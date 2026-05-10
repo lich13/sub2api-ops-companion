@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>Telegram</h2>
+    <p>只填 Bot Token。首次在 Telegram 私聊给 Bot 发 <code>/start</code> 或 <code>/menu</code>，会自动绑定当前会话。</p>
+  </div>
+  <div class="filters inline">
+    <form method="post" action="{{ base_path }}/telegram/push-test">
+      <button class="primary" type="submit">测试推送</button>
+    </form>
+    <form method="post" action="{{ base_path }}/telegram/guard-run">
+      <button type="submit">执行 Guard</button>
+    </form>
+  </div>
+</section>
+
+<section class="metric-strip telegram-metrics">
+  <div class="metric-card {{ 'danger' if not telegram.configured else '' }}">
+    <span>Bot</span>
+    <strong>{{ '已启用' if telegram.configured else '未启用' }}</strong>
+  </div>
+  <div class="metric-card {{ 'warning' if telegram.binding_status != '已绑定' else '' }}">
+    <span>绑定</span>
+    <strong>{{ telegram.binding_status }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>推送</span>
+    <strong>{{ telegram.push_target_count }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>控制</span>
+    <strong>{{ telegram.control_user_count }}</strong>
+  </div>
+</section>
+
+<section class="panel telegram-config-panel">
+  <div class="section-head compact-head">
+    <div>
+      <h3>Bot Token</h3>
+      <p>保存后立即生效。</p>
+    </div>
+    <span class="subtle">更新：{{ telegram.config_updated_at | bj_time }}</span>
+  </div>
+
+  <form class="telegram-config-form telegram-token-form" method="post" action="{{ base_path }}/telegram/config" autocomplete="off">
+    <label class="token-field">
+      <span>Bot Token</span>
+      <input class="wide-input" type="password" name="telegram_bot_token" autocomplete="new-password" spellcheck="false" placeholder="{{ telegram.bot_token_preview if telegram.bot_token_set else '粘贴 Bot Token' }}">
+    </label>
+    <button class="primary" type="submit">保存</button>
+  </form>
+
+  <p class="telegram-note">保存 Token 后，直接在 Telegram 私聊发送 <code>/start</code>。</p>
+</section>
+
+<section class="panel split-panel telegram-split">
+  <div>
+    <h3>当前绑定</h3>
+    <div class="id-list">
+      {% for item in telegram.paired_chat_ids %}
+        <span class="id-chip">Chat {{ item }}</span>
+      {% endfor %}
+      {% for item in telegram.paired_user_ids %}
+        <span class="id-chip">User {{ item }}</span>
+      {% endfor %}
+      {% if not telegram.paired_chat_ids and not telegram.paired_user_ids %}
+        <span class="muted-text">待首次绑定</span>
+      {% endif %}
+    </div>
+    {% if telegram.state_updated_at %}
+      <p class="subtle telegram-state-time">绑定更新：{{ telegram.state_updated_at | bj_time }}</p>
+    {% endif %}
+  </div>
+  <div>
+    <h3>常用命令</h3>
+    <div class="command-pills telegram-command-pills">
+      <code>/menu</code>
+      <code>/status</code>
+      <code>/accounts</code>
+      <code>/account 7</code>
+      <code>/pause 7</code>
+      <code>/resume 7</code>
+      <code>/cooldown 7 30</code>
+      <code>/guard_run</code>
+      <code>/push_test</code>
+    </div>
+  </div>
+</section>
+{% endblock %}

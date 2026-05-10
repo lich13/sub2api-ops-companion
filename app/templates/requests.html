@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>错误链路</h2>
+    <p>只展开可归因到具体账号的上游尝试；其他请求侧错误不进入此页。</p>
+  </div>
+</section>
+<section class="panel filter-panel">
+  <form class="filters inline" method="get" action="{{ base_path }}/requests">
+    <label>搜索 request_id / 文本
+      <input name="q" value="{{ q }}" placeholder="request_id 或错误文本" />
+    </label>
+    <label>平台
+      <select name="platform">
+        <option value="" {{ 'selected' if not platform else '' }}>全部平台</option>
+        {% for item in platform_options %}
+          <option value="{{ item.platform }}" {{ 'selected' if item.platform == platform else '' }}>{{ item.platform }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>账号
+      <select name="account_id" class="account-filter-select">
+        <option value="" {{ 'selected' if not account_id else '' }}>全部账号</option>
+        {% for item in account_options %}
+          <option value="{{ item.id }}" {{ 'selected' if item.id == account_id|int else '' }}>
+            #{{ item.id }} {{ item.name }} · {{ item.type }} · P{{ item.priority }} · {{ '可调度' if item.schedulable else '已停' }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>窗口小时
+      <input name="hours" value="{{ hours }}" />
+    </label>
+    <label>行数
+      <input name="limit" value="{{ limit }}" />
+    </label>
+    <button class="primary" type="submit">查询</button>
+  </form>
+</section>
+
+<section class="panel table-panel request-chain-panel">
+  {% include "request_table.html" %}
+</section>
+{% endblock %}

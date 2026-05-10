@@ -1,0 +1,114 @@
+# Sub2API Ops Companion
+
+旁路运维面板，用来补足 Sub2API 原面板里账号质量归因、`upstream_errors` 链路展示和账号调度禁用操作不够直观的问题。
+
+设计边界：
+
+- 不修改 Sub2API 原仓库和镜像。
+- 只连接 Sub2API 的 PostgreSQL，读取 `usage_logs`、`ops_error_logs`、`accounts`、`groups` 等运行数据。
+- 账号操作只更新 `accounts.schedulable`、`accounts.temp_unschedulable_*` 和 `accounts.updated_at`。
+- 登录使用页面内 Cookie 会话，不触发浏览器 Basic Auth 弹窗。
+- 操作审计写入本服务自己的 `/data/audit.jsonl`，不污染 Sub2API 源码。
+
+## 功能
+
+- 账号质量快照：按账号展开成功量、账号质量错误、错误率、`403 blocked`、余额/额度、限流、5xx/流式截断。
+- 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
+- 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
+- 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
+- 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号，直到手动恢复。
+- Telegram 远程运维：只需 Bot Token，首次私聊自动绑定当前会话，支持 Guard 推送、账号列表筛选、按账号暂停/恢复/冷却。
+
+## 运行
+
+复制 `.env.example` 为 `.env` 并设置强密码：
+
+```bash
+cp .env.example .env
+```
+
+启动：
+
+```bash
+docker compose up -d --build
+```
+
+默认监听 `127.0.0.1:18081`。生产环境建议通过 nginx 挂到 `/sub2ops/`，并保留 Basic Auth。nginx 片段见 `deploy/nginx/sub2ops.location.conf`。
+
+## 环境变量
+
+- `DATABASE_URL`：PostgreSQL 连接串。
+- `OPS_BASIC_USER`：Basic Auth 用户名。
+- `OPS_BASIC_PASSWORD`：页面登录密码，必须设置。
+- `OPS_SESSION_SECRET`：Cookie 会话签名密钥。
+- `OPS_SESSION_TTL_SECONDS`：页面登录 Cookie 会话有效期，默认 1 年（`31536000` 秒）。
+- `BASE_PATH`：反代路径前缀，例如 `/sub2ops`。
+- `APP_PORT`：容器内监听端口，默认 `18081`。
+- `GUARD_ENABLED`：是否启动后台 Guard，默认 `true`。
+- `GUARD_INTERVAL_SECONDS`：Guard 扫描间隔，默认 `5` 秒；服务启动后会立即先扫一次，之后按该间隔轮询。
+- `GUARD_LOOKBACK_MINUTES`：余额/额度错误扫描窗口，默认 `60`。
+- `GUARD_BALANCE_ERROR_THRESHOLD`：触发自动处理的余额/额度错误次数，默认 `1`。
+- `TELEGRAM_CONFIG_PATH`：Telegram 面板配置持久化文件，默认 `/data/telegram-config.json`。
+- `TELEGRAM_BOT_TOKEN`：可选初始值。面板保存后以 `TELEGRAM_CONFIG_PATH` 文件为准。
+- `TELEGRAM_STATE_PATH`：配对状态持久化文件，默认 `/data/telegram-state.json`。
+
+## Telegram 远程控制
+
+进入 `/sub2ops/telegram` 后只需要保存 Bot Token。保存后 Bot 会热重启，不需要手动改 `.env` 或重启容器。
+
+配置完成后，在 Telegram 私聊里给 Bot 发送：
+
+```text
+/start
+```
+
+首次会自动绑定当前会话。之后可使用按钮菜单，也可以直接发命令：
+
+```text
+/menu
+/status
+/accounts
+/accounts balance
+/account 7
+/account nb
+/pause 7
+/resume 7
+/cooldown 7 30
+/guard_run
+/push_test
+```
+
+自动 Guard 如果暂停了余额/额度不足账号，会主动推送到当前绑定的 Telegram 会话。`/guard_run` 可以从 Telegram 立即执行一次 Guard。账号详情页按钮支持“暂停到手动恢复”、“恢复/清除冷却”和“临时冷却 10 分钟、30 分钟、2 小时、24 小时”。
+
+## 质量统计口径
+
+账号质量错误会展开 `ops_error_logs.upstream_errors` 后按实际 `account_id` 归因。
+`account_id` 为空、`none`、`null` 或客户端请求错误不会进入账号质量表，也不会在面板展示或统计。
+
+计入账号质量问题：
+
+- `403` 且消息包含 `blocked`。
+- 余额或额度类错误，例如 `insufficient_user_quota`、`用户额度不足`、`预扣费额度失败`、`剩余额度`、`insufficient balance`。
+- `429`、`rate limit`、`Too many pending requests`。
+- `500` 到 `599`。
+- 流式截断或终止事件缺失，例如 `stream ended before a terminal event`。
+
+不计入账号质量问题：
+
+- `account_id IS NULL` 的预路由错误。
+- `error_owner=client` 或 `error_source=client_request`。
+- 常见客户端坏请求，例如 `Input must be a list`、`Instructions are required`。
+
+## 安全说明
+
+这个服务具备暂停和恢复账号调度的能力，不应该裸露在公网。至少启用 Basic Auth；更稳妥的方式是只监听本机，通过 nginx 内部路径访问。
+
+## 调度问题排查口径
+
+如果 OpenAI 同优先级账号没有轮询，先检查 `settings.openai_advanced_scheduler_enabled`。该值为 `false` 时，Sub2API 会使用默认 OpenAI 账号选择路径，实际行为可能明显偏向单个账号。
+
+高级调度开启后仍需要保证最高优先级下至少有两个健康可调度账号。如果最高优先级只剩一个账号，轮询无从发生；应恢复健康账号或把健康账号提升到同一优先级。
+
+如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
+
+自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。

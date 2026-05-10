@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260510-telegram-hermes" />
+    <script src="{{ base_path }}/static/table-columns.js?v=20260510-telegram-hermes" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="shell header-inner">
+        <div class="brand">
+          <span class="brand-mark">S</span>
+          <div>
+            <h1>{{ app_name }}</h1>
+            <p>账号质量和调度 Guard</p>
+          </div>
+        </div>
+        {% if current_user %}
+          <nav class="nav">
+            <a class="{{ 'active' if active == 'quality' else '' }}" href="{{ base_path }}/">账号质量</a>
+            <a class="{{ 'active' if active == 'requests' else '' }}" href="{{ base_path }}/requests">错误链路</a>
+            <a class="{{ 'active' if active == 'guard' else '' }}" href="{{ base_path }}/guard">自动 Guard</a>
+            <a class="{{ 'active' if active == 'telegram' else '' }}" href="{{ base_path }}/telegram">Telegram</a>
+            <form method="post" action="{{ base_path }}/logout">
+              <button class="link-button" type="submit">退出</button>
+            </form>
+          </nav>
+        {% endif %}
+      </div>
+    </header>
+    <main class="shell page-shell">
+      {% if msg %}
+        <div class="notice">{{ msg }}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
