@@ -1,0 +1,745 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import urllib.error
+import urllib.request
+from collections.abc import Awaitable, Callable
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from . import account_ops
+from .db import Database
+from .settings import Settings
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+ACCOUNT_PAGE_SIZE = 8
+
+
+GuardRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
+GuardConfig = Callable[[], dict[str, Any]]
+
+
+class TelegramOpsBot:
+    def __init__(
+        self,
+        settings: Settings,
+        db: Database,
+        guard_runner: GuardRunner,
+        guard_config: GuardConfig,
+    ) -> None:
+        self.settings = settings
+        self.db = db
+        self.guard_runner = guard_runner
+        self.guard_config = guard_config
+        self._state_lock = asyncio.Lock()
+
+    async def run(self) -> None:
+        if not self.enabled:
+            return
+
+        offset = 0
+        while True:
+            try:
+                response = await self._api(
+                    "getUpdates",
+                    {
+                        "timeout": self.settings.telegram_poll_timeout_seconds,
+                        "offset": offset,
+                        "allowed_updates": ["message", "callback_query"],
+                    },
+                    timeout=self.settings.telegram_poll_timeout_seconds + 10,
+                )
+                for update in response.get("result", []):
+                    offset = int(update.get("update_id", offset)) + 1
+                    await self._handle_update(update)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(3)
+
+    @property
+    def enabled(self) -> bool:
+        return self.settings.telegram_enabled and bool(self.settings.telegram_bot_token.strip())
+
+    async def notify(self, text: str, keyboard: dict[str, Any] | None = None) -> None:
+        if not self.enabled:
+            return
+        for chat_id in await self.allowed_chat_ids():
+            await self._send_message(chat_id, text, keyboard)
+
+    async def allowed_chat_ids(self) -> list[int]:
+        state = await self._load_state()
+        return unique_ints(list(state.get("paired_chat_ids") or []))
+
+    async def _handle_update(self, update: dict[str, Any]) -> None:
+        callback = update.get("callback_query")
+        if callback:
+            callback_id = str(callback.get("id") or "")
+            if callback_id:
+                await self._api("answerCallbackQuery", {"callback_query_id": callback_id})
+            message = callback.get("message") or {}
+            chat_id = int((message.get("chat") or {}).get("id") or 0)
+            user_id = int((callback.get("from") or {}).get("id") or 0)
+            chat_type = str((message.get("chat") or {}).get("type") or "private")
+            auto_bound = await self._maybe_bind_first_session(chat_id, user_id, chat_type)
+            if not chat_id or (not auto_bound and not await self._allowed(chat_id, user_id)):
+                if chat_id and chat_type == "private":
+                    await self._send_message(chat_id, "未授权。请使用已绑定的 Telegram 会话。")
+                return
+            try:
+                text, keyboard = await self._callback_reply(
+                    chat_id,
+                    user_id,
+                    str(callback.get("data") or "menu"),
+                )
+            except Exception as exc:
+                text, keyboard = f"执行失败：{exc}", main_keyboard()
+            if auto_bound:
+                text = f"已自动绑定当前会话。\n\n{text}"
+            await self._send_message(chat_id, text, keyboard)
+            return
+
+        message = update.get("message") or {}
+        text = str(message.get("text") or "").strip()
+        if not text:
+            return
+        chat_id = int((message.get("chat") or {}).get("id") or 0)
+        user_id = int((message.get("from") or {}).get("id") or 0)
+        chat_type = str((message.get("chat") or {}).get("type") or "private")
+        if not chat_id:
+            return
+
+        auto_bound = await self._maybe_bind_first_session(chat_id, user_id, chat_type)
+
+        if is_pair_command(text):
+            reply, keyboard = await self._pair(chat_id, user_id, chat_type, auto_bound)
+            await self._send_message(chat_id, reply, keyboard)
+            return
+
+        if not auto_bound and not await self._allowed(chat_id, user_id):
+            if chat_type != "private":
+                await self._send_message(chat_id, "未授权。请在私聊中和 Bot 交互。")
+            else:
+                await self._send_message(chat_id, "未授权。请使用已绑定的 Telegram 会话。")
+            return
+
+        try:
+            reply, keyboard = await self._text_reply(chat_id, user_id, text)
+        except Exception as exc:
+            reply, keyboard = f"执行失败：{exc}", main_keyboard()
+        if auto_bound:
+            reply = f"已自动绑定当前会话。\n\n{reply}"
+        await self._send_message(chat_id, reply, keyboard)
+
+    async def _pair(
+        self,
+        chat_id: int,
+        user_id: int,
+        chat_type: str,
+        auto_bound: bool = False,
+    ) -> tuple[str, dict[str, Any] | None]:
+        if auto_bound:
+            return (
+                f"已自动绑定当前会话。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n现在可以使用 /menu、/accounts、/guard、/push_test。",
+                main_keyboard(),
+            )
+        if await self._maybe_bind_first_session(chat_id, user_id, chat_type):
+            return (
+                f"已自动绑定当前会话。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n现在可以使用 /menu、/accounts、/guard、/push_test。",
+                main_keyboard(),
+            )
+        return (
+            "当前版本不需要配对码。首次在私聊里发 /start 或 /menu 会自动绑定当前会话。",
+            main_keyboard(),
+        )
+
+    async def _text_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        parts = text.split()
+        command = normalize_command(parts[0] if parts else "")
+        args = parts[1:]
+
+        if command in {"/start", "/help", "/menu", "menu", "菜单"}:
+            return await self._menu_reply()
+        if command in {"/status", "status", "状态"}:
+            return await self._status_reply()
+        if command in {"/push_test", "push_test", "测试推送"}:
+            return "Sub2API Ops Telegram 推送通道正常。", main_keyboard()
+        if command in {"/guard", "guard", "自动guard"}:
+            return await self._guard_reply()
+        if command in {"/guard_run", "guard_run", "执行guard"}:
+            return await self._guard_run_reply(chat_id, user_id)
+        if command in {"/accounts", "accounts", "账号"}:
+            if args:
+                return await self._account_list_reply(args[0], 0)
+            return await self._accounts_menu_reply()
+        if command in {"/account", "account", "账号详情", "/find", "find", "找账号"}:
+            query = " ".join(args).strip()
+            if not query:
+                return "发送 /account <账号ID或名称>。\n示例：/account #7 或 /account nb", accounts_keyboard()
+            return await self._account_search_reply(query)
+        if command in {"/pause", "pause", "暂停账号"}:
+            account_id = parse_account_id(args[0] if args else "")
+            return await self._pause_confirm_reply(account_id)
+        if command in {"/resume", "resume", "恢复账号"}:
+            account_id = parse_account_id(args[0] if args else "")
+            return await self._resume_confirm_reply(account_id)
+        if command in {"/cooldown", "cooldown", "冷却账号"}:
+            account_id = parse_account_id(args[0] if args else "")
+            minutes = parse_minutes(args[1] if len(args) > 1 else "", 30)
+            return await self._cooldown_apply_reply(account_id, minutes, actor(chat_id, user_id))
+
+        return "无法识别命令。使用 /menu 打开远程控制菜单。", main_keyboard()
+
+    async def _callback_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        data: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        if data == "menu":
+            return await self._menu_reply()
+        if data == "status":
+            return await self._status_reply()
+        if data == "push":
+            return "Sub2API Ops Telegram 推送通道正常。", main_keyboard()
+        if data == "guard":
+            return await self._guard_reply()
+        if data == "guardrun":
+            return await self._guard_run_reply(chat_id, user_id)
+        if data == "acctmenu":
+            return await self._accounts_menu_reply()
+        if data == "acctsearch":
+            return "发送 /account <账号ID或名称> 定位账号。\n示例：/account #7、/account nb", accounts_keyboard()
+        if data.startswith("acctlist:"):
+            _, filter_name, page_raw = (data.split(":") + ["all", "0"])[:3]
+            return await self._account_list_reply(filter_name, parse_page(page_raw))
+        if data.startswith("acct:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._account_detail_reply(account_id)
+        if data.startswith("pauseask:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._pause_confirm_reply(account_id)
+        if data.startswith("pause:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._pause_apply_reply(account_id, actor(chat_id, user_id))
+        if data.startswith("resask:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._resume_confirm_reply(account_id)
+        if data.startswith("res:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._resume_apply_reply(account_id, actor(chat_id, user_id))
+        if data.startswith("cdmenu:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._cooldown_menu_reply(account_id)
+        if data.startswith("cd:"):
+            _, account_raw, minutes_raw = (data.split(":") + ["", "30"])[:3]
+            return await self._cooldown_apply_reply(
+                parse_account_id(account_raw),
+                parse_minutes(minutes_raw, 30),
+                actor(chat_id, user_id),
+            )
+        return await self._menu_reply()
+
+    async def _menu_reply(self) -> tuple[str, dict[str, Any]]:
+        chats = await self.allowed_chat_ids()
+        text = (
+            "Sub2API Ops 远程控制\n"
+            f"平台/分组：{self.settings.telegram_default_platform} / {self.settings.telegram_default_group}\n"
+            f"已配对推送目标：{len(chats)} 个\n\n"
+            "可远程查看账号质量、执行 Guard、暂停/恢复/冷却具体账号。"
+        )
+        return text, main_keyboard()
+
+    async def _status_reply(self) -> tuple[str, dict[str, Any]]:
+        def load() -> tuple[dict[str, int], dict[str, Any], str]:
+            rows = self._quality_rows()
+            summary = account_ops.account_summary(rows)
+            self.db.fetch_one("SELECT 1 AS ok")
+            return summary, self.guard_config(), "ok"
+
+        summary, guard, db_status = await asyncio.to_thread(load)
+        text = (
+            "Sub2API Ops 状态\n"
+            f"DB：{db_status}\n"
+            f"Guard：{'开启' if guard.get('enabled') else '关闭'} / {guard.get('interval_seconds')}s\n"
+            f"Guard 运行中：{'是' if (guard.get('state') or {}).get('running') else '否'}\n"
+            f"上次 Guard：{bj_time((guard.get('state') or {}).get('last_run_at'))}\n\n"
+            f"账号：总 {summary['total']}，可调度 {summary['active']}，冷却 {summary['cooling']}，已停 {summary['paused']}\n"
+            f"错误：额度 {summary['balance']}，403 {summary['blocked']}，限流 {summary['rate']}，5xx/流式 {summary['unstable']}"
+        )
+        return text, main_keyboard()
+
+    async def _guard_reply(self) -> tuple[str, dict[str, Any]]:
+        guard = await asyncio.to_thread(self.guard_config)
+        state = guard.get("state") or {}
+        last_actions = state.get("last_actions") or []
+        text = (
+            "自动 Guard\n"
+            f"状态：{'开启' if guard.get('enabled') else '关闭'}\n"
+            f"扫描间隔：{guard.get('interval_seconds')}s\n"
+            f"扫描窗口：{guard.get('lookback_minutes')}m\n"
+            f"余额/额度阈值：{guard.get('threshold')}\n"
+            f"上次运行：{bj_time(state.get('last_run_at'))}\n"
+            f"上次错误：{state.get('last_error') or '-'}\n"
+            f"上次动作：{len(last_actions)} 个"
+        )
+        return text, guard_keyboard()
+
+    async def _guard_run_reply(self, chat_id: int, user_id: int) -> tuple[str, dict[str, Any]]:
+        actions = await self.guard_runner(actor(chat_id, user_id, "guard"))
+        if not actions:
+            return "Guard 已执行：没有需要处理的账号。", guard_keyboard()
+        return format_guard_actions("Guard 已执行", actions), guard_keyboard()
+
+    async def _accounts_menu_reply(self) -> tuple[str, dict[str, Any]]:
+        rows = await asyncio.to_thread(self._quality_rows)
+        summary = account_ops.account_summary(rows)
+        text = (
+            "账号运维\n"
+            f"平台/分组：{self.settings.telegram_default_platform} / {self.settings.telegram_default_group}\n"
+            f"统计窗口：{self.settings.telegram_quality_hours}h\n\n"
+            f"总数：{summary['total']}，可调度：{summary['active']}，冷却中：{summary['cooling']}，已停：{summary['paused']}\n"
+            f"有错误：{summary['bad']}，额度/余额：{summary['balance']}，403：{summary['blocked']}，限流：{summary['rate']}，5xx/流式：{summary['unstable']}"
+        )
+        return text, accounts_keyboard(summary)
+
+    async def _account_list_reply(self, filter_name: str, page: int) -> tuple[str, dict[str, Any]]:
+        rows = await asyncio.to_thread(self._quality_rows)
+        key = account_ops.normalize_filter(filter_name)
+        filtered = account_ops.filter_rows(rows, key)
+        page_count = max(1, (len(filtered) + ACCOUNT_PAGE_SIZE - 1) // ACCOUNT_PAGE_SIZE)
+        page = max(0, min(page, page_count - 1))
+        start = page * ACCOUNT_PAGE_SIZE
+        selected = filtered[start : start + ACCOUNT_PAGE_SIZE]
+        if not selected:
+            return f"{account_ops.filter_title(key)} 没有账号。", accounts_keyboard()
+
+        lines = [account_row(row) for row in selected]
+        text = (
+            f"账号列表：{account_ops.filter_title(key)}\n"
+            f"第 {page + 1}/{page_count} 页，共 {len(filtered)} 个\n\n"
+            + "\n".join(lines)
+        )
+        return text, account_list_keyboard(selected, key, page, page_count)
+
+    async def _account_search_reply(self, query: str) -> tuple[str, dict[str, Any]]:
+        rows = await asyncio.to_thread(self._quality_rows)
+        matches = account_ops.find_accounts(rows, query, 12)
+        if not matches:
+            return f"没有找到账号：{query}", accounts_keyboard()
+        if len(matches) == 1:
+            return account_detail(matches[0]), account_actions_keyboard(matches[0])
+        text = f"搜索结果：{query}\n共 {len(matches)} 个\n\n" + "\n".join(account_row(row) for row in matches)
+        return text, account_list_keyboard(matches, "all", 0, 1, show_pager=False)
+
+    async def _account_detail_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        if not row:
+            return f"没有找到账号 #{account_id}", accounts_keyboard()
+        return account_detail(row), account_actions_keyboard(row)
+
+    async def _pause_confirm_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        if not row:
+            return f"没有找到账号 #{account_id}", accounts_keyboard()
+        text = f"确认暂停账号？\n\n{account_row(row)}\n\n暂停后不会再调度，直到手动恢复。"
+        return text, confirm_keyboard("确认暂停", f"pause:{account_id}", f"acct:{account_id}")
+
+    async def _pause_apply_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any]]:
+        reason = f"telegram remote pause by {actor_name}"
+        row = await asyncio.to_thread(
+            account_ops.pause_account,
+            self.db,
+            self.settings.audit_path,
+            account_id,
+            actor_name,
+            reason,
+        )
+        if not row:
+            return f"暂停失败：没有找到账号 #{account_id}", accounts_keyboard()
+        detail = await asyncio.to_thread(self._account_detail, account_id)
+        return f"已暂停账号。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+
+    async def _resume_confirm_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        if not row:
+            return f"没有找到账号 #{account_id}", accounts_keyboard()
+        text = f"确认恢复账号调度？\n\n{account_row(row)}\n\n恢复会清除手动暂停和临时冷却。"
+        return text, confirm_keyboard("确认恢复", f"res:{account_id}", f"acct:{account_id}")
+
+    async def _resume_apply_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any]]:
+        row = await asyncio.to_thread(
+            account_ops.resume_account,
+            self.db,
+            self.settings.audit_path,
+            account_id,
+            actor_name,
+        )
+        if not row:
+            return f"恢复失败：没有找到账号 #{account_id}", accounts_keyboard()
+        detail = await asyncio.to_thread(self._account_detail, account_id)
+        return f"已恢复账号。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+
+    async def _cooldown_menu_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        if not row:
+            return f"没有找到账号 #{account_id}", accounts_keyboard()
+        return f"选择冷却时间\n\n{account_row(row)}", cooldown_keyboard(account_id)
+
+    async def _cooldown_apply_reply(
+        self,
+        account_id: int,
+        minutes: int,
+        actor_name: str,
+    ) -> tuple[str, dict[str, Any]]:
+        reason = f"telegram remote cooldown {minutes}m by {actor_name}"
+        row = await asyncio.to_thread(
+            account_ops.cooldown_account,
+            self.db,
+            self.settings.audit_path,
+            account_id,
+            actor_name,
+            minutes,
+            reason,
+        )
+        if not row:
+            return f"冷却失败：没有找到账号 #{account_id}", accounts_keyboard()
+        detail = await asyncio.to_thread(self._account_detail, account_id)
+        return f"已冷却账号 {minutes} 分钟。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+
+    def _quality_rows(self) -> list[dict[str, Any]]:
+        return account_ops.quality_rows(
+            self.db,
+            self.settings.telegram_default_group,
+            self.settings.telegram_default_platform,
+            self.settings.telegram_quality_hours,
+        )
+
+    def _account_detail(self, account_id: int) -> dict[str, Any] | None:
+        rows = self._quality_rows()
+        return account_ops.account_by_id(rows, account_id) or account_ops.fallback_account(self.db, account_id)
+
+    async def _allowed(self, chat_id: int, user_id: int) -> bool:
+        state = await self._load_state()
+        chat_ids = unique_ints(list(state.get("paired_chat_ids") or []))
+        user_ids = unique_ints(list(state.get("paired_user_ids") or []))
+        if not chat_ids and not user_ids:
+            return False
+        if chat_ids and chat_id not in chat_ids:
+            return False
+        if user_ids and user_id not in user_ids:
+            return False
+        return True
+
+    async def _maybe_bind_first_session(self, chat_id: int, user_id: int, chat_type: str) -> bool:
+        if chat_type != "private":
+            return False
+        async with self._state_lock:
+            state = await self._load_state_unlocked()
+            chat_ids = unique_ints(list(state.get("paired_chat_ids") or []))
+            user_ids = unique_ints(list(state.get("paired_user_ids") or []))
+            if chat_ids or user_ids:
+                return False
+            state["paired_chat_ids"] = [chat_id]
+            state["paired_user_ids"] = [user_id]
+            state["updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+            await asyncio.to_thread(self._save_state_sync, state)
+        return True
+
+    async def _load_state(self) -> dict[str, Any]:
+        async with self._state_lock:
+            return await self._load_state_unlocked()
+
+    async def _load_state_unlocked(self) -> dict[str, Any]:
+        return await asyncio.to_thread(self._load_state_sync)
+
+    def _load_state_sync(self) -> dict[str, Any]:
+        path = Path(self.settings.telegram_state_path)
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        state.setdefault("paired_chat_ids", [])
+        state.setdefault("paired_user_ids", [])
+        return state
+
+    def _save_state_sync(self, state: dict[str, Any]) -> None:
+        path = Path(self.settings.telegram_state_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    async def _send_message(
+        self,
+        chat_id: int,
+        text: str,
+        keyboard: dict[str, Any] | None = None,
+    ) -> None:
+        body: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": truncate(text, 3800),
+            "disable_web_page_preview": True,
+        }
+        if keyboard:
+            body["reply_markup"] = keyboard
+        await self._api("sendMessage", body)
+
+    async def _api(self, method: str, payload: dict[str, Any], timeout: int = 15) -> dict[str, Any]:
+        return await asyncio.to_thread(self._api_sync, method, payload, timeout)
+
+    def _api_sync(self, method: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+        token = self.settings.telegram_bot_token.strip()
+        if not token:
+            return {"ok": False, "result": []}
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/{method}",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            return {"ok": False, "result": []}
+
+
+def main_keyboard() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": "状态", "callback_data": "status"}, {"text": "账号运维", "callback_data": "acctmenu"}],
+            [{"text": "自动 Guard", "callback_data": "guard"}, {"text": "执行 Guard", "callback_data": "guardrun"}],
+            [{"text": "推送测试", "callback_data": "push"}],
+        ]
+    }
+
+
+def accounts_keyboard(summary: dict[str, int] | None = None) -> dict[str, Any]:
+    suffix = summary or {}
+    return {
+        "inline_keyboard": [
+            [
+                {"text": label("全部", suffix.get("total")), "callback_data": "acctlist:all:0"},
+                {"text": label("可调度", suffix.get("active")), "callback_data": "acctlist:active:0"},
+            ],
+            [
+                {"text": label("已停", suffix.get("paused")), "callback_data": "acctlist:paused:0"},
+                {"text": label("冷却中", suffix.get("cooling")), "callback_data": "acctlist:cooling:0"},
+            ],
+            [
+                {"text": label("额度/余额", suffix.get("balance")), "callback_data": "acctlist:balance:0"},
+                {"text": label("403", suffix.get("blocked")), "callback_data": "acctlist:blocked:0"},
+            ],
+            [
+                {"text": label("限流", suffix.get("rate")), "callback_data": "acctlist:rate:0"},
+                {"text": label("5xx/流式", suffix.get("unstable")), "callback_data": "acctlist:unstable:0"},
+            ],
+            [{"text": "搜索账号", "callback_data": "acctsearch"}, {"text": "主菜单", "callback_data": "menu"}],
+        ]
+    }
+
+
+def account_list_keyboard(
+    rows: list[dict[str, Any]],
+    filter_name: str,
+    page: int,
+    page_count: int,
+    show_pager: bool = True,
+) -> dict[str, Any]:
+    buttons = [
+        [{"text": f"#{row.get('id')} {truncate(str(row.get('name') or '-'), 28)} · {account_ops.account_state(row)}", "callback_data": f"acct:{row.get('id')}"}]
+        for row in rows
+    ]
+    if show_pager and page_count > 1:
+        prev_page = max(0, page - 1)
+        next_page = min(page_count - 1, page + 1)
+        buttons.append(
+            [
+                {"text": "上一页", "callback_data": f"acctlist:{filter_name}:{prev_page}"},
+                {"text": f"{page + 1}/{page_count}", "callback_data": f"acctlist:{filter_name}:{page}"},
+                {"text": "下一页", "callback_data": f"acctlist:{filter_name}:{next_page}"},
+            ]
+        )
+    buttons.append([{"text": "筛选菜单", "callback_data": "acctmenu"}, {"text": "搜索账号", "callback_data": "acctsearch"}])
+    buttons.append([{"text": "主菜单", "callback_data": "menu"}])
+    return {"inline_keyboard": buttons}
+
+
+def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
+    account_id = int(row.get("id") or 0)
+    if row.get("schedulable") and account_ops.is_cooling(row):
+        first = [
+            {"text": "解除冷却/恢复", "callback_data": f"resask:{account_id}"},
+            {"text": "暂停到手动恢复", "callback_data": f"pauseask:{account_id}"},
+        ]
+    elif row.get("schedulable"):
+        first = [
+            {"text": "暂停到手动恢复", "callback_data": f"pauseask:{account_id}"},
+            {"text": "临时冷却", "callback_data": f"cdmenu:{account_id}"},
+        ]
+    else:
+        first = [
+            {"text": "恢复调度", "callback_data": f"resask:{account_id}"},
+            {"text": "改为临时冷却", "callback_data": f"cdmenu:{account_id}"},
+        ]
+    return {
+        "inline_keyboard": [
+            first,
+            [{"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"}, {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"}],
+            [{"text": "刷新", "callback_data": f"acct:{account_id}"}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
+            [{"text": "主菜单", "callback_data": "menu"}],
+        ]
+    }
+
+
+def cooldown_keyboard(account_id: int) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": "10 分钟", "callback_data": f"cd:{account_id}:10"}, {"text": "30 分钟", "callback_data": f"cd:{account_id}:30"}],
+            [{"text": "2 小时", "callback_data": f"cd:{account_id}:120"}, {"text": "24 小时", "callback_data": f"cd:{account_id}:1440"}],
+            [{"text": "返回账号", "callback_data": f"acct:{account_id}"}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
+        ]
+    }
+
+
+def confirm_keyboard(confirm_text: str, confirm_data: str, back_data: str) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": confirm_text, "callback_data": confirm_data}],
+            [{"text": "返回账号", "callback_data": back_data}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
+        ]
+    }
+
+
+def guard_keyboard() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": "立即执行 Guard", "callback_data": "guardrun"}],
+            [{"text": "账号运维", "callback_data": "acctmenu"}, {"text": "主菜单", "callback_data": "menu"}],
+        ]
+    }
+
+
+def account_row(row: dict[str, Any]) -> str:
+    return (
+        f"#{row.get('id')} {row.get('name')} · {row.get('type') or '-'} · "
+        f"G{row.get('group_priority') or '-'} / P{row.get('account_priority') or row.get('priority') or '-'} · "
+        f"{account_ops.account_state(row)} · 成功/错 {int(row.get('success_window') or 0)}/{int(row.get('account_quality_errors_window') or 0)} · "
+        f"余额 {int(row.get('balance_or_quota_window') or 0)} 403 {int(row.get('blocked_403_window') or 0)} "
+        f"限流 {int(row.get('rate_limit_window') or 0)} 5xx {int(row.get('unstable_5xx_stream_window') or 0)}"
+    )
+
+
+def account_detail(row: dict[str, Any]) -> str:
+    lines = [
+        f"#{row.get('id')} {row.get('name')}",
+        f"平台/类型：{row.get('platform') or '-'} / {row.get('type') or '-'}",
+        f"状态：{account_ops.account_state(row)}，G{row.get('group_priority') or '-'} / P{row.get('account_priority') or row.get('priority') or '-'}，并发 {row.get('concurrency') or '-'}",
+        f"窗口成功/错误：{int(row.get('success_window') or 0)} / {int(row.get('account_quality_errors_window') or 0)}",
+        f"错误拆分：余额 {int(row.get('balance_or_quota_window') or 0)}，403 {int(row.get('blocked_403_window') or 0)}，限流 {int(row.get('rate_limit_window') or 0)}，5xx/流式 {int(row.get('unstable_5xx_stream_window') or 0)}",
+    ]
+    if row.get("temp_unschedulable_until"):
+        lines.append(f"冷却到：{bj_time(row.get('temp_unschedulable_until'))}")
+    if row.get("temp_unschedulable_reason"):
+        lines.append(f"停调度原因：{truncate(str(row.get('temp_unschedulable_reason')), 800)}")
+    if row.get("last_error_at"):
+        lines.append(
+            f"最近错误：{bj_time(row.get('last_error_at'))} · {row.get('last_error_status') or '-'} · {row.get('last_error_category') or '-'}"
+        )
+        if row.get("last_error_message"):
+            lines.append(f"错误内容：{truncate(str(row.get('last_error_message')), 1000)}")
+    return "\n".join(lines)
+
+
+def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
+    lines = [title]
+    for item in actions[:10]:
+        lines.append(
+            f"#{item.get('account_id')} {item.get('name') or '-'} · {item.get('action') or '-'} · "
+            f"余额/额度错误 {item.get('balance_error_count') or '-'}"
+        )
+    if len(actions) > 10:
+        lines.append(f"... 另有 {len(actions) - 10} 个动作")
+    return "\n".join(lines)
+
+
+def bj_time(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=BEIJING_TZ)
+    return parsed.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def is_pair_command(text: str) -> bool:
+    parts = text.strip().split()
+    return bool(parts) and normalize_command(parts[0]) == "/pair"
+
+
+def normalize_command(command: str) -> str:
+    command = command.strip()
+    if command.startswith("/"):
+        return command.split("@", 1)[0].lower()
+    return command.lower()
+
+
+def parse_account_id(value: str) -> int:
+    raw = str(value or "").strip().lstrip("#")
+    if not raw.isdigit():
+        raise ValueError("账号 ID 必须是数字")
+    return int(raw)
+
+
+def parse_minutes(value: str, default: int) -> int:
+    try:
+        return max(1, min(1440, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_page(value: str) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def actor(chat_id: int, user_id: int, label_name: str = "control") -> str:
+    return f"telegram:{label_name}:chat={chat_id}:user={user_id}"
+
+
+def label(text: str, count: int | None) -> str:
+    return f"{text} {count}" if count is not None else text
+
+
+def unique_ints(values: list[Any]) -> list[int]:
+    result: list[int] = []
+    for value in values:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed and parsed not in result:
+            result.append(parsed)
+    return sorted(result)
+
+
+def truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)] + "…"

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>请求详情</h2>
+    <p class="mono detail-request-id">{{ request_id }}</p>
+    <p>这里只显示可归因到具体账号的上游尝试。</p>
+  </div>
+</section>
+<section class="panel table-panel request-chain-panel">
+  {% include "request_table.html" %}
+</section>
+{% endblock %}

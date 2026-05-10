@@ -1,0 +1,18 @@
+services:
+  sub2api-ops-companion:
+    build: .
+    container_name: sub2api-ops-companion
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:18081:18081"
+    volumes:
+      - ./data:/data
+    networks:
+      - sub2api-network
+
+networks:
+  sub2api-network:
+    external: true
+    name: sub2api_sub2api-network

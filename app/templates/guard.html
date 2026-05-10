@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>自动 Guard</h2>
+    <p>后台只自动处理余额/额度不足这类确定性错误；命中后永久停调度，不设置冷却时间，直到手动恢复。</p>
+  </div>
+  <form class="filters inline" method="get" action="{{ base_path }}/guard">
+    <label>分组
+      <input name="group" value="{{ group }}" />
+    </label>
+    <label>平台
+      <input name="platform" value="{{ platform }}" />
+    </label>
+    <label>窗口小时
+      <input name="hours" value="{{ hours }}" />
+    </label>
+    <button class="primary" type="submit">刷新</button>
+  </form>
+</section>
+
+<section class="metric-strip guard-metrics">
+  <div class="metric-card {{ 'danger' if not guard.enabled else '' }}">
+    <span>后台开关</span>
+    <strong>{{ '开启' if guard.enabled else '关闭' }}</strong>
+  </div>
+  <div class="metric-card {{ 'warning' if guard.state.running else '' }}">
+    <span>运行中</span>
+    <strong>{{ '是' if guard.state.running else '否' }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>扫描频率</span>
+    <strong>{{ guard.interval_seconds }}s</strong>
+  </div>
+  <div class="metric-card">
+    <span>扫描窗口</span>
+    <strong>{{ guard.lookback_minutes }}m</strong>
+  </div>
+  <div class="metric-card {{ 'danger' if guard.state.last_error else '' }}">
+    <span>上次错误</span>
+    <strong>{{ '有' if guard.state.last_error else '无' }}</strong>
+  </div>
+</section>
+
+<section class="panel guard-rule-panel">
+  <div class="section-head">
+    <div>
+      <h3>自动处理规则</h3>
+      <p>服务启动后立即扫描一次，之后每 {{ guard.interval_seconds }} 秒扫描一次。最近 {{ guard.lookback_minutes }} 分钟内，同一账号出现 {{ guard.threshold }} 次余额/额度错误时，执行永久暂停调度。</p>
+    </div>
+    <form method="post" action="{{ base_path }}/guard/run">
+      <button class="primary" type="submit">立即扫描并执行</button>
+    </form>
+  </div>
+  <dl class="status-list guard-status-list">
+    <div><dt>上次运行</dt><dd class="mono">{{ guard.state.last_run_at | bj_time }}</dd></div>
+    <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
+    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度</dd></div>
+  </dl>
+</section>
+
+<section class="panel table-panel guard-table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>当前建议</h3>
+      <p>这部分是人工确认建议；后台自动 Guard 只自动处理余额/额度不足。</p>
+    </div>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="guard-suggestions">
+        <label><input type="checkbox" class="column-toggle" data-table="guard-suggestions" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-suggestions" data-column="action" checked />建议动作</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-suggestions" data-column="reason" checked />原因</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-suggestions" data-column="execute" checked />执行</label>
+        <button type="button" class="link-button columns-reset" data-table="guard-suggestions">重置列</button>
+      </div>
+    </details>
+  </div>
+
+  {% if suggestions %}
+    <div class="table-wrap">
+      <table class="data-table guard-table" data-table-id="guard-suggestions">
+        <thead>
+          <tr>
+            <th data-col="account">账号</th>
+            <th data-col="action">建议动作</th>
+            <th data-col="reason">原因</th>
+            <th data-col="execute">执行</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in suggestions %}
+            <tr>
+              <td data-col="account">
+                <strong class="account-title"><span class="account-id">#{{ item.account_id }}</span> {{ item.name }}</strong>
+              </td>
+              <td data-col="action">
+                {% if item.action == "pause" %}
+                  <span class="pill bad">暂停调度</span>
+                {% else %}
+                  <span class="pill warn">冷却 {{ item.minutes }} 分钟</span>
+                {% endif %}
+              </td>
+              <td data-col="reason" class="suggestion-reason">{{ item.reason }}</td>
+              <td data-col="execute">
+                <form method="post" action="{{ base_path }}/guard/apply">
+                  <input type="hidden" name="account_id" value="{{ item.account_id }}" />
+                  <input type="hidden" name="action" value="{{ item.action }}" />
+                  <input type="hidden" name="minutes" value="{{ item.minutes or 30 }}" />
+                  <input type="hidden" name="reason" value="{{ item.reason }}" />
+                  <button class="primary" type="submit">执行</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <strong>当前没有需要人工处理的建议</strong>
+      <p>余额/额度不足的确定性错误会由后台 Guard 自动处理。</p>
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel table-panel guard-table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>最近 Guard 记录</h3>
+      <p>来自本服务 `/data/audit.jsonl`，只显示 Guard 相关事件。</p>
+    </div>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="guard-audit">
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="time" checked />时间</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="event" checked />事件</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="payload" checked />动作/原因</label>
+        <button type="button" class="link-button columns-reset" data-table="guard-audit">重置列</button>
+      </div>
+    </details>
+  </div>
+  {% if guard.recent_events %}
+    <div class="table-wrap">
+      <table class="data-table guard-audit-table" data-table-id="guard-audit">
+        <thead>
+          <tr>
+            <th data-col="time">时间</th>
+            <th data-col="event">事件</th>
+            <th data-col="account">账号</th>
+            <th data-col="payload">动作/原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in guard.recent_events %}
+            <tr>
+              <td data-col="time" class="mono nowrap">{{ item.ts | bj_time }}</td>
+              <td data-col="event"><span class="audit-event mono">{{ item.event }}</span></td>
+              <td data-col="account">
+                {% if item.payload.account_id %}
+                  #{{ item.payload.account_id }} {{ item.payload.name }}
+                {% elif item.payload.updated %}
+                  #{{ item.payload.updated.id }} {{ item.payload.updated.name }}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td data-col="payload" class="audit-payload">{{ item.payload.reason or item.payload.error or item.payload }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <strong>暂无 Guard 审计记录</strong>
+      <p>后台扫描或手动执行后会在这里出现记录。</p>
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel compact-panel">
+  <h3>判定边界</h3>
+  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度不足`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。其他错误仍展示但不自动改账号状态。</p>
+</section>
+{% endblock %}
