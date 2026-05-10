@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import subprocess
 import threading
 import time
@@ -20,13 +19,6 @@ class UpdateError(RuntimeError):
 
 def _run_git(args: list[str], workdir: Path, settings: Any, timeout: int = 20) -> str:
     env = os.environ.copy()
-    key_path = str(getattr(settings, "update_ssh_key_path", "") or "").strip()
-    if key_path and Path(key_path).exists():
-        env["GIT_SSH_COMMAND"] = (
-            f"ssh -i {shlex.quote(key_path)} "
-            "-o IdentitiesOnly=yes "
-            "-o StrictHostKeyChecking=accept-new"
-        )
     result = subprocess.run(
         ["git", "-C", str(workdir), *args],
         check=False,
