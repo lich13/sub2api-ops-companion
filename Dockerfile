@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -22,4 +22,4 @@ USER companion
 
 EXPOSE 18081
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-18081}"]
+CMD ["sh", "-c", "if [ -d \"${OPS_UPDATE_WORKDIR:-/workspace}/app\" ]; then cd \"${OPS_UPDATE_WORKDIR:-/workspace}\"; else cd /app; fi; uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-18081}"]

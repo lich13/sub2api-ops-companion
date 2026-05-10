@@ -18,6 +18,7 @@
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
 - 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号，直到手动恢复。
 - Telegram 远程运维：只需 Bot Token，首次私聊自动绑定当前会话，支持 Guard 推送、账号列表筛选、按账号暂停/恢复/冷却。
+- 面板版本更新：左上角显示当前版本，支持检查 GitHub main 分支并从面板拉取更新后自重启。
 
 ## 运行
 
@@ -51,6 +52,24 @@ docker compose up -d --build
 - `TELEGRAM_CONFIG_PATH`：Telegram 面板配置持久化文件，默认 `/data/telegram-config.json`。
 - `TELEGRAM_BOT_TOKEN`：可选初始值。面板保存后以 `TELEGRAM_CONFIG_PATH` 文件为准。
 - `TELEGRAM_STATE_PATH`：配对状态持久化文件，默认 `/data/telegram-state.json`。
+- `OPS_UPDATE_ENABLED`：是否允许从面板执行更新，默认 `true`。
+- `OPS_UPDATE_WORKDIR`：容器内 Git 工作树路径，默认 `/workspace`。
+- `OPS_UPDATE_BRANCH`：更新跟踪分支，默认 `main`。
+- `OPS_UPDATE_SSH_KEY_PATH`：访问 GitHub 私有仓库的部署密钥路径，默认 `/data/github-deploy-key`。
+
+## 面板版本更新
+
+当前版本定义为 `0.1.0`。服务通过左上角版本徽标展示版本状态：
+
+- `已是最新版本`：容器内 Git 工作树和 GitHub `main` 分支一致。
+- `发现可更新版本`：GitHub `main` 分支有新提交，可以点击“立即更新”。
+- 更新动作会在容器内执行 `git fetch` 和 `git reset --hard origin/main`，然后退出当前进程；Docker 的 `restart: unless-stopped` 会拉起新版代码。
+
+生产部署需要满足三点：
+
+- `/srv/sub2api-ops-companion` 是 Git clone，而不是 rsync 出来的普通目录。
+- `docker-compose.yml` 已把项目目录挂载到容器内 `/workspace`。
+- 如果仓库是私有仓库，需要把只读 deploy key 放在 `/data/github-deploy-key`，并让容器用户可读。
 
 ## Telegram 远程控制
 
