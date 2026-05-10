@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260510-telegram-hermes" />
-    <script src="{{ base_path }}/static/table-columns.js?v=20260510-telegram-hermes" defer></script>
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260510-version" />
+    <script src="{{ base_path }}/static/table-columns.js?v=20260510-version" defer></script>
+    <script src="{{ base_path }}/static/version-panel.js?v=20260510-version" defer></script>
   </head>
   <body>
     <header class="app-header">
@@ -14,7 +15,38 @@
           <span class="brand-mark">S</span>
           <div>
             <h1>{{ app_name }}</h1>
-            <p>账号质量和调度 Guard</p>
+            <div class="brand-meta">
+              <span>账号质量和调度 Guard</span>
+              {% if current_user %}
+                <div class="version-widget" data-version-widget data-base-path="{{ base_path }}">
+                  <button class="version-pill" type="button" data-version-toggle aria-expanded="false">
+                    <span>v{{ version.current_version }}</span>
+                    <i class="version-dot" data-version-dot></i>
+                  </button>
+                  <div class="version-popover" data-version-popover hidden>
+                    <div class="version-popover-head">
+                      <span>当前版本</span>
+                      <button class="icon-button" type="button" data-version-refresh title="刷新">↻</button>
+                    </div>
+                    <div class="version-popover-body">
+                      <div class="version-current">
+                        <strong data-version-current>v{{ version.current_version }}</strong>
+                        <span class="version-check" data-version-check>✓</span>
+                      </div>
+                      <p data-version-status>点击查看更新状态</p>
+                      <dl class="version-meta-list">
+                        <div><dt>当前提交</dt><dd class="mono" data-version-current-commit>-</dd></div>
+                        <div><dt>远端提交</dt><dd class="mono" data-version-latest-commit>-</dd></div>
+                      </dl>
+                      <div class="version-actions">
+                        <button class="primary small-button" type="button" data-version-update disabled>更新</button>
+                        <a class="secondary-link" href="https://github.com/lich13/sub2api-ops-companion/releases" target="_blank" rel="noopener noreferrer">查看发布</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
           </div>
         </div>
         {% if current_user %}

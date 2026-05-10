@@ -32,6 +32,10 @@ class Settings:
     telegram_default_platform: str = "openai"
     telegram_quality_hours: int = 24
     telegram_poll_timeout_seconds: int = 25
+    update_enabled: bool = True
+    update_workdir: str = "/workspace"
+    update_branch: str = "main"
+    update_ssh_key_path: str = "/data/github-deploy-key"
 
 
 def bool_env(name: str, default: bool) -> bool:
@@ -149,4 +153,8 @@ def load_settings() -> Settings:
             5,
             50,
         ),
+        update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
+        update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
+        update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
+        update_ssh_key_path=os.getenv("OPS_UPDATE_SSH_KEY_PATH", "/data/github-deploy-key"),
     )

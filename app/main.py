@@ -31,6 +31,7 @@ from .sql import (
     REQUESTS_SQL,
 )
 from .telegram_bot import TelegramOpsBot, format_guard_actions
+from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
 db = Database(settings.database_url)
@@ -182,6 +183,7 @@ def render(request: Request, template: str, context: dict[str, Any]) -> HTMLResp
     context.setdefault("base_path", settings.base_path)
     context.setdefault("now", datetime.now())
     context.setdefault("current_user", verify_session(request.cookies.get(SESSION_COOKIE)))
+    context.setdefault("version", {"current_version": APP_VERSION})
     return templates.TemplateResponse(request, template, context)
 
 
@@ -833,6 +835,36 @@ def apply_guard(
     if action == "cooldown":
         return cooldown_account(request, account_id, user, minutes, reason)
     raise HTTPException(status_code=400, detail="Unknown guard action")
+
+
+@app.get("/system/version")
+def system_version(_: AuthUser) -> dict[str, Any]:
+    info = version_info(settings)
+    return {"version": info["current_version"], **info}
+
+
+@app.get("/system/check-updates")
+def system_check_updates(_: AuthUser, force: bool = False) -> dict[str, Any]:
+    return version_info(settings, force=force)
+
+
+@app.post("/system/update")
+def system_update(user: AuthUser) -> dict[str, Any]:
+    try:
+        result = perform_update(settings)
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    write_audit(settings.audit_path, "system_update", {"user": user, **result})
+    if result.get("need_restart"):
+        restart_process_soon()
+    return result
+
+
+@app.post("/system/restart")
+def system_restart(user: AuthUser) -> dict[str, Any]:
+    write_audit(settings.audit_path, "system_restart", {"user": user})
+    restart_process_soon()
+    return {"message": "服务正在重启", "need_restart": True}
 
 
 @app.get("/healthz")
