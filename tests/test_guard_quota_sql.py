@@ -1,0 +1,35 @@
+from __future__ import annotations
+
+import re
+import unittest
+
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, QUALITY_SQL
+
+
+class GuardQuotaSqlTests(unittest.TestCase):
+    def test_quality_and_guard_search_full_error_payload(self) -> None:
+        for sql in (QUALITY_SQL, GUARD_BALANCE_CANDIDATES_SQL):
+            with self.subTest(sql=sql[:20]):
+                self.assertIn("AS search_text", sql)
+                self.assertIn("x.elem::text", sql)
+                self.assertIn("e.upstream_errors::text", sql)
+                self.assertIn("search_text ILIKE '%%额度已用尽%%'", sql)
+                self.assertIn("search_text ~* 'RemainQuota[[:space:]]*=[[:space:]]*-'", sql)
+
+    def test_new_api_quota_exhausted_sample_matches_guard_terms(self) -> None:
+        sample = (
+            '{"error":{"code":"","message":"[sk-Di1***uE8] 该令牌额度已用尽 '
+            '!token.UnlimitedQuota && token.RemainQuota = -56679 '
+            '(request id: 2026051103345959094769452hyagit)","type":"new_api_error"}}'
+        )
+        self.assertIn("额度已用尽", sample)
+        self.assertRegex(sample, r"RemainQuota\s*=\s*-")
+
+    def test_positive_remain_quota_is_not_a_standalone_guard_signal(self) -> None:
+        sql_terms = QUALITY_SQL + GUARD_BALANCE_CANDIDATES_SQL
+        self.assertNotIn("search_text ILIKE '%%RemainQuota%%'", sql_terms)
+        self.assertIsNone(re.search(r"RemainQuota\s*%%", sql_terms))
+
+
+if __name__ == "__main__":
+    unittest.main()
