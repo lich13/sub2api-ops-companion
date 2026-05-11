@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 import unittest
+from pathlib import Path
 
 from app.sql import GUARD_BALANCE_CANDIDATES_SQL, QUALITY_SQL
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class GuardQuotaSqlTests(unittest.TestCase):
@@ -29,6 +32,12 @@ class GuardQuotaSqlTests(unittest.TestCase):
         sql_terms = QUALITY_SQL + GUARD_BALANCE_CANDIDATES_SQL
         self.assertNotIn("search_text ILIKE '%%RemainQuota%%'", sql_terms)
         self.assertIsNone(re.search(r"RemainQuota\s*%%", sql_terms))
+
+    def test_guard_promotes_temporary_cooldowns_to_permanent_pause(self) -> None:
+        self.assertIn("OR a.temp_unschedulable_until IS NOT NULL", GUARD_BALANCE_CANDIDATES_SQL)
+
+        main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
+        self.assertIn("OR temp_unschedulable_until IS NOT NULL", main_py)
 
 
 if __name__ == "__main__":

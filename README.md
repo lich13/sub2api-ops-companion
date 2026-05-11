@@ -16,7 +16,7 @@
 - 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
-- 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号，直到手动恢复。
+- 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号；如果账号已被 Sub2API 临时冷却，也会升级为永久停调度，直到手动恢复。
 - Telegram 远程运维：只需 Bot Token，首次私聊自动绑定当前会话，支持 Guard 推送、账号列表筛选、按账号暂停/恢复/冷却。
 - 面板版本更新：左上角显示当前版本，支持检查 GitHub main 分支并从面板拉取更新后自重启。
 
@@ -129,4 +129,4 @@ docker compose up -d --build
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。
+自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把可调度或临时冷却中的账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。

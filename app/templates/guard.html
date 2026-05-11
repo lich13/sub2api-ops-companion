@@ -46,7 +46,7 @@
   <div class="section-head">
     <div>
       <h3>自动处理规则</h3>
-      <p>服务启动后立即扫描一次，之后每 {{ guard.interval_seconds }} 秒扫描一次。最近 {{ guard.lookback_minutes }} 分钟内，同一账号出现 {{ guard.threshold }} 次余额/额度错误时，执行永久暂停调度。</p>
+      <p>服务启动后立即扫描一次，之后每 {{ guard.interval_seconds }} 秒扫描一次。最近 {{ guard.lookback_minutes }} 分钟内，同一账号出现 {{ guard.threshold }} 次余额/额度错误时，执行永久暂停调度；已被临时冷却的账号也会升级为手动恢复。</p>
     </div>
     <form method="post" action="{{ base_path }}/guard/run">
       <button class="primary" type="submit">立即扫描并执行</button>
@@ -182,6 +182,6 @@
 
 <section class="panel compact-panel">
   <h3>判定边界</h3>
-  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。其他错误仍展示但不自动改账号状态。</p>
+  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会暂停可调度账号，也会把临时冷却升级为手动恢复；其他错误仍展示但不自动改账号状态。</p>
 </section>
 {% endblock %}

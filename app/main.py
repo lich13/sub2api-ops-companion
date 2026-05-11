@@ -360,7 +360,10 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-          AND schedulable = true
+          AND (
+              schedulable = true
+              OR temp_unschedulable_until IS NOT NULL
+          )
         RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
         """,
         {"account_id": row["id"], "reason": reason},
