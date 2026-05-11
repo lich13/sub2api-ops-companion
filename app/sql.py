@@ -98,7 +98,18 @@ raw_error_attempts AS (
       e.error_message,
       e.error_body,
       ''
-    ) AS message
+    ) AS message,
+    concat_ws(
+      ' ',
+      NULLIF(x.elem->>'detail',''),
+      NULLIF(x.elem->>'message',''),
+      NULLIF(x.elem->>'upstream_response_body',''),
+      e.upstream_error_message,
+      e.error_message,
+      e.error_body,
+      x.elem::text,
+      e.upstream_errors::text
+    ) AS search_text
   FROM ops_error_logs e
   LEFT JOIN accounts a ON a.id = e.account_id
   LEFT JOIN LATERAL jsonb_array_elements(
@@ -116,27 +127,30 @@ classified AS (
       WHEN account_id IS NULL THEN 'client_pre_route'
       WHEN error_owner = 'client' OR error_source = 'client_request' THEN 'client_request'
       WHEN status_code = 400 AND (
-        message ILIKE '%%Input must be a list%%'
-        OR message ILIKE '%%Instructions are required%%'
+        search_text ILIKE '%%Input must be a list%%'
+        OR search_text ILIKE '%%Instructions are required%%'
       ) THEN 'client_bad_request'
-      WHEN message ILIKE '%%用户额度不足%%'
-        OR message ILIKE '%%额度不足%%'
-        OR message ILIKE '%%预扣费额度失败%%'
-        OR message ILIKE '%%剩余额度%%'
-        OR message ILIKE '%%insufficient_user_quota%%'
-        OR message ILIKE '%%insufficient%%balance%%'
-        OR message ILIKE '%%INSUFFICIENT_BALANCE%%'
-        OR message ILIKE '%%not enough credits%%'
-        OR message ILIKE '%%quota exceeded%%' THEN 'provider_balance_or_quota'
-      WHEN status_code = 403 AND message ILIKE '%%blocked%%' THEN 'provider_blocked_403'
+      WHEN search_text ILIKE '%%用户额度不足%%'
+        OR search_text ILIKE '%%额度不足%%'
+        OR search_text ILIKE '%%额度已用尽%%'
+        OR search_text ILIKE '%%令牌额度已用尽%%'
+        OR search_text ILIKE '%%预扣费额度失败%%'
+        OR search_text ILIKE '%%剩余额度%%'
+        OR search_text ~* 'RemainQuota[[:space:]]*=[[:space:]]*-'
+        OR search_text ILIKE '%%insufficient_user_quota%%'
+        OR search_text ILIKE '%%insufficient%%balance%%'
+        OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
+        OR search_text ILIKE '%%not enough credits%%'
+        OR search_text ILIKE '%%quota exceeded%%' THEN 'provider_balance_or_quota'
+      WHEN status_code = 403 AND search_text ILIKE '%%blocked%%' THEN 'provider_blocked_403'
       WHEN status_code = 429
-        OR message ILIKE '%%rate limit%%'
-        OR message ILIKE '%%Too many pending%%'
-        OR message ILIKE '%%quota%%' THEN 'provider_rate_limit'
+        OR search_text ILIKE '%%rate limit%%'
+        OR search_text ILIKE '%%Too many pending%%'
+        OR search_text ILIKE '%%quota%%' THEN 'provider_rate_limit'
       WHEN status_code BETWEEN 500 AND 599
         OR kind ILIKE '%%truncated%%'
-        OR message ILIKE '%%terminal event%%'
-        OR message ILIKE '%%missing terminal event%%' THEN 'upstream_unstable_5xx_stream'
+        OR search_text ILIKE '%%terminal event%%'
+        OR search_text ILIKE '%%missing terminal event%%' THEN 'upstream_unstable_5xx_stream'
       ELSE 'account_other_error'
     END AS category
   FROM raw_error_attempts
@@ -311,7 +325,18 @@ WITH raw_error_attempts AS (
       e.error_message,
       e.error_body,
       ''
-    ) AS message
+    ) AS message,
+    concat_ws(
+      ' ',
+      NULLIF(x.elem->>'detail',''),
+      NULLIF(x.elem->>'message',''),
+      NULLIF(x.elem->>'upstream_response_body',''),
+      e.upstream_error_message,
+      e.error_message,
+      e.error_body,
+      x.elem::text,
+      e.upstream_errors::text
+    ) AS search_text
   FROM ops_error_logs e
   LEFT JOIN LATERAL jsonb_array_elements(
     CASE
@@ -326,15 +351,18 @@ balance_errors AS (
   FROM raw_error_attempts
   WHERE account_id IS NOT NULL
     AND (
-      message ILIKE '%%用户额度不足%%'
-      OR message ILIKE '%%额度不足%%'
-      OR message ILIKE '%%预扣费额度失败%%'
-      OR message ILIKE '%%剩余额度%%'
-      OR message ILIKE '%%insufficient_user_quota%%'
-      OR message ILIKE '%%insufficient%%balance%%'
-      OR message ILIKE '%%INSUFFICIENT_BALANCE%%'
-      OR message ILIKE '%%not enough credits%%'
-      OR message ILIKE '%%quota exceeded%%'
+      search_text ILIKE '%%用户额度不足%%'
+      OR search_text ILIKE '%%额度不足%%'
+      OR search_text ILIKE '%%额度已用尽%%'
+      OR search_text ILIKE '%%令牌额度已用尽%%'
+      OR search_text ILIKE '%%预扣费额度失败%%'
+      OR search_text ILIKE '%%剩余额度%%'
+      OR search_text ~* 'RemainQuota[[:space:]]*=[[:space:]]*-'
+      OR search_text ILIKE '%%insufficient_user_quota%%'
+      OR search_text ILIKE '%%insufficient%%balance%%'
+      OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
+      OR search_text ILIKE '%%not enough credits%%'
+      OR search_text ILIKE '%%quota exceeded%%'
     )
 ),
 ranked AS (
