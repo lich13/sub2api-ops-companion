@@ -376,8 +376,10 @@ ranked AS (
   JOIN accounts a ON a.id = be.account_id
   WHERE a.deleted_at IS NULL
     AND a.status = 'active'
-    AND a.schedulable = true
-    AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= now())
+    AND (
+      a.schedulable = true
+      OR a.temp_unschedulable_until IS NOT NULL
+    )
   GROUP BY a.id, a.name
 )
 SELECT *
