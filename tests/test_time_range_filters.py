@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from app.sql import QUALITY_SQL, REQUESTS_SQL
 from app.time_range import BEIJING_TZ, build_time_range
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TimeRangeFilterTests(unittest.TestCase):
@@ -43,6 +46,21 @@ class TimeRangeFilterTests(unittest.TestCase):
                 self.assertIn("%(range_start)s::timestamptz", sql)
                 self.assertIn("%(range_end)s::timestamptz", sql)
                 self.assertNotIn("make_interval(hours => %(hours)s)", sql)
+
+    def test_quality_sql_exposes_speed_metrics(self) -> None:
+        self.assertIn("AS avg_first_token_ms", QUALITY_SQL)
+        self.assertIn("AS avg_duration_ms", QUALITY_SQL)
+        self.assertIn("AS avg_ms_per_output_token", QUALITY_SQL)
+        self.assertIn("AS output_tokens_window", QUALITY_SQL)
+
+    def test_stability_and_speed_templates_split_lifetime_column(self) -> None:
+        stability = (REPO_ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+        speed = (REPO_ROOT / "app" / "templates" / "speed.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("历史消耗</th>", stability)
+        self.assertIn("历史消耗</th>", speed)
+        self.assertIn("首 Token</th>", speed)
+        self.assertIn("耗时/输出 Token</th>", speed)
 
 
 if __name__ == "__main__":

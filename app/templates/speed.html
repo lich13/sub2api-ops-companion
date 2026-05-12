@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% from "time_range_picker.html" import time_range_picker %}
+{% block content %}
+{% macro ms_value(value) %}
+  {% if value is not none %}{{ "%.0f"|format(value) }} ms{% else %}-{% endif %}
+{% endmacro %}
+{% macro token_ms_value(value) %}
+  {% if value is not none %}{{ "%.2f"|format(value) }} ms/token{% else %}-{% endif %}
+{% endmacro %}
+
+<section class="page-title">
+  <div>
+    <h2>账号速度</h2>
+    <p>按账号展示窗口内响应速度、首 Token、单位输出 Token 耗时和历史消耗。</p>
+  </div>
+  <form class="filters inline" method="get" action="{{ base_path }}/speed">
+    <label>分组
+      <select name="group">
+        {% for item in groups %}
+          <option value="{{ item.name }}" {{ 'selected' if item.name == group else '' }}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>平台
+      <input name="platform" value="{{ platform }}" />
+    </label>
+    {{ time_range_picker(time_range) }}
+    <button class="primary" type="submit">刷新</button>
+  </form>
+</section>
+
+<section class="metric-strip">
+  <div class="metric-card">
+    <span>窗口成功</span>
+    <strong>{{ dashboard.success_count }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>输出 Tokens</span>
+    <strong>{{ dashboard.output_tokens | int_commas }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>平均首 Token</span>
+    <strong>{{ ms_value(dashboard.avg_first_token_ms) }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>耗时/输出 Token</span>
+    <strong>{{ token_ms_value(dashboard.avg_ms_per_output_token) }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>历史消耗</span>
+    <strong>${{ "%.6f"|format(dashboard.lifetime_total_cost or 0) }}</strong>
+    <span class="metric-footnote">Tokens {{ dashboard.lifetime_total_tokens | int_commas }}</span>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>速度列表</h3>
+      <p>速度统计只使用当前时间范围内的成功请求；历史消耗保持全量口径，便于按成本和性能一起排序观察。</p>
+    </div>
+    <div class="table-actions">
+      <details class="column-picker">
+        <summary>选择列</summary>
+        <div class="column-list" data-column-picker="account-speed">
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="account" checked />账号</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="state" checked />状态</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="priority" checked />优先级</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="traffic" checked />窗口样本</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />耗时/输出 Token</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="lifetime" checked />历史消耗</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
+          <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table account-table speed-table" data-table-id="account-speed">
+      <thead>
+        <tr>
+          <th data-col="account">账号</th>
+          <th data-col="state">状态</th>
+          <th data-col="priority">优先级</th>
+          <th data-col="traffic">窗口样本</th>
+          <th data-col="first-token">首 Token</th>
+          <th data-col="duration">平均耗时</th>
+          <th data-col="token-speed">耗时/输出 Token</th>
+          <th data-col="lifetime">历史消耗</th>
+          <th data-col="last-success">最近成功</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td data-col="account">
+              <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
+              <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
+            </td>
+            <td data-col="state">
+              {% if row.schedulable %}
+                <span class="pill good">可调度</span>
+              {% else %}
+                <span class="pill bad">已停</span>
+              {% endif %}
+              {% if row.temp_unschedulable_until %}
+                <div class="cell-sub mono">{{ row.temp_unschedulable_until | bj_time }}</div>
+              {% endif %}
+            </td>
+            <td data-col="priority" class="mono">
+              <div class="priority-main">G{{ row.group_priority }} / P{{ row.account_priority }}</div>
+              <div class="cell-sub tiny">account P{{ row.account_priority }}</div>
+            </td>
+            <td data-col="traffic">
+              <div class="traffic-pair">
+                <span class="traffic-good">{{ row.success_window }}</span>
+              </div>
+              <div class="cell-sub">输出 {{ row.output_tokens_window | int_commas }} tokens</div>
+            </td>
+            <td data-col="first-token" class="speed-metric-cell">
+              <strong>{{ ms_value(row.avg_first_token_ms) }}</strong>
+            </td>
+            <td data-col="duration" class="speed-metric-cell">
+              <strong>{{ ms_value(row.avg_duration_ms) }}</strong>
+            </td>
+            <td data-col="token-speed" class="speed-metric-cell">
+              <strong>{{ token_ms_value(row.avg_ms_per_output_token) }}</strong>
+            </td>
+            <td data-col="lifetime" class="money-cell">
+              <strong class="cost-main">${{ "%.6f"|format(row.lifetime_total_cost or 0) }}</strong>
+              <div class="cell-sub">全量请求 {{ row.lifetime_request_count }}</div>
+              <div class="cell-sub tiny">Tokens {{ row.lifetime_total_tokens | int_commas }}</div>
+              {% if row.lifetime_actual_cost != row.lifetime_total_cost %}
+                <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.lifetime_actual_cost or 0) }}</div>
+              {% endif %}
+            </td>
+            <td data-col="last-success" class="window-cell">
+              <div class="cell-sub mono">{{ row.last_success_at | bj_time }}</div>
+              {% if row.rate_limit_reset_at %}
+                <div class="cell-sub tiny">限流重置 {{ row.rate_limit_reset_at | bj_time }}</div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
