@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
+from .quality_sort import STABILITY_SORT_OPTIONS, normalize_stability_sort, sort_stability_rows
 from .settings import load_settings
 from .sql import (
     ACCOUNT_OPTIONS_SQL,
@@ -564,8 +565,8 @@ def build_speed_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "output_tokens": sum(int(row.get("output_tokens_window") or 0) for row in rows),
         "avg_first_token_ms": weighted_average(rows, "avg_first_token_ms"),
         "avg_ms_per_output_token": weighted_average(rows, "avg_ms_per_output_token"),
-        "lifetime_total_cost": sum(float(row.get("lifetime_total_cost") or 0) for row in rows),
-        "lifetime_total_tokens": sum(int(row.get("lifetime_total_tokens") or 0) for row in rows),
+        "usage_total_cost": sum(float(row.get("usage_total_cost") or 0) for row in rows),
+        "usage_total_tokens": sum(int(row.get("usage_total_tokens") or 0) for row in rows),
     }
 
 
@@ -622,10 +623,15 @@ def index(
     start_date: str = "",
     end_date: str = "",
     hours: int | None = None,
+    sort: str = "default",
     msg: str = "",
 ) -> HTMLResponse:
     selected_range = build_time_range(time_range, start_date, end_date, hours)
-    rows = load_quality(group, platform, selected_range["start_at"], selected_range["end_at"])
+    selected_sort = normalize_stability_sort(sort)
+    rows = sort_stability_rows(
+        load_quality(group, platform, selected_range["start_at"], selected_range["end_at"]),
+        selected_sort,
+    )
     groups = load_groups()
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     dashboard = build_dashboard(rows)
@@ -640,6 +646,8 @@ def index(
             "group": group,
             "platform": platform,
             "time_range": selected_range,
+            "sort": selected_sort,
+            "sort_options": STABILITY_SORT_OPTIONS,
             "requests_query": requests_query,
             "suggestions": suggestions,
             "dashboard": dashboard,

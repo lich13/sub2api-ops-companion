@@ -983,7 +983,7 @@ dd {
   word-break: keep-all;
 }
 
-.account-table [data-col="lifetime"] {
+.account-table [data-col="usage"] {
   min-width: 168px;
   white-space: nowrap;
   word-break: keep-all;

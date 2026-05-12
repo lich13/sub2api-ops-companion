@@ -35,18 +35,9 @@ successes AS (
     max(created_at) AS last_success_at,
     round(avg(duration_ms)::numeric, 0) AS avg_duration_ms,
     round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms,
-    round(avg(duration_ms::numeric / NULLIF(output_tokens,0)), 2) AS avg_ms_per_output_token
-  FROM usage_logs
-  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
-  GROUP BY account_id
-),
-lifetime_usage AS (
-  SELECT
-    account_id,
-    count(*) AS lifetime_request_count,
-    round(COALESCE(sum(total_cost),0), 6) AS lifetime_total_cost,
-    round(COALESCE(sum(actual_cost),0), 6) AS lifetime_actual_cost,
+    round(avg(duration_ms::numeric / NULLIF(output_tokens,0)), 2) AS avg_ms_per_output_token,
+    round(COALESCE(sum(total_cost),0), 6) AS usage_total_cost,
+    round(COALESCE(sum(actual_cost),0), 6) AS usage_actual_cost,
     COALESCE(sum(
       COALESCE(input_tokens,0)
       + COALESCE(output_tokens,0)
@@ -55,9 +46,10 @@ lifetime_usage AS (
       + COALESCE(cache_creation_5m_tokens,0)
       + COALESCE(cache_creation_1h_tokens,0)
       + COALESCE(image_output_tokens,0)
-    ),0) AS lifetime_total_tokens
+    ),0) AS usage_total_tokens
   FROM usage_logs
-  WHERE account_id IS NOT NULL
+  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
   GROUP BY account_id
 ),
 raw_error_attempts AS (
@@ -193,10 +185,10 @@ SELECT
   COALESCE(b.client_bad_request_window,0) AS client_bad_request_window,
   s.last_success_at,
   b.last_error_at,
-  COALESCE(lu.lifetime_request_count,0) AS lifetime_request_count,
-  COALESCE(lu.lifetime_total_cost,0) AS lifetime_total_cost,
-  COALESCE(lu.lifetime_actual_cost,0) AS lifetime_actual_cost,
-  COALESCE(lu.lifetime_total_tokens,0) AS lifetime_total_tokens,
+  COALESCE(s.success_window,0) AS usage_request_count,
+  COALESCE(s.usage_total_cost,0) AS usage_total_cost,
+  COALESCE(s.usage_actual_cost,0) AS usage_actual_cost,
+  COALESCE(s.usage_total_tokens,0) AS usage_total_tokens,
   le.status_code AS last_error_status,
   le.kind AS last_error_kind,
   le.category AS last_error_category,
@@ -206,7 +198,6 @@ SELECT
   s.avg_ms_per_output_token
 FROM group_accounts ga
 LEFT JOIN successes s ON s.account_id = ga.id
-LEFT JOIN lifetime_usage lu ON lu.account_id = ga.id
 LEFT JOIN by_account b ON b.account_id = ga.id
 LEFT JOIN last_error le ON le.account_id = ga.id
 ORDER BY ga.group_priority, ga.account_priority, ga.id;
