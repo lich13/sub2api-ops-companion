@@ -164,6 +164,7 @@ def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
           temp_unschedulable_until,
           temp_unschedulable_reason,
           0 AS success_window,
+          0 AS output_tokens_window,
           0 AS account_quality_errors_window,
           0 AS blocked_403_window,
           0 AS balance_or_quota_window,
@@ -173,7 +174,10 @@ def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
           NULL::timestamptz AS last_error_at,
           NULL::integer AS last_error_status,
           NULL::text AS last_error_category,
-          NULL::text AS last_error_message
+          NULL::text AS last_error_message,
+          NULL::numeric AS avg_duration_ms,
+          NULL::numeric AS avg_first_token_ms,
+          NULL::numeric AS avg_ms_per_output_token
         FROM accounts
         WHERE id = %(account_id)s
           AND deleted_at IS NULL

@@ -537,6 +537,38 @@ def build_dashboard(
     }
 
 
+def weighted_average(
+    rows: list[dict[str, Any]],
+    value_key: str,
+    weight_key: str = "success_window",
+) -> float | None:
+    total_weight = 0
+    weighted_total = 0.0
+    for row in rows:
+        value = row.get(value_key)
+        if value in (None, ""):
+            continue
+        weight = int(row.get(weight_key) or 0)
+        if weight <= 0:
+            continue
+        weighted_total += float(value) * weight
+        total_weight += weight
+    if total_weight <= 0:
+        return None
+    return round(weighted_total / total_weight, 2)
+
+
+def build_speed_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "success_count": sum(int(row.get("success_window") or 0) for row in rows),
+        "output_tokens": sum(int(row.get("output_tokens_window") or 0) for row in rows),
+        "avg_first_token_ms": weighted_average(rows, "avg_first_token_ms"),
+        "avg_ms_per_output_token": weighted_average(rows, "avg_ms_per_output_token"),
+        "lifetime_total_cost": sum(float(row.get("lifetime_total_cost") or 0) for row in rows),
+        "lifetime_total_tokens": sum(int(row.get("lifetime_total_tokens") or 0) for row in rows),
+    }
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/", error: str = "") -> HTMLResponse:
     next_path = safe_next(next)
@@ -602,7 +634,7 @@ def index(
         request,
         "index.html",
         {
-            "active": "quality",
+            "active": "stability",
             "rows": rows,
             "groups": groups,
             "group": group,
@@ -612,6 +644,36 @@ def index(
             "suggestions": suggestions,
             "dashboard": dashboard,
             "guard": guard_config(),
+            "msg": msg,
+        },
+    )
+
+
+@app.get("/speed", response_class=HTMLResponse)
+def speed_view(
+    request: Request,
+    _: AuthUser,
+    group: str = "openai-default",
+    platform: str = "openai",
+    time_range: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    hours: int | None = None,
+    msg: str = "",
+) -> HTMLResponse:
+    selected_range = build_time_range(time_range, start_date, end_date, hours)
+    rows = load_quality(group, platform, selected_range["start_at"], selected_range["end_at"])
+    return render(
+        request,
+        "speed.html",
+        {
+            "active": "speed",
+            "rows": rows,
+            "groups": load_groups(),
+            "group": group,
+            "platform": platform,
+            "time_range": selected_range,
+            "dashboard": build_speed_dashboard(rows),
             "msg": msg,
         },
     )

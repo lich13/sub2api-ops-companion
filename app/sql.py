@@ -31,9 +31,11 @@ successes AS (
   SELECT
     account_id,
     count(*) AS success_window,
+    COALESCE(sum(output_tokens),0) AS output_tokens_window,
     max(created_at) AS last_success_at,
     round(avg(duration_ms)::numeric, 0) AS avg_duration_ms,
-    round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms
+    round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms,
+    round(avg(duration_ms::numeric / NULLIF(output_tokens,0)), 2) AS avg_ms_per_output_token
   FROM usage_logs
   WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
     AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
@@ -179,6 +181,7 @@ last_error AS (
 SELECT
   ga.*,
   COALESCE(s.success_window,0) AS success_window,
+  COALESCE(s.output_tokens_window,0) AS output_tokens_window,
   COALESCE(b.account_quality_errors_window,0) AS account_quality_errors_window,
   CASE WHEN COALESCE(s.success_window,0)+COALESCE(b.account_quality_errors_window,0) > 0
     THEN round(100 * COALESCE(b.account_quality_errors_window,0)::numeric / (COALESCE(s.success_window,0)+COALESCE(b.account_quality_errors_window,0)), 1)
@@ -199,7 +202,8 @@ SELECT
   le.category AS last_error_category,
   le.message AS last_error_message,
   s.avg_duration_ms,
-  s.avg_first_token_ms
+  s.avg_first_token_ms,
+  s.avg_ms_per_output_token
 FROM group_accounts ga
 LEFT JOIN successes s ON s.account_id = ga.id
 LEFT JOIN lifetime_usage lu ON lu.account_id = ga.id

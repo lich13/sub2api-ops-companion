@@ -676,6 +676,12 @@ button.primary:hover,
   font-weight: 700;
 }
 
+.metric-card .metric-footnote {
+  margin-top: 6px;
+  color: var(--muted-soft);
+  font-size: 11px;
+}
+
 .metric-card.danger strong,
 .danger-text {
   color: var(--danger);
@@ -875,6 +881,14 @@ dd {
   table-layout: auto;
 }
 
+.stability-table {
+  min-width: 1370px;
+}
+
+.speed-table {
+  min-width: 1480px;
+}
+
 .account-table th:nth-child(1),
 .account-table td:nth-child(1) {
   width: 150px;
@@ -975,6 +989,14 @@ dd {
   word-break: keep-all;
 }
 
+.account-table [data-col="first-token"],
+.account-table [data-col="duration"],
+.account-table [data-col="token-speed"] {
+  min-width: 132px;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 .account-table [data-col="errors"] {
   min-width: 150px;
 }
@@ -991,6 +1013,10 @@ dd {
 
 .account-table [data-col="last-error"] {
   min-width: 420px;
+}
+
+.account-table [data-col="last-success"] {
+  min-width: 170px;
 }
 
 .account-table [data-col="actions"] {
@@ -1324,6 +1350,12 @@ dd {
 
 .actual-cost {
   color: #f97316;
+}
+
+.speed-metric-cell strong {
+  color: #1f2937;
+  font-size: 15px;
+  line-height: 1.2;
 }
 
 .error-stack {

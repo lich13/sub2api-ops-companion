@@ -3,8 +3,8 @@
 {% block content %}
 <section class="page-title">
   <div>
-    <h2>账号质量快照</h2>
-    <p>按账号展示可归因上游错误和调度状态；表格支持横向滚动和列选择。</p>
+    <h2>账号稳定性</h2>
+    <p>按账号展示可归因上游错误、错误率和调度状态；表格支持横向滚动和列选择。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/">
     <label>分组
@@ -32,7 +32,7 @@
     <strong>{{ dashboard.success_count }}</strong>
   </div>
   <div class="metric-card {{ 'danger' if dashboard.quality_error_count > 0 else '' }}">
-    <span>账号质量错误</span>
+    <span>稳定性错误</span>
     <strong>{{ dashboard.quality_error_count }}</strong>
   </div>
   <div class="metric-card {{ 'danger' if dashboard.suggestion_count > 0 else '' }}">
@@ -44,37 +44,35 @@
 <section class="panel table-panel">
   <div class="section-head table-toolbar">
     <div>
-      <h3>账号列表</h3>
+      <h3>稳定性列表</h3>
       <p>和 Sub2API 后台一致的密集表格视图；错误详情、停调度原因和原始响应可展开查看完整内容。</p>
     </div>
     <div class="table-actions">
       <details class="column-picker">
         <summary>选择列</summary>
-        <div class="column-list" data-column-picker="account-quality">
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="account" checked />账号</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="state" checked />状态</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="priority" checked />优先级</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="traffic" checked />成功/错误</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="lifetime" checked />历史消耗</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="errors" checked />错误拆分</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="window" checked />窗口/重置</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="last-error" checked />最近错误</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="actions" checked />操作</label>
-          <button type="button" class="link-button columns-reset" data-table="account-quality">重置列</button>
+        <div class="column-list" data-column-picker="account-stability">
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="account" checked />账号</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="state" checked />状态</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="priority" checked />优先级</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="traffic" checked />成功/错误</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="errors" checked />错误拆分</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="window" checked />窗口/重置</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="last-error" checked />最近错误</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-stability" data-column="actions" checked />操作</label>
+          <button type="button" class="link-button columns-reset" data-table="account-stability">重置列</button>
         </div>
       </details>
       <a class="button" href="{{ base_path }}/requests?{{ requests_query }}">查看全部错误链路</a>
     </div>
   </div>
   <div class="table-wrap">
-    <table class="data-table account-table" data-table-id="account-quality">
+    <table class="data-table account-table stability-table" data-table-id="account-stability">
       <thead>
         <tr>
           <th data-col="account">账号</th>
           <th data-col="state">状态</th>
           <th data-col="priority">优先级</th>
           <th data-col="traffic">成功/错误</th>
-          <th data-col="lifetime">历史消耗</th>
           <th data-col="errors">错误拆分</th>
           <th data-col="window">窗口/重置</th>
           <th data-col="last-error">最近错误</th>
@@ -126,14 +124,6 @@
                 <span class="traffic-bad {{ 'danger-text' if row.account_quality_errors_window else '' }}">{{ row.account_quality_errors_window }}</span>
               </div>
               <div class="cell-sub">错误率 {{ row.error_rate_window_pct or 0 }}%</div>
-            </td>
-            <td data-col="lifetime" class="money-cell">
-              <strong class="cost-main">${{ "%.6f"|format(row.lifetime_total_cost or 0) }}</strong>
-              <div class="cell-sub">全量请求 {{ row.lifetime_request_count }}</div>
-              <div class="cell-sub tiny">Tokens {{ row.lifetime_total_tokens | int_commas }}</div>
-              {% if row.lifetime_actual_cost != row.lifetime_total_cost %}
-                <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.lifetime_actual_cost or 0) }}</div>
-              {% endif %}
             </td>
             <td data-col="errors">
               <div class="error-stack">
