@@ -18,6 +18,13 @@
       <input name="platform" value="{{ platform }}" />
     </label>
     {{ time_range_picker(time_range) }}
+    <label>排序
+      <select name="sort">
+        {% for item in sort_options %}
+          <option value="{{ item.value }}" {{ 'selected' if item.value == sort else '' }}>{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button class="primary" type="submit">刷新</button>
   </form>
 </section>

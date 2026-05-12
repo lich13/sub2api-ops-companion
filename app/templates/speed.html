@@ -11,7 +11,7 @@
 <section class="page-title">
   <div>
     <h2>账号速度</h2>
-    <p>按账号展示窗口内响应速度、首 Token、单位输出 Token 耗时和历史消耗。</p>
+    <p>按账号展示窗口内响应速度、首 Token、单位输出 Token 耗时和消耗。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/speed">
     <label>分组
@@ -47,9 +47,9 @@
     <strong>{{ token_ms_value(dashboard.avg_ms_per_output_token) }}</strong>
   </div>
   <div class="metric-card">
-    <span>历史消耗</span>
-    <strong>${{ "%.6f"|format(dashboard.lifetime_total_cost or 0) }}</strong>
-    <span class="metric-footnote">Tokens {{ dashboard.lifetime_total_tokens | int_commas }}</span>
+    <span>消耗</span>
+    <strong>${{ "%.6f"|format(dashboard.usage_total_cost or 0) }}</strong>
+    <span class="metric-footnote">Tokens {{ dashboard.usage_total_tokens | int_commas }}</span>
   </div>
 </section>
 
@@ -57,7 +57,7 @@
   <div class="section-head table-toolbar">
     <div>
       <h3>速度列表</h3>
-      <p>速度统计只使用当前时间范围内的成功请求；历史消耗保持全量口径，便于按成本和性能一起排序观察。</p>
+      <p>速度统计和消耗都使用当前时间范围内的成功请求，便于按成本和性能一起观察。</p>
     </div>
     <div class="table-actions">
       <details class="column-picker">
@@ -70,7 +70,7 @@
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />耗时/输出 Token</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="lifetime" checked />历史消耗</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="usage" checked />消耗</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
           <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
         </div>
@@ -88,7 +88,7 @@
           <th data-col="first-token">首 Token</th>
           <th data-col="duration">平均耗时</th>
           <th data-col="token-speed">耗时/输出 Token</th>
-          <th data-col="lifetime">历史消耗</th>
+          <th data-col="usage">消耗</th>
           <th data-col="last-success">最近成功</th>
         </tr>
       </thead>
@@ -129,12 +129,12 @@
             <td data-col="token-speed" class="speed-metric-cell">
               <strong>{{ token_ms_value(row.avg_ms_per_output_token) }}</strong>
             </td>
-            <td data-col="lifetime" class="money-cell">
-              <strong class="cost-main">${{ "%.6f"|format(row.lifetime_total_cost or 0) }}</strong>
-              <div class="cell-sub">全量请求 {{ row.lifetime_request_count }}</div>
-              <div class="cell-sub tiny">Tokens {{ row.lifetime_total_tokens | int_commas }}</div>
-              {% if row.lifetime_actual_cost != row.lifetime_total_cost %}
-                <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.lifetime_actual_cost or 0) }}</div>
+            <td data-col="usage" class="money-cell">
+              <strong class="cost-main">${{ "%.6f"|format(row.usage_total_cost or 0) }}</strong>
+              <div class="cell-sub">请求 {{ row.usage_request_count }}</div>
+              <div class="cell-sub tiny">Tokens {{ row.usage_total_tokens | int_commas }}</div>
+              {% if row.usage_actual_cost != row.usage_total_cost %}
+                <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.usage_actual_cost or 0) }}</div>
               {% endif %}
             </td>
             <td data-col="last-success" class="window-cell">
