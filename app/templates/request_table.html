@@ -10,7 +10,6 @@
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="time" checked />时间</label>
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="ids" checked />请求 ID</label>
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="route" checked />模型/路由</label>
-        <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="endpoint" checked />端点</label>
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="account" checked />账号链路</label>
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="status" checked />状态</label>
         <label><input type="checkbox" class="column-toggle" data-table="request-chain" data-column="kind" checked />类型</label>
@@ -26,7 +25,6 @@
           <th data-col="time">时间</th>
           <th data-col="ids">请求 ID</th>
           <th data-col="route">模型/路由</th>
-          <th data-col="endpoint">端点</th>
           <th data-col="account">账号链路</th>
           <th data-col="status">状态</th>
           <th data-col="kind">类型</th>
@@ -49,11 +47,6 @@
               {% if row.upstream_model %}
                 <div class="cell-sub mono tiny">upstream model={{ row.upstream_model }}</div>
               {% endif %}
-            </td>
-            <td data-col="endpoint">
-              <div class="endpoint-main mono">{{ row.request_path or row.inbound_endpoint or '-' }}</div>
-              <div class="cell-sub mono tiny">upstream {{ row.upstream_endpoint or '-' }}</div>
-              <div class="cell-sub tiny">stream={{ row.stream }}</div>
             </td>
             <td data-col="account">
               <div class="chain-stack">
