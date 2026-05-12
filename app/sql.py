@@ -20,16 +20,7 @@ WITH group_accounts AS (
     a.session_window_start,
     a.session_window_end,
     a.session_window_status,
-    a.error_message,
-    CASE WHEN coalesce(a.extra->>'codex_5h_used_percent','') ~ '^-?[0-9]+([.][0-9]+)?$' THEN (a.extra->>'codex_5h_used_percent')::numeric END AS codex_5h_used_percent,
-    a.extra->>'codex_5h_reset_at' AS codex_5h_reset_at,
-    CASE WHEN coalesce(a.extra->>'codex_7d_used_percent','') ~ '^-?[0-9]+([.][0-9]+)?$' THEN (a.extra->>'codex_7d_used_percent')::numeric END AS codex_7d_used_percent,
-    a.extra->>'codex_7d_reset_at' AS codex_7d_reset_at,
-    CASE WHEN coalesce(a.extra->>'codex_primary_used_percent','') ~ '^-?[0-9]+([.][0-9]+)?$' THEN (a.extra->>'codex_primary_used_percent')::numeric END AS codex_primary_used_percent,
-    a.extra->>'codex_primary_reset_after_seconds' AS codex_primary_reset_after_seconds,
-    CASE WHEN coalesce(a.extra->>'codex_secondary_used_percent','') ~ '^-?[0-9]+([.][0-9]+)?$' THEN (a.extra->>'codex_secondary_used_percent')::numeric END AS codex_secondary_used_percent,
-    a.extra->>'codex_secondary_reset_after_seconds' AS codex_secondary_reset_after_seconds,
-    a.extra->>'codex_usage_updated_at' AS codex_usage_updated_at
+    a.error_message
   FROM accounts a
   JOIN account_groups ag ON ag.account_id = a.id
   JOIN groups g ON g.id = ag.group_id
@@ -39,13 +30,13 @@ WITH group_accounts AS (
 successes AS (
   SELECT
     account_id,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s)) AS success_window,
-    count(*) AS success_7d,
+    count(*) AS success_window,
     max(created_at) AS last_success_at,
     round(avg(duration_ms)::numeric, 0) AS avg_duration_ms,
     round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms
   FROM usage_logs
-  WHERE created_at >= now() - interval '7 days'
+  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
   GROUP BY account_id
 ),
 lifetime_usage AS (
@@ -118,7 +109,8 @@ raw_error_attempts AS (
       ELSE '[{}]'::jsonb
     END
   ) AS x(elem) ON true
-  WHERE e.created_at >= now() - interval '7 days'
+  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
     AND (%(platform)s = '' OR e.platform = %(platform)s)
 ),
 classified AS (
@@ -159,15 +151,13 @@ by_account AS (
   SELECT
     account_id,
     count(*) FILTER (
-      WHERE created_at >= now() - make_interval(hours => %(hours)s)
-        AND category NOT IN ('client_pre_route','client_request','client_bad_request')
+      WHERE category NOT IN ('client_pre_route','client_request','client_bad_request')
     ) AS account_quality_errors_window,
-    count(*) FILTER (WHERE category NOT IN ('client_pre_route','client_request','client_bad_request')) AS account_quality_errors_7d,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s) AND category = 'provider_blocked_403') AS blocked_403_window,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s) AND category = 'provider_balance_or_quota') AS balance_or_quota_window,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s) AND category = 'provider_rate_limit') AS rate_limit_window,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s) AND category = 'upstream_unstable_5xx_stream') AS unstable_5xx_stream_window,
-    count(*) FILTER (WHERE created_at >= now() - make_interval(hours => %(hours)s) AND category = 'client_bad_request') AS client_bad_request_window,
+    count(*) FILTER (WHERE category = 'provider_blocked_403') AS blocked_403_window,
+    count(*) FILTER (WHERE category = 'provider_balance_or_quota') AS balance_or_quota_window,
+    count(*) FILTER (WHERE category = 'provider_rate_limit') AS rate_limit_window,
+    count(*) FILTER (WHERE category = 'upstream_unstable_5xx_stream') AS unstable_5xx_stream_window,
+    count(*) FILTER (WHERE category = 'client_bad_request') AS client_bad_request_window,
     max(created_at) FILTER (WHERE category NOT IN ('client_pre_route','client_request','client_bad_request')) AS last_error_at
   FROM classified
   WHERE account_id IS NOT NULL
@@ -189,9 +179,7 @@ last_error AS (
 SELECT
   ga.*,
   COALESCE(s.success_window,0) AS success_window,
-  COALESCE(s.success_7d,0) AS success_7d,
   COALESCE(b.account_quality_errors_window,0) AS account_quality_errors_window,
-  COALESCE(b.account_quality_errors_7d,0) AS account_quality_errors_7d,
   CASE WHEN COALESCE(s.success_window,0)+COALESCE(b.account_quality_errors_window,0) > 0
     THEN round(100 * COALESCE(b.account_quality_errors_window,0)::numeric / (COALESCE(s.success_window,0)+COALESCE(b.account_quality_errors_window,0)), 1)
     ELSE NULL END AS error_rate_window_pct,
@@ -236,9 +224,6 @@ WITH expanded AS (
     g.name AS group_name,
     e.user_id,
     u.email AS user_email,
-    e.request_path,
-    e.inbound_endpoint,
-    e.upstream_endpoint,
     e.stream,
     e.status_code AS final_status_code,
     e.upstream_status_code AS final_upstream_status_code,
@@ -289,7 +274,8 @@ WITH expanded AS (
       ELSE '[{}]'::jsonb
     END
   ) WITH ORDINALITY AS x(elem, ordinality) ON true
-  WHERE e.created_at >= now() - make_interval(hours => %(hours)s)
+  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
     AND (%(platform)s = '' OR e.platform = %(platform)s)
     AND (%(q)s = '' OR e.request_id = %(q)s OR e.client_request_id = %(q)s OR e.error_message ILIKE '%%' || %(q)s || '%%' OR e.error_body ILIKE '%%' || %(q)s || '%%')
     AND (

@@ -31,6 +31,7 @@ from .sql import (
     REQUESTS_SQL,
 )
 from .telegram_bot import TelegramOpsBot, format_guard_actions
+from .time_range import build_time_range, clean_query_string, rolling_hours_range
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
@@ -216,10 +217,15 @@ def load_account_options(platform: str) -> list[dict[str, Any]]:
     return db.fetch_all(ACCOUNT_OPTIONS_SQL, {"platform": platform})
 
 
-def load_quality(group_name: str, platform: str, hours: int) -> list[dict[str, Any]]:
+def load_quality(
+    group_name: str,
+    platform: str,
+    range_start: datetime | None,
+    range_end: datetime | None,
+) -> list[dict[str, Any]]:
     return db.fetch_all(
         QUALITY_SQL,
-        {"group_name": group_name, "platform": platform, "hours": hours},
+        {"group_name": group_name, "platform": platform, "range_start": range_start, "range_end": range_end},
     )
 
 
@@ -580,14 +586,18 @@ def index(
     _: AuthUser,
     group: str = "openai-default",
     platform: str = "openai",
-    hours: int = 24,
+    time_range: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    hours: int | None = None,
     msg: str = "",
 ) -> HTMLResponse:
-    hours = int_param(str(hours), 24, 1, 168)
-    rows = load_quality(group, platform, hours)
+    selected_range = build_time_range(time_range, start_date, end_date, hours)
+    rows = load_quality(group, platform, selected_range["start_at"], selected_range["end_at"])
     groups = load_groups()
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     dashboard = build_dashboard(rows)
+    requests_query = clean_query_string({"platform": platform, **selected_range["query_args"]})
     return render(
         request,
         "index.html",
@@ -597,7 +607,8 @@ def index(
             "groups": groups,
             "group": group,
             "platform": platform,
-            "hours": hours,
+            "time_range": selected_range,
+            "requests_query": requests_query,
             "suggestions": suggestions,
             "dashboard": dashboard,
             "guard": guard_config(),
@@ -613,12 +624,15 @@ def requests_view(
     q: str = "",
     platform: str = "openai",
     account_id: str = "",
-    hours: int = 24,
+    time_range: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    hours: int | None = None,
     limit: int = 200,
 ) -> HTMLResponse:
     platform = platform.strip()
     account_id = account_id.strip()
-    parsed_hours = int_param(str(hours), 24, 1, 168)
+    selected_range = build_time_range(time_range, start_date, end_date, hours)
     parsed_limit = int_param(str(limit), 200, 1, 1000)
     rows = db.fetch_all(
         REQUESTS_SQL,
@@ -626,7 +640,8 @@ def requests_view(
             "q": q.strip(),
             "platform": platform,
             "account_id": nullable_int(account_id),
-            "hours": parsed_hours,
+            "range_start": selected_range["start_at"],
+            "range_end": selected_range["end_at"],
             "limit": parsed_limit,
         },
     )
@@ -639,7 +654,7 @@ def requests_view(
             "q": q.strip(),
             "platform": platform,
             "account_id": account_id,
-            "hours": parsed_hours,
+            "time_range": selected_range,
             "limit": parsed_limit,
             "platform_options": load_platform_options(),
             "account_options": load_account_options(platform),
@@ -649,13 +664,15 @@ def requests_view(
 
 @app.get("/requests/{request_id}", response_class=HTMLResponse)
 def request_detail(request: Request, _: AuthUser, request_id: str) -> HTMLResponse:
+    detail_range = rolling_hours_range(168)
     rows = db.fetch_all(
         REQUESTS_SQL,
         {
             "q": request_id,
             "platform": "",
             "account_id": None,
-            "hours": 168,
+            "range_start": detail_range["start_at"],
+            "range_end": detail_range["end_at"],
             "limit": 200,
         },
     )
@@ -680,7 +697,8 @@ def guard_view(
     msg: str = "",
 ) -> HTMLResponse:
     hours = int_param(str(hours), 1, 1, 168)
-    rows = load_quality(group, platform, hours)
+    guard_range = rolling_hours_range(hours)
+    rows = load_quality(group, platform, guard_range["start_at"], guard_range["end_at"])
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,

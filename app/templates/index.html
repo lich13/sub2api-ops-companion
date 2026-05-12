@@ -1,27 +1,10 @@
 {% extends "base.html" %}
+{% from "time_range_picker.html" import time_range_picker %}
 {% block content %}
-{% macro usage_meter(label, value, reset_at='', reset_after='') %}
-  {% set pct = value or 0 %}
-  <div class="usage-row {{ 'danger' if value is not none and value >= 95 else ('warning' if value is not none and value >= 80 else '') }}">
-    <span class="usage-label">{{ label }}</span>
-    <div class="usage-track" aria-label="{{ label }} 用量 {{ pct }}%">
-      <span style="width: {{ pct }}%"></span>
-    </div>
-    <strong class="usage-value">{{ pct }}%</strong>
-    {% if reset_at %}
-      <span class="usage-reset">{{ reset_at | bj_time }}</span>
-    {% elif reset_after %}
-      <span class="usage-reset">{{ reset_after | bj_after }}</span>
-    {% else %}
-      <span class="usage-reset">-</span>
-    {% endif %}
-  </div>
-{% endmacro %}
-
 <section class="page-title">
   <div>
     <h2>账号质量快照</h2>
-    <p>按账号展示可归因上游错误、OAuth 用量和调度状态；表格支持横向滚动和列选择。</p>
+    <p>按账号展示可归因上游错误和调度状态；表格支持横向滚动和列选择。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/">
     <label>分组
@@ -34,9 +17,7 @@
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>
-    <label>窗口小时
-      <input name="hours" value="{{ hours }}" />
-    </label>
+    {{ time_range_picker(time_range) }}
     <button class="primary" type="submit">刷新</button>
   </form>
 </section>
@@ -75,7 +56,6 @@
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="priority" checked />优先级</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="traffic" checked />成功/错误</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="lifetime" checked />历史消耗</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="oauth" checked />OAuth 用量</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="errors" checked />错误拆分</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="window" checked />窗口/重置</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-quality" data-column="last-error" checked />最近错误</label>
@@ -83,7 +63,7 @@
           <button type="button" class="link-button columns-reset" data-table="account-quality">重置列</button>
         </div>
       </details>
-      <a class="button" href="{{ base_path }}/requests?platform={{ platform }}&hours={{ hours }}">查看全部错误链路</a>
+      <a class="button" href="{{ base_path }}/requests?{{ requests_query }}">查看全部错误链路</a>
     </div>
   </div>
   <div class="table-wrap">
@@ -95,7 +75,6 @@
           <th data-col="priority">优先级</th>
           <th data-col="traffic">成功/错误</th>
           <th data-col="lifetime">历史消耗</th>
-          <th data-col="oauth">OAuth 用量</th>
           <th data-col="errors">错误拆分</th>
           <th data-col="window">窗口/重置</th>
           <th data-col="last-error">最近错误</th>
@@ -147,7 +126,6 @@
                 <span class="traffic-bad {{ 'danger-text' if row.account_quality_errors_window else '' }}">{{ row.account_quality_errors_window }}</span>
               </div>
               <div class="cell-sub">错误率 {{ row.error_rate_window_pct or 0 }}%</div>
-              <div class="cell-sub tiny">7d 成功 {{ row.success_7d }} / 错误 {{ row.account_quality_errors_7d }}</div>
             </td>
             <td data-col="lifetime" class="money-cell">
               <strong class="cost-main">${{ "%.6f"|format(row.lifetime_total_cost or 0) }}</strong>
@@ -155,19 +133,6 @@
               <div class="cell-sub tiny">Tokens {{ row.lifetime_total_tokens | int_commas }}</div>
               {% if row.lifetime_actual_cost != row.lifetime_total_cost %}
                 <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.lifetime_actual_cost or 0) }}</div>
-              {% endif %}
-            </td>
-            <td data-col="oauth">
-              {% if row.type == "oauth" %}
-                <div class="usage-panel">
-                  {{ usage_meter("5h", row.codex_5h_used_percent, row.codex_5h_reset_at) }}
-                  {{ usage_meter("7d", row.codex_7d_used_percent, row.codex_7d_reset_at) }}
-                  {{ usage_meter("主模型", row.codex_primary_used_percent, '', row.codex_primary_reset_after_seconds) }}
-                  {{ usage_meter("备用", row.codex_secondary_used_percent, '', row.codex_secondary_reset_after_seconds) }}
-                </div>
-                <div class="usage-updated">更新 {{ row.codex_usage_updated_at | bj_time }}</div>
-              {% else %}
-                <span class="cell-sub">apikey 无 OAuth 用量</span>
               {% endif %}
             </td>
             <td data-col="errors">
@@ -210,7 +175,7 @@
                     <button type="submit">冷却</button>
                   </form>
                 {% endif %}
-                <a class="button" href="{{ base_path }}/requests?account_id={{ row.id }}&hours={{ hours }}">错误</a>
+                <a class="button" href="{{ base_path }}/requests?{{ requests_query }}&account_id={{ row.id }}">错误</a>
               </div>
             </td>
           </tr>

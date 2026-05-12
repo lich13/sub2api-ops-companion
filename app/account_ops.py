@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .audit import write_audit
@@ -33,9 +33,10 @@ def account_state(row: dict[str, Any]) -> str:
 
 
 def quality_rows(db: Database, group: str, platform: str, hours: int) -> list[dict[str, Any]]:
+    range_start = datetime.now(timezone.utc) - timedelta(hours=int(hours or 24))
     return db.fetch_all(
         QUALITY_SQL,
-        {"group_name": group, "platform": platform, "hours": hours},
+        {"group_name": group, "platform": platform, "range_start": range_start, "range_end": None},
     )
 
 
