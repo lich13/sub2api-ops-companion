@@ -23,7 +23,7 @@ sys.modules.setdefault("psycopg.rows", psycopg_rows)
 sys.modules.setdefault("psycopg_pool", psycopg_pool)
 
 from app.settings import Settings
-from app.telegram_bot import TelegramOpsBot, account_actions_keyboard, normalize_pairing_code
+from app.telegram_bot import TelegramOpsBot, account_actions_keyboard, error_chain_alert, normalize_pairing_code
 
 
 async def guard_runner(_: str) -> list[dict[str, Any]]:
@@ -88,6 +88,38 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
     def test_pairing_code_normalization_ignores_case_spaces_and_hyphen(self) -> None:
         self.assertEqual(normalize_pairing_code("ab cd-ef gh"), "ABCDEFGH")
+
+    async def test_error_alert_cursor_persists_in_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            self.assertEqual(await bot.error_alert_cursor_id(), 0)
+            await bot.set_error_alert_cursor_id(123)
+
+            self.assertEqual(await bot.error_alert_cursor_id(), 123)
+
+    def test_error_chain_alert_includes_request_account_and_message(self) -> None:
+        text = error_chain_alert(
+            {
+                "request_id": "req-1",
+                "client_request_id": "client-1",
+                "platform": "openai",
+                "model": "gpt-test",
+                "attempt_no": 2,
+                "account_id": 7,
+                "account_name": "acct",
+                "status_code": 429,
+                "category": "provider_rate_limit",
+                "message": "rate limit exceeded",
+            },
+            None,
+        )
+
+        self.assertIn("错误链路异常", text)
+        self.assertIn("req-1", text)
+        self.assertIn("#7 acct", text)
+        self.assertIn("provider_rate_limit", text)
+        self.assertIn("rate limit exceeded", text)
 
 
 if __name__ == "__main__":

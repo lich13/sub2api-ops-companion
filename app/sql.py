@@ -290,6 +290,143 @@ LIMIT %(limit)s;
 """
 
 
+TELEGRAM_ERROR_ALERTS_SQL = """
+WITH target_logs AS (
+  SELECT id
+  FROM ops_error_logs
+  WHERE id > %(cursor_id)s::bigint
+  ORDER BY id ASC
+  LIMIT %(limit)s
+),
+expanded AS (
+  SELECT
+    e.id AS error_log_id,
+    e.created_at,
+    e.request_id,
+    e.client_request_id,
+    e.platform,
+    e.model,
+    e.requested_model,
+    e.upstream_model,
+    e.status_code AS final_status_code,
+    e.upstream_status_code AS final_upstream_status_code,
+    e.error_owner,
+    e.error_source,
+    e.error_type,
+    e.error_phase,
+    x.ordinality AS attempt_no,
+    COALESCE(
+      CASE WHEN coalesce(x.elem->>'account_id','') ~ '^[0-9]+$' THEN (x.elem->>'account_id')::bigint END,
+      e.account_id
+    ) AS account_id,
+    COALESCE(
+      CASE
+        WHEN lower(trim(coalesce(x.elem->>'account_name',''))) IN ('', 'none', 'null') THEN NULL
+        ELSE x.elem->>'account_name'
+      END,
+      a.name
+    ) AS account_name,
+    COALESCE(
+      CASE WHEN coalesce(x.elem->>'upstream_status_code','') ~ '^[0-9]+$' THEN (x.elem->>'upstream_status_code')::int END,
+      e.upstream_status_code,
+      e.status_code
+    ) AS status_code,
+    COALESCE(NULLIF(x.elem->>'kind',''), e.error_type) AS kind,
+    COALESCE(
+      NULLIF(x.elem->>'detail',''),
+      NULLIF(x.elem->>'message',''),
+      NULLIF(x.elem->>'upstream_response_body',''),
+      e.upstream_error_message,
+      e.error_message,
+      e.error_body,
+      ''
+    ) AS message,
+    concat_ws(
+      ' ',
+      NULLIF(x.elem->>'detail',''),
+      NULLIF(x.elem->>'message',''),
+      NULLIF(x.elem->>'upstream_response_body',''),
+      e.upstream_error_message,
+      e.error_message,
+      e.error_body,
+      x.elem::text,
+      e.upstream_errors::text
+    ) AS search_text
+  FROM target_logs t
+  JOIN ops_error_logs e ON e.id = t.id
+  LEFT JOIN accounts a ON a.id = e.account_id
+  LEFT JOIN LATERAL jsonb_array_elements(
+    CASE
+      WHEN jsonb_typeof(e.upstream_errors) = 'array' AND jsonb_array_length(e.upstream_errors) > 0 THEN e.upstream_errors
+      ELSE '[{}]'::jsonb
+    END
+  ) WITH ORDINALITY AS x(elem, ordinality) ON true
+),
+classified AS (
+  SELECT *,
+    CASE
+      WHEN account_id IS NULL THEN 'client_pre_route'
+      WHEN error_owner = 'client' OR error_source = 'client_request' THEN 'client_request'
+      WHEN status_code = 400 AND (
+        search_text ILIKE '%%Input must be a list%%'
+        OR search_text ILIKE '%%Instructions are required%%'
+      ) THEN 'client_bad_request'
+      WHEN search_text ILIKE '%%用户额度不足%%'
+        OR search_text ILIKE '%%额度不足%%'
+        OR search_text ILIKE '%%额度已用尽%%'
+        OR search_text ILIKE '%%令牌额度已用尽%%'
+        OR search_text ILIKE '%%预扣费额度失败%%'
+        OR search_text ILIKE '%%剩余额度%%'
+        OR search_text ~* 'RemainQuota[[:space:]]*=[[:space:]]*-'
+        OR search_text ILIKE '%%insufficient_user_quota%%'
+        OR search_text ILIKE '%%insufficient%%balance%%'
+        OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
+        OR search_text ILIKE '%%not enough credits%%'
+        OR search_text ILIKE '%%quota exceeded%%' THEN 'provider_balance_or_quota'
+      WHEN status_code = 403 AND search_text ILIKE '%%blocked%%' THEN 'provider_blocked_403'
+      WHEN status_code = 429
+        OR search_text ILIKE '%%rate limit%%'
+        OR search_text ILIKE '%%Too many pending%%'
+        OR search_text ILIKE '%%quota%%' THEN 'provider_rate_limit'
+      WHEN status_code BETWEEN 500 AND 599
+        OR kind ILIKE '%%truncated%%'
+        OR search_text ILIKE '%%terminal event%%'
+        OR search_text ILIKE '%%missing terminal event%%' THEN 'upstream_unstable_5xx_stream'
+      ELSE 'account_other_error'
+    END AS category
+  FROM expanded
+)
+SELECT
+  c.error_log_id,
+  c.created_at,
+  c.request_id,
+  c.client_request_id,
+  c.platform,
+  c.model,
+  c.requested_model,
+  c.upstream_model,
+  c.final_status_code,
+  c.final_upstream_status_code,
+  c.error_owner,
+  c.error_source,
+  c.error_type,
+  c.error_phase,
+  c.attempt_no,
+  c.account_id,
+  COALESCE(c.account_name, a.name) AS account_name,
+  c.status_code,
+  c.kind,
+  c.category,
+  left(replace(coalesce(c.message,''), E'\\n', ' '), 1200) AS message,
+  a.schedulable,
+  a.temp_unschedulable_until,
+  a.temp_unschedulable_reason
+FROM classified c
+LEFT JOIN accounts a ON a.id = c.account_id
+ORDER BY c.error_log_id ASC, c.attempt_no ASC;
+"""
+
+
 GUARD_BALANCE_CANDIDATES_SQL = """
 WITH raw_error_attempts AS (
   SELECT

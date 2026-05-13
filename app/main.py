@@ -30,6 +30,7 @@ from .sql import (
     PLATFORM_OPTIONS_SQL,
     QUALITY_SQL,
     REQUESTS_SQL,
+    TELEGRAM_ERROR_ALERTS_SQL,
 )
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
@@ -50,6 +51,7 @@ guard_state: dict[str, Any] = {
 }
 telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
+telegram_error_alert_task: asyncio.Task[None] | None = None
 TELEGRAM_PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -98,12 +100,13 @@ templates.env.filters["int_commas"] = integer_with_commas
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global telegram_bot, telegram_task
+    global telegram_bot, telegram_task, telegram_error_alert_task
     db.open()
     guard_task: asyncio.Task[None] | None = None
     await restart_telegram_bot()
     if settings.guard_enabled:
         guard_task = asyncio.create_task(auto_guard_loop())
+    telegram_error_alert_task = asyncio.create_task(telegram_error_alert_loop())
     try:
         yield
     finally:
@@ -116,6 +119,11 @@ async def lifespan(_: FastAPI):
             guard_task.cancel()
             with suppress(asyncio.CancelledError):
                 await guard_task
+        if telegram_error_alert_task:
+            telegram_error_alert_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await telegram_error_alert_task
+            telegram_error_alert_task = None
         telegram_bot = None
         db.close()
 
@@ -365,6 +373,12 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         settings.telegram_quality_hours = int_param(str(payload.get("quality_hours")), 24, 1, 168)
     if "poll_timeout_seconds" in payload:
         settings.telegram_poll_timeout_seconds = int_param(str(payload.get("poll_timeout_seconds")), 25, 5, 50)
+    if "error_alert_enabled" in payload:
+        settings.telegram_error_alert_enabled = bool(payload.get("error_alert_enabled"))
+    if "error_alert_interval_seconds" in payload:
+        settings.telegram_error_alert_interval_seconds = int_param(str(payload.get("error_alert_interval_seconds")), 2, 1, 60)
+    if "error_alert_batch_size" in payload:
+        settings.telegram_error_alert_batch_size = int_param(str(payload.get("error_alert_batch_size")), 50, 1, 100)
 
 
 async def restart_telegram_bot() -> None:
@@ -458,6 +472,21 @@ async def run_auto_guard_threaded(actor: str = "auto_guard") -> list[dict[str, A
         return await asyncio.to_thread(run_auto_guard_once, actor)
 
 
+def current_error_log_id() -> int:
+    row = db.fetch_one("SELECT COALESCE(max(id), 0) AS cursor_id FROM ops_error_logs")
+    return int((row or {}).get("cursor_id") or 0)
+
+
+def load_telegram_error_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
+    return db.fetch_all(
+        TELEGRAM_ERROR_ALERTS_SQL,
+        {
+            "cursor_id": max(0, int(cursor_id or 0)),
+            "limit": settings.telegram_error_alert_batch_size,
+        },
+    )
+
+
 async def notify_telegram(text: str) -> None:
     if telegram_bot is None:
         return
@@ -476,12 +505,40 @@ async def notify_telegram_account_alerts(title: str, actions: list[dict[str, Any
         return
 
 
+async def telegram_error_alert_loop() -> None:
+    while True:
+        try:
+            bot = telegram_bot
+            if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
+                cursor_id = await bot.error_alert_cursor_id()
+                if cursor_id <= 0:
+                    await bot.set_error_alert_cursor_id(await asyncio.to_thread(current_error_log_id))
+                else:
+                    rows = await asyncio.to_thread(load_telegram_error_alert_rows, cursor_id)
+                    if rows:
+                        next_cursor = max(int(row.get("error_log_id") or cursor_id) for row in rows)
+                        account_rows = [row for row in rows if row.get("account_id")]
+                        if account_rows:
+                            await bot.notify_error_chain_alerts(account_rows)
+                            write_audit(
+                                settings.audit_path,
+                                "telegram_error_alert_push",
+                                {
+                                    "row_count": len(account_rows),
+                                    "from_cursor_id": cursor_id,
+                                    "to_cursor_id": next_cursor,
+                                },
+                            )
+                        await bot.set_error_alert_cursor_id(next_cursor)
+        except Exception as exc:
+            write_audit(settings.audit_path, "telegram_error_alert_error", {"error": str(exc)})
+        await asyncio.sleep(settings.telegram_error_alert_interval_seconds)
+
+
 async def auto_guard_loop() -> None:
     while True:
         try:
-            actions = await run_auto_guard_threaded()
-            if actions:
-                await notify_telegram_account_alerts("账号异常：自动 Guard 已处理", actions)
+            await run_auto_guard_threaded()
         except Exception as exc:
             await notify_telegram(f"自动 Guard 执行失败\n{exc}")
         await asyncio.sleep(settings.guard_interval_seconds)
