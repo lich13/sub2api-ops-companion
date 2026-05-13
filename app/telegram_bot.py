@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import urllib.error
 import urllib.request
 from collections.abc import Awaitable, Callable
@@ -16,6 +17,7 @@ from .settings import Settings
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 ACCOUNT_PAGE_SIZE = 8
+PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然后在私聊中发送 /pair <配对码>。"
 
 
 GuardRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
@@ -70,9 +72,29 @@ class TelegramOpsBot:
         for chat_id in await self.allowed_chat_ids():
             await self._send_message(chat_id, text, keyboard)
 
+    async def notify_account_alerts(self, title: str, actions: list[dict[str, Any]]) -> None:
+        if not self.enabled:
+            return
+        chat_ids = await self.allowed_chat_ids()
+        if not chat_ids:
+            return
+        for action in actions[:10]:
+            try:
+                account_id = parse_account_id(action.get("account_id") or action.get("id") or "")
+            except ValueError:
+                account_id = 0
+            row = await asyncio.to_thread(self._account_detail, account_id) if account_id else None
+            alert_text = account_alert(title, action, row)
+            keyboard = account_actions_keyboard(row or action) if account_id else None
+            for chat_id in chat_ids:
+                await self._send_message(chat_id, alert_text, keyboard)
+        if len(actions) > 10:
+            for chat_id in chat_ids:
+                await self._send_message(chat_id, f"{title}\n另有 {len(actions) - 10} 个账号异常未展开。")
+
     async def allowed_chat_ids(self) -> list[int]:
         state = await self._load_state()
-        return unique_ints(list(state.get("paired_chat_ids") or []))
+        return unique_ints(list(self.settings.telegram_allowed_chat_ids) + list(state.get("paired_chat_ids") or []))
 
     async def _handle_update(self, update: dict[str, Any]) -> None:
         callback = update.get("callback_query")
@@ -84,10 +106,9 @@ class TelegramOpsBot:
             chat_id = int((message.get("chat") or {}).get("id") or 0)
             user_id = int((callback.get("from") or {}).get("id") or 0)
             chat_type = str((message.get("chat") or {}).get("type") or "private")
-            auto_bound = await self._maybe_bind_first_session(chat_id, user_id, chat_type)
-            if not chat_id or (not auto_bound and not await self._allowed(chat_id, user_id)):
+            if not chat_id or not await self._allowed(chat_id, user_id):
                 if chat_id and chat_type == "private":
-                    await self._send_message(chat_id, "未授权。请使用已绑定的 Telegram 会话。")
+                    await self._send_message(chat_id, f"未授权。{PAIRING_CODE_HINT}")
                 return
             try:
                 text, keyboard = await self._callback_reply(
@@ -96,9 +117,7 @@ class TelegramOpsBot:
                     str(callback.get("data") or "menu"),
                 )
             except Exception as exc:
-                text, keyboard = f"执行失败：{exc}", main_keyboard()
-            if auto_bound:
-                text = f"已自动绑定当前会话。\n\n{text}"
+                text, keyboard = f"执行失败：{exc}", None
             await self._send_message(chat_id, text, keyboard)
             return
 
@@ -112,26 +131,22 @@ class TelegramOpsBot:
         if not chat_id:
             return
 
-        auto_bound = await self._maybe_bind_first_session(chat_id, user_id, chat_type)
-
         if is_pair_command(text):
-            reply, keyboard = await self._pair(chat_id, user_id, chat_type, auto_bound)
+            reply, keyboard = await self._pair(chat_id, user_id, chat_type, text)
             await self._send_message(chat_id, reply, keyboard)
             return
 
-        if not auto_bound and not await self._allowed(chat_id, user_id):
+        if not await self._allowed(chat_id, user_id):
             if chat_type != "private":
                 await self._send_message(chat_id, "未授权。请在私聊中和 Bot 交互。")
             else:
-                await self._send_message(chat_id, "未授权。请使用已绑定的 Telegram 会话。")
+                await self._send_message(chat_id, f"未授权。{PAIRING_CODE_HINT}")
             return
 
         try:
             reply, keyboard = await self._text_reply(chat_id, user_id, text)
         except Exception as exc:
-            reply, keyboard = f"执行失败：{exc}", main_keyboard()
-        if auto_bound:
-            reply = f"已自动绑定当前会话。\n\n{reply}"
+            reply, keyboard = f"执行失败：{exc}", None
         await self._send_message(chat_id, reply, keyboard)
 
     async def _pair(
@@ -139,21 +154,38 @@ class TelegramOpsBot:
         chat_id: int,
         user_id: int,
         chat_type: str,
-        auto_bound: bool = False,
+        text: str,
     ) -> tuple[str, dict[str, Any] | None]:
-        if auto_bound:
+        if chat_type != "private":
             return (
-                f"已自动绑定当前会话。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n现在可以使用 /menu、/accounts、/guard、/push_test。",
-                main_keyboard(),
+                "请在 Telegram 私聊中配对，群聊不会绑定。",
+                None,
             )
-        if await self._maybe_bind_first_session(chat_id, user_id, chat_type):
+        if await self._allowed(chat_id, user_id):
             return (
-                f"已自动绑定当前会话。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n现在可以使用 /menu、/accounts、/guard、/push_test。",
-                main_keyboard(),
+                f"当前会话已配对。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n后续会推送账号异常，直接使用消息下方按钮处理账号。",
+                None,
             )
+        if not self.settings.telegram_pairing_enabled:
+            return ("Telegram 配对已关闭，请在 Ops 面板中重新启用。", None)
+        expected = normalize_pairing_code(self.settings.telegram_pairing_code)
+        if not expected:
+            return (f"当前没有可用配对码。{PAIRING_CODE_HINT}", None)
+        provided = normalize_pairing_code(pairing_code_from_text(text))
+        if not provided:
+            return (f"发送 /pair <配对码> 完成绑定。{PAIRING_CODE_HINT}", None)
+        if not secrets.compare_digest(provided, expected):
+            return ("配对码不正确或已被重新生成，请回到 Ops 面板查看最新配对码。", None)
+
+        async with self._state_lock:
+            state = await self._load_state_unlocked()
+            state["paired_chat_ids"] = unique_ints(list(state.get("paired_chat_ids") or []) + [chat_id])
+            state["paired_user_ids"] = unique_ints(list(state.get("paired_user_ids") or []) + [user_id])
+            state["updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+            await asyncio.to_thread(self._save_state_sync, state)
         return (
-            "当前版本不需要配对码。首次在私聊里发 /start 或 /menu 会自动绑定当前会话。",
-            main_keyboard(),
+            f"配对成功。\nchat_id：{chat_id}\nuser_id：{user_id}\n\n后续会推送账号异常，直接使用消息下方按钮处理账号。",
+            None,
         )
 
     async def _text_reply(
@@ -164,39 +196,17 @@ class TelegramOpsBot:
     ) -> tuple[str, dict[str, Any] | None]:
         parts = text.split()
         command = normalize_command(parts[0] if parts else "")
-        args = parts[1:]
 
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
-            return await self._menu_reply()
-        if command in {"/status", "status", "状态"}:
-            return await self._status_reply()
-        if command in {"/push_test", "push_test", "测试推送"}:
-            return "Sub2API Ops Telegram 推送通道正常。", main_keyboard()
-        if command in {"/guard", "guard", "自动guard"}:
-            return await self._guard_reply()
-        if command in {"/guard_run", "guard_run", "执行guard"}:
-            return await self._guard_run_reply(chat_id, user_id)
-        if command in {"/accounts", "accounts", "账号"}:
-            if args:
-                return await self._account_list_reply(args[0], 0)
-            return await self._accounts_menu_reply()
-        if command in {"/account", "account", "账号详情", "/find", "find", "找账号"}:
-            query = " ".join(args).strip()
-            if not query:
-                return "发送 /account <账号ID或名称>。\n示例：/account #7 或 /account nb", accounts_keyboard()
-            return await self._account_search_reply(query)
-        if command in {"/pause", "pause", "暂停账号"}:
-            account_id = parse_account_id(args[0] if args else "")
-            return await self._pause_confirm_reply(account_id)
-        if command in {"/resume", "resume", "恢复账号"}:
-            account_id = parse_account_id(args[0] if args else "")
-            return await self._resume_confirm_reply(account_id)
-        if command in {"/cooldown", "cooldown", "冷却账号"}:
-            account_id = parse_account_id(args[0] if args else "")
-            minutes = parse_minutes(args[1] if len(args) > 1 else "", 30)
-            return await self._cooldown_apply_reply(account_id, minutes, actor(chat_id, user_id))
+            return (
+                "Telegram 命令菜单已关闭。\n\n后续只推送账号异常信息；每条异常消息下方会附带暂停、冷却、恢复和查看详情按钮。",
+                None,
+            )
 
-        return "无法识别命令。使用 /menu 打开远程控制菜单。", main_keyboard()
+        return (
+            "不再通过文本命令做账号运维。请等待异常推送，并直接点击异常消息下方的账号操作按钮。",
+            None,
+        )
 
     async def _callback_reply(
         self,
@@ -204,35 +214,28 @@ class TelegramOpsBot:
         user_id: int,
         data: str,
     ) -> tuple[str, dict[str, Any] | None]:
-        if data == "menu":
-            return await self._menu_reply()
-        if data == "status":
-            return await self._status_reply()
-        if data == "push":
-            return "Sub2API Ops Telegram 推送通道正常。", main_keyboard()
-        if data == "guard":
-            return await self._guard_reply()
-        if data == "guardrun":
-            return await self._guard_run_reply(chat_id, user_id)
-        if data == "acctmenu":
-            return await self._accounts_menu_reply()
-        if data == "acctsearch":
-            return "发送 /account <账号ID或名称> 定位账号。\n示例：/account #7、/account nb", accounts_keyboard()
+        if data in {"menu", "status", "push", "guard", "guardrun", "acctmenu", "acctsearch"}:
+            return (
+                "这个 Telegram 菜单已下线。请直接使用异常推送下方的账号操作按钮。",
+                None,
+            )
         if data.startswith("acctlist:"):
-            _, filter_name, page_raw = (data.split(":") + ["all", "0"])[:3]
-            return await self._account_list_reply(filter_name, parse_page(page_raw))
+            return (
+                "账号列表命令已下线。异常账号会在推送消息里直接给出操作按钮。",
+                None,
+            )
         if data.startswith("acct:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._account_detail_reply(account_id)
         if data.startswith("pauseask:"):
             account_id = parse_account_id(data.split(":", 1)[1])
-            return await self._pause_confirm_reply(account_id)
+            return await self._pause_apply_reply(account_id, actor(chat_id, user_id))
         if data.startswith("pause:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._pause_apply_reply(account_id, actor(chat_id, user_id))
         if data.startswith("resask:"):
             account_id = parse_account_id(data.split(":", 1)[1])
-            return await self._resume_confirm_reply(account_id)
+            return await self._resume_apply_reply(account_id, actor(chat_id, user_id))
         if data.startswith("res:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._resume_apply_reply(account_id, actor(chat_id, user_id))
@@ -246,7 +249,7 @@ class TelegramOpsBot:
                 parse_minutes(minutes_raw, 30),
                 actor(chat_id, user_id),
             )
-        return await self._menu_reply()
+        return ("无法识别这个按钮，可能来自旧消息。", None)
 
     async def _menu_reply(self) -> tuple[str, dict[str, Any]]:
         chats = await self.allowed_chat_ids()
@@ -429,29 +432,14 @@ class TelegramOpsBot:
 
     async def _allowed(self, chat_id: int, user_id: int) -> bool:
         state = await self._load_state()
-        chat_ids = unique_ints(list(state.get("paired_chat_ids") or []))
-        user_ids = unique_ints(list(state.get("paired_user_ids") or []))
+        chat_ids = unique_ints(list(self.settings.telegram_allowed_chat_ids) + list(state.get("paired_chat_ids") or []))
+        user_ids = unique_ints(list(self.settings.telegram_allowed_user_ids) + list(state.get("paired_user_ids") or []))
         if not chat_ids and not user_ids:
             return False
         if chat_ids and chat_id not in chat_ids:
             return False
         if user_ids and user_id not in user_ids:
             return False
-        return True
-
-    async def _maybe_bind_first_session(self, chat_id: int, user_id: int, chat_type: str) -> bool:
-        if chat_type != "private":
-            return False
-        async with self._state_lock:
-            state = await self._load_state_unlocked()
-            chat_ids = unique_ints(list(state.get("paired_chat_ids") or []))
-            user_ids = unique_ints(list(state.get("paired_user_ids") or []))
-            if chat_ids or user_ids:
-                return False
-            state["paired_chat_ids"] = [chat_id]
-            state["paired_user_ids"] = [user_id]
-            state["updated_at"] = datetime.now(BEIJING_TZ).isoformat()
-            await asyncio.to_thread(self._save_state_sync, state)
         return True
 
     async def _load_state(self) -> dict[str, Any]:
@@ -574,28 +562,28 @@ def account_list_keyboard(
 
 
 def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
-    account_id = int(row.get("id") or 0)
-    if row.get("schedulable") and account_ops.is_cooling(row):
+    account_id = int(row.get("id") or row.get("account_id") or 0)
+    if row.get("schedulable", True) and not account_ops.is_cooling(row):
         first = [
-            {"text": "解除冷却/恢复", "callback_data": f"resask:{account_id}"},
-            {"text": "暂停到手动恢复", "callback_data": f"pauseask:{account_id}"},
+            {"text": "暂停", "callback_data": f"pause:{account_id}"},
+            {"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"},
+            {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"},
         ]
-    elif row.get("schedulable"):
+    elif row.get("schedulable", True):
         first = [
-            {"text": "暂停到手动恢复", "callback_data": f"pauseask:{account_id}"},
-            {"text": "临时冷却", "callback_data": f"cdmenu:{account_id}"},
+            {"text": "恢复", "callback_data": f"res:{account_id}"},
+            {"text": "暂停", "callback_data": f"pause:{account_id}"},
+            {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"},
         ]
     else:
         first = [
-            {"text": "恢复调度", "callback_data": f"resask:{account_id}"},
-            {"text": "改为临时冷却", "callback_data": f"cdmenu:{account_id}"},
+            {"text": "恢复", "callback_data": f"res:{account_id}"},
+            {"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"},
         ]
     return {
         "inline_keyboard": [
             first,
-            [{"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"}, {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"}],
-            [{"text": "刷新", "callback_data": f"acct:{account_id}"}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
-            [{"text": "主菜单", "callback_data": "menu"}],
+            [{"text": "查看详情", "callback_data": f"acct:{account_id}"}],
         ]
     }
 
@@ -605,7 +593,7 @@ def cooldown_keyboard(account_id: int) -> dict[str, Any]:
         "inline_keyboard": [
             [{"text": "10 分钟", "callback_data": f"cd:{account_id}:10"}, {"text": "30 分钟", "callback_data": f"cd:{account_id}:30"}],
             [{"text": "2 小时", "callback_data": f"cd:{account_id}:120"}, {"text": "24 小时", "callback_data": f"cd:{account_id}:1440"}],
-            [{"text": "返回账号", "callback_data": f"acct:{account_id}"}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
+            [{"text": "查看详情", "callback_data": f"acct:{account_id}"}],
         ]
     }
 
@@ -614,7 +602,7 @@ def confirm_keyboard(confirm_text: str, confirm_data: str, back_data: str) -> di
     return {
         "inline_keyboard": [
             [{"text": confirm_text, "callback_data": confirm_data}],
-            [{"text": "返回账号", "callback_data": back_data}, {"text": "账号列表", "callback_data": "acctlist:all:0"}],
+            [{"text": "返回账号", "callback_data": back_data}],
         ]
     }
 
@@ -659,6 +647,24 @@ def account_detail(row: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def account_alert(title: str, action: dict[str, Any], row: dict[str, Any] | None) -> str:
+    lines = [title]
+    if row:
+        lines.extend(["", account_detail(row)])
+    else:
+        lines.append(f"账号：#{action.get('account_id') or action.get('id')} {action.get('name') or '-'}")
+
+    if action.get("balance_error_count"):
+        lines.append(f"余额/额度错误：{action.get('balance_error_count')}")
+    if action.get("last_error_at"):
+        lines.append(f"异常时间：{bj_time(action.get('last_error_at'))}")
+    if action.get("last_message"):
+        lines.append(f"异常内容：{truncate(str(action.get('last_message')), 1000)}")
+    if action.get("reason"):
+        lines.append(f"处理原因：{truncate(str(action.get('reason')), 800)}")
+    return "\n".join(lines)
+
+
 def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     lines = [title]
     for item in actions[:10]:
@@ -689,6 +695,15 @@ def bj_time(value: Any) -> str:
 def is_pair_command(text: str) -> bool:
     parts = text.strip().split()
     return bool(parts) and normalize_command(parts[0]) == "/pair"
+
+
+def pairing_code_from_text(text: str) -> str:
+    parts = text.strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def normalize_pairing_code(value: str) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
 
 
 def normalize_command(command: str) -> str:

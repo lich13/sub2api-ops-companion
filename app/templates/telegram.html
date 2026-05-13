@@ -3,7 +3,7 @@
 <section class="page-title">
   <div>
     <h2>Telegram</h2>
-    <p>只填 Bot Token。首次在 Telegram 私聊给 Bot 发 <code>/start</code> 或 <code>/menu</code>，会自动绑定当前会话。</p>
+    <p>保存 Bot Token 后复制随机配对码，在 Telegram 私聊发送 <code>/pair 配对码</code> 才会绑定当前会话。</p>
   </div>
   <div class="filters inline">
     <form method="post" action="{{ base_path }}/telegram/push-test">
@@ -37,8 +37,8 @@
 <section class="panel telegram-config-panel">
   <div class="section-head compact-head">
     <div>
-      <h3>Bot Token</h3>
-      <p>保存后立即生效。</p>
+      <h3>Bot Token 与配对码</h3>
+      <p>Bot 保存后立即生效；配对码用于阻止陌生 Telegram 会话自动绑定。</p>
     </div>
     <span class="subtle">更新：{{ telegram.config_updated_at | bj_time }}</span>
   </div>
@@ -51,7 +51,16 @@
     <button class="primary" type="submit">保存</button>
   </form>
 
-  <p class="telegram-note">保存 Token 后，直接在 Telegram 私聊发送 <code>/start</code>。</p>
+  <div class="pairing-code-panel">
+    <div>
+      <span>当前配对码</span>
+      <strong>{{ telegram.pairing_code or '保存 Token 后生成' }}</strong>
+      <p>在 Telegram 私聊发送 <code>/pair {{ telegram.pairing_code or '配对码' }}</code>。重新生成后，旧配对码立即失效，已绑定会话不受影响。</p>
+    </div>
+    <form method="post" action="{{ base_path }}/telegram/pairing-code/regenerate">
+      <button type="submit">重新生成配对码</button>
+    </form>
+  </div>
 </section>
 
 <section class="panel split-panel telegram-split">
@@ -73,18 +82,8 @@
     {% endif %}
   </div>
   <div>
-    <h3>常用命令</h3>
-    <div class="command-pills telegram-command-pills">
-      <code>/menu</code>
-      <code>/status</code>
-      <code>/accounts</code>
-      <code>/account 7</code>
-      <code>/pause 7</code>
-      <code>/resume 7</code>
-      <code>/cooldown 7 30</code>
-      <code>/guard_run</code>
-      <code>/push_test</code>
-    </div>
+    <h3>推送与操作</h3>
+    <p class="telegram-note">Telegram 不再提供账号命令菜单。账号异常会主动推送，消息下方会直接附带暂停、冷却、恢复和查看详情按钮。</p>
   </div>
 </section>
 {% endblock %}
