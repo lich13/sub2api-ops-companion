@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% from "time_range_picker.html" import time_range_picker %}
 {% block content %}
-{% macro ms_value(value) %}
-  {% if value is not none %}{{ "%.0f"|format(value) }} ms{% else %}-{% endif %}
+{% macro seconds_value(value) %}
+  {% if value is not none %}{{ "%.2f"|format(value / 1000) }} s{% else %}-{% endif %}
 {% endmacro %}
-{% macro token_ms_value(value) %}
-  {% if value is not none %}{{ "%.2f"|format(value) }} ms/token{% else %}-{% endif %}
+{% macro tokens_per_second_value(value) %}
+  {% if value is not none and value > 0 %}{{ "%.2f"|format(1000 / value) }} tokens/s{% else %}-{% endif %}
 {% endmacro %}
 
 <section class="page-title">
   <div>
     <h2>账号速度</h2>
-    <p>按账号展示窗口内响应速度、首 Token、单位输出 Token 耗时和消耗。</p>
+    <p>按账号展示窗口内响应速度、首 Token（秒）、平均耗时（秒）、tokens/秒和消耗。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/speed">
     <label>分组
@@ -39,12 +39,16 @@
     <strong>{{ dashboard.output_tokens | int_commas }}</strong>
   </div>
   <div class="metric-card">
-    <span>平均首 Token</span>
-    <strong>{{ ms_value(dashboard.avg_first_token_ms) }}</strong>
+    <span>首 Token（秒）</span>
+    <strong>{{ seconds_value(dashboard.avg_first_token_ms) }}</strong>
   </div>
   <div class="metric-card">
-    <span>耗时/输出 Token</span>
-    <strong>{{ token_ms_value(dashboard.avg_ms_per_output_token) }}</strong>
+    <span>平均耗时（秒）</span>
+    <strong>{{ seconds_value(dashboard.avg_duration_ms) }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>tokens/秒</span>
+    <strong>{{ tokens_per_second_value(dashboard.avg_ms_per_output_token) }}</strong>
   </div>
   <div class="metric-card">
     <span>消耗</span>
@@ -67,9 +71,9 @@
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="state" checked />状态</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="priority" checked />优先级</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="traffic" checked />窗口样本</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />耗时/输出 Token</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token（秒）</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时（秒）</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />tokens/秒</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="usage" checked />消耗</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
           <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
@@ -85,9 +89,9 @@
           <th data-col="state">状态</th>
           <th data-col="priority">优先级</th>
           <th data-col="traffic">窗口样本</th>
-          <th data-col="first-token">首 Token</th>
-          <th data-col="duration">平均耗时</th>
-          <th data-col="token-speed">耗时/输出 Token</th>
+          <th data-col="first-token">首 Token（秒）</th>
+          <th data-col="duration">平均耗时（秒）</th>
+          <th data-col="token-speed">tokens/秒</th>
           <th data-col="usage">消耗</th>
           <th data-col="last-success">最近成功</th>
         </tr>
@@ -121,13 +125,13 @@
               <div class="cell-sub">输出 {{ row.output_tokens_window | int_commas }} tokens</div>
             </td>
             <td data-col="first-token" class="speed-metric-cell">
-              <strong>{{ ms_value(row.avg_first_token_ms) }}</strong>
+              <strong>{{ seconds_value(row.avg_first_token_ms) }}</strong>
             </td>
             <td data-col="duration" class="speed-metric-cell">
-              <strong>{{ ms_value(row.avg_duration_ms) }}</strong>
+              <strong>{{ seconds_value(row.avg_duration_ms) }}</strong>
             </td>
             <td data-col="token-speed" class="speed-metric-cell">
-              <strong>{{ token_ms_value(row.avg_ms_per_output_token) }}</strong>
+              <strong>{{ tokens_per_second_value(row.avg_ms_per_output_token) }}</strong>
             </td>
             <td data-col="usage" class="money-cell">
               <strong class="cost-main">${{ "%.6f"|format(row.usage_total_cost or 0) }}</strong>

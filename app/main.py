@@ -564,6 +564,7 @@ def build_speed_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "success_count": sum(int(row.get("success_window") or 0) for row in rows),
         "output_tokens": sum(int(row.get("output_tokens_window") or 0) for row in rows),
         "avg_first_token_ms": weighted_average(rows, "avg_first_token_ms"),
+        "avg_duration_ms": weighted_average(rows, "avg_duration_ms"),
         "avg_ms_per_output_token": weighted_average(rows, "avg_ms_per_output_token"),
         "usage_total_cost": sum(float(row.get("usage_total_cost") or 0) for row in rows),
         "usage_total_tokens": sum(int(row.get("usage_total_tokens") or 0) for row in rows),
