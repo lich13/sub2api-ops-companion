@@ -32,6 +32,9 @@ class Settings:
     telegram_default_platform: str = "openai"
     telegram_quality_hours: int = 24
     telegram_poll_timeout_seconds: int = 25
+    telegram_error_alert_enabled: bool = True
+    telegram_error_alert_interval_seconds: int = 2
+    telegram_error_alert_batch_size: int = 50
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
@@ -151,6 +154,22 @@ def load_settings() -> Settings:
             25,
             5,
             50,
+        ),
+        telegram_error_alert_enabled=bool_value(
+            telegram_config.get("error_alert_enabled", os.getenv("TELEGRAM_ERROR_ALERT_ENABLED")),
+            True,
+        ),
+        telegram_error_alert_interval_seconds=int_value(
+            telegram_config.get("error_alert_interval_seconds", os.getenv("TELEGRAM_ERROR_ALERT_INTERVAL_SECONDS")),
+            2,
+            1,
+            60,
+        ),
+        telegram_error_alert_batch_size=int_value(
+            telegram_config.get("error_alert_batch_size", os.getenv("TELEGRAM_ERROR_ALERT_BATCH_SIZE")),
+            50,
+            1,
+            100,
         ),
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),

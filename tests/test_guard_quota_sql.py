@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from app.sql import GUARD_BALANCE_CANDIDATES_SQL, QUALITY_SQL
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, QUALITY_SQL, TELEGRAM_ERROR_ALERTS_SQL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,6 +38,13 @@ class GuardQuotaSqlTests(unittest.TestCase):
 
         main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
         self.assertIn("OR temp_unschedulable_until IS NOT NULL", main_py)
+
+    def test_telegram_error_alerts_scan_incrementally_by_error_log_id(self) -> None:
+        self.assertIn("WHERE id > %(cursor_id)s::bigint", TELEGRAM_ERROR_ALERTS_SQL)
+        self.assertIn("LIMIT %(limit)s", TELEGRAM_ERROR_ALERTS_SQL)
+        self.assertIn("e.upstream_errors::text", TELEGRAM_ERROR_ALERTS_SQL)
+        self.assertIn("WITH ORDINALITY AS x(elem, ordinality)", TELEGRAM_ERROR_ALERTS_SQL)
+        self.assertIn("COALESCE(c.account_name, a.name) AS account_name", TELEGRAM_ERROR_ALERTS_SQL)
 
 
 if __name__ == "__main__":

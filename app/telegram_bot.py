@@ -92,9 +92,40 @@ class TelegramOpsBot:
             for chat_id in chat_ids:
                 await self._send_message(chat_id, f"{title}\n另有 {len(actions) - 10} 个账号异常未展开。")
 
+    async def notify_error_chain_alerts(self, rows: list[dict[str, Any]]) -> None:
+        if not self.enabled:
+            return
+        chat_ids = await self.allowed_chat_ids()
+        if not chat_ids:
+            return
+        for row in rows:
+            try:
+                account_id = parse_account_id(row.get("account_id") or "")
+            except ValueError:
+                continue
+            detail = await asyncio.to_thread(self._account_detail, account_id)
+            alert_text = error_chain_alert(row, detail)
+            keyboard = account_actions_keyboard(detail or row)
+            for chat_id in chat_ids:
+                await self._send_message(chat_id, alert_text, keyboard)
+
     async def allowed_chat_ids(self) -> list[int]:
         state = await self._load_state()
         return unique_ints(list(self.settings.telegram_allowed_chat_ids) + list(state.get("paired_chat_ids") or []))
+
+    async def error_alert_cursor_id(self) -> int:
+        state = await self._load_state()
+        try:
+            return max(0, int(state.get("error_alert_cursor_id") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    async def set_error_alert_cursor_id(self, cursor_id: int) -> None:
+        async with self._state_lock:
+            state = await self._load_state_unlocked()
+            state["error_alert_cursor_id"] = max(0, int(cursor_id or 0))
+            state["error_alert_cursor_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+            await asyncio.to_thread(self._save_state_sync, state)
 
     async def _handle_update(self, update: dict[str, Any]) -> None:
         callback = update.get("callback_query")
@@ -662,6 +693,28 @@ def account_alert(title: str, action: dict[str, Any], row: dict[str, Any] | None
         lines.append(f"异常内容：{truncate(str(action.get('last_message')), 1000)}")
     if action.get("reason"):
         lines.append(f"处理原因：{truncate(str(action.get('reason')), 800)}")
+    return "\n".join(lines)
+
+
+def error_chain_alert(row: dict[str, Any], account: dict[str, Any] | None) -> str:
+    account_id = row.get("account_id") or (account or {}).get("id") or "-"
+    account_name = row.get("account_name") or (account or {}).get("name") or "-"
+    lines = [
+        "错误链路异常",
+        f"请求：{row.get('request_id') or '-'}",
+        f"客户端请求：{row.get('client_request_id') or '-'}",
+        f"平台/模型：{row.get('platform') or '-'} / {row.get('upstream_model') or row.get('requested_model') or row.get('model') or '-'}",
+        f"账号：#{account_id} {account_name}",
+        f"尝试：{row.get('attempt_no') or '-'}，状态：{row.get('status_code') or row.get('final_status_code') or '-'}，分类：{row.get('category') or '-'}",
+    ]
+    if row.get("created_at"):
+        lines.append(f"时间：{bj_time(row.get('created_at'))}")
+    if row.get("kind") or row.get("error_phase"):
+        lines.append(f"类型/阶段：{row.get('kind') or '-'} / {row.get('error_phase') or '-'}")
+    if row.get("message"):
+        lines.append(f"错误内容：{truncate(str(row.get('message')), 1200)}")
+    if account:
+        lines.append(f"当前状态：{account_ops.account_state(account)}")
     return "\n".join(lines)
 
 
