@@ -31,7 +31,7 @@ from .sql import (
     QUALITY_SQL,
     REQUESTS_SQL,
 )
-from .telegram_bot import TelegramOpsBot, format_guard_actions
+from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
@@ -50,6 +50,7 @@ guard_state: dict[str, Any] = {
 }
 telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
+TELEGRAM_PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def beijing_time(value: Any) -> str:
@@ -266,6 +267,11 @@ def mask_secret(value: str) -> str:
     return f"{raw[:6]}...{raw[-4:]}"
 
 
+def generate_telegram_pairing_code() -> str:
+    raw = "".join(secrets.choice(TELEGRAM_PAIRING_ALPHABET) for _ in range(8))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
 def telegram_state() -> dict[str, Any]:
     try:
         state = json.loads(Path(settings.telegram_state_path).read_text(encoding="utf-8"))
@@ -284,8 +290,29 @@ def telegram_config_file() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def ensure_telegram_pairing_code() -> str:
+    config_file = telegram_config_file()
+    pairing_code = str(settings.telegram_pairing_code or config_file.get("pairing_code") or "").strip()
+    if pairing_code or not settings.telegram_bot_token.strip():
+        return pairing_code
+
+    pairing_code = generate_telegram_pairing_code()
+    payload = {
+        **config_file,
+        "pairing_enabled": True,
+        "pairing_code": pairing_code,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": config_file.get("updated_by") or "system",
+    }
+    save_telegram_runtime_config(payload)
+    apply_telegram_runtime_config(payload)
+    return pairing_code
+
+
 def build_telegram_config() -> dict[str, Any]:
     state = telegram_state()
+    config_file = telegram_config_file()
+    pairing_code = ensure_telegram_pairing_code()
     config_file = telegram_config_file()
     paired_chat_ids = sorted({int(item) for item in state.get("paired_chat_ids", []) if str(item).lstrip("-").isdigit()})
     paired_user_ids = sorted({int(item) for item in state.get("paired_user_ids", []) if str(item).lstrip("-").isdigit()})
@@ -296,6 +323,8 @@ def build_telegram_config() -> dict[str, Any]:
         "bot_token_set": bool(settings.telegram_bot_token.strip()),
         "bot_token_preview": mask_secret(settings.telegram_bot_token),
         "configured": settings.telegram_enabled and bool(settings.telegram_bot_token.strip()),
+        "pairing_enabled": settings.telegram_pairing_enabled,
+        "pairing_code": pairing_code,
         "config_updated_at": config_file.get("updated_at"),
         "state_updated_at": state.get("updated_at"),
         "paired_chat_ids": paired_chat_ids,
@@ -304,7 +333,7 @@ def build_telegram_config() -> dict[str, Any]:
         "control_user_count": control_user_count,
         "binding_status": "未启用"
         if not settings.telegram_bot_token.strip()
-        else ("已绑定" if push_target_count or control_user_count else "待首次绑定"),
+        else ("已绑定" if push_target_count or control_user_count else "待配对"),
     }
 
 
@@ -320,16 +349,14 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         settings.telegram_enabled = bool(payload.get("enabled"))
     if "bot_token" in payload:
         settings.telegram_bot_token = str(payload.get("bot_token") or "")
-    settings.telegram_pairing_enabled = bool(payload.get("pairing_enabled", True))
-    settings.telegram_pairing_code = str(payload.get("pairing_code", "") or "")
+    if "pairing_enabled" in payload:
+        settings.telegram_pairing_enabled = bool(payload.get("pairing_enabled", True))
+    if "pairing_code" in payload:
+        settings.telegram_pairing_code = str(payload.get("pairing_code", "") or "")
     if "allowed_chat_ids" in payload:
         settings.telegram_allowed_chat_ids = parse_int_csv(",".join(str(v) for v in payload.get("allowed_chat_ids", [])))
-    else:
-        settings.telegram_allowed_chat_ids = ()
     if "allowed_user_ids" in payload:
         settings.telegram_allowed_user_ids = parse_int_csv(",".join(str(v) for v in payload.get("allowed_user_ids", [])))
-    else:
-        settings.telegram_allowed_user_ids = ()
     if "default_platform" in payload:
         settings.telegram_default_platform = str(payload.get("default_platform") or "openai").strip() or "openai"
     if "default_group" in payload:
@@ -382,6 +409,7 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
         "action": "pause",
         "balance_error_count": row["balance_error_count"],
         "last_error_at": row.get("last_error_at"),
+        "last_message": row.get("last_message"),
         "updated": updated,
         "actor": actor,
         "reason": reason,
@@ -439,12 +467,21 @@ async def notify_telegram(text: str) -> None:
         return
 
 
+async def notify_telegram_account_alerts(title: str, actions: list[dict[str, Any]]) -> None:
+    if telegram_bot is None:
+        return
+    try:
+        await telegram_bot.notify_account_alerts(title, actions)
+    except Exception:
+        return
+
+
 async def auto_guard_loop() -> None:
     while True:
         try:
             actions = await run_auto_guard_threaded()
             if actions:
-                await notify_telegram(format_guard_actions("自动 Guard 已暂停账号", actions))
+                await notify_telegram_account_alerts("账号异常：自动 Guard 已处理", actions)
         except Exception as exc:
             await notify_telegram(f"自动 Guard 执行失败\n{exc}")
         await asyncio.sleep(settings.guard_interval_seconds)
@@ -805,7 +842,7 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
 async def run_guard_now(user: AuthUser) -> Response:
     actions = await run_auto_guard_threaded(user)
     if actions:
-        await notify_telegram(format_guard_actions(f"用户 {user} 手动执行 Guard", actions))
+        await notify_telegram_account_alerts(f"账号异常：用户 {user} 手动执行 Guard", actions)
     return RedirectResponse(f"{settings.base_path}/guard?msg=guard+applied+{len(actions)}+actions", status_code=303)
 
 
@@ -815,9 +852,16 @@ async def telegram_config_save(
     telegram_bot_token: str = Form(""),
 ) -> Response:
     token = telegram_bot_token.strip() or settings.telegram_bot_token
+    existing = telegram_config_file()
+    pairing_code = str(existing.get("pairing_code") or settings.telegram_pairing_code or "").strip()
+    if token and not pairing_code:
+        pairing_code = generate_telegram_pairing_code()
     payload = {
+        **existing,
         "enabled": bool(token),
         "bot_token": token,
+        "pairing_enabled": True,
+        "pairing_code": pairing_code,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": user,
     }
@@ -831,10 +875,33 @@ async def telegram_config_save(
             "user": user,
             "enabled": payload["enabled"],
             "bot_token_set": bool(token),
-            "mode": "token_only_auto_bind",
+            "pairing_code_set": bool(pairing_code),
+            "mode": "token_with_pairing_code",
         },
     )
-    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存')}", status_code=303)
+    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存，配对码已生成')}", status_code=303)
+
+
+@app.post("/telegram/pairing-code/regenerate")
+async def telegram_pairing_code_regenerate(user: AuthUser) -> Response:
+    existing = telegram_config_file()
+    pairing_code = generate_telegram_pairing_code()
+    payload = {
+        **existing,
+        "pairing_enabled": True,
+        "pairing_code": pairing_code,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": user,
+    }
+    save_telegram_runtime_config(payload)
+    apply_telegram_runtime_config(payload)
+    await restart_telegram_bot()
+    write_audit(
+        settings.audit_path,
+        "telegram_pairing_code_regenerate",
+        {"user": user, "pairing_code_set": True},
+    )
+    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('已重新生成 Telegram 配对码')}", status_code=303)
 
 
 @app.post("/telegram/push-test")
@@ -847,7 +914,7 @@ async def telegram_push_test(user: AuthUser) -> Response:
     chat_ids = await telegram_bot.allowed_chat_ids()
     if not chat_ids:
         return RedirectResponse(
-            f"{settings.base_path}/telegram?msg={quote('没有可推送 chat，请先在 Telegram 给 Bot 发送 /start 或 /menu 完成首次绑定')}",
+            f"{settings.base_path}/telegram?msg={quote('没有可推送 chat，请先在 Telegram 私聊发送 /pair 配对码完成绑定')}",
             status_code=303,
         )
     await telegram_bot.notify(f"Sub2API Ops 面板推送测试\n用户：{user}\n时间：{beijing_time(datetime.now(timezone.utc))}")
@@ -861,7 +928,7 @@ async def telegram_push_test(user: AuthUser) -> Response:
 async def telegram_guard_run(user: AuthUser) -> Response:
     actions = await run_auto_guard_threaded(f"{user}:telegram_panel")
     if actions:
-        await notify_telegram(format_guard_actions(f"用户 {user} 从 Telegram 面板执行 Guard", actions))
+        await notify_telegram_account_alerts(f"账号异常：用户 {user} 从 Telegram 面板执行 Guard", actions)
     return RedirectResponse(
         f"{settings.base_path}/telegram?msg={quote(f'Guard 已执行，动作 {len(actions)} 个')}",
         status_code=303,

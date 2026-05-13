@@ -18,7 +18,7 @@
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
 - 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号；如果账号已被 Sub2API 临时冷却，也会升级为永久停调度，直到手动恢复。
-- Telegram 远程运维：只需 Bot Token，首次私聊自动绑定当前会话，支持 Guard 推送、账号列表筛选、按账号暂停/恢复/冷却。
+- Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；异常推送会直接附带账号暂停/恢复/冷却按钮。
 - 面板版本更新：左上角显示当前版本，支持检查 GitHub main 分支并从面板拉取更新后自重启。
 
 ## 运行
@@ -73,31 +73,15 @@ docker compose up -d --build
 
 ## Telegram 远程控制
 
-进入 `/sub2ops/telegram` 后只需要保存 Bot Token。保存后 Bot 会热重启，不需要手动改 `.env` 或重启容器。
+进入 `/sub2ops/telegram` 后保存 Bot Token。保存后面板会生成随机配对码，Bot 会热重启，不需要手动改 `.env` 或重启容器。
 
-配置完成后，在 Telegram 私聊里给 Bot 发送：
-
-```text
-/start
-```
-
-首次会自动绑定当前会话。之后可使用按钮菜单，也可以直接发命令：
+配置完成后，在 Telegram 私聊里给 Bot 发送面板显示的配对命令：
 
 ```text
-/menu
-/status
-/accounts
-/accounts balance
-/account 7
-/account nb
-/pause 7
-/resume 7
-/cooldown 7 30
-/guard_run
-/push_test
+/pair ABCD-EFGH
 ```
 
-自动 Guard 如果暂停了余额/额度不足账号，会主动推送到当前绑定的 Telegram 会话。`/guard_run` 可以从 Telegram 立即执行一次 Guard。账号详情页按钮支持“暂停到手动恢复”、“恢复/清除冷却”和“临时冷却 10 分钟、30 分钟、2 小时、24 小时”。
+不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram 侧不再提供账号命令菜单，自动 Guard 如果暂停了余额/额度不足账号，会主动推送到当前绑定的 Telegram 会话，并在每条异常消息下方附加“暂停”“冷却 30m”“冷却 2h”“恢复”“查看详情”等账号操作按钮。
 
 ## 质量统计口径
 
