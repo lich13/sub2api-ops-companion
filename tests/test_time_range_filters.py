@@ -80,8 +80,10 @@ class TimeRangeFilterTests(unittest.TestCase):
         self.assertIn('name="sort"', stability)
         self.assertIn("sort_options", stability)
         self.assertIn("消耗</th>", speed)
-        self.assertIn("首 Token</th>", speed)
-        self.assertIn("耗时/输出 Token</th>", speed)
+        self.assertIn("首 Token（秒）</th>", speed)
+        self.assertIn("平均耗时（秒）</th>", speed)
+        self.assertIn("tokens/秒</th>", speed)
+        self.assertNotIn("ms/token", speed)
 
 
 if __name__ == "__main__":
