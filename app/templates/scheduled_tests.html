@@ -1,18 +1,17 @@
 {% extends "base.html" %}
 {% from "group_picker.html" import group_picker, group_hidden_inputs %}
 {% block content %}
-<section class="scheduled-hero">
-  <div class="scheduled-hero-copy">
-    <span class="scheduled-eyebrow">Scheduled Recovery</span>
-    <h2>定时恢复控制台</h2>
+<section class="page-title">
+  <div>
+    <h2>定时恢复</h2>
     <p>以每个整点为基准配置 Sub2API 原生定时测试。账号测通后由上游自动恢复可恢复运行态，恢复成功会推送 Telegram。</p>
   </div>
-  <form class="scheduled-filter-bar" method="get" action="{{ base_path }}/scheduled-tests">
+  <form class="filters inline scheduled-filters" method="get" action="{{ base_path }}/scheduled-tests">
     {{ group_picker(group_selection) }}
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>
-    <label class="checkbox-label scheduled-filter-check">
+    <label class="checkbox-label inline-checkbox scheduled-filter-check">
       <input type="checkbox" name="include_all" value="1" {{ 'checked' if include_all else '' }} />
       <span>显示全部账号</span>
     </label>
@@ -25,19 +24,19 @@
     {{ capability.message }}
   </section>
 {% else %}
-  <section class="scheduled-command-deck">
-    <div class="scheduled-deck-head">
+  <section class="metric-strip scheduled-metric-strip">
+    <div class="metric-card"><span>当前展示</span><strong>{{ dashboard.shown_count }}</strong></div>
+    <div class="metric-card {{ 'danger' if dashboard.recoverable_count > 0 else '' }}"><span>异常信号</span><strong>{{ dashboard.recoverable_count }}</strong></div>
+    <div class="metric-card"><span>已有计划</span><strong>{{ dashboard.plan_count }}</strong></div>
+    <div class="metric-card {{ 'warning' if dashboard.enabled_count > 0 else '' }}"><span>启用中</span><strong>{{ dashboard.enabled_count }}</strong></div>
+    <div class="metric-card {{ 'warning' if dashboard.auto_recover_count > 0 else '' }}"><span>自动恢复</span><strong>{{ dashboard.auto_recover_count }}</strong></div>
+  </section>
+
+  <section class="panel scheduled-command-deck">
+    <div class="section-head scheduled-cadence-head">
       <div>
-        <span class="scheduled-eyebrow">Runner Plan</span>
         <h3>整点对齐的自动恢复计划</h3>
         <p>计划写入上游 <code>scheduled_test_plans</code>，runner 到点执行。留空模型时使用 Sub2API 平台默认测试模型。</p>
-      </div>
-      <div class="scheduled-summary-grid">
-        <div><span>展示</span><strong>{{ dashboard.shown_count }}</strong></div>
-        <div><span>异常</span><strong>{{ dashboard.recoverable_count }}</strong></div>
-        <div><span>计划</span><strong>{{ dashboard.plan_count }}</strong></div>
-        <div><span>启用</span><strong>{{ dashboard.enabled_count }}</strong></div>
-        <div><span>恢复</span><strong>{{ dashboard.auto_recover_count }}</strong></div>
       </div>
     </div>
 
