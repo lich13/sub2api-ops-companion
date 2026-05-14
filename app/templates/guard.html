@@ -106,7 +106,7 @@
                 <form method="post" action="{{ base_path }}/guard/apply">
                   <input type="hidden" name="account_id" value="{{ item.account_id }}" />
                   <input type="hidden" name="action" value="{{ item.action }}" />
-                  <input type="hidden" name="minutes" value="{{ item.minutes or 30 }}" />
+                  <input type="hidden" name="minutes" value="{{ item.minutes or 15 }}" />
                   <input type="hidden" name="reason" value="{{ item.reason }}" />
                   <button class="primary" type="submit">执行</button>
                 </form>

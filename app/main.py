@@ -1023,10 +1023,10 @@ def cooldown_account(
     request: Request,
     account_id: int,
     user: AuthUser,
-    minutes: int = Form(30),
+    minutes: int = Form(15),
     reason: str = Form("temporary cooldown from ops companion"),
 ) -> Response:
-    minutes = int_param(str(minutes), 30, 1, 1440)
+    minutes = int_param(str(minutes), 15, 1, 1440)
     account_ops.cooldown_account(db, settings.audit_path, account_id, user, minutes, reason)
     return RedirectResponse(f"{settings.base_path}/?msg=cooldown+account+{account_id}", status_code=303)
 
@@ -1043,7 +1043,7 @@ def apply_guard(
     user: AuthUser,
     account_id: int = Form(...),
     action: str = Form(...),
-    minutes: int = Form(30),
+    minutes: int = Form(15),
     reason: str = Form(...),
 ) -> Response:
     if action == "pause":

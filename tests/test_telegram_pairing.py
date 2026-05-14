@@ -82,9 +82,19 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})
         callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
 
-        self.assertEqual(callback_data, ["pause:7", "cd:7:30", "cd:7:120", "acct:7"])
+        self.assertEqual(callback_data, ["pause:7", "cd:7:5", "cd:7:15", "cd:7:30", "acct:7"])
         self.assertNotIn("menu", callback_data)
         self.assertNotIn("acctlist:all:0", callback_data)
+
+    def test_cooldown_keyboard_uses_short_fixed_presets(self) -> None:
+        from app.telegram_bot import cooldown_keyboard
+
+        keyboard = cooldown_keyboard(7)
+        callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
+
+        self.assertEqual(callback_data, ["cd:7:5", "cd:7:15", "cd:7:30", "acct:7"])
+        self.assertNotIn("cd:7:120", callback_data)
+        self.assertNotIn("cd:7:1440", callback_data)
 
     def test_pairing_code_normalization_ignores_case_spaces_and_hyphen(self) -> None:
         self.assertEqual(normalize_pairing_code("ab cd-ef gh"), "ABCDEFGH")

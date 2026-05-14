@@ -274,10 +274,10 @@ class TelegramOpsBot:
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._cooldown_menu_reply(account_id)
         if data.startswith("cd:"):
-            _, account_raw, minutes_raw = (data.split(":") + ["", "30"])[:3]
+            _, account_raw, minutes_raw = (data.split(":") + ["", "15"])[:3]
             return await self._cooldown_apply_reply(
                 parse_account_id(account_raw),
-                parse_minutes(minutes_raw, 30),
+                parse_minutes(minutes_raw, 15),
                 actor(chat_id, user_id),
             )
         return ("无法识别这个按钮，可能来自旧消息。", None)
@@ -597,18 +597,22 @@ def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
     if row.get("schedulable", True) and not account_ops.is_cooling(row):
         first = [
             {"text": "暂停", "callback_data": f"pause:{account_id}"},
+            {"text": "冷却 5m", "callback_data": f"cd:{account_id}:5"},
+            {"text": "冷却 15m", "callback_data": f"cd:{account_id}:15"},
             {"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"},
-            {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"},
         ]
     elif row.get("schedulable", True):
         first = [
             {"text": "恢复", "callback_data": f"res:{account_id}"},
-            {"text": "暂停", "callback_data": f"pause:{account_id}"},
-            {"text": "冷却 2h", "callback_data": f"cd:{account_id}:120"},
+            {"text": "冷却 5m", "callback_data": f"cd:{account_id}:5"},
+            {"text": "冷却 15m", "callback_data": f"cd:{account_id}:15"},
+            {"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"},
         ]
     else:
         first = [
             {"text": "恢复", "callback_data": f"res:{account_id}"},
+            {"text": "冷却 5m", "callback_data": f"cd:{account_id}:5"},
+            {"text": "冷却 15m", "callback_data": f"cd:{account_id}:15"},
             {"text": "冷却 30m", "callback_data": f"cd:{account_id}:30"},
         ]
     return {
@@ -622,8 +626,11 @@ def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
 def cooldown_keyboard(account_id: int) -> dict[str, Any]:
     return {
         "inline_keyboard": [
-            [{"text": "10 分钟", "callback_data": f"cd:{account_id}:10"}, {"text": "30 分钟", "callback_data": f"cd:{account_id}:30"}],
-            [{"text": "2 小时", "callback_data": f"cd:{account_id}:120"}, {"text": "24 小时", "callback_data": f"cd:{account_id}:1440"}],
+            [
+                {"text": "5m", "callback_data": f"cd:{account_id}:5"},
+                {"text": "15m", "callback_data": f"cd:{account_id}:15"},
+                {"text": "30m", "callback_data": f"cd:{account_id}:30"},
+            ],
             [{"text": "查看详情", "callback_data": f"acct:{account_id}"}],
         ]
     }
