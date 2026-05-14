@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "group_picker.html" import group_picker %}
 {% from "time_range_picker.html" import time_range_picker %}
 {% block content %}
 {% macro seconds_value(value) %}
@@ -14,13 +15,7 @@
     <p>按账号展示窗口内响应速度、首 Token（秒）、平均耗时（秒）、tokens/秒和消耗。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/speed">
-    <label>分组
-      <select name="group">
-        {% for item in groups %}
-          <option value="{{ item.name }}" {{ 'selected' if item.name == group else '' }}>{{ item.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    {{ group_picker(group_selection) }}
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>

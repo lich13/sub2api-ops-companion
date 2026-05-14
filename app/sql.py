@@ -1,6 +1,6 @@
 QUALITY_SQL = """
 WITH group_accounts AS (
-  SELECT
+  SELECT DISTINCT ON (a.id)
     a.id,
     a.name,
     a.platform,
@@ -9,6 +9,7 @@ WITH group_accounts AS (
     a.schedulable,
     a.priority AS account_priority,
     ag.priority AS group_priority,
+    g.name AS group_name,
     a.concurrency,
     a.last_used_at,
     a.updated_at,
@@ -24,8 +25,10 @@ WITH group_accounts AS (
   FROM accounts a
   JOIN account_groups ag ON ag.account_id = a.id
   JOIN groups g ON g.id = ag.group_id
-  WHERE g.name = %(group_name)s
+  WHERE g.name = ANY(%(group_names)s::text[])
     AND a.deleted_at IS NULL
+    AND (%(platform)s = '' OR a.platform = %(platform)s)
+  ORDER BY a.id, ag.priority NULLS LAST, a.priority NULLS LAST, g.name
 ),
 successes AS (
   SELECT
@@ -610,7 +613,7 @@ WITH scoped_accounts AS (
   LEFT JOIN groups g ON g.id = ag.group_id
   WHERE a.deleted_at IS NULL
     AND (%(platform)s = '' OR a.platform = %(platform)s)
-    AND (%(group_name)s = '' OR g.name = %(group_name)s)
+    AND g.name = ANY(%(group_names)s::text[])
   ORDER BY a.id, ag.priority NULLS LAST, g.name NULLS LAST
 ),
 plans AS (

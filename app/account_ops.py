@@ -36,7 +36,7 @@ def quality_rows(db: Database, group: str, platform: str, hours: int) -> list[di
     range_start = datetime.now(timezone.utc) - timedelta(hours=int(hours or 24))
     return db.fetch_all(
         QUALITY_SQL,
-        {"group_name": group, "platform": platform, "range_start": range_start, "range_end": None},
+        {"group_names": [group], "platform": platform, "range_start": range_start, "range_end": None},
     )
 
 

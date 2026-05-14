@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
+from .group_selection import DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
 from .quality_sort import STABILITY_SORT_OPTIONS, normalize_stability_sort, sort_stability_rows
 from .settings import load_settings
 from .sql import (
@@ -248,14 +249,14 @@ def load_account_options(platform: str) -> list[dict[str, Any]]:
 
 
 def load_quality(
-    group_name: str,
+    group_names: list[str],
     platform: str,
     range_start: datetime | None,
     range_end: datetime | None,
 ) -> list[dict[str, Any]]:
     return db.fetch_all(
         QUALITY_SQL,
-        {"group_name": group_name, "platform": platform, "range_start": range_start, "range_end": range_end},
+        {"group_names": group_names, "platform": platform, "range_start": range_start, "range_end": range_end},
     )
 
 
@@ -296,10 +297,10 @@ def scheduled_test_reasons(row: dict[str, Any]) -> list[str]:
     return reasons
 
 
-def load_scheduled_test_accounts(group_name: str, platform: str, include_all: bool) -> list[dict[str, Any]]:
+def load_scheduled_test_accounts(group_names: list[str], platform: str, include_all: bool) -> list[dict[str, Any]]:
     rows = db.fetch_all(
         SCHEDULED_TEST_ACCOUNTS_SQL,
-        {"group_name": group_name, "platform": platform, "include_all": include_all},
+        {"group_names": group_names, "platform": platform, "include_all": include_all},
     )
     for row in rows:
         row["plan_interval_minutes"] = interval_from_cron(row.get("plan_cron_expression") or "")
@@ -326,12 +327,14 @@ def scheduled_test_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def scheduled_tests_url(group: str, platform: str, include_all: bool, msg: str = "") -> str:
-    query = {"group": group, "platform": platform}
+def scheduled_tests_url(group_values: list[str], platform: str, include_all: bool, msg: str = "") -> str:
+    query: list[tuple[str, str]] = [("platform", platform)]
+    for value in unique_group_values(group_values) or [DEFAULT_GROUP_NAME]:
+        query.append(("group", value))
     if include_all:
-        query["include_all"] = "1"
+        query.append(("include_all", "1"))
     if msg:
-        query["msg"] = msg
+        query.append(("msg", msg))
     return f"{settings.base_path}/scheduled-tests?{urlencode(query)}"
 
 
@@ -854,7 +857,6 @@ def logout(user: AuthUser) -> Response:
 def index(
     request: Request,
     _: AuthUser,
-    group: str = "openai-default",
     platform: str = "openai",
     time_range: str = "",
     start_date: str = "",
@@ -863,13 +865,14 @@ def index(
     sort: str = "default",
     msg: str = "",
 ) -> HTMLResponse:
+    groups = load_groups()
+    group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     selected_range = build_time_range(time_range, start_date, end_date, hours)
     selected_sort = normalize_stability_sort(sort)
     rows = sort_stability_rows(
-        load_quality(group, platform, selected_range["start_at"], selected_range["end_at"]),
+        load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"]),
         selected_sort,
     )
-    groups = load_groups()
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     dashboard = build_dashboard(rows)
     requests_query = clean_query_string({"platform": platform, **selected_range["query_args"]})
@@ -880,7 +883,8 @@ def index(
             "active": "stability",
             "rows": rows,
             "groups": groups,
-            "group": group,
+            "group": group_selection["selected"][0],
+            "group_selection": group_selection,
             "platform": platform,
             "time_range": selected_range,
             "sort": selected_sort,
@@ -898,7 +902,6 @@ def index(
 def speed_view(
     request: Request,
     _: AuthUser,
-    group: str = "openai-default",
     platform: str = "openai",
     time_range: str = "",
     start_date: str = "",
@@ -906,16 +909,19 @@ def speed_view(
     hours: int | None = None,
     msg: str = "",
 ) -> HTMLResponse:
+    groups = load_groups()
+    group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     selected_range = build_time_range(time_range, start_date, end_date, hours)
-    rows = load_quality(group, platform, selected_range["start_at"], selected_range["end_at"])
+    rows = load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
     return render(
         request,
         "speed.html",
         {
             "active": "speed",
             "rows": rows,
-            "groups": load_groups(),
-            "group": group,
+            "groups": groups,
+            "group": group_selection["selected"][0],
+            "group_selection": group_selection,
             "platform": platform,
             "time_range": selected_range,
             "dashboard": build_speed_dashboard(rows),
@@ -928,27 +934,29 @@ def speed_view(
 def scheduled_tests_view(
     request: Request,
     _: AuthUser,
-    group: str = "openai-default",
     platform: str = "openai",
     include_all: str = "",
     msg: str = "",
 ) -> HTMLResponse:
+    groups = load_groups()
+    group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     capability = scheduled_test_capability()
     include_all_flag = form_truthy(include_all)
     rows: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     if capability["available"]:
-        rows = load_scheduled_test_accounts(group, platform, include_all_flag)
+        rows = load_scheduled_test_accounts(group_selection["selected"], platform, include_all_flag)
         results = load_scheduled_test_results(limit=30)
     return render(
         request,
         "scheduled_tests.html",
         {
             "active": "scheduled_tests",
-            "group": group,
+            "group": group_selection["selected"][0],
             "platform": platform,
             "include_all": include_all_flag,
-            "groups": load_groups(),
+            "groups": groups,
+            "group_selection": group_selection,
             "platform_options": load_platform_options(),
             "capability": capability,
             "rows": rows,
@@ -961,7 +969,8 @@ def scheduled_tests_view(
 
 
 @app.post("/scheduled-tests")
-def scheduled_test_save(
+async def scheduled_test_save(
+    request: Request,
     user: AuthUser,
     account_id: int = Form(...),
     model_id: str = Form(""),
@@ -969,15 +978,16 @@ def scheduled_test_save(
     enabled: str | None = Form(None),
     auto_recover: str | None = Form(None),
     max_results: int = Form(50),
-    group: str = Form("openai-default"),
     platform: str = Form("openai"),
     include_all: str = Form(""),
 ) -> Response:
+    form = await request.form()
+    group_values = [str(value) for value in form.getlist("group")]
     capability = scheduled_test_capability()
     include_all_flag = form_truthy(include_all)
     if not capability["available"]:
         return RedirectResponse(
-            scheduled_tests_url(group, platform, include_all_flag, "上游定时测试表未就绪"),
+            scheduled_tests_url(group_values, platform, include_all_flag, "上游定时测试表未就绪"),
             status_code=303,
         )
 
@@ -1001,23 +1011,25 @@ def scheduled_test_save(
         {"user": user, "account_id": account_id, "plan": row, "interval_minutes": interval},
     )
     return RedirectResponse(
-        scheduled_tests_url(group, platform, include_all_flag, f"已保存账号 #{account_id} 的定时恢复计划"),
+        scheduled_tests_url(group_values, platform, include_all_flag, f"已保存账号 #{account_id} 的定时恢复计划"),
         status_code=303,
     )
 
 
 @app.post("/scheduled-tests/{plan_id}/delete")
-def scheduled_test_delete(
+async def scheduled_test_delete(
+    request: Request,
     user: AuthUser,
     plan_id: int,
-    group: str = Form("openai-default"),
     platform: str = Form("openai"),
     include_all: str = Form(""),
 ) -> Response:
+    form = await request.form()
+    group_values = [str(value) for value in form.getlist("group")]
     row = db.fetch_one(SCHEDULED_TEST_DELETE_SQL, {"plan_id": plan_id})
     write_audit(settings.audit_path, "scheduled_test_plan_delete", {"user": user, "plan_id": plan_id, "plan": row})
     return RedirectResponse(
-        scheduled_tests_url(group, platform, form_truthy(include_all), f"已删除定时恢复计划 #{plan_id}"),
+        scheduled_tests_url(group_values, platform, form_truthy(include_all), f"已删除定时恢复计划 #{plan_id}"),
         status_code=303,
     )
 
@@ -1103,7 +1115,7 @@ def guard_view(
 ) -> HTMLResponse:
     hours = int_param(str(hours), 1, 1, 168)
     guard_range = rolling_hours_range(hours)
-    rows = load_quality(group, platform, guard_range["start_at"], guard_range["end_at"])
+    rows = load_quality([group], platform, guard_range["start_at"], guard_range["end_at"])
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,

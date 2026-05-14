@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "group_picker.html" import group_picker, group_hidden_inputs %}
 {% block content %}
 <section class="scheduled-hero">
   <div class="scheduled-hero-copy">
@@ -7,13 +8,7 @@
     <p>以每个整点为基准配置 Sub2API 原生定时测试。账号测通后由上游自动恢复可恢复运行态，恢复成功会推送 Telegram。</p>
   </div>
   <form class="scheduled-filter-bar" method="get" action="{{ base_path }}/scheduled-tests">
-    <label>分组
-      <select name="group">
-        {% for item in groups %}
-          <option value="{{ item.name }}" {{ 'selected' if item.name == group else '' }}>{{ item.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    {{ group_picker(group_selection) }}
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>
@@ -152,7 +147,7 @@
                 <div class="scheduled-action-row">
                   {% if row.plan_id %}
                     <form method="post" action="{{ base_path }}/scheduled-tests/{{ row.plan_id }}/delete">
-                      <input type="hidden" name="group" value="{{ group }}" />
+                      {{ group_hidden_inputs(group_selection) }}
                       <input type="hidden" name="platform" value="{{ platform }}" />
                       <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
                       <button type="submit">删除计划</button>
@@ -167,7 +162,7 @@
 
               <form class="scheduled-plan-editor" method="post" action="{{ base_path }}/scheduled-tests">
                 <input type="hidden" name="account_id" value="{{ row.id }}" />
-                <input type="hidden" name="group" value="{{ group }}" />
+                {{ group_hidden_inputs(group_selection) }}
                 <input type="hidden" name="platform" value="{{ platform }}" />
                 <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
 
