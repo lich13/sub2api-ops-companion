@@ -17,12 +17,12 @@ class GroupSelectionTests(unittest.TestCase):
             {"name": "anthropic-default", "platform": "anthropic"},
         ]
 
-    def test_defaults_to_default_group(self) -> None:
+    def test_missing_group_defaults_to_all_groups_for_panel_navigation(self) -> None:
         selection = build_group_selection([], self.groups)
 
-        self.assertEqual(selection["selected"], ["openai-default"])
-        self.assertEqual(selection["label"], "默认分组")
-        self.assertEqual(selection["form_values"], ["openai-default"])
+        self.assertEqual(selection["selected"], ["openai-default", "openai-backup", "anthropic-default"])
+        self.assertEqual(selection["label"], "全部分组")
+        self.assertEqual(selection["form_values"], [ALL_GROUP_VALUE])
 
     def test_all_group_value_selects_every_group(self) -> None:
         selection = build_group_selection([ALL_GROUP_VALUE], self.groups)
