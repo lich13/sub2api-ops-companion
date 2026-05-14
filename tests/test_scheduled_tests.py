@@ -98,7 +98,10 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertIn("scheduled-command-deck", page)
         self.assertIn("scheduled-account-card", page)
         self.assertIn("schedule-option-grid", page)
+        self.assertIn("schedule-options.js", base)
+        self.assertIn("data-schedule-option", page)
         self.assertIn('type="radio" name="interval_minutes"', page)
+        self.assertNotIn("schedule-option {{ 'selected'", page)
         self.assertNotIn("scheduled-test-table", page)
 
 

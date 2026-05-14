@@ -181,7 +181,7 @@
                   </div>
                   <div class="schedule-option-grid">
                     {% for option in interval_options %}
-                      <label class="schedule-option {{ 'selected' if option.minutes == row.plan_interval_minutes else '' }}">
+                      <label class="schedule-option" data-schedule-option>
                         <input type="radio" name="interval_minutes" value="{{ option.minutes }}" {{ 'checked' if option.minutes == row.plan_interval_minutes else '' }} />
                         <span class="schedule-option-main">{{ option.label }}</span>
                         {% if option.minutes == 60 %}
