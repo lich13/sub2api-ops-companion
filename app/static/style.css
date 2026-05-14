@@ -1103,6 +1103,111 @@ dd {
   min-width: 520px;
 }
 
+.scheduled-test-table {
+  min-width: 1320px;
+}
+
+.scheduled-test-table th:nth-child(1),
+.scheduled-test-table td:nth-child(1) {
+  min-width: 250px;
+}
+
+.scheduled-test-table th:nth-child(2),
+.scheduled-test-table td:nth-child(2) {
+  min-width: 220px;
+}
+
+.scheduled-test-table th:nth-child(3),
+.scheduled-test-table td:nth-child(3) {
+  min-width: 420px;
+}
+
+.scheduled-test-table th:nth-child(4),
+.scheduled-test-table td:nth-child(4) {
+  min-width: 250px;
+}
+
+.scheduled-result-table {
+  min-width: 1060px;
+}
+
+.scheduled-result-table th:nth-child(5),
+.scheduled-result-table td:nth-child(5) {
+  min-width: 520px;
+}
+
+.scheduled-plan-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 140px 110px;
+  gap: 10px;
+  align-items: end;
+}
+
+.scheduled-plan-form label {
+  min-width: 0;
+}
+
+.scheduled-plan-form input,
+.scheduled-plan-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.checkbox-label input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.inline-checkbox {
+  align-self: center;
+  padding-bottom: 2px;
+}
+
+.reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.result-card {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.result-card.good {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: rgba(22, 163, 74, 0.06);
+}
+
+.result-card.bad {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.result-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .table-toolbar {
   align-items: center;
 }
@@ -1521,6 +1626,12 @@ dd {
   background: #fff1f2;
 }
 
+.pill.muted {
+  color: var(--muted);
+  border-color: var(--border);
+  background: #f3f4f6;
+}
+
 .muted-pill {
   color: var(--muted);
   background: #f3f4f6;
@@ -1875,6 +1986,10 @@ pre {
   .telegram-config-form {
     grid-template-columns: 1fr auto;
   }
+
+  .scheduled-plan-form {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1896,6 +2011,10 @@ pre {
   }
 
   .telegram-config-form {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduled-plan-form {
     grid-template-columns: 1fr;
   }
 

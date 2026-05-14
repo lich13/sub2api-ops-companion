@@ -551,3 +551,242 @@ WHERE deleted_at IS NULL
   AND (%(platform)s = '' OR platform = %(platform)s)
 ORDER BY platform, priority, id;
 """
+
+
+SCHEDULED_TEST_CAPABILITY_SQL = """
+SELECT
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'scheduled_test_plans'
+  ) AS plans_table_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'scheduled_test_results'
+  ) AS results_table_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'scheduled_test_plans'
+      AND column_name = 'auto_recover'
+  ) AS auto_recover_column_exists;
+"""
+
+
+SCHEDULED_TEST_ACCOUNTS_SQL = """
+WITH scoped_accounts AS (
+  SELECT DISTINCT ON (a.id)
+    a.id,
+    a.name,
+    a.platform,
+    a.type,
+    a.status,
+    a.schedulable,
+    a.priority AS account_priority,
+    ag.priority AS group_priority,
+    g.name AS group_name,
+    a.concurrency,
+    a.updated_at,
+    a.error_message,
+    a.rate_limited_at,
+    a.rate_limit_reset_at,
+    a.overload_until,
+    a.temp_unschedulable_until,
+    a.temp_unschedulable_reason,
+    CASE WHEN a.status <> 'active'
+      OR a.schedulable = false
+      OR a.rate_limited_at IS NOT NULL
+      OR a.rate_limit_reset_at IS NOT NULL
+      OR a.overload_until IS NOT NULL
+      OR a.temp_unschedulable_until IS NOT NULL
+      OR coalesce(a.error_message, '') <> ''
+    THEN true ELSE false END AS has_recoverable_signal
+  FROM accounts a
+  LEFT JOIN account_groups ag ON ag.account_id = a.id
+  LEFT JOIN groups g ON g.id = ag.group_id
+  WHERE a.deleted_at IS NULL
+    AND (%(platform)s = '' OR a.platform = %(platform)s)
+    AND (%(group_name)s = '' OR g.name = %(group_name)s)
+  ORDER BY a.id, ag.priority NULLS LAST, g.name NULLS LAST
+),
+plans AS (
+  SELECT DISTINCT ON (account_id)
+    id,
+    account_id,
+    model_id,
+    cron_expression,
+    enabled,
+    max_results,
+    auto_recover,
+    last_run_at,
+    next_run_at,
+    created_at,
+    updated_at
+  FROM scheduled_test_plans
+  ORDER BY account_id, enabled DESC, updated_at DESC, id DESC
+),
+last_results AS (
+  SELECT DISTINCT ON (p.account_id)
+    p.account_id,
+    r.id AS result_id,
+    r.status AS result_status,
+    r.response_text AS result_response_text,
+    r.error_message AS result_error_message,
+    r.latency_ms AS result_latency_ms,
+    r.started_at AS result_started_at,
+    r.finished_at AS result_finished_at,
+    r.created_at AS result_created_at
+  FROM scheduled_test_plans p
+  JOIN scheduled_test_results r ON r.plan_id = p.id
+  ORDER BY p.account_id, r.created_at DESC, r.id DESC
+)
+SELECT
+  sa.*,
+  p.id AS plan_id,
+  p.model_id AS plan_model_id,
+  p.cron_expression AS plan_cron_expression,
+  p.enabled AS plan_enabled,
+  p.max_results AS plan_max_results,
+  p.auto_recover AS plan_auto_recover,
+  p.last_run_at AS plan_last_run_at,
+  p.next_run_at AS plan_next_run_at,
+  p.created_at AS plan_created_at,
+  p.updated_at AS plan_updated_at,
+  lr.result_id,
+  lr.result_status,
+  left(replace(coalesce(lr.result_response_text, ''), E'\\n', ' '), 500) AS result_response_text,
+  left(replace(coalesce(lr.result_error_message, ''), E'\\n', ' '), 800) AS result_error_message,
+  lr.result_latency_ms,
+  lr.result_started_at,
+  lr.result_finished_at,
+  lr.result_created_at
+FROM scoped_accounts sa
+LEFT JOIN plans p ON p.account_id = sa.id
+LEFT JOIN last_results lr ON lr.account_id = sa.id
+WHERE %(include_all)s::boolean = true
+  OR p.id IS NOT NULL
+  OR sa.has_recoverable_signal = true
+ORDER BY
+  sa.has_recoverable_signal DESC,
+  p.enabled DESC NULLS LAST,
+  sa.group_priority NULLS LAST,
+  sa.account_priority NULLS LAST,
+  sa.id;
+"""
+
+
+SCHEDULED_TEST_UPSERT_SQL = """
+WITH existing AS (
+  SELECT id
+  FROM scheduled_test_plans
+  WHERE account_id = %(account_id)s::bigint
+  ORDER BY enabled DESC, updated_at DESC, id DESC
+  LIMIT 1
+),
+updated AS (
+  UPDATE scheduled_test_plans p
+  SET model_id = %(model_id)s,
+      cron_expression = %(cron_expression)s,
+      enabled = %(enabled)s::boolean,
+      max_results = %(max_results)s::int,
+      auto_recover = %(auto_recover)s::boolean,
+      next_run_at = %(next_run_at)s::timestamptz,
+      updated_at = now()
+  FROM existing e
+  WHERE p.id = e.id
+  RETURNING p.id, p.account_id, p.model_id, p.cron_expression, p.enabled, p.max_results, p.auto_recover, p.last_run_at, p.next_run_at, p.created_at, p.updated_at
+),
+inserted AS (
+  INSERT INTO scheduled_test_plans (account_id, model_id, cron_expression, enabled, max_results, auto_recover, next_run_at, created_at, updated_at)
+  SELECT
+    %(account_id)s::bigint,
+    %(model_id)s,
+    %(cron_expression)s,
+    %(enabled)s::boolean,
+    %(max_results)s::int,
+    %(auto_recover)s::boolean,
+    %(next_run_at)s::timestamptz,
+    now(),
+    now()
+  WHERE NOT EXISTS (SELECT 1 FROM updated)
+  RETURNING id, account_id, model_id, cron_expression, enabled, max_results, auto_recover, last_run_at, next_run_at, created_at, updated_at
+)
+SELECT *
+FROM updated
+UNION ALL
+SELECT *
+FROM inserted;
+"""
+
+
+SCHEDULED_TEST_DELETE_SQL = """
+DELETE FROM scheduled_test_plans
+WHERE id = %(plan_id)s::bigint
+RETURNING id, account_id;
+"""
+
+
+SCHEDULED_TEST_RESULTS_SQL = """
+SELECT
+  r.id,
+  r.plan_id,
+  p.account_id,
+  a.name AS account_name,
+  r.status,
+  left(replace(coalesce(r.response_text, ''), E'\\n', ' '), 800) AS response_text,
+  left(replace(coalesce(r.error_message, ''), E'\\n', ' '), 1200) AS error_message,
+  r.latency_ms,
+  r.started_at,
+  r.finished_at,
+  r.created_at
+FROM scheduled_test_results r
+JOIN scheduled_test_plans p ON p.id = r.plan_id
+JOIN accounts a ON a.id = p.account_id
+WHERE (%(plan_id)s::bigint IS NULL OR r.plan_id = %(plan_id)s::bigint)
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT %(limit)s::int;
+"""
+
+
+SCHEDULED_TEST_RECOVERY_ALERTS_SQL = """
+SELECT
+  r.id AS result_id,
+  r.plan_id,
+  r.status AS result_status,
+  r.latency_ms,
+  r.started_at,
+  r.finished_at,
+  r.created_at,
+  p.account_id,
+  p.model_id,
+  p.cron_expression,
+  p.auto_recover,
+  a.id,
+  a.name AS account_name,
+  a.platform,
+  a.type,
+  a.status AS account_status,
+  a.schedulable,
+  a.updated_at AS account_updated_at,
+  a.error_message,
+  a.rate_limited_at,
+  a.rate_limit_reset_at,
+  a.overload_until,
+  a.temp_unschedulable_until,
+  a.temp_unschedulable_reason
+FROM scheduled_test_results r
+JOIN scheduled_test_plans p ON p.id = r.plan_id
+JOIN accounts a ON a.id = p.account_id
+WHERE r.id > %(cursor_id)s::bigint
+  AND p.auto_recover = true
+  AND r.status = 'success'
+  AND r.created_at <= now() - interval '5 seconds'
+  AND a.updated_at >= r.started_at - interval '5 seconds'
+  AND a.updated_at <= COALESCE(r.finished_at, r.created_at) + interval '45 seconds'
+ORDER BY r.id ASC
+LIMIT %(limit)s::int;
+"""

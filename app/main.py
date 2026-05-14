@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
@@ -30,7 +30,20 @@ from .sql import (
     PLATFORM_OPTIONS_SQL,
     QUALITY_SQL,
     REQUESTS_SQL,
+    SCHEDULED_TEST_ACCOUNTS_SQL,
+    SCHEDULED_TEST_CAPABILITY_SQL,
+    SCHEDULED_TEST_DELETE_SQL,
+    SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
+    SCHEDULED_TEST_RESULTS_SQL,
+    SCHEDULED_TEST_UPSERT_SQL,
     TELEGRAM_ERROR_ALERTS_SQL,
+)
+from .scheduled_tests import (
+    interval_from_cron,
+    interval_options,
+    next_aligned_run,
+    normalize_interval_minutes,
+    schedule_cron,
 )
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
@@ -52,6 +65,7 @@ guard_state: dict[str, Any] = {
 telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
 telegram_error_alert_task: asyncio.Task[None] | None = None
+telegram_recovery_alert_task: asyncio.Task[None] | None = None
 TELEGRAM_PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -100,13 +114,14 @@ templates.env.filters["int_commas"] = integer_with_commas
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global telegram_bot, telegram_task, telegram_error_alert_task
+    global telegram_bot, telegram_task, telegram_error_alert_task, telegram_recovery_alert_task
     db.open()
     guard_task: asyncio.Task[None] | None = None
     await restart_telegram_bot()
     if settings.guard_enabled:
         guard_task = asyncio.create_task(auto_guard_loop())
     telegram_error_alert_task = asyncio.create_task(telegram_error_alert_loop())
+    telegram_recovery_alert_task = asyncio.create_task(telegram_recovery_alert_loop())
     try:
         yield
     finally:
@@ -124,6 +139,11 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await telegram_error_alert_task
             telegram_error_alert_task = None
+        if telegram_recovery_alert_task:
+            telegram_recovery_alert_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await telegram_recovery_alert_task
+            telegram_recovery_alert_task = None
         telegram_bot = None
         db.close()
 
@@ -237,6 +257,82 @@ def load_quality(
         QUALITY_SQL,
         {"group_name": group_name, "platform": platform, "range_start": range_start, "range_end": range_end},
     )
+
+
+def form_truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def scheduled_test_capability() -> dict[str, Any]:
+    row = db.fetch_one(SCHEDULED_TEST_CAPABILITY_SQL) or {}
+    available = bool(
+        row.get("plans_table_exists")
+        and row.get("results_table_exists")
+        and row.get("auto_recover_column_exists")
+    )
+    return {
+        **row,
+        "available": available,
+        "message": ""
+        if available
+        else "当前 Sub2API 数据库缺少 scheduled_test_plans/results 或 auto_recover 字段，请先确认上游迁移已执行。",
+    }
+
+
+def scheduled_test_reasons(row: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if row.get("status") and row.get("status") != "active":
+        reasons.append(f"状态 {row.get('status')}")
+    if not row.get("schedulable", True):
+        reasons.append("已停调度")
+    if account_ops.is_cooling(row):
+        reasons.append("临时冷却")
+    if row.get("rate_limited_at") or row.get("rate_limit_reset_at"):
+        reasons.append("限流状态")
+    if row.get("overload_until"):
+        reasons.append("过载状态")
+    if row.get("error_message"):
+        reasons.append("错误状态")
+    return reasons
+
+
+def load_scheduled_test_accounts(group_name: str, platform: str, include_all: bool) -> list[dict[str, Any]]:
+    rows = db.fetch_all(
+        SCHEDULED_TEST_ACCOUNTS_SQL,
+        {"group_name": group_name, "platform": platform, "include_all": include_all},
+    )
+    for row in rows:
+        row["plan_interval_minutes"] = interval_from_cron(row.get("plan_cron_expression") or "")
+        row["state_label"] = account_ops.account_state(row)
+        row["recovery_reasons"] = scheduled_test_reasons(row)
+        row["has_plan"] = bool(row.get("plan_id"))
+    return rows
+
+
+def load_scheduled_test_results(plan_id: int | None = None, limit: int = 30) -> list[dict[str, Any]]:
+    return db.fetch_all(
+        SCHEDULED_TEST_RESULTS_SQL,
+        {"plan_id": plan_id, "limit": int_param(str(limit), 30, 1, 100)},
+    )
+
+
+def scheduled_test_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "shown_count": len(rows),
+        "recoverable_count": sum(1 for row in rows if row.get("has_recoverable_signal")),
+        "plan_count": sum(1 for row in rows if row.get("plan_id")),
+        "enabled_count": sum(1 for row in rows if row.get("plan_enabled")),
+        "auto_recover_count": sum(1 for row in rows if row.get("plan_auto_recover")),
+    }
+
+
+def scheduled_tests_url(group: str, platform: str, include_all: bool, msg: str = "") -> str:
+    query = {"group": group, "platform": platform}
+    if include_all:
+        query["include_all"] = "1"
+    if msg:
+        query["msg"] = msg
+    return f"{settings.base_path}/scheduled-tests?{urlencode(query)}"
 
 
 def guard_config() -> dict[str, Any]:
@@ -487,6 +583,24 @@ def load_telegram_error_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
     )
 
 
+def current_scheduled_test_result_id() -> int:
+    capability = scheduled_test_capability()
+    if not capability["available"]:
+        return 0
+    row = db.fetch_one("SELECT COALESCE(max(id), 0) AS cursor_id FROM scheduled_test_results")
+    return int((row or {}).get("cursor_id") or 0)
+
+
+def load_scheduled_test_recovery_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
+    return db.fetch_all(
+        SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
+        {
+            "cursor_id": max(0, int(cursor_id or 0)),
+            "limit": settings.telegram_error_alert_batch_size,
+        },
+    )
+
+
 async def notify_telegram(text: str) -> None:
     if telegram_bot is None:
         return
@@ -503,6 +617,34 @@ async def notify_telegram_account_alerts(title: str, actions: list[dict[str, Any
         await telegram_bot.notify_account_alerts(title, actions)
     except Exception:
         return
+
+
+async def telegram_recovery_alert_loop() -> None:
+    while True:
+        try:
+            bot = telegram_bot
+            if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
+                cursor_id = await bot.recovery_alert_cursor_id()
+                if cursor_id <= 0:
+                    await bot.set_recovery_alert_cursor_id(await asyncio.to_thread(current_scheduled_test_result_id))
+                else:
+                    rows = await asyncio.to_thread(load_scheduled_test_recovery_alert_rows, cursor_id)
+                    if rows:
+                        next_cursor = max(int(row.get("result_id") or cursor_id) for row in rows)
+                        await bot.notify_recovery_alerts(rows)
+                        write_audit(
+                            settings.audit_path,
+                            "telegram_scheduled_test_recovery_push",
+                            {
+                                "row_count": len(rows),
+                                "from_cursor_id": cursor_id,
+                                "to_cursor_id": next_cursor,
+                            },
+                        )
+                        await bot.set_recovery_alert_cursor_id(next_cursor)
+        except Exception as exc:
+            write_audit(settings.audit_path, "telegram_scheduled_test_recovery_error", {"error": str(exc)})
+        await asyncio.sleep(settings.telegram_error_alert_interval_seconds)
 
 
 async def telegram_error_alert_loop() -> None:
@@ -779,6 +921,104 @@ def speed_view(
             "dashboard": build_speed_dashboard(rows),
             "msg": msg,
         },
+    )
+
+
+@app.get("/scheduled-tests", response_class=HTMLResponse)
+def scheduled_tests_view(
+    request: Request,
+    _: AuthUser,
+    group: str = "openai-default",
+    platform: str = "openai",
+    include_all: str = "",
+    msg: str = "",
+) -> HTMLResponse:
+    capability = scheduled_test_capability()
+    include_all_flag = form_truthy(include_all)
+    rows: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    if capability["available"]:
+        rows = load_scheduled_test_accounts(group, platform, include_all_flag)
+        results = load_scheduled_test_results(limit=30)
+    return render(
+        request,
+        "scheduled_tests.html",
+        {
+            "active": "scheduled_tests",
+            "group": group,
+            "platform": platform,
+            "include_all": include_all_flag,
+            "groups": load_groups(),
+            "platform_options": load_platform_options(),
+            "capability": capability,
+            "rows": rows,
+            "results": results,
+            "dashboard": scheduled_test_dashboard(rows),
+            "interval_options": interval_options(),
+            "msg": msg,
+        },
+    )
+
+
+@app.post("/scheduled-tests")
+def scheduled_test_save(
+    user: AuthUser,
+    account_id: int = Form(...),
+    model_id: str = Form(""),
+    interval_minutes: str = Form("30"),
+    enabled: str | None = Form(None),
+    auto_recover: str | None = Form(None),
+    max_results: int = Form(50),
+    group: str = Form("openai-default"),
+    platform: str = Form("openai"),
+    include_all: str = Form(""),
+) -> Response:
+    capability = scheduled_test_capability()
+    include_all_flag = form_truthy(include_all)
+    if not capability["available"]:
+        return RedirectResponse(
+            scheduled_tests_url(group, platform, include_all_flag, "上游定时测试表未就绪"),
+            status_code=303,
+        )
+
+    interval = normalize_interval_minutes(interval_minutes)
+    next_run_at = next_aligned_run(datetime.now(timezone.utc), interval)
+    row = db.fetch_one(
+        SCHEDULED_TEST_UPSERT_SQL,
+        {
+            "account_id": account_id,
+            "model_id": model_id.strip(),
+            "cron_expression": schedule_cron(interval),
+            "enabled": form_truthy(enabled),
+            "max_results": int_param(str(max_results), 50, 1, 500),
+            "auto_recover": form_truthy(auto_recover),
+            "next_run_at": next_run_at,
+        },
+    )
+    write_audit(
+        settings.audit_path,
+        "scheduled_test_plan_save",
+        {"user": user, "account_id": account_id, "plan": row, "interval_minutes": interval},
+    )
+    return RedirectResponse(
+        scheduled_tests_url(group, platform, include_all_flag, f"已保存账号 #{account_id} 的定时恢复计划"),
+        status_code=303,
+    )
+
+
+@app.post("/scheduled-tests/{plan_id}/delete")
+def scheduled_test_delete(
+    user: AuthUser,
+    plan_id: int,
+    group: str = Form("openai-default"),
+    platform: str = Form("openai"),
+    include_all: str = Form(""),
+) -> Response:
+    row = db.fetch_one(SCHEDULED_TEST_DELETE_SQL, {"plan_id": plan_id})
+    write_audit(settings.audit_path, "scheduled_test_plan_delete", {"user": user, "plan_id": plan_id, "plan": row})
+    return RedirectResponse(
+        scheduled_tests_url(group, platform, form_truthy(include_all), f"已删除定时恢复计划 #{plan_id}"),
+        status_code=303,
     )
 
 

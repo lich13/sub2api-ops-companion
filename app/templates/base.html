@@ -55,6 +55,7 @@
             <a class="{{ 'active' if active == 'stability' else '' }}" href="{{ base_path }}/">账号稳定性</a>
             <a class="{{ 'active' if active == 'speed' else '' }}" href="{{ base_path }}/speed">账号速度</a>
             <a class="{{ 'active' if active == 'requests' else '' }}" href="{{ base_path }}/requests">错误链路</a>
+            <a class="{{ 'active' if active == 'scheduled_tests' else '' }}" href="{{ base_path }}/scheduled-tests">定时恢复</a>
             <a class="{{ 'active' if active == 'guard' else '' }}" href="{{ base_path }}/guard">自动 Guard</a>
             <a class="{{ 'active' if active == 'telegram' else '' }}" href="{{ base_path }}/telegram">Telegram</a>
             <form method="post" action="{{ base_path }}/logout">

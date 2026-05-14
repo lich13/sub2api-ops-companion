@@ -109,6 +109,23 @@ class TelegramOpsBot:
             for chat_id in chat_ids:
                 await self._send_message(chat_id, alert_text, keyboard)
 
+    async def notify_recovery_alerts(self, rows: list[dict[str, Any]]) -> None:
+        if not self.enabled:
+            return
+        chat_ids = await self.allowed_chat_ids()
+        if not chat_ids:
+            return
+        for row in rows:
+            try:
+                account_id = parse_account_id(row.get("account_id") or row.get("id") or "")
+            except ValueError:
+                continue
+            detail = await asyncio.to_thread(self._account_detail, account_id)
+            alert_text = recovery_alert(row, detail)
+            keyboard = account_actions_keyboard(detail or row)
+            for chat_id in chat_ids:
+                await self._send_message(chat_id, alert_text, keyboard)
+
     async def allowed_chat_ids(self) -> list[int]:
         state = await self._load_state()
         return unique_ints(list(self.settings.telegram_allowed_chat_ids) + list(state.get("paired_chat_ids") or []))
@@ -125,6 +142,20 @@ class TelegramOpsBot:
             state = await self._load_state_unlocked()
             state["error_alert_cursor_id"] = max(0, int(cursor_id or 0))
             state["error_alert_cursor_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+            await asyncio.to_thread(self._save_state_sync, state)
+
+    async def recovery_alert_cursor_id(self) -> int:
+        state = await self._load_state()
+        try:
+            return max(0, int(state.get("recovery_alert_cursor_id") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    async def set_recovery_alert_cursor_id(self, cursor_id: int) -> None:
+        async with self._state_lock:
+            state = await self._load_state_unlocked()
+            state["recovery_alert_cursor_id"] = max(0, int(cursor_id or 0))
+            state["recovery_alert_cursor_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
             await asyncio.to_thread(self._save_state_sync, state)
 
     async def _handle_update(self, update: dict[str, Any]) -> None:
@@ -725,6 +756,26 @@ def error_chain_alert(row: dict[str, Any], account: dict[str, Any] | None) -> st
     return "\n".join(lines)
 
 
+def recovery_alert(row: dict[str, Any], account: dict[str, Any] | None = None) -> str:
+    account_id = row.get("account_id") or row.get("id") or (account or {}).get("id") or "-"
+    account_name = row.get("account_name") or row.get("name") or (account or {}).get("name") or "-"
+    latency_ms = row.get("latency_ms") or row.get("result_latency_ms")
+    lines = [
+        "账号已自动恢复",
+        f"账号：#{account_id} {account_name}",
+        f"平台/类型：{row.get('platform') or (account or {}).get('platform') or '-'} / {row.get('type') or (account or {}).get('type') or '-'}",
+        f"测试模型：{row.get('model_id') or row.get('plan_model_id') or 'Sub2API 默认'}",
+        f"计划：{row.get('cron_expression') or row.get('plan_cron_expression') or '-'}",
+    ]
+    if latency_ms not in (None, ""):
+        lines.append(f"测试耗时：{format_seconds(latency_ms)}")
+    if row.get("finished_at") or row.get("created_at"):
+        lines.append(f"恢复时间：{bj_time(row.get('finished_at') or row.get('created_at'))}")
+    if account:
+        lines.append(f"当前状态：{account_ops.account_state(account)}")
+    return "\n".join(lines)
+
+
 def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     lines = [title]
     for item in actions[:10]:
@@ -800,6 +851,14 @@ def actor(chat_id: int, user_id: int, label_name: str = "control") -> str:
 
 def label(text: str, count: int | None) -> str:
     return f"{text} {count}" if count is not None else text
+
+
+def format_seconds(value: Any) -> str:
+    try:
+        seconds = float(value) / 1000
+    except (TypeError, ValueError):
+        return "-"
+    return f"{seconds:.2f}s"
 
 
 def unique_ints(values: list[Any]) -> list[int]:
