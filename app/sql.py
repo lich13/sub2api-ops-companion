@@ -130,6 +130,8 @@ classified AS (
         OR search_text ILIKE '%%insufficient%%balance%%'
         OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
         OR search_text ILIKE '%%not enough credits%%'
+        OR search_text ILIKE '%%pre_consume_token_quota_failed%%'
+        OR search_text ILIKE '%%token quota is not enough%%'
         OR search_text ILIKE '%%quota exceeded%%' THEN 'provider_balance_or_quota'
       WHEN status_code = 403 AND search_text ILIKE '%%blocked%%' THEN 'provider_blocked_403'
       WHEN status_code = 429
@@ -385,6 +387,8 @@ classified AS (
         OR search_text ILIKE '%%insufficient%%balance%%'
         OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
         OR search_text ILIKE '%%not enough credits%%'
+        OR search_text ILIKE '%%pre_consume_token_quota_failed%%'
+        OR search_text ILIKE '%%token quota is not enough%%'
         OR search_text ILIKE '%%quota exceeded%%' THEN 'provider_balance_or_quota'
       WHEN status_code = 403 AND search_text ILIKE '%%blocked%%' THEN 'provider_blocked_403'
       WHEN status_code = 429
@@ -483,6 +487,8 @@ balance_errors AS (
       OR search_text ILIKE '%%insufficient%%balance%%'
       OR search_text ILIKE '%%INSUFFICIENT_BALANCE%%'
       OR search_text ILIKE '%%not enough credits%%'
+      OR search_text ILIKE '%%pre_consume_token_quota_failed%%'
+      OR search_text ILIKE '%%token quota is not enough%%'
       OR search_text ILIKE '%%quota exceeded%%'
     )
 ),

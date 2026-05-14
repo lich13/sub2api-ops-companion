@@ -103,7 +103,7 @@ docker compose up -d --build
 计入账号质量问题：
 
 - `403` 且消息包含 `blocked`。
-- 余额或额度类错误，例如 `insufficient_user_quota`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`insufficient balance`。
+- 余额或额度类错误，例如 `insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`insufficient balance`。
 - `429`、`rate limit`、`Too many pending requests`。
 - `500` 到 `599`。
 - 流式截断或终止事件缺失，例如 `stream ended before a terminal event`。
@@ -126,4 +126,4 @@ docker compose up -d --build
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把可调度或临时冷却中的账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。
+自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把可调度或临时冷却中的账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。
