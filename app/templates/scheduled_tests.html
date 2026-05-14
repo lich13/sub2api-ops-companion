@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="page-title">
-  <div>
-    <h2>定时恢复</h2>
-    <p>给异常账号配置 Sub2API 原生定时测试：以每个整点为基准，默认档位为每小时、每30分钟、每15分钟、每5分钟；测试通过后自动恢复可恢复运行态。</p>
+<section class="scheduled-hero">
+  <div class="scheduled-hero-copy">
+    <span class="scheduled-eyebrow">Scheduled Recovery</span>
+    <h2>定时恢复控制台</h2>
+    <p>以每个整点为基准配置 Sub2API 原生定时测试。账号测通后由上游自动恢复可恢复运行态，恢复成功会推送 Telegram。</p>
   </div>
-  <form class="filters inline" method="get" action="{{ base_path }}/scheduled-tests">
+  <form class="scheduled-filter-bar" method="get" action="{{ base_path }}/scheduled-tests">
     <label>分组
       <select name="group">
         {% for item in groups %}
@@ -16,7 +17,7 @@
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>
-    <label class="checkbox-label inline-checkbox">
+    <label class="checkbox-label scheduled-filter-check">
       <input type="checkbox" name="include_all" value="1" {{ 'checked' if include_all else '' }} />
       <span>显示全部账号</span>
     </label>
@@ -29,122 +30,109 @@
     {{ capability.message }}
   </section>
 {% else %}
-  <section class="metric-strip">
-    <div class="metric-card">
-      <span>当前展示</span>
-      <strong>{{ dashboard.shown_count }}</strong>
-    </div>
-    <div class="metric-card {{ 'danger' if dashboard.recoverable_count > 0 else '' }}">
-      <span>异常信号</span>
-      <strong>{{ dashboard.recoverable_count }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>已有计划</span>
-      <strong>{{ dashboard.plan_count }}</strong>
-    </div>
-    <div class="metric-card {{ 'warning' if dashboard.enabled_count > 0 else '' }}">
-      <span>启用中</span>
-      <strong>{{ dashboard.enabled_count }}</strong>
-    </div>
-    <div class="metric-card {{ 'warning' if dashboard.auto_recover_count > 0 else '' }}">
-      <span>自动恢复</span>
-      <strong>{{ dashboard.auto_recover_count }}</strong>
-    </div>
-  </section>
-
-  <section class="panel compact-panel">
-    <h3>执行边界</h3>
-    <p>定时计划写入上游 `scheduled_test_plans`，由 Sub2API runner 执行。`auto_recover` 开启后，测试成功会清理上游可恢复状态：error、rate-limit、overload、临时不可调度和模型级限流；手动永久停调度仍需要人工恢复。恢复成功会推送 Telegram，并附带账号操作按钮。</p>
-  </section>
-
-  <section class="panel table-panel">
-    <div class="section-head table-toolbar">
+  <section class="scheduled-command-deck">
+    <div class="scheduled-deck-head">
       <div>
-        <h3>账号定时测试计划</h3>
-        <p>默认只显示异常账号和已有计划；留空模型时使用 Sub2API 当前平台默认测试模型。</p>
+        <span class="scheduled-eyebrow">Runner Plan</span>
+        <h3>整点对齐的自动恢复计划</h3>
+        <p>计划写入上游 <code>scheduled_test_plans</code>，runner 到点执行。留空模型时使用 Sub2API 平台默认测试模型。</p>
+      </div>
+      <div class="scheduled-summary-grid">
+        <div><span>展示</span><strong>{{ dashboard.shown_count }}</strong></div>
+        <div><span>异常</span><strong>{{ dashboard.recoverable_count }}</strong></div>
+        <div><span>计划</span><strong>{{ dashboard.plan_count }}</strong></div>
+        <div><span>启用</span><strong>{{ dashboard.enabled_count }}</strong></div>
+        <div><span>恢复</span><strong>{{ dashboard.auto_recover_count }}</strong></div>
       </div>
     </div>
 
-    {% if rows %}
-      <div class="table-wrap">
-        <table class="data-table scheduled-test-table">
-          <thead>
-            <tr>
-              <th>账号</th>
-              <th>当前状态</th>
-              <th>计划配置</th>
-              <th>最近执行</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr class="{{ 'bad' if row.has_recoverable_signal else '' }}">
-                <td>
-                  <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
-                  <div class="cell-sub">{{ row.platform }} / {{ row.type }} / concurrency={{ row.concurrency }}</div>
-                  <div class="cell-sub mono tiny">G{{ row.group_priority or '-' }} / P{{ row.account_priority or '-' }}</div>
-                </td>
-                <td>
-                  {% if row.has_recoverable_signal %}
-                    <span class="pill bad">异常</span>
-                  {% else %}
-                    <span class="pill good">正常</span>
-                  {% endif %}
-                  <div class="cell-sub">调度：{{ row.state_label }}</div>
+    <div class="cadence-grid" aria-label="可选定时检测档位">
+      <div class="cadence-card">
+        <span>Hourly</span>
+        <strong>每小时</strong>
+        <em>00 分</em>
+      </div>
+      <div class="cadence-card">
+        <span>30 min</span>
+        <strong>每30分钟</strong>
+        <em>00 / 30 分</em>
+      </div>
+      <div class="cadence-card">
+        <span>15 min</span>
+        <strong>每15分钟</strong>
+        <em>00 / 15 / 30 / 45 分</em>
+      </div>
+      <div class="cadence-card">
+        <span>5 min</span>
+        <strong>每5分钟</strong>
+        <em>整点 5 分钟栅格</em>
+      </div>
+    </div>
+  </section>
+
+  <section class="scheduled-workbench">
+    <div class="scheduled-account-stream">
+      <div class="scheduled-section-title">
+        <div>
+          <h3>账号计划</h3>
+          <p>默认只列出异常账号和已有计划。左侧确认状态，右侧直接配置检测与恢复。</p>
+        </div>
+        <span class="scheduled-count">{{ rows | length }} 个账号</span>
+      </div>
+
+      {% if rows %}
+        {% for row in rows %}
+          <article class="scheduled-account-card {{ 'needs-recovery' if row.has_recoverable_signal else '' }}">
+            <div class="scheduled-account-head">
+              <div>
+                <span class="scheduled-account-id">#{{ row.id }}</span>
+                <h4>{{ row.name }}</h4>
+                <p>{{ row.platform }} / {{ row.type }} / concurrency={{ row.concurrency }} · G{{ row.group_priority or '-' }} / P{{ row.account_priority or '-' }}</p>
+              </div>
+              <div class="scheduled-state-stack">
+                {% if row.has_recoverable_signal %}
+                  <span class="pill bad">异常信号</span>
+                {% else %}
+                  <span class="pill good">运行正常</span>
+                {% endif %}
+                <span class="scheduled-state-text">{{ row.state_label }}</span>
+              </div>
+            </div>
+
+            <div class="scheduled-card-layout">
+              <aside class="scheduled-status-panel">
+                <div class="scheduled-reason-panel">
+                  <strong>{{ '需要恢复' if row.has_recoverable_signal else '状态可用' }}</strong>
                   {% if row.recovery_reasons %}
-                    <div class="reason-chips">
+                    <div class="reason-chips scheduled-reason-chips">
                       {% for reason in row.recovery_reasons %}
                         <span class="id-chip">{{ reason }}</span>
                       {% endfor %}
                     </div>
+                  {% else %}
+                    <p>当前没有可恢复异常信号。</p>
                   {% endif %}
                   {% if row.temp_unschedulable_reason %}
-                    <details class="inline-details">
+                    <details class="inline-details scheduled-reason-detail">
                       <summary>停调度原因</summary>
                       <pre>{{ row.temp_unschedulable_reason }}</pre>
                     </details>
                   {% endif %}
-                </td>
-                <td>
-                  <form class="scheduled-plan-form" method="post" action="{{ base_path }}/scheduled-tests">
-                    <input type="hidden" name="account_id" value="{{ row.id }}" />
-                    <input type="hidden" name="group" value="{{ group }}" />
-                    <input type="hidden" name="platform" value="{{ platform }}" />
-                    <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
-                    <label>模型
-                      <input name="model_id" value="{{ row.plan_model_id or '' }}" placeholder="留空=Sub2API 默认" />
-                    </label>
-                    <label>频率
-                      <select name="interval_minutes">
-                        {% for option in interval_options %}
-                          <option value="{{ option.minutes }}" {{ 'selected' if option.minutes == row.plan_interval_minutes else '' }}>{{ option.label }}</option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                    <label>保留结果
-                      <input name="max_results" value="{{ row.plan_max_results or 50 }}" />
-                    </label>
-                    <label class="checkbox-label">
-                      <input type="checkbox" name="enabled" value="1" {{ 'checked' if (not row.has_plan or row.plan_enabled) else '' }} />
-                      <span>启用计划</span>
-                    </label>
-                    <label class="checkbox-label">
-                      <input type="checkbox" name="auto_recover" value="1" {{ 'checked' if (not row.has_plan or row.plan_auto_recover) else '' }} />
-                      <span>测试通过后自动恢复</span>
-                    </label>
-                    <button class="primary" type="submit">{{ '保存计划' if row.has_plan else '创建计划' }}</button>
-                  </form>
-                </td>
-                <td>
+                </div>
+
+                <div class="scheduled-run-status">
                   {% if row.plan_id %}
-                    <div><span class="pill {{ 'good' if row.plan_enabled else 'muted' }}">{{ '启用' if row.plan_enabled else '停用' }}</span></div>
-                    <div class="cell-sub mono">cron={{ row.plan_cron_expression }}</div>
-                    <div class="cell-sub">下次：{{ row.plan_next_run_at | bj_time }}</div>
-                    <div class="cell-sub">上次：{{ row.plan_last_run_at | bj_time }}</div>
+                    <div>
+                      <span class="pill {{ 'good' if row.plan_enabled else 'muted' }}">{{ '启用中' if row.plan_enabled else '已停用' }}</span>
+                      <span class="pill {{ 'good' if row.plan_auto_recover else 'muted' }}">{{ '自动恢复' if row.plan_auto_recover else '只测试' }}</span>
+                    </div>
+                    <dl>
+                      <div><dt>上次</dt><dd>{{ row.plan_last_run_at | bj_time }}</dd></div>
+                      <div><dt>下次</dt><dd>{{ row.plan_next_run_at | bj_time }}</dd></div>
+                    </dl>
                     {% if row.result_id %}
                       <div class="result-card {{ 'bad' if row.result_status != 'success' else 'good' }}">
-                        <strong>{{ '成功' if row.result_status == 'success' else '失败' }}</strong>
+                        <strong>{{ '最近成功' if row.result_status == 'success' else '最近失败' }}</strong>
                         <span>{{ row.result_latency_ms or 0 }}ms / {{ row.result_created_at | bj_time }}</span>
                         {% if row.result_error_message %}
                           <details class="inline-details">
@@ -154,85 +142,136 @@
                         {% endif %}
                       </div>
                     {% else %}
-                      <div class="cell-sub">暂无执行结果</div>
+                      <span class="cell-sub">暂无执行结果</span>
                     {% endif %}
                   {% else %}
                     <span class="cell-sub">未创建计划</span>
                   {% endif %}
-                </td>
-                <td>
-                  <div class="actions compact-actions">
-                    {% if row.plan_id %}
-                      <form method="post" action="{{ base_path }}/scheduled-tests/{{ row.plan_id }}/delete">
-                        <input type="hidden" name="group" value="{{ group }}" />
-                        <input type="hidden" name="platform" value="{{ platform }}" />
-                        <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
-                        <button type="submit">删除计划</button>
-                      </form>
-                    {% endif %}
-                    <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/resume">
-                      <button type="submit">手动恢复</button>
-                    </form>
-                    <a class="button" href="{{ base_path }}/requests?platform={{ row.platform }}&account_id={{ row.id }}">错误链路</a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="empty-state">
-        <strong>没有异常账号或定时测试计划</strong>
-        <p>勾选“显示全部账号”后可以给任意账号预先创建自动恢复计划。</p>
-      </div>
-    {% endif %}
-  </section>
+                </div>
 
-  <section class="panel table-panel">
-    <div class="section-head">
-      <div>
-        <h3>最近定时测试结果</h3>
-        <p>来自上游 `scheduled_test_results`，用于确认 runner 是否真的执行。</p>
-      </div>
-    </div>
-    {% if results %}
-      <div class="table-wrap">
-        <table class="data-table scheduled-result-table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>账号</th>
-              <th>状态</th>
-              <th>耗时</th>
-              <th>内容</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in results %}
-              <tr class="{{ 'bad' if item.status != 'success' else '' }}">
-                <td class="mono nowrap">{{ item.created_at | bj_time }}</td>
-                <td>#{{ item.account_id }} {{ item.account_name }}</td>
-                <td>
-                  {% if item.status == "success" %}
-                    <span class="pill good">成功</span>
-                  {% else %}
-                    <span class="pill bad">失败</span>
+                <div class="scheduled-action-row">
+                  {% if row.plan_id %}
+                    <form method="post" action="{{ base_path }}/scheduled-tests/{{ row.plan_id }}/delete">
+                      <input type="hidden" name="group" value="{{ group }}" />
+                      <input type="hidden" name="platform" value="{{ platform }}" />
+                      <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
+                      <button type="submit">删除计划</button>
+                    </form>
                   {% endif %}
-                </td>
-                <td>{{ item.latency_ms or 0 }}ms</td>
-                <td class="message-preview">{{ item.error_message or item.response_text or '-' }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                  <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/resume">
+                    <button type="submit">手动恢复</button>
+                  </form>
+                  <a class="button" href="{{ base_path }}/requests?platform={{ row.platform }}&account_id={{ row.id }}">错误链路</a>
+                </div>
+              </aside>
+
+              <form class="scheduled-plan-editor" method="post" action="{{ base_path }}/scheduled-tests">
+                <input type="hidden" name="account_id" value="{{ row.id }}" />
+                <input type="hidden" name="group" value="{{ group }}" />
+                <input type="hidden" name="platform" value="{{ platform }}" />
+                <input type="hidden" name="include_all" value="{{ '1' if include_all else '' }}" />
+
+                <div class="scheduled-editor-grid">
+                  <label class="scheduled-field scheduled-field-model">测试模型
+                    <input name="model_id" value="{{ row.plan_model_id or '' }}" placeholder="留空=Sub2API 默认模型" />
+                  </label>
+                  <label class="scheduled-field scheduled-field-keep">结果保留
+                    <input name="max_results" value="{{ row.plan_max_results or 50 }}" inputmode="numeric" />
+                  </label>
+                </div>
+
+                <div class="frequency-section">
+                  <div class="frequency-head">
+                    <strong>检测频率</strong>
+                    <span>全部按整点分钟栅格对齐</span>
+                  </div>
+                  <div class="schedule-option-grid">
+                    {% for option in interval_options %}
+                      <label class="schedule-option {{ 'selected' if option.minutes == row.plan_interval_minutes else '' }}">
+                        <input type="radio" name="interval_minutes" value="{{ option.minutes }}" {{ 'checked' if option.minutes == row.plan_interval_minutes else '' }} />
+                        <span class="schedule-option-main">{{ option.label }}</span>
+                        {% if option.minutes == 60 %}
+                          <span class="schedule-option-sub">00 分执行</span>
+                        {% elif option.minutes == 30 %}
+                          <span class="schedule-option-sub">00 / 30</span>
+                        {% elif option.minutes == 15 %}
+                          <span class="schedule-option-sub">00 / 15 / 30 / 45</span>
+                        {% else %}
+                          <span class="schedule-option-sub">每 5 分钟</span>
+                        {% endif %}
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <div class="scheduled-toggle-grid">
+                  <label class="scheduled-toggle-card">
+                    <input type="checkbox" name="enabled" value="1" {{ 'checked' if (not row.has_plan or row.plan_enabled) else '' }} />
+                    <span>
+                      <strong>启用计划</strong>
+                      <em>到点后由 Sub2API runner 执行</em>
+                    </span>
+                  </label>
+                  <label class="scheduled-toggle-card accent">
+                    <input type="checkbox" name="auto_recover" value="1" {{ 'checked' if (not row.has_plan or row.plan_auto_recover) else '' }} />
+                    <span>
+                      <strong>测试通过后自动恢复</strong>
+                      <em>清理 error、限流、临时不可调度等运行态</em>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="scheduled-submit-row">
+                  <button class="primary" type="submit">{{ '保存计划' if row.has_plan else '创建计划' }}</button>
+                  {% if row.plan_id %}
+                    <span class="mono">cron={{ row.plan_cron_expression }} · next={{ row.plan_next_run_at | bj_time }}</span>
+                  {% else %}
+                    <span>保存后写入上游计划表，并自动计算下次执行时间。</span>
+                  {% endif %}
+                </div>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state scheduled-empty">
+          <strong>没有异常账号或定时测试计划</strong>
+          <p>勾选“显示全部账号”后可以给任意账号预先创建自动恢复计划。</p>
+        </div>
+      {% endif %}
+    </div>
+
+    <aside class="scheduled-result-dock">
+      <div class="scheduled-section-title compact">
+        <div>
+          <h3>最近结果</h3>
+          <p>确认 runner 是否真正执行。</p>
+        </div>
       </div>
-    {% else %}
-      <div class="empty-state">
-        <strong>暂无定时测试结果</strong>
-        <p>计划到点运行后会在这里出现执行记录。</p>
-      </div>
-    {% endif %}
+      {% if results %}
+        <div class="result-feed">
+          {% for item in results %}
+            <article class="result-feed-item {{ 'failed' if item.status != 'success' else '' }}">
+              <div>
+                {% if item.status == "success" %}
+                  <span class="pill good">成功</span>
+                {% else %}
+                  <span class="pill bad">失败</span>
+                {% endif %}
+                <strong>#{{ item.account_id }} {{ item.account_name }}</strong>
+              </div>
+              <p class="mono">{{ item.created_at | bj_time }} · {{ item.latency_ms or 0 }}ms</p>
+              <p>{{ item.error_message or item.response_text or '-' }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state scheduled-empty">
+          <strong>暂无定时测试结果</strong>
+          <p>计划到点运行后会在这里出现执行记录。</p>
+        </div>
+      {% endif %}
+    </aside>
   </section>
 {% endif %}
 {% endblock %}
