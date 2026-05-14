@@ -166,11 +166,13 @@
             <td data-col="actions">
               <div class="actions compact-actions">
                 {% if row.schedulable %}
-                  <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/cooldown">
-                    <input name="minutes" value="30" aria-label="冷却分钟" />
-                    <input type="hidden" name="reason" value="manual cooldown from ops companion" />
-                    <button type="submit">冷却</button>
-                  </form>
+                  {% for minutes in [5, 15, 30] %}
+                    <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/cooldown">
+                      <input type="hidden" name="minutes" value="{{ minutes }}" />
+                      <input type="hidden" name="reason" value="manual cooldown from ops companion" />
+                      <button type="submit">冷却 {{ minutes }}m</button>
+                    </form>
+                  {% endfor %}
                 {% endif %}
                 <a class="button" href="{{ base_path }}/requests?{{ requests_query }}&account_id={{ row.id }}">错误</a>
               </div>

@@ -85,6 +85,13 @@ class TimeRangeFilterTests(unittest.TestCase):
         self.assertIn("tokens/秒</th>", speed)
         self.assertNotIn("ms/token", speed)
 
+    def test_account_panel_uses_fixed_cooldown_presets(self) -> None:
+        stability = (REPO_ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("{% for minutes in [5, 15, 30] %}", stability)
+        self.assertIn("冷却 {{ minutes }}m", stability)
+        self.assertNotIn('name="minutes" value="30" aria-label="冷却分钟"', stability)
+
 
 if __name__ == "__main__":
     unittest.main()
