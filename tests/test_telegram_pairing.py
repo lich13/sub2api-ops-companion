@@ -23,7 +23,7 @@ sys.modules.setdefault("psycopg.rows", psycopg_rows)
 sys.modules.setdefault("psycopg_pool", psycopg_pool)
 
 from app.settings import Settings
-from app.telegram_bot import TelegramOpsBot, account_actions_keyboard, error_chain_alert, normalize_pairing_code
+from app.telegram_bot import TelegramOpsBot, account_actions_keyboard, error_chain_alert, normalize_pairing_code, recovery_alert
 
 
 async def guard_runner(_: str) -> list[dict[str, Any]]:
@@ -108,6 +108,17 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(await bot.error_alert_cursor_id(), 123)
 
+    async def test_recovery_alert_cursor_persists_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            self.assertEqual(await bot.recovery_alert_cursor_id(), 0)
+            await bot.set_error_alert_cursor_id(123)
+            await bot.set_recovery_alert_cursor_id(456)
+
+            self.assertEqual(await bot.error_alert_cursor_id(), 123)
+            self.assertEqual(await bot.recovery_alert_cursor_id(), 456)
+
     def test_error_chain_alert_includes_request_account_and_message(self) -> None:
         text = error_chain_alert(
             {
@@ -130,6 +141,25 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#7 acct", text)
         self.assertIn("provider_rate_limit", text)
         self.assertIn("rate limit exceeded", text)
+
+    def test_recovery_alert_includes_account_plan_and_latency(self) -> None:
+        text = recovery_alert(
+            {
+                "account_id": 7,
+                "account_name": "acct",
+                "platform": "openai",
+                "type": "oauth",
+                "model_id": "gpt-test",
+                "cron_expression": "*/5 * * * *",
+                "latency_ms": 2345,
+            }
+        )
+
+        self.assertIn("账号已自动恢复", text)
+        self.assertIn("#7 acct", text)
+        self.assertIn("openai / oauth", text)
+        self.assertIn("gpt-test", text)
+        self.assertIn("2.35s", text)
 
 
 if __name__ == "__main__":
