@@ -95,6 +95,11 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertIn("每5分钟", page)
         self.assertIn('name="auto_recover"', page)
         self.assertIn("恢复成功会推送 Telegram", page)
+        self.assertIn("scheduled-command-deck", page)
+        self.assertIn("scheduled-account-card", page)
+        self.assertIn("schedule-option-grid", page)
+        self.assertIn('type="radio" name="interval_minutes"', page)
+        self.assertNotIn("scheduled-test-table", page)
 
 
 if __name__ == "__main__":
