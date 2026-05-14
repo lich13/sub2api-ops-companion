@@ -483,23 +483,37 @@ select:focus {
   border-color: var(--primary);
 }
 
+.group-picker-field {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.group-picker-field > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .group-picker {
   position: relative;
-  min-width: 190px;
+  min-width: 0;
   margin: 0;
+  width: 100%;
 }
 
 .group-picker > summary {
-  display: grid;
-  gap: 5px;
+  display: flex;
+  align-items: center;
+  width: 100%;
   min-height: 38px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  padding: 7px 36px 7px 12px;
-  color: var(--muted);
+  padding: 8px 36px 8px 12px;
+  color: var(--text);
   background: var(--surface);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 650;
   list-style: none;
   cursor: pointer;
 }
@@ -521,8 +535,8 @@ select:focus {
 .group-picker > summary strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
-  line-height: 1.1;
+  font-size: 14px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -536,7 +550,7 @@ select:focus {
   position: absolute;
   left: 0;
   top: calc(100% + 10px);
-  z-index: 40;
+  z-index: 80;
   width: min(360px, calc(100vw - 40px));
   overflow: hidden;
   border: 1px solid var(--border);
@@ -611,6 +625,7 @@ select:focus {
 .time-range-picker {
   position: relative;
   margin: 0;
+  width: 100%;
 }
 
 .time-range-picker > summary {
@@ -618,6 +633,7 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
   min-width: 156px;
   min-height: 38px;
   border: 1px solid var(--border-strong);
@@ -1311,8 +1327,13 @@ dd {
   font-weight: 700;
 }
 
+.scheduled-filter-bar .group-picker-field,
 .scheduled-filter-bar .group-picker {
   min-width: 0;
+}
+
+.scheduled-filter-bar .group-picker-field > span {
+  color: var(--scheduled-muted);
 }
 
 .scheduled-filter-bar .group-picker > summary {
@@ -1361,13 +1382,13 @@ dd {
 
 .scheduled-filter-check {
   justify-content: center;
-  min-width: 132px;
+  min-width: auto;
   min-height: 38px;
-  border: 1px solid var(--scheduled-hairline);
-  border-radius: 10px;
+  border: 0;
+  border-radius: 8px;
   padding: 0 10px;
-  color: var(--scheduled-muted) !important;
-  background: var(--scheduled-surface-2);
+  color: var(--muted) !important;
+  background: transparent;
 }
 
 .scheduled-filter-check span {
@@ -1384,6 +1405,28 @@ dd {
   color: var(--scheduled-ink);
   background: var(--scheduled-surface);
   box-shadow: var(--shadow);
+}
+
+.scheduled-filters {
+  position: relative;
+  z-index: 30;
+}
+
+.scheduled-filters .group-picker-field {
+  min-width: 190px;
+}
+
+.scheduled-metric-strip {
+  margin-bottom: 16px;
+}
+
+.scheduled-command-deck.panel {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.scheduled-cadence-head {
+  margin-bottom: 0;
 }
 
 .scheduled-deck-head {
@@ -2678,6 +2721,10 @@ pre {
     margin-top: 12px;
   }
 
+  .filters.inline {
+    justify-content: flex-start;
+  }
+
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2737,6 +2784,30 @@ pre {
   input,
   select {
     min-width: 100%;
+  }
+
+  .page-title .filters.inline {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 10px;
+  }
+
+  .page-title .filters.inline > label,
+  .page-title .filters.inline > .group-picker-field,
+  .page-title .filters.inline > .time-range-field,
+  .page-title .filters.inline > button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .page-title .filters.inline > button {
+    min-height: 38px;
+  }
+
+  .group-picker-menu,
+  .time-range-menu {
+    width: calc(100vw - 20px);
   }
 
   .group-picker-list input {
