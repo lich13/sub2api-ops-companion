@@ -30,6 +30,8 @@ def build_group_selection(
     explicit_all = ALL_GROUP_VALUE in requested
     if explicit_all:
         selected_names = list(available_names) or [default_value]
+    elif not requested:
+        selected_names = list(available_names) or [default_value]
     else:
         requested_names = [value for value in requested if value != ALL_GROUP_VALUE]
         if available_names:
