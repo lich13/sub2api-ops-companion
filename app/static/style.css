@@ -483,6 +483,126 @@ select:focus {
   border-color: var(--primary);
 }
 
+.group-picker {
+  position: relative;
+  min-width: 190px;
+  margin: 0;
+}
+
+.group-picker > summary {
+  display: grid;
+  gap: 5px;
+  min-height: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 7px 36px 7px 12px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+
+.group-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.group-picker > summary::after {
+  content: "⌄";
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  color: var(--muted-soft);
+  font-size: 16px;
+  transform: translateY(-50%);
+}
+
+.group-picker > summary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-picker[open] > summary {
+  outline: 3px solid rgba(15, 118, 110, 0.12);
+  border-color: var(--primary);
+}
+
+.group-picker-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  z-index: 40;
+  width: min(360px, calc(100vw - 40px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-strong);
+}
+
+.group-picker-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.group-picker-actions button {
+  min-height: 32px;
+  background: var(--surface);
+}
+
+.group-picker-list {
+  display: grid;
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.group-picker-list label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 7px 8px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.group-picker-list label:hover {
+  background: var(--surface-soft);
+}
+
+.group-picker-list input {
+  min-width: 16px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--primary);
+}
+
+.group-picker-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-picker-list em {
+  color: var(--muted-soft);
+  font-style: normal;
+  font-size: 11px;
+}
+
 .time-range-field {
   display: grid;
   gap: 4px;
@@ -1122,6 +1242,8 @@ dd {
 }
 
 .scheduled-hero {
+  position: relative;
+  z-index: 5;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
   gap: 20px;
@@ -1189,6 +1311,25 @@ dd {
   font-weight: 700;
 }
 
+.scheduled-filter-bar .group-picker {
+  min-width: 0;
+}
+
+.scheduled-filter-bar .group-picker > summary {
+  border-color: var(--scheduled-hairline-strong);
+  color: var(--scheduled-muted);
+  background: var(--scheduled-surface);
+}
+
+.scheduled-filter-bar .group-picker > summary strong {
+  color: var(--scheduled-ink);
+}
+
+.scheduled-filter-bar .group-picker[open] > summary {
+  outline-color: var(--scheduled-primary-soft);
+  border-color: var(--scheduled-primary);
+}
+
 .scheduled-filter-bar input,
 .scheduled-filter-bar select,
 .scheduled-field input {
@@ -1234,6 +1375,8 @@ dd {
 }
 
 .scheduled-command-deck {
+  position: relative;
+  z-index: 1;
   margin-bottom: 18px;
   padding: 18px;
   border: 1px solid var(--scheduled-hairline);
@@ -2594,6 +2737,10 @@ pre {
   input,
   select {
     min-width: 100%;
+  }
+
+  .group-picker-list input {
+    min-width: 16px;
   }
 
   .telegram-config-form {

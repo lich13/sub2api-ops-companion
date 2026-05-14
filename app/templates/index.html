@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "group_picker.html" import group_picker %}
 {% from "time_range_picker.html" import time_range_picker %}
 {% block content %}
 <section class="page-title">
@@ -7,13 +8,7 @@
     <p>按账号展示可归因上游错误、错误率和调度状态；表格支持横向滚动和列选择。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/">
-    <label>分组
-      <select name="group">
-        {% for item in groups %}
-          <option value="{{ item.name }}" {{ 'selected' if item.name == group else '' }}>{{ item.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    {{ group_picker(group_selection) }}
     <label>平台
       <input name="platform" value="{{ platform }}" />
     </label>
