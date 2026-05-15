@@ -1,35 +1,31 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
-TURNSTILE_ENABLED_KEY = "turnstile_enabled"
-TURNSTILE_SITE_KEY = "turnstile_site_key"
-TURNSTILE_SECRET_KEY = "turnstile_secret_key"
-TURNSTILE_SETTING_KEYS = (TURNSTILE_ENABLED_KEY, TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY)
-
-TURNSTILE_SETTINGS_SELECT_SQL = """
-SELECT key, value, updated_at
-FROM settings
-WHERE key = ANY(%(keys)s::text[])
-ORDER BY key
-"""
-
-TURNSTILE_SETTING_UPSERT_SQL = """
-INSERT INTO settings (key, value, updated_at)
-VALUES (%(key)s, %(value)s, now())
-ON CONFLICT (key)
-DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-RETURNING key, value, updated_at
-"""
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 
-class SettingsDatabase(Protocol):
-    def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        ...
+@dataclass(frozen=True)
+class TurnstileRuntimeConfig:
+    enabled: bool = False
+    site_key: str = ""
+    secret_key: str = ""
+    updated_at: str | None = None
+    updated_by: str = ""
 
-    def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        ...
+
+@dataclass(frozen=True)
+class TurnstileVerifyResult:
+    ok: bool
+    reason: str
+    detail: str = ""
 
 
 def setting_bool(value: Any) -> bool:
@@ -40,50 +36,114 @@ def clean_setting_value(value: Any) -> str:
     return str(value or "").strip()
 
 
-def turnstile_setting_values(
-    enabled: bool,
-    site_key: str,
-    secret_key: str | None,
-) -> list[tuple[str, str]]:
-    values = [
-        (TURNSTILE_ENABLED_KEY, "true" if enabled else "false"),
-        (TURNSTILE_SITE_KEY, site_key.strip()),
-    ]
-    if secret_key is not None:
-        values.append((TURNSTILE_SECRET_KEY, secret_key.strip()))
-    return values
-
-
-def build_turnstile_config(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    by_key = {str(row.get("key")): row for row in rows}
-    secret_key = clean_setting_value(by_key.get(TURNSTILE_SECRET_KEY, {}).get("value"))
-    updated_values = [row.get("updated_at") for row in rows if row.get("updated_at")]
-    return {
-        "enabled": setting_bool(by_key.get(TURNSTILE_ENABLED_KEY, {}).get("value")),
-        "site_key": clean_setting_value(by_key.get(TURNSTILE_SITE_KEY, {}).get("value")),
-        "site_key_set": bool(clean_setting_value(by_key.get(TURNSTILE_SITE_KEY, {}).get("value"))),
-        "secret_key_set": bool(secret_key),
-        "updated_at": max(updated_values) if updated_values else None,
-        "setting_keys": TURNSTILE_SETTING_KEYS,
-    }
-
-
-def load_turnstile_config(db: SettingsDatabase) -> dict[str, Any]:
-    return build_turnstile_config(
-        db.fetch_all(TURNSTILE_SETTINGS_SELECT_SQL, {"keys": list(TURNSTILE_SETTING_KEYS)})
+def load_turnstile_runtime_config(path: str) -> TurnstileRuntimeConfig:
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return TurnstileRuntimeConfig()
+    if not isinstance(data, dict):
+        return TurnstileRuntimeConfig()
+    return TurnstileRuntimeConfig(
+        enabled=setting_bool(data.get("enabled")),
+        site_key=clean_setting_value(data.get("site_key")),
+        secret_key=clean_setting_value(data.get("secret_key")),
+        updated_at=clean_setting_value(data.get("updated_at")) or None,
+        updated_by=clean_setting_value(data.get("updated_by")),
     )
 
 
+def build_turnstile_panel_config(config: TurnstileRuntimeConfig) -> dict[str, Any]:
+    return {
+        "enabled": config.enabled,
+        "site_key": config.site_key,
+        "site_key_set": bool(config.site_key),
+        "secret_key_set": bool(config.secret_key),
+        "updated_at": config.updated_at,
+        "updated_by": config.updated_by,
+    }
+
+
 def save_turnstile_config(
-    db: SettingsDatabase,
+    path: str,
     *,
     enabled: bool,
     site_key: str,
     secret_key: str | None,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for key, value in turnstile_setting_values(enabled, site_key, secret_key):
-        row = db.fetch_one(TURNSTILE_SETTING_UPSERT_SQL, {"key": key, "value": value})
-        if row:
-            rows.append(row)
-    return rows
+    updated_by: str,
+) -> TurnstileRuntimeConfig:
+    existing = load_turnstile_runtime_config(path)
+    updated = TurnstileRuntimeConfig(
+        enabled=enabled,
+        site_key=site_key.strip(),
+        secret_key=secret_key.strip() if secret_key is not None else existing.secret_key,
+        updated_at=datetime.now(timezone.utc).isoformat(),
+        updated_by=updated_by,
+    )
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(
+            {
+                "enabled": updated.enabled,
+                "site_key": updated.site_key,
+                "secret_key": updated.secret_key,
+                "updated_at": updated.updated_at,
+                "updated_by": updated.updated_by,
+            },
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return updated
+
+
+def verify_turnstile_token(
+    config: TurnstileRuntimeConfig,
+    *,
+    token: str,
+    remote_ip: str,
+    timeout_seconds: int = 5,
+    opener: Callable[..., Any] = urlopen,
+) -> TurnstileVerifyResult:
+    if not config.enabled:
+        return TurnstileVerifyResult(True, "disabled")
+    if not config.site_key or not config.secret_key:
+        return TurnstileVerifyResult(False, "not_configured")
+
+    clean_token = token.strip()
+    if not clean_token:
+        return TurnstileVerifyResult(False, "missing_token")
+
+    payload: dict[str, str] = {
+        "secret": config.secret_key,
+        "response": clean_token,
+    }
+    if remote_ip.strip():
+        payload["remoteip"] = remote_ip.strip()
+
+    request = Request(
+        TURNSTILE_VERIFY_URL,
+        data=urlencode(payload).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with opener(request, timeout=timeout_seconds) as response:
+            raw = response.read()
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, TimeoutError, json.JSONDecodeError) as exc:
+        return TurnstileVerifyResult(False, "request_failed", str(exc))
+
+    if data.get("success") is True:
+        return TurnstileVerifyResult(True, "verified")
+
+    error_codes = data.get("error-codes")
+    if isinstance(error_codes, list):
+        detail = ",".join(str(item) for item in error_codes)
+    else:
+        detail = ""
+    return TurnstileVerifyResult(False, "verification_failed", detail)

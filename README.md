@@ -57,6 +57,8 @@ docker compose up -d --build
 - `OPS_UPDATE_ENABLED`：是否允许从面板执行更新，默认 `true`。
 - `OPS_UPDATE_WORKDIR`：容器内 Git 工作树路径，默认 `/workspace`。
 - `OPS_UPDATE_BRANCH`：更新跟踪分支，默认 `main`。
+- `OPS_TURNSTILE_CONFIG_PATH`：Ops 登录防护配置文件，默认 `/data/turnstile-config.json`。通过 `/sub2ops/turnstile` 面板保存后立即作用于 Ops 自身登录。
+- `OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS`：Cloudflare Turnstile 校验超时，默认 `5` 秒。
 
 ## 面板版本更新
 

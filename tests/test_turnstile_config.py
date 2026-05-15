@@ -1,85 +1,125 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 
 from app.turnstile import (
-    TURNSTILE_ENABLED_KEY,
-    TURNSTILE_SECRET_KEY,
-    TURNSTILE_SETTING_KEYS,
-    TURNSTILE_SETTING_UPSERT_SQL,
-    TURNSTILE_SITE_KEY,
-    build_turnstile_config,
+    TurnstileRuntimeConfig,
+    build_turnstile_panel_config,
+    load_turnstile_runtime_config,
     save_turnstile_config,
-    turnstile_setting_values,
+    verify_turnstile_token,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-class FakeDatabase:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, Any]]] = []
+class FakeHTTPResponse:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
 
-    def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        payload = params or {}
-        self.calls.append((sql, payload))
-        return {"key": payload["key"], "value": payload["value"], "updated_at": "now"}
+    def __enter__(self) -> "FakeHTTPResponse":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class TurnstileConfigTests(unittest.TestCase):
-    def test_config_hides_secret_value(self) -> None:
-        config = build_turnstile_config(
-            [
-                {"key": TURNSTILE_ENABLED_KEY, "value": "true", "updated_at": "2026-05-15T00:00:00Z"},
-                {"key": TURNSTILE_SITE_KEY, "value": "0x4AAAAAADPfCPB_O-N3j6ON"},
-                {"key": TURNSTILE_SECRET_KEY, "value": "secret-do-not-render"},
-            ]
+    def test_panel_config_hides_secret_value(self) -> None:
+        panel = build_turnstile_panel_config(
+            TurnstileRuntimeConfig(
+                enabled=True,
+                site_key="0x4AAAAAADPfCPB_O-N3j6ON",
+                secret_key="secret-do-not-render",
+                updated_at="2026-05-15T00:00:00Z",
+            )
         )
 
-        self.assertTrue(config["enabled"])
-        self.assertEqual(config["site_key"], "0x4AAAAAADPfCPB_O-N3j6ON")
-        self.assertTrue(config["secret_key_set"])
-        self.assertNotIn("secret_key", config)
-        self.assertNotIn("secret-do-not-render", str(config))
-        self.assertFalse(build_turnstile_config([])["secret_key_set"])
+        self.assertTrue(panel["enabled"])
+        self.assertEqual(panel["site_key"], "0x4AAAAAADPfCPB_O-N3j6ON")
+        self.assertTrue(panel["secret_key_set"])
+        self.assertNotIn("secret_key", panel)
+        self.assertNotIn("secret-do-not-render", str(panel))
 
-    def test_blank_secret_keeps_existing_value(self) -> None:
-        self.assertEqual(
-            turnstile_setting_values(True, " site-key ", None),
-            [
-                (TURNSTILE_ENABLED_KEY, "true"),
-                (TURNSTILE_SITE_KEY, "site-key"),
-            ],
+    def test_save_preserves_existing_secret_when_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "turnstile.json")
+            save_turnstile_config(
+                path,
+                enabled=True,
+                site_key="site-key",
+                secret_key="secret-key",
+                updated_by="admin",
+            )
+
+            save_turnstile_config(
+                path,
+                enabled=True,
+                site_key="new-site-key",
+                secret_key=None,
+                updated_by="admin",
+            )
+            runtime = load_turnstile_runtime_config(path)
+
+            self.assertTrue(runtime.enabled)
+            self.assertEqual(runtime.site_key, "new-site-key")
+            self.assertEqual(runtime.secret_key, "secret-key")
+
+    def test_verifier_blocks_enabled_login_without_token(self) -> None:
+        result = verify_turnstile_token(
+            TurnstileRuntimeConfig(enabled=True, site_key="site", secret_key="secret"),
+            token="",
+            remote_ip="127.0.0.1",
+            opener=lambda *_args, **_kwargs: FakeHTTPResponse({"success": True}),
         )
 
-    def test_save_updates_secret_only_when_present(self) -> None:
-        db = FakeDatabase()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "missing_token")
 
-        rows = save_turnstile_config(db, enabled=True, site_key="site-key", secret_key="secret-key")
+    def test_verifier_accepts_cloudflare_success_response(self) -> None:
+        calls: list[Any] = []
 
-        self.assertEqual([params["key"] for _, params in db.calls], list(TURNSTILE_SETTING_KEYS))
-        self.assertEqual(rows[-1]["key"], TURNSTILE_SECRET_KEY)
-        for sql, _ in db.calls:
-            self.assertEqual(sql, TURNSTILE_SETTING_UPSERT_SQL)
-            self.assertIn("ON CONFLICT (key)", sql)
+        def opener(request: Any, **kwargs: Any) -> FakeHTTPResponse:
+            calls.append((request, kwargs))
+            return FakeHTTPResponse({"success": True})
 
-    def test_panel_and_nav_exist_without_secret_value_field(self) -> None:
+        result = verify_turnstile_token(
+            TurnstileRuntimeConfig(enabled=True, site_key="site", secret_key="secret"),
+            token="token",
+            remote_ip="127.0.0.1",
+            opener=opener,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.reason, "verified")
+        self.assertEqual(len(calls), 1)
+        body = calls[0][0].data.decode("utf-8")
+        self.assertIn("secret=secret", body)
+        self.assertIn("response=token", body)
+        self.assertIn("remoteip=127.0.0.1", body)
+
+    def test_login_and_panel_templates_are_ops_local(self) -> None:
         base = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
-        template = (REPO_ROOT / "app" / "templates" / "turnstile.html").read_text(encoding="utf-8")
+        login = (REPO_ROOT / "app" / "templates" / "login.html").read_text(encoding="utf-8")
+        panel = (REPO_ROOT / "app" / "templates" / "turnstile.html").read_text(encoding="utf-8")
+        main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
         self.assertIn('href="{{ base_path }}/turnstile"', base)
         self.assertIn("登录防护", base)
-        self.assertIn("Cloudflare Turnstile", template)
-        self.assertIn('name="site_key"', template)
-        self.assertIn('name="secret_key"', template)
-        self.assertIn("留空不变", template)
-        self.assertNotIn('value="{{ turnstile.secret_key', template)
-
-        main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
-        self.assertIn("启用 Turnstile 前需要填写 Secret Key", main_py)
-        self.assertIn("existing.get(\"secret_key_set\")", main_py)
+        self.assertIn("cf-turnstile", login)
+        self.assertIn("cf-turnstile-response", main_py)
+        self.assertIn("verify_turnstile_token", main_py)
+        self.assertIn("Ops Companion 登录", panel)
+        self.assertNotIn("window.__APP_CONFIG__", panel)
+        self.assertNotIn("Sub2API 的 Turnstile", panel)
+        self.assertNotIn("settings</dd>", panel)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>登录 - {{ app_name }}</title>
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260514-ui-1" />
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260515-ops-turnstile-1" />
+    {% if turnstile.enabled %}
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
   </head>
   <body>
     <main class="login-shell">
@@ -16,7 +19,9 @@
             <p class="muted">页面内登录，Cookie 会话有效期 1 年。</p>
           </div>
         </div>
-        {% if error %}
+        {% if error == "turnstile" %}
+          <div class="notice bad-notice">Turnstile 验证失败，请重新验证后登录。</div>
+        {% elif error %}
           <div class="notice bad-notice">用户名或密码不正确。</div>
         {% endif %}
         <form class="login-form" method="post" action="{{ base_path }}/login">
@@ -27,6 +32,11 @@
           <label>密码
             <input name="password" type="password" autocomplete="current-password" />
           </label>
+          {% if turnstile.enabled %}
+            <div class="ops-turnstile-widget">
+              <div class="cf-turnstile" data-sitekey="{{ turnstile.site_key }}"></div>
+            </div>
+          {% endif %}
           <button class="primary" type="submit">进入面板</button>
         </form>
         <p class="login-footnote">建议继续保留 nginx 侧访问控制；这里的登录只负责 Ops 面板会话。</p>
