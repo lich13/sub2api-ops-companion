@@ -29,6 +29,7 @@ from .quality_sort import (
     sort_stability_rows,
 )
 from .settings import load_settings
+from .secure_session import create_session_cookie, read_session_cookie
 from .sql import (
     ACCOUNT_OPTIONS_SQL,
     GROUPS_SQL,
@@ -51,6 +52,7 @@ from .scheduled_tests import (
     normalize_interval_minutes,
     schedule_cron,
 )
+from .sub2api_sso import Sub2APISSOError, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
 from .turnstile import (
@@ -168,7 +170,7 @@ def cookie_path() -> str:
     return settings.base_path or "/"
 
 
-def sign_session(username: str, issued_at: int) -> str:
+def sign_legacy_session(username: str, issued_at: int) -> str:
     payload = f"{username}:{issued_at}"
     signature = hmac.new(
         settings.session_secret.encode("utf-8"),
@@ -178,9 +180,35 @@ def sign_session(username: str, issued_at: int) -> str:
     return f"{payload}:{signature}"
 
 
+def sign_session(
+    username: str,
+    issued_at: int,
+    *,
+    ttl_seconds: int | None = None,
+    source: str = "password",
+) -> str:
+    return create_session_cookie(
+        username,
+        settings.session_secret,
+        store_path=settings.session_store_path,
+        issued_at=issued_at,
+        ttl_seconds=ttl_seconds or settings.session_ttl_seconds,
+        source=source,
+    )
+
+
 def verify_session(value: str | None) -> str | None:
     if not value:
         return None
+    encrypted = read_session_cookie(
+        value,
+        settings.session_secret,
+        store_path=settings.session_store_path,
+        max_age_seconds=settings.session_ttl_seconds,
+    )
+    if encrypted:
+        return encrypted.username
+
     parts = value.split(":")
     if len(parts) != 3:
         return None
@@ -191,7 +219,7 @@ def verify_session(value: str | None) -> str | None:
         return None
     if time.time() - issued_at > settings.session_ttl_seconds:
         return None
-    expected = sign_session(username, issued_at).rsplit(":", 1)[1]
+    expected = sign_legacy_session(username, issued_at).rsplit(":", 1)[1]
     if not secrets.compare_digest(signature, expected):
         return None
     return username
@@ -209,6 +237,13 @@ def safe_next(value: str | None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/"
     return value
+
+
+def no_store_redirect(location: str, status_code: int = 303) -> RedirectResponse:
+    response = RedirectResponse(location, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 def require_auth(request: Request) -> str:
@@ -887,6 +922,73 @@ def login_submit(
         path=cookie_path(),
     )
     write_audit(settings.audit_path, "login", {"user": username, "client": request.client.host if request.client else ""})
+    return response
+
+
+@app.get("/sso/start")
+def sub2api_sso_start(
+    request: Request,
+    token: str = "",
+    user_id: str = "",
+    next: str = "/",
+) -> Response:
+    next_path = safe_next(next)
+    login_target = f"{settings.base_path}/login?error=sso&next={quote(next_path, safe='/')}"
+    client_host = request.client.host if request.client else ""
+
+    if not settings.sub2api_sso_enabled:
+        write_audit(settings.audit_path, "sso_login_reject", {"reason": "disabled", "client": client_host})
+        return no_store_redirect(login_target)
+
+    try:
+        principal = validate_sub2api_token(
+            settings.sub2api_base_url,
+            token=token,
+            expected_user_id=user_id or None,
+            required_role=settings.sub2api_sso_required_role,
+            timeout_seconds=settings.sub2api_sso_verify_timeout_seconds,
+        )
+    except Sub2APISSOError as exc:
+        write_audit(
+            settings.audit_path,
+            "sso_login_reject",
+            {
+                "reason": exc.reason,
+                "user_id": user_id,
+                "client": client_host,
+                "src_host": request.query_params.get("src_host", ""),
+            },
+        )
+        return no_store_redirect(login_target)
+
+    session_user = f"sub2api:{principal.id}:{principal.username}"
+    issued_at = int(time.time())
+    response = no_store_redirect(f"{settings.base_path}{next_path}")
+    response.set_cookie(
+        SESSION_COOKIE,
+        sign_session(
+            session_user,
+            issued_at,
+            ttl_seconds=settings.sub2api_sso_session_ttl_seconds,
+            source="sub2api_sso",
+        ),
+        max_age=settings.sub2api_sso_session_ttl_seconds,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path=cookie_path(),
+    )
+    write_audit(
+        settings.audit_path,
+        "sso_login",
+        {
+            "user": session_user,
+            "sub2api_user_id": principal.id,
+            "sub2api_role": principal.role,
+            "client": client_host,
+            "src_host": request.query_params.get("src_host", ""),
+        },
+    )
     return response
 
 
