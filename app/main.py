@@ -22,7 +22,12 @@ from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
 from .group_selection import DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
-from .quality_sort import STABILITY_SORT_OPTIONS, normalize_stability_sort, sort_stability_rows
+from .quality_sort import (
+    STABILITY_SORT_OPTIONS,
+    normalize_stability_sort,
+    sort_speed_rows,
+    sort_stability_rows,
+)
 from .settings import load_settings
 from .sql import (
     ACCOUNT_OPTIONS_SQL,
@@ -952,7 +957,9 @@ def speed_view(
     groups = load_groups()
     group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     selected_range = build_time_range(time_range, start_date, end_date, hours)
-    rows = load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
+    rows = sort_speed_rows(
+        load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
+    )
     return render(
         request,
         "speed.html",
