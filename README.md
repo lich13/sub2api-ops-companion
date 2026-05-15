@@ -61,6 +61,7 @@ docker compose up -d --build
 - `OPS_UPDATE_BRANCH`：更新跟踪分支，默认 `main`。
 - `OPS_TURNSTILE_CONFIG_PATH`：Ops 登录防护配置文件，默认 `/data/turnstile-config.json`。通过 `/sub2ops/turnstile` 面板保存后立即作用于 Ops 自身登录。
 - `OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS`：Cloudflare Turnstile 校验超时，默认 `5` 秒。
+- `OPS_SSO_CONFIG_PATH`：Sub2API 免二次登录运行时配置，默认 `/data/sso-config.json`。可在 `/sub2ops/turnstile` 面板保存，不需要重启。
 - `SUB2API_BASE_URL`：Sub2API 站点根地址，例如 `https://sub2api.example.com`。
 - `SUB2API_SSO_ENABLED`：是否允许 Sub2API 自定义菜单 token 换取 Companion 会话，默认 `false`。
 - `SUB2API_SSO_REQUIRED_ROLE`：允许进入 Companion 的 Sub2API 用户角色，默认 `admin`；设为 `*` 可放开角色校验，不建议。
@@ -71,7 +72,13 @@ docker compose up -d --build
 
 这个模式不改 Sub2API 源码，只依赖 Sub2API 现有自定义菜单 iframe 会自动追加 `token`、`user_id`、`ui_mode=embedded` 等参数。
 
-1. Companion `.env` 开启：
+1. 进入 `/sub2ops/turnstile` 的“Sub2API 免二次登录”区块，开启后填写 Sub2API 站点地址，例如：
+
+```text
+https://你的-sub2api-域名
+```
+
+也可以用 `.env` 兜底配置：
 
 ```bash
 SUB2API_BASE_URL=https://你的-sub2api-域名
@@ -79,7 +86,7 @@ SUB2API_SSO_ENABLED=true
 SUB2API_SSO_REQUIRED_ROLE=admin
 ```
 
-2. 在 Sub2API 管理后台的自定义菜单里新增管理端菜单，URL 填：
+2. 在 Sub2API 管理后台的自定义菜单里新增管理端菜单，URL 填面板生成的地址：
 
 ```text
 https://你的-sub2api-域名/sub2ops/sso/start
