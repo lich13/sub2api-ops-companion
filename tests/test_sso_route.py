@@ -41,6 +41,7 @@ class Sub2APISSORouteTests(unittest.TestCase):
             session_secret="very-long-session-secret",
             session_store_path=str(data_dir / "sessions.json"),
             session_ttl_seconds=31536000,
+            sso_config_path=str(data_dir / "sso-config.json"),
             sub2api_base_url="https://661313.xyz",
             sub2api_sso_enabled=True,
             sub2api_sso_required_role="Admin",

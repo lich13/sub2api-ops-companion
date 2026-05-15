@@ -52,7 +52,13 @@ from .scheduled_tests import (
     normalize_interval_minutes,
     schedule_cron,
 )
-from .sub2api_sso import Sub2APISSOError, validate_sub2api_token
+from .sso_config import (
+    SSORuntimeConfig,
+    build_sso_panel_config,
+    load_sso_runtime_config,
+    save_sso_config,
+)
+from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
 from .turnstile import (
@@ -244,6 +250,17 @@ def no_store_redirect(location: str, status_code: int = 303) -> RedirectResponse
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+def current_sso_config() -> SSORuntimeConfig:
+    return load_sso_runtime_config(
+        settings.sso_config_path,
+        env_enabled=settings.sub2api_sso_enabled,
+        env_base_url=settings.sub2api_base_url,
+        env_required_role=settings.sub2api_sso_required_role,
+        env_session_ttl_seconds=settings.sub2api_sso_session_ttl_seconds,
+        env_verify_timeout_seconds=settings.sub2api_sso_verify_timeout_seconds,
+    )
 
 
 def require_auth(request: Request) -> str:
@@ -935,18 +952,19 @@ def sub2api_sso_start(
     next_path = safe_next(next)
     login_target = f"{settings.base_path}/login?error=sso&next={quote(next_path, safe='/')}"
     client_host = request.client.host if request.client else ""
+    sso_config = current_sso_config()
 
-    if not settings.sub2api_sso_enabled:
+    if not sso_config.enabled:
         write_audit(settings.audit_path, "sso_login_reject", {"reason": "disabled", "client": client_host})
         return no_store_redirect(login_target)
 
     try:
         principal = validate_sub2api_token(
-            settings.sub2api_base_url,
+            sso_config.base_url,
             token=token,
             expected_user_id=user_id or None,
-            required_role=settings.sub2api_sso_required_role,
-            timeout_seconds=settings.sub2api_sso_verify_timeout_seconds,
+            required_role=sso_config.required_role,
+            timeout_seconds=sso_config.verify_timeout_seconds,
         )
     except Sub2APISSOError as exc:
         write_audit(
@@ -969,10 +987,10 @@ def sub2api_sso_start(
         sign_session(
             session_user,
             issued_at,
-            ttl_seconds=settings.sub2api_sso_session_ttl_seconds,
+            ttl_seconds=sso_config.session_ttl_seconds,
             source="sub2api_sso",
         ),
-        max_age=settings.sub2api_sso_session_ttl_seconds,
+        max_age=sso_config.session_ttl_seconds,
         httponly=True,
         secure=True,
         samesite="lax",
@@ -1299,6 +1317,7 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
 @app.get("/turnstile", response_class=HTMLResponse)
 def turnstile_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
+    sso_runtime = current_sso_config()
     return render(
         request,
         "turnstile.html",
@@ -1306,6 +1325,8 @@ def turnstile_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse
             "active": "turnstile",
             "turnstile": build_turnstile_panel_config(turnstile_runtime),
             "turnstile_config_path": settings.turnstile_config_path,
+            "sso": build_sso_panel_config(sso_runtime, base_path=settings.base_path),
+            "sso_config_path": settings.sso_config_path,
             "msg": msg,
         },
     )
@@ -1395,6 +1416,54 @@ def turnstile_config_save(
     )
     return RedirectResponse(
         f"{settings.base_path}/turnstile?msg={quote('Ops 登录防护配置已保存，下一次登录立即生效')}",
+        status_code=303,
+    )
+
+
+@app.post("/sso-config")
+def sso_config_save(
+    user: AuthUser,
+    enabled: str | None = Form(None),
+    base_url: str = Form(""),
+    required_role: str = Form("admin"),
+    session_ttl_seconds: int = Form(86400),
+    verify_timeout_seconds: int = Form(5),
+) -> Response:
+    clean_base_url = base_url.strip().rstrip("/")
+    if form_truthy(enabled) and not clean_base_url:
+        return RedirectResponse(
+            f"{settings.base_path}/turnstile?msg={quote('启用 Sub2API 免登录前需要填写 Sub2API 地址')}",
+            status_code=303,
+        )
+    if clean_base_url:
+        try:
+            clean_base_url = normalize_base_url(clean_base_url)
+        except Sub2APISSOError:
+            return RedirectResponse(
+                f"{settings.base_path}/turnstile?msg={quote('Sub2API 地址必须是完整的 http(s) 地址')}",
+                status_code=303,
+            )
+    save_sso_config(
+        settings.sso_config_path,
+        enabled=form_truthy(enabled),
+        base_url=clean_base_url,
+        required_role=required_role.strip() or "admin",
+        session_ttl_seconds=session_ttl_seconds,
+        verify_timeout_seconds=verify_timeout_seconds,
+        updated_by=user,
+    )
+    write_audit(
+        settings.audit_path,
+        "ops_sso_config_update",
+        {
+            "user": user,
+            "enabled": form_truthy(enabled),
+            "base_url_set": bool(clean_base_url),
+            "required_role": required_role.strip() or "admin",
+        },
+    )
+    return RedirectResponse(
+        f"{settings.base_path}/turnstile?msg={quote('Sub2API 免二次登录配置已保存，下一次从自定义菜单进入立即生效')}",
         status_code=303,
     )
 

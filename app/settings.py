@@ -41,6 +41,7 @@ class Settings:
     update_branch: str = "main"
     turnstile_config_path: str = "/data/turnstile-config.json"
     turnstile_verify_timeout_seconds: int = 5
+    sso_config_path: str = "/data/sso-config.json"
     sub2api_base_url: str = ""
     sub2api_sso_enabled: bool = False
     sub2api_sso_required_role: str = "admin"
@@ -185,6 +186,7 @@ def load_settings() -> Settings:
         update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
         turnstile_config_path=os.getenv("OPS_TURNSTILE_CONFIG_PATH", "/data/turnstile-config.json"),
         turnstile_verify_timeout_seconds=int_env("OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
+        sso_config_path=os.getenv("OPS_SSO_CONFIG_PATH", "/data/sso-config.json"),
         sub2api_base_url=os.getenv("SUB2API_BASE_URL", "").rstrip("/"),
         sub2api_sso_enabled=bool_env("SUB2API_SSO_ENABLED", False),
         sub2api_sso_required_role=os.getenv("SUB2API_SSO_REQUIRED_ROLE", "admin").strip() or "admin",

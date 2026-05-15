@@ -2620,6 +2620,12 @@ pre {
   gap: 14px;
 }
 
+.sso-form-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr));
+  gap: 14px;
+}
+
 .turnstile-field {
   min-width: 0;
 }
@@ -2627,6 +2633,35 @@ pre {
 .turnstile-field input {
   width: 100%;
   min-width: 0;
+}
+
+.sso-base-url-field {
+  min-width: 260px;
+}
+
+.sso-menu-preview {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.sso-menu-preview span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sso-menu-preview code {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.turnstile-secondary-layout {
+  margin-top: 18px;
 }
 
 .turnstile-submit-row {
@@ -2909,8 +2944,13 @@ pre {
   .scheduled-editor-grid,
   .schedule-option-grid,
   .scheduled-toggle-grid,
-  .turnstile-form-grid {
+  .turnstile-form-grid,
+  .sso-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sso-base-url-field {
+    min-width: 0;
   }
 
   .scheduled-hero,
