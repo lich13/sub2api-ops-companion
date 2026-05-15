@@ -2578,26 +2578,99 @@ pre {
   margin-top: 10px;
 }
 
+.turnstile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.turnstile-config-card,
+.turnstile-help-card {
+  margin-bottom: 0;
+}
+
+.turnstile-config-card {
+  display: grid;
+  gap: 16px;
+}
+
+.turnstile-metrics .metric-card strong {
+  font-size: 22px;
+}
+
+.turnstile-metrics .metric-card .metric-time {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.turnstile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.turnstile-field {
+  min-width: 0;
+}
+
+.turnstile-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.turnstile-submit-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.turnstile-submit-row span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.turnstile-help-card .status-list {
+  margin-top: 12px;
+}
+
+.turnstile-help-card .status-list div {
+  align-items: center;
+}
+
+.turnstile-help-card dd {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
 .telegram-command-pills {
   margin-top: 12px;
 }
 
 .switch-field {
-  display: flex;
+  display: inline-flex;
+  grid-template-columns: none;
   align-items: center;
+  gap: 9px;
   min-height: 36px;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(15, 118, 110, 0.2);
   border-radius: 8px;
-  color: var(--text);
-  background: var(--surface-soft);
+  padding: 0 12px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .switch-field input {
-  width: auto;
-  min-width: 0;
-  height: auto;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--primary);
 }
 
 .clear-token {
@@ -2750,7 +2823,8 @@ pre {
   .scheduled-hero,
   .scheduled-deck-head,
   .scheduled-workbench,
-  .scheduled-card-layout {
+  .scheduled-card-layout,
+  .turnstile-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2824,7 +2898,8 @@ pre {
   .scheduled-card-layout,
   .scheduled-editor-grid,
   .schedule-option-grid,
-  .scheduled-toggle-grid {
+  .scheduled-toggle-grid,
+  .turnstile-form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2838,16 +2913,19 @@ pre {
 
   .scheduled-account-head,
   .scheduled-submit-row,
+  .turnstile-submit-row,
   .frequency-head {
     display: grid;
     justify-items: stretch;
   }
 
-  .scheduled-submit-row {
+  .scheduled-submit-row,
+  .turnstile-submit-row {
     grid-template-columns: 1fr;
   }
 
-  .scheduled-submit-row button {
+  .scheduled-submit-row button,
+  .turnstile-submit-row button {
     width: 100%;
   }
 

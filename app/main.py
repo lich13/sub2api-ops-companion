@@ -48,6 +48,7 @@ from .scheduled_tests import (
 )
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
+from .turnstile import load_turnstile_config, save_turnstile_config
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
@@ -1147,6 +1148,19 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     )
 
 
+@app.get("/turnstile", response_class=HTMLResponse)
+def turnstile_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
+    return render(
+        request,
+        "turnstile.html",
+        {
+            "active": "turnstile",
+            "turnstile": load_turnstile_config(db),
+            "msg": msg,
+        },
+    )
+
+
 @app.post("/guard/run")
 async def run_guard_now(user: AuthUser) -> Response:
     actions = await run_auto_guard_threaded(user)
@@ -1189,6 +1203,49 @@ async def telegram_config_save(
         },
     )
     return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存，配对码已生成')}", status_code=303)
+
+
+@app.post("/turnstile")
+def turnstile_config_save(
+    user: AuthUser,
+    enabled: str | None = Form(None),
+    site_key: str = Form(""),
+    secret_key: str = Form(""),
+) -> Response:
+    existing = load_turnstile_config(db)
+    submitted_secret_key = secret_key.strip()
+    secret_to_save = submitted_secret_key if submitted_secret_key else None
+    if form_truthy(enabled) and not site_key.strip():
+        return RedirectResponse(
+            f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Site Key')}",
+            status_code=303,
+        )
+    if form_truthy(enabled) and not (submitted_secret_key or existing.get("secret_key_set")):
+        return RedirectResponse(
+            f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Secret Key')}",
+            status_code=303,
+        )
+    save_turnstile_config(
+        db,
+        enabled=form_truthy(enabled),
+        site_key=site_key.strip(),
+        secret_key=secret_to_save,
+    )
+    write_audit(
+        settings.audit_path,
+        "turnstile_config_update",
+        {
+            "user": user,
+            "enabled": form_truthy(enabled),
+            "site_key_set": bool(site_key.strip()),
+            "secret_key_updated": bool(submitted_secret_key),
+            "secret_key_previously_set": bool(existing.get("secret_key_set")),
+        },
+    )
+    return RedirectResponse(
+        f"{settings.base_path}/turnstile?msg={quote('Turnstile 配置已保存；重启 Sub2API 后登录页会读取新配置')}",
+        status_code=303,
+    )
 
 
 @app.post("/telegram/pairing-code/regenerate")
