@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>登录防护</h2>
+    <p>直接写入 Sub2API 的 Turnstile 登录保护配置。密钥只保存到上游 <code>settings</code> 表，不在面板回显。</p>
+  </div>
+</section>
+
+<section class="metric-strip turnstile-metrics">
+  <div class="metric-card {{ 'warning' if not turnstile.enabled else '' }}">
+    <span>Turnstile</span>
+    <strong>{{ '已启用' if turnstile.enabled else '未启用' }}</strong>
+  </div>
+  <div class="metric-card {{ 'danger' if turnstile.enabled and not turnstile.site_key_set else '' }}">
+    <span>Site Key</span>
+    <strong>{{ '已设置' if turnstile.site_key_set else '缺失' }}</strong>
+  </div>
+  <div class="metric-card {{ 'danger' if turnstile.enabled and not turnstile.secret_key_set else '' }}">
+    <span>Secret Key</span>
+    <strong>{{ '已设置' if turnstile.secret_key_set else '缺失' }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>更新时间</span>
+    <strong class="metric-time">{{ turnstile.updated_at | bj_time }}</strong>
+  </div>
+</section>
+
+<section class="turnstile-layout">
+  <form class="panel turnstile-config-card" method="post" action="{{ base_path }}/turnstile" autocomplete="off">
+    <div class="section-head compact-head">
+      <div>
+        <h3>Cloudflare Turnstile</h3>
+        <p>开启后，Sub2API 登录接口会要求浏览器提交 Turnstile token。Secret Key 留空表示保留当前已保存值。</p>
+      </div>
+      <label class="switch-field">
+        <input type="checkbox" name="enabled" value="1" {{ 'checked' if turnstile.enabled else '' }} />
+        <span>启用</span>
+      </label>
+    </div>
+
+    <div class="turnstile-form-grid">
+      <label class="turnstile-field">
+        <span>Site Key</span>
+        <input
+          class="wide-input mono"
+          name="site_key"
+          value="{{ turnstile.site_key }}"
+          spellcheck="false"
+          placeholder="0x4AAAA..."
+        />
+      </label>
+      <label class="turnstile-field">
+        <span>Secret Key</span>
+        <input
+          class="wide-input mono"
+          type="password"
+          name="secret_key"
+          autocomplete="new-password"
+          spellcheck="false"
+          placeholder="{{ '已设置，留空不变' if turnstile.secret_key_set else '粘贴 Cloudflare Secret Key' }}"
+        />
+      </label>
+    </div>
+
+    <div class="turnstile-submit-row">
+      <button class="primary" type="submit">保存配置</button>
+      <span>保存后请重启 Sub2API，让 <code>/login</code> 的 <code>window.__APP_CONFIG__</code> 重新注入。</span>
+    </div>
+  </form>
+
+  <aside class="panel turnstile-help-card">
+    <h3>配置边界</h3>
+    <dl class="status-list">
+      <div><dt>写入位置</dt><dd class="mono">settings</dd></div>
+      <div><dt>开关键</dt><dd class="mono">turnstile_enabled</dd></div>
+      <div><dt>站点 Key</dt><dd class="mono">turnstile_site_key</dd></div>
+      <div><dt>密钥 Key</dt><dd class="mono">turnstile_secret_key</dd></div>
+    </dl>
+    <p>面板只负责配置数据库，不会自动操作 Docker 或远端服务。这样避免在 Companion 里引入主机级控制权限。</p>
+  </aside>
+</section>
+{% endblock %}
