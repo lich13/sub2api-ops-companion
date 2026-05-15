@@ -38,6 +38,8 @@ class Settings:
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
+    turnstile_config_path: str = "/data/turnstile-config.json"
+    turnstile_verify_timeout_seconds: int = 5
 
 
 def bool_env(name: str, default: bool) -> bool:
@@ -174,4 +176,6 @@ def load_settings() -> Settings:
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
         update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
+        turnstile_config_path=os.getenv("OPS_TURNSTILE_CONFIG_PATH", "/data/turnstile-config.json"),
+        turnstile_verify_timeout_seconds=int_env("OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
     )

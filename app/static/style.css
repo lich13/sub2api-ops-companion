@@ -2485,6 +2485,16 @@ pre {
   width: 100%;
 }
 
+.ops-turnstile-widget {
+  min-height: 65px;
+  display: flex;
+  justify-content: center;
+}
+
+.ops-turnstile-widget .cf-turnstile {
+  max-width: 100%;
+}
+
 .login-footnote {
   margin: 16px 0 0;
   color: var(--muted-soft);

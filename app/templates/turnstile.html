@@ -3,7 +3,7 @@
 <section class="page-title">
   <div>
     <h2>登录防护</h2>
-    <p>直接写入 Sub2API 的 Turnstile 登录保护配置。密钥只保存到上游 <code>settings</code> 表，不在面板回显。</p>
+    <p>给 Ops Companion 自己的登录页增加 Cloudflare Turnstile 校验。密钥只保存在 Ops 本地配置，不在面板回显。</p>
   </div>
 </section>
 
@@ -24,14 +24,18 @@
     <span>更新时间</span>
     <strong class="metric-time">{{ turnstile.updated_at | bj_time }}</strong>
   </div>
+  <div class="metric-card">
+    <span>作用范围</span>
+    <strong>Ops 登录</strong>
+  </div>
 </section>
 
 <section class="turnstile-layout">
   <form class="panel turnstile-config-card" method="post" action="{{ base_path }}/turnstile" autocomplete="off">
     <div class="section-head compact-head">
       <div>
-        <h3>Cloudflare Turnstile</h3>
-        <p>开启后，Sub2API 登录接口会要求浏览器提交 Turnstile token。Secret Key 留空表示保留当前已保存值。</p>
+        <h3>Ops Companion 登录</h3>
+        <p>开启后，访问 Ops 面板的登录表单会先通过 Turnstile 校验，再校验用户名和密码。Secret Key 留空表示保留当前已保存值。</p>
       </div>
       <label class="switch-field">
         <input type="checkbox" name="enabled" value="1" {{ 'checked' if turnstile.enabled else '' }} />
@@ -65,19 +69,19 @@
 
     <div class="turnstile-submit-row">
       <button class="primary" type="submit">保存配置</button>
-      <span>保存后请重启 Sub2API，让 <code>/login</code> 的 <code>window.__APP_CONFIG__</code> 重新注入。</span>
+      <span>保存后立即作用于 Ops 的下一次登录，不需要重启服务。</span>
     </div>
   </form>
 
   <aside class="panel turnstile-help-card">
     <h3>配置边界</h3>
     <dl class="status-list">
-      <div><dt>写入位置</dt><dd class="mono">settings</dd></div>
-      <div><dt>开关键</dt><dd class="mono">turnstile_enabled</dd></div>
-      <div><dt>站点 Key</dt><dd class="mono">turnstile_site_key</dd></div>
-      <div><dt>密钥 Key</dt><dd class="mono">turnstile_secret_key</dd></div>
+      <div><dt>保护对象</dt><dd>Ops 面板登录页</dd></div>
+      <div><dt>配置文件</dt><dd class="mono">{{ turnstile_config_path }}</dd></div>
+      <div><dt>校验接口</dt><dd class="mono">Cloudflare siteverify</dd></div>
+      <div><dt>生效方式</dt><dd>保存后下次登录读取</dd></div>
     </dl>
-    <p>面板只负责配置数据库，不会自动操作 Docker 或远端服务。这样避免在 Companion 里引入主机级控制权限。</p>
+    <p>这个开关只保护 Companion 自身登录，不会修改 Sub2API 的用户登录、注册或上游配置。</p>
   </aside>
 </section>
 {% endblock %}

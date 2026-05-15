@@ -48,7 +48,12 @@ from .scheduled_tests import (
 )
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
-from .turnstile import load_turnstile_config, save_turnstile_config
+from .turnstile import (
+    build_turnstile_panel_config,
+    load_turnstile_runtime_config,
+    save_turnstile_config,
+    verify_turnstile_token,
+)
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
@@ -816,7 +821,17 @@ def login_page(request: Request, next: str = "/", error: str = "") -> HTMLRespon
     next_path = safe_next(next)
     if verify_session(request.cookies.get(SESSION_COOKIE)):
         return RedirectResponse(f"{settings.base_path}{next_path}", status_code=303)
-    return render(request, "login.html", {"active": "login", "next": next_path, "error": error})
+    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
+    return render(
+        request,
+        "login.html",
+        {
+            "active": "login",
+            "next": next_path,
+            "error": error,
+            "turnstile": build_turnstile_panel_config(turnstile_runtime),
+        },
+    )
 
 
 @app.post("/login")
@@ -825,8 +840,32 @@ def login_submit(
     username: str = Form(...),
     password: str = Form(...),
     next: str = Form("/"),
+    cf_turnstile_response: str = Form("", alias="cf-turnstile-response"),
 ) -> Response:
     next_path = safe_next(next)
+    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
+    turnstile_result = verify_turnstile_token(
+        turnstile_runtime,
+        token=cf_turnstile_response,
+        remote_ip=request.client.host if request.client else "",
+        timeout_seconds=settings.turnstile_verify_timeout_seconds,
+    )
+    if not turnstile_result.ok:
+        write_audit(
+            settings.audit_path,
+            "turnstile_login_reject",
+            {
+                "user": username,
+                "client": request.client.host if request.client else "",
+                "reason": turnstile_result.reason,
+                "detail": turnstile_result.detail,
+            },
+        )
+        return RedirectResponse(
+            f"{settings.base_path}/login?error=turnstile&next={quote(next_path, safe='/')}",
+            status_code=303,
+        )
+
     user_ok = secrets.compare_digest(username, settings.basic_user)
     password_ok = secrets.compare_digest(password, settings.basic_password)
     if not (user_ok and password_ok):
@@ -1150,12 +1189,14 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
 
 @app.get("/turnstile", response_class=HTMLResponse)
 def turnstile_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
+    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
     return render(
         request,
         "turnstile.html",
         {
             "active": "turnstile",
-            "turnstile": load_turnstile_config(db),
+            "turnstile": build_turnstile_panel_config(turnstile_runtime),
+            "turnstile_config_path": settings.turnstile_config_path,
             "msg": msg,
         },
     )
@@ -1212,7 +1253,7 @@ def turnstile_config_save(
     site_key: str = Form(""),
     secret_key: str = Form(""),
 ) -> Response:
-    existing = load_turnstile_config(db)
+    existing = load_turnstile_runtime_config(settings.turnstile_config_path)
     submitted_secret_key = secret_key.strip()
     secret_to_save = submitted_secret_key if submitted_secret_key else None
     if form_truthy(enabled) and not site_key.strip():
@@ -1220,30 +1261,31 @@ def turnstile_config_save(
             f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Site Key')}",
             status_code=303,
         )
-    if form_truthy(enabled) and not (submitted_secret_key or existing.get("secret_key_set")):
+    if form_truthy(enabled) and not (submitted_secret_key or existing.secret_key):
         return RedirectResponse(
             f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Secret Key')}",
             status_code=303,
         )
     save_turnstile_config(
-        db,
+        settings.turnstile_config_path,
         enabled=form_truthy(enabled),
         site_key=site_key.strip(),
         secret_key=secret_to_save,
+        updated_by=user,
     )
     write_audit(
         settings.audit_path,
-        "turnstile_config_update",
+        "ops_turnstile_config_update",
         {
             "user": user,
             "enabled": form_truthy(enabled),
             "site_key_set": bool(site_key.strip()),
             "secret_key_updated": bool(submitted_secret_key),
-            "secret_key_previously_set": bool(existing.get("secret_key_set")),
+            "secret_key_previously_set": bool(existing.secret_key),
         },
     )
     return RedirectResponse(
-        f"{settings.base_path}/turnstile?msg={quote('Turnstile 配置已保存；重启 Sub2API 后登录页会读取新配置')}",
+        f"{settings.base_path}/turnstile?msg={quote('Ops 登录防护配置已保存，下一次登录立即生效')}",
         status_code=303,
     )
 
