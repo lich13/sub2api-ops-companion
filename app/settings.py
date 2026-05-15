@@ -15,6 +15,7 @@ class Settings:
     session_ttl_seconds: int
     base_path: str
     audit_path: str
+    session_store_path: str = "/data/sessions.json"
     app_name: str = "Sub2API Ops Companion"
     guard_enabled: bool = True
     guard_interval_seconds: int = 5
@@ -40,6 +41,11 @@ class Settings:
     update_branch: str = "main"
     turnstile_config_path: str = "/data/turnstile-config.json"
     turnstile_verify_timeout_seconds: int = 5
+    sub2api_base_url: str = ""
+    sub2api_sso_enabled: bool = False
+    sub2api_sso_required_role: str = "admin"
+    sub2api_sso_session_ttl_seconds: int = 86400
+    sub2api_sso_verify_timeout_seconds: int = 5
 
 
 def bool_env(name: str, default: bool) -> bool:
@@ -115,6 +121,7 @@ def load_settings() -> Settings:
         session_ttl_seconds=int_env("OPS_SESSION_TTL_SECONDS", 31536000, 300, 31536000),
         base_path=base_path,
         audit_path=os.getenv("AUDIT_PATH", "/data/audit.jsonl"),
+        session_store_path=os.getenv("OPS_SESSION_STORE_PATH", "/data/sessions.json"),
         guard_enabled=bool_env("GUARD_ENABLED", True),
         guard_interval_seconds=int_env("GUARD_INTERVAL_SECONDS", 5, 1, 3600),
         guard_lookback_minutes=int_env("GUARD_LOOKBACK_MINUTES", 60, 5, 10080),
@@ -178,4 +185,9 @@ def load_settings() -> Settings:
         update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
         turnstile_config_path=os.getenv("OPS_TURNSTILE_CONFIG_PATH", "/data/turnstile-config.json"),
         turnstile_verify_timeout_seconds=int_env("OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
+        sub2api_base_url=os.getenv("SUB2API_BASE_URL", "").rstrip("/"),
+        sub2api_sso_enabled=bool_env("SUB2API_SSO_ENABLED", False),
+        sub2api_sso_required_role=os.getenv("SUB2API_SSO_REQUIRED_ROLE", "admin").strip() or "admin",
+        sub2api_sso_session_ttl_seconds=int_env("SUB2API_SSO_SESSION_TTL_SECONDS", 86400, 300, 604800),
+        sub2api_sso_verify_timeout_seconds=int_env("SUB2API_SSO_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
     )
