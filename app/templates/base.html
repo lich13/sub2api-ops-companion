@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260516-sso-1" />
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260516-sso-only" />
     <script src="{{ base_path }}/static/table-columns.js?v=20260510-version" defer></script>
     <script src="{{ base_path }}/static/time-range.js?v=20260512-speed" defer></script>
     <script src="{{ base_path }}/static/group-picker.js?v=20260514-groups-2" defer></script>
@@ -59,7 +59,7 @@
             <a class="{{ 'active' if active == 'requests' else '' }}" href="{{ base_path }}/requests">错误链路</a>
             <a class="{{ 'active' if active == 'scheduled_tests' else '' }}" href="{{ base_path }}/scheduled-tests">定时恢复</a>
             <a class="{{ 'active' if active == 'guard' else '' }}" href="{{ base_path }}/guard">自动 Guard</a>
-            <a class="{{ 'active' if active == 'turnstile' else '' }}" href="{{ base_path }}/turnstile">登录防护</a>
+            <a class="{{ 'active' if active == 'sso' else '' }}" href="{{ base_path }}/sso">Sub2API 接入</a>
             <a class="{{ 'active' if active == 'telegram' else '' }}" href="{{ base_path }}/telegram">Telegram</a>
             <form method="post" action="{{ base_path }}/logout">
               <button class="link-button" type="submit">退出</button>

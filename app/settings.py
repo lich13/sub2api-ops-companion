@@ -9,8 +9,6 @@ from pathlib import Path
 @dataclass
 class Settings:
     database_url: str
-    basic_user: str
-    basic_password: str
     session_secret: str
     session_ttl_seconds: int
     base_path: str
@@ -39,8 +37,6 @@ class Settings:
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
-    turnstile_config_path: str = "/data/turnstile-config.json"
-    turnstile_verify_timeout_seconds: int = 5
     sso_config_path: str = "/data/sso-config.json"
     sub2api_base_url: str = ""
     sub2api_verify_base_url: str = ""
@@ -110,6 +106,9 @@ def load_settings() -> Settings:
     base_path = os.getenv("BASE_PATH", "/sub2ops").rstrip("/")
     if base_path == "":
         base_path = ""
+    session_secret = os.getenv("OPS_SESSION_SECRET", "")
+    if not session_secret:
+        raise RuntimeError("OPS_SESSION_SECRET must be set")
     telegram_config_path = os.getenv("TELEGRAM_CONFIG_PATH", "/data/telegram-config.json")
     telegram_config = read_json_config(telegram_config_path)
     telegram_bot_token = str(telegram_config.get("bot_token", os.getenv("TELEGRAM_BOT_TOKEN", "")) or "")
@@ -117,9 +116,7 @@ def load_settings() -> Settings:
 
     return Settings(
         database_url=os.environ["DATABASE_URL"],
-        basic_user=os.getenv("OPS_BASIC_USER", "admin"),
-        basic_password=os.environ["OPS_BASIC_PASSWORD"],
-        session_secret=os.getenv("OPS_SESSION_SECRET", os.environ["OPS_BASIC_PASSWORD"]),
+        session_secret=session_secret,
         session_ttl_seconds=int_env("OPS_SESSION_TTL_SECONDS", 31536000, 300, 31536000),
         base_path=base_path,
         audit_path=os.getenv("AUDIT_PATH", "/data/audit.jsonl"),
@@ -185,8 +182,6 @@ def load_settings() -> Settings:
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
         update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
-        turnstile_config_path=os.getenv("OPS_TURNSTILE_CONFIG_PATH", "/data/turnstile-config.json"),
-        turnstile_verify_timeout_seconds=int_env("OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
         sso_config_path=os.getenv("OPS_SSO_CONFIG_PATH", "/data/sso-config.json"),
         sub2api_base_url=os.getenv("SUB2API_BASE_URL", "").rstrip("/"),
         sub2api_verify_base_url=os.getenv("SUB2API_VERIFY_BASE_URL", "").rstrip("/"),

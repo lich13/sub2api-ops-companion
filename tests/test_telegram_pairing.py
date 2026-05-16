@@ -37,8 +37,6 @@ def guard_config() -> dict[str, Any]:
 def make_settings(state_path: str, pairing_code: str = "ABCD-EFGH") -> Settings:
     return Settings(
         database_url="postgresql://unused",
-        basic_user="admin",
-        basic_password="password",
         session_secret="secret",
         session_ttl_seconds=3600,
         base_path="/sub2ops",

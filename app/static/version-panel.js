@@ -14,7 +14,7 @@
   async function readJson(response) {
     var contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
-      throw new Error("登录状态可能已失效，请刷新页面重新登录");
+      throw new Error("SSO 会话可能已失效，请从 Sub2API 菜单重新进入");
     }
     var payload = await response.json();
     if (!response.ok) {
