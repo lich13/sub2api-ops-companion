@@ -13,6 +13,7 @@ from .turnstile import clean_setting_value, setting_bool
 class SSORuntimeConfig:
     enabled: bool = False
     base_url: str = ""
+    verify_base_url: str = ""
     required_role: str = "admin"
     session_ttl_seconds: int = 86400
     verify_timeout_seconds: int = 5
@@ -37,6 +38,7 @@ def load_sso_runtime_config(
     *,
     env_enabled: bool = False,
     env_base_url: str = "",
+    env_verify_base_url: str = "",
     env_required_role: str = "admin",
     env_session_ttl_seconds: int = 86400,
     env_verify_timeout_seconds: int = 5,
@@ -44,6 +46,7 @@ def load_sso_runtime_config(
     defaults = SSORuntimeConfig(
         enabled=env_enabled,
         base_url=_clean_base_url(env_base_url),
+        verify_base_url=_clean_base_url(env_verify_base_url),
         required_role=clean_setting_value(env_required_role) or "admin",
         session_ttl_seconds=_int_setting(env_session_ttl_seconds, 86400, 300, 604800),
         verify_timeout_seconds=_int_setting(env_verify_timeout_seconds, 5, 1, 20),
@@ -59,6 +62,7 @@ def load_sso_runtime_config(
     return SSORuntimeConfig(
         enabled=setting_bool(data.get("enabled", defaults.enabled)),
         base_url=_clean_base_url(data.get("base_url", defaults.base_url)),
+        verify_base_url=_clean_base_url(data.get("verify_base_url", defaults.verify_base_url)),
         required_role=clean_setting_value(data.get("required_role", defaults.required_role)) or "admin",
         session_ttl_seconds=_int_setting(data.get("session_ttl_seconds"), defaults.session_ttl_seconds, 300, 604800),
         verify_timeout_seconds=_int_setting(data.get("verify_timeout_seconds"), defaults.verify_timeout_seconds, 1, 20),
@@ -71,10 +75,18 @@ def build_sso_panel_config(config: SSORuntimeConfig, *, base_path: str) -> dict[
     menu_url = ""
     if config.base_url:
         menu_url = f"{config.base_url}{base_path}/sso/start"
+    effective_verify_base_url = config.verify_base_url or config.base_url
+    verify_url = ""
+    if effective_verify_base_url:
+        verify_url = f"{effective_verify_base_url}/api/v1/auth/me"
     return {
         "enabled": config.enabled,
         "base_url": config.base_url,
         "base_url_set": bool(config.base_url),
+        "verify_base_url": config.verify_base_url,
+        "verify_base_url_set": bool(config.verify_base_url),
+        "effective_verify_base_url": effective_verify_base_url,
+        "verify_url": verify_url,
         "required_role": config.required_role,
         "session_ttl_seconds": config.session_ttl_seconds,
         "verify_timeout_seconds": config.verify_timeout_seconds,
@@ -89,6 +101,7 @@ def save_sso_config(
     *,
     enabled: bool,
     base_url: str,
+    verify_base_url: str,
     required_role: str,
     session_ttl_seconds: int,
     verify_timeout_seconds: int,
@@ -97,6 +110,7 @@ def save_sso_config(
     updated = SSORuntimeConfig(
         enabled=enabled,
         base_url=_clean_base_url(base_url),
+        verify_base_url=_clean_base_url(verify_base_url),
         required_role=required_role.strip() or "admin",
         session_ttl_seconds=_int_setting(session_ttl_seconds, 86400, 300, 604800),
         verify_timeout_seconds=_int_setting(verify_timeout_seconds, 5, 1, 20),
@@ -110,6 +124,7 @@ def save_sso_config(
             {
                 "enabled": updated.enabled,
                 "base_url": updated.base_url,
+                "verify_base_url": updated.verify_base_url,
                 "required_role": updated.required_role,
                 "session_ttl_seconds": updated.session_ttl_seconds,
                 "verify_timeout_seconds": updated.verify_timeout_seconds,

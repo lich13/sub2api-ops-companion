@@ -62,7 +62,8 @@ docker compose up -d --build
 - `OPS_TURNSTILE_CONFIG_PATH`：Ops 登录防护配置文件，默认 `/data/turnstile-config.json`。通过 `/sub2ops/turnstile` 面板保存后立即作用于 Ops 自身登录。
 - `OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS`：Cloudflare Turnstile 校验超时，默认 `5` 秒。
 - `OPS_SSO_CONFIG_PATH`：Sub2API 免二次登录运行时配置，默认 `/data/sso-config.json`。可在 `/sub2ops/turnstile` 面板保存，不需要重启。
-- `SUB2API_BASE_URL`：Sub2API 站点根地址，例如 `https://sub2api.example.com`。
+- `SUB2API_BASE_URL`：Sub2API 菜单公网根地址，例如 `https://sub2api.example.com`。
+- `SUB2API_VERIFY_BASE_URL`：可选的 Ops 服务端校验根地址；Docker 同网部署时可填 `http://sub2api:8080`，避免服务端绕公网/Cloudflare 回源。
 - `SUB2API_SSO_ENABLED`：是否允许 Sub2API 自定义菜单 token 换取 Companion 会话，默认 `false`。
 - `SUB2API_SSO_REQUIRED_ROLE`：允许进入 Companion 的 Sub2API 用户角色，默认 `admin`；设为 `*` 可放开角色校验，不建议。
 - `SUB2API_SSO_SESSION_TTL_SECONDS`：SSO 换出的 Companion 会话有效期，默认 1 天，范围 `300` 到 `604800` 秒。
@@ -72,7 +73,7 @@ docker compose up -d --build
 
 这个模式不改 Sub2API 源码，只依赖 Sub2API 现有自定义菜单 iframe 会自动追加 `token`、`user_id`、`ui_mode=embedded` 等参数。
 
-1. 进入 `/sub2ops/turnstile` 的“Sub2API 免二次登录”区块，开启后填写 Sub2API 站点地址，例如：
+1. 进入 `/sub2ops/turnstile` 的“Sub2API 免二次登录”区块，开启后填写 Sub2API 菜单公网地址，例如：
 
 ```text
 https://你的-sub2api-域名
@@ -82,6 +83,8 @@ https://你的-sub2api-域名
 
 ```bash
 SUB2API_BASE_URL=https://你的-sub2api-域名
+# 可选：Ops 和 Sub2API 在同一个 Docker 网络时，服务端验 token 可走内网。
+SUB2API_VERIFY_BASE_URL=http://sub2api:8080
 SUB2API_SSO_ENABLED=true
 SUB2API_SSO_REQUIRED_ROLE=admin
 ```
@@ -92,7 +95,7 @@ SUB2API_SSO_REQUIRED_ROLE=admin
 https://你的-sub2api-域名/sub2ops/sso/start
 ```
 
-3. 管理员从 Sub2API 菜单进入后，Companion 会用传入的 JWT 调 `SUB2API_BASE_URL/api/v1/auth/me` 验证身份。验证成功后立即写入自己的强随机会话 Cookie，并 303 跳转到干净的 `/sub2ops/`。Cookie 只包含随机会话 ID 和 HMAC，真实用户信息保存在服务端 `/data`，浏览器端没有可读明文。
+3. 管理员从 Sub2API 菜单进入后，Companion 会用传入的 JWT 调 `SUB2API_VERIFY_BASE_URL/api/v1/auth/me` 验证身份；未配置 `SUB2API_VERIFY_BASE_URL` 时回退到 `SUB2API_BASE_URL`。验证成功后立即写入自己的强随机会话 Cookie，并 303 跳转到干净的 `/sub2ops/`。Cookie 只包含随机会话 ID 和 HMAC，真实用户信息保存在服务端 `/data`，浏览器端没有可读明文。
 
 4. 因为 Sub2API 现有 iframe 机制会把 JWT 放在首次 GET 的 query string 里，生产环境应使用 HTTPS，并避免 nginx 记录 `/sub2ops/` 的 query 日志。仓库里的 nginx 示例已经对该路径关闭 access log。
 

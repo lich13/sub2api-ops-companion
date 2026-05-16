@@ -2622,7 +2622,7 @@ pre {
 
 .sso-form-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -2635,8 +2635,9 @@ pre {
   min-width: 0;
 }
 
-.sso-base-url-field {
-  min-width: 260px;
+.sso-wide-field {
+  grid-column: span 2;
+  min-width: 240px;
 }
 
 .sso-menu-preview {
@@ -2949,7 +2950,8 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .sso-base-url-field {
+  .sso-wide-field {
+    grid-column: auto;
     min-width: 0;
   }
 
