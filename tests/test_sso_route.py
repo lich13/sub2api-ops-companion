@@ -43,6 +43,7 @@ class Sub2APISSORouteTests(unittest.TestCase):
             session_ttl_seconds=31536000,
             sso_config_path=str(data_dir / "sso-config.json"),
             sub2api_base_url="https://661313.xyz",
+            sub2api_verify_base_url="http://sub2api:8080",
             sub2api_sso_enabled=True,
             sub2api_sso_required_role="Admin",
             sub2api_sso_session_ttl_seconds=600,
@@ -74,7 +75,7 @@ class Sub2APISSORouteTests(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/sub2ops/speed")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
-        self.assertEqual(calls[0]["args"][0], "https://661313.xyz")
+        self.assertEqual(calls[0]["args"][0], "http://sub2api:8080")
         self.assertEqual(calls[0]["kwargs"]["token"], "jwt-token")
         self.assertEqual(calls[0]["kwargs"]["expected_user_id"], "7")
         self.assertEqual(calls[0]["kwargs"]["required_role"], "Admin")

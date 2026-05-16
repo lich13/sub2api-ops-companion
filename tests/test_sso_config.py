@@ -14,6 +14,7 @@ class SSOConfigTests(unittest.TestCase):
                 str(Path(tmpdir) / "missing.json"),
                 env_enabled=True,
                 env_base_url="https://661313.xyz/",
+                env_verify_base_url="http://sub2api:8080/",
                 env_required_role="Admin",
                 env_session_ttl_seconds=900,
                 env_verify_timeout_seconds=4,
@@ -21,6 +22,7 @@ class SSOConfigTests(unittest.TestCase):
 
             self.assertTrue(config.enabled)
             self.assertEqual(config.base_url, "https://661313.xyz")
+            self.assertEqual(config.verify_base_url, "http://sub2api:8080")
             self.assertEqual(config.required_role, "Admin")
             self.assertEqual(config.session_ttl_seconds, 900)
             self.assertEqual(config.verify_timeout_seconds, 4)
@@ -32,6 +34,7 @@ class SSOConfigTests(unittest.TestCase):
                 path,
                 enabled=True,
                 base_url="https://661313.xyz/",
+                verify_base_url="http://sub2api:8080/",
                 required_role="admin",
                 session_ttl_seconds=86400,
                 verify_timeout_seconds=5,
@@ -43,7 +46,9 @@ class SSOConfigTests(unittest.TestCase):
 
             self.assertTrue(config.enabled)
             self.assertEqual(config.base_url, "https://661313.xyz")
+            self.assertEqual(config.verify_base_url, "http://sub2api:8080")
             self.assertEqual(panel["menu_url"], "https://661313.xyz/sub2ops/sso/start")
+            self.assertEqual(panel["verify_url"], "http://sub2api:8080/api/v1/auth/me")
             self.assertEqual(panel["updated_by"], "sub2api:7:admin")
 
     def test_ttl_and_timeout_are_clamped(self) -> None:
@@ -53,6 +58,7 @@ class SSOConfigTests(unittest.TestCase):
                 path,
                 enabled=True,
                 base_url="https://661313.xyz",
+                verify_base_url="",
                 required_role="admin",
                 session_ttl_seconds=10,
                 verify_timeout_seconds=100,

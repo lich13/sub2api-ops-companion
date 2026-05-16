@@ -43,6 +43,7 @@ class Settings:
     turnstile_verify_timeout_seconds: int = 5
     sso_config_path: str = "/data/sso-config.json"
     sub2api_base_url: str = ""
+    sub2api_verify_base_url: str = ""
     sub2api_sso_enabled: bool = False
     sub2api_sso_required_role: str = "admin"
     sub2api_sso_session_ttl_seconds: int = 86400
@@ -188,6 +189,7 @@ def load_settings() -> Settings:
         turnstile_verify_timeout_seconds=int_env("OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS", 5, 1, 20),
         sso_config_path=os.getenv("OPS_SSO_CONFIG_PATH", "/data/sso-config.json"),
         sub2api_base_url=os.getenv("SUB2API_BASE_URL", "").rstrip("/"),
+        sub2api_verify_base_url=os.getenv("SUB2API_VERIFY_BASE_URL", "").rstrip("/"),
         sub2api_sso_enabled=bool_env("SUB2API_SSO_ENABLED", False),
         sub2api_sso_required_role=os.getenv("SUB2API_SSO_REQUIRED_ROLE", "admin").strip() or "admin",
         sub2api_sso_session_ttl_seconds=int_env("SUB2API_SSO_SESSION_TTL_SECONDS", 86400, 300, 604800),

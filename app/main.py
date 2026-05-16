@@ -257,6 +257,7 @@ def current_sso_config() -> SSORuntimeConfig:
         settings.sso_config_path,
         env_enabled=settings.sub2api_sso_enabled,
         env_base_url=settings.sub2api_base_url,
+        env_verify_base_url=settings.sub2api_verify_base_url,
         env_required_role=settings.sub2api_sso_required_role,
         env_session_ttl_seconds=settings.sub2api_sso_session_ttl_seconds,
         env_verify_timeout_seconds=settings.sub2api_sso_verify_timeout_seconds,
@@ -958,9 +959,10 @@ def sub2api_sso_start(
         write_audit(settings.audit_path, "sso_login_reject", {"reason": "disabled", "client": client_host})
         return no_store_redirect(login_target)
 
+    verify_base_url = sso_config.verify_base_url or sso_config.base_url
     try:
         principal = validate_sub2api_token(
-            sso_config.base_url,
+            verify_base_url,
             token=token,
             expected_user_id=user_id or None,
             required_role=sso_config.required_role,
@@ -972,9 +974,11 @@ def sub2api_sso_start(
             "sso_login_reject",
             {
                 "reason": exc.reason,
+                "message": exc.message,
                 "user_id": user_id,
                 "client": client_host,
                 "src_host": request.query_params.get("src_host", ""),
+                "verify_base_url_set": bool(sso_config.verify_base_url),
             },
         )
         return no_store_redirect(login_target)
@@ -1425,11 +1429,13 @@ def sso_config_save(
     user: AuthUser,
     enabled: str | None = Form(None),
     base_url: str = Form(""),
+    verify_base_url: str = Form(""),
     required_role: str = Form("admin"),
     session_ttl_seconds: int = Form(86400),
     verify_timeout_seconds: int = Form(5),
 ) -> Response:
     clean_base_url = base_url.strip().rstrip("/")
+    clean_verify_base_url = verify_base_url.strip().rstrip("/")
     if form_truthy(enabled) and not clean_base_url:
         return RedirectResponse(
             f"{settings.base_path}/turnstile?msg={quote('启用 Sub2API 免登录前需要填写 Sub2API 地址')}",
@@ -1443,10 +1449,19 @@ def sso_config_save(
                 f"{settings.base_path}/turnstile?msg={quote('Sub2API 地址必须是完整的 http(s) 地址')}",
                 status_code=303,
             )
+    if clean_verify_base_url:
+        try:
+            clean_verify_base_url = normalize_base_url(clean_verify_base_url)
+        except Sub2APISSOError:
+            return RedirectResponse(
+                f"{settings.base_path}/turnstile?msg={quote('服务端校验地址必须是完整的 http(s) 地址')}",
+                status_code=303,
+            )
     save_sso_config(
         settings.sso_config_path,
         enabled=form_truthy(enabled),
         base_url=clean_base_url,
+        verify_base_url=clean_verify_base_url,
         required_role=required_role.strip() or "admin",
         session_ttl_seconds=session_ttl_seconds,
         verify_timeout_seconds=verify_timeout_seconds,
@@ -1459,6 +1474,7 @@ def sso_config_save(
             "user": user,
             "enabled": form_truthy(enabled),
             "base_url_set": bool(clean_base_url),
+            "verify_base_url_set": bool(clean_verify_base_url),
             "required_role": required_role.strip() or "admin",
         },
     )

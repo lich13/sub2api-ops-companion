@@ -29,8 +29,12 @@
     <strong>{{ '已启用' if sso.enabled else '未启用' }}</strong>
   </div>
   <div class="metric-card {{ 'danger' if sso.enabled and not sso.base_url_set else '' }}">
-    <span>Sub2API 地址</span>
+    <span>菜单地址</span>
     <strong>{{ '已设置' if sso.base_url_set else '缺失' }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>校验地址</span>
+    <strong>{{ '内网' if sso.verify_base_url_set else '同菜单' }}</strong>
   </div>
 </section>
 
@@ -48,14 +52,24 @@
     </div>
 
     <div class="sso-form-grid">
-      <label class="turnstile-field sso-base-url-field">
-        <span>Sub2API 站点地址</span>
+      <label class="turnstile-field sso-wide-field">
+        <span>Sub2API 菜单公网地址</span>
         <input
           class="wide-input mono"
           name="base_url"
           value="{{ sso.base_url }}"
           spellcheck="false"
           placeholder="https://661313.xyz"
+        />
+      </label>
+      <label class="turnstile-field sso-wide-field">
+        <span>服务端校验地址（可选）</span>
+        <input
+          class="wide-input mono"
+          name="verify_base_url"
+          value="{{ sso.verify_base_url }}"
+          spellcheck="false"
+          placeholder="http://sub2api:8080"
         />
       </label>
       <label class="turnstile-field">
@@ -76,6 +90,10 @@
       <span>Sub2API 自定义菜单 URL</span>
       <code>{{ sso.menu_url or '保存 Sub2API 地址后生成' }}</code>
     </div>
+    <div class="sso-menu-preview">
+      <span>服务端实际校验 URL</span>
+      <code>{{ sso.verify_url or '默认使用菜单公网地址 + /api/v1/auth/me' }}</code>
+    </div>
 
     <div class="turnstile-submit-row">
       <button class="primary" type="submit">保存免登录配置</button>
@@ -86,7 +104,7 @@
   <aside class="panel turnstile-help-card">
     <h3>对接边界</h3>
     <dl class="status-list">
-      <div><dt>验证接口</dt><dd class="mono">/api/v1/auth/me</dd></div>
+      <div><dt>验证接口</dt><dd class="mono">{{ sso.verify_url or '/api/v1/auth/me' }}</dd></div>
       <div><dt>菜单地址</dt><dd class="mono">{{ sso.menu_url or '-' }}</dd></div>
       <div><dt>配置文件</dt><dd class="mono">{{ sso_config_path }}</dd></div>
       <div><dt>会话形式</dt><dd>随机 ID + HMAC，载荷保存在 Ops 本地</dd></div>
