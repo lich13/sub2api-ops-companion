@@ -117,6 +117,17 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertNotIn("cf-turnstile", template)
         self.assertNotIn("/turnstile", template)
 
+    def test_brand_icon_is_static_svg_asset(self) -> None:
+        icon = (REPO_ROOT / "app" / "static" / "sub2ops-icon.svg").read_text(encoding="utf-8")
+        base = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+
+        self.assertIn("<svg", icon)
+        self.assertIn('viewBox="0 0 64 64"', icon)
+        self.assertIn("<title>Sub2API Ops Companion</title>", icon)
+        self.assertIn('href="{{ base_path }}/static/sub2ops-icon.svg', base)
+        self.assertIn('src="{{ base_path }}/static/sub2ops-icon.svg', base)
+        self.assertNotIn('<span class="brand-mark">S</span>', base)
+
     def test_settings_load_without_legacy_basic_password(self) -> None:
         with patch.dict(
             os.environ,
