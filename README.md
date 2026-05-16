@@ -7,7 +7,7 @@
 - 不修改 Sub2API 原仓库和镜像。
 - 只连接 Sub2API 的 PostgreSQL，读取 `usage_logs`、`ops_error_logs`、`accounts`、`groups` 等运行数据。
 - 账号操作只更新 `accounts.schedulable`、`accounts.temp_unschedulable_*` 和 `accounts.updated_at`。
-- 登录使用页面内强随机服务端 Cookie 会话，不触发浏览器 Basic Auth 弹窗。
+- 不提供独立账号密码登录页，只接受 Sub2API 管理后台 SSO 首跳换取本服务 Cookie 会话。
 - 操作审计写入本服务自己的 `/data/audit.jsonl`，不污染 Sub2API 源码。
 
 ## 功能
@@ -37,15 +37,13 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-默认监听 `127.0.0.1:18081`。生产环境建议通过 nginx 挂到 `/sub2ops/`，并保留 Basic Auth。nginx 片段见 `deploy/nginx/sub2ops.location.conf`。
+默认监听 `127.0.0.1:18081`。生产环境建议通过 nginx 挂到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log，避免首跳 token 写入日志。nginx 片段见 `deploy/nginx/sub2ops.location.conf`。
 
 ## 环境变量
 
 - `DATABASE_URL`：PostgreSQL 连接串。
-- `OPS_BASIC_USER`：Basic Auth 用户名。
-- `OPS_BASIC_PASSWORD`：页面登录密码，必须设置。
 - `OPS_SESSION_SECRET`：Cookie 会话签名密钥。
-- `OPS_SESSION_TTL_SECONDS`：页面登录 Cookie 会话有效期，默认 1 年（`31536000` 秒）。
+- `OPS_SESSION_TTL_SECONDS`：兼容旧会话校验的最大有效期，默认 1 年（`31536000` 秒）。
 - `OPS_SESSION_STORE_PATH`：服务端会话存储文件，默认 `/data/sessions.json`。
 - `BASE_PATH`：反代路径前缀，例如 `/sub2ops`。
 - `APP_PORT`：容器内监听端口，默认 `18081`。
@@ -59,12 +57,10 @@ docker compose up -d --build
 - `OPS_UPDATE_ENABLED`：是否允许从面板执行更新，默认 `true`。
 - `OPS_UPDATE_WORKDIR`：容器内 Git 工作树路径，默认 `/workspace`。
 - `OPS_UPDATE_BRANCH`：更新跟踪分支，默认 `main`。
-- `OPS_TURNSTILE_CONFIG_PATH`：Ops 登录防护配置文件，默认 `/data/turnstile-config.json`。通过 `/sub2ops/turnstile` 面板保存后立即作用于 Ops 自身登录。
-- `OPS_TURNSTILE_VERIFY_TIMEOUT_SECONDS`：Cloudflare Turnstile 校验超时，默认 `5` 秒。
-- `OPS_SSO_CONFIG_PATH`：Sub2API 免二次登录运行时配置，默认 `/data/sso-config.json`。可在 `/sub2ops/turnstile` 面板保存，不需要重启。
+- `OPS_SSO_CONFIG_PATH`：Sub2API 免二次登录运行时配置，默认 `/data/sso-config.json`。可在 `/sub2ops/sso` 面板保存，不需要重启。
 - `SUB2API_BASE_URL`：Sub2API 菜单公网根地址，例如 `https://sub2api.example.com`。
 - `SUB2API_VERIFY_BASE_URL`：可选的 Ops 服务端校验根地址；Docker 同网部署时可填 `http://sub2api:8080`，避免服务端绕公网/Cloudflare 回源。
-- `SUB2API_SSO_ENABLED`：是否允许 Sub2API 自定义菜单 token 换取 Companion 会话，默认 `false`。
+- `SUB2API_SSO_ENABLED`：是否允许 Sub2API 自定义菜单 token 换取 Companion 会话；SSO-only 部署应设为 `true`。
 - `SUB2API_SSO_REQUIRED_ROLE`：允许进入 Companion 的 Sub2API 用户角色，默认 `admin`；设为 `*` 可放开角色校验，不建议。
 - `SUB2API_SSO_SESSION_TTL_SECONDS`：SSO 换出的 Companion 会话有效期，默认 1 天，范围 `300` 到 `604800` 秒。
 - `SUB2API_SSO_VERIFY_TIMEOUT_SECONDS`：Companion 调 Sub2API 验证 token 的超时，默认 `5` 秒。
@@ -73,7 +69,7 @@ docker compose up -d --build
 
 这个模式不改 Sub2API 源码，只依赖 Sub2API 现有自定义菜单 iframe 会自动追加 `token`、`user_id`、`ui_mode=embedded` 等参数。
 
-1. 进入 `/sub2ops/turnstile` 的“Sub2API 免二次登录”区块，开启后填写 Sub2API 菜单公网地址，例如：
+1. 首次部署先通过 `.env` 配好 `SUB2API_BASE_URL` 和 `SUB2API_SSO_ENABLED=true`，或直接写入 `OPS_SSO_CONFIG_PATH` 指向的配置文件。成功从 Sub2API 菜单进入后，可以继续在 `/sub2ops/sso` 的“Sub2API 免二次登录”区块里调整配置，例如：
 
 ```text
 https://你的-sub2api-域名
@@ -157,9 +153,9 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 ## 安全说明
 
-这个服务具备暂停和恢复账号调度的能力，不应该裸露在公网。至少启用 Basic Auth；更稳妥的方式是只监听本机，通过 nginx 内部路径访问。
+这个服务具备暂停和恢复账号调度的能力，不应该作为独立站点裸露在公网。当前实现是 SSO-only：未带合法 Sub2API token 的直接访问会返回 `403`，不会展示账号密码登录表单。
 
-启用 Sub2API SSO 后，Companion 的独立登录仍可作为回退入口；如果你希望只能从 Sub2API 进入，可以在公网侧只暴露 `/sub2ops/sso/start` 和认证后的 `/sub2ops/`，并把容器端口继续限制在 `127.0.0.1:18081` 或 Docker 内网。
+更稳妥的部署方式是让 Companion 继续只监听 `127.0.0.1:18081` 或 Docker 内网，由 Sub2API 同域 nginx 暴露 `/sub2ops/`。响应会附加 `frame-ancestors 'self' <Sub2API 菜单域名>`，使 Companion 只面向 Sub2API 管理后台 iframe 接入。
 
 ## 调度问题排查口径
 

@@ -66,8 +66,7 @@ a:hover {
   padding: 24px 0 40px;
 }
 
-.brand,
-.login-brand {
+.brand {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -84,16 +83,14 @@ a:hover {
   font-weight: 700;
 }
 
-.brand h1,
-.login-brand h1 {
+.brand h1 {
   margin: 0;
   font-size: 16px;
   line-height: 1.2;
   font-weight: 700;
 }
 
-.brand p,
-.login-brand p {
+.brand p {
   margin: 2px 0 0;
   color: var(--muted);
   font-size: 11px;
@@ -2457,51 +2454,6 @@ pre {
   font-size: 12px;
 }
 
-.login-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: linear-gradient(180deg, #ffffff 0, var(--bg) 100%);
-}
-
-.login-card {
-  width: min(440px, 100%);
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: var(--shadow);
-}
-
-.login-form {
-  display: grid;
-  gap: 14px;
-  margin-top: 24px;
-}
-
-.login-form input,
-.login-form button {
-  width: 100%;
-}
-
-.ops-turnstile-widget {
-  min-height: 65px;
-  display: flex;
-  justify-content: center;
-}
-
-.ops-turnstile-widget .cf-turnstile {
-  max-width: 100%;
-}
-
-.login-footnote {
-  margin: 16px 0 0;
-  color: var(--muted-soft);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .telegram-status-list {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
@@ -2588,36 +2540,25 @@ pre {
   margin-top: 10px;
 }
 
-.turnstile-layout {
+.sso-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 18px;
   align-items: start;
 }
 
-.turnstile-config-card,
-.turnstile-help-card {
+.sso-config-card,
+.sso-help-card {
   margin-bottom: 0;
 }
 
-.turnstile-config-card {
+.sso-config-card {
   display: grid;
   gap: 16px;
 }
 
-.turnstile-metrics .metric-card strong {
+.sso-metrics .metric-card strong {
   font-size: 22px;
-}
-
-.turnstile-metrics .metric-card .metric-time {
-  font-size: 16px;
-  line-height: 1.25;
-}
-
-.turnstile-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
 }
 
 .sso-form-grid {
@@ -2626,11 +2567,11 @@ pre {
   gap: 14px;
 }
 
-.turnstile-field {
+.sso-field {
   min-width: 0;
 }
 
-.turnstile-field input {
+.sso-field input {
   width: 100%;
   min-width: 0;
 }
@@ -2661,11 +2602,13 @@ pre {
   font-size: 12px;
 }
 
-.turnstile-secondary-layout {
-  margin-top: 18px;
+.sso-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.turnstile-submit-row {
+.sso-submit-row {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 12px;
@@ -2673,21 +2616,21 @@ pre {
   padding-top: 2px;
 }
 
-.turnstile-submit-row span {
+.sso-submit-row span {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
 }
 
-.turnstile-help-card .status-list {
+.sso-help-card .status-list {
   margin-top: 12px;
 }
 
-.turnstile-help-card .status-list div {
+.sso-help-card .status-list div {
   align-items: center;
 }
 
-.turnstile-help-card dd {
+.sso-help-card dd {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
@@ -2870,7 +2813,7 @@ pre {
   .scheduled-deck-head,
   .scheduled-workbench,
   .scheduled-card-layout,
-  .turnstile-layout {
+  .sso-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2945,8 +2888,8 @@ pre {
   .scheduled-editor-grid,
   .schedule-option-grid,
   .scheduled-toggle-grid,
-  .turnstile-form-grid,
-  .sso-form-grid {
+  .sso-form-grid,
+  .sso-preview-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2965,19 +2908,19 @@ pre {
 
   .scheduled-account-head,
   .scheduled-submit-row,
-  .turnstile-submit-row,
+  .sso-submit-row,
   .frequency-head {
     display: grid;
     justify-items: stretch;
   }
 
   .scheduled-submit-row,
-  .turnstile-submit-row {
+  .sso-submit-row {
     grid-template-columns: 1fr;
   }
 
   .scheduled-submit-row button,
-  .turnstile-submit-row button {
+  .sso-submit-row button {
     width: 100%;
   }
 

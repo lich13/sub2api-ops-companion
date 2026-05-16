@@ -7,7 +7,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from types import SimpleNamespace
 
-os.environ.setdefault("OPS_BASIC_PASSWORD", "test-password")
+os.environ.setdefault("OPS_SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 from starlette.requests import Request
@@ -75,6 +75,8 @@ class Sub2APISSORouteTests(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/sub2ops/speed")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+        self.assertIn("frame-ancestors", response.headers["Content-Security-Policy"])
+        self.assertIn("https://661313.xyz", response.headers["Content-Security-Policy"])
         self.assertEqual(calls[0]["args"][0], "http://sub2api:8080")
         self.assertEqual(calls[0]["kwargs"]["token"], "jwt-token")
         self.assertEqual(calls[0]["kwargs"]["expected_user_id"], "7")
@@ -88,17 +90,19 @@ class Sub2APISSORouteTests(unittest.TestCase):
         session_value = cookie[main_module.SESSION_COOKIE].value
         self.assertEqual(main_module.verify_session(session_value), "sub2api:7:admin")
 
-    def test_disabled_sso_redirects_without_setting_cookie(self) -> None:
+    def test_disabled_sso_rejects_without_login_redirect_or_cookie(self) -> None:
         main_module.settings.sub2api_sso_enabled = False
 
         response = main_module.sub2api_sso_start(fake_request(), token="jwt-token", user_id="7")
 
-        self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/sub2ops/login?error=sso&next=/")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.body.decode("utf-8"), "Sub2API SSO required")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+        self.assertNotIn("location", response.headers)
         self.assertNotIn("set-cookie", response.headers)
 
-    def test_failed_sso_redirects_without_leaking_token_to_location(self) -> None:
+    def test_failed_sso_rejects_without_login_redirect_or_cookie(self) -> None:
         def fake_validator(*_args: object, **_kwargs: object) -> Sub2APISSOUser:
             raise Sub2APISSOError("upstream_unauthorized", "bad token")
 
@@ -106,9 +110,12 @@ class Sub2APISSORouteTests(unittest.TestCase):
 
         response = main_module.sub2api_sso_start(fake_request(), token="jwt-token", user_id="7")
 
-        self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/sub2ops/login?error=sso&next=/")
-        self.assertNotIn("jwt-token", response.headers["location"])
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.body.decode("utf-8"), "Sub2API SSO required")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+        self.assertIn("frame-ancestors", response.headers["Content-Security-Policy"])
+        self.assertNotIn("location", response.headers)
         self.assertNotIn("set-cookie", response.headers)
 
 

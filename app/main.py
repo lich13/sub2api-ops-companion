@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
@@ -61,12 +61,6 @@ from .sso_config import (
 from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
-from .turnstile import (
-    build_turnstile_panel_config,
-    load_turnstile_runtime_config,
-    save_turnstile_config,
-    verify_turnstile_token,
-)
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
@@ -231,25 +225,52 @@ def verify_session(value: str | None) -> str | None:
     return username
 
 
-def login_redirect(request: Request) -> HTTPException:
-    next_path = request.url.path
-    if request.url.query:
-        next_path += f"?{request.url.query}"
-    location = f"{settings.base_path}/login?next={quote(next_path, safe='/')}"
-    return HTTPException(status_code=303, headers={"Location": location}, detail="Login required")
-
-
 def safe_next(value: str | None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/"
     return value
 
 
+def origin_from_url(value: str) -> str:
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def frame_ancestors_value(sso_config: SSORuntimeConfig | None = None) -> str:
+    config = sso_config or current_sso_config()
+    ancestors = ["'self'"]
+    base_origin = origin_from_url(config.base_url)
+    if base_origin and base_origin not in ancestors:
+        ancestors.append(base_origin)
+    return "frame-ancestors " + " ".join(ancestors)
+
+
+def sso_security_headers(*, no_store: bool = False) -> dict[str, str]:
+    headers = {
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": frame_ancestors_value(),
+    }
+    if no_store:
+        headers["Cache-Control"] = "no-store"
+    return headers
+
+
+def apply_sso_security_headers(response: Response, *, no_store: bool = False) -> Response:
+    for key, value in sso_security_headers(no_store=no_store).items():
+        response.headers[key] = value
+    return response
+
+
 def no_store_redirect(location: str, status_code: int = 303) -> RedirectResponse:
     response = RedirectResponse(location, status_code=status_code)
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
+    return apply_sso_security_headers(response, no_store=True)  # type: ignore[return-value]
+
+
+def sso_required_response() -> Response:
+    response = Response("Sub2API SSO required", status_code=403, media_type="text/plain")
+    return apply_sso_security_headers(response, no_store=True)
 
 
 def current_sso_config() -> SSORuntimeConfig:
@@ -264,10 +285,20 @@ def current_sso_config() -> SSORuntimeConfig:
     )
 
 
+@app.middleware("http")
+async def add_sso_frame_headers(request: Request, call_next: Any) -> Response:
+    response = await call_next(request)
+    return apply_sso_security_headers(response)
+
+
 def require_auth(request: Request) -> str:
     username = verify_session(request.cookies.get(SESSION_COOKIE))
     if username is None:
-        raise login_redirect(request)
+        raise HTTPException(
+            status_code=403,
+            detail="Sub2API SSO required",
+            headers=sso_security_headers(no_store=True),
+        )
     return username
 
 
@@ -874,75 +905,6 @@ def build_speed_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, next: str = "/", error: str = "") -> HTMLResponse:
-    next_path = safe_next(next)
-    if verify_session(request.cookies.get(SESSION_COOKIE)):
-        return RedirectResponse(f"{settings.base_path}{next_path}", status_code=303)
-    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
-    return render(
-        request,
-        "login.html",
-        {
-            "active": "login",
-            "next": next_path,
-            "error": error,
-            "turnstile": build_turnstile_panel_config(turnstile_runtime),
-        },
-    )
-
-
-@app.post("/login")
-def login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    next: str = Form("/"),
-    cf_turnstile_response: str = Form("", alias="cf-turnstile-response"),
-) -> Response:
-    next_path = safe_next(next)
-    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
-    turnstile_result = verify_turnstile_token(
-        turnstile_runtime,
-        token=cf_turnstile_response,
-        remote_ip=request.client.host if request.client else "",
-        timeout_seconds=settings.turnstile_verify_timeout_seconds,
-    )
-    if not turnstile_result.ok:
-        write_audit(
-            settings.audit_path,
-            "turnstile_login_reject",
-            {
-                "user": username,
-                "client": request.client.host if request.client else "",
-                "reason": turnstile_result.reason,
-                "detail": turnstile_result.detail,
-            },
-        )
-        return RedirectResponse(
-            f"{settings.base_path}/login?error=turnstile&next={quote(next_path, safe='/')}",
-            status_code=303,
-        )
-
-    user_ok = secrets.compare_digest(username, settings.basic_user)
-    password_ok = secrets.compare_digest(password, settings.basic_password)
-    if not (user_ok and password_ok):
-        return RedirectResponse(f"{settings.base_path}/login?error=1&next={quote(next_path, safe='/')}", status_code=303)
-
-    response = RedirectResponse(f"{settings.base_path}{next_path}", status_code=303)
-    response.set_cookie(
-        SESSION_COOKIE,
-        sign_session(username, int(time.time())),
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path=cookie_path(),
-    )
-    write_audit(settings.audit_path, "login", {"user": username, "client": request.client.host if request.client else ""})
-    return response
-
-
 @app.get("/sso/start")
 def sub2api_sso_start(
     request: Request,
@@ -951,13 +913,12 @@ def sub2api_sso_start(
     next: str = "/",
 ) -> Response:
     next_path = safe_next(next)
-    login_target = f"{settings.base_path}/login?error=sso&next={quote(next_path, safe='/')}"
     client_host = request.client.host if request.client else ""
     sso_config = current_sso_config()
 
     if not sso_config.enabled:
         write_audit(settings.audit_path, "sso_login_reject", {"reason": "disabled", "client": client_host})
-        return no_store_redirect(login_target)
+        return sso_required_response()
 
     verify_base_url = sso_config.verify_base_url or sso_config.base_url
     try:
@@ -981,7 +942,7 @@ def sub2api_sso_start(
                 "verify_base_url_set": bool(sso_config.verify_base_url),
             },
         )
-        return no_store_redirect(login_target)
+        return sso_required_response()
 
     session_user = f"sub2api:{principal.id}:{principal.username}"
     issued_at = int(time.time())
@@ -1016,7 +977,7 @@ def sub2api_sso_start(
 
 @app.post("/logout")
 def logout(user: AuthUser) -> Response:
-    response = RedirectResponse(f"{settings.base_path}/login", status_code=303)
+    response = no_store_redirect(f"{settings.base_path}/sso/start")
     response.delete_cookie(SESSION_COOKIE, path=cookie_path())
     write_audit(settings.audit_path, "logout", {"user": user})
     return response
@@ -1318,17 +1279,14 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     )
 
 
-@app.get("/turnstile", response_class=HTMLResponse)
-def turnstile_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
-    turnstile_runtime = load_turnstile_runtime_config(settings.turnstile_config_path)
+@app.get("/sso", response_class=HTMLResponse)
+def sso_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     sso_runtime = current_sso_config()
     return render(
         request,
-        "turnstile.html",
+        "sso.html",
         {
-            "active": "turnstile",
-            "turnstile": build_turnstile_panel_config(turnstile_runtime),
-            "turnstile_config_path": settings.turnstile_config_path,
+            "active": "sso",
             "sso": build_sso_panel_config(sso_runtime, base_path=settings.base_path),
             "sso_config_path": settings.sso_config_path,
             "msg": msg,
@@ -1380,50 +1338,6 @@ async def telegram_config_save(
     return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存，配对码已生成')}", status_code=303)
 
 
-@app.post("/turnstile")
-def turnstile_config_save(
-    user: AuthUser,
-    enabled: str | None = Form(None),
-    site_key: str = Form(""),
-    secret_key: str = Form(""),
-) -> Response:
-    existing = load_turnstile_runtime_config(settings.turnstile_config_path)
-    submitted_secret_key = secret_key.strip()
-    secret_to_save = submitted_secret_key if submitted_secret_key else None
-    if form_truthy(enabled) and not site_key.strip():
-        return RedirectResponse(
-            f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Site Key')}",
-            status_code=303,
-        )
-    if form_truthy(enabled) and not (submitted_secret_key or existing.secret_key):
-        return RedirectResponse(
-            f"{settings.base_path}/turnstile?msg={quote('启用 Turnstile 前需要填写 Secret Key')}",
-            status_code=303,
-        )
-    save_turnstile_config(
-        settings.turnstile_config_path,
-        enabled=form_truthy(enabled),
-        site_key=site_key.strip(),
-        secret_key=secret_to_save,
-        updated_by=user,
-    )
-    write_audit(
-        settings.audit_path,
-        "ops_turnstile_config_update",
-        {
-            "user": user,
-            "enabled": form_truthy(enabled),
-            "site_key_set": bool(site_key.strip()),
-            "secret_key_updated": bool(submitted_secret_key),
-            "secret_key_previously_set": bool(existing.secret_key),
-        },
-    )
-    return RedirectResponse(
-        f"{settings.base_path}/turnstile?msg={quote('Ops 登录防护配置已保存，下一次登录立即生效')}",
-        status_code=303,
-    )
-
-
 @app.post("/sso-config")
 def sso_config_save(
     user: AuthUser,
@@ -1438,7 +1352,7 @@ def sso_config_save(
     clean_verify_base_url = verify_base_url.strip().rstrip("/")
     if form_truthy(enabled) and not clean_base_url:
         return RedirectResponse(
-            f"{settings.base_path}/turnstile?msg={quote('启用 Sub2API 免登录前需要填写 Sub2API 地址')}",
+            f"{settings.base_path}/sso?msg={quote('启用 Sub2API 免登录前需要填写 Sub2API 地址')}",
             status_code=303,
         )
     if clean_base_url:
@@ -1446,7 +1360,7 @@ def sso_config_save(
             clean_base_url = normalize_base_url(clean_base_url)
         except Sub2APISSOError:
             return RedirectResponse(
-                f"{settings.base_path}/turnstile?msg={quote('Sub2API 地址必须是完整的 http(s) 地址')}",
+                f"{settings.base_path}/sso?msg={quote('Sub2API 地址必须是完整的 http(s) 地址')}",
                 status_code=303,
             )
     if clean_verify_base_url:
@@ -1454,7 +1368,7 @@ def sso_config_save(
             clean_verify_base_url = normalize_base_url(clean_verify_base_url)
         except Sub2APISSOError:
             return RedirectResponse(
-                f"{settings.base_path}/turnstile?msg={quote('服务端校验地址必须是完整的 http(s) 地址')}",
+                f"{settings.base_path}/sso?msg={quote('服务端校验地址必须是完整的 http(s) 地址')}",
                 status_code=303,
             )
     save_sso_config(
@@ -1479,7 +1393,7 @@ def sso_config_save(
         },
     )
     return RedirectResponse(
-        f"{settings.base_path}/turnstile?msg={quote('Sub2API 免二次登录配置已保存，下一次从自定义菜单进入立即生效')}",
+        f"{settings.base_path}/sso?msg={quote('Sub2API 免二次登录配置已保存，下一次从自定义菜单进入立即生效')}",
         status_code=303,
     )
 

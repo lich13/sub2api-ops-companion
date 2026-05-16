@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .turnstile import clean_setting_value, setting_bool
-
 
 @dataclass(frozen=True)
 class SSORuntimeConfig:
@@ -19,6 +17,14 @@ class SSORuntimeConfig:
     verify_timeout_seconds: int = 5
     updated_at: str | None = None
     updated_by: str = ""
+
+
+def setting_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def clean_setting_value(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _int_setting(value: Any, default: int, minimum: int, maximum: int) -> int:

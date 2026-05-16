@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-title">
+  <div>
+    <h2>Sub2API 接入</h2>
+    <p>只允许 Sub2API 管理后台自定义菜单换取 Companion 会话，Ops 不再提供独立登录入口。</p>
+  </div>
+</section>
+
+<section class="metric-strip sso-metrics">
+  <div class="metric-card {{ 'warning' if not sso.enabled else '' }}">
+    <span>SSO 状态</span>
+    <strong>{{ '已启用' if sso.enabled else '未启用' }}</strong>
+  </div>
+  <div class="metric-card {{ 'danger' if sso.enabled and not sso.base_url_set else '' }}">
+    <span>菜单地址</span>
+    <strong>{{ '已设置' if sso.base_url_set else '缺失' }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>校验地址</span>
+    <strong>{{ '内网' if sso.verify_base_url_set else '同菜单' }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>允许角色</span>
+    <strong>{{ sso.required_role }}</strong>
+  </div>
+</section>
+
+<section class="sso-layout">
+  <form class="panel sso-config-card" method="post" action="{{ base_path }}/sso-config" autocomplete="off">
+    <div class="section-head compact-head">
+      <div>
+        <h3>Sub2API 免二次登录</h3>
+        <p>Sub2API 菜单首跳携带管理员 token；Companion 校验通过后写入自己的强随机会话，并跳转到干净地址。</p>
+      </div>
+      <label class="switch-field">
+        <input type="checkbox" name="enabled" value="1" {{ 'checked' if sso.enabled else '' }} />
+        <span>启用</span>
+      </label>
+    </div>
+
+    <div class="sso-form-grid">
+      <label class="sso-field sso-wide-field">
+        <span>Sub2API 菜单公网地址</span>
+        <input
+          class="wide-input mono"
+          name="base_url"
+          value="{{ sso.base_url }}"
+          spellcheck="false"
+          placeholder="https://661313.xyz"
+        />
+      </label>
+      <label class="sso-field sso-wide-field">
+        <span>服务端校验地址（可选）</span>
+        <input
+          class="wide-input mono"
+          name="verify_base_url"
+          value="{{ sso.verify_base_url }}"
+          spellcheck="false"
+          placeholder="http://sub2api:8080"
+        />
+      </label>
+      <label class="sso-field">
+        <span>允许角色</span>
+        <input class="wide-input mono" name="required_role" value="{{ sso.required_role }}" spellcheck="false" />
+      </label>
+      <label class="sso-field">
+        <span>会话有效期（秒）</span>
+        <input class="wide-input mono" name="session_ttl_seconds" type="number" min="300" max="604800" step="60" value="{{ sso.session_ttl_seconds }}" />
+      </label>
+      <label class="sso-field">
+        <span>验证超时（秒）</span>
+        <input class="wide-input mono" name="verify_timeout_seconds" type="number" min="1" max="20" value="{{ sso.verify_timeout_seconds }}" />
+      </label>
+    </div>
+
+    <div class="sso-preview-grid">
+      <div class="sso-menu-preview">
+        <span>Sub2API 自定义菜单 URL</span>
+        <code>{{ sso.menu_url or '保存 Sub2API 地址后生成' }}</code>
+      </div>
+      <div class="sso-menu-preview">
+        <span>服务端实际校验 URL</span>
+        <code>{{ sso.verify_url or '默认使用菜单公网地址 + /api/v1/auth/me' }}</code>
+      </div>
+    </div>
+
+    <div class="sso-submit-row">
+      <button class="primary" type="submit">保存接入配置</button>
+      <span>保存后立即生效，不需要重启；Sub2API 源码和镜像不会被修改。</span>
+    </div>
+  </form>
+
+  <aside class="panel sso-help-card">
+    <h3>访问边界</h3>
+    <dl class="status-list">
+      <div><dt>入口</dt><dd class="mono">{{ sso.menu_url or base_path ~ '/sso/start' }}</dd></div>
+      <div><dt>验证接口</dt><dd class="mono">{{ sso.verify_url or '/api/v1/auth/me' }}</dd></div>
+      <div><dt>配置文件</dt><dd class="mono">{{ sso_config_path }}</dd></div>
+      <div><dt>会话形式</dt><dd>随机 ID + HMAC，载荷保存在 Ops 本地</dd></div>
+      <div><dt>独立登录</dt><dd>已移除</dd></div>
+    </dl>
+    <p>未带合法 Sub2API token 的直接公网访问会返回 403，不会展示账号密码表单。</p>
+  </aside>
+</section>
+{% endblock %}
