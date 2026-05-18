@@ -134,9 +134,10 @@
     <span>健康账号按窗口成功次数优先；异常、冷却、已停账号会设为降载观察。</span>
   </form>
 
-  <form class="guard-queue-order-form" method="post" action="{{ base_path }}/guard/queue/reorder" data-guard-queue-form>
+  <form id="guard-queue-order-form" method="post" action="{{ base_path }}/guard/queue/reorder" hidden></form>
+  <div class="guard-queue-order-form" data-guard-queue-form>
     {% for value in queue_group_selection.form_values %}
-      <input type="hidden" name="queue_group" value="{{ value }}" />
+      <input form="guard-queue-order-form" type="hidden" name="queue_group" value="{{ value }}" />
     {% endfor %}
     <div class="guard-queue-board">
       {% for group in queue_groups %}
@@ -154,11 +155,23 @@
             {% for row in group.rows %}
               {% set position = row.queue_position or {} %}
               <article class="guard-queue-card {{ row.problem.level }}" draggable="true" data-guard-sort-item>
-                <input type="hidden" name="account_order" value="{{ row.membership_key }}" />
+                <input form="guard-queue-order-form" type="hidden" name="account_order" value="{{ row.membership_key }}" />
                 <button class="drag-handle" type="button" title="拖动排序" aria-label="拖动排序" data-drag-handle>↕</button>
                 <div class="queue-rank pill {{ position.class or 'muted' }}" data-guard-rank>{{ position.label or ('P' ~ loop.index) }}</div>
                 <div class="queue-account-main">
-                  <strong><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+                  <div class="queue-account-title">
+                    <strong><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+                    {% if row.schedulable %}
+                      <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/pause" title="点击停止调度">
+                        <input type="hidden" name="reason" value="manual switch pause from guard queue" />
+                        <button class="schedule-switch on" type="submit" name="return_to" value="guard" aria-label="停止调度 {{ row.name }}"><span></span></button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{{ base_path }}/accounts/{{ row.id }}/resume" title="点击恢复调度">
+                        <button class="schedule-switch off" type="submit" name="return_to" value="guard" aria-label="恢复调度 {{ row.name }}"><span></span></button>
+                      </form>
+                    {% endif %}
+                  </div>
                   <span>{{ row.type }} / concurrency={{ row.concurrency }}</span>
                 </div>
                 <div class="queue-account-state">
@@ -191,9 +204,9 @@
     </div>
     <div class="guard-queue-savebar">
       <span>低序号优先，同一分组从 P1 依次向下排列。</span>
-      <button class="primary" type="submit">保存当前顺序</button>
+      <button form="guard-queue-order-form" class="primary" type="submit">保存当前顺序</button>
     </div>
-  </form>
+  </div>
 </section>
 
 <section class="panel table-panel guard-table-panel">
