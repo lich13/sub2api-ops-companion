@@ -7,6 +7,7 @@ import time
 import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any
@@ -22,6 +23,9 @@ from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
 from .group_selection import DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
+from .guard_engine import GuardEngine
+from .guard_policy import GuardPolicy
+from .guard_store import GuardStore
 from .quality_sort import (
     STABILITY_SORT_OPTIONS,
     normalize_stability_sort,
@@ -32,8 +36,11 @@ from .settings import load_settings
 from .secure_session import create_session_cookie, read_session_cookie
 from .sql import (
     ACCOUNT_OPTIONS_SQL,
+    ACCOUNT_ROUTING_CAPABILITY_SQL,
     GROUPS_SQL,
     GUARD_BALANCE_CANDIDATES_SQL,
+    QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
+    SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     PLATFORM_OPTIONS_SQL,
     QUALITY_SQL,
     REQUESTS_SQL,
@@ -74,6 +81,8 @@ guard_state: dict[str, Any] = {
     "running": False,
     "last_run_at": None,
     "last_error": "",
+    "last_error_at": "",
+    "last_error_notified": "",
     "last_actions": [],
 }
 telegram_bot: TelegramOpsBot | None = None
@@ -343,14 +352,27 @@ def load_account_options(platform: str) -> list[dict[str, Any]]:
     return db.fetch_all(ACCOUNT_OPTIONS_SQL, {"platform": platform})
 
 
+def account_routing_capability() -> dict[str, bool]:
+    try:
+        row = db.fetch_one(ACCOUNT_ROUTING_CAPABILITY_SQL) or {}
+    except Exception:
+        row = {}
+    return {
+        "priority": bool(row.get("account_priority_column_exists")),
+        "load_factor": bool(row.get("account_load_factor_column_exists")),
+    }
+
+
 def load_quality(
     group_names: list[str],
     platform: str,
     range_start: datetime | None,
     range_end: datetime | None,
 ) -> list[dict[str, Any]]:
+    capability = account_routing_capability()
+    sql = QUALITY_SQL if capability["load_factor"] else QUALITY_SQL_COMPAT_NO_LOAD_FACTOR
     return db.fetch_all(
-        QUALITY_SQL,
+        sql,
         {"group_names": group_names, "platform": platform, "range_start": range_start, "range_end": range_end},
     )
 
@@ -393,8 +415,10 @@ def scheduled_test_reasons(row: dict[str, Any]) -> list[str]:
 
 
 def load_scheduled_test_accounts(group_names: list[str], platform: str, include_all: bool) -> list[dict[str, Any]]:
+    capability = account_routing_capability()
+    sql = SCHEDULED_TEST_ACCOUNTS_SQL if capability["load_factor"] else SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR
     rows = db.fetch_all(
-        SCHEDULED_TEST_ACCOUNTS_SQL,
+        sql,
         {"group_names": group_names, "platform": platform, "include_all": include_all},
     )
     for row in rows:
@@ -434,6 +458,7 @@ def scheduled_tests_url(group_values: list[str], platform: str, include_all: boo
 
 
 def guard_config() -> dict[str, Any]:
+    policy = guard_policy_from_store()
     return {
         "enabled": settings.guard_enabled,
         "interval_seconds": settings.guard_interval_seconds,
@@ -441,8 +466,46 @@ def guard_config() -> dict[str, Any]:
         "threshold": settings.guard_balance_error_threshold,
         "action": "pause",
         "state": guard_state,
+        "policy": asdict(policy),
+        "account_routing": account_routing_capability(),
         "recent_events": read_audit(settings.audit_path, limit=12, event_prefix="guard_"),
     }
+
+
+def guard_policy_from_store() -> GuardPolicy:
+    raw = GuardStore(settings.guard_state_path).policy_config()
+    return GuardPolicy(
+        failure_threshold=int_param(str(raw.get("failure_threshold")), 4, 1, 50),
+        success_threshold=int_param(str(raw.get("success_threshold")), 2, 1, 20),
+        circuit_timeout_seconds=int_param(str(raw.get("circuit_timeout_seconds")), 60, 5, 3600),
+        blocked_403_threshold=int_param(str(raw.get("blocked_403_threshold")), 1, 1, 20),
+        balance_pause_threshold=int_param(str(raw.get("balance_pause_threshold")), 1, 1, 20),
+    )
+
+
+def guard_store() -> GuardStore:
+    return GuardStore(settings.guard_state_path)
+
+
+def guard_engine(store: GuardStore | None = None) -> GuardEngine:
+    capability = account_routing_capability()
+    return GuardEngine(
+        db=db,
+        store=store or guard_store(),
+        audit_path=settings.audit_path,
+        policy=guard_policy_from_store(),
+        batch_size=settings.guard_event_batch_size,
+        lookback_minutes=settings.guard_lookback_minutes,
+        load_factor_supported=capability["load_factor"],
+    )
+
+
+def enrich_guard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    store = guard_store()
+    for row in rows:
+        row["guard_circuit"] = asdict(store.circuit(int(row.get("id") or 0)))
+        row["problem"] = account_problem(row)
+    return rows
 
 
 def parse_int_csv(value: str) -> tuple[int, ...]:
@@ -627,36 +690,65 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
     return result
 
 
+def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
+    candidates = db.fetch_all(
+        GUARD_BALANCE_CANDIDATES_SQL,
+        {
+            "lookback_minutes": settings.guard_lookback_minutes,
+            "threshold": settings.guard_balance_error_threshold,
+        },
+    )
+    actions = [pause_guard_candidate(row, actor) for row in candidates if row.get("id")]
+    applied = [item for item in actions if item.get("updated")]
+    write_audit(
+        settings.audit_path,
+        "guard_auto_fallback_balance_scan",
+        {"actor": actor, "candidate_count": len(candidates), "action_count": len(applied)},
+    )
+    return applied
+
+
 def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     guard_state["running"] = True
     guard_state["last_error"] = ""
+    guard_state["last_error_at"] = ""
     try:
-        candidates = db.fetch_all(
-            GUARD_BALANCE_CANDIDATES_SQL,
-            {
-                "lookback_minutes": settings.guard_lookback_minutes,
-                "threshold": settings.guard_balance_error_threshold,
-            },
-        )
-        actions = [pause_guard_candidate(row, actor) for row in candidates]
-        applied = [item for item in actions if item.get("updated")]
+        actions = guard_engine().run_once(actor)
         guard_state.update(
             {
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
-                "last_actions": applied[:10],
+                "last_actions": actions[:10],
+                "last_error_notified": "",
             }
         )
-        if candidates and not applied:
+        if not actions:
             write_audit(
                 settings.audit_path,
                 "guard_auto_noop",
-                {"actor": actor, "candidate_count": len(candidates), "reason": "no rows updated"},
+                {"actor": actor, "reason": "no rows updated"},
             )
-        return applied
+        return actions
     except Exception as exc:
-        guard_state["last_error"] = str(exc)
-        write_audit(settings.audit_path, "guard_auto_error", {"actor": actor, "error": str(exc)})
-        raise
+        fallback_actions = run_guard_balance_fallback(actor)
+        error = f"incremental guard failed; fallback balance scan applied {len(fallback_actions)} action(s): {exc}"
+        guard_state["last_error"] = error
+        guard_state["last_error_at"] = datetime.now(timezone.utc).isoformat()
+        write_audit(
+            settings.audit_path,
+            "guard_auto_error",
+            {
+                "actor": actor,
+                "error": str(exc),
+                "fallback_action_count": len(fallback_actions),
+            },
+        )
+        guard_state.update(
+            {
+                "last_run_at": datetime.now(timezone.utc).isoformat(),
+                "last_actions": fallback_actions[:10],
+            }
+        )
+        return fallback_actions
     finally:
         guard_state["running"] = False
 
@@ -717,10 +809,36 @@ async def notify_telegram_account_alerts(title: str, actions: list[dict[str, Any
         return
 
 
+def process_guard_recovery_circuits() -> None:
+    if not scheduled_test_capability()["available"]:
+        return
+    store = guard_store()
+    cursor_id = store.recovery_cursor()
+    if cursor_id <= 0:
+        current_id = current_scheduled_test_result_id()
+        if current_id > 0:
+            store.set_recovery_cursor(current_id)
+        return
+    rows = load_scheduled_test_recovery_alert_rows(cursor_id)
+    if not rows:
+        return
+    engine = guard_engine(store)
+    next_cursor = cursor_id
+    for row in rows:
+        next_cursor = max(next_cursor, int(row.get("result_id") or cursor_id))
+        engine.record_recovery_success(
+            int(row["account_id"]),
+            int(row["result_id"]),
+            f"scheduled test success: {row.get('model_id') or ''}",
+        )
+    engine.store.set_recovery_cursor(next_cursor)
+
+
 async def telegram_recovery_alert_loop() -> None:
     while True:
         try:
             bot = telegram_bot
+            await asyncio.to_thread(process_guard_recovery_circuits)
             if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
                 cursor_id = await bot.recovery_alert_cursor_id()
                 if cursor_id <= 0:
@@ -728,6 +846,13 @@ async def telegram_recovery_alert_loop() -> None:
                 else:
                     rows = await asyncio.to_thread(load_scheduled_test_recovery_alert_rows, cursor_id)
                     if rows:
+                        engine = guard_engine()
+                        for row in rows:
+                            engine.record_recovery_success(
+                                int(row["account_id"]),
+                                int(row["result_id"]),
+                                f"scheduled test success: {row.get('model_id') or ''}",
+                            )
                         next_cursor = max(int(row.get("result_id") or cursor_id) for row in rows)
                         await bot.notify_recovery_alerts(rows)
                         write_audit(
@@ -778,7 +903,17 @@ async def telegram_error_alert_loop() -> None:
 async def auto_guard_loop() -> None:
     while True:
         try:
-            await run_auto_guard_threaded()
+            actions = await run_auto_guard_threaded()
+            error = str(guard_state.get("last_error") or "")
+            if error and guard_state.get("last_error_notified") != error:
+                await notify_telegram(
+                    "自动 Guard 增量扫描失败，已执行余额/额度兜底扫描\n"
+                    f"兜底动作：{len(actions)}\n"
+                    f"错误：{error}"
+                )
+                guard_state["last_error_notified"] = error
+            if actions:
+                await notify_telegram_account_alerts("自动 Guard 已处理账号异常", actions)
         except Exception as exc:
             await notify_telegram(f"自动 Guard 执行失败\n{exc}")
         await asyncio.sleep(settings.guard_interval_seconds)
@@ -1247,7 +1382,7 @@ def guard_view(
 ) -> HTMLResponse:
     hours = int_param(str(hours), 1, 1, 168)
     guard_range = rolling_hours_range(hours)
-    rows = load_quality([group], platform, guard_range["start_at"], guard_range["end_at"])
+    rows = enrich_guard_rows(load_quality([group], platform, guard_range["start_at"], guard_range["end_at"]))
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,
@@ -1297,9 +1432,69 @@ def sso_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
 @app.post("/guard/run")
 async def run_guard_now(user: AuthUser) -> Response:
     actions = await run_auto_guard_threaded(user)
+    if guard_state.get("last_error"):
+        await notify_telegram(
+            f"用户 {user} 手动执行 Guard 时增量扫描失败，已执行余额/额度兜底扫描\n"
+            f"兜底动作：{len(actions)}\n"
+            f"错误：{guard_state.get('last_error')}"
+        )
     if actions:
         await notify_telegram_account_alerts(f"账号异常：用户 {user} 手动执行 Guard", actions)
+    if guard_state.get("last_error"):
+        return RedirectResponse(
+            f"{settings.base_path}/guard?msg={quote(f'Guard 增量扫描失败，已执行余额兜底 {len(actions)} 个动作')}",
+            status_code=303,
+        )
     return RedirectResponse(f"{settings.base_path}/guard?msg=guard+applied+{len(actions)}+actions", status_code=303)
+
+
+@app.post("/guard/policy")
+def guard_policy_save(
+    user: AuthUser,
+    failure_threshold: int = Form(4),
+    success_threshold: int = Form(2),
+    circuit_timeout_seconds: int = Form(60),
+    blocked_403_threshold: int = Form(1),
+    balance_pause_threshold: int = Form(1),
+) -> Response:
+    payload = {
+        "failure_threshold": int_param(str(failure_threshold), 4, 1, 50),
+        "success_threshold": int_param(str(success_threshold), 2, 1, 20),
+        "circuit_timeout_seconds": int_param(str(circuit_timeout_seconds), 60, 5, 3600),
+        "blocked_403_threshold": int_param(str(blocked_403_threshold), 1, 1, 20),
+        "balance_pause_threshold": int_param(str(balance_pause_threshold), 1, 1, 20),
+        "updated_by": user,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    guard_store().save_policy(payload)
+    write_audit(settings.audit_path, "guard_policy_update", payload)
+    return RedirectResponse(f"{settings.base_path}/guard?msg={quote('Guard 策略已保存')}", status_code=303)
+
+
+@app.post("/guard/account-routing")
+def guard_account_routing_save(
+    user: AuthUser,
+    account_id: int = Form(...),
+    priority: int = Form(50),
+    load_factor: str = Form(""),
+    reason: str = Form("manual guard routing update"),
+) -> Response:
+    capability = account_routing_capability()
+    if not capability["priority"]:
+        raise HTTPException(status_code=400, detail="accounts.priority column is not available")
+    updated = account_ops.guard_update_account_routing(
+        db,
+        settings.audit_path,
+        account_id,
+        user,
+        account_ops.normalize_priority_value(priority),
+        account_ops.normalize_load_factor_value(load_factor),
+        capability["load_factor"],
+        reason,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="account not found")
+    return RedirectResponse(f"{settings.base_path}/guard?msg={quote('账号优先级/负载因子已保存')}", status_code=303)
 
 
 @app.post("/telegram/config")

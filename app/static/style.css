@@ -1202,6 +1202,10 @@ dd {
   min-width: 1040px;
 }
 
+.guard-routing-table {
+  min-width: 1440px;
+}
+
 .guard-table [data-col="account"] {
   min-width: 240px;
 }
@@ -1212,6 +1216,18 @@ dd {
 
 .guard-table [data-col="execute"] {
   min-width: 110px;
+}
+
+.guard-routing-table [data-col="routing"] {
+  min-width: 300px;
+}
+
+.guard-routing-table [data-col="signal"] {
+  min-width: 240px;
+}
+
+.guard-routing-table [data-col="next"] {
+  min-width: 160px;
 }
 
 .guard-audit-table {
@@ -1232,6 +1248,63 @@ dd {
 
 .guard-audit-table [data-col="payload"] {
   min-width: 520px;
+}
+
+.guard-policy-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.guard-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.guard-policy-grid label {
+  min-width: 0;
+}
+
+.guard-policy-grid input {
+  width: 100%;
+}
+
+.guard-policy-grid .primary {
+  min-height: 38px;
+}
+
+.guard-status-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.guard-error-text {
+  word-break: break-word;
+}
+
+.routing-mini-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(74px, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+  min-width: 250px;
+}
+
+.routing-mini-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.routing-mini-form input {
+  width: 100%;
+  min-width: 0;
+}
+
+.routing-mini-form button {
+  min-height: 34px;
+  white-space: nowrap;
 }
 
 .scheduled-hero,
@@ -2929,6 +3002,15 @@ pre {
   .scheduled-action-row {
     grid-template-columns: 1fr;
     flex-basis: auto;
+  }
+
+  .guard-policy-grid,
+  .routing-mini-form {
+    grid-template-columns: 1fr;
+  }
+
+  .routing-mini-form input {
+    min-width: 0;
   }
 
   .pairing-code-panel {

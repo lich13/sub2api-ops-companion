@@ -689,6 +689,7 @@ def account_row(row: dict[str, Any]) -> str:
     return (
         f"#{row.get('id')} {row.get('name')} · {row.get('type') or '-'} · "
         f"G{row.get('group_priority') or '-'} / P{row.get('account_priority') or row.get('priority') or '-'} · "
+        f"load {row.get('load_factor') or row.get('effective_load_factor') or '-'} · "
         f"{account_ops.account_state(row)} · 成功/错 {int(row.get('success_window') or 0)}/{int(row.get('account_quality_errors_window') or 0)} · "
         f"余额 {int(row.get('balance_or_quota_window') or 0)} 403 {int(row.get('blocked_403_window') or 0)} "
         f"限流 {int(row.get('rate_limit_window') or 0)} 5xx {int(row.get('unstable_5xx_stream_window') or 0)}"
@@ -699,7 +700,7 @@ def account_detail(row: dict[str, Any]) -> str:
     lines = [
         f"#{row.get('id')} {row.get('name')}",
         f"平台/类型：{row.get('platform') or '-'} / {row.get('type') or '-'}",
-        f"状态：{account_ops.account_state(row)}，G{row.get('group_priority') or '-'} / P{row.get('account_priority') or row.get('priority') or '-'}，并发 {row.get('concurrency') or '-'}",
+        f"状态：{account_ops.account_state(row)}，G{row.get('group_priority') or '-'} / P{row.get('account_priority') or row.get('priority') or '-'}，并发 {row.get('concurrency') or '-'}，负载因子 {row.get('load_factor') or row.get('effective_load_factor') or '-'}",
         f"窗口成功/错误：{int(row.get('success_window') or 0)} / {int(row.get('account_quality_errors_window') or 0)}",
         f"错误拆分：余额 {int(row.get('balance_or_quota_window') or 0)}，403 {int(row.get('blocked_403_window') or 0)}，限流 {int(row.get('rate_limit_window') or 0)}，5xx/流式 {int(row.get('unstable_5xx_stream_window') or 0)}",
     ]
@@ -725,6 +726,13 @@ def account_alert(title: str, action: dict[str, Any], row: dict[str, Any] | None
 
     if action.get("balance_error_count"):
         lines.append(f"余额/额度错误：{action.get('balance_error_count')}")
+    if action.get("action"):
+        detail = str(action.get("action"))
+        if action.get("minutes"):
+            detail += f" {action.get('minutes')}m"
+        lines.append(f"Guard 动作：{detail}")
+    if action.get("load_factor"):
+        lines.append(f"软降载：load_factor={action.get('load_factor')}")
     if action.get("last_error_at"):
         lines.append(f"异常时间：{bj_time(action.get('last_error_at'))}")
     if action.get("last_message"):
@@ -779,9 +787,14 @@ def recovery_alert(row: dict[str, Any], account: dict[str, Any] | None = None) -
 def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     lines = [title]
     for item in actions[:10]:
+        action_label = str(item.get("action") or "-")
+        if item.get("minutes"):
+            action_label += f" {item.get('minutes')}m"
+        if item.get("load_factor"):
+            action_label += f" / load_factor={item.get('load_factor')}"
         lines.append(
-            f"#{item.get('account_id')} {item.get('name') or '-'} · {item.get('action') or '-'} · "
-            f"余额/额度错误 {item.get('balance_error_count') or '-'}"
+            f"#{item.get('account_id')} {item.get('name') or '-'} · {action_label} · "
+            f"{truncate(str(item.get('reason') or ''), 160)}"
         )
     if len(actions) > 10:
         lines.append(f"... 另有 {len(actions) - 10} 个动作")
