@@ -35,6 +35,8 @@ class GuardMainTests(unittest.TestCase):
         self.original_scheduled_test_capability = main_module.scheduled_test_capability
         self.original_load_recovery_rows = main_module.load_scheduled_test_recovery_alert_rows
         self.original_run_guard_balance_fallback = main_module.run_guard_balance_fallback
+        self.original_pause_account_op = main_module.account_ops.pause_account
+        self.original_resume_account_op = main_module.account_ops.resume_account
         self.original_guard_state = dict(main_module.guard_state)
         self.tmpdir = tempfile.TemporaryDirectory()
         data_dir = Path(self.tmpdir.name)
@@ -58,6 +60,8 @@ class GuardMainTests(unittest.TestCase):
         main_module.scheduled_test_capability = self.original_scheduled_test_capability
         main_module.load_scheduled_test_recovery_alert_rows = self.original_load_recovery_rows
         main_module.run_guard_balance_fallback = self.original_run_guard_balance_fallback
+        main_module.account_ops.pause_account = self.original_pause_account_op
+        main_module.account_ops.resume_account = self.original_resume_account_op
         main_module.guard_state.clear()
         main_module.guard_state.update(self.original_guard_state)
         self.tmpdir.cleanup()
@@ -330,6 +334,30 @@ class GuardMainTests(unittest.TestCase):
         self.assertNotIn("group", captured["context"])
         self.assertNotIn("platform", captured["context"])
         self.assertNotIn("hours", captured["context"])
+
+    def test_account_pause_can_return_to_guard_panel(self) -> None:
+        calls: list[tuple[int, str]] = []
+        main_module.account_ops.pause_account = lambda _db, _audit, account_id, _user, reason: calls.append(  # type: ignore[assignment]
+            (account_id, reason)
+        )
+
+        response = main_module.pause_account(
+            object(), 7, "tester", reason="manual switch pause from guard queue", return_to="guard"
+        )
+
+        self.assertEqual(calls, [(7, "manual switch pause from guard queue")])
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/sub2ops/guard?msg=paused+account+7")
+
+    def test_account_resume_can_return_to_guard_panel(self) -> None:
+        calls: list[int] = []
+        main_module.account_ops.resume_account = lambda _db, _audit, account_id, _user: calls.append(account_id)  # type: ignore[assignment]
+
+        response = main_module.resume_account(object(), 8, "tester", return_to="guard")
+
+        self.assertEqual(calls, [8])
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/sub2ops/guard?msg=resumed+account+8")
 
 
 if __name__ == "__main__":

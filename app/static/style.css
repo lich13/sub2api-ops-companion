@@ -1460,6 +1460,22 @@ dd {
   display: grid;
 }
 
+.queue-account-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-account-title strong {
+  min-width: 0;
+}
+
+.queue-account-title form {
+  flex: 0 0 auto;
+}
+
 .queue-account-state,
 .queue-account-metrics {
   display: flex;
