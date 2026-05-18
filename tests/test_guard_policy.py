@@ -22,6 +22,27 @@ class GuardPolicyTests(unittest.TestCase):
         self.assertTrue(action.hard)
         self.assertEqual(updated.state, "open")
 
+    def test_hard_pause_switch_disables_balance_and_blocked_actions(self) -> None:
+        policy = GuardPolicy(hard_pause_enabled=False)
+
+        balance_action, balance_circuit = apply_signal(
+            policy,
+            GuardCircuit(account_id=9),
+            GuardSignal(9, "provider_balance_or_quota", "error:101:1", now(), event_id=101),
+            now(),
+        )
+        blocked_action, blocked_circuit = apply_signal(
+            policy,
+            GuardCircuit(account_id=10),
+            GuardSignal(10, "provider_blocked_403", "error:102:1", now(), event_id=102),
+            now(),
+        )
+
+        self.assertEqual(balance_action.kind, "none")
+        self.assertEqual(blocked_action.kind, "none")
+        self.assertEqual(balance_circuit.last_category, "provider_balance_or_quota")
+        self.assertEqual(blocked_circuit.last_category, "provider_blocked_403")
+
     def test_rate_limit_uses_short_realtime_cooldown_slots(self) -> None:
         policy = GuardPolicy()
         circuit = GuardCircuit(account_id=9)
@@ -29,6 +50,17 @@ class GuardPolicyTests(unittest.TestCase):
         action2, circuit = apply_signal(policy, circuit, GuardSignal(9, "provider_rate_limit", "error:102:1", now(), event_id=102), now())
         action3, circuit = apply_signal(policy, circuit, GuardSignal(9, "provider_rate_limit", "error:103:1", now(), event_id=103), now())
         self.assertEqual([action1.minutes, action2.minutes, action3.minutes], [1, 3, 5])
+
+    def test_rate_limit_switch_disables_cooldown_action(self) -> None:
+        action, updated = apply_signal(
+            GuardPolicy(rate_limit_enabled=False),
+            GuardCircuit(account_id=9),
+            GuardSignal(9, "provider_rate_limit", "error:101:1", now(), event_id=101),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(updated.last_category, "provider_rate_limit")
 
     def test_unstable_errors_open_after_failure_threshold(self) -> None:
         policy = GuardPolicy(failure_threshold=4)
@@ -45,6 +77,18 @@ class GuardPolicyTests(unittest.TestCase):
         self.assertEqual(action.kind, "cooldown")
         self.assertEqual(action.minutes, 1)
         self.assertEqual(circuit.state, "open")
+
+    def test_unstable_switch_disables_cooldown_action(self) -> None:
+        policy = GuardPolicy(failure_threshold=1, unstable_enabled=False)
+        action, updated = apply_signal(
+            policy,
+            GuardCircuit(account_id=9),
+            GuardSignal(9, "upstream_unstable_5xx_stream", "error:201:1", now(), event_id=201),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(updated.last_category, "upstream_unstable_5xx_stream")
 
     def test_client_errors_are_ignored(self) -> None:
         action, updated = apply_signal(

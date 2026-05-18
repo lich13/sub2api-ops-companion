@@ -1257,7 +1257,7 @@ dd {
 
 .guard-policy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   align-items: end;
   gap: 12px;
 }
@@ -1272,6 +1272,87 @@ dd {
 
 .guard-policy-grid .primary {
   min-height: 38px;
+}
+
+.guard-switch {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.guard-queue-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.guard-queue-head {
+  align-items: flex-start;
+}
+
+.guard-queue-filter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.guard-auto-queue-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 150px)) max-content minmax(220px, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.guard-auto-queue-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.guard-auto-queue-form input {
+  width: 100%;
+}
+
+.guard-auto-queue-form span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.guard-queue-table {
+  min-width: 1280px;
+}
+
+.guard-queue-table [data-col="group"] {
+  min-width: 170px;
+}
+
+.guard-queue-table [data-col="tier"] {
+  min-width: 210px;
+}
+
+.guard-queue-table [data-col="signal"] {
+  min-width: 220px;
+}
+
+.guard-queue-table [data-col="action"] {
+  min-width: 260px;
+}
+
+.queue-tier-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(48px, 1fr));
+  gap: 6px;
+  min-width: 230px;
+}
+
+.queue-tier-actions button {
+  min-height: 32px;
+  white-space: nowrap;
 }
 
 .guard-status-list {
@@ -3005,8 +3086,24 @@ pre {
   }
 
   .guard-policy-grid,
+  .guard-auto-queue-form,
   .routing-mini-form {
     grid-template-columns: 1fr;
+  }
+
+  .guard-queue-filter {
+    justify-content: stretch;
+  }
+
+  .guard-queue-filter .group-picker-field,
+  .guard-queue-filter button,
+  .guard-auto-queue-form button {
+    width: 100%;
+  }
+
+  .queue-tier-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
   }
 
   .routing-mini-form input {

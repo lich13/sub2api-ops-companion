@@ -41,6 +41,18 @@
     </form>
   </div>
   <form class="guard-policy-grid" method="post" action="{{ base_path }}/guard/policy">
+    <label class="switch-field guard-switch">
+      <input type="checkbox" name="hard_pause_enabled" value="1" {{ 'checked' if guard.policy.hard_pause_enabled else '' }} />
+      <span>额度/403 硬停</span>
+    </label>
+    <label class="switch-field guard-switch">
+      <input type="checkbox" name="rate_limit_enabled" value="1" {{ 'checked' if guard.policy.rate_limit_enabled else '' }} />
+      <span>429 短冷却</span>
+    </label>
+    <label class="switch-field guard-switch">
+      <input type="checkbox" name="unstable_enabled" value="1" {{ 'checked' if guard.policy.unstable_enabled else '' }} />
+      <span>5xx/流式冷却</span>
+    </label>
     <label>连续失败阈值
       <input type="number" name="failure_threshold" min="1" max="50" value="{{ guard.policy.failure_threshold }}" />
     </label>
@@ -64,6 +76,113 @@
     <div><dt>额度扫尾窗口</dt><dd>{{ guard.balance_max_age_hours }} 小时</dd></div>
     <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却</dd></div>
   </dl>
+</section>
+
+<section class="panel table-panel guard-queue-panel">
+  <div class="section-head guard-queue-head">
+    <div>
+      <h3>P1/P2 显式队列</h3>
+      <p>按分组查看账号队列，把账号 priority 映射为 P1/P2；自动调整会把健康高样本账号排到前面，并把异常账号降载观察。</p>
+    </div>
+    <form class="guard-queue-filter" method="get" action="{{ base_path }}/guard">
+      <div class="group-picker-field">
+        <span>队列分组</span>
+        <details class="group-picker" data-group-picker data-default-group="{{ queue_group_selection.default_value }}">
+          <summary>
+            <strong data-group-picker-label>{{ queue_group_selection.label }}</strong>
+          </summary>
+          <div class="group-picker-menu">
+            <div class="group-picker-actions">
+              <button type="button" data-group-picker-default>默认</button>
+              <button type="button" data-group-picker-all>全选</button>
+            </div>
+            <div class="group-picker-list">
+              {% for item in queue_group_selection.options %}
+                <label>
+                  <input
+                    type="checkbox"
+                    name="queue_group"
+                    value="{{ item.name }}"
+                    data-group-picker-option
+                    data-default-group="{{ '1' if item.is_default else '0' }}"
+                    {{ 'checked' if item.checked else '' }}
+                  />
+                  <span>{{ item.name }}</span>
+                  {% if item.platform %}
+                    <em>{{ item.platform }}</em>
+                  {% endif %}
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+      </div>
+      <button class="primary" type="submit">切换分组</button>
+    </form>
+  </div>
+
+  <form class="guard-auto-queue-form" method="post" action="{{ base_path }}/guard/queue/auto">
+    {% for value in queue_group_selection.form_values %}
+      <input type="hidden" name="queue_group" value="{{ value }}" />
+    {% endfor %}
+    <label>P1 数量
+      <input type="number" name="p1_count" min="0" max="20" value="1" />
+    </label>
+    <label>P2 数量
+      <input type="number" name="p2_count" min="0" max="50" value="2" />
+    </label>
+    <button class="primary" type="submit">自动调整队列</button>
+    <span>健康账号按窗口成功次数优先；异常、冷却、已停账号会设为降载观察。</span>
+  </form>
+
+  <div class="table-wrap">
+    <table class="data-table guard-table guard-queue-table" data-table-id="guard-queue">
+      <thead>
+        <tr>
+          <th data-col="account">账号</th>
+          <th data-col="group">分组</th>
+          <th data-col="tier">当前队列</th>
+          <th data-col="signal">样本/异常</th>
+          <th data-col="action">调整</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in queue_rows %}
+          {% set tier = row.queue_tier or {} %}
+          <tr class="{{ row.problem.level }}">
+            <td data-col="account">
+              <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
+            </td>
+            <td data-col="group">
+              <span class="mono">{{ row.group_name or '-' }}</span>
+              <div class="cell-sub">G{{ row.group_priority or '-' }}</div>
+            </td>
+            <td data-col="tier">
+              <span class="pill {{ tier.class or 'muted' }}">{{ tier.label or '备用池' }}</span>
+              <div class="cell-sub mono">P{{ row.account_priority or '-' }} / load={{ row.load_factor or row.effective_load_factor or '-' }}</div>
+            </td>
+            <td data-col="signal">
+              <div class="cell-sub mono">success={{ row.success_window or 0 }} / errors={{ row.account_quality_errors_window or 0 }}</div>
+              <div class="cell-sub">{{ row.problem.title }}</div>
+            </td>
+            <td data-col="action">
+              <form class="queue-tier-actions" method="post" action="{{ base_path }}/guard/queue-tier">
+                <input type="hidden" name="account_id" value="{{ row.id }}" />
+                {% for value in queue_group_selection.form_values %}
+                  <input type="hidden" name="queue_group" value="{{ value }}" />
+                {% endfor %}
+                <button type="submit" name="tier" value="p1">P1</button>
+                <button type="submit" name="tier" value="p2">P2</button>
+                <button type="submit" name="tier" value="standby">备用</button>
+                <button type="submit" name="tier" value="degraded">降载</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel table-panel guard-table-panel">
