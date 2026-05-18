@@ -4,7 +4,7 @@
 <section class="page-title">
   <div>
     <h2>定时恢复</h2>
-    <p>以每个整点为基准配置 Sub2API 原生定时测试。账号测通后由上游自动恢复可恢复运行态，恢复成功会推送 Telegram。</p>
+    <p>以每个整点为基准配置 Sub2API 原生定时测试。账号测通后由 companion 清理可恢复运行态，恢复成功会推送 Telegram。</p>
   </div>
   <form class="filters inline scheduled-filters" method="get" action="{{ base_path }}/scheduled-tests">
     {{ group_picker(group_selection) }}

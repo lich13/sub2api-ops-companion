@@ -273,6 +273,6 @@
 
 <section class="panel compact-panel">
   <h3>判定边界</h3>
-  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会暂停可调度账号，也会把临时冷却升级为手动恢复；其他错误仍展示但不自动改账号状态。</p>
+  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。</p>
 </section>
 {% endblock %}

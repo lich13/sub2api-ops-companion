@@ -152,6 +152,13 @@ class GuardEngine:
         circuit = self.store.circuit(int(account_id))
         if signal.event_key in set(circuit.processed_event_keys):
             return
+        account_ops.resume_account(
+            self.db,
+            self.audit_path,
+            int(account_id),
+            "auto_guard_recovery",
+            message,
+        )
         circuit.state = "half_open"
         _, circuit = apply_signal(self.policy, circuit, signal, datetime.now(timezone.utc))
         self.store.save_circuit(circuit)

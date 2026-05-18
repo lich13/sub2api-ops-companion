@@ -669,14 +669,23 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
         SET schedulable = false,
             temp_unschedulable_until = NULL,
             temp_unschedulable_reason = %(reason)s,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-          AND (
-              schedulable = true
-              OR temp_unschedulable_until IS NOT NULL
-          )
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": row["id"], "reason": reason},
     )
@@ -719,7 +728,9 @@ def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     guard_state["last_error"] = ""
     guard_state["last_error_at"] = ""
     try:
-        actions = guard_engine().run_once(actor)
+        incremental_actions = guard_engine().run_once(actor)
+        balance_actions = run_guard_balance_fallback(actor)
+        actions = [*incremental_actions, *balance_actions]
         guard_state.update(
             {
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
@@ -797,6 +808,19 @@ def load_scheduled_test_recovery_alert_rows(cursor_id: int) -> list[dict[str, An
     )
 
 
+def scheduled_test_needs_recovery(row: dict[str, Any]) -> bool:
+    account_status = row.get("account_status", row.get("status"))
+    return (
+        bool(account_status and account_status != "active")
+        or not row.get("schedulable", True)
+        or bool(row.get("rate_limited_at"))
+        or bool(row.get("rate_limit_reset_at"))
+        or bool(row.get("overload_until"))
+        or account_ops.is_cooling(row)
+        or bool(str(row.get("error_message") or "").strip())
+    )
+
+
 async def notify_telegram(text: str) -> None:
     if telegram_bot is None:
         return
@@ -832,6 +856,8 @@ def process_guard_recovery_circuits() -> None:
     next_cursor = cursor_id
     for row in rows:
         next_cursor = max(next_cursor, int(row.get("result_id") or cursor_id))
+        if not scheduled_test_needs_recovery(row):
+            continue
         engine.record_recovery_success(
             int(row["account_id"]),
             int(row["result_id"]),
@@ -844,33 +870,39 @@ async def telegram_recovery_alert_loop() -> None:
     while True:
         try:
             bot = telegram_bot
-            await asyncio.to_thread(process_guard_recovery_circuits)
             if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
                 cursor_id = await bot.recovery_alert_cursor_id()
                 if cursor_id <= 0:
-                    await bot.set_recovery_alert_cursor_id(await asyncio.to_thread(current_scheduled_test_result_id))
+                    current_id = await asyncio.to_thread(current_scheduled_test_result_id)
+                    await bot.set_recovery_alert_cursor_id(current_id)
+                    guard_store().set_recovery_cursor(current_id)
                 else:
                     rows = await asyncio.to_thread(load_scheduled_test_recovery_alert_rows, cursor_id)
                     if rows:
                         engine = guard_engine()
-                        for row in rows:
+                        recovery_rows = [row for row in rows if scheduled_test_needs_recovery(row)]
+                        for row in recovery_rows:
                             engine.record_recovery_success(
                                 int(row["account_id"]),
                                 int(row["result_id"]),
                                 f"scheduled test success: {row.get('model_id') or ''}",
                             )
                         next_cursor = max(int(row.get("result_id") or cursor_id) for row in rows)
-                        await bot.notify_recovery_alerts(rows)
-                        write_audit(
-                            settings.audit_path,
-                            "telegram_scheduled_test_recovery_push",
-                            {
-                                "row_count": len(rows),
-                                "from_cursor_id": cursor_id,
-                                "to_cursor_id": next_cursor,
-                            },
-                        )
+                        engine.store.set_recovery_cursor(next_cursor)
+                        if recovery_rows:
+                            await bot.notify_recovery_alerts(recovery_rows)
+                            write_audit(
+                                settings.audit_path,
+                                "telegram_scheduled_test_recovery_push",
+                                {
+                                    "row_count": len(recovery_rows),
+                                    "from_cursor_id": cursor_id,
+                                    "to_cursor_id": next_cursor,
+                                },
+                            )
                         await bot.set_recovery_alert_cursor_id(next_cursor)
+            else:
+                await asyncio.to_thread(process_guard_recovery_circuits)
         except Exception as exc:
             write_audit(settings.audit_path, "telegram_scheduled_test_recovery_error", {"error": str(exc)})
         await asyncio.sleep(settings.telegram_error_alert_interval_seconds)

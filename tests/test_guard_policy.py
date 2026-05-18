@@ -22,13 +22,13 @@ class GuardPolicyTests(unittest.TestCase):
         self.assertTrue(action.hard)
         self.assertEqual(updated.state, "open")
 
-    def test_rate_limit_escalates_to_allowed_cooldown_slots(self) -> None:
+    def test_rate_limit_uses_short_realtime_cooldown_slots(self) -> None:
         policy = GuardPolicy()
         circuit = GuardCircuit(account_id=9)
         action1, circuit = apply_signal(policy, circuit, GuardSignal(9, "provider_rate_limit", "error:101:1", now(), event_id=101), now())
         action2, circuit = apply_signal(policy, circuit, GuardSignal(9, "provider_rate_limit", "error:102:1", now(), event_id=102), now())
         action3, circuit = apply_signal(policy, circuit, GuardSignal(9, "provider_rate_limit", "error:103:1", now(), event_id=103), now())
-        self.assertEqual([action1.minutes, action2.minutes, action3.minutes], [5, 15, 30])
+        self.assertEqual([action1.minutes, action2.minutes, action3.minutes], [1, 3, 5])
 
     def test_unstable_errors_open_after_failure_threshold(self) -> None:
         policy = GuardPolicy(failure_threshold=4)
@@ -43,7 +43,7 @@ class GuardPolicyTests(unittest.TestCase):
             )
         self.assertIsNotNone(action)
         self.assertEqual(action.kind, "cooldown")
-        self.assertEqual(action.minutes, 5)
+        self.assertEqual(action.minutes, 1)
         self.assertEqual(circuit.state, "open")
 
     def test_client_errors_are_ignored(self) -> None:
