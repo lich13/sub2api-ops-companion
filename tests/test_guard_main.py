@@ -38,6 +38,7 @@ class GuardMainTests(unittest.TestCase):
             guard_enabled=True,
             guard_interval_seconds=5,
             guard_balance_error_threshold=1,
+            guard_balance_error_max_age_hours=24,
             guard_event_batch_size=100,
         )
         main_module.db = FakeCapabilityDB()  # type: ignore[assignment]
@@ -132,6 +133,25 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(result, actions)
         self.assertEqual(main_module.guard_state["last_actions"], actions)
         self.assertEqual(main_module.guard_state["last_error"], "")
+
+    def test_balance_sweep_passes_max_age_hours(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.params: dict[str, Any] | None = None
+
+            def fetch_all(self, _sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.params = params
+                return []
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+        main_module.settings.guard_balance_error_max_age_hours = 12
+
+        actions = main_module.run_guard_balance_fallback("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(capture_db.params["threshold"], 1)
+        self.assertEqual(capture_db.params["max_age_hours"], 12)
 
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [
