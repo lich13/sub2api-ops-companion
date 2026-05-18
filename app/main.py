@@ -25,7 +25,7 @@ from .db import Database
 from .group_selection import ALL_GROUP_VALUE, DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
 from .guard_engine import GuardEngine
 from .guard_policy import GuardPolicy
-from .guard_queue import QUEUE_TIERS, auto_queue_plan, normalize_queue_tier, queue_tier, tier_routing_values
+from .guard_queue import auto_queue_plan, group_queue_rows, membership_key, queue_position, reorder_queue_plan
 from .guard_store import GuardStore
 from .quality_sort import (
     STABILITY_SORT_OPTIONS,
@@ -40,6 +40,8 @@ from .sql import (
     ACCOUNT_ROUTING_CAPABILITY_SQL,
     GROUPS_SQL,
     GUARD_BALANCE_CANDIDATES_SQL,
+    GUARD_QUEUE_SQL,
+    GUARD_QUEUE_SQL_COMPAT_NO_LOAD_FACTOR,
     QUALITY_ALL_ACCOUNTS_SQL,
     QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
@@ -363,6 +365,7 @@ def account_routing_capability() -> dict[str, bool]:
     return {
         "priority": bool(row.get("account_priority_column_exists")),
         "load_factor": bool(row.get("account_load_factor_column_exists")),
+        "group_priority": bool(row.get("account_group_priority_column_exists")),
     }
 
 
@@ -383,6 +386,12 @@ def load_quality(
 def load_guard_quality() -> list[dict[str, Any]]:
     capability = account_routing_capability()
     sql = QUALITY_ALL_ACCOUNTS_SQL if capability["load_factor"] else QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR
+    return db.fetch_all(sql)
+
+
+def load_guard_queue_quality() -> list[dict[str, Any]]:
+    capability = account_routing_capability()
+    sql = GUARD_QUEUE_SQL if capability["load_factor"] else GUARD_QUEUE_SQL_COMPAT_NO_LOAD_FACTOR
     return db.fetch_all(sql)
 
 
@@ -517,7 +526,8 @@ def enrich_guard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         row["guard_circuit"] = asdict(store.circuit(int(row.get("id") or 0)))
         row["problem"] = account_problem(row)
-        row["queue_tier"] = queue_tier(row)
+        row["queue_position"] = queue_position(row)
+        row["membership_key"] = membership_key(row)
     return rows
 
 
@@ -1447,7 +1457,8 @@ def guard_view(
     queue_group_values = query_params.getlist("queue_group") if hasattr(query_params, "getlist") else []
     queue_group_selection = build_group_selection(queue_group_values, groups)
     rows = enrich_guard_rows(load_guard_quality())
-    queue_rows = filter_guard_queue_rows(rows, queue_group_selection)
+    queue_rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), queue_group_selection)
+    queue_groups = group_queue_rows(queue_rows)
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,
@@ -1456,11 +1467,11 @@ def guard_view(
             "active": "guard",
             "rows": rows,
             "queue_rows": queue_rows,
+            "queue_groups": queue_groups,
             "suggestions": suggestions,
             "guard": guard_config(),
             "groups": groups,
             "queue_group_selection": queue_group_selection,
-            "queue_tiers": QUEUE_TIERS,
             "msg": msg,
         },
     )
@@ -1543,34 +1554,52 @@ def guard_policy_save(
     return RedirectResponse(f"{settings.base_path}/guard?msg={quote('Guard 策略已保存')}", status_code=303)
 
 
-@app.post("/guard/queue-tier")
-async def guard_queue_tier_save(
-    request: Request,
-    user: AuthUser,
-    account_id: int = Form(...),
-    tier: str = Form("standby"),
-) -> Response:
+@app.post("/guard/queue/reorder")
+async def guard_queue_reorder(request: Request, user: AuthUser) -> Response:
     form = await request.form()
     queue_group_values = [str(value) for value in form.getlist("queue_group")]
+    groups = load_groups()
+    group_selection = build_group_selection(queue_group_values, groups)
+    rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), group_selection)
     capability = account_routing_capability()
-    if not capability["priority"]:
-        raise HTTPException(status_code=400, detail="accounts.priority column is not available")
-    priority, load_factor = tier_routing_values(tier, capability["load_factor"])
-    updated = account_ops.guard_update_account_routing(
-        db,
+    if not capability["group_priority"]:
+        raise HTTPException(status_code=400, detail="account_groups.priority column is not available")
+
+    ordered_keys: list[str] = []
+    for value in form.getlist("account_order"):
+        item = str(value or "").strip()
+        if item:
+            ordered_keys.append(item)
+
+    plan = reorder_queue_plan(rows, ordered_keys, load_factor_supported=capability["load_factor"])
+    applied: list[dict[str, Any]] = []
+    for item in plan:
+        updated = account_ops.guard_update_account_group_priority(
+            db,
+            settings.audit_path,
+            int(item["account_id"]),
+            item.get("group_id"),
+            str(item.get("group_name") or ""),
+            user,
+            int(item["group_priority"]),
+            f"guard queue reorder: {item['group_name'] or '-'} P{item['position']}",
+        )
+        if updated:
+            applied.append({**item, "updated": updated})
+    write_audit(
         settings.audit_path,
-        account_id,
-        user,
-        priority,
-        load_factor,
-        capability["load_factor"],
-        f"guard explicit queue tier {tier}",
+        "guard_queue_reorder",
+        {
+            "user": user,
+            "selected_groups": group_selection.get("selected"),
+            "submitted": len(ordered_keys),
+            "planned": len(plan),
+            "applied": len(applied),
+            "load_factor_supported": capability["load_factor"],
+        },
     )
-    if not updated:
-        raise HTTPException(status_code=404, detail="account not found")
-    tier_label = QUEUE_TIERS[normalize_queue_tier(tier)]["label"]
     return RedirectResponse(
-        guard_queue_url(queue_group_values, f"账号 #{account_id} 已设为 {tier_label}"),
+        guard_queue_url(queue_group_values, f"已保存 {len(applied)} 个账号的队列顺序"),
         status_code=303,
     )
 
@@ -1581,31 +1610,38 @@ async def guard_queue_auto_apply(request: Request, user: AuthUser) -> Response:
     queue_group_values = [str(value) for value in form.getlist("queue_group")]
     groups = load_groups()
     group_selection = build_group_selection(queue_group_values, groups)
-    rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_quality()), group_selection)
+    rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), group_selection)
     capability = account_routing_capability()
-    if not capability["priority"]:
-        raise HTTPException(status_code=400, detail="accounts.priority column is not available")
+    if not capability["group_priority"]:
+        raise HTTPException(status_code=400, detail="account_groups.priority column is not available")
 
-    plan = auto_queue_plan(
-        rows,
-        p1_count=int_param(str(form.get("p1_count")), 1, 0, 20),
-        p2_count=int_param(str(form.get("p2_count")), 2, 0, 50),
-        load_factor_supported=capability["load_factor"],
-    )
+    plan = auto_queue_plan(rows, load_factor_supported=capability["load_factor"])
     applied: list[dict[str, Any]] = []
     for item in plan:
-        updated = account_ops.guard_update_account_routing(
+        updated = account_ops.guard_update_account_group_priority(
             db,
             settings.audit_path,
             int(item["account_id"]),
+            item.get("group_id"),
+            str(item.get("group_name") or ""),
             user,
-            int(item["priority"]),
-            item.get("load_factor"),
-            capability["load_factor"],
-            f"guard auto queue adjustment: {item['tier']}",
+            int(item["group_priority"]),
+            f"guard auto queue adjustment: {item['group_name'] or '-'} P{item['position']}",
         )
         if updated:
+            load_factor_update = None
+            if capability["load_factor"]:
+                load_factor_update = account_ops.guard_update_account_load_factor(
+                    db,
+                    settings.audit_path,
+                    int(item["account_id"]),
+                    user,
+                    item.get("load_factor"),
+                    f"guard auto queue load factor: {item['group_name'] or '-'} P{item['position']}",
+                )
             applied.append({**item, "updated": updated})
+            if load_factor_update:
+                applied[-1]["load_factor_updated"] = load_factor_update
     write_audit(
         settings.audit_path,
         "guard_auto_queue_adjustment",
@@ -1618,7 +1654,7 @@ async def guard_queue_auto_apply(request: Request, user: AuthUser) -> Response:
         },
     )
     return RedirectResponse(
-        guard_queue_url(queue_group_values, f"已自动调整 {len(applied)} 个账号的 P1/P2 队列"),
+        guard_queue_url(queue_group_values, f"已按健康度重排 {len(applied)} 个账号"),
         status_code=303,
     )
 

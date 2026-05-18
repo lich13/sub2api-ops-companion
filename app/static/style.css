@@ -1297,24 +1297,15 @@ dd {
 }
 
 .guard-auto-queue-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(110px, 150px)) max-content minmax(220px, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  align-items: end;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-soft);
-}
-
-.guard-auto-queue-form label {
-  display: grid;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.guard-auto-queue-form input {
-  width: 100%;
 }
 
 .guard-auto-queue-form span {
@@ -1323,36 +1314,160 @@ dd {
   line-height: 1.45;
 }
 
-.guard-queue-table {
-  min-width: 1280px;
-}
-
-.guard-queue-table [data-col="group"] {
-  min-width: 170px;
-}
-
-.guard-queue-table [data-col="tier"] {
-  min-width: 210px;
-}
-
-.guard-queue-table [data-col="signal"] {
-  min-width: 220px;
-}
-
-.guard-queue-table [data-col="action"] {
-  min-width: 260px;
-}
-
-.queue-tier-actions {
+.guard-queue-order-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(48px, 1fr));
-  gap: 6px;
-  min-width: 230px;
+  gap: 12px;
 }
 
-.queue-tier-actions button {
-  min-height: 32px;
-  white-space: nowrap;
+.guard-queue-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.guard-queue-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.guard-queue-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.guard-queue-group-head h4,
+.guard-queue-group-head p {
+  margin: 0;
+}
+
+.guard-queue-group-head h4 {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.guard-queue-group-head p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guard-queue-list {
+  display: grid;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.guard-queue-card {
+  display: grid;
+  grid-template-columns: 34px 54px minmax(150px, 1.4fr) minmax(116px, 0.7fr) minmax(160px, 0.9fr) 68px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.guard-queue-card.warn {
+  border-color: rgba(217, 119, 6, 0.32);
+  background: #fffaf2;
+}
+
+.guard-queue-card.bad {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: #fff7f7;
+}
+
+.guard-queue-card.dragging {
+  opacity: 0.58;
+}
+
+.drag-handle,
+.queue-move-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.queue-rank {
+  justify-self: start;
+  min-width: 44px;
+  text-align: center;
+}
+
+.queue-account-main,
+.queue-account-state,
+.queue-account-metrics {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queue-account-main strong,
+.queue-account-main span,
+.queue-account-state span,
+.queue-account-metrics span {
+  overflow-wrap: anywhere;
+}
+
+.queue-account-main span,
+.queue-account-state .cell-sub,
+.queue-account-metrics {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.queue-move-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.queue-move-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.guard-queue-savebar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.guard-queue-savebar span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .guard-status-list {
@@ -3086,7 +3201,6 @@ pre {
   }
 
   .guard-policy-grid,
-  .guard-auto-queue-form,
   .routing-mini-form {
     grid-template-columns: 1fr;
   }
@@ -3097,13 +3211,29 @@ pre {
 
   .guard-queue-filter .group-picker-field,
   .guard-queue-filter button,
-  .guard-auto-queue-form button {
+  .guard-auto-queue-form button,
+  .guard-queue-savebar button {
     width: 100%;
   }
 
-  .queue-tier-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-width: 0;
+  .guard-queue-board {
+    grid-template-columns: 1fr;
+  }
+
+  .guard-queue-card {
+    grid-template-columns: 34px 54px minmax(0, 1fr) 68px;
+  }
+
+  .queue-account-main,
+  .queue-account-state,
+  .queue-account-metrics {
+    grid-column: 3 / 4;
+  }
+
+  .queue-move-actions {
+    grid-column: 4;
+    grid-row: 1 / span 3;
+    align-self: center;
   }
 
   .routing-mini-form input {

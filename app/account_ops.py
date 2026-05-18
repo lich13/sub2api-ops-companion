@@ -6,6 +6,8 @@ from typing import Any
 from .audit import write_audit
 from .db import Database
 from .sql import (
+    GUARD_ACCOUNT_GROUP_PRIORITY_UPDATE_SQL,
+    GUARD_ACCOUNT_LOAD_FACTOR_UPDATE_SQL,
     GUARD_ACCOUNT_PRIORITY_UPDATE_SQL,
     GUARD_ACCOUNT_ROUTING_UPDATE_SQL,
     QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
@@ -207,7 +209,7 @@ def normalize_priority_value(value: object, default: int = 50) -> int:
         parsed = int(str(value).strip())
     except (TypeError, ValueError):
         parsed = default
-    return max(1, min(100, parsed))
+    return max(1, parsed)
 
 
 def normalize_load_factor_value(value: object) -> int | None:
@@ -415,6 +417,59 @@ def guard_update_account_routing(
             "account": row,
             "params": params,
             "load_factor_supported": load_factor_supported,
+            "reason": reason,
+        },
+    )
+    return row
+
+
+def guard_update_account_group_priority(
+    db: Database,
+    audit_path: str,
+    account_id: int,
+    group_id: int | None,
+    group_name: str,
+    actor: str,
+    group_priority: int,
+    reason: str,
+) -> dict[str, Any] | None:
+    params = {
+        "account_id": int(account_id),
+        "group_id": int(group_id) if group_id else None,
+        "group_name": str(group_name or ""),
+        "group_priority": normalize_priority_value(group_priority),
+    }
+    row = db.fetch_one(GUARD_ACCOUNT_GROUP_PRIORITY_UPDATE_SQL, params)
+    write_audit(
+        audit_path,
+        "guard_account_group_priority_update",
+        {
+            "user": actor,
+            "account_group": row,
+            "params": params,
+            "reason": reason,
+        },
+    )
+    return row
+
+
+def guard_update_account_load_factor(
+    db: Database,
+    audit_path: str,
+    account_id: int,
+    actor: str,
+    load_factor: int | None,
+    reason: str,
+) -> dict[str, Any] | None:
+    params = {"account_id": int(account_id), "load_factor": normalize_load_factor_value(load_factor)}
+    row = db.fetch_one(GUARD_ACCOUNT_LOAD_FACTOR_UPDATE_SQL, params)
+    write_audit(
+        audit_path,
+        "guard_account_load_factor_update",
+        {
+            "user": actor,
+            "account": row,
+            "params": params,
             "reason": reason,
         },
     )
