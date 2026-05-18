@@ -34,6 +34,51 @@ class FakeDB:
         return None
 
 
+class AlreadyLimitedFakeDB(FakeDB):
+    def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        payload = params or {}
+        self.updates.append((sql, payload))
+        if "UPDATE accounts" not in sql:
+            return None
+        if "AND schedulable = true" in sql or "(schedulable = true OR" in sql:
+            return None
+        return {
+            "id": payload["account_id"],
+            "name": "wong",
+            "schedulable": bool("temp_unschedulable_until = now()" in sql),
+            "temp_unschedulable_until": "2026-05-18T10:01:00+00:00",
+        }
+
+
+class RecoveryFakeDB(FakeDB):
+    def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        payload = params or {}
+        self.updates.append((sql, payload))
+        if "UPDATE accounts" not in sql:
+            return None
+        if "status = 'active'" not in sql:
+            return None
+        if "rate_limited_at = NULL" not in sql:
+            return None
+        if "rate_limit_reset_at = NULL" not in sql:
+            return None
+        if "overload_until = NULL" not in sql:
+            return None
+        if "error_message = NULL" not in sql:
+            return None
+        return {
+            "id": payload["account_id"],
+            "name": "wong",
+            "status": "active",
+            "schedulable": True,
+            "temp_unschedulable_until": None,
+            "rate_limited_at": None,
+            "rate_limit_reset_at": None,
+            "overload_until": None,
+            "error_message": None,
+        }
+
+
 def row(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "error_log_id": 101,
@@ -66,6 +111,17 @@ class GuardEngineTests(unittest.TestCase):
             self.assertEqual(actions[0]["account_id"], 9)
             self.assertEqual(store.error_cursor(), 101)
 
+    def test_engine_hard_pauses_quota_fault_even_when_account_already_limited(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db = AlreadyLimitedFakeDB([row()])
+            store = GuardStore(str(Path(tmp) / "state.json"))
+            engine = GuardEngine(db=db, store=store, audit_path=str(Path(tmp) / "audit.jsonl"), policy=GuardPolicy())
+            actions = engine.run_once(actor="test")
+
+            self.assertEqual(len(actions), 1)
+            self.assertEqual(actions[0]["action"], "pause")
+            self.assertEqual(actions[0]["account_id"], 9)
+
     def test_engine_ignores_client_error_but_advances_cursor(self) -> None:
         with TemporaryDirectory() as tmp:
             db = FakeDB([row(error_owner="client", error_source="client_request", search_text="bad user input")])
@@ -94,6 +150,17 @@ class GuardEngineTests(unittest.TestCase):
             self.assertEqual(actions[0]["load_factor"], 1)
             self.assertTrue(any(params.get("load_factor") == 1 for _sql, params in db.updates))
 
+    def test_rate_limit_cooldown_updates_account_even_when_already_unschedulable(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db = AlreadyLimitedFakeDB([row(status_code=429, message="rate limit", search_text="rate limit")])
+            store = GuardStore(str(Path(tmp) / "state.json"))
+            engine = GuardEngine(db=db, store=store, audit_path=str(Path(tmp) / "audit.jsonl"), policy=GuardPolicy())
+            actions = engine.run_once(actor="test")
+
+            self.assertEqual(len(actions), 1)
+            self.assertEqual(actions[0]["action"], "cooldown")
+            self.assertEqual(actions[0]["minutes"], 1)
+
     def test_record_recovery_success_closes_open_circuit(self) -> None:
         with TemporaryDirectory() as tmp:
             store = GuardStore(str(Path(tmp) / "state.json"))
@@ -103,10 +170,12 @@ class GuardEngineTests(unittest.TestCase):
             circuit.consecutive_failures = 4
             store.save_circuit(circuit)
 
-            engine = GuardEngine(FakeDB([]), store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
+            db = RecoveryFakeDB([])
+            engine = GuardEngine(db, store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
             engine.record_recovery_success(9, 777)
 
             self.assertEqual(store.circuit(9).state, "closed")
+            self.assertTrue(any(params.get("account_id") == 9 for _sql, params in db.updates))
 
     def test_duplicate_recovery_success_does_not_reopen_closed_circuit(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -116,7 +185,7 @@ class GuardEngineTests(unittest.TestCase):
             circuit.consecutive_failures = 4
             store.save_circuit(circuit)
 
-            engine = GuardEngine(FakeDB([]), store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
+            engine = GuardEngine(RecoveryFakeDB([]), store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
             engine.record_recovery_success(9, 777)
             self.assertEqual(store.circuit(9).state, "closed")
 

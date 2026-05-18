@@ -6,7 +6,7 @@
 
 - 不修改 Sub2API 原仓库和镜像。
 - 只连接 Sub2API 的 PostgreSQL，读取 `usage_logs`、`ops_error_logs`、`accounts`、`groups` 等运行数据。
-- 账号操作只更新现有运行态/调度字段：`accounts.schedulable`、`accounts.temp_unschedulable_*`、`accounts.updated_at`、`accounts.priority`，以及上游数据库存在时的 `accounts.load_factor`。
+- 账号操作只更新现有运行态/调度字段：`accounts.status`、`accounts.schedulable`、`accounts.temp_unschedulable_*`、`accounts.rate_limited_at`、`accounts.rate_limit_reset_at`、`accounts.overload_until`、`accounts.error_message`、`accounts.updated_at`、`accounts.priority`，以及上游数据库存在时的 `accounts.load_factor`。
 - 不提供独立账号密码登录页，只接受 Sub2API 管理后台 SSO 首跳换取本服务 Cookie 会话。
 - 操作审计写入本服务自己的 `/data/audit.jsonl`，不污染 Sub2API 源码。
 
@@ -17,8 +17,8 @@
 - 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
-- 自动 Guard：读取全部账号，按 `ops_error_logs.id` 增量处理错误链路，余额/额度错误永久暂停确定性坏账号；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 5m/15m/30m 临时冷却；如果增量读取异常，仍用余额/额度兜底扫描硬暂停。
-- 定时恢复：在面板里直接配置 Sub2API 原生定时测试计划，支持每小时、每30分钟、每15分钟、每5分钟整点对齐检测；测试通过后自动清理可恢复异常状态。
+- 自动 Guard：读取全部账号，按 `ops_error_logs.id` 增量处理错误链路，余额/额度错误永久暂停确定性坏账号；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 1m/3m/5m 短冷却，并清掉上游 rate-limit/overload 运行态；如果增量读取异常，仍用余额/额度兜底扫描硬暂停。
+- 定时恢复：在面板里直接配置 Sub2API 原生定时测试计划，支持每小时、每30分钟、每15分钟、每5分钟整点对齐检测；测试通过后由 companion 自动清理可恢复异常状态。
 - Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；新错误链路会实时推送，并直接附带账号暂停/恢复/冷却按钮。
 - Sub2API 免二次登录：Sub2API 自定义菜单 iframe 可进入 `/sub2ops/sso/start`，Companion 调 Sub2API `/api/v1/auth/me` 验证管理员 JWT 后换成本服务的不可伪造会话。
 - 面板版本更新：左上角显示当前版本，支持检查 GitHub main 分支并从面板拉取更新后自重启。
@@ -122,7 +122,7 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram 侧不再提供账号命令菜单。后台会按 `ops_error_logs.id` 做增量扫描，默认每 2 秒检查一次新错误链路，每批最多处理 50 条错误日志；首次启动只记录当前最大 id，避免历史错误刷屏。之后每条带账号的错误链路会推送到当前绑定的 Telegram 会话，并在消息下方附加“暂停”“冷却 5m”“冷却 15m”“冷却 30m”“恢复”“查看详情”等账号操作按钮。
 
-如果 Sub2API 定时测试计划开启了 `auto_recover`，测试成功并实际清理账号运行态后，companion 也会按 `scheduled_test_results.id` 增量推送“账号已自动恢复”通知，并附带同样的账号操作按钮。
+如果 Sub2API 定时测试计划开启了 `auto_recover`，companion 会按 `scheduled_test_results.id` 增量读取成功结果；只要账号当时仍有停调度、rate-limit、overload、临时不可调度或错误状态，就会清理这些运行态并推送“账号已自动恢复”通知，消息下方附带同样的账号操作按钮。
 
 ## 定时恢复
 
@@ -130,8 +130,8 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 - 频率固定为每小时、每30分钟、每15分钟、每5分钟，对应 `0 * * * *`、`*/30 * * * *`、`*/15 * * * *`、`*/5 * * * *`，都以整点分钟栅格对齐。
 - 模型可以留空；留空时由 Sub2API 使用对应平台的默认测试模型。
-- 开启“测试通过后自动恢复”会写入 `auto_recover=true`。实际测试和恢复仍由 Sub2API 自己的 scheduled test runner 执行。
-- 自动恢复能清理上游可恢复运行态：`status=error`、rate-limit、overload、临时不可调度、模型级限流等。手动永久停调度仍需要人工恢复。
+- 开启“测试通过后自动恢复”会写入 `auto_recover=true`。实际测试由 Sub2API 的 scheduled test runner 执行；成功结果由 companion 接管恢复写回。
+- 自动恢复能清理上游可恢复运行态：`status=error`、rate-limit、overload、临时不可调度、错误状态等；如果账号确实恢复可用，会重新设为可调度并推送 Telegram。
 
 ## 质量统计口径
 
@@ -166,4 +166,4 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把可调度或临时冷却中的账号永久停调度，不设置冷却时间。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 5m/15m/30m 冷却。
+自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把命中的活跃账号永久停调度，不设置冷却时间。即使账号已被上游 rate-limit 标记成不可调度，也会被升级为明确的硬暂停。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 1m/3m/5m 短冷却。

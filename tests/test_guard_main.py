@@ -63,7 +63,7 @@ class GuardMainTests(unittest.TestCase):
 
         main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
         main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
-            {"result_id": 11, "account_id": 9, "model_id": "gpt-test"}
+            {"result_id": 11, "account_id": 9, "model_id": "gpt-test", "schedulable": False}
         ]
 
         main_module.process_guard_recovery_circuits()
@@ -71,6 +71,35 @@ class GuardMainTests(unittest.TestCase):
         reloaded = GuardStore(main_module.settings.guard_state_path)
         self.assertEqual(reloaded.recovery_cursor(), 11)
         self.assertNotEqual(reloaded.circuit(9).state, "open")
+
+    def test_recovery_processing_only_resumes_accounts_with_recoverable_state(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.set_recovery_cursor(10)
+        recorded: list[tuple[int, int]] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, account_id: int, result_id: int, _message: str) -> None:
+                recorded.append((account_id, result_id))
+
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
+            {"result_id": 11, "account_id": 8, "model_id": "gpt-test", "schedulable": True},
+            {"result_id": 12, "account_id": 9, "model_id": "gpt-test", "schedulable": False},
+        ]
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+
+        main_module.process_guard_recovery_circuits()
+
+        reloaded = GuardStore(main_module.settings.guard_state_path)
+        self.assertEqual(recorded, [(9, 12)])
+        self.assertEqual(reloaded.recovery_cursor(), 12)
+
+    def test_scheduled_test_needs_recovery_includes_account_status(self) -> None:
+        self.assertTrue(main_module.scheduled_test_needs_recovery({"account_status": "error", "schedulable": True}))
+        self.assertFalse(main_module.scheduled_test_needs_recovery({"account_status": "active", "schedulable": True}))
 
     def test_incremental_guard_failure_returns_fallback_actions_but_marks_error_visible(self) -> None:
         class BrokenEngine:
@@ -88,6 +117,21 @@ class GuardMainTests(unittest.TestCase):
         self.assertIn("db cursor failed", main_module.guard_state["last_error"])
         self.assertTrue(main_module.guard_state["last_error_at"])
         self.assertEqual(main_module.guard_state["last_actions"], actions)
+
+    def test_successful_incremental_guard_also_runs_balance_sweep(self) -> None:
+        class EmptyEngine:
+            def run_once(self, _actor: str) -> list[dict[str, Any]]:
+                return []
+
+        actions = [{"account_id": 9, "name": "wong", "action": "pause"}]
+        main_module.guard_engine = lambda *_args, **_kwargs: EmptyEngine()  # type: ignore[assignment]
+        main_module.run_guard_balance_fallback = lambda _actor: list(actions)  # type: ignore[assignment]
+
+        result = main_module.run_auto_guard_once("test")
+
+        self.assertEqual(result, actions)
+        self.assertEqual(main_module.guard_state["last_actions"], actions)
+        self.assertEqual(main_module.guard_state["last_error"], "")
 
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [

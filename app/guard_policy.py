@@ -14,8 +14,8 @@ class GuardPolicy:
     circuit_timeout_seconds: int = 60
     error_rate_threshold: float = 0.6
     min_requests: int = 10
-    rate_limit_cooldowns: tuple[int, ...] = (5, 15, 30)
-    unstable_cooldowns: tuple[int, ...] = (5, 15, 30)
+    rate_limit_cooldowns: tuple[int, ...] = (1, 3, 5)
+    unstable_cooldowns: tuple[int, ...] = (1, 3, 5)
     rate_limit_load_factor_steps: tuple[int, ...] = (1, 1, 1)
     unstable_load_factor_steps: tuple[int, ...] = (1, 1, 1)
     blocked_403_threshold: int = 1

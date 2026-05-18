@@ -81,7 +81,8 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertIn("INSERT INTO scheduled_test_plans", SCHEDULED_TEST_UPSERT_SQL)
         self.assertIn("r.id > %(cursor_id)s::bigint", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
         self.assertIn("r.created_at <= now() - interval '5 seconds'", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
-        self.assertIn("a.updated_at >= r.started_at - interval '5 seconds'", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
+        self.assertNotIn("a.updated_at >= r.started_at", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
+        self.assertIn("a.rate_limited_at", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
 
     def test_panel_template_exposes_easy_recovery_controls(self) -> None:
         base = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
