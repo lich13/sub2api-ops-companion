@@ -9,6 +9,9 @@ IGNORED_CATEGORIES = {"client_pre_route", "client_request", "client_bad_request"
 
 @dataclass(slots=True)
 class GuardPolicy:
+    hard_pause_enabled: bool = True
+    rate_limit_enabled: bool = True
+    unstable_enabled: bool = True
     failure_threshold: int = 4
     success_threshold: int = 2
     circuit_timeout_seconds: int = 60
@@ -112,6 +115,8 @@ def apply_signal(
     circuit.consecutive_successes = 0
 
     if signal.category == "provider_balance_or_quota":
+        if not policy.hard_pause_enabled:
+            return _none(signal, "hard-pause category disabled by guard policy"), _remember(circuit, signal)
         if circuit.consecutive_failures < policy.balance_pause_threshold:
             return _none(signal, "balance/quota signal recorded below threshold"), _remember(circuit, signal)
         circuit.state = "open"
@@ -128,6 +133,8 @@ def apply_signal(
         )
 
     if signal.category == "provider_blocked_403" and circuit.consecutive_failures >= policy.blocked_403_threshold:
+        if not policy.hard_pause_enabled:
+            return _none(signal, "hard-pause category disabled by guard policy"), _remember(circuit, signal)
         circuit.state = "open"
         circuit.opened_at = now.isoformat()
         return (
@@ -142,6 +149,8 @@ def apply_signal(
         )
 
     if signal.category == "provider_rate_limit":
+        if not policy.rate_limit_enabled:
+            return _none(signal, "rate-limit category disabled by guard policy"), _remember(circuit, signal)
         minutes = _slot(policy.rate_limit_cooldowns, circuit.rate_limit_level)
         load_factor = _slot(policy.rate_limit_load_factor_steps, circuit.rate_limit_level)
         circuit.rate_limit_level += 1
@@ -161,6 +170,8 @@ def apply_signal(
         )
 
     if signal.category == "upstream_unstable_5xx_stream":
+        if not policy.unstable_enabled:
+            return _none(signal, "unstable-upstream category disabled by guard policy"), _remember(circuit, signal)
         if circuit.consecutive_failures < policy.failure_threshold:
             return _none(signal, "unstable signal recorded below threshold"), _remember(circuit, signal)
         minutes = _slot(policy.unstable_cooldowns, circuit.unstable_level)

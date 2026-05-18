@@ -22,9 +22,10 @@ from fastapi.templating import Jinja2Templates
 from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
-from .group_selection import DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
+from .group_selection import ALL_GROUP_VALUE, DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
 from .guard_engine import GuardEngine
 from .guard_policy import GuardPolicy
+from .guard_queue import QUEUE_TIERS, auto_queue_plan, normalize_queue_tier, queue_tier, tier_routing_values
 from .guard_store import GuardStore
 from .quality_sort import (
     STABILITY_SORT_OPTIONS,
@@ -484,6 +485,9 @@ def guard_config() -> dict[str, Any]:
 def guard_policy_from_store() -> GuardPolicy:
     raw = GuardStore(settings.guard_state_path).policy_config()
     return GuardPolicy(
+        hard_pause_enabled=form_truthy(raw.get("hard_pause_enabled")) if "hard_pause_enabled" in raw else True,
+        rate_limit_enabled=form_truthy(raw.get("rate_limit_enabled")) if "rate_limit_enabled" in raw else True,
+        unstable_enabled=form_truthy(raw.get("unstable_enabled")) if "unstable_enabled" in raw else True,
         failure_threshold=int_param(str(raw.get("failure_threshold")), 4, 1, 50),
         success_threshold=int_param(str(raw.get("success_threshold")), 2, 1, 20),
         circuit_timeout_seconds=int_param(str(raw.get("circuit_timeout_seconds")), 60, 5, 3600),
@@ -513,7 +517,26 @@ def enrich_guard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         row["guard_circuit"] = asdict(store.circuit(int(row.get("id") or 0)))
         row["problem"] = account_problem(row)
+        row["queue_tier"] = queue_tier(row)
     return rows
+
+
+def filter_guard_queue_rows(rows: list[dict[str, Any]], group_selection: dict[str, Any]) -> list[dict[str, Any]]:
+    if group_selection.get("all_selected") or not group_selection.get("options"):
+        return list(rows)
+    selected = set(group_selection.get("selected") or [])
+    return [row for row in rows if row.get("group_name") in selected]
+
+
+def guard_queue_url(queue_group_values: list[Any], msg: str = "") -> str:
+    query: list[tuple[str, str]] = []
+    values = unique_group_values(queue_group_values) or [ALL_GROUP_VALUE]
+    for value in values:
+        query.append(("queue_group", value))
+    if msg:
+        query.append(("msg", msg))
+    suffix = urlencode(query)
+    return f"{settings.base_path}/guard?{suffix}" if suffix else f"{settings.base_path}/guard"
 
 
 def parse_int_csv(value: str) -> tuple[int, ...]:
@@ -708,6 +731,8 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
 
 
 def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
+    if not guard_policy_from_store().hard_pause_enabled:
+        return []
     candidates = db.fetch_all(
         GUARD_BALANCE_CANDIDATES_SQL,
         {
@@ -1417,7 +1442,12 @@ def guard_view(
     _: AuthUser,
     msg: str = "",
 ) -> HTMLResponse:
+    groups = load_groups()
+    query_params = getattr(request, "query_params", None)
+    queue_group_values = query_params.getlist("queue_group") if hasattr(query_params, "getlist") else []
+    queue_group_selection = build_group_selection(queue_group_values, groups)
     rows = enrich_guard_rows(load_guard_quality())
+    queue_rows = filter_guard_queue_rows(rows, queue_group_selection)
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,
@@ -1425,8 +1455,12 @@ def guard_view(
         {
             "active": "guard",
             "rows": rows,
+            "queue_rows": queue_rows,
             "suggestions": suggestions,
             "guard": guard_config(),
+            "groups": groups,
+            "queue_group_selection": queue_group_selection,
+            "queue_tiers": QUEUE_TIERS,
             "msg": msg,
         },
     )
@@ -1483,6 +1517,9 @@ async def run_guard_now(user: AuthUser) -> Response:
 @app.post("/guard/policy")
 def guard_policy_save(
     user: AuthUser,
+    hard_pause_enabled: str | None = Form(None),
+    rate_limit_enabled: str | None = Form(None),
+    unstable_enabled: str | None = Form(None),
     failure_threshold: int = Form(4),
     success_threshold: int = Form(2),
     circuit_timeout_seconds: int = Form(60),
@@ -1490,6 +1527,9 @@ def guard_policy_save(
     balance_pause_threshold: int = Form(1),
 ) -> Response:
     payload = {
+        "hard_pause_enabled": form_truthy(hard_pause_enabled),
+        "rate_limit_enabled": form_truthy(rate_limit_enabled),
+        "unstable_enabled": form_truthy(unstable_enabled),
         "failure_threshold": int_param(str(failure_threshold), 4, 1, 50),
         "success_threshold": int_param(str(success_threshold), 2, 1, 20),
         "circuit_timeout_seconds": int_param(str(circuit_timeout_seconds), 60, 5, 3600),
@@ -1501,6 +1541,86 @@ def guard_policy_save(
     guard_store().save_policy(payload)
     write_audit(settings.audit_path, "guard_policy_update", payload)
     return RedirectResponse(f"{settings.base_path}/guard?msg={quote('Guard 策略已保存')}", status_code=303)
+
+
+@app.post("/guard/queue-tier")
+async def guard_queue_tier_save(
+    request: Request,
+    user: AuthUser,
+    account_id: int = Form(...),
+    tier: str = Form("standby"),
+) -> Response:
+    form = await request.form()
+    queue_group_values = [str(value) for value in form.getlist("queue_group")]
+    capability = account_routing_capability()
+    if not capability["priority"]:
+        raise HTTPException(status_code=400, detail="accounts.priority column is not available")
+    priority, load_factor = tier_routing_values(tier, capability["load_factor"])
+    updated = account_ops.guard_update_account_routing(
+        db,
+        settings.audit_path,
+        account_id,
+        user,
+        priority,
+        load_factor,
+        capability["load_factor"],
+        f"guard explicit queue tier {tier}",
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="account not found")
+    tier_label = QUEUE_TIERS[normalize_queue_tier(tier)]["label"]
+    return RedirectResponse(
+        guard_queue_url(queue_group_values, f"账号 #{account_id} 已设为 {tier_label}"),
+        status_code=303,
+    )
+
+
+@app.post("/guard/queue/auto")
+async def guard_queue_auto_apply(request: Request, user: AuthUser) -> Response:
+    form = await request.form()
+    queue_group_values = [str(value) for value in form.getlist("queue_group")]
+    groups = load_groups()
+    group_selection = build_group_selection(queue_group_values, groups)
+    rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_quality()), group_selection)
+    capability = account_routing_capability()
+    if not capability["priority"]:
+        raise HTTPException(status_code=400, detail="accounts.priority column is not available")
+
+    plan = auto_queue_plan(
+        rows,
+        p1_count=int_param(str(form.get("p1_count")), 1, 0, 20),
+        p2_count=int_param(str(form.get("p2_count")), 2, 0, 50),
+        load_factor_supported=capability["load_factor"],
+    )
+    applied: list[dict[str, Any]] = []
+    for item in plan:
+        updated = account_ops.guard_update_account_routing(
+            db,
+            settings.audit_path,
+            int(item["account_id"]),
+            user,
+            int(item["priority"]),
+            item.get("load_factor"),
+            capability["load_factor"],
+            f"guard auto queue adjustment: {item['tier']}",
+        )
+        if updated:
+            applied.append({**item, "updated": updated})
+    write_audit(
+        settings.audit_path,
+        "guard_auto_queue_adjustment",
+        {
+            "user": user,
+            "selected_groups": group_selection.get("selected"),
+            "planned": len(plan),
+            "applied": len(applied),
+            "load_factor_supported": capability["load_factor"],
+        },
+    )
+    return RedirectResponse(
+        guard_queue_url(queue_group_values, f"已自动调整 {len(applied)} 个账号的 P1/P2 队列"),
+        status_code=303,
+    )
 
 
 @app.post("/guard/account-routing")
