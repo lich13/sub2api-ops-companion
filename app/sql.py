@@ -618,6 +618,7 @@ SELECT *
 FROM ranked
 WHERE balance_error_count >= %(threshold)s
   AND already_auto_guarded = false
+  AND last_error_at >= now() - (%(max_age_hours)s::text || ' hours')::interval
 ORDER BY balance_error_count DESC, last_error_at DESC;
 """
 

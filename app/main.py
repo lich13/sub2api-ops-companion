@@ -472,6 +472,7 @@ def guard_config() -> dict[str, Any]:
         "interval_seconds": settings.guard_interval_seconds,
         "scope": "all_accounts",
         "threshold": settings.guard_balance_error_threshold,
+        "balance_max_age_hours": settings.guard_balance_error_max_age_hours,
         "action": "pause",
         "state": guard_state,
         "policy": asdict(policy),
@@ -711,6 +712,7 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
         GUARD_BALANCE_CANDIDATES_SQL,
         {
             "threshold": settings.guard_balance_error_threshold,
+            "max_age_hours": settings.guard_balance_error_max_age_hours,
         },
     )
     actions = [pause_guard_candidate(row, actor) for row in candidates if row.get("id")]

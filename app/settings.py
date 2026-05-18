@@ -18,6 +18,7 @@ class Settings:
     guard_enabled: bool = True
     guard_interval_seconds: int = 5
     guard_balance_error_threshold: int = 1
+    guard_balance_error_max_age_hours: int = 24
     guard_state_path: str = "/data/guard-state.json"
     guard_event_batch_size: int = 100
     telegram_config_path: str = "/data/telegram-config.json"
@@ -125,6 +126,7 @@ def load_settings() -> Settings:
         guard_enabled=bool_env("GUARD_ENABLED", True),
         guard_interval_seconds=int_env("GUARD_INTERVAL_SECONDS", 5, 1, 3600),
         guard_balance_error_threshold=int_env("GUARD_BALANCE_ERROR_THRESHOLD", 1, 1, 100),
+        guard_balance_error_max_age_hours=int_env("GUARD_BALANCE_ERROR_MAX_AGE_HOURS", 24, 1, 720),
         guard_state_path=os.getenv("GUARD_STATE_PATH", "/data/guard-state.json"),
         guard_event_batch_size=int_env("GUARD_EVENT_BATCH_SIZE", 100, 1, 500),
         telegram_config_path=telegram_config_path,
