@@ -225,10 +225,23 @@ def pause_account(db: Database, audit_path: str, account_id: int, actor: str, re
         SET schedulable = false,
             temp_unschedulable_until = NULL,
             temp_unschedulable_reason = %(reason)s,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": account_id, "reason": reason},
     )
@@ -243,11 +256,23 @@ def guard_pause_account(db: Database, account_id: int, reason: str) -> dict[str,
         SET schedulable = false,
             temp_unschedulable_until = NULL,
             temp_unschedulable_reason = %(reason)s,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-          AND (schedulable = true OR temp_unschedulable_until IS NOT NULL)
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": account_id, "reason": reason},
     )
@@ -268,10 +293,23 @@ def cooldown_account(
         SET schedulable = true,
             temp_unschedulable_until = now() + (%(minutes)s::text || ' minutes')::interval,
             temp_unschedulable_reason = %(reason)s,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": account_id, "minutes": minutes, "reason": reason},
     )
@@ -291,31 +329,64 @@ def guard_cooldown_account(db: Database, account_id: int, minutes: int, reason: 
         SET schedulable = true,
             temp_unschedulable_until = now() + (%(minutes)s::text || ' minutes')::interval,
             temp_unschedulable_reason = %(reason)s,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-          AND schedulable = true
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": account_id, "minutes": minutes, "reason": reason},
     )
 
 
-def resume_account(db: Database, audit_path: str, account_id: int, actor: str) -> dict[str, Any] | None:
+def resume_account(
+    db: Database,
+    audit_path: str,
+    account_id: int,
+    actor: str,
+    reason: str = "resume account from ops companion",
+) -> dict[str, Any] | None:
     row = db.fetch_one(
         """
         UPDATE accounts
-        SET schedulable = true,
+        SET status = 'active',
+            schedulable = true,
             temp_unschedulable_until = NULL,
             temp_unschedulable_reason = NULL,
+            rate_limited_at = NULL,
+            rate_limit_reset_at = NULL,
+            overload_until = NULL,
+            error_message = NULL,
             updated_at = now()
         WHERE id = %(account_id)s
           AND deleted_at IS NULL
-        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        RETURNING
+          id,
+          name,
+          status,
+          schedulable,
+          temp_unschedulable_until,
+          temp_unschedulable_reason,
+          rate_limited_at,
+          rate_limit_reset_at,
+          overload_until,
+          error_message
         """,
         {"account_id": account_id},
     )
-    write_audit(audit_path, "resume_account", {"user": actor, "account": row})
+    write_audit(audit_path, "resume_account", {"user": actor, "account": row, "reason": reason})
     return row
 
 

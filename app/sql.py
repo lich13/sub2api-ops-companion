@@ -594,20 +594,30 @@ ranked AS (
     a.name,
     count(*) AS balance_error_count,
     max(be.created_at) AS last_error_at,
-    (array_agg(left(replace(coalesce(be.message,''), E'\\n', ' '), 220) ORDER BY be.created_at DESC))[1] AS last_message
+    (array_agg(left(replace(coalesce(be.message,''), E'\\n', ' '), 220) ORDER BY be.created_at DESC))[1] AS last_message,
+    (
+      a.schedulable = false
+      AND a.temp_unschedulable_until IS NULL
+      AND coalesce(a.temp_unschedulable_reason, '') ILIKE 'auto guard:%%balance/quota%%'
+    ) AS already_auto_guarded
   FROM balance_errors be
   JOIN accounts a ON a.id = be.account_id
   WHERE a.deleted_at IS NULL
     AND a.status = 'active'
     AND (
-      a.schedulable = true
+      a.schedulable = false
       OR a.temp_unschedulable_until IS NOT NULL
+      OR a.rate_limited_at IS NOT NULL
+      OR a.rate_limit_reset_at IS NOT NULL
+      OR a.overload_until IS NOT NULL
+      OR coalesce(a.error_message, '') <> ''
     )
-  GROUP BY a.id, a.name
+  GROUP BY a.id, a.name, a.schedulable, a.temp_unschedulable_until, a.temp_unschedulable_reason
 )
 SELECT *
 FROM ranked
 WHERE balance_error_count >= %(threshold)s
+  AND already_auto_guarded = false
 ORDER BY balance_error_count DESC, last_error_at DESC;
 """
 
@@ -1040,8 +1050,6 @@ WHERE r.id > %(cursor_id)s::bigint
   AND p.auto_recover = true
   AND r.status = 'success'
   AND r.created_at <= now() - interval '5 seconds'
-  AND a.updated_at >= r.started_at - interval '5 seconds'
-  AND a.updated_at <= COALESCE(r.finished_at, r.created_at) + interval '45 seconds'
 ORDER BY r.id ASC
 LIMIT %(limit)s::int;
 """

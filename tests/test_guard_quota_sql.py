@@ -64,11 +64,14 @@ class GuardQuotaSqlTests(unittest.TestCase):
         self.assertNotIn("search_text ILIKE '%%RemainQuota%%'", sql_terms)
         self.assertIsNone(re.search(r"RemainQuota\s*%%", sql_terms))
 
-    def test_guard_promotes_temporary_cooldowns_to_permanent_pause(self) -> None:
-        self.assertIn("OR a.temp_unschedulable_until IS NOT NULL", GUARD_BALANCE_CANDIDATES_SQL)
+    def test_guard_balance_fallback_includes_already_unschedulable_accounts(self) -> None:
+        self.assertNotIn("a.schedulable = true", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("temp_unschedulable_reason", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("a.rate_limited_at IS NOT NULL", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("already_auto_guarded", GUARD_BALANCE_CANDIDATES_SQL)
 
         main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
-        self.assertIn("OR temp_unschedulable_until IS NOT NULL", main_py)
+        self.assertNotIn("OR temp_unschedulable_until IS NOT NULL", main_py)
 
     def test_guard_balance_fallback_is_not_time_window_filtered(self) -> None:
         self.assertNotIn("lookback_minutes", GUARD_BALANCE_CANDIDATES_SQL)

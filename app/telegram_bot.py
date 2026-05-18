@@ -437,7 +437,7 @@ class TelegramOpsBot:
         row = await asyncio.to_thread(self._account_detail, account_id)
         if not row:
             return f"没有找到账号 #{account_id}", accounts_keyboard()
-        text = f"确认恢复账号调度？\n\n{account_row(row)}\n\n恢复会清除手动暂停和临时冷却。"
+        text = f"确认恢复账号调度？\n\n{account_row(row)}\n\n恢复会清除手动暂停、临时冷却和限流/错误状态。"
         return text, confirm_keyboard("确认恢复", f"res:{account_id}", f"acct:{account_id}")
 
     async def _resume_apply_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any]]:
