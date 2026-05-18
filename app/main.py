@@ -383,16 +383,25 @@ def load_quality(
     )
 
 
+def guard_signal_params() -> dict[str, Any]:
+    hours = int_param(str(getattr(settings, "guard_quality_hours", 24)), 24, 1, 720)
+    return {
+        "range_start": datetime.now(timezone.utc) - timedelta(hours=hours),
+        "range_end": None,
+        "platform": "",
+    }
+
+
 def load_guard_quality() -> list[dict[str, Any]]:
     capability = account_routing_capability()
     sql = QUALITY_ALL_ACCOUNTS_SQL if capability["load_factor"] else QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR
-    return db.fetch_all(sql)
+    return db.fetch_all(sql, guard_signal_params())
 
 
 def load_guard_queue_quality() -> list[dict[str, Any]]:
     capability = account_routing_capability()
     sql = GUARD_QUEUE_SQL if capability["load_factor"] else GUARD_QUEUE_SQL_COMPAT_NO_LOAD_FACTOR
-    return db.fetch_all(sql)
+    return db.fetch_all(sql, guard_signal_params())
 
 
 def form_truthy(value: Any) -> bool:
@@ -481,6 +490,7 @@ def guard_config() -> dict[str, Any]:
         "enabled": settings.guard_enabled,
         "interval_seconds": settings.guard_interval_seconds,
         "scope": "all_accounts",
+        "quality_hours": getattr(settings, "guard_quality_hours", 24),
         "threshold": settings.guard_balance_error_threshold,
         "balance_max_age_hours": settings.guard_balance_error_max_age_hours,
         "action": "pause",
@@ -547,6 +557,13 @@ def guard_queue_url(queue_group_values: list[Any], msg: str = "") -> str:
         query.append(("msg", msg))
     suffix = urlencode(query)
     return f"{settings.base_path}/guard?{suffix}" if suffix else f"{settings.base_path}/guard"
+
+
+def request_scan_limit(limit: int, account_id: str = "", q: str = "") -> int:
+    multiplier = 50 if str(account_id or "").strip() else 20
+    if str(q or "").strip():
+        multiplier = max(multiplier, 30)
+    return min(max(limit, limit * multiplier), 50000)
 
 
 def parse_int_csv(value: str) -> tuple[int, ...]:
@@ -1393,6 +1410,7 @@ def requests_view(
     account_id = account_id.strip()
     selected_range = build_time_range(time_range, start_date, end_date, hours)
     parsed_limit = int_param(str(limit), 200, 1, 1000)
+    scan_limit = request_scan_limit(parsed_limit, account_id, q)
     rows = db.fetch_all(
         REQUESTS_SQL,
         {
@@ -1402,6 +1420,7 @@ def requests_view(
             "range_start": selected_range["start_at"],
             "range_end": selected_range["end_at"],
             "limit": parsed_limit,
+            "scan_limit": scan_limit,
         },
     )
     return render(
@@ -1415,6 +1434,7 @@ def requests_view(
             "account_id": account_id,
             "time_range": selected_range,
             "limit": parsed_limit,
+            "scan_limit": scan_limit,
             "platform_options": load_platform_options(),
             "account_options": load_account_options(platform),
         },
@@ -1433,6 +1453,7 @@ def request_detail(request: Request, _: AuthUser, request_id: str) -> HTMLRespon
             "range_start": detail_range["start_at"],
             "range_end": detail_range["end_at"],
             "limit": 200,
+            "scan_limit": request_scan_limit(200, "", request_id),
         },
     )
     return render(

@@ -55,14 +55,13 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn("NULL::integer AS load_factor", QUALITY_SQL_COMPAT_NO_LOAD_FACTOR)
         self.assertNotIn("a.load_factor", QUALITY_SQL_COMPAT_NO_LOAD_FACTOR)
 
-    def test_guard_all_accounts_quality_sql_has_no_group_platform_or_time_filters(self) -> None:
+    def test_guard_all_accounts_quality_sql_has_no_group_filter_but_keeps_signal_window(self) -> None:
         self.assertIn("LEFT JOIN account_groups", QUALITY_ALL_ACCOUNTS_SQL)
         self.assertIn("LEFT JOIN groups", QUALITY_ALL_ACCOUNTS_SQL)
         self.assertNotIn("g.name = ANY(%(group_names)s::text[])", QUALITY_ALL_ACCOUNTS_SQL)
         self.assertNotIn("a.platform = %(platform)s", QUALITY_ALL_ACCOUNTS_SQL)
-        self.assertNotIn("e.platform = %(platform)s", QUALITY_ALL_ACCOUNTS_SQL)
-        self.assertNotIn("created_at >= %(range_start)s", QUALITY_ALL_ACCOUNTS_SQL)
-        self.assertNotIn("created_at < %(range_end)s", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertIn("%(range_start)s::timestamptz", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertIn("%(range_end)s::timestamptz", QUALITY_ALL_ACCOUNTS_SQL)
         self.assertIn("NULL::integer AS load_factor", QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR)
         self.assertNotIn("a.load_factor", QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR)
 
@@ -92,6 +91,7 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('action="{{ base_path }}/guard/queue/reorder"', template)
         self.assertIn('name="queue_group"', template)
         self.assertIn('name="account_order"', template)
+        self.assertIn("guard.quality_hours", template)
         self.assertIn('name="priority"', template)
         self.assertIn('name="load_factor"', template)
         self.assertIn("accounts.load_factor", template)

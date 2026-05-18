@@ -9,7 +9,7 @@ from app.quality_sort import (
     sort_speed_rows,
     sort_stability_rows,
 )
-from app.sql import QUALITY_SQL, REQUESTS_SQL
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_QUEUE_SQL, QUALITY_ALL_ACCOUNTS_SQL, QUALITY_SQL, REQUESTS_SQL
 from app.time_range import BEIJING_TZ, build_time_range
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +52,24 @@ class TimeRangeFilterTests(unittest.TestCase):
                 self.assertIn("%(range_start)s::timestamptz", sql)
                 self.assertIn("%(range_end)s::timestamptz", sql)
                 self.assertNotIn("make_interval(hours => %(hours)s)", sql)
+
+    def test_guard_all_account_sql_keeps_bounded_signal_window(self) -> None:
+        for sql in (QUALITY_ALL_ACCOUNTS_SQL, GUARD_QUEUE_SQL):
+            with self.subTest(sql=sql[:20]):
+                self.assertIn("%(range_start)s::timestamptz", sql)
+                self.assertIn("%(range_end)s::timestamptz", sql)
+                self.assertNotIn("g.name = ANY(%(group_names)s::text[])", sql)
+
+    def test_requests_sql_limits_logs_before_attempt_expansion(self) -> None:
+        self.assertIn("WITH target_logs AS", REQUESTS_SQL)
+        self.assertIn("LIMIT %(scan_limit)s::int", REQUESTS_SQL)
+        self.assertIn("left(replace(coalesce(", REQUESTS_SQL)
+        self.assertIn("left(coalesce(e.upstream_errors::text, ''), 2000)", REQUESTS_SQL)
+
+    def test_balance_candidate_sql_filters_age_before_json_expansion(self) -> None:
+        self.assertIn("WITH target_logs AS", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("WHERE created_at >= now() - (%(max_age_hours)s::text || ' hours')::interval", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("FROM target_logs t", GUARD_BALANCE_CANDIDATES_SQL)
 
     def test_quality_sql_exposes_speed_metrics(self) -> None:
         self.assertIn("AS avg_first_token_ms", QUALITY_SQL)

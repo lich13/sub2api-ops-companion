@@ -75,7 +75,8 @@ class GuardQuotaSqlTests(unittest.TestCase):
 
     def test_guard_balance_fallback_ignores_expired_last_error(self) -> None:
         self.assertNotIn("lookback_minutes", GUARD_BALANCE_CANDIDATES_SQL)
-        self.assertIn("last_error_at >= now() -", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("WHERE created_at >= now() -", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("FROM target_logs t", GUARD_BALANCE_CANDIDATES_SQL)
         self.assertIn("%(max_age_hours)s", GUARD_BALANCE_CANDIDATES_SQL)
 
     def test_telegram_error_alerts_scan_incrementally_by_error_log_id(self) -> None:

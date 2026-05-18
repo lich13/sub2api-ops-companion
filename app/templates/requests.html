@@ -32,7 +32,7 @@
     </label>
     {{ time_range_picker(time_range) }}
     <label>行数
-      <input name="limit" value="{{ limit }}" />
+      <input type="number" name="limit" min="1" max="1000" step="50" value="{{ limit }}" />
     </label>
     <button class="primary" type="submit">查询</button>
   </form>
