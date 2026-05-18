@@ -1876,8 +1876,11 @@ def pause_account(
     account_id: int,
     user: AuthUser,
     reason: str = Form("manual pause from ops companion"),
+    return_to: str = Form(""),
 ) -> Response:
     account_ops.pause_account(db, settings.audit_path, account_id, user, reason)
+    if return_to == "guard":
+        return RedirectResponse(f"{settings.base_path}/guard?msg=paused+account+{account_id}", status_code=303)
     return RedirectResponse(f"{settings.base_path}/?msg=paused+account+{account_id}", status_code=303)
 
 
@@ -1895,8 +1898,10 @@ def cooldown_account(
 
 
 @app.post("/accounts/{account_id}/resume")
-def resume_account(request: Request, account_id: int, user: AuthUser) -> Response:
+def resume_account(request: Request, account_id: int, user: AuthUser, return_to: str = Form("")) -> Response:
     account_ops.resume_account(db, settings.audit_path, account_id, user)
+    if return_to == "guard":
+        return RedirectResponse(f"{settings.base_path}/guard?msg=resumed+account+{account_id}", status_code=303)
     return RedirectResponse(f"{settings.base_path}/?msg=resumed+account+{account_id}", status_code=303)
 
 
