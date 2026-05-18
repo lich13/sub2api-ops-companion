@@ -23,7 +23,14 @@ sys.modules.setdefault("psycopg.rows", psycopg_rows)
 sys.modules.setdefault("psycopg_pool", psycopg_pool)
 
 from app.settings import Settings
-from app.telegram_bot import TelegramOpsBot, account_actions_keyboard, error_chain_alert, normalize_pairing_code, recovery_alert
+from app.telegram_bot import (
+    TelegramOpsBot,
+    account_actions_keyboard,
+    error_chain_alert,
+    format_guard_actions,
+    normalize_pairing_code,
+    recovery_alert,
+)
 
 
 async def guard_runner(_: str) -> list[dict[str, Any]]:
@@ -158,6 +165,27 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("openai / oauth", text)
         self.assertIn("gpt-test", text)
         self.assertIn("2.35s", text)
+
+    def test_guard_action_message_includes_action_reason_and_load_factor(self) -> None:
+        text = format_guard_actions(
+            "自动 Guard 已处理",
+            [
+                {
+                    "account_id": 9,
+                    "name": "wong",
+                    "action": "cooldown",
+                    "minutes": 15,
+                    "load_factor": 1,
+                    "reason": "auto guard: provider rate limit",
+                }
+            ],
+        )
+
+        self.assertIn("自动 Guard 已处理", text)
+        self.assertIn("#9 wong", text)
+        self.assertIn("cooldown 15m", text)
+        self.assertIn("load_factor=1", text)
+        self.assertIn("provider rate limit", text)
 
 
 if __name__ == "__main__":

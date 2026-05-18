@@ -5,7 +5,11 @@ from typing import Any
 
 from .audit import write_audit
 from .db import Database
-from .sql import QUALITY_SQL
+from .sql import (
+    GUARD_ACCOUNT_PRIORITY_UPDATE_SQL,
+    GUARD_ACCOUNT_ROUTING_UPDATE_SQL,
+    QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
+)
 
 
 def is_cooling(row: dict[str, Any]) -> bool:
@@ -35,7 +39,7 @@ def account_state(row: dict[str, Any]) -> str:
 def quality_rows(db: Database, group: str, platform: str, hours: int) -> list[dict[str, Any]]:
     range_start = datetime.now(timezone.utc) - timedelta(hours=int(hours or 24))
     return db.fetch_all(
-        QUALITY_SQL,
+        QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
         {"group_names": [group], "platform": platform, "range_start": range_start, "range_end": None},
     )
 
@@ -148,9 +152,20 @@ def account_by_id(rows: list[dict[str, Any]], account_id: int) -> dict[str, Any]
     return next((row for row in rows if int(row.get("id") or 0) == account_id), None)
 
 
-def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
-    return db.fetch_one(
+def fallback_account(db: Database, account_id: int, load_factor_supported: bool = False) -> dict[str, Any] | None:
+    load_factor_sql = (
         """
+          load_factor,
+          COALESCE(NULLIF(load_factor, 0), NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+        if load_factor_supported
+        else """
+          NULL::integer AS load_factor,
+          COALESCE(NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+    )
+    return db.fetch_one(
+        f"""
         SELECT
           id,
           name,
@@ -161,6 +176,7 @@ def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
           priority AS account_priority,
           NULL::integer AS group_priority,
           concurrency,
+{load_factor_sql}
           temp_unschedulable_until,
           temp_unschedulable_reason,
           0 AS success_window,
@@ -186,6 +202,22 @@ def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
     )
 
 
+def normalize_priority_value(value: object, default: int = 50) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(100, parsed))
+
+
+def normalize_load_factor_value(value: object) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def pause_account(db: Database, audit_path: str, account_id: int, actor: str, reason: str) -> dict[str, Any] | None:
     row = db.fetch_one(
         """
@@ -202,6 +234,23 @@ def pause_account(db: Database, audit_path: str, account_id: int, actor: str, re
     )
     write_audit(audit_path, "pause_account", {"user": actor, "account": row, "reason": reason})
     return row
+
+
+def guard_pause_account(db: Database, account_id: int, reason: str) -> dict[str, Any] | None:
+    return db.fetch_one(
+        """
+        UPDATE accounts
+        SET schedulable = false,
+            temp_unschedulable_until = NULL,
+            temp_unschedulable_reason = %(reason)s,
+            updated_at = now()
+        WHERE id = %(account_id)s
+          AND deleted_at IS NULL
+          AND (schedulable = true OR temp_unschedulable_until IS NOT NULL)
+        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        """,
+        {"account_id": account_id, "reason": reason},
+    )
 
 
 def cooldown_account(
@@ -234,6 +283,24 @@ def cooldown_account(
     return row
 
 
+def guard_cooldown_account(db: Database, account_id: int, minutes: int, reason: str) -> dict[str, Any] | None:
+    minutes = max(1, min(1440, int(minutes or 15)))
+    return db.fetch_one(
+        """
+        UPDATE accounts
+        SET schedulable = true,
+            temp_unschedulable_until = now() + (%(minutes)s::text || ' minutes')::interval,
+            temp_unschedulable_reason = %(reason)s,
+            updated_at = now()
+        WHERE id = %(account_id)s
+          AND deleted_at IS NULL
+          AND schedulable = true
+        RETURNING id, name, schedulable, temp_unschedulable_until, temp_unschedulable_reason
+        """,
+        {"account_id": account_id, "minutes": minutes, "reason": reason},
+    )
+
+
 def resume_account(db: Database, audit_path: str, account_id: int, actor: str) -> dict[str, Any] | None:
     row = db.fetch_one(
         """
@@ -249,4 +316,35 @@ def resume_account(db: Database, audit_path: str, account_id: int, actor: str) -
         {"account_id": account_id},
     )
     write_audit(audit_path, "resume_account", {"user": actor, "account": row})
+    return row
+
+
+def guard_update_account_routing(
+    db: Database,
+    audit_path: str,
+    account_id: int,
+    actor: str,
+    priority: int,
+    load_factor: int | None,
+    load_factor_supported: bool,
+    reason: str,
+) -> dict[str, Any] | None:
+    sql = GUARD_ACCOUNT_ROUTING_UPDATE_SQL if load_factor_supported else GUARD_ACCOUNT_PRIORITY_UPDATE_SQL
+    params = {
+        "account_id": int(account_id),
+        "priority": normalize_priority_value(priority),
+        "load_factor": normalize_load_factor_value(load_factor),
+    }
+    row = db.fetch_one(sql, params)
+    write_audit(
+        audit_path,
+        "guard_account_routing_update",
+        {
+            "user": actor,
+            "account": row,
+            "params": params,
+            "load_factor_supported": load_factor_supported,
+            "reason": reason,
+        },
+    )
     return row

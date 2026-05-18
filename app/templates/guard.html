@@ -3,7 +3,7 @@
 <section class="page-title">
   <div>
     <h2>自动 Guard</h2>
-    <p>后台只自动处理余额/额度不足这类确定性错误；命中后永久停调度，不设置冷却时间，直到手动恢复。</p>
+    <p>自动 Guard 读取错误链路和成功记录，快速暂停确定性坏账号、冷却临时异常账号，并用定时测试结果恢复；不接管 Sub2API 请求转发。</p>
   </div>
   <form class="filters inline" method="get" action="{{ base_path }}/guard">
     <label>分组
@@ -42,28 +42,46 @@
   </div>
 </section>
 
-<section class="panel guard-rule-panel">
+<section class="panel guard-policy-panel">
   <div class="section-head">
     <div>
-      <h3>自动处理规则</h3>
-      <p>服务启动后立即扫描一次，之后每 {{ guard.interval_seconds }} 秒扫描一次。最近 {{ guard.lookback_minutes }} 分钟内，同一账号出现 {{ guard.threshold }} 次余额/额度错误时，执行永久暂停调度；已被临时冷却的账号也会升级为手动恢复。</p>
+      <h3>策略</h3>
+      <p>这里控制 Guard 的熔断与恢复节奏。`priority` 只影响账号调度顺序，不改变稳定性/速度页面的默认排序。</p>
     </div>
     <form method="post" action="{{ base_path }}/guard/run">
       <button class="primary" type="submit">立即扫描并执行</button>
     </form>
   </div>
+  <form class="guard-policy-grid" method="post" action="{{ base_path }}/guard/policy">
+    <label>连续失败阈值
+      <input type="number" name="failure_threshold" min="1" max="50" value="{{ guard.policy.failure_threshold }}" />
+    </label>
+    <label>恢复成功阈值
+      <input type="number" name="success_threshold" min="1" max="20" value="{{ guard.policy.success_threshold }}" />
+    </label>
+    <label>半开等待秒数
+      <input type="number" name="circuit_timeout_seconds" min="5" max="3600" value="{{ guard.policy.circuit_timeout_seconds }}" />
+    </label>
+    <label>403 阈值
+      <input type="number" name="blocked_403_threshold" min="1" max="20" value="{{ guard.policy.blocked_403_threshold }}" />
+    </label>
+    <label>额度阈值
+      <input type="number" name="balance_pause_threshold" min="1" max="20" value="{{ guard.policy.balance_pause_threshold }}" />
+    </label>
+    <button class="primary" type="submit">保存策略</button>
+  </form>
   <dl class="status-list guard-status-list">
     <div><dt>上次运行</dt><dd class="mono">{{ guard.state.last_run_at | bj_time }}</dd></div>
     <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
-    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度</dd></div>
+    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却</dd></div>
   </dl>
 </section>
 
 <section class="panel table-panel guard-table-panel">
   <div class="section-head table-toolbar">
     <div>
-      <h3>当前建议</h3>
-      <p>这部分是人工确认建议；后台自动 Guard 只自动处理余额/额度不足。</p>
+      <h3>自动动作与人工建议</h3>
+      <p>余额/额度错误由后台自动处理，其它建议由人工确认后执行。</p>
     </div>
     <details class="column-picker">
       <summary>选择列</summary>
@@ -122,6 +140,91 @@
       <p>余额/额度不足的确定性错误会由后台 Guard 自动处理。</p>
     </div>
   {% endif %}
+</section>
+
+<section class="panel table-panel guard-table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>账号路由</h3>
+      <p>优先级和负载因子都能在这里改。负载因子只在上游数据库支持时启用。</p>
+    </div>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="guard-routing">
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="state" checked />状态</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="routing" checked />调度参数</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="signal" checked />最近信号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="next" checked />下次恢复</label>
+        <button type="button" class="link-button columns-reset" data-table="guard-routing">重置列</button>
+      </div>
+    </details>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table guard-table guard-routing-table" data-table-id="guard-routing">
+      <thead>
+        <tr>
+          <th data-col="account">账号</th>
+          <th data-col="state">状态</th>
+          <th data-col="routing">调度参数</th>
+          <th data-col="signal">最近信号</th>
+          <th data-col="next">下次恢复</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% set circuit = row.guard_circuit or {} %}
+          <tr class="{{ row.problem.level }}">
+            <td data-col="account">
+              <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
+              <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
+            </td>
+            <td data-col="state">
+              {% if row.schedulable %}
+                <span class="pill good">可调度</span>
+              {% else %}
+                <span class="pill bad">已停</span>
+              {% endif %}
+              <div class="cell-sub">{{ row.problem.title }}</div>
+              <div class="cell-sub mono tiny">Guard {{ circuit.state or 'closed' }}</div>
+            </td>
+            <td data-col="routing">
+              <form class="routing-mini-form" method="post" action="{{ base_path }}/guard/account-routing">
+                <input type="hidden" name="account_id" value="{{ row.id }}" />
+                <input type="hidden" name="reason" value="guard panel account routing update" />
+                <label>优先级
+                  <input type="number" name="priority" min="1" max="100" value="{{ row.account_priority or 50 }}" />
+                </label>
+                <label>负载因子
+                  <input
+                    type="number"
+                    name="load_factor"
+                    min="1"
+                    value="{{ row.load_factor or '' }}"
+                    placeholder="{{ row.concurrency or 1 }}"
+                    {{ 'disabled' if not guard.account_routing.load_factor else '' }}
+                  />
+                </label>
+                <button type="submit">保存</button>
+              </form>
+              {% if not guard.account_routing.load_factor %}
+                <div class="cell-sub">当前 Sub2API 数据库没有 accounts.load_factor，无法降载，只能改优先级。</div>
+              {% endif %}
+            </td>
+            <td data-col="signal">
+              <div class="cell-sub mono">last={{ circuit.last_event_key or '-' }}</div>
+              <div class="cell-sub mono">category={{ circuit.last_category or '-' }}</div>
+            </td>
+            <td data-col="next">
+              <div class="cell-sub mono">opened={{ circuit.opened_at or '-' }}</div>
+              <div class="cell-sub mono">load={{ circuit.last_applied_load_factor or '-' }}</div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel table-panel guard-table-panel">

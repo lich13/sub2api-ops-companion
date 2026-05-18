@@ -47,6 +47,18 @@ class GuardQuotaSqlTests(unittest.TestCase):
                     self.assertLess(sql.index("token quota is not enough"), balance_index)
                     self.assertLess(balance_index, rate_index)
 
+    def test_user_sample_quota_not_enough_remains_hard_pause_signal(self) -> None:
+        sample = """
+        {"error":{"code":"pre_consume_token_quota_failed","message":"token quota is not enough, token remain quota: ＄0.060062, need quota: ＄0.198744"}}
+        """
+        combined = QUALITY_SQL + GUARD_BALANCE_CANDIDATES_SQL
+        self.assertIn("pre_consume_token_quota_failed", sample)
+        self.assertIn("token quota is not enough", sample)
+        self.assertIn("pre_consume_token_quota_failed", combined)
+        self.assertIn("token quota is not enough", combined)
+        self.assertNotIn("provider_rate_limit' THEN 'provider_balance_or_quota", combined)
+        self.assertIn("provider_balance_or_quota", combined)
+
     def test_positive_remain_quota_is_not_a_standalone_guard_signal(self) -> None:
         sql_terms = QUALITY_SQL + GUARD_BALANCE_CANDIDATES_SQL
         self.assertNotIn("search_text ILIKE '%%RemainQuota%%'", sql_terms)

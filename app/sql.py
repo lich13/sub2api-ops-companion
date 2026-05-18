@@ -1,3 +1,4 @@
+# Keep category names and quota terms aligned with app.guard_classifier.
 QUALITY_SQL = """
 WITH group_accounts AS (
   SELECT DISTINCT ON (a.id)
@@ -11,6 +12,8 @@ WITH group_accounts AS (
     ag.priority AS group_priority,
     g.name AS group_name,
     a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
     a.last_used_at,
     a.updated_at,
     a.temp_unschedulable_until,
@@ -207,6 +210,12 @@ LEFT JOIN by_account b ON b.account_id = ga.id
 LEFT JOIN last_error le ON le.account_id = ga.id
 ORDER BY ga.group_priority, ga.account_priority, ga.id;
 """
+
+
+QUALITY_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_SQL.replace(
+    "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
 
 
 REQUESTS_SQL = """
@@ -434,6 +443,7 @@ ORDER BY c.error_log_id ASC, c.attempt_no ASC;
 """
 
 
+# Keep category names and quota terms aligned with app.guard_classifier.
 GUARD_BALANCE_CANDIDATES_SQL = """
 WITH raw_error_attempts AS (
   SELECT
@@ -513,6 +523,150 @@ SELECT *
 FROM ranked
 WHERE balance_error_count >= %(threshold)s
 ORDER BY balance_error_count DESC, last_error_at DESC;
+"""
+
+
+GUARD_ERROR_EVENTS_SQL = """
+WITH target_logs AS (
+  SELECT id
+  FROM ops_error_logs
+  WHERE id > %(cursor_id)s::bigint
+    AND created_at >= now() - (%(lookback_minutes)s::text || ' minutes')::interval
+  ORDER BY id ASC
+  LIMIT %(limit)s::int
+)
+SELECT
+  e.id AS error_log_id,
+  e.created_at,
+  e.request_id,
+  e.client_request_id,
+  e.platform,
+  e.model,
+  x.ordinality AS attempt_no,
+  COALESCE(
+    CASE WHEN coalesce(x.elem->>'account_id','') ~ '^[0-9]+$' THEN (x.elem->>'account_id')::bigint END,
+    e.account_id
+  ) AS account_id,
+  COALESCE(
+    CASE
+      WHEN lower(trim(coalesce(x.elem->>'account_name',''))) IN ('', 'none', 'null') THEN NULL
+      ELSE x.elem->>'account_name'
+    END,
+    a.name
+  ) AS account_name,
+  a.priority AS account_priority,
+  a.load_factor,
+  a.concurrency,
+  COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+  COALESCE(
+    CASE WHEN coalesce(x.elem->>'upstream_status_code','') ~ '^[0-9]+$' THEN (x.elem->>'upstream_status_code')::int END,
+    e.upstream_status_code,
+    e.status_code
+  ) AS status_code,
+  COALESCE(NULLIF(x.elem->>'kind',''), e.error_type) AS kind,
+  e.error_owner,
+  e.error_source,
+  COALESCE(
+    NULLIF(x.elem->>'detail',''),
+    NULLIF(x.elem->>'message',''),
+    NULLIF(x.elem->>'upstream_response_body',''),
+    e.upstream_error_message,
+    e.error_message,
+    e.error_body,
+    ''
+  ) AS message,
+  concat_ws(
+    ' ',
+    NULLIF(x.elem->>'detail',''),
+    NULLIF(x.elem->>'message',''),
+    NULLIF(x.elem->>'upstream_response_body',''),
+    e.upstream_error_message,
+    e.error_message,
+    e.error_body,
+    x.elem::text,
+    e.upstream_errors::text
+  ) AS search_text
+FROM target_logs t
+JOIN ops_error_logs e ON e.id = t.id
+LEFT JOIN LATERAL jsonb_array_elements(
+  CASE
+    WHEN jsonb_typeof(e.upstream_errors) = 'array' AND jsonb_array_length(e.upstream_errors) > 0 THEN e.upstream_errors
+    ELSE '[{}]'::jsonb
+  END
+) WITH ORDINALITY AS x(elem, ordinality) ON true
+LEFT JOIN accounts a ON a.id = COALESCE(
+  CASE WHEN coalesce(x.elem->>'account_id','') ~ '^[0-9]+$' THEN (x.elem->>'account_id')::bigint END,
+  e.account_id
+)
+ORDER BY e.id ASC, x.ordinality ASC;
+"""
+
+
+GUARD_ERROR_EVENTS_SQL_COMPAT_NO_LOAD_FACTOR = GUARD_ERROR_EVENTS_SQL.replace(
+    "  a.load_factor,\n  a.concurrency,\n  COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "  NULL::integer AS load_factor,\n  a.concurrency,\n  COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
+
+
+GUARD_SUCCESS_EVENTS_SQL = """
+SELECT
+  account_id,
+  max(created_at) AS success_created_at,
+  ('success:' || account_id::text || ':' || max(created_at)::text) AS success_event_key,
+  count(*) AS success_count,
+  COALESCE(sum(output_tokens), 0) AS output_tokens,
+  round(avg(duration_ms)::numeric, 0) AS avg_duration_ms,
+  round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms
+FROM usage_logs
+WHERE account_id IS NOT NULL
+  AND (%(cursor_created_at)s = '' OR created_at > %(cursor_created_at)s::timestamptz)
+  AND created_at >= now() - (%(lookback_minutes)s::text || ' minutes')::interval
+GROUP BY account_id
+ORDER BY max(created_at) ASC
+LIMIT %(limit)s::int;
+"""
+
+
+ACCOUNT_ROUTING_CAPABILITY_SQL = """
+SELECT
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'accounts'
+      AND column_name = 'priority'
+  ) AS account_priority_column_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'accounts'
+      AND column_name = 'load_factor'
+  ) AS account_load_factor_column_exists;
+"""
+
+
+GUARD_ACCOUNT_ROUTING_UPDATE_SQL = """
+UPDATE accounts
+SET priority = %(priority)s::int,
+    load_factor = CASE
+      WHEN %(load_factor)s::int IS NULL OR %(load_factor)s::int <= 0 THEN NULL
+      ELSE %(load_factor)s::int
+    END,
+    updated_at = now()
+WHERE id = %(account_id)s::bigint
+  AND deleted_at IS NULL
+RETURNING id, name, priority AS account_priority, load_factor, concurrency, updated_at;
+"""
+
+
+GUARD_ACCOUNT_PRIORITY_UPDATE_SQL = """
+UPDATE accounts
+SET priority = %(priority)s::int,
+    updated_at = now()
+WHERE id = %(account_id)s::bigint
+  AND deleted_at IS NULL
+RETURNING id, name, priority AS account_priority, concurrency, updated_at;
 """
 
 
@@ -599,6 +753,8 @@ WITH scoped_accounts AS (
     ag.priority AS group_priority,
     g.name AS group_name,
     a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
     a.updated_at,
     a.error_message,
     a.rate_limited_at,
@@ -686,6 +842,12 @@ ORDER BY
   sa.account_priority NULLS LAST,
   sa.id;
 """
+
+
+SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR = SCHEDULED_TEST_ACCOUNTS_SQL.replace(
+    "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
 
 
 SCHEDULED_TEST_UPSERT_SQL = """

@@ -6,7 +6,7 @@
 
 - 不修改 Sub2API 原仓库和镜像。
 - 只连接 Sub2API 的 PostgreSQL，读取 `usage_logs`、`ops_error_logs`、`accounts`、`groups` 等运行数据。
-- 账号操作只更新 `accounts.schedulable`、`accounts.temp_unschedulable_*` 和 `accounts.updated_at`。
+- 账号操作只更新现有运行态/调度字段：`accounts.schedulable`、`accounts.temp_unschedulable_*`、`accounts.updated_at`、`accounts.priority`，以及上游数据库存在时的 `accounts.load_factor`。
 - 不提供独立账号密码登录页，只接受 Sub2API 管理后台 SSO 首跳换取本服务 Cookie 会话。
 - 操作审计写入本服务自己的 `/data/audit.jsonl`，不污染 Sub2API 源码。
 
@@ -17,7 +17,7 @@
 - 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
-- 自动 Guard：后台定时扫描余额/额度不足错误，并永久暂停确定性坏账号；如果账号已被 Sub2API 临时冷却，也会升级为永久停调度，直到手动恢复。
+- 自动 Guard：按 `ops_error_logs.id` 增量处理错误链路，余额/额度错误永久暂停确定性坏账号；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 5m/15m/30m 临时冷却；如果增量读取异常，仍用余额/额度兜底扫描硬暂停。
 - 定时恢复：在面板里直接配置 Sub2API 原生定时测试计划，支持每小时、每30分钟、每15分钟、每5分钟整点对齐检测；测试通过后自动清理可恢复异常状态。
 - Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；新错误链路会实时推送，并直接附带账号暂停/恢复/冷却按钮。
 - Sub2API 免二次登录：Sub2API 自定义菜单 iframe 可进入 `/sub2ops/sso/start`，Companion 调 Sub2API `/api/v1/auth/me` 验证管理员 JWT 后换成本服务的不可伪造会话。
@@ -51,6 +51,8 @@ docker compose up -d --build
 - `GUARD_INTERVAL_SECONDS`：Guard 扫描间隔，默认 `5` 秒；服务启动后会立即先扫一次，之后按该间隔轮询。
 - `GUARD_LOOKBACK_MINUTES`：余额/额度错误扫描窗口，默认 `60`。
 - `GUARD_BALANCE_ERROR_THRESHOLD`：触发自动处理的余额/额度错误次数，默认 `1`。
+- `GUARD_STATE_PATH`：Guard cursor、circuit 和策略状态文件，默认 `/data/guard-state.json`。
+- `GUARD_EVENT_BATCH_SIZE`：每轮 Guard 最多处理的错误/成功事件数，默认 `100`。
 - `TELEGRAM_CONFIG_PATH`：Telegram 面板配置持久化文件，默认 `/data/telegram-config.json`。
 - `TELEGRAM_BOT_TOKEN`：可选初始值。面板保存后以 `TELEGRAM_CONFIG_PATH` 文件为准。
 - `TELEGRAM_STATE_PATH`：配对状态持久化文件，默认 `/data/telegram-state.json`。
@@ -165,4 +167,4 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`。它会把可调度或临时冷却中的账号永久停调度，不设置冷却时间；不自动处理 403 blocked、5xx 或限流。
+自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把可调度或临时冷却中的账号永久停调度，不设置冷却时间。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 5m/15m/30m 冷却。
