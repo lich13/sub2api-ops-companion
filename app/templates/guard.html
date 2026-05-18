@@ -61,6 +61,7 @@
   <dl class="status-list guard-status-list">
     <div><dt>上次运行</dt><dd class="mono">{{ guard.state.last_run_at | bj_time }}</dd></div>
     <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
+    <div><dt>额度扫尾窗口</dt><dd>{{ guard.balance_max_age_hours }} 小时</dd></div>
     <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却</dd></div>
   </dl>
 </section>
