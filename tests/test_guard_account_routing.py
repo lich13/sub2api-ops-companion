@@ -68,15 +68,20 @@ class GuardAccountRoutingTests(unittest.TestCase):
 
         self.assertIn('action="{{ base_path }}/guard/policy"', template)
         self.assertIn('name="failure_threshold"', template)
+        self.assertIn('name="hard_pause_enabled"', template)
+        self.assertIn('name="rate_limit_enabled"', template)
+        self.assertIn('name="unstable_enabled"', template)
         self.assertIn('action="{{ base_path }}/guard/account-routing"', template)
+        self.assertIn('action="{{ base_path }}/guard/queue/auto"', template)
+        self.assertIn('action="{{ base_path }}/guard/queue-tier"', template)
+        self.assertIn('name="queue_group"', template)
         self.assertIn('name="priority"', template)
         self.assertIn('name="load_factor"', template)
         self.assertIn("accounts.load_factor", template)
 
-    def test_guard_template_has_no_group_platform_or_hours_filters(self) -> None:
+    def test_guard_template_does_not_add_guard_scan_platform_or_hours_filters(self) -> None:
         template = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
 
-        self.assertNotIn('name="group"', template)
         self.assertNotIn('name="platform"', template)
         self.assertNotIn('name="hours"', template)
 

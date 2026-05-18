@@ -19,6 +19,9 @@ class FakeCapabilityDB:
     def fetch_one(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"account_priority_column_exists": True, "account_load_factor_column_exists": False}
 
+    def fetch_all(self, *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
 
 class GuardMainTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -152,6 +155,24 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(actions, [])
         self.assertEqual(capture_db.params["threshold"], 1)
         self.assertEqual(capture_db.params["max_age_hours"], 12)
+
+    def test_balance_sweep_respects_disabled_hard_pause_policy(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.called = False
+
+            def fetch_all(self, _sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.called = True
+                return []
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+        GuardStore(main_module.settings.guard_state_path).save_policy({"hard_pause_enabled": False})
+
+        actions = main_module.run_guard_balance_fallback("test")
+
+        self.assertEqual(actions, [])
+        self.assertFalse(capture_db.called)
 
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [
