@@ -17,7 +17,11 @@ from app.guard_store import GuardStore
 
 class FakeCapabilityDB:
     def fetch_one(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"account_priority_column_exists": True, "account_load_factor_column_exists": False}
+        return {
+            "account_priority_column_exists": True,
+            "account_load_factor_column_exists": False,
+            "account_group_priority_column_exists": True,
+        }
 
     def fetch_all(self, *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
         return []
@@ -219,6 +223,26 @@ class GuardMainTests(unittest.TestCase):
         self.assertNotIn("g.name = ANY", sql)
         self.assertIsNone(params)
 
+    def test_load_guard_queue_quality_preserves_group_membership_rows(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.fetch_all_calls.append((sql, params))
+                return []
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+
+        rows = main_module.load_guard_queue_quality()
+
+        self.assertEqual(rows, [])
+        sql, params = capture_db.fetch_all_calls[0]
+        self.assertIn("ag.group_id", sql)
+        self.assertNotIn("SELECT DISTINCT ON (a.id)", sql)
+        self.assertIsNone(params)
+
     def test_guard_view_uses_all_accounts_loader_and_no_filter_context(self) -> None:
         sentinel_rows = [
             {
@@ -234,6 +258,7 @@ class GuardMainTests(unittest.TestCase):
         ]
         captured: dict[str, Any] = {}
         original_load_guard_quality = main_module.load_guard_quality
+        original_load_guard_queue_quality = main_module.load_guard_queue_quality
         original_load_quality = main_module.load_quality
         original_render = main_module.render
 
@@ -247,12 +272,14 @@ class GuardMainTests(unittest.TestCase):
 
         try:
             main_module.load_guard_quality = lambda: list(sentinel_rows)  # type: ignore[assignment]
+            main_module.load_guard_queue_quality = lambda: list(sentinel_rows)  # type: ignore[assignment]
             main_module.load_quality = fail_load_quality  # type: ignore[assignment]
             main_module.render = capture_render  # type: ignore[assignment]
 
             result = main_module.guard_view(object(), "tester")  # type: ignore[arg-type]
         finally:
             main_module.load_guard_quality = original_load_guard_quality
+            main_module.load_guard_queue_quality = original_load_guard_queue_quality
             main_module.load_quality = original_load_quality
             main_module.render = original_render
 

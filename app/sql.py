@@ -305,6 +305,100 @@ QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_ALL_ACCOUNTS_SQL.replac
 )
 
 
+GUARD_QUEUE_SQL = QUALITY_SQL.replace(
+    """WITH group_accounts AS (
+  SELECT DISTINCT ON (a.id)
+    a.id,
+    a.name,
+    a.platform,
+    a.type,
+    a.status,
+    a.schedulable,
+    a.priority AS account_priority,
+    ag.priority AS group_priority,
+    g.name AS group_name,
+    a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+    a.last_used_at,
+    a.updated_at,
+    a.temp_unschedulable_until,
+    a.temp_unschedulable_reason,
+    a.rate_limited_at,
+    a.rate_limit_reset_at,
+    a.overload_until,
+    a.session_window_start,
+    a.session_window_end,
+    a.session_window_status,
+    a.error_message
+  FROM accounts a
+  JOIN account_groups ag ON ag.account_id = a.id
+  JOIN groups g ON g.id = ag.group_id
+  WHERE g.name = ANY(%(group_names)s::text[])
+    AND a.deleted_at IS NULL
+    AND (%(platform)s = '' OR a.platform = %(platform)s)
+  ORDER BY a.id, ag.priority NULLS LAST, a.priority NULLS LAST, g.name
+),""",
+    """WITH group_accounts AS (
+  SELECT
+    a.id,
+    ag.group_id,
+    COALESCE(g.sort_order, 999999) AS group_sort_order,
+    a.name,
+    a.platform,
+    a.type,
+    a.status,
+    a.schedulable,
+    a.priority AS account_priority,
+    ag.priority AS group_priority,
+    g.name AS group_name,
+    a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+    a.last_used_at,
+    a.updated_at,
+    a.temp_unschedulable_until,
+    a.temp_unschedulable_reason,
+    a.rate_limited_at,
+    a.rate_limit_reset_at,
+    a.overload_until,
+    a.session_window_start,
+    a.session_window_end,
+    a.session_window_status,
+    a.error_message
+  FROM account_groups ag
+  JOIN accounts a ON a.id = ag.account_id
+  JOIN groups g ON g.id = ag.group_id
+  WHERE a.deleted_at IS NULL
+    AND g.deleted_at IS NULL
+  ORDER BY g.platform NULLS LAST, g.sort_order NULLS LAST, g.name, ag.priority NULLS LAST, a.priority NULLS LAST, a.id
+),""",
+)
+GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
+    """  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
+""",
+    "",
+)
+GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
+    """  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
+    AND (%(platform)s = '' OR e.platform = %(platform)s)
+""",
+    "",
+)
+GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
+    "ORDER BY ga.group_priority, ga.account_priority, ga.id;",
+    "ORDER BY ga.platform NULLS LAST, ga.group_sort_order NULLS LAST, ga.group_name NULLS LAST, ga.group_priority NULLS LAST, ga.account_priority NULLS LAST, ga.id;",
+)
+
+
+GUARD_QUEUE_SQL_COMPAT_NO_LOAD_FACTOR = GUARD_QUEUE_SQL.replace(
+    "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
+
+
 REQUESTS_SQL = """
 WITH expanded AS (
   SELECT
@@ -737,7 +831,14 @@ SELECT
     WHERE table_schema = 'public'
       AND table_name = 'accounts'
       AND column_name = 'load_factor'
-  ) AS account_load_factor_column_exists;
+  ) AS account_load_factor_column_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'account_groups'
+      AND column_name = 'priority'
+  ) AS account_group_priority_column_exists;
 """
 
 
@@ -765,8 +866,33 @@ RETURNING id, name, priority AS account_priority, concurrency, updated_at;
 """
 
 
+GUARD_ACCOUNT_LOAD_FACTOR_UPDATE_SQL = """
+UPDATE accounts
+SET load_factor = CASE
+      WHEN %(load_factor)s::int IS NULL OR %(load_factor)s::int <= 0 THEN NULL
+      ELSE %(load_factor)s::int
+    END,
+    updated_at = now()
+WHERE id = %(account_id)s::bigint
+  AND deleted_at IS NULL
+RETURNING id, name, load_factor, concurrency, updated_at;
+"""
+
+
+GUARD_ACCOUNT_GROUP_PRIORITY_UPDATE_SQL = """
+UPDATE account_groups ag
+SET priority = %(group_priority)s::int
+FROM groups g
+WHERE g.id = ag.group_id
+  AND ag.account_id = %(account_id)s::bigint
+  AND (%(group_id)s::bigint IS NULL OR ag.group_id = %(group_id)s::bigint)
+  AND (%(group_name)s::text = '' OR g.name = %(group_name)s::text)
+RETURNING ag.account_id, ag.group_id, g.name AS group_name, ag.priority AS group_priority;
+"""
+
+
 GROUPS_SQL = """
-SELECT name, platform
+SELECT id, name, platform
 FROM groups
 WHERE deleted_at IS NULL
 ORDER BY platform, sort_order, name;
