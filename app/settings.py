@@ -17,7 +17,6 @@ class Settings:
     app_name: str = "Sub2API Ops Companion"
     guard_enabled: bool = True
     guard_interval_seconds: int = 5
-    guard_lookback_minutes: int = 60
     guard_balance_error_threshold: int = 1
     guard_state_path: str = "/data/guard-state.json"
     guard_event_batch_size: int = 100
@@ -125,7 +124,6 @@ def load_settings() -> Settings:
         session_store_path=os.getenv("OPS_SESSION_STORE_PATH", "/data/sessions.json"),
         guard_enabled=bool_env("GUARD_ENABLED", True),
         guard_interval_seconds=int_env("GUARD_INTERVAL_SECONDS", 5, 1, 3600),
-        guard_lookback_minutes=int_env("GUARD_LOOKBACK_MINUTES", 60, 5, 10080),
         guard_balance_error_threshold=int_env("GUARD_BALANCE_ERROR_THRESHOLD", 1, 1, 100),
         guard_state_path=os.getenv("GUARD_STATE_PATH", "/data/guard-state.json"),
         guard_event_batch_size=int_env("GUARD_EVENT_BATCH_SIZE", 100, 1, 500),
