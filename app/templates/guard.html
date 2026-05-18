@@ -3,20 +3,8 @@
 <section class="page-title">
   <div>
     <h2>自动 Guard</h2>
-    <p>自动 Guard 读取错误链路和成功记录，快速暂停确定性坏账号、冷却临时异常账号，并用定时测试结果恢复；不接管 Sub2API 请求转发。</p>
+    <p>自动 Guard 读取全部账号的错误链路和成功记录，快速暂停确定性坏账号、冷却临时异常账号，并用定时测试结果恢复；不接管 Sub2API 请求转发。</p>
   </div>
-  <form class="filters inline" method="get" action="{{ base_path }}/guard">
-    <label>分组
-      <input name="group" value="{{ group }}" />
-    </label>
-    <label>平台
-      <input name="platform" value="{{ platform }}" />
-    </label>
-    <label>窗口小时
-      <input name="hours" value="{{ hours }}" />
-    </label>
-    <button class="primary" type="submit">刷新</button>
-  </form>
 </section>
 
 <section class="metric-strip guard-metrics">
@@ -33,8 +21,8 @@
     <strong>{{ guard.interval_seconds }}s</strong>
   </div>
   <div class="metric-card">
-    <span>扫描窗口</span>
-    <strong>{{ guard.lookback_minutes }}m</strong>
+    <span>扫描范围</span>
+    <strong>全部账号</strong>
   </div>
   <div class="metric-card {{ 'danger' if guard.state.last_error else '' }}">
     <span>上次错误</span>

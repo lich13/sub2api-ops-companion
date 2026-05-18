@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,8 +35,10 @@ class GuardMainTests(unittest.TestCase):
             audit_path=str(data_dir / "audit.jsonl"),
             base_path="/sub2ops",
             guard_state_path=str(data_dir / "guard-state.json"),
+            guard_enabled=True,
+            guard_interval_seconds=5,
+            guard_balance_error_threshold=1,
             guard_event_batch_size=100,
-            guard_lookback_minutes=60,
         )
         main_module.db = FakeCapabilityDB()  # type: ignore[assignment]
 
@@ -103,6 +106,77 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(enriched[0]["problem"]["level"], "good")
         self.assertEqual(enriched[0]["guard_circuit"]["state"], "closed")
+
+    def test_guard_view_does_not_accept_group_platform_or_hours_filters(self) -> None:
+        params = inspect.signature(main_module.guard_view).parameters
+
+        self.assertNotIn("group", params)
+        self.assertNotIn("platform", params)
+        self.assertNotIn("hours", params)
+
+    def test_load_guard_quality_uses_all_accounts_sql_without_filters(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.fetch_all_calls.append((sql, params))
+                return []
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+
+        rows = main_module.load_guard_quality()
+
+        self.assertEqual(rows, [])
+        sql, params = capture_db.fetch_all_calls[0]
+        self.assertIn("LEFT JOIN account_groups", sql)
+        self.assertNotIn("g.name = ANY", sql)
+        self.assertIsNone(params)
+
+    def test_guard_view_uses_all_accounts_loader_and_no_filter_context(self) -> None:
+        sentinel_rows = [
+            {
+                "id": 9,
+                "name": "wong",
+                "schedulable": True,
+                "blocked_403_window": 0,
+                "balance_or_quota_window": 0,
+                "unstable_5xx_stream_window": 0,
+                "rate_limit_window": 0,
+                "account_quality_errors_window": 0,
+            }
+        ]
+        captured: dict[str, Any] = {}
+        original_load_guard_quality = main_module.load_guard_quality
+        original_load_quality = main_module.load_quality
+        original_render = main_module.render
+
+        def fail_load_quality(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+            raise AssertionError("guard_view must not use filtered load_quality")
+
+        def capture_render(_request: Any, template: str, context: dict[str, Any]) -> Any:
+            captured["template"] = template
+            captured["context"] = context
+            return context
+
+        try:
+            main_module.load_guard_quality = lambda: list(sentinel_rows)  # type: ignore[assignment]
+            main_module.load_quality = fail_load_quality  # type: ignore[assignment]
+            main_module.render = capture_render  # type: ignore[assignment]
+
+            result = main_module.guard_view(object(), "tester")  # type: ignore[arg-type]
+        finally:
+            main_module.load_guard_quality = original_load_guard_quality
+            main_module.load_quality = original_load_quality
+            main_module.render = original_render
+
+        self.assertIs(result, captured["context"])
+        self.assertEqual(captured["template"], "guard.html")
+        self.assertEqual(captured["context"]["rows"][0]["id"], 9)
+        self.assertNotIn("group", captured["context"])
+        self.assertNotIn("platform", captured["context"])
+        self.assertNotIn("hours", captured["context"])
 
 
 if __name__ == "__main__":

@@ -39,6 +39,8 @@ from .sql import (
     ACCOUNT_ROUTING_CAPABILITY_SQL,
     GROUPS_SQL,
     GUARD_BALANCE_CANDIDATES_SQL,
+    QUALITY_ALL_ACCOUNTS_SQL,
+    QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
     SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     PLATFORM_OPTIONS_SQL,
@@ -377,6 +379,12 @@ def load_quality(
     )
 
 
+def load_guard_quality() -> list[dict[str, Any]]:
+    capability = account_routing_capability()
+    sql = QUALITY_ALL_ACCOUNTS_SQL if capability["load_factor"] else QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR
+    return db.fetch_all(sql)
+
+
 def form_truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -462,7 +470,7 @@ def guard_config() -> dict[str, Any]:
     return {
         "enabled": settings.guard_enabled,
         "interval_seconds": settings.guard_interval_seconds,
-        "lookback_minutes": settings.guard_lookback_minutes,
+        "scope": "all_accounts",
         "threshold": settings.guard_balance_error_threshold,
         "action": "pause",
         "state": guard_state,
@@ -495,7 +503,6 @@ def guard_engine(store: GuardStore | None = None) -> GuardEngine:
         audit_path=settings.audit_path,
         policy=guard_policy_from_store(),
         batch_size=settings.guard_event_batch_size,
-        lookback_minutes=settings.guard_lookback_minutes,
         load_factor_supported=capability["load_factor"],
     )
 
@@ -653,7 +660,7 @@ async def restart_telegram_bot() -> None:
 def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
     reason = (
         "auto guard: permanent pause for balance/quota error; manual resume required; "
-        f"{row['balance_error_count']} balance/quota errors in last {settings.guard_lookback_minutes} minutes; "
+        f"{row['balance_error_count']} historical balance/quota errors; "
         f"last={row.get('last_message') or 'n/a'}"
     )
     updated = db.fetch_one(
@@ -694,7 +701,6 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
     candidates = db.fetch_all(
         GUARD_BALANCE_CANDIDATES_SQL,
         {
-            "lookback_minutes": settings.guard_lookback_minutes,
             "threshold": settings.guard_balance_error_threshold,
         },
     )
@@ -1375,23 +1381,15 @@ def request_detail(request: Request, _: AuthUser, request_id: str) -> HTMLRespon
 def guard_view(
     request: Request,
     _: AuthUser,
-    group: str = "openai-default",
-    platform: str = "openai",
-    hours: int = 1,
     msg: str = "",
 ) -> HTMLResponse:
-    hours = int_param(str(hours), 1, 1, 168)
-    guard_range = rolling_hours_range(hours)
-    rows = enrich_guard_rows(load_quality([group], platform, guard_range["start_at"], guard_range["end_at"]))
+    rows = enrich_guard_rows(load_guard_quality())
     suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,
         "guard.html",
         {
             "active": "guard",
-            "group": group,
-            "platform": platform,
-            "hours": hours,
             "rows": rows,
             "suggestions": suggestions,
             "guard": guard_config(),

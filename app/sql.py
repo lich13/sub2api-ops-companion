@@ -218,6 +218,93 @@ QUALITY_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_SQL.replace(
 )
 
 
+QUALITY_ALL_ACCOUNTS_SQL = QUALITY_SQL.replace(
+    """WITH group_accounts AS (
+  SELECT DISTINCT ON (a.id)
+    a.id,
+    a.name,
+    a.platform,
+    a.type,
+    a.status,
+    a.schedulable,
+    a.priority AS account_priority,
+    ag.priority AS group_priority,
+    g.name AS group_name,
+    a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+    a.last_used_at,
+    a.updated_at,
+    a.temp_unschedulable_until,
+    a.temp_unschedulable_reason,
+    a.rate_limited_at,
+    a.rate_limit_reset_at,
+    a.overload_until,
+    a.session_window_start,
+    a.session_window_end,
+    a.session_window_status,
+    a.error_message
+  FROM accounts a
+  JOIN account_groups ag ON ag.account_id = a.id
+  JOIN groups g ON g.id = ag.group_id
+  WHERE g.name = ANY(%(group_names)s::text[])
+    AND a.deleted_at IS NULL
+    AND (%(platform)s = '' OR a.platform = %(platform)s)
+  ORDER BY a.id, ag.priority NULLS LAST, a.priority NULLS LAST, g.name
+),""",
+    """WITH group_accounts AS (
+  SELECT DISTINCT ON (a.id)
+    a.id,
+    a.name,
+    a.platform,
+    a.type,
+    a.status,
+    a.schedulable,
+    a.priority AS account_priority,
+    ag.priority AS group_priority,
+    g.name AS group_name,
+    a.concurrency,
+    a.load_factor,
+    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+    a.last_used_at,
+    a.updated_at,
+    a.temp_unschedulable_until,
+    a.temp_unschedulable_reason,
+    a.rate_limited_at,
+    a.rate_limit_reset_at,
+    a.overload_until,
+    a.session_window_start,
+    a.session_window_end,
+    a.session_window_status,
+    a.error_message
+  FROM accounts a
+  LEFT JOIN account_groups ag ON ag.account_id = a.id
+  LEFT JOIN groups g ON g.id = ag.group_id
+  WHERE a.deleted_at IS NULL
+  ORDER BY a.id, ag.priority NULLS LAST, a.priority NULLS LAST, g.name NULLS LAST
+),""",
+)
+QUALITY_ALL_ACCOUNTS_SQL = QUALITY_ALL_ACCOUNTS_SQL.replace(
+    """  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
+""",
+    "",
+)
+QUALITY_ALL_ACCOUNTS_SQL = QUALITY_ALL_ACCOUNTS_SQL.replace(
+    """  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
+    AND (%(platform)s = '' OR e.platform = %(platform)s)
+""",
+    "",
+)
+
+
+QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_ALL_ACCOUNTS_SQL.replace(
+    "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
+
+
 REQUESTS_SQL = """
 WITH expanded AS (
   SELECT
@@ -479,7 +566,6 @@ WITH raw_error_attempts AS (
       ELSE '[{}]'::jsonb
     END
   ) AS x(elem) ON true
-  WHERE e.created_at >= now() - (%(lookback_minutes)s::text || ' minutes')::interval
 ),
 balance_errors AS (
   SELECT *
@@ -531,7 +617,6 @@ WITH target_logs AS (
   SELECT id
   FROM ops_error_logs
   WHERE id > %(cursor_id)s::bigint
-    AND created_at >= now() - (%(lookback_minutes)s::text || ' minutes')::interval
   ORDER BY id ASC
   LIMIT %(limit)s::int
 )
@@ -620,7 +705,6 @@ SELECT
 FROM usage_logs
 WHERE account_id IS NOT NULL
   AND (%(cursor_created_at)s = '' OR created_at > %(cursor_created_at)s::timestamptz)
-  AND created_at >= now() - (%(lookback_minutes)s::text || ' minutes')::interval
 GROUP BY account_id
 ORDER BY max(created_at) ASC
 LIMIT %(limit)s::int;

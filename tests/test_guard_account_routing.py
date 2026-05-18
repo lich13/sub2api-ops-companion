@@ -8,6 +8,8 @@ from app.sql import (
     ACCOUNT_ROUTING_CAPABILITY_SQL,
     GUARD_ACCOUNT_PRIORITY_UPDATE_SQL,
     GUARD_ACCOUNT_ROUTING_UPDATE_SQL,
+    QUALITY_ALL_ACCOUNTS_SQL,
+    QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     QUALITY_SQL,
     QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
 )
@@ -37,6 +39,17 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn("NULL::integer AS load_factor", QUALITY_SQL_COMPAT_NO_LOAD_FACTOR)
         self.assertNotIn("a.load_factor", QUALITY_SQL_COMPAT_NO_LOAD_FACTOR)
 
+    def test_guard_all_accounts_quality_sql_has_no_group_platform_or_time_filters(self) -> None:
+        self.assertIn("LEFT JOIN account_groups", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertIn("LEFT JOIN groups", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertNotIn("g.name = ANY(%(group_names)s::text[])", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertNotIn("a.platform = %(platform)s", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertNotIn("e.platform = %(platform)s", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertNotIn("created_at >= %(range_start)s", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertNotIn("created_at < %(range_end)s", QUALITY_ALL_ACCOUNTS_SQL)
+        self.assertIn("NULL::integer AS load_factor", QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR)
+        self.assertNotIn("a.load_factor", QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR)
+
     def test_priority_validation_matches_sub2api_scheduler_range(self) -> None:
         self.assertEqual(normalize_priority_value("1"), 1)
         self.assertEqual(normalize_priority_value("50"), 50)
@@ -59,6 +72,13 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('name="priority"', template)
         self.assertIn('name="load_factor"', template)
         self.assertIn("accounts.load_factor", template)
+
+    def test_guard_template_has_no_group_platform_or_hours_filters(self) -> None:
+        template = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
+
+        self.assertNotIn('name="group"', template)
+        self.assertNotIn('name="platform"', template)
+        self.assertNotIn('name="hours"', template)
 
 
 if __name__ == "__main__":
