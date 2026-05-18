@@ -1282,6 +1282,7 @@ dd {
 .guard-queue-panel {
   display: grid;
   gap: 14px;
+  overflow: hidden;
 }
 
 .guard-queue-head {
@@ -1321,7 +1322,7 @@ dd {
 
 .guard-queue-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -1368,9 +1369,13 @@ dd {
 
 .guard-queue-card {
   display: grid;
-  grid-template-columns: 34px 54px minmax(150px, 1.4fr) minmax(116px, 0.7fr) minmax(160px, 0.9fr) 68px;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: 32px 50px minmax(0, 1fr) 70px;
+  grid-template-areas:
+    "handle rank main actions"
+    "handle state state actions"
+    "handle metrics metrics actions";
+  gap: 6px 10px;
+  align-items: start;
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--border);
@@ -1391,6 +1396,30 @@ dd {
 
 .guard-queue-card.dragging {
   opacity: 0.58;
+}
+
+.guard-queue-card .drag-handle {
+  grid-area: handle;
+}
+
+.guard-queue-card .queue-rank {
+  grid-area: rank;
+}
+
+.guard-queue-card .queue-account-main {
+  grid-area: main;
+}
+
+.guard-queue-card .queue-account-state {
+  grid-area: state;
+}
+
+.guard-queue-card .queue-account-metrics {
+  grid-area: metrics;
+}
+
+.guard-queue-card .queue-move-actions {
+  grid-area: actions;
 }
 
 .drag-handle,
@@ -1423,9 +1452,20 @@ dd {
 .queue-account-main,
 .queue-account-state,
 .queue-account-metrics {
-  display: grid;
   gap: 3px;
   min-width: 0;
+}
+
+.queue-account-main {
+  display: grid;
+}
+
+.queue-account-state,
+.queue-account-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 
 .queue-account-main strong,
@@ -1446,6 +1486,7 @@ dd {
   display: flex;
   gap: 4px;
   justify-content: flex-end;
+  align-self: center;
 }
 
 .queue-move-actions button:disabled {
@@ -1501,6 +1542,12 @@ dd {
 .routing-mini-form button {
   min-height: 34px;
   white-space: nowrap;
+}
+
+.guard-table-panel,
+.request-chain-panel {
+  content-visibility: auto;
+  contain-intrinsic-size: 520px;
 }
 
 .scheduled-hero,
@@ -3221,19 +3268,7 @@ pre {
   }
 
   .guard-queue-card {
-    grid-template-columns: 34px 54px minmax(0, 1fr) 68px;
-  }
-
-  .queue-account-main,
-  .queue-account-state,
-  .queue-account-metrics {
-    grid-column: 3 / 4;
-  }
-
-  .queue-move-actions {
-    grid-column: 4;
-    grid-row: 1 / span 3;
-    align-self: center;
+    grid-template-columns: 32px 46px minmax(0, 1fr) 70px;
   }
 
   .routing-mini-form input {
