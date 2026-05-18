@@ -46,6 +46,7 @@ class GuardMainTests(unittest.TestCase):
             guard_interval_seconds=5,
             guard_balance_error_threshold=1,
             guard_balance_error_max_age_hours=24,
+            guard_quality_hours=24,
             guard_event_batch_size=100,
         )
         main_module.db = FakeCapabilityDB()  # type: ignore[assignment]
@@ -144,10 +145,10 @@ class GuardMainTests(unittest.TestCase):
     def test_balance_sweep_passes_max_age_hours(self) -> None:
         class CaptureDB(FakeCapabilityDB):
             def __init__(self) -> None:
-                self.params: dict[str, Any] | None = None
+                self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
-            def fetch_all(self, _sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-                self.params = params
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.calls.append((sql, params))
                 return []
 
         capture_db = CaptureDB()
@@ -157,8 +158,10 @@ class GuardMainTests(unittest.TestCase):
         actions = main_module.run_guard_balance_fallback("test")
 
         self.assertEqual(actions, [])
-        self.assertEqual(capture_db.params["threshold"], 1)
-        self.assertEqual(capture_db.params["max_age_hours"], 12)
+        params = capture_db.calls[0][1]
+        assert params is not None
+        self.assertEqual(params["threshold"], 1)
+        self.assertEqual(params["max_age_hours"], 12)
 
     def test_balance_sweep_respects_disabled_hard_pause_policy(self) -> None:
         class CaptureDB(FakeCapabilityDB):
@@ -203,7 +206,7 @@ class GuardMainTests(unittest.TestCase):
         self.assertNotIn("platform", params)
         self.assertNotIn("hours", params)
 
-    def test_load_guard_quality_uses_all_accounts_sql_without_filters(self) -> None:
+    def test_load_guard_quality_uses_all_accounts_sql_with_bounded_signal_window(self) -> None:
         class CaptureDB(FakeCapabilityDB):
             def __init__(self) -> None:
                 self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
@@ -221,9 +224,13 @@ class GuardMainTests(unittest.TestCase):
         sql, params = capture_db.fetch_all_calls[0]
         self.assertIn("LEFT JOIN account_groups", sql)
         self.assertNotIn("g.name = ANY", sql)
-        self.assertIsNone(params)
+        self.assertIsNotNone(params)
+        assert params is not None
+        self.assertEqual(params["platform"], "")
+        self.assertIsNotNone(params["range_start"])
+        self.assertIsNone(params["range_end"])
 
-    def test_load_guard_queue_quality_preserves_group_membership_rows(self) -> None:
+    def test_load_guard_queue_quality_preserves_group_membership_rows_with_bounded_signal_window(self) -> None:
         class CaptureDB(FakeCapabilityDB):
             def __init__(self) -> None:
                 self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
@@ -241,7 +248,41 @@ class GuardMainTests(unittest.TestCase):
         sql, params = capture_db.fetch_all_calls[0]
         self.assertIn("ag.group_id", sql)
         self.assertNotIn("SELECT DISTINCT ON (a.id)", sql)
-        self.assertIsNone(params)
+        self.assertIsNotNone(params)
+        assert params is not None
+        self.assertEqual(params["platform"], "")
+        self.assertIsNotNone(params["range_start"])
+        self.assertIsNone(params["range_end"])
+
+    def test_request_view_limits_error_logs_before_expanding_attempts(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.calls.append((sql, params))
+                return []
+
+        captured: dict[str, Any] = {}
+        original_render = main_module.render
+        capture_db = CaptureDB()
+
+        def capture_render(_request: Any, _template: str, context: dict[str, Any]) -> Any:
+            captured["context"] = context
+            return context
+
+        try:
+            main_module.db = capture_db  # type: ignore[assignment]
+            main_module.render = capture_render  # type: ignore[assignment]
+
+            main_module.requests_view(object(), "tester", limit=200)  # type: ignore[arg-type]
+        finally:
+            main_module.render = original_render
+
+        request_params = next(params for sql, params in capture_db.calls if "WITH target_logs AS" in sql)
+        assert request_params is not None
+        self.assertEqual(request_params["limit"], 200)
+        self.assertEqual(request_params["scan_limit"], 4000)
 
     def test_guard_view_uses_all_accounts_loader_and_no_filter_context(self) -> None:
         sentinel_rows = [

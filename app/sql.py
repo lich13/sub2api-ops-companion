@@ -284,21 +284,6 @@ QUALITY_ALL_ACCOUNTS_SQL = QUALITY_SQL.replace(
   ORDER BY a.id, ag.priority NULLS LAST, a.priority NULLS LAST, g.name NULLS LAST
 ),""",
 )
-QUALITY_ALL_ACCOUNTS_SQL = QUALITY_ALL_ACCOUNTS_SQL.replace(
-    """  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
-""",
-    "",
-)
-QUALITY_ALL_ACCOUNTS_SQL = QUALITY_ALL_ACCOUNTS_SQL.replace(
-    """  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
-    AND (%(platform)s = '' OR e.platform = %(platform)s)
-""",
-    "",
-)
-
-
 QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_ALL_ACCOUNTS_SQL.replace(
     "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
     "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
@@ -375,19 +360,6 @@ GUARD_QUEUE_SQL = QUALITY_SQL.replace(
 ),""",
 )
 GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
-    """  WHERE (%(range_start)s::timestamptz IS NULL OR created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR created_at < %(range_end)s::timestamptz)
-""",
-    "",
-)
-GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
-    """  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
-    AND (%(platform)s = '' OR e.platform = %(platform)s)
-""",
-    "",
-)
-GUARD_QUEUE_SQL = GUARD_QUEUE_SQL.replace(
     "ORDER BY ga.group_priority, ga.account_priority, ga.id;",
     "ORDER BY ga.platform NULLS LAST, ga.group_sort_order NULLS LAST, ga.group_name NULLS LAST, ga.group_priority NULLS LAST, ga.account_priority NULLS LAST, ga.id;",
 )
@@ -400,7 +372,23 @@ GUARD_QUEUE_SQL_COMPAT_NO_LOAD_FACTOR = GUARD_QUEUE_SQL.replace(
 
 
 REQUESTS_SQL = """
-WITH expanded AS (
+WITH target_logs AS (
+  SELECT e.id
+  FROM ops_error_logs e
+  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
+    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
+    AND (%(platform)s = '' OR e.platform = %(platform)s)
+    AND (%(q)s = '' OR e.request_id = %(q)s OR e.client_request_id = %(q)s OR e.error_message ILIKE '%%' || %(q)s || '%%' OR e.error_body ILIKE '%%' || %(q)s || '%%')
+    AND (
+      %(account_id)s::bigint IS NULL
+      OR e.account_id = %(account_id)s::bigint
+      OR e.upstream_errors @> jsonb_build_array(jsonb_build_object('account_id', %(account_id)s::bigint))
+      OR e.upstream_errors @> jsonb_build_array(jsonb_build_object('account_id', %(account_id)s::text))
+    )
+  ORDER BY e.created_at DESC, e.id DESC
+  LIMIT %(scan_limit)s::int
+),
+expanded AS (
   SELECT
     e.id,
     e.created_at,
@@ -444,17 +432,21 @@ WITH expanded AS (
       e.status_code
     ) AS attempt_status_code,
     COALESCE(NULLIF(x.elem->>'kind',''), e.error_type) AS attempt_kind,
-    COALESCE(
-      NULLIF(x.elem->>'detail',''),
-      NULLIF(x.elem->>'message',''),
-      NULLIF(x.elem->>'upstream_response_body',''),
-      e.upstream_error_message,
-      e.error_message,
-      e.error_body,
+    left(replace(coalesce(
+      COALESCE(
+        NULLIF(x.elem->>'detail',''),
+        NULLIF(x.elem->>'message',''),
+        NULLIF(x.elem->>'upstream_response_body',''),
+        e.upstream_error_message,
+        e.error_message,
+        e.error_body,
+        ''
+      ),
       ''
-    ) AS attempt_message,
-    e.upstream_errors
-  FROM ops_error_logs e
+    ), E'\n', ' '), 1200) AS attempt_message,
+    left(coalesce(e.upstream_errors::text, ''), 2000) AS upstream_errors
+  FROM target_logs t
+  JOIN ops_error_logs e ON e.id = t.id
   LEFT JOIN users u ON u.id = e.user_id
   LEFT JOIN groups g ON g.id = e.group_id
   LEFT JOIN accounts fa ON fa.id = e.account_id
@@ -464,24 +456,16 @@ WITH expanded AS (
       ELSE '[{}]'::jsonb
     END
   ) WITH ORDINALITY AS x(elem, ordinality) ON true
-  WHERE (%(range_start)s::timestamptz IS NULL OR e.created_at >= %(range_start)s::timestamptz)
-    AND (%(range_end)s::timestamptz IS NULL OR e.created_at < %(range_end)s::timestamptz)
-    AND (%(platform)s = '' OR e.platform = %(platform)s)
-    AND (%(q)s = '' OR e.request_id = %(q)s OR e.client_request_id = %(q)s OR e.error_message ILIKE '%%' || %(q)s || '%%' OR e.error_body ILIKE '%%' || %(q)s || '%%')
-    AND (
-      %(account_id)s::bigint IS NULL
-      OR e.account_id = %(account_id)s::bigint
-      OR COALESCE(
-        CASE WHEN coalesce(x.elem->>'account_id','') ~ '^[0-9]+$' THEN (x.elem->>'account_id')::bigint END,
-        e.account_id
-      ) = %(account_id)s::bigint
-    )
 )
 SELECT *
 FROM expanded
 WHERE attempt_account_id IS NOT NULL
+  AND (
+    %(account_id)s::bigint IS NULL
+    OR attempt_account_id = %(account_id)s::bigint
+  )
 ORDER BY created_at DESC, id DESC, attempt_no ASC
-LIMIT %(limit)s;
+LIMIT %(limit)s::int;
 """
 
 
@@ -626,7 +610,12 @@ ORDER BY c.error_log_id ASC, c.attempt_no ASC;
 
 # Keep category names and quota terms aligned with app.guard_classifier.
 GUARD_BALANCE_CANDIDATES_SQL = """
-WITH raw_error_attempts AS (
+WITH target_logs AS (
+  SELECT id
+  FROM ops_error_logs
+  WHERE created_at >= now() - (%(max_age_hours)s::text || ' hours')::interval
+),
+raw_error_attempts AS (
   SELECT
     e.created_at,
     COALESCE(
@@ -653,7 +642,8 @@ WITH raw_error_attempts AS (
       x.elem::text,
       e.upstream_errors::text
     ) AS search_text
-  FROM ops_error_logs e
+  FROM target_logs t
+  JOIN ops_error_logs e ON e.id = t.id
   LEFT JOIN LATERAL jsonb_array_elements(
     CASE
       WHEN jsonb_typeof(e.upstream_errors) = 'array' AND jsonb_array_length(e.upstream_errors) > 0 THEN e.upstream_errors
@@ -712,7 +702,6 @@ SELECT *
 FROM ranked
 WHERE balance_error_count >= %(threshold)s
   AND already_auto_guarded = false
-  AND last_error_at >= now() - (%(max_age_hours)s::text || ' hours')::interval
 ORDER BY balance_error_count DESC, last_error_at DESC;
 """
 
