@@ -350,7 +350,7 @@ class TelegramOpsBot:
             "自动 Guard\n"
             f"状态：{'开启' if guard.get('enabled') else '关闭'}\n"
             f"扫描间隔：{guard.get('interval_seconds')}s\n"
-            f"扫描窗口：{guard.get('lookback_minutes')}m\n"
+            "扫描范围：全部账号\n"
             f"余额/额度阈值：{guard.get('threshold')}\n"
             f"上次运行：{bj_time(state.get('last_run_at'))}\n"
             f"上次错误：{state.get('last_error') or '-'}\n"

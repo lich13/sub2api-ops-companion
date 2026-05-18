@@ -17,7 +17,7 @@
 - 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
-- 自动 Guard：按 `ops_error_logs.id` 增量处理错误链路，余额/额度错误永久暂停确定性坏账号；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 5m/15m/30m 临时冷却；如果增量读取异常，仍用余额/额度兜底扫描硬暂停。
+- 自动 Guard：读取全部账号，按 `ops_error_logs.id` 增量处理错误链路，余额/额度错误永久暂停确定性坏账号；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 5m/15m/30m 临时冷却；如果增量读取异常，仍用余额/额度兜底扫描硬暂停。
 - 定时恢复：在面板里直接配置 Sub2API 原生定时测试计划，支持每小时、每30分钟、每15分钟、每5分钟整点对齐检测；测试通过后自动清理可恢复异常状态。
 - Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；新错误链路会实时推送，并直接附带账号暂停/恢复/冷却按钮。
 - Sub2API 免二次登录：Sub2API 自定义菜单 iframe 可进入 `/sub2ops/sso/start`，Companion 调 Sub2API `/api/v1/auth/me` 验证管理员 JWT 后换成本服务的不可伪造会话。
@@ -49,7 +49,6 @@ docker compose up -d --build
 - `APP_PORT`：容器内监听端口，默认 `18081`。
 - `GUARD_ENABLED`：是否启动后台 Guard，默认 `true`。
 - `GUARD_INTERVAL_SECONDS`：Guard 扫描间隔，默认 `5` 秒；服务启动后会立即先扫一次，之后按该间隔轮询。
-- `GUARD_LOOKBACK_MINUTES`：余额/额度错误扫描窗口，默认 `60`。
 - `GUARD_BALANCE_ERROR_THRESHOLD`：触发自动处理的余额/额度错误次数，默认 `1`。
 - `GUARD_STATE_PATH`：Guard cursor、circuit 和策略状态文件，默认 `/data/guard-state.json`。
 - `GUARD_EVENT_BATCH_SIZE`：每轮 Guard 最多处理的错误/成功事件数，默认 `100`。

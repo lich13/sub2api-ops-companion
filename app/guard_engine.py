@@ -19,7 +19,6 @@ class GuardEngine:
         audit_path: str,
         policy: GuardPolicy,
         batch_size: int = 100,
-        lookback_minutes: int = 60,
         load_factor_supported: bool = False,
     ) -> None:
         self.db = db
@@ -27,14 +26,13 @@ class GuardEngine:
         self.audit_path = audit_path
         self.policy = policy
         self.batch_size = batch_size
-        self.lookback_minutes = max(5, int(lookback_minutes or 60))
         self.load_factor_supported = load_factor_supported
 
     def run_once(self, actor: str = "auto_guard") -> list[dict[str, Any]]:
         actions: list[dict[str, Any]] = []
         rows = self.db.fetch_all(
             GUARD_ERROR_EVENTS_SQL if self.load_factor_supported else GUARD_ERROR_EVENTS_SQL_COMPAT_NO_LOAD_FACTOR,
-            {"cursor_id": self.store.error_cursor(), "lookback_minutes": self.lookback_minutes, "limit": self.batch_size},
+            {"cursor_id": self.store.error_cursor(), "limit": self.batch_size},
         )
         max_cursor = self.store.error_cursor()
         for row in rows:
@@ -120,7 +118,6 @@ class GuardEngine:
             GUARD_SUCCESS_EVENTS_SQL,
             {
                 "cursor_created_at": self.store.success_cursor(),
-                "lookback_minutes": self.lookback_minutes,
                 "limit": self.batch_size,
             },
         )

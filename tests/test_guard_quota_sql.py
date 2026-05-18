@@ -70,6 +70,10 @@ class GuardQuotaSqlTests(unittest.TestCase):
         main_py = (REPO_ROOT / "app" / "main.py").read_text(encoding="utf-8")
         self.assertIn("OR temp_unschedulable_until IS NOT NULL", main_py)
 
+    def test_guard_balance_fallback_is_not_time_window_filtered(self) -> None:
+        self.assertNotIn("lookback_minutes", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertNotIn("created_at >= now() -", GUARD_BALANCE_CANDIDATES_SQL)
+
     def test_telegram_error_alerts_scan_incrementally_by_error_log_id(self) -> None:
         self.assertIn("WHERE id > %(cursor_id)s::bigint", TELEGRAM_ERROR_ALERTS_SQL)
         self.assertIn("LIMIT %(limit)s", TELEGRAM_ERROR_ALERTS_SQL)
