@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from app.sql import GUARD_BALANCE_CANDIDATES_SQL, QUALITY_SQL, TELEGRAM_ERROR_ALERTS_SQL
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_ERROR_EVENTS_SQL, QUALITY_SQL, TELEGRAM_ERROR_ALERTS_SQL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,6 +78,12 @@ class GuardQuotaSqlTests(unittest.TestCase):
         self.assertIn("WHERE created_at >= now() -", GUARD_BALANCE_CANDIDATES_SQL)
         self.assertIn("FROM target_logs t", GUARD_BALANCE_CANDIDATES_SQL)
         self.assertIn("%(max_age_hours)s", GUARD_BALANCE_CANDIDATES_SQL)
+
+    def test_auto_guard_candidate_sql_excludes_oauth_accounts(self) -> None:
+        self.assertIn("a.type AS account_type", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("lower(coalesce(a.type, '')) <> 'oauth'", GUARD_BALANCE_CANDIDATES_SQL)
+        self.assertIn("a.type AS account_type", GUARD_ERROR_EVENTS_SQL)
+        self.assertNotIn("lower(coalesce(a.type, '')) <> 'oauth'", GUARD_ERROR_EVENTS_SQL)
 
     def test_telegram_error_alerts_scan_incrementally_by_error_log_id(self) -> None:
         self.assertIn("WHERE id > %(cursor_id)s::bigint", TELEGRAM_ERROR_ALERTS_SQL)

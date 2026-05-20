@@ -122,6 +122,41 @@ class GuardEngineTests(unittest.TestCase):
             self.assertEqual(actions[0]["action"], "pause")
             self.assertEqual(actions[0]["account_id"], 9)
 
+    def test_engine_skips_oauth_accounts_for_auto_actions_but_advances_cursor(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db = FakeDB([row(account_type="oauth")])
+            store = GuardStore(str(Path(tmp) / "state.json"))
+            engine = GuardEngine(db=db, store=store, audit_path=str(Path(tmp) / "audit.jsonl"), policy=GuardPolicy())
+            actions = engine.run_once(actor="test")
+
+            self.assertEqual(actions, [])
+            self.assertEqual(store.error_cursor(), 101)
+            self.assertEqual(db.updates, [])
+
+    def test_engine_skips_oauth_success_events_but_advances_success_cursor(self) -> None:
+        with TemporaryDirectory() as tmp:
+            success_at = datetime(2026, 5, 18, 10, 5, tzinfo=timezone.utc)
+            db = FakeDB(
+                [],
+                [
+                    {
+                        "account_id": 9,
+                        "account_type": "oauth",
+                        "success_created_at": success_at,
+                        "success_event_key": "success:9:2026-05-18 10:05:00+00",
+                        "success_count": 3,
+                    }
+                ],
+            )
+            store = GuardStore(str(Path(tmp) / "state.json"))
+            engine = GuardEngine(db=db, store=store, audit_path=str(Path(tmp) / "audit.jsonl"), policy=GuardPolicy())
+
+            actions = engine.run_once(actor="test")
+
+            self.assertEqual(actions, [])
+            self.assertEqual(store.success_cursor(), str(success_at))
+            self.assertEqual(store.circuit(9).processed_event_keys, [])
+
     def test_engine_ignores_client_error_but_advances_cursor(self) -> None:
         with TemporaryDirectory() as tmp:
             db = FakeDB([row(error_owner="client", error_source="client_request", search_text="bad user input")])

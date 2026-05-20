@@ -67,6 +67,16 @@ class GuardQueueTests(unittest.TestCase):
         self.assertEqual(by_id[2]["load_factor"], 1)
         self.assertEqual(by_id[3]["position"], 3)
 
+    def test_auto_queue_plan_skips_oauth_accounts(self) -> None:
+        rows = [
+            account(id=1, group_id=101, group_name="openai", success_window=10),
+            account(id=2, group_id=101, group_name="openai", success_window=20, type="oauth", rate_limit_window=1),
+        ]
+
+        plan = auto_queue_plan(rows, load_factor_supported=True)
+
+        self.assertEqual([item["account_id"] for item in plan], [1])
+
     def test_reorder_queue_plan_uses_submitted_order_inside_each_group_membership(self) -> None:
         rows = [account(id=index, group_id=101, group_name="openai", group_priority=index, load_factor=None) for index in range(1, 103)]
         rows[1]["load_factor"] = 1
