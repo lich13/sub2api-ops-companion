@@ -113,6 +113,20 @@ class GuardMainTests(unittest.TestCase):
     def test_scheduled_test_needs_recovery_includes_account_status(self) -> None:
         self.assertTrue(main_module.scheduled_test_needs_recovery({"account_status": "error", "schedulable": True}))
         self.assertFalse(main_module.scheduled_test_needs_recovery({"account_status": "active", "schedulable": True}))
+        self.assertFalse(main_module.scheduled_test_needs_recovery({"account_status": "error", "schedulable": False, "type": "oauth"}))
+
+    def test_guard_suggestion_skips_oauth_accounts(self) -> None:
+        self.assertIsNone(
+            main_module.guard_suggestion(
+                {
+                    "id": 9,
+                    "name": "oauth-account",
+                    "type": "oauth",
+                    "schedulable": True,
+                    "balance_or_quota_window": 3,
+                }
+            )
+        )
 
     def test_incremental_guard_failure_returns_fallback_actions_but_marks_error_visible(self) -> None:
         class BrokenEngine:

@@ -15,6 +15,10 @@ def _safe_int(value: object, default: int = 0) -> int:
         return default
 
 
+def _is_oauth_account(row: dict[str, Any]) -> bool:
+    return str(row.get("account_type") or row.get("type") or "").strip().lower() == "oauth"
+
+
 def _priority_value(row: dict[str, Any]) -> int:
     return _safe_int(row.get("group_priority") or row.get("priority"), 50)
 
@@ -209,7 +213,7 @@ def auto_queue_plan(
     load_factor_supported: bool = False,
 ) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
-    for group in group_queue_rows(rows):
+    for group in group_queue_rows([row for row in rows if not _is_oauth_account(row)]):
         group_rows = list(group["rows"])
         healthy = sorted([row for row in group_rows if _is_healthy_candidate(row)], key=_sort_key)
         unhealthy = sorted([row for row in group_rows if not _is_healthy_candidate(row)], key=_display_order_key)
