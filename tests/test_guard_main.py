@@ -254,6 +254,28 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(options[1]["label"], "#12 当前列表未返回")
         self.assertTrue(options[1]["checked"])
 
+    def test_telegram_error_alerts_skip_whitelisted_schedulable_accounts(self) -> None:
+        policy = main_module.GuardPolicy(whitelist_account_ids=(9,))
+        rows = [
+            {"error_log_id": 101, "account_id": 9, "schedulable": True, "temp_unschedulable_until": None},
+            {"error_log_id": 102, "account_id": 10, "schedulable": True, "temp_unschedulable_until": None},
+        ]
+
+        filtered = main_module.filter_telegram_error_alert_rows(rows, policy)
+
+        self.assertEqual([row["account_id"] for row in filtered], [10])
+
+    def test_telegram_error_alerts_keep_whitelisted_hard_disabled_accounts(self) -> None:
+        policy = main_module.GuardPolicy(whitelist_account_ids=(9,))
+        rows = [
+            {"error_log_id": 101, "account_id": 9, "schedulable": False, "temp_unschedulable_until": None},
+            {"error_log_id": 102, "account_id": 9, "schedulable": True, "temp_unschedulable_until": "2026-05-18T10:05:00+00:00"},
+        ]
+
+        filtered = main_module.filter_telegram_error_alert_rows(rows, policy)
+
+        self.assertEqual([row["error_log_id"] for row in filtered], [101])
+
     def test_balance_sweep_skips_whitelisted_candidates(self) -> None:
         class CaptureDB(FakeCapabilityDB):
             def __init__(self) -> None:

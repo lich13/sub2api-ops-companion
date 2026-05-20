@@ -886,6 +886,28 @@ def load_telegram_error_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
     )
 
 
+def is_hard_disabled_account(row: dict[str, Any]) -> bool:
+    return not row.get("schedulable", True) and not row.get("temp_unschedulable_until")
+
+
+def filter_telegram_error_alert_rows(
+    rows: list[dict[str, Any]],
+    policy: GuardPolicy | None = None,
+) -> list[dict[str, Any]]:
+    active_policy = policy or guard_policy_from_store()
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        account_id = row.get("account_id")
+        if not account_id:
+            continue
+        if not is_whitelisted_account(active_policy, account_id):
+            filtered.append(row)
+            continue
+        if is_hard_disabled_account(row):
+            filtered.append(row)
+    return filtered
+
+
 def current_scheduled_test_result_id() -> int:
     capability = scheduled_test_capability()
     if not capability["available"]:
@@ -1018,7 +1040,8 @@ async def telegram_error_alert_loop() -> None:
                     rows = await asyncio.to_thread(load_telegram_error_alert_rows, cursor_id)
                     if rows:
                         next_cursor = max(int(row.get("error_log_id") or cursor_id) for row in rows)
-                        account_rows = [row for row in rows if row.get("account_id")]
+                        policy = await asyncio.to_thread(guard_policy_from_store)
+                        account_rows = filter_telegram_error_alert_rows(rows, policy)
                         if account_rows:
                             await bot.notify_error_chain_alerts(account_rows)
                             write_audit(
