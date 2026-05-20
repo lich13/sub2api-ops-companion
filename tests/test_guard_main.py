@@ -199,6 +199,69 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(actions, [])
         self.assertFalse(capture_db.called)
 
+    def test_guard_policy_from_store_parses_whitelist(self) -> None:
+        GuardStore(main_module.settings.guard_state_path).save_policy(
+            {
+                "whitelist_account_ids": ["9", "10", "bad", "9"],
+                "whitelist_balance_pause_threshold": 12,
+            }
+        )
+
+        policy = main_module.guard_policy_from_store()
+
+        self.assertEqual(policy.whitelist_account_ids, (9, 10))
+        self.assertEqual(policy.whitelist_balance_pause_threshold, 12)
+
+    def test_guard_policy_save_persists_whitelist_settings(self) -> None:
+        main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_account_ids="9, 10, bad, 9",
+            whitelist_balance_pause_threshold=11,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+
+        self.assertEqual(saved["whitelist_account_ids"], [9, 10])
+        self.assertEqual(saved["whitelist_balance_pause_threshold"], 11)
+
+    def test_balance_sweep_skips_whitelisted_candidates(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.updated_account_ids: list[int] = []
+
+            def fetch_all(self, _sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "id": 9,
+                        "name": "white",
+                        "balance_error_count": 99,
+                        "last_message": "token quota is not enough",
+                    },
+                    {
+                        "id": 10,
+                        "name": "normal",
+                        "balance_error_count": 1,
+                        "last_message": "token quota is not enough",
+                    },
+                ]
+
+            def fetch_one(self, _sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                assert params is not None
+                self.updated_account_ids.append(int(params["account_id"]))
+                return {"id": params["account_id"], "name": "normal", "schedulable": False}
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+        GuardStore(main_module.settings.guard_state_path).save_policy({"whitelist_account_ids": [9]})
+
+        actions = main_module.run_guard_balance_fallback("test")
+
+        self.assertEqual([item["account_id"] for item in actions], [10])
+        self.assertEqual(capture_db.updated_account_ids, [10])
+
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [
             {

@@ -24,7 +24,7 @@ from .audit import read_audit, write_audit
 from .db import Database
 from .group_selection import ALL_GROUP_VALUE, DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
 from .guard_engine import GuardEngine, is_oauth_account
-from .guard_policy import GuardPolicy
+from .guard_policy import GuardPolicy, is_whitelisted_account, normalize_account_ids
 from .guard_queue import auto_queue_plan, group_queue_rows, membership_key, queue_position, reorder_queue_plan
 from .guard_store import GuardStore
 from .quality_sort import (
@@ -486,6 +486,8 @@ def scheduled_tests_url(group_values: list[str], platform: str, include_all: boo
 
 def guard_config() -> dict[str, Any]:
     policy = guard_policy_from_store()
+    policy_payload = asdict(policy)
+    policy_payload["whitelist_account_ids_text"] = ", ".join(str(item) for item in policy.whitelist_account_ids)
     return {
         "enabled": settings.guard_enabled,
         "interval_seconds": settings.guard_interval_seconds,
@@ -495,7 +497,7 @@ def guard_config() -> dict[str, Any]:
         "balance_max_age_hours": settings.guard_balance_error_max_age_hours,
         "action": "pause",
         "state": guard_state,
-        "policy": asdict(policy),
+        "policy": policy_payload,
         "account_routing": account_routing_capability(),
         "recent_events": read_audit(settings.audit_path, limit=12, event_prefix="guard_"),
     }
@@ -512,6 +514,8 @@ def guard_policy_from_store() -> GuardPolicy:
         circuit_timeout_seconds=int_param(str(raw.get("circuit_timeout_seconds")), 60, 5, 3600),
         blocked_403_threshold=int_param(str(raw.get("blocked_403_threshold")), 1, 1, 20),
         balance_pause_threshold=int_param(str(raw.get("balance_pause_threshold")), 1, 1, 20),
+        whitelist_account_ids=parse_int_csv(raw.get("whitelist_account_ids")),
+        whitelist_balance_pause_threshold=int_param(str(raw.get("whitelist_balance_pause_threshold")), 10, 1, 100),
     )
 
 
@@ -566,19 +570,8 @@ def request_scan_limit(limit: int, account_id: str = "", q: str = "") -> int:
     return min(max(limit, limit * multiplier), 50000)
 
 
-def parse_int_csv(value: str) -> tuple[int, ...]:
-    values: list[int] = []
-    for part in str(value or "").replace(";", ",").split(","):
-        item = part.strip()
-        if not item:
-            continue
-        try:
-            parsed = int(item)
-        except ValueError:
-            continue
-        if parsed and parsed not in values:
-            values.append(parsed)
-    return tuple(values)
+def parse_int_csv(value: Any) -> tuple[int, ...]:
+    return normalize_account_ids(value)
 
 
 def mask_secret(value: str) -> str:
@@ -758,7 +751,8 @@ def pause_guard_candidate(row: dict[str, Any], actor: str) -> dict[str, Any]:
 
 
 def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
-    if not guard_policy_from_store().hard_pause_enabled:
+    policy = guard_policy_from_store()
+    if not policy.hard_pause_enabled:
         return []
     candidates = db.fetch_all(
         GUARD_BALANCE_CANDIDATES_SQL,
@@ -767,12 +761,26 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
             "max_age_hours": settings.guard_balance_error_max_age_hours,
         },
     )
-    actions = [pause_guard_candidate(row, actor) for row in candidates if row.get("id")]
+    actionable: list[dict[str, Any]] = []
+    whitelist_skipped_count = 0
+    for row in candidates:
+        if not row.get("id"):
+            continue
+        if is_whitelisted_account(policy, row.get("id")):
+            whitelist_skipped_count += 1
+            continue
+        actionable.append(row)
+    actions = [pause_guard_candidate(row, actor) for row in actionable]
     applied = [item for item in actions if item.get("updated")]
     write_audit(
         settings.audit_path,
         "guard_auto_fallback_balance_scan",
-        {"actor": actor, "candidate_count": len(candidates), "action_count": len(applied)},
+        {
+            "actor": actor,
+            "candidate_count": len(candidates),
+            "whitelist_skipped_count": whitelist_skipped_count,
+            "action_count": len(applied),
+        },
     )
     return applied
 
@@ -1561,7 +1569,10 @@ def guard_policy_save(
     circuit_timeout_seconds: int = Form(60),
     blocked_403_threshold: int = Form(1),
     balance_pause_threshold: int = Form(1),
+    whitelist_account_ids: str = Form(""),
+    whitelist_balance_pause_threshold: int = Form(10),
 ) -> Response:
+    parsed_whitelist = parse_int_csv(whitelist_account_ids)
     payload = {
         "hard_pause_enabled": form_truthy(hard_pause_enabled),
         "rate_limit_enabled": form_truthy(rate_limit_enabled),
@@ -1571,6 +1582,8 @@ def guard_policy_save(
         "circuit_timeout_seconds": int_param(str(circuit_timeout_seconds), 60, 5, 3600),
         "blocked_403_threshold": int_param(str(blocked_403_threshold), 1, 1, 20),
         "balance_pause_threshold": int_param(str(balance_pause_threshold), 1, 1, 20),
+        "whitelist_account_ids": list(parsed_whitelist),
+        "whitelist_balance_pause_threshold": int_param(str(whitelist_balance_pause_threshold), 10, 1, 100),
         "updated_by": user,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
