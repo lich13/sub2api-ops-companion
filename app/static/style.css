@@ -1262,21 +1262,41 @@ dd {
   gap: 12px;
 }
 
-.guard-policy-grid label {
+.guard-policy-grid > label,
+.guard-policy-grid > .group-picker-field {
   min-width: 0;
 }
 
-.guard-policy-grid input,
-.guard-policy-grid textarea {
+.guard-policy-grid > label > input {
   width: 100%;
-}
-
-.guard-policy-grid textarea {
-  resize: vertical;
 }
 
 .guard-policy-grid .primary {
   min-height: 38px;
+}
+
+.guard-whitelist-field {
+  grid-column: span 2;
+}
+
+.guard-whitelist-field small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.guard-whitelist-picker .group-picker-menu {
+  width: min(460px, calc(100vw - 40px));
+}
+
+.guard-whitelist-list label {
+  grid-template-columns: 16px minmax(0, 1fr) minmax(76px, auto);
+}
+
+.group-picker-empty {
+  padding: 14px 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .guard-switch {
@@ -3271,6 +3291,10 @@ pre {
   .guard-policy-grid,
   .routing-mini-form {
     grid-template-columns: 1fr;
+  }
+
+  .guard-whitelist-field {
+    grid-column: auto;
   }
 
   .guard-queue-filter {

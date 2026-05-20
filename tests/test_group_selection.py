@@ -54,6 +54,14 @@ class GroupSelectionTests(unittest.TestCase):
         self.assertIn('type="checkbox"', picker)
         self.assertNotIn('<select name="group">', stability + speed + scheduled)
 
+    def test_group_picker_script_supports_optional_clearable_picker(self) -> None:
+        script = (REPO_ROOT / "app" / "static" / "group-picker.js").read_text(encoding="utf-8")
+
+        self.assertIn("allowEmpty", script)
+        self.assertIn("data-group-picker-clear", script)
+        self.assertIn("emptyLabel", script)
+        self.assertIn("countSuffix", script)
+
     def test_sql_filters_by_group_array(self) -> None:
         self.assertIn("g.name = ANY(%(group_names)s::text[])", QUALITY_SQL)
         self.assertIn("g.name = ANY(%(group_names)s::text[])", SCHEDULED_TEST_ACCOUNTS_SQL)

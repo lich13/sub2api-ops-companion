@@ -484,8 +484,8 @@ def scheduled_tests_url(group_values: list[str], platform: str, include_all: boo
     return f"{settings.base_path}/scheduled-tests?{urlencode(query)}"
 
 
-def guard_config() -> dict[str, Any]:
-    policy = guard_policy_from_store()
+def guard_config(policy: GuardPolicy | None = None) -> dict[str, Any]:
+    policy = policy or guard_policy_from_store()
     policy_payload = asdict(policy)
     policy_payload["whitelist_account_ids_text"] = ", ".join(str(item) for item in policy.whitelist_account_ids)
     return {
@@ -543,6 +543,40 @@ def enrich_guard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["queue_position"] = queue_position(row)
         row["membership_key"] = membership_key(row)
     return rows
+
+
+def guard_whitelist_options(rows: list[dict[str, Any]], policy: GuardPolicy) -> list[dict[str, Any]]:
+    selected = set(policy.whitelist_account_ids)
+    seen: set[int] = set()
+    options: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            account_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if account_id <= 0 or account_id in seen:
+            continue
+        seen.add(account_id)
+        name = str(row.get("name") or f"Account {account_id}").strip()
+        meta_parts = [str(value).strip() for value in (row.get("type"), row.get("platform")) if str(value or "").strip()]
+        options.append(
+            {
+                "id": account_id,
+                "label": f"#{account_id} {name}",
+                "meta": " / ".join(meta_parts),
+                "checked": account_id in selected,
+            }
+        )
+    for account_id in sorted(selected - seen):
+        options.append(
+            {
+                "id": account_id,
+                "label": f"#{account_id} 当前列表未返回",
+                "meta": "已保存",
+                "checked": True,
+            }
+        )
+    return options
 
 
 def filter_guard_queue_rows(rows: list[dict[str, Any]], group_selection: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1489,6 +1523,7 @@ def guard_view(
     query_params = getattr(request, "query_params", None)
     queue_group_values = query_params.getlist("queue_group") if hasattr(query_params, "getlist") else []
     queue_group_selection = build_group_selection(queue_group_values, groups)
+    policy = guard_policy_from_store()
     rows = enrich_guard_rows(load_guard_quality())
     queue_rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), queue_group_selection)
     queue_groups = group_queue_rows(queue_rows)
@@ -1502,7 +1537,8 @@ def guard_view(
             "queue_rows": queue_rows,
             "queue_groups": queue_groups,
             "suggestions": suggestions,
-            "guard": guard_config(),
+            "guard": guard_config(policy),
+            "whitelist_options": guard_whitelist_options(rows, policy),
             "groups": groups,
             "queue_group_selection": queue_group_selection,
             "msg": msg,
@@ -1569,7 +1605,7 @@ def guard_policy_save(
     circuit_timeout_seconds: int = Form(60),
     blocked_403_threshold: int = Form(1),
     balance_pause_threshold: int = Form(1),
-    whitelist_account_ids: str = Form(""),
+    whitelist_account_ids: list[str] | None = Form(None),
     whitelist_balance_pause_threshold: int = Form(10),
 ) -> Response:
     parsed_whitelist = parse_int_csv(whitelist_account_ids)
