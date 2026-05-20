@@ -62,6 +62,94 @@ class GuardPolicyTests(unittest.TestCase):
         self.assertEqual(action.kind, "none")
         self.assertEqual(updated.last_category, "provider_rate_limit")
 
+    def test_whitelisted_rate_limit_records_without_cooldown_action(self) -> None:
+        action, updated = apply_signal(
+            GuardPolicy(whitelist_account_ids=(9,)),
+            GuardCircuit(account_id=9),
+            GuardSignal(9, "provider_rate_limit", "error:101:1", now(), event_id=101),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(updated.state, "closed")
+        self.assertEqual(updated.last_category, "provider_rate_limit")
+        self.assertEqual(updated.consecutive_balance_quota_failures, 0)
+
+    def test_whitelisted_blocked_403_records_without_pause_action(self) -> None:
+        action, updated = apply_signal(
+            GuardPolicy(whitelist_account_ids=(9,)),
+            GuardCircuit(account_id=9),
+            GuardSignal(9, "provider_blocked_403", "error:102:1", now(), event_id=102),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(updated.state, "closed")
+        self.assertEqual(updated.last_category, "provider_blocked_403")
+
+    def test_whitelisted_quota_pauses_after_ten_consecutive_quota_signals(self) -> None:
+        policy = GuardPolicy(whitelist_account_ids=(9,))
+        circuit = GuardCircuit(account_id=9)
+        action = None
+
+        for index in range(9):
+            action, circuit = apply_signal(
+                policy,
+                circuit,
+                GuardSignal(9, "provider_balance_or_quota", f"error:{201 + index}:1", now(), event_id=201 + index),
+                now(),
+            )
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(circuit.state, "closed")
+        self.assertEqual(circuit.consecutive_balance_quota_failures, 9)
+
+        action, circuit = apply_signal(
+            policy,
+            circuit,
+            GuardSignal(9, "provider_balance_or_quota", "error:210:1", now(), event_id=210),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "pause")
+        self.assertTrue(action.hard)
+        self.assertEqual(circuit.state, "open")
+        self.assertEqual(circuit.consecutive_balance_quota_failures, 10)
+
+    def test_whitelisted_non_quota_signal_resets_quota_streak(self) -> None:
+        policy = GuardPolicy(whitelist_account_ids=(9,))
+        circuit = GuardCircuit(account_id=9)
+        for index in range(9):
+            _, circuit = apply_signal(
+                policy,
+                circuit,
+                GuardSignal(9, "provider_balance_or_quota", f"error:{301 + index}:1", now(), event_id=301 + index),
+                now(),
+            )
+
+        action, circuit = apply_signal(
+            policy,
+            circuit,
+            GuardSignal(9, "provider_rate_limit", "error:400:1", now(), event_id=400),
+            now(),
+        )
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(circuit.consecutive_balance_quota_failures, 0)
+
+        for index in range(9):
+            action, circuit = apply_signal(
+                policy,
+                circuit,
+                GuardSignal(9, "provider_balance_or_quota", f"error:{401 + index}:1", now(), event_id=401 + index),
+                now(),
+            )
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(circuit.state, "closed")
+        self.assertEqual(circuit.consecutive_balance_quota_failures, 9)
+
     def test_unstable_errors_open_after_failure_threshold(self) -> None:
         policy = GuardPolicy(failure_threshold=4)
         circuit = GuardCircuit(account_id=9)

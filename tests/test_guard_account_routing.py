@@ -86,6 +86,8 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('name="hard_pause_enabled"', template)
         self.assertIn('name="rate_limit_enabled"', template)
         self.assertIn('name="unstable_enabled"', template)
+        self.assertIn('name="whitelist_account_ids"', template)
+        self.assertIn('name="whitelist_balance_pause_threshold"', template)
         self.assertIn('action="{{ base_path }}/guard/account-routing"', template)
         self.assertIn('action="{{ base_path }}/guard/queue/auto"', template)
         self.assertIn('action="{{ base_path }}/guard/queue/reorder"', template)

@@ -1266,8 +1266,13 @@ dd {
   min-width: 0;
 }
 
-.guard-policy-grid input {
+.guard-policy-grid input,
+.guard-policy-grid textarea {
   width: 100%;
+}
+
+.guard-policy-grid textarea {
+  resize: vertical;
 }
 
 .guard-policy-grid .primary {
