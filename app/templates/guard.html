@@ -72,6 +72,12 @@
     <label>额度阈值
       <input type="number" name="balance_pause_threshold" min="1" max="20" value="{{ guard.policy.balance_pause_threshold }}" />
     </label>
+    <label>白名单账号 ID
+      <textarea name="whitelist_account_ids" rows="2" placeholder="9, 12, 30">{{ guard.policy.whitelist_account_ids_text }}</textarea>
+    </label>
+    <label>白名单额度阈值
+      <input type="number" name="whitelist_balance_pause_threshold" min="1" max="100" value="{{ guard.policy.whitelist_balance_pause_threshold }}" />
+    </label>
     <button class="primary" type="submit">保存策略</button>
   </form>
   <dl class="status-list guard-status-list">
@@ -79,7 +85,7 @@
     <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
     <div><dt>页面信号窗口</dt><dd>近 {{ guard.quality_hours }} 小时</dd></div>
     <div><dt>额度扫尾窗口</dt><dd>{{ guard.balance_max_age_hours }} 小时</dd></div>
-    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却</dd></div>
+    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却；白名单账号只在连续额度错误达到阈值时硬停</dd></div>
   </dl>
 </section>
 
@@ -417,6 +423,6 @@
 
 <section class="panel compact-panel">
   <h3>判定边界</h3>
-  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。</p>
+  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。白名单账号的 403、429、5xx、流式错误只记录信号，不会自动暂停或冷却；额度/余额错误必须连续达到白名单阈值才会硬停。</p>
 </section>
 {% endblock %}

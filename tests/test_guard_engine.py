@@ -196,6 +196,23 @@ class GuardEngineTests(unittest.TestCase):
             self.assertEqual(actions[0]["action"], "cooldown")
             self.assertEqual(actions[0]["minutes"], 1)
 
+    def test_engine_whitelisted_rate_limit_records_without_account_update(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db = FakeDB([row(status_code=429, message="rate limit", search_text="rate limit")])
+            store = GuardStore(str(Path(tmp) / "state.json"))
+            engine = GuardEngine(
+                db=db,
+                store=store,
+                audit_path=str(Path(tmp) / "audit.jsonl"),
+                policy=GuardPolicy(whitelist_account_ids=(9,)),
+            )
+
+            actions = engine.run_once(actor="test")
+
+            self.assertEqual(actions, [])
+            self.assertEqual(db.updates, [])
+            self.assertEqual(store.circuit(9).last_category, "provider_rate_limit")
+
     def test_record_recovery_success_closes_open_circuit(self) -> None:
         with TemporaryDirectory() as tmp:
             store = GuardStore(str(Path(tmp) / "state.json"))

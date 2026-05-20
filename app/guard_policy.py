@@ -7,6 +7,36 @@ from datetime import datetime
 IGNORED_CATEGORIES = {"client_pre_route", "client_request", "client_bad_request"}
 
 
+def normalize_account_ids(value: object) -> tuple[int, ...]:
+    if isinstance(value, (list, tuple, set)):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(str(item).replace("\n", ",").replace(";", ",").split(","))
+    else:
+        parts = str(value or "").replace("\n", ",").replace(";", ",").split(",")
+
+    account_ids: list[int] = []
+    for part in parts:
+        item = part.strip()
+        if not item:
+            continue
+        try:
+            parsed = int(item)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0 and parsed not in account_ids:
+            account_ids.append(parsed)
+    return tuple(account_ids)
+
+
+def _positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        return default
+    return max(1, parsed)
+
+
 @dataclass(slots=True)
 class GuardPolicy:
     hard_pause_enabled: bool = True
@@ -23,6 +53,12 @@ class GuardPolicy:
     unstable_load_factor_steps: tuple[int, ...] = (1, 1, 1)
     blocked_403_threshold: int = 1
     balance_pause_threshold: int = 1
+    whitelist_account_ids: tuple[int, ...] = ()
+    whitelist_balance_pause_threshold: int = 10
+
+    def __post_init__(self) -> None:
+        self.whitelist_account_ids = normalize_account_ids(self.whitelist_account_ids)
+        self.whitelist_balance_pause_threshold = _positive_int(self.whitelist_balance_pause_threshold, 10)
 
 
 @dataclass(slots=True)
@@ -63,6 +99,7 @@ class GuardCircuit:
     last_event_key: str = ""
     last_category: str = ""
     last_message: str = ""
+    consecutive_balance_quota_failures: int = 0
     processed_event_keys: list[str] = field(default_factory=list)
 
 
@@ -86,6 +123,14 @@ def _remember(circuit: GuardCircuit, signal: GuardSignal) -> GuardCircuit:
     return circuit
 
 
+def is_whitelisted_account(policy: GuardPolicy, account_id: object) -> bool:
+    try:
+        parsed = int(account_id or 0)
+    except (TypeError, ValueError):
+        return False
+    return parsed in set(policy.whitelist_account_ids)
+
+
 def apply_signal(
     policy: GuardPolicy,
     circuit: GuardCircuit,
@@ -96,12 +141,14 @@ def apply_signal(
         return _none(signal, "duplicate guard event"), circuit
 
     if signal.category in IGNORED_CATEGORIES:
+        circuit.consecutive_balance_quota_failures = 0
         return _none(signal, "client-side error ignored by guard"), _remember(circuit, signal)
 
     if signal.category == "success":
         circuit.total_requests += 1
         circuit.consecutive_failures = 0
         circuit.consecutive_successes += 1
+        circuit.consecutive_balance_quota_failures = 0
         if circuit.state == "open":
             circuit.state = "half_open"
         if circuit.state == "half_open" and circuit.consecutive_successes >= policy.success_threshold:
@@ -113,11 +160,20 @@ def apply_signal(
     circuit.failed_requests += 1
     circuit.consecutive_failures += 1
     circuit.consecutive_successes = 0
+    if signal.category == "provider_balance_or_quota":
+        circuit.consecutive_balance_quota_failures += 1
+    else:
+        circuit.consecutive_balance_quota_failures = 0
+
+    whitelisted = is_whitelisted_account(policy, signal.account_id)
+    if whitelisted and signal.category != "provider_balance_or_quota":
+        return _none(signal, "whitelisted account non-quota signal recorded without automatic action"), _remember(circuit, signal)
 
     if signal.category == "provider_balance_or_quota":
         if not policy.hard_pause_enabled:
             return _none(signal, "hard-pause category disabled by guard policy"), _remember(circuit, signal)
-        if circuit.consecutive_failures < policy.balance_pause_threshold:
+        threshold = policy.whitelist_balance_pause_threshold if whitelisted else policy.balance_pause_threshold
+        if circuit.consecutive_balance_quota_failures < threshold:
             return _none(signal, "balance/quota signal recorded below threshold"), _remember(circuit, signal)
         circuit.state = "open"
         circuit.opened_at = now.isoformat()
