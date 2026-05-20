@@ -676,6 +676,7 @@ ranked AS (
   SELECT
     a.id,
     a.name,
+    a.type AS account_type,
     count(*) AS balance_error_count,
     max(be.created_at) AS last_error_at,
     (array_agg(left(replace(coalesce(be.message,''), E'\\n', ' '), 220) ORDER BY be.created_at DESC))[1] AS last_message,
@@ -688,6 +689,7 @@ ranked AS (
   JOIN accounts a ON a.id = be.account_id
   WHERE a.deleted_at IS NULL
     AND a.status = 'active'
+    AND lower(coalesce(a.type, '')) <> 'oauth'
     AND (
       a.schedulable = false
       OR a.temp_unschedulable_until IS NOT NULL
@@ -696,7 +698,7 @@ ranked AS (
       OR a.overload_until IS NOT NULL
       OR coalesce(a.error_message, '') <> ''
     )
-  GROUP BY a.id, a.name, a.schedulable, a.temp_unschedulable_until, a.temp_unschedulable_reason
+  GROUP BY a.id, a.name, a.type, a.schedulable, a.temp_unschedulable_until, a.temp_unschedulable_reason
 )
 SELECT *
 FROM ranked
@@ -737,6 +739,7 @@ SELECT
   a.load_factor,
   a.concurrency,
   COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,
+  a.type AS account_type,
   COALESCE(
     CASE WHEN coalesce(x.elem->>'upstream_status_code','') ~ '^[0-9]+$' THEN (x.elem->>'upstream_status_code')::int END,
     e.upstream_status_code,
@@ -789,18 +792,20 @@ GUARD_ERROR_EVENTS_SQL_COMPAT_NO_LOAD_FACTOR = GUARD_ERROR_EVENTS_SQL.replace(
 
 GUARD_SUCCESS_EVENTS_SQL = """
 SELECT
-  account_id,
-  max(created_at) AS success_created_at,
-  ('success:' || account_id::text || ':' || max(created_at)::text) AS success_event_key,
+  u.account_id,
+  a.type AS account_type,
+  max(u.created_at) AS success_created_at,
+  ('success:' || u.account_id::text || ':' || max(u.created_at)::text) AS success_event_key,
   count(*) AS success_count,
-  COALESCE(sum(output_tokens), 0) AS output_tokens,
-  round(avg(duration_ms)::numeric, 0) AS avg_duration_ms,
-  round(avg(first_token_ms)::numeric, 0) AS avg_first_token_ms
-FROM usage_logs
-WHERE account_id IS NOT NULL
-  AND (%(cursor_created_at)s = '' OR created_at > %(cursor_created_at)s::timestamptz)
-GROUP BY account_id
-ORDER BY max(created_at) ASC
+  COALESCE(sum(u.output_tokens), 0) AS output_tokens,
+  round(avg(u.duration_ms)::numeric, 0) AS avg_duration_ms,
+  round(avg(u.first_token_ms)::numeric, 0) AS avg_first_token_ms
+FROM usage_logs u
+LEFT JOIN accounts a ON a.id = u.account_id
+WHERE u.account_id IS NOT NULL
+  AND (%(cursor_created_at)s = '' OR u.created_at > %(cursor_created_at)s::timestamptz)
+GROUP BY u.account_id, a.type
+ORDER BY max(u.created_at) ASC
 LIMIT %(limit)s::int;
 """
 

@@ -23,7 +23,7 @@ from . import account_ops
 from .audit import read_audit, write_audit
 from .db import Database
 from .group_selection import ALL_GROUP_VALUE, DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
-from .guard_engine import GuardEngine
+from .guard_engine import GuardEngine, is_oauth_account
 from .guard_policy import GuardPolicy
 from .guard_queue import auto_queue_plan, group_queue_rows, membership_key, queue_position, reorder_queue_plan
 from .guard_store import GuardStore
@@ -863,6 +863,8 @@ def load_scheduled_test_recovery_alert_rows(cursor_id: int) -> list[dict[str, An
 
 
 def scheduled_test_needs_recovery(row: dict[str, Any]) -> bool:
+    if is_oauth_account(row):
+        return False
     account_status = row.get("account_status", row.get("status"))
     return (
         bool(account_status and account_status != "active")
@@ -1012,6 +1014,8 @@ async def auto_guard_loop() -> None:
 
 
 def guard_suggestion(row: dict[str, Any]) -> dict[str, Any] | None:
+    if is_oauth_account(row):
+        return None
     if not row.get("schedulable"):
         return None
     account_id = row["id"]

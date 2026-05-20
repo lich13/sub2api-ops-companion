@@ -12,6 +12,7 @@ class GuardEventSqlTests(unittest.TestCase):
         self.assertIn("jsonb_array_elements", GUARD_ERROR_EVENTS_SQL)
         self.assertIn("error_log_id", GUARD_ERROR_EVENTS_SQL)
         self.assertIn("attempt_no", GUARD_ERROR_EVENTS_SQL)
+        self.assertIn("a.type AS account_type", GUARD_ERROR_EVENTS_SQL)
         self.assertIn("account_priority", GUARD_ERROR_EVENTS_SQL)
         self.assertIn("load_factor", GUARD_ERROR_EVENTS_SQL)
         self.assertIn("LIMIT %(limit)s::int", GUARD_ERROR_EVENTS_SQL)
@@ -24,9 +25,10 @@ class GuardEventSqlTests(unittest.TestCase):
 
     def test_guard_success_events_are_incremental(self) -> None:
         self.assertIn("usage_logs", GUARD_SUCCESS_EVENTS_SQL)
-        self.assertIn("created_at > %(cursor_created_at)s::timestamptz", GUARD_SUCCESS_EVENTS_SQL)
+        self.assertIn("u.created_at > %(cursor_created_at)s::timestamptz", GUARD_SUCCESS_EVENTS_SQL)
         self.assertIn("success_event_key", GUARD_SUCCESS_EVENTS_SQL)
-        self.assertIn("account_id IS NOT NULL", GUARD_SUCCESS_EVENTS_SQL)
+        self.assertIn("u.account_id IS NOT NULL", GUARD_SUCCESS_EVENTS_SQL)
+        self.assertIn("a.type AS account_type", GUARD_SUCCESS_EVENTS_SQL)
 
     def test_guard_incremental_events_are_not_time_window_filtered(self) -> None:
         combined = GUARD_ERROR_EVENTS_SQL + GUARD_SUCCESS_EVENTS_SQL

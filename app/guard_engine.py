@@ -11,6 +11,11 @@ from .guard_store import GuardStore
 from .sql import GUARD_ERROR_EVENTS_SQL, GUARD_ERROR_EVENTS_SQL_COMPAT_NO_LOAD_FACTOR, GUARD_SUCCESS_EVENTS_SQL
 
 
+def is_oauth_account(row: dict[str, Any]) -> bool:
+    account_type = str(row.get("account_type") or row.get("type") or "").strip().lower()
+    return account_type == "oauth"
+
+
 class GuardEngine:
     def __init__(
         self,
@@ -39,6 +44,8 @@ class GuardEngine:
             max_cursor = max(max_cursor, int(row.get("error_log_id") or 0))
             account_id = row.get("account_id")
             if not account_id:
+                continue
+            if is_oauth_account(row):
                 continue
             category = classify_guard_event(row)
             signal = GuardSignal(
@@ -127,6 +134,9 @@ class GuardEngine:
             created_at = row.get("success_created_at")
             if not account_id or not created_at:
                 continue
+            latest = str(created_at)
+            if is_oauth_account(row):
+                continue
             signal = GuardSignal(
                 account_id=int(account_id),
                 category="success",
@@ -137,7 +147,6 @@ class GuardEngine:
             circuit = self.store.circuit(int(account_id))
             _, circuit = apply_signal(self.policy, circuit, signal, datetime.now(timezone.utc))
             self.store.save_circuit(circuit)
-            latest = str(created_at)
         self.store.set_success_cursor(latest)
 
     def record_recovery_success(self, account_id: int, result_id: int, message: str = "scheduled test recovered") -> None:
