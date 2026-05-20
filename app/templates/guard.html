@@ -72,9 +72,53 @@
     <label>额度阈值
       <input type="number" name="balance_pause_threshold" min="1" max="20" value="{{ guard.policy.balance_pause_threshold }}" />
     </label>
-    <label>白名单账号 ID
-      <textarea name="whitelist_account_ids" rows="2" placeholder="9, 12, 30">{{ guard.policy.whitelist_account_ids_text }}</textarea>
-    </label>
+    <div class="group-picker-field guard-whitelist-field">
+      <span>白名单账号</span>
+      <details
+        class="group-picker guard-whitelist-picker"
+        data-group-picker
+        data-allow-empty="1"
+        data-empty-label="未设置白名单"
+        data-all-label="全部账号"
+        data-count-suffix="个账号"
+      >
+        <summary>
+          <strong data-group-picker-label>
+            {% if guard.policy.whitelist_account_ids | length == 0 %}
+              未设置白名单
+            {% elif guard.policy.whitelist_account_ids | length == 1 %}
+              1 个账号
+            {% else %}
+              {{ guard.policy.whitelist_account_ids | length }} 个账号
+            {% endif %}
+          </strong>
+        </summary>
+        <div class="group-picker-menu">
+          <div class="group-picker-actions">
+            <button type="button" data-group-picker-clear>清空</button>
+            <button type="button" data-group-picker-all>全选</button>
+          </div>
+          <div class="group-picker-list guard-whitelist-list">
+            {% for item in whitelist_options %}
+              <label>
+                <input
+                  type="checkbox"
+                  name="whitelist_account_ids"
+                  value="{{ item.id }}"
+                  data-group-picker-option
+                  {{ 'checked' if item.checked else '' }}
+                />
+                <span>{{ item.label }}</span>
+                <em>{{ item.meta or '-' }}</em>
+              </label>
+            {% else %}
+              <div class="group-picker-empty">当前没有可选择账号</div>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+      <small>勾选后，非额度错误只记录；连续额度错误达到阈值才硬停。</small>
+    </div>
     <label>白名单额度阈值
       <input type="number" name="whitelist_balance_pause_threshold" min="1" max="100" value="{{ guard.policy.whitelist_balance_pause_threshold }}" />
     </label>

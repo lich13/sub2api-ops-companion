@@ -227,6 +227,33 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(saved["whitelist_account_ids"], [9, 10])
         self.assertEqual(saved["whitelist_balance_pause_threshold"], 11)
 
+    def test_guard_policy_save_accepts_checkbox_whitelist_values(self) -> None:
+        main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_account_ids=["9", "10", "9"],
+            whitelist_balance_pause_threshold=10,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+
+        self.assertEqual(saved["whitelist_account_ids"], [9, 10])
+
+    def test_guard_whitelist_options_preserve_selected_missing_accounts(self) -> None:
+        options = main_module.guard_whitelist_options(
+            [{"id": 9, "name": "primary", "type": "api", "platform": "openai"}],
+            main_module.GuardPolicy(whitelist_account_ids=(9, 12)),
+        )
+
+        self.assertEqual([item["id"] for item in options], [9, 12])
+        self.assertTrue(options[0]["checked"])
+        self.assertEqual(options[0]["label"], "#9 primary")
+        self.assertEqual(options[0]["meta"], "api / openai")
+        self.assertEqual(options[1]["label"], "#12 当前列表未返回")
+        self.assertTrue(options[1]["checked"])
+
     def test_balance_sweep_skips_whitelisted_candidates(self) -> None:
         class CaptureDB(FakeCapabilityDB):
             def __init__(self) -> None:
