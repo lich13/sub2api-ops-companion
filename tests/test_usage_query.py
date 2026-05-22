@@ -12,6 +12,7 @@ from app.usage_query import (
     DEFAULT_SUB2API_TEMPLATE,
     UsageQueryConfig,
     UsageQueryStore,
+    apply_account_credentials,
     execute_usage_query,
     is_query_due,
     should_pause_for_depleted,
@@ -20,9 +21,9 @@ from app.usage_query import (
 
 class UsageQueryTests(unittest.TestCase):
     def test_default_templates_match_sub2api_and_newapi_shapes(self) -> None:
-        self.assertIn("{{baseUrl}}/user/balance", DEFAULT_SUB2API_TEMPLATE)
+        self.assertIn("{{baseUrl}}/v1/usage", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn('"Authorization": "Bearer {{apiKey}}"', DEFAULT_SUB2API_TEMPLATE)
-        self.assertIn("remaining: response.balance", DEFAULT_SUB2API_TEMPLATE)
+        self.assertIn("response?.remaining ?? response?.quota?.remaining ?? response?.balance", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("{{baseUrl}}/api/user/self", DEFAULT_NEWAPI_TEMPLATE)
         self.assertIn('"New-Api-User": "{{userId}}"', DEFAULT_NEWAPI_TEMPLATE)
         self.assertIn("response.data.quota / 500000", DEFAULT_NEWAPI_TEMPLATE)
@@ -48,11 +49,77 @@ class UsageQueryTests(unittest.TestCase):
         )
 
         self.assertTrue(result["success"])
-        self.assertEqual(requests[0]["url"], "https://sub2api.example.com/user/balance")
+        self.assertEqual(requests[0]["url"], "https://sub2api.example.com/v1/usage")
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer sk-test")
         self.assertEqual(result["remaining"], 12.5)
         self.assertEqual(result["actual_available"], 25.0)
         self.assertEqual(result["unit"], "USD")
+
+    def test_sub2api_template_matches_ciii_usage_response_shape(self) -> None:
+        result = execute_usage_query(
+            UsageQueryConfig(
+                account_id=5,
+                enabled=True,
+                template_type="sub2api",
+                base_url="https://codex.ciii.club",
+                api_key="sk-test",
+            ),
+            opener=lambda _request, _timeout: {
+                "balance": 319.8202155,
+                "isValid": True,
+                "planName": "钱包余额",
+                "remaining": 319.8202155,
+                "unit": "USD",
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["plan_name"], "钱包余额")
+        self.assertEqual(result["remaining"], 319.8202155)
+        self.assertEqual(result["actual_available"], 319.8202155)
+
+    def test_account_credentials_fill_missing_base_url_and_api_key(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="sub2api",
+            use_account_credentials=True,
+        )
+        hydrated = apply_account_credentials(
+            config,
+            {
+                "credentials": {
+                    "base_url": "https://codex.ciii.club",
+                    "api_key": "sk-from-account",
+                }
+            },
+        )
+
+        self.assertEqual(hydrated.base_url, "https://codex.ciii.club")
+        self.assertEqual(hydrated.api_key, "sk-from-account")
+        self.assertTrue(hydrated.use_account_credentials)
+
+    def test_account_credentials_do_not_override_manual_values(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="sub2api",
+            base_url="https://manual.example.com",
+            api_key="sk-manual",
+            use_account_credentials=True,
+        )
+        hydrated = apply_account_credentials(
+            config,
+            {
+                "credentials": {
+                    "base_url": "https://codex.ciii.club",
+                    "api_key": "sk-from-account",
+                }
+            },
+        )
+
+        self.assertEqual(hydrated.base_url, "https://manual.example.com")
+        self.assertEqual(hydrated.api_key, "sk-manual")
 
     def test_newapi_query_uses_access_token_user_id_and_converts_quota(self) -> None:
         requests: list[dict[str, Any]] = []

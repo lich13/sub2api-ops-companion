@@ -173,6 +173,8 @@ def fallback_account(db: Database, account_id: int, load_factor_supported: bool 
           name,
           platform,
           type,
+          credentials,
+          extra,
           status,
           schedulable,
           priority AS account_priority,

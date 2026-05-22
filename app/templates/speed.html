@@ -72,8 +72,6 @@
         <summary>选择列</summary>
         <div class="column-list" data-column-picker="account-speed">
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="account" checked />账号</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="state" checked />状态</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="priority" checked />优先级</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="traffic" checked />窗口样本</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token（秒）</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时（秒）</label>
@@ -91,8 +89,6 @@
       <thead>
         <tr>
           <th data-col="account">账号</th>
-          <th data-col="state">状态</th>
-          <th data-col="priority">优先级</th>
           <th data-col="traffic">窗口样本</th>
           <th data-col="first-token">首 Token（秒）</th>
           <th data-col="duration">平均耗时（秒）</th>
@@ -109,20 +105,6 @@
               <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
               <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
               <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
-            </td>
-            <td data-col="state">
-              {% if row.schedulable %}
-                <span class="pill good">可调度</span>
-              {% else %}
-                <span class="pill bad">已停</span>
-              {% endif %}
-              {% if row.temp_unschedulable_until %}
-                <div class="cell-sub mono">{{ row.temp_unschedulable_until | bj_time }}</div>
-              {% endif %}
-            </td>
-            <td data-col="priority" class="mono">
-              <div class="priority-main">G{{ row.group_priority }} / P{{ row.account_priority }}</div>
-              <div class="cell-sub tiny">account P{{ row.account_priority }}</div>
             </td>
             <td data-col="traffic">
               <div class="traffic-pair">
@@ -181,7 +163,7 @@
             </td>
           </tr>
           <tr class="usage-query-detail-row">
-            <td data-col="quota" colspan="10">
+            <td data-col="quota" colspan="8">
               <details class="usage-query-config">
                 <summary>{{ '编辑额度查询' if usage.configured else '配置额度查询' }} #{{ row.id }}</summary>
                 <form class="usage-query-form" method="post" action="{{ base_path }}/usage-query/accounts/{{ row.id }}" autocomplete="off">
@@ -189,6 +171,10 @@
                   <label class="checkbox-label usage-query-toggle">
                     <input type="checkbox" name="enabled" value="1" {{ 'checked' if cfg.enabled else '' }} />
                     启用查询
+                  </label>
+                  <label class="checkbox-label usage-query-account-credentials-toggle">
+                    <input type="checkbox" name="use_account_credentials" value="1" {{ 'checked' if cfg.use_account_credentials else '' }} />
+                    读取账号 Base URL / API Key
                   </label>
                   <label>模板
                     <select class="usage-query-template-select" name="template_type">
