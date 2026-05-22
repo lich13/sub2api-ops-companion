@@ -53,6 +53,7 @@ class TelegramOpsBot:
         if not self.enabled:
             return
 
+        await self.sync_commands()
         offset = 0
         while True:
             try:
@@ -82,6 +83,18 @@ class TelegramOpsBot:
             return
         for chat_id in await self.allowed_chat_ids():
             await self._send_message(chat_id, text, keyboard)
+
+    async def sync_commands(self) -> None:
+        if not self.enabled:
+            return
+        await self._api(
+            "setMyCommands",
+            {
+                "commands": [
+                    {"command": "quota", "description": "查询账号额度"},
+                ]
+            },
+        )
 
     async def notify_account_alerts(self, title: str, actions: list[dict[str, Any]]) -> None:
         if not self.enabled:
@@ -518,9 +531,8 @@ class TelegramOpsBot:
         if not configs:
             return "没有启用额度查询的账号。请先在速度页为账号开启额度查询。", None
 
-        lines = ["额度查询"]
-        failed = 0
-        snapshot_count = 0
+        account_lines: list[str] = []
+        totals: dict[str, float] = {}
         for config in configs[:30]:
             row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
             hydrated = apply_account_credentials(config, row)
@@ -528,22 +540,22 @@ class TelegramOpsBot:
             result = await self._execute_quota_query(hydrated)
             if result.get("success"):
                 store.save_result(config.account_id, result)
-                lines.append(format_quota_line(hydrated, row, result))
+                account_lines.append(format_quota_line(hydrated, row, result))
+                add_quota_total(totals, quota_available(result, hydrated), str(result.get("unit") or ""))
                 continue
             if previous.get("success"):
-                snapshot_count += 1
-                lines.append(format_quota_line(hydrated, row, previous, "快照"))
+                account_lines.append(format_quota_line(hydrated, row, previous))
+                add_quota_total(totals, quota_available(previous, hydrated), str(previous.get("unit") or ""))
                 continue
             store.save_result(config.account_id, result)
-            if not result.get("success"):
-                failed += 1
-            lines.append(format_quota_line(hydrated, row, result))
+            account_lines.append(format_quota_line(hydrated, row, result))
+        lines = [
+            "额度查询",
+            f"总可用：{format_quota_totals(totals)}",
+            *account_lines,
+        ]
         if len(configs) > 30:
             lines.append(f"... 另有 {len(configs) - 30} 个已启用账号未展开")
-        if snapshot_count:
-            lines.append(f"沿用快照：{snapshot_count} 个")
-        if failed:
-            lines.append(f"失败：{failed} 个")
         return "\n".join(lines), None
 
     async def _execute_quota_query(self, config: UsageQueryConfig) -> dict[str, Any]:
@@ -876,26 +888,40 @@ def format_quota_line(
     config: UsageQueryConfig,
     row: dict[str, Any] | None,
     result: dict[str, Any],
-    suffix: str = "",
 ) -> str:
     account_id = int((row or {}).get("id") or config.account_id)
     account_name = str((row or {}).get("name") or "-")
     prefix = f"#{account_id} {account_name}"
     if not result.get("success"):
-        return f"{prefix}：查询失败，{truncate(str(result.get('error') or '未知错误'), 160)}"
+        return f"{prefix}：可用 -"
 
     unit = str(result.get("unit") or "")
-    available = result.get("actual_available")
-    total = actual_available(result.get("total"), result.get("upstream_multiplier") or config.upstream_multiplier)
-    parts = [
-        f"{prefix}：可用 {format_quota_amount(available, unit)}",
-        f"总额 {format_quota_amount(total, unit)}",
-    ]
-    if result.get("plan_name"):
-        parts.append(str(result.get("plan_name")))
-    if suffix:
-        parts.append(suffix)
-    return " / ".join(parts)
+    return f"{prefix}：可用 {format_quota_amount(quota_available(result, config), unit)}"
+
+
+def quota_available(result: dict[str, Any], config: UsageQueryConfig) -> float | None:
+    recalculated = actual_available(result.get("remaining"), config.upstream_multiplier)
+    if recalculated is not None:
+        return recalculated
+    value = result.get("actual_available")
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def add_quota_total(totals: dict[str, float], value: float | None, unit: str) -> None:
+    if value is None:
+        return
+    totals[unit] = totals.get(unit, 0.0) + value
+
+
+def format_quota_totals(totals: dict[str, float]) -> str:
+    if not totals:
+        return "-"
+    return " / ".join(format_quota_amount(value, unit) for unit, value in sorted(totals.items()))
 
 
 def format_quota_amount(value: Any, unit: str) -> str:

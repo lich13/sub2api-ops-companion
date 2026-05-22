@@ -327,6 +327,7 @@ class GuardMainTests(unittest.TestCase):
 
     def test_usage_query_guard_pauses_depleted_non_oauth_account(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_auto_query_interval_minutes(60)
         store.save_config(
             UsageQueryConfig(
                 account_id=9,
@@ -362,6 +363,50 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(paused[0][0], 9)
         self.assertIn("usage query depleted", paused[0][1])
         self.assertEqual(store.result(9)["actual_available"], 0)
+
+    def test_usage_query_guard_uses_global_auto_query_interval(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_auto_query_interval_minutes(0)
+        store.save_config(
+            UsageQueryConfig(
+                account_id=9,
+                enabled=True,
+                guard_disable_on_zero=True,
+                auto_query_interval_minutes=60,
+            )
+        )
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+
+        def unexpected_query(_config: Any) -> dict[str, Any]:
+            raise AssertionError("global interval 0 should disable automatic usage query refresh")
+
+        main_module.execute_usage_query = unexpected_query  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(store.result(9), {})
+
+    def test_usage_query_view_recalculates_actual_available_with_current_multiplier(self) -> None:
+        view = main_module.usage_query_view(
+            UsageQueryConfig(account_id=9, enabled=True, upstream_multiplier=0.06),
+            {
+                "success": True,
+                "remaining": 28.6806749,
+                "actual_available": 28.6806749,
+                "upstream_multiplier": 1.0,
+                "unit": "USD",
+            },
+        )
+
+        self.assertAlmostEqual(view["result"]["actual_available"], 478.01124833333336)
+        self.assertEqual(view["result"]["upstream_multiplier"], 0.06)
 
     def test_usage_query_guard_skips_oauth_accounts(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)

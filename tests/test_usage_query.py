@@ -14,6 +14,7 @@ from app.usage_query import (
     UsageQueryStore,
     apply_account_credentials,
     execute_usage_query,
+    fill_account_credentials,
     is_query_due,
     should_pause_for_depleted,
 )
@@ -127,6 +128,29 @@ class UsageQueryTests(unittest.TestCase):
         self.assertEqual(hydrated.base_url, "https://manual.example.com")
         self.assertEqual(hydrated.api_key, "sk-manual")
 
+    def test_fill_account_credentials_overwrites_form_values_from_database(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="sub2api",
+            base_url="https://old.example.com",
+            api_key="sk-old",
+            use_account_credentials=False,
+        )
+        filled = fill_account_credentials(
+            config,
+            {
+                "credentials": {
+                    "base_url": "https://codex.ciii.club",
+                    "api_key": "sk-from-account",
+                }
+            },
+        )
+
+        self.assertEqual(filled.base_url, "https://codex.ciii.club")
+        self.assertEqual(filled.api_key, "sk-from-account")
+        self.assertFalse(filled.use_account_credentials)
+
     def test_legacy_default_sub2api_template_is_upgraded(self) -> None:
         legacy_template = """({
     request: {
@@ -230,6 +254,7 @@ class UsageQueryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "usage-query-state.json"
             store = UsageQueryStore(str(path))
+            store.save_auto_query_interval_minutes(15)
             store.save_config(
                 UsageQueryConfig(
                     account_id=9,
@@ -248,6 +273,7 @@ class UsageQueryTests(unittest.TestCase):
 
             self.assertEqual(reloaded.config(9).api_key, "secret")
             self.assertEqual(reloaded.config(9).upstream_multiplier, 0.5)
+            self.assertEqual(reloaded.auto_query_interval_minutes(), 15)
             self.assertEqual(reloaded.result(9)["actual_available"], 2)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
@@ -270,11 +296,20 @@ class UsageQueryTests(unittest.TestCase):
         now = datetime(2026, 5, 22, 8, 0, tzinfo=timezone.utc)
 
         self.assertTrue(is_query_due(config, {}, now))
+        self.assertFalse(is_query_due(config, {}, now, interval_minutes=0))
         self.assertFalse(
             is_query_due(
                 config,
                 {"queried_at": "2026-05-22T07:45:00+00:00"},
                 now,
+            )
+        )
+        self.assertTrue(
+            is_query_due(
+                UsageQueryConfig(account_id=9, enabled=True, auto_query_interval_minutes=1440),
+                {"queried_at": "2026-05-22T07:44:59+00:00"},
+                now,
+                interval_minutes=15,
             )
         )
         self.assertTrue(

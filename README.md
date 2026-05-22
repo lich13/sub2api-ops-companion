@@ -124,7 +124,7 @@ https://你的-sub2api-域名/sub2ops/sso/start
 /pair ABCD-EFGH
 ```
 
-不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram 侧不再提供账号命令菜单，但已配对会话可发送 `/quota`、`/usage` 或 `额度`，立即查询所有已启用额度查询的账号，并逐行返回可用额度和总额度。后台会按 `ops_error_logs.id` 做增量扫描，默认每 2 秒检查一次新错误链路，每批最多处理 50 条错误日志；首次启动只记录当前最大 id，避免历史错误刷屏。之后每条带账号的错误链路会推送到当前绑定的 Telegram 会话，并在消息下方附加“暂停”“冷却 5m”“冷却 15m”“冷却 30m”“恢复”“查看详情”等账号操作按钮。
+不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram Bot 会注册 `/quota` 命令菜单；已配对会话可发送 `/quota`、`/usage` 或 `额度`，立即查询所有已启用额度查询的账号，并返回总可用额度和分账号可用额度。后台会按 `ops_error_logs.id` 做增量扫描，默认每 2 秒检查一次新错误链路，每批最多处理 50 条错误日志；首次启动只记录当前最大 id，避免历史错误刷屏。之后每条带账号的错误链路会推送到当前绑定的 Telegram 会话，并在消息下方附加“暂停”“冷却 5m”“冷却 15m”“冷却 30m”“恢复”“查看详情”等账号操作按钮。
 
 如果 Sub2API 定时测试计划开启了 `auto_recover`，companion 会按 `scheduled_test_results.id` 增量读取成功结果；只要账号当时仍有停调度、rate-limit、overload、临时不可调度或错误状态，就会清理这些运行态并推送“账号已自动恢复”通知，消息下方附带同样的账号操作按钮。
 
@@ -135,11 +135,12 @@ https://你的-sub2api-域名/sub2ops/sso/start
 - `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}` 和 `User-Agent: cc-switch/1.0`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段；若接口没有直接返回 `total`，会尝试用 `remaining + usage.total.actual_cost/cost` 推导总额。
 - `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}`，把 `quota`、`used_quota` 除以 `500000` 后展示为 USD。
 - `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
-- 勾选“读取账号 Base URL / API Key”后，查询时会直接读取 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key`；表单里手动填写的 Base URL/API Key 优先级更高。
-- `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。
-- 开启“可用量≤0 时 Auto Guard 硬停”后，后台 Guard 会按账号配置的自动查询间隔刷新额度；只有查询成功且实际可用量小于等于 `0`，才会把非 OAuth 账号硬停调度。查询失败只保存失败快照，不会当作额度耗尽处理。
+- 点击“从账号读取 Base URL / API Key”会从 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key` 读取并保存到当前额度查询配置。
+- `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。面板会按当前配置倍率重新计算旧快照的实际可用量。
+- 自动查询间隔是速度页顶部的全局设置，后台 Guard 对所有启用额度查询的账号使用同一个间隔。
+- 开启“可用量≤0 时 Auto Guard 硬停”后，后台 Guard 会按全局自动查询间隔刷新额度；只有查询成功且实际可用量小于等于 `0`，才会把非 OAuth 账号硬停调度。查询失败只保存失败快照，不会当作额度耗尽处理。
 
-密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件或上游账号 `credentials` 中，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。若接口没有返回总额度且无法从已用量推导，面板和 Telegram 会把总额显示为 `-`。
+密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件或上游账号 `credentials` 中，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。Telegram `/quota` 只展示总可用额度和分账号可用额度。
 
 ## 定时恢复
 

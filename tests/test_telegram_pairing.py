@@ -126,9 +126,11 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIsNone(keyboard)
             self.assertIn("额度查询", reply)
+            self.assertIn("总可用：25 USD", reply)
             self.assertIn("#7 quota-account", reply)
             self.assertIn("可用 25 USD", reply)
-            self.assertIn("总额 40 USD", reply)
+            self.assertNotIn("总额", reply)
+            self.assertNotIn("wallet", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
 
     async def test_quota_command_reports_no_enabled_configs(self) -> None:
@@ -235,9 +237,33 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             reply, keyboard = await bot._text_reply(100, 200, "/quota")
 
             self.assertIsNone(keyboard)
-            self.assertIn("沿用快照：1 个", reply)
-            self.assertIn("#7 snapshot-account：可用 25 USD / 总额 40 USD / wallet / 快照", reply)
+            self.assertIn("总可用：25 USD", reply)
+            self.assertIn("#7 snapshot-account：可用 25 USD", reply)
+            self.assertNotIn("总额", reply)
+            self.assertNotIn("wallet", reply)
+            self.assertNotIn("快照", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["success"], True)
+
+    async def test_sync_commands_registers_quota_menu_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            calls: list[tuple[str, dict[str, Any]]] = []
+
+            class FakeBot(TelegramOpsBot):
+                async def _api(
+                    self,
+                    method: str,
+                    payload: dict[str, Any],
+                    timeout: int = 15,
+                ) -> dict[str, Any]:
+                    calls.append((method, payload))
+                    return {"ok": True, "result": True}
+
+            bot = FakeBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            await bot.sync_commands()
+
+            self.assertEqual(calls[0][0], "setMyCommands")
+            self.assertIn({"command": "quota", "description": "查询账号额度"}, calls[0][1]["commands"])
 
     def test_account_action_keyboard_has_only_direct_account_actions(self) -> None:
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})

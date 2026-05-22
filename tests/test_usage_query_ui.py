@@ -20,10 +20,13 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn('colspan="8"', template)
         self.assertIn('action="{{ base_path }}/usage-query/accounts/{{ row.id }}"', template)
         self.assertIn('name="template_type"', template)
-        self.assertIn('name="use_account_credentials"', template)
+        self.assertNotIn('name="use_account_credentials"', template)
+        self.assertIn('formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/fill-credentials"', template)
         self.assertIn('name="upstream_multiplier"', template)
         self.assertIn('name="guard_disable_on_zero"', template)
         self.assertIn('formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query"', template)
+        self.assertIn('action="{{ base_path }}/usage-query/settings"', template)
+        self.assertIn('name="auto_query_interval_minutes"', template)
 
     def test_usage_query_styles_are_scoped_to_speed_quota_ui(self) -> None:
         style = (REPO_ROOT / "app" / "static" / "style.css").read_text(encoding="utf-8")
