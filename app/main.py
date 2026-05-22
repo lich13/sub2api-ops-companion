@@ -6,6 +6,7 @@ import hmac
 import time
 import asyncio
 import json
+import math
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -73,6 +74,16 @@ from .sso_config import (
 from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
 from .time_range import build_time_range, clean_query_string, rolling_hours_range
+from .usage_query import (
+    TEMPLATE_LABELS,
+    UsageQueryConfig,
+    UsageQueryStore,
+    default_template,
+    execute_usage_query,
+    is_query_due,
+    public_config,
+    should_pause_for_depleted,
+)
 from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
 
 settings = load_settings()
@@ -135,9 +146,21 @@ def integer_with_commas(value: Any) -> str:
         return "0"
 
 
+def quota_number(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    text = f"{parsed:,.4f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
 templates.env.filters["bj_time"] = beijing_time
 templates.env.filters["bj_after"] = beijing_time_after_seconds
 templates.env.filters["int_commas"] = integer_with_commas
+templates.env.filters["quota"] = quota_number
 
 
 @asynccontextmanager
@@ -383,6 +406,75 @@ def load_quality(
     )
 
 
+def usage_query_store() -> UsageQueryStore:
+    return UsageQueryStore(settings.usage_query_state_path)
+
+
+def usage_query_account_row(account_id: int) -> dict[str, Any] | None:
+    return account_ops.fallback_account(db, int(account_id), account_routing_capability()["load_factor"])
+
+
+def usage_template_options(selected: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "value": value,
+            "label": label,
+            "selected": value == selected,
+            "default_code": default_template(value),
+        }
+        for value, label in TEMPLATE_LABELS.items()
+    ]
+
+
+def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[str, Any]:
+    public = public_config(config)
+    public["default_code"] = default_template(config.template_type)
+    return {
+        "configured": bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token),
+        "config": public,
+        "result": result,
+        "template_options": usage_template_options(config.template_type),
+        "depleted": should_pause_for_depleted(result),
+    }
+
+
+def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, Any]:
+    return {
+        "user": user,
+        "account_id": config.account_id,
+        "enabled": config.enabled,
+        "template_type": config.template_type,
+        "base_url": config.base_url,
+        "api_key_set": bool(config.api_key),
+        "access_token_set": bool(config.access_token),
+        "user_id_set": bool(config.user_id),
+        "timeout_seconds": config.timeout_seconds,
+        "upstream_multiplier": config.upstream_multiplier,
+        "guard_disable_on_zero": config.guard_disable_on_zero,
+        "auto_query_interval_minutes": config.auto_query_interval_minutes,
+    }
+
+
+def enrich_usage_query_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    store = usage_query_store()
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        account_id = int(row.get("id") or 0)
+        item = dict(row)
+        item["usage_query"] = usage_query_view(store.config(account_id), store.result(account_id))
+        enriched.append(item)
+    return enriched
+
+
+def usage_query_dashboard(rows: list[dict[str, Any]]) -> dict[str, int]:
+    query_rows = [row.get("usage_query") or {} for row in rows]
+    return {
+        "configured_count": sum(1 for item in query_rows if item.get("configured")),
+        "enabled_count": sum(1 for item in query_rows if (item.get("config") or {}).get("enabled")),
+        "depleted_count": sum(1 for item in query_rows if item.get("depleted")),
+    }
+
+
 def guard_signal_params() -> dict[str, Any]:
     hours = int_param(str(getattr(settings, "guard_quality_hours", 24)), 24, 1, 720)
     return {
@@ -406,6 +498,49 @@ def load_guard_queue_quality() -> list[dict[str, Any]]:
 
 def form_truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def redirect_with_msg(location: str, message: str) -> RedirectResponse:
+    target = safe_next(location)
+    separator = "&" if "?" in target else "?"
+    return RedirectResponse(f"{target}{separator}msg={quote(message)}", status_code=303)
+
+
+def usage_query_config_from_form(
+    account_id: int,
+    raw: dict[str, Any],
+    existing: UsageQueryConfig,
+    user: str,
+) -> UsageQueryConfig:
+    template_type = str(raw.get("template_type") or existing.template_type or "sub2api")
+    api_key = str(raw.get("api_key") or "").strip()
+    access_token = str(raw.get("access_token") or "").strip()
+    selected_template = template_type.strip().lower()
+    return UsageQueryConfig(
+        account_id=account_id,
+        enabled=form_truthy(raw.get("enabled")),
+        template_type=template_type,
+        code=str(raw.get("code") or "").strip() or default_template(template_type),
+        base_url=str(raw.get("base_url") or "").strip(),
+        api_key=api_key or (existing.api_key if existing.template_type == selected_template else ""),
+        access_token=access_token or (existing.access_token if existing.template_type == selected_template else ""),
+        user_id=str(raw.get("user_id") or "").strip(),
+        timeout_seconds=int_param(str(raw.get("timeout_seconds")), 10, 2, 30),
+        upstream_multiplier=float_param(raw.get("upstream_multiplier"), 1.0, 0.0001, 1_000_000.0),
+        guard_disable_on_zero=form_truthy(raw.get("guard_disable_on_zero")),
+        auto_query_interval_minutes=int_param(str(raw.get("auto_query_interval_minutes")), 60, 0, 1440),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def float_param(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(parsed):
+        return default
+    return max(minimum, min(maximum, parsed))
 
 
 def scheduled_test_capability() -> dict[str, Any]:
@@ -819,6 +954,68 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
     return applied
 
 
+def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
+    store = usage_query_store()
+    actions: list[dict[str, Any]] = []
+    checked_count = 0
+    queried_count = 0
+    skipped_oauth_count = 0
+    for config in store.configs():
+        if not config.enabled or not config.guard_disable_on_zero:
+            continue
+        row = usage_query_account_row(config.account_id)
+        if not row:
+            continue
+        if is_oauth_account(row):
+            skipped_oauth_count += 1
+            continue
+        if not row.get("schedulable", True):
+            continue
+        checked_count += 1
+        result = store.result(config.account_id)
+        if is_query_due(config, result):
+            result = execute_usage_query(config)
+            store.save_result(config.account_id, result)
+            queried_count += 1
+        if not should_pause_for_depleted(result):
+            continue
+        reason = (
+            "auto guard: usage query depleted; manual resume required; "
+            f"remaining={result.get('remaining')}; "
+            f"multiplier={result.get('upstream_multiplier')}; "
+            f"available={result.get('actual_available')} {result.get('unit') or ''}".strip()
+        )
+        updated = account_ops.guard_pause_account(db, config.account_id, reason)
+        if not updated:
+            continue
+        action = {
+            "account_id": config.account_id,
+            "name": updated.get("name") or row.get("name"),
+            "action": "pause",
+            "reason": reason,
+            "updated": updated,
+            "actor": actor,
+            "remaining": result.get("remaining"),
+            "actual_available": result.get("actual_available"),
+            "unit": result.get("unit"),
+            "upstream_multiplier": result.get("upstream_multiplier"),
+        }
+        write_audit(settings.audit_path, "guard_auto_usage_query_pause_account", action)
+        actions.append(action)
+    write_audit(
+        settings.audit_path,
+        "guard_auto_usage_query_scan",
+        {
+            "actor": actor,
+            "checked_count": checked_count,
+            "queried_count": queried_count,
+            "skipped_oauth_count": skipped_oauth_count,
+            "action_count": len(actions),
+        },
+    )
+    return actions
+
+
 def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     guard_state["running"] = True
     guard_state["last_error"] = ""
@@ -826,7 +1023,8 @@ def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     try:
         incremental_actions = guard_engine().run_once(actor)
         balance_actions = run_guard_balance_fallback(actor)
-        actions = [*incremental_actions, *balance_actions]
+        usage_actions = run_usage_query_guard(actor)
+        actions = [*incremental_actions, *balance_actions, *usage_actions]
         guard_state.update(
             {
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
@@ -1331,9 +1529,11 @@ def speed_view(
     groups = load_groups()
     group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     selected_range = build_time_range(time_range, start_date, end_date, hours)
-    rows = sort_speed_rows(
+    rows = enrich_usage_query_rows(sort_speed_rows(
         load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
-    )
+    ))
+    dashboard = build_speed_dashboard(rows)
+    dashboard.update(usage_query_dashboard(rows))
     return render(
         request,
         "speed.html",
@@ -1345,10 +1545,87 @@ def speed_view(
             "group_selection": group_selection,
             "platform": platform,
             "time_range": selected_range,
-            "dashboard": build_speed_dashboard(rows),
+            "dashboard": dashboard,
+            "return_to": f"{settings.base_path}/speed"
+            + (f"?{request.url.query}" if request.url.query else ""),
             "msg": msg,
         },
     )
+
+
+@app.post("/usage-query/accounts/{account_id}")
+async def usage_query_config_save(request: Request, user: AuthUser, account_id: int) -> Response:
+    form = await request.form()
+    raw = dict(form)
+    return_to = str(raw.get("return_to") or f"{settings.base_path}/speed")
+    store = usage_query_store()
+    config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
+    store.save_config(config)
+    write_audit(settings.audit_path, "usage_query_config_save", usage_query_audit_payload(config, user))
+    return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置")
+
+
+@app.post("/usage-query/accounts/{account_id}/query")
+async def usage_query_account_query(request: Request, user: AuthUser, account_id: int) -> Response:
+    form = await request.form()
+    raw = dict(form)
+    return_to = str(raw.get("return_to") or f"{settings.base_path}/speed")
+    store = usage_query_store()
+    config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
+    store.save_config(config)
+    result = execute_usage_query(config)
+    store.save_result(account_id, result)
+    write_audit(
+        settings.audit_path,
+        "usage_query_account_query",
+        {
+            **usage_query_audit_payload(config, user),
+            "success": result.get("success"),
+            "remaining": result.get("remaining"),
+            "actual_available": result.get("actual_available"),
+            "error": result.get("error") if not result.get("success") else "",
+        },
+    )
+    if result.get("success"):
+        return redirect_with_msg(return_to, f"账号 #{account_id} 额度查询成功")
+    return redirect_with_msg(return_to, f"账号 #{account_id} 额度查询失败：{result.get('error') or '未知错误'}")
+
+
+@app.post("/usage-query/accounts/{account_id}/delete")
+async def usage_query_config_delete(
+    user: AuthUser,
+    account_id: int,
+    return_to: str = Form("/speed"),
+) -> Response:
+    usage_query_store().delete_config(account_id)
+    write_audit(settings.audit_path, "usage_query_config_delete", {"user": user, "account_id": account_id})
+    return redirect_with_msg(return_to, f"已移除账号 #{account_id} 的额度查询配置")
+
+
+@app.post("/usage-query/query-enabled")
+async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/speed")) -> Response:
+    store = usage_query_store()
+    queried = 0
+    failed = 0
+    skipped_oauth = 0
+    for config in store.configs():
+        if not config.enabled:
+            continue
+        row = usage_query_account_row(config.account_id)
+        if row and is_oauth_account(row):
+            skipped_oauth += 1
+            continue
+        result = execute_usage_query(config)
+        store.save_result(config.account_id, result)
+        queried += 1
+        if not result.get("success"):
+            failed += 1
+    write_audit(
+        settings.audit_path,
+        "usage_query_batch_query",
+        {"user": user, "queried": queried, "failed": failed, "skipped_oauth": skipped_oauth},
+    )
+    return redirect_with_msg(return_to, f"已查询 {queried} 个已启用账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个")
 
 
 @app.get("/scheduled-tests", response_class=HTMLResponse)

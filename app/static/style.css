@@ -1136,6 +1136,10 @@ dd {
   word-break: keep-all;
 }
 
+.account-table [data-col="quota"] {
+  min-width: 260px;
+}
+
 .account-table [data-col="first-token"],
 .account-table [data-col="duration"],
 .account-table [data-col="token-speed"] {
@@ -2588,6 +2592,127 @@ dd {
   font-weight: 600;
 }
 
+.quota-cell {
+  min-width: 260px;
+  max-width: 420px;
+  vertical-align: top;
+}
+
+.usage-query-detail-row td {
+  padding: 0 14px 14px 254px;
+  background: #fbfcfb;
+}
+
+.quota-snapshot {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+}
+
+.quota-snapshot strong {
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.15;
+  font-weight: 750;
+}
+
+.quota-error {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 340px;
+  line-height: 1.4;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.usage-query-config {
+  margin-top: 10px;
+}
+
+.usage-query-config > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 8px;
+  padding: 4px 9px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.usage-query-config > summary::-webkit-details-marker {
+  display: none;
+}
+
+.usage-query-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(118px, 1fr));
+  gap: 10px;
+  width: min(980px, calc(100vw - 96px));
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfb;
+  box-shadow: var(--shadow);
+}
+
+.usage-query-form label {
+  min-width: 0;
+}
+
+.usage-query-form input,
+.usage-query-form select,
+.usage-query-form textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.usage-query-template-select {
+  font-weight: 700;
+}
+
+.usage-query-toggle,
+.usage-query-guard-toggle {
+  align-self: end;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--surface);
+}
+
+.usage-query-code {
+  grid-column: 1 / -1;
+}
+
+.usage-query-code textarea {
+  min-height: 180px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: #111827;
+  background: var(--surface);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  resize: vertical;
+}
+
+.usage-query-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.usage-query-actions button {
+  min-height: 34px;
+}
+
 .error-stack {
   display: grid;
   gap: 5px;
@@ -3289,8 +3414,17 @@ pre {
   }
 
   .guard-policy-grid,
-  .routing-mini-form {
+  .routing-mini-form,
+  .usage-query-form {
     grid-template-columns: 1fr;
+  }
+
+  .usage-query-form {
+    width: min(720px, calc(100vw - 64px));
+  }
+
+  .usage-query-detail-row td {
+    padding-left: 14px;
   }
 
   .guard-whitelist-field {
