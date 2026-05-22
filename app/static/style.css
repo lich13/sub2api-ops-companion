@@ -2677,7 +2677,6 @@ dd {
 }
 
 .usage-query-toggle,
-.usage-query-account-credentials-toggle,
 .usage-query-guard-toggle {
   align-self: end;
   min-height: 38px;
@@ -2685,6 +2684,20 @@ dd {
   border-radius: 8px;
   padding: 0 10px;
   background: var(--surface);
+}
+
+.usage-query-global-settings {
+  display: inline-flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.usage-query-global-settings label {
+  min-width: 150px;
+}
+
+.usage-query-global-settings input {
+  width: 96px;
 }
 
 .usage-query-code {
