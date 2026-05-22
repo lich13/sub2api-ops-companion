@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import inspect
 import tempfile
@@ -327,12 +328,16 @@ class GuardMainTests(unittest.TestCase):
 
     def test_usage_query_guard_pauses_depleted_non_oauth_account(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
-        store.save_auto_query_interval_minutes(60)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=True,
+            auto_query_interval_seconds=3600,
+        )
         store.save_config(
             UsageQueryConfig(
                 account_id=9,
-                enabled=True,
-                guard_disable_on_zero=True,
+                enabled=False,
+                guard_disable_on_zero=False,
                 upstream_multiplier=0.5,
                 auto_query_interval_minutes=60,
             )
@@ -364,14 +369,14 @@ class GuardMainTests(unittest.TestCase):
         self.assertIn("usage query depleted", paused[0][1])
         self.assertEqual(store.result(9)["actual_available"], 0)
 
-    def test_usage_query_guard_uses_global_auto_query_interval(self) -> None:
+    def test_usage_query_guard_uses_global_auto_query_interval_seconds(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
-        store.save_auto_query_interval_minutes(0)
+        store.save_usage_query_settings(auto_query_interval_seconds=0)
         store.save_config(
             UsageQueryConfig(
                 account_id=9,
-                enabled=True,
-                guard_disable_on_zero=True,
+                enabled=False,
+                guard_disable_on_zero=False,
                 auto_query_interval_minutes=60,
             )
         )
@@ -392,6 +397,121 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(actions, [])
         self.assertEqual(store.result(9), {})
+
+    def test_usage_query_guard_respects_global_query_enabled_switch(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=False)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+
+        def unexpected_query(_config: Any) -> dict[str, Any]:
+            raise AssertionError("global query switch should disable automatic usage queries")
+
+        main_module.execute_usage_query = unexpected_query  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(store.result(9), {})
+
+    def test_usage_query_guard_refreshes_but_does_not_pause_when_global_hard_stop_is_off(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=False,
+            auto_query_interval_seconds=1,
+        )
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
+        paused: list[int] = []
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
+            "success": True,
+            "remaining": 0,
+            "actual_available": 0,
+            "queried_at": "2026-05-22T08:00:00+00:00",
+        }
+        main_module.account_ops.guard_pause_account = lambda _db, account_id, _reason: paused.append(account_id)  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(paused, [])
+        self.assertEqual(store.result(9)["actual_available"], 0)
+
+    def test_usage_query_config_save_queries_and_preserves_return_anchor(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
+            "success": True,
+            "remaining": 3,
+            "actual_available": 6,
+            "queried_at": "2026-05-22T08:00:00+00:00",
+        }
+
+        class FakeRequest:
+            async def form(self) -> dict[str, str]:
+                return {
+                    "return_to": "/sub2ops/speed?group=default#usage-query-9",
+                    "template_type": "sub2api",
+                    "base_url": "https://quota.example.com",
+                    "api_key": "secret",
+                    "upstream_multiplier": "0.5",
+                    "timeout_seconds": "10",
+                }
+
+        response = asyncio.run(main_module.usage_query_config_save(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
+
+        self.assertEqual(store.result(9)["actual_available"], 6)
+        self.assertTrue(store.config(9).enabled)
+        self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
+        self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
+
+    def test_usage_query_settings_save_persists_global_switches_and_seconds(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+
+        class FakeForm(dict[str, str]):
+            def __init__(self) -> None:
+                super().__init__(
+                    {
+                        "return_to": "/sub2ops/speed",
+                        "usage_query_enabled": "0",
+                        "guard_disable_on_zero": "0",
+                        "auto_query_interval_seconds": "30",
+                    }
+                )
+
+            def getlist(self, name: str) -> list[str]:
+                return [self[name]] if name in self else []
+
+        class FakeRequest:
+            async def form(self) -> FakeForm:
+                return FakeForm()
+
+        response = asyncio.run(main_module.usage_query_settings_save(FakeRequest(), "tester"))  # type: ignore[arg-type]
+
+        self.assertFalse(store.usage_query_enabled())
+        self.assertFalse(store.guard_disable_on_zero())
+        self.assertEqual(store.auto_query_interval_seconds(), 30)
+        self.assertIn("/sub2ops/speed?msg=", response.headers["location"])
 
     def test_usage_query_view_recalculates_actual_available_with_current_multiplier(self) -> None:
         view = main_module.usage_query_view(

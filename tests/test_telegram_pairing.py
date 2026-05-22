@@ -94,7 +94,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             store.save_config(
                 UsageQueryConfig(
                     account_id=7,
-                    enabled=True,
+                    enabled=False,
                     template_type="custom",
                     code="""({
   request: {url: "https://quota.example.com/7", method: "GET", headers: {}},
@@ -133,7 +133,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("wallet", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
 
-    async def test_quota_command_reports_no_enabled_configs(self) -> None:
+    async def test_quota_command_reports_no_configured_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             settings = make_settings(str(Path(tmpdir) / "state.json"))
             settings.usage_query_state_path = str(Path(tmpdir) / "usage-query-state.json")
@@ -142,7 +142,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             reply, keyboard = await bot._text_reply(100, 200, "额度")
 
             self.assertIsNone(keyboard)
-            self.assertIn("没有启用额度查询", reply)
+            self.assertIn("没有配置额度查询", reply)
 
     async def test_quota_command_uses_last_success_snapshot_when_live_query_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

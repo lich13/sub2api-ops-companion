@@ -12,7 +12,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
@@ -444,12 +444,16 @@ def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[s
             display_result["actual_available"] = recalculated
             display_result["upstream_multiplier"] = config.upstream_multiplier
     return {
-        "configured": bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token),
+        "configured": usage_query_configured(config),
         "config": public,
         "result": display_result,
         "template_options": usage_template_options(config.template_type),
         "depleted": should_pause_for_depleted(display_result),
     }
+
+
+def usage_query_configured(config: UsageQueryConfig) -> bool:
+    return bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token)
 
 
 def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, Any]:
@@ -479,18 +483,24 @@ def enrich_usage_query_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return enriched
 
 
-def usage_query_dashboard(rows: list[dict[str, Any]]) -> dict[str, int]:
+def usage_query_dashboard(rows: list[dict[str, Any]], store: UsageQueryStore | None = None) -> dict[str, int]:
+    active_store = store or usage_query_store()
     query_rows = [row.get("usage_query") or {} for row in rows]
+    configured_count = sum(1 for item in query_rows if item.get("configured"))
     return {
-        "configured_count": sum(1 for item in query_rows if item.get("configured")),
-        "enabled_count": sum(1 for item in query_rows if (item.get("config") or {}).get("enabled")),
+        "configured_count": configured_count,
+        "enabled_count": configured_count if active_store.usage_query_enabled() else 0,
         "depleted_count": sum(1 for item in query_rows if item.get("depleted")),
     }
 
 
-def usage_query_settings(store: UsageQueryStore | None = None) -> dict[str, int]:
+def usage_query_settings(store: UsageQueryStore | None = None) -> dict[str, Any]:
     active_store = store or usage_query_store()
-    return {"auto_query_interval_minutes": active_store.auto_query_interval_minutes()}
+    return {
+        "usage_query_enabled": active_store.usage_query_enabled(),
+        "guard_disable_on_zero": active_store.guard_disable_on_zero(),
+        "auto_query_interval_seconds": active_store.auto_query_interval_seconds(),
+    }
 
 
 def guard_signal_params() -> dict[str, Any]:
@@ -520,8 +530,11 @@ def form_truthy(value: Any) -> bool:
 
 def redirect_with_msg(location: str, message: str) -> RedirectResponse:
     target = safe_next(location)
-    separator = "&" if "?" in target else "?"
-    return RedirectResponse(f"{target}{separator}msg={quote(message)}", status_code=303)
+    parsed = urlsplit(target)
+    params = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "msg"]
+    params.append(("msg", message))
+    query = urlencode(params)
+    return RedirectResponse(urlunsplit(("", "", parsed.path, query, parsed.fragment)), status_code=303)
 
 
 def usage_query_config_from_form(
@@ -536,7 +549,7 @@ def usage_query_config_from_form(
     selected_template = template_type.strip().lower()
     return UsageQueryConfig(
         account_id=account_id,
-        enabled=form_truthy(raw.get("enabled")),
+        enabled=True,
         template_type=template_type,
         code=str(raw.get("code") or "").strip() or default_template(template_type),
         base_url=str(raw.get("base_url") or "").strip(),
@@ -546,7 +559,7 @@ def usage_query_config_from_form(
         use_account_credentials=existing.use_account_credentials,
         timeout_seconds=int_param(str(raw.get("timeout_seconds")), 10, 2, 30),
         upstream_multiplier=float_param(raw.get("upstream_multiplier"), 1.0, 0.0001, 1_000_000.0),
-        guard_disable_on_zero=form_truthy(raw.get("guard_disable_on_zero")),
+        guard_disable_on_zero=True,
         auto_query_interval_minutes=existing.auto_query_interval_minutes,
         updated_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -975,13 +988,30 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
 
 def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     store = usage_query_store()
-    auto_query_interval_minutes = store.auto_query_interval_minutes()
+    usage_enabled = store.usage_query_enabled()
+    hard_stop_enabled = store.guard_disable_on_zero()
+    auto_query_interval_seconds = store.auto_query_interval_seconds()
     actions: list[dict[str, Any]] = []
     checked_count = 0
     queried_count = 0
     skipped_oauth_count = 0
+    if not usage_enabled:
+        write_audit(
+            settings.audit_path,
+            "guard_auto_usage_query_scan",
+            {
+                "actor": actor,
+                "checked_count": 0,
+                "queried_count": 0,
+                "skipped_oauth_count": 0,
+                "action_count": 0,
+                "usage_query_enabled": False,
+                "guard_disable_on_zero": hard_stop_enabled,
+            },
+        )
+        return []
     for config in store.configs():
-        if not config.enabled or not config.guard_disable_on_zero:
+        if not usage_query_configured(config):
             continue
         row = usage_query_account_row(config.account_id)
         if not row:
@@ -993,10 +1023,12 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             continue
         checked_count += 1
         result = store.result(config.account_id)
-        if is_query_due(config, result, interval_minutes=auto_query_interval_minutes):
+        if is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
             result = execute_usage_query(hydrate_usage_query_config(config, row))
             store.save_result(config.account_id, result)
             queried_count += 1
+        if not hard_stop_enabled:
+            continue
         if not should_pause_for_depleted(result):
             continue
         reason = (
@@ -1031,6 +1063,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             "queried_count": queried_count,
             "skipped_oauth_count": skipped_oauth_count,
             "action_count": len(actions),
+            "usage_query_enabled": usage_enabled,
+            "guard_disable_on_zero": hard_stop_enabled,
+            "auto_query_interval_seconds": auto_query_interval_seconds,
         },
     )
     return actions
@@ -1554,7 +1589,7 @@ def speed_view(
         load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
     ))
     dashboard = build_speed_dashboard(rows)
-    dashboard.update(usage_query_dashboard(rows))
+    dashboard.update(usage_query_dashboard(rows, store))
     return render(
         request,
         "speed.html",
@@ -1583,24 +1618,76 @@ async def usage_query_config_save(request: Request, user: AuthUser, account_id: 
     store = usage_query_store()
     config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
     store.save_config(config)
-    write_audit(settings.audit_path, "usage_query_config_save", usage_query_audit_payload(config, user))
-    return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置")
+    row = usage_query_account_row(account_id)
+    if row and is_oauth_account(row):
+        write_audit(
+            settings.audit_path,
+            "usage_query_config_save",
+            {**usage_query_audit_payload(config, user), "query_skipped": "oauth"},
+        )
+        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，OAuth 账号已跳过查询")
+    result = execute_usage_query(hydrate_usage_query_config(config, row))
+    store.save_result(account_id, result)
+    write_audit(
+        settings.audit_path,
+        "usage_query_config_save",
+        {
+            **usage_query_audit_payload(config, user),
+            "query_success": result.get("success"),
+            "remaining": result.get("remaining"),
+            "actual_available": result.get("actual_available"),
+            "error": result.get("error") if not result.get("success") else "",
+        },
+    )
+    if result.get("success"):
+        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，并查询成功")
+    return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，查询失败：{result.get('error') or '未知错误'}")
 
 
 @app.post("/usage-query/settings")
 async def usage_query_settings_save(
+    request: Request,
     user: AuthUser,
-    auto_query_interval_minutes: str = Form("60"),
-    return_to: str = Form("/speed"),
 ) -> Response:
-    interval = int_param(str(auto_query_interval_minutes), 60, 0, 1440)
-    usage_query_store().save_auto_query_interval_minutes(interval)
+    form = await request.form()
+    raw = dict(form)
+    return_to = str(raw.get("return_to") or "/speed")
+    store = usage_query_store()
+
+    def any_form_truthy(name: str) -> bool:
+        values = form.getlist(name)
+        return any(form_truthy(value) for value in values)
+
+    if "usage_query_enabled" in form:
+        query_enabled = any_form_truthy("usage_query_enabled")
+    else:
+        query_enabled = store.usage_query_enabled()
+    if "guard_disable_on_zero" in form:
+        hard_stop_enabled = any_form_truthy("guard_disable_on_zero")
+    else:
+        hard_stop_enabled = store.guard_disable_on_zero()
+    if raw.get("auto_query_interval_seconds") not in {None, ""}:
+        interval = int_param(str(raw.get("auto_query_interval_seconds")), 3600, 0, 86400)
+    elif raw.get("auto_query_interval_minutes") not in {None, ""}:
+        interval = int_param(str(raw.get("auto_query_interval_minutes")), 60, 0, 1440) * 60
+    else:
+        interval = store.auto_query_interval_seconds()
+    store.save_usage_query_settings(
+        usage_query_enabled=query_enabled,
+        guard_disable_on_zero=hard_stop_enabled,
+        auto_query_interval_seconds=interval,
+    )
     write_audit(
         settings.audit_path,
         "usage_query_settings_save",
-        {"user": user, "auto_query_interval_minutes": interval},
+        {
+            "user": user,
+            "usage_query_enabled": query_enabled,
+            "guard_disable_on_zero": hard_stop_enabled,
+            "auto_query_interval_seconds": interval,
+        },
     )
-    return redirect_with_msg(return_to, f"已保存全局额度自动查询间隔：{interval} 分钟")
+    return redirect_with_msg(return_to, f"已保存全局额度查询设置：自动间隔 {interval} 秒")
 
 
 @app.post("/usage-query/accounts/{account_id}/fill-credentials")
@@ -1638,7 +1725,15 @@ async def usage_query_account_query(request: Request, user: AuthUser, account_id
     store = usage_query_store()
     config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
     store.save_config(config)
-    result = execute_usage_query(hydrate_usage_query_config(config))
+    row = usage_query_account_row(account_id)
+    if row and is_oauth_account(row):
+        write_audit(
+            settings.audit_path,
+            "usage_query_account_query",
+            {**usage_query_audit_payload(config, user), "query_skipped": "oauth"},
+        )
+        return redirect_with_msg(return_to, f"账号 #{account_id} 是 OAuth 账号，已跳过额度查询")
+    result = execute_usage_query(hydrate_usage_query_config(config, row))
     store.save_result(account_id, result)
     write_audit(
         settings.audit_path,
@@ -1673,8 +1768,15 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     queried = 0
     failed = 0
     skipped_oauth = 0
+    if not store.usage_query_enabled():
+        write_audit(
+            settings.audit_path,
+            "usage_query_batch_query",
+            {"user": user, "queried": 0, "failed": 0, "skipped_oauth": 0, "usage_query_enabled": False},
+        )
+        return redirect_with_msg(return_to, "全局额度查询已关闭，未查询账号")
     for config in store.configs():
-        if not config.enabled:
+        if not usage_query_configured(config):
             continue
         row = usage_query_account_row(config.account_id)
         if row and is_oauth_account(row):
@@ -1688,9 +1790,15 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     write_audit(
         settings.audit_path,
         "usage_query_batch_query",
-        {"user": user, "queried": queried, "failed": failed, "skipped_oauth": skipped_oauth},
+        {
+            "user": user,
+            "queried": queried,
+            "failed": failed,
+            "skipped_oauth": skipped_oauth,
+            "usage_query_enabled": True,
+        },
     )
-    return redirect_with_msg(return_to, f"已查询 {queried} 个已启用账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个")
+    return redirect_with_msg(return_to, f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个")
 
 
 @app.get("/scheduled-tests", response_class=HTMLResponse)
