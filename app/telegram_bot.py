@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from . import account_ops
 from .db import Database
+from .guard_engine import is_oauth_account
 from .settings import Settings
 from .usage_query import (
     UsageOpener,
@@ -31,6 +32,10 @@ PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然�
 GuardRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
 GuardConfig = Callable[[], dict[str, Any]]
 AsyncUsageOpener = Callable[[dict[str, Any], int], Awaitable[Any]]
+
+
+def usage_query_configured(config: UsageQueryConfig) -> bool:
+    return bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token)
 
 
 class TelegramOpsBot:
@@ -527,14 +532,20 @@ class TelegramOpsBot:
 
     async def _quota_reply(self) -> tuple[str, dict[str, Any] | None]:
         store = UsageQueryStore(self.settings.usage_query_state_path)
-        configs = [config for config in store.configs() if config.enabled]
+        if not store.usage_query_enabled():
+            return "全局额度查询已关闭。请先在速度页开启额度查询。", None
+        configs = [config for config in store.configs() if usage_query_configured(config)]
         if not configs:
-            return "没有启用额度查询的账号。请先在速度页为账号开启额度查询。", None
+            return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
 
         account_lines: list[str] = []
         totals: dict[str, float] = {}
+        skipped_oauth = 0
         for config in configs[:30]:
             row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
+            if row and is_oauth_account(row):
+                skipped_oauth += 1
+                continue
             hydrated = apply_account_credentials(config, row)
             previous = store.result(config.account_id)
             result = await self._execute_quota_query(hydrated)
@@ -554,8 +565,10 @@ class TelegramOpsBot:
             f"总可用：{format_quota_totals(totals)}",
             *account_lines,
         ]
+        if skipped_oauth:
+            lines.append(f"跳过 OAuth：{skipped_oauth} 个")
         if len(configs) > 30:
-            lines.append(f"... 另有 {len(configs) - 30} 个已启用账号未展开")
+            lines.append(f"... 另有 {len(configs) - 30} 个已配置账号未展开")
         return "\n".join(lines), None
 
     async def _execute_quota_query(self, config: UsageQueryConfig) -> dict[str, Any]:
