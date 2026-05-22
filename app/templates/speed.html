@@ -64,6 +64,13 @@
       <p>速度统计和消耗都使用当前时间范围内的成功请求，便于按成本和性能一起观察。</p>
     </div>
     <div class="table-actions">
+      <form class="usage-query-global-settings" method="post" action="{{ base_path }}/usage-query/settings">
+        <input type="hidden" name="return_to" value="{{ return_to }}" />
+        <label>自动查询间隔（全局）
+          <input name="auto_query_interval_minutes" type="number" min="0" max="1440" value="{{ usage_query_settings.auto_query_interval_minutes }}" />
+        </label>
+        <button type="submit">保存间隔</button>
+      </form>
       <form method="post" action="{{ base_path }}/usage-query/query-enabled">
         <input type="hidden" name="return_to" value="{{ return_to }}" />
         <button class="primary" type="submit">查询已启用额度</button>
@@ -172,10 +179,6 @@
                     <input type="checkbox" name="enabled" value="1" {{ 'checked' if cfg.enabled else '' }} />
                     启用查询
                   </label>
-                  <label class="checkbox-label usage-query-account-credentials-toggle">
-                    <input type="checkbox" name="use_account_credentials" value="1" {{ 'checked' if cfg.use_account_credentials else '' }} />
-                    读取账号 Base URL / API Key
-                  </label>
                   <label>模板
                     <select class="usage-query-template-select" name="template_type">
                       {% for option in usage.template_options %}
@@ -201,9 +204,6 @@
                   <label>超时秒数
                     <input name="timeout_seconds" type="number" min="2" max="30" value="{{ cfg.timeout_seconds }}" />
                   </label>
-                  <label>自动查询间隔
-                    <input name="auto_query_interval_minutes" type="number" min="0" max="1440" value="{{ cfg.auto_query_interval_minutes }}" />
-                  </label>
                   <label class="checkbox-label usage-query-guard-toggle">
                     <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if cfg.guard_disable_on_zero else '' }} />
                     可用量≤0 时 Auto Guard 硬停
@@ -214,6 +214,7 @@
                   <div class="usage-query-actions">
                     <button class="primary" type="submit">保存</button>
                     <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query">保存并查询</button>
+                    <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/fill-credentials">从账号读取 Base URL / API Key</button>
                     {% if usage.configured %}
                       <button class="link-button clear-token" type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/delete">移除配置</button>
                     {% endif %}

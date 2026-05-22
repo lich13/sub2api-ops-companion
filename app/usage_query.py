@@ -245,11 +245,12 @@ class UsageQueryStore:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return {"configs": {}, "results": {}}
+            return {"configs": {}, "results": {}, "settings": {}}
         if not isinstance(data, dict):
-            return {"configs": {}, "results": {}}
+            return {"configs": {}, "results": {}, "settings": {}}
         data.setdefault("configs", {})
         data.setdefault("results", {})
+        data.setdefault("settings", {})
         return data
 
     def _write(self) -> None:
@@ -276,6 +277,18 @@ class UsageQueryStore:
                 continue
             result.append(UsageQueryConfig.from_dict(account_id, raw if isinstance(raw, dict) else {}))
         return result
+
+    def auto_query_interval_minutes(self) -> int:
+        settings = self._data.get("settings") or {}
+        if not isinstance(settings, dict):
+            return normalize_interval(None)
+        return normalize_interval(settings.get("auto_query_interval_minutes"))
+
+    def save_auto_query_interval_minutes(self, value: object) -> None:
+        with _STORE_LOCK:
+            self._data = self._read()
+            self._data.setdefault("settings", {})["auto_query_interval_minutes"] = normalize_interval(value)
+            self._write()
 
     def save_config(self, config: UsageQueryConfig) -> None:
         with _STORE_LOCK:
@@ -403,6 +416,19 @@ def apply_account_credentials(config: UsageQueryConfig, account_row: dict[str, A
     if base_url == config.base_url and api_key == config.api_key and access_token == config.access_token:
         return config
     return replace(config, base_url=base_url, api_key=api_key, access_token=access_token)
+
+
+def fill_account_credentials(config: UsageQueryConfig, account_row: dict[str, Any] | None) -> UsageQueryConfig:
+    if not account_row:
+        return config
+    credentials = account_credentials(account_row)
+    return replace(
+        config,
+        base_url=credentials.get("base_url", "") or config.base_url,
+        api_key=credentials.get("api_key", "") or config.api_key,
+        access_token=credentials.get("access_token", "") or config.access_token,
+        use_account_credentials=False,
+    )
 
 
 def account_credentials(account_row: dict[str, Any]) -> dict[str, str]:
@@ -633,8 +659,13 @@ def should_pause_for_depleted(result: dict[str, Any]) -> bool:
     return bool(result.get("success")) and available is not None and available <= 0
 
 
-def is_query_due(config: UsageQueryConfig, result: dict[str, Any], now: datetime | None = None) -> bool:
-    interval = normalize_interval(config.auto_query_interval_minutes)
+def is_query_due(
+    config: UsageQueryConfig,
+    result: dict[str, Any],
+    now: datetime | None = None,
+    interval_minutes: object | None = None,
+) -> bool:
+    interval = normalize_interval(config.auto_query_interval_minutes if interval_minutes is None else interval_minutes)
     if interval <= 0:
         return False
     queried_at = str(result.get("queried_at") or "")
