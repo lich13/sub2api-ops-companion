@@ -43,6 +43,49 @@ DEFAULT_SUB2API_TEMPLATE = """({
   }
 })"""
 
+LEGACY_SUB2API_TEMPLATES = (
+    """({
+  request: {
+    url: "{{baseUrl}}/v1/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function(response) {
+    const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+    const total = response?.total ?? response?.quota?.total;
+    const used = response?.used ?? response?.quota?.used;
+    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+    return {
+      isValid: response?.is_active ?? response?.isValid ?? true,
+      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
+      remaining,
+      total,
+      used,
+      unit
+    };
+  }
+})""",
+    """({
+  request: {
+    url: "{{baseUrl}}/user/balance",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
+    }
+  },
+  extractor: function(response) {
+    return {
+      isValid: response.is_active || true,
+      remaining: response.balance,
+      unit: "USD"
+    };
+  }
+})""",
+)
+
 DEFAULT_NEWAPI_TEMPLATE = """({
   request: {
     url: "{{baseUrl}}/api/user/self",
@@ -135,7 +178,7 @@ class UsageQueryConfig:
         self.upstream_multiplier = normalize_multiplier(self.upstream_multiplier)
         self.guard_disable_on_zero = bool(self.guard_disable_on_zero)
         self.auto_query_interval_minutes = normalize_interval(self.auto_query_interval_minutes)
-        self.code = str(self.code or "").strip() or default_template(self.template_type)
+        self.code = normalize_default_template(self.template_type, str(self.code or "").strip())
         self.updated_at = str(self.updated_at or "")
 
     @classmethod
@@ -246,6 +289,20 @@ def normalize_template_type(value: object) -> str:
 
 def default_template(template_type: object) -> str:
     return DEFAULT_TEMPLATES[normalize_template_type(template_type)]
+
+
+def normalize_default_template(template_type: object, code: str) -> str:
+    if not code:
+        return default_template(template_type)
+    if normalize_template_type(template_type) == "sub2api":
+        legacy_codes = {normalize_template_code(template) for template in LEGACY_SUB2API_TEMPLATES}
+        if normalize_template_code(code) in legacy_codes:
+            return default_template("sub2api")
+    return code
+
+
+def normalize_template_code(code: str) -> str:
+    return "\n".join(line.rstrip() for line in str(code or "").strip().splitlines())
 
 
 def normalize_timeout(value: object) -> int:
