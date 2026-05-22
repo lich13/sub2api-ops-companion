@@ -23,6 +23,7 @@ class UsageQueryTests(unittest.TestCase):
     def test_default_templates_match_sub2api_and_newapi_shapes(self) -> None:
         self.assertIn("{{baseUrl}}/v1/usage", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn('"Authorization": "Bearer {{apiKey}}"', DEFAULT_SUB2API_TEMPLATE)
+        self.assertIn('"User-Agent": "cc-switch/1.0"', DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("response?.remaining ?? response?.quota?.remaining ?? response?.balance", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("response?.usage?.total?.actual_cost", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("{{baseUrl}}/api/user/self", DEFAULT_NEWAPI_TEMPLATE)
@@ -52,6 +53,7 @@ class UsageQueryTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(requests[0]["url"], "https://sub2api.example.com/v1/usage")
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer sk-test")
+        self.assertEqual(requests[0]["headers"]["User-Agent"], "cc-switch/1.0")
         self.assertEqual(result["remaining"], 12.5)
         self.assertEqual(result["actual_available"], 25.0)
         self.assertEqual(result["unit"], "USD")

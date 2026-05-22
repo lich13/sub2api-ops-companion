@@ -132,7 +132,7 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 进入 `/sub2ops/speed` 后，在“额度”列展开单个账号的“配置额度查询”：
 
-- `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段；若接口没有直接返回 `total`，会尝试用 `remaining + usage.total.actual_cost/cost` 推导总额。
+- `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}` 和 `User-Agent: cc-switch/1.0`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段；若接口没有直接返回 `total`，会尝试用 `remaining + usage.total.actual_cost/cost` 推导总额。
 - `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}`，把 `quota`、`used_quota` 除以 `500000` 后展示为 USD。
 - `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
 - 勾选“读取账号 Base URL / API Key”后，查询时会直接读取 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key`；表单里手动填写的 Base URL/API Key 优先级更高。
