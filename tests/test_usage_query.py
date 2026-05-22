@@ -127,28 +127,21 @@ class UsageQueryTests(unittest.TestCase):
 
     def test_legacy_default_sub2api_template_is_upgraded(self) -> None:
         legacy_template = """({
-  request: {
-    url: "{{baseUrl}}/v1/usage",
-    method: "GET",
-    headers: {
-      "Authorization": "Bearer {{apiKey}}"
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
     }
-  },
-  extractor: function(response) {
-    const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-    const total = response?.total ?? response?.quota?.total;
-    const used = response?.used ?? response?.quota?.used;
-    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-    return {
-      isValid: response?.is_active ?? response?.isValid ?? true,
-      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
-      remaining,
-      total,
-      used,
-      unit
-    };
-  }
-})"""
+  })"""
         config = UsageQueryConfig.from_dict(
             5,
             {
