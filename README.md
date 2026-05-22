@@ -132,14 +132,14 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 进入 `/sub2ops/speed` 后，在“额度”列展开单个账号的“配置额度查询”：
 
-- `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段。
+- `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段；若接口没有直接返回 `total`，会尝试用 `remaining + usage.total.actual_cost/cost` 推导总额。
 - `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}`，把 `quota`、`used_quota` 除以 `500000` 后展示为 USD。
 - `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
 - 勾选“读取账号 Base URL / API Key”后，查询时会直接读取 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key`；表单里手动填写的 Base URL/API Key 优先级更高。
 - `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。
 - 开启“可用量≤0 时 Auto Guard 硬停”后，后台 Guard 会按账号配置的自动查询间隔刷新额度；只有查询成功且实际可用量小于等于 `0`，才会把非 OAuth 账号硬停调度。查询失败只保存失败快照，不会当作额度耗尽处理。
 
-密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件或上游账号 `credentials` 中，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。若接口没有返回总额度，面板和 Telegram 会把总额显示为 `-`。
+密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件或上游账号 `credentials` 中，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。若接口没有返回总额度且无法从已用量推导，面板和 Telegram 会把总额显示为 `-`。
 
 ## 定时恢复
 
