@@ -13,6 +13,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db"
 
 from app import main as main_module
 from app.guard_store import GuardStore
+from app.usage_query import UsageQueryConfig, UsageQueryStore
 
 
 class FakeCapabilityDB:
@@ -35,8 +36,12 @@ class GuardMainTests(unittest.TestCase):
         self.original_scheduled_test_capability = main_module.scheduled_test_capability
         self.original_load_recovery_rows = main_module.load_scheduled_test_recovery_alert_rows
         self.original_run_guard_balance_fallback = main_module.run_guard_balance_fallback
+        self.original_usage_query_store = getattr(main_module, "usage_query_store", None)
+        self.original_usage_query_account_row = getattr(main_module, "usage_query_account_row", None)
+        self.original_execute_usage_query = getattr(main_module, "execute_usage_query", None)
         self.original_pause_account_op = main_module.account_ops.pause_account
         self.original_resume_account_op = main_module.account_ops.resume_account
+        self.original_guard_pause_account = main_module.account_ops.guard_pause_account
         self.original_guard_state = dict(main_module.guard_state)
         self.tmpdir = tempfile.TemporaryDirectory()
         data_dir = Path(self.tmpdir.name)
@@ -44,6 +49,7 @@ class GuardMainTests(unittest.TestCase):
             audit_path=str(data_dir / "audit.jsonl"),
             base_path="/sub2ops",
             guard_state_path=str(data_dir / "guard-state.json"),
+            usage_query_state_path=str(data_dir / "usage-query-state.json"),
             guard_enabled=True,
             guard_interval_seconds=5,
             guard_balance_error_threshold=1,
@@ -60,8 +66,15 @@ class GuardMainTests(unittest.TestCase):
         main_module.scheduled_test_capability = self.original_scheduled_test_capability
         main_module.load_scheduled_test_recovery_alert_rows = self.original_load_recovery_rows
         main_module.run_guard_balance_fallback = self.original_run_guard_balance_fallback
+        if self.original_usage_query_store is not None:
+            main_module.usage_query_store = self.original_usage_query_store  # type: ignore[assignment]
+        if self.original_usage_query_account_row is not None:
+            main_module.usage_query_account_row = self.original_usage_query_account_row  # type: ignore[assignment]
+        if self.original_execute_usage_query is not None:
+            main_module.execute_usage_query = self.original_execute_usage_query  # type: ignore[assignment]
         main_module.account_ops.pause_account = self.original_pause_account_op
         main_module.account_ops.resume_account = self.original_resume_account_op
+        main_module.account_ops.guard_pause_account = self.original_guard_pause_account
         main_module.guard_state.clear()
         main_module.guard_state.update(self.original_guard_state)
         self.tmpdir.cleanup()
@@ -311,6 +324,88 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual([item["account_id"] for item in actions], [10])
         self.assertEqual(capture_db.updated_account_ids, [10])
+
+    def test_usage_query_guard_pauses_depleted_non_oauth_account(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(
+            UsageQueryConfig(
+                account_id=9,
+                enabled=True,
+                guard_disable_on_zero=True,
+                upstream_multiplier=0.5,
+                auto_query_interval_minutes=60,
+            )
+        )
+        paused: list[tuple[int, str]] = []
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
+            "success": True,
+            "remaining": 0,
+            "actual_available": 0,
+            "unit": "USD",
+            "upstream_multiplier": 0.5,
+            "queried_at": "2026-05-22T08:00:00+00:00",
+        }
+        main_module.account_ops.guard_pause_account = lambda _db, account_id, reason: paused.append(  # type: ignore[assignment]
+            (account_id, reason)
+        ) or {"id": account_id, "name": "quota-account", "schedulable": False}
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual([item["account_id"] for item in actions], [9])
+        self.assertEqual(paused[0][0], 9)
+        self.assertIn("usage query depleted", paused[0][1])
+        self.assertEqual(store.result(9)["actual_available"], 0)
+
+    def test_usage_query_guard_skips_oauth_accounts(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "oauth-account",
+            "type": "oauth",
+            "schedulable": True,
+        }
+        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
+            "success": True,
+            "remaining": 0,
+            "actual_available": 0,
+        }
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+
+    def test_usage_query_guard_does_not_pause_failed_queries(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
+        paused: list[int] = []
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+        }
+        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
+            "success": False,
+            "error": "query failed",
+            "actual_available": 0,
+        }
+        main_module.account_ops.guard_pause_account = lambda _db, account_id, _reason: paused.append(account_id)  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(paused, [])
+        self.assertFalse(store.result(9)["success"])
 
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [

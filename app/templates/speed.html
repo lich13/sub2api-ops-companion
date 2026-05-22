@@ -50,6 +50,11 @@
     <strong>${{ "%.6f"|format(dashboard.usage_total_cost or 0) }}</strong>
     <span class="metric-footnote">Tokens {{ dashboard.usage_total_tokens | int_commas }}</span>
   </div>
+  <div class="metric-card {{ 'danger' if dashboard.depleted_count else '' }}">
+    <span>额度查询</span>
+    <strong>{{ dashboard.enabled_count }}</strong>
+    <span class="metric-footnote">已配置 {{ dashboard.configured_count }} / 耗尽 {{ dashboard.depleted_count }}</span>
+  </div>
 </section>
 
 <section class="panel table-panel">
@@ -59,6 +64,10 @@
       <p>速度统计和消耗都使用当前时间范围内的成功请求，便于按成本和性能一起观察。</p>
     </div>
     <div class="table-actions">
+      <form method="post" action="{{ base_path }}/usage-query/query-enabled">
+        <input type="hidden" name="return_to" value="{{ return_to }}" />
+        <button class="primary" type="submit">查询已启用额度</button>
+      </form>
       <details class="column-picker">
         <summary>选择列</summary>
         <div class="column-list" data-column-picker="account-speed">
@@ -70,6 +79,7 @@
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时（秒）</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />tokens/秒</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="usage" checked />消耗</label>
+          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="quota" checked />额度</label>
           <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
           <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
         </div>
@@ -88,6 +98,7 @@
           <th data-col="duration">平均耗时（秒）</th>
           <th data-col="token-speed">tokens/秒</th>
           <th data-col="usage">消耗</th>
+          <th data-col="quota">额度</th>
           <th data-col="last-success">最近成功</th>
         </tr>
       </thead>
@@ -136,11 +147,93 @@
                 <div class="cell-sub tiny actual-cost">实际 ${{ "%.6f"|format(row.usage_actual_cost or 0) }}</div>
               {% endif %}
             </td>
+            <td data-col="quota" class="quota-cell">
+              {% set usage = row.usage_query %}
+              {% set cfg = usage.config %}
+              {% set result = usage.result %}
+              <div class="quota-snapshot">
+                {% if result and result.success %}
+                  <span class="pill {{ 'bad' if usage.depleted else 'good' }}">{{ '可用≤0' if usage.depleted else '有额度' }}</span>
+                  <strong>{{ result.actual_available | quota }} {{ result.unit }}</strong>
+                  <div class="cell-sub">原始 {{ result.remaining | quota }} / 倍率 {{ cfg.upstream_multiplier | quota }}</div>
+                  {% if result.plan_name %}
+                    <div class="cell-sub tiny">{{ result.plan_name }}</div>
+                  {% endif %}
+                  <div class="cell-sub tiny">更新 {{ result.queried_at | bj_time }}</div>
+                {% elif result and result.error %}
+                  <span class="pill bad">查询失败</span>
+                  <div class="cell-sub quota-error">{{ result.error }}</div>
+                  <div class="cell-sub tiny">更新 {{ result.queried_at | bj_time }}</div>
+                {% elif cfg.enabled %}
+                  <span class="pill warn">待查询</span>
+                  <div class="cell-sub">倍率 {{ cfg.upstream_multiplier | quota }}</div>
+                {% else %}
+                  <span class="pill muted">未启用</span>
+                  <div class="cell-sub">配置后可显示剩余额度</div>
+                {% endif %}
+              </div>
+            </td>
             <td data-col="last-success" class="window-cell">
               <div class="cell-sub mono">{{ row.last_success_at | bj_time }}</div>
               {% if row.rate_limit_reset_at %}
                 <div class="cell-sub tiny">限流重置 {{ row.rate_limit_reset_at | bj_time }}</div>
               {% endif %}
+            </td>
+          </tr>
+          <tr class="usage-query-detail-row">
+            <td data-col="quota" colspan="10">
+              <details class="usage-query-config">
+                <summary>{{ '编辑额度查询' if usage.configured else '配置额度查询' }} #{{ row.id }}</summary>
+                <form class="usage-query-form" method="post" action="{{ base_path }}/usage-query/accounts/{{ row.id }}" autocomplete="off">
+                  <input type="hidden" name="return_to" value="{{ return_to }}" />
+                  <label class="checkbox-label usage-query-toggle">
+                    <input type="checkbox" name="enabled" value="1" {{ 'checked' if cfg.enabled else '' }} />
+                    启用查询
+                  </label>
+                  <label>模板
+                    <select class="usage-query-template-select" name="template_type">
+                      {% for option in usage.template_options %}
+                        <option value="{{ option.value }}" {{ 'selected' if option.selected else '' }}>{{ option.label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>Base URL
+                    <input name="base_url" value="{{ cfg.base_url }}" placeholder="https://sub2api.example.com" />
+                  </label>
+                  <label>API Key
+                    <input type="password" name="api_key" placeholder="{{ '已保存，留空保留' if cfg.api_key_saved else 'Sub2API API Key' }}" autocomplete="new-password" />
+                  </label>
+                  <label>Access Token
+                    <input type="password" name="access_token" placeholder="{{ '已保存，留空保留' if cfg.access_token_saved else 'NewAPI Access Token' }}" autocomplete="new-password" />
+                  </label>
+                  <label>User ID
+                    <input name="user_id" value="{{ cfg.user_id }}" placeholder="NewAPI 用户 ID" />
+                  </label>
+                  <label>上游倍率
+                    <input name="upstream_multiplier" type="number" min="0.0001" step="0.0001" value="{{ cfg.upstream_multiplier }}" />
+                  </label>
+                  <label>超时秒数
+                    <input name="timeout_seconds" type="number" min="2" max="30" value="{{ cfg.timeout_seconds }}" />
+                  </label>
+                  <label>自动查询间隔
+                    <input name="auto_query_interval_minutes" type="number" min="0" max="1440" value="{{ cfg.auto_query_interval_minutes }}" />
+                  </label>
+                  <label class="checkbox-label usage-query-guard-toggle">
+                    <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if cfg.guard_disable_on_zero else '' }} />
+                    可用量≤0 时 Auto Guard 硬停
+                  </label>
+                  <label class="usage-query-code">提取器代码
+                    <textarea name="code" spellcheck="false">{{ cfg.code }}</textarea>
+                  </label>
+                  <div class="usage-query-actions">
+                    <button class="primary" type="submit">保存</button>
+                    <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query">保存并查询</button>
+                    {% if usage.configured %}
+                      <button class="link-button clear-token" type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/delete">移除配置</button>
+                    {% endif %}
+                  </div>
+                </form>
+              </details>
             </td>
           </tr>
         {% endfor %}
