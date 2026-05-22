@@ -125,6 +125,41 @@ class UsageQueryTests(unittest.TestCase):
         self.assertEqual(hydrated.base_url, "https://manual.example.com")
         self.assertEqual(hydrated.api_key, "sk-manual")
 
+    def test_legacy_default_sub2api_template_is_upgraded(self) -> None:
+        legacy_template = """({
+  request: {
+    url: "{{baseUrl}}/v1/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function(response) {
+    const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+    const total = response?.total ?? response?.quota?.total;
+    const used = response?.used ?? response?.quota?.used;
+    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+    return {
+      isValid: response?.is_active ?? response?.isValid ?? true,
+      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
+      remaining,
+      total,
+      used,
+      unit
+    };
+  }
+})"""
+        config = UsageQueryConfig.from_dict(
+            5,
+            {
+                "template_type": "sub2api",
+                "code": legacy_template,
+            },
+        )
+
+        self.assertIn("response?.usage?.total?.actual_cost", config.code)
+        self.assertEqual(config.code, DEFAULT_SUB2API_TEMPLATE)
+
     def test_newapi_query_uses_access_token_user_id_and_converts_quota(self) -> None:
         requests: list[dict[str, Any]] = []
 
