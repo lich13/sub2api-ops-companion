@@ -886,10 +886,6 @@ def load_telegram_error_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
     )
 
 
-def is_hard_disabled_account(row: dict[str, Any]) -> bool:
-    return not row.get("schedulable", True) and not row.get("temp_unschedulable_until")
-
-
 def filter_telegram_error_alert_rows(
     rows: list[dict[str, Any]],
     policy: GuardPolicy | None = None,
@@ -901,9 +897,6 @@ def filter_telegram_error_alert_rows(
         if not account_id:
             continue
         if not is_whitelisted_account(active_policy, account_id):
-            filtered.append(row)
-            continue
-        if is_hard_disabled_account(row):
             filtered.append(row)
     return filtered
 
