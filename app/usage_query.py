@@ -19,7 +19,8 @@ DEFAULT_SUB2API_TEMPLATE = """({
     url: "{{baseUrl}}/v1/usage",
     method: "GET",
     headers: {
-      "Authorization": "Bearer {{apiKey}}"
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
     }
   },
   extractor: function(response) {
@@ -44,6 +45,34 @@ DEFAULT_SUB2API_TEMPLATE = """({
 })"""
 
 LEGACY_SUB2API_TEMPLATES = (
+    """({
+  request: {
+    url: "{{baseUrl}}/v1/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function(response) {
+    const asNumber = function(value) {
+      const parsed = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const remaining = asNumber(response?.remaining ?? response?.quota?.remaining ?? response?.balance);
+    const used = asNumber(response?.used ?? response?.quota?.used ?? response?.usage?.total?.actual_cost ?? response?.usage?.total?.cost);
+    const explicitTotal = asNumber(response?.total ?? response?.quota?.total);
+    const total = explicitTotal ?? (remaining !== undefined && used !== undefined ? remaining + used : undefined);
+    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+    return {
+      isValid: response?.is_active ?? response?.isValid ?? true,
+      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
+      remaining,
+      total,
+      used,
+      unit
+    };
+  }
+})""",
     """({
     request: {
       url: "{{baseUrl}}/v1/usage",
