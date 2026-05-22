@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import quickjs
 
@@ -133,6 +133,64 @@ LEGACY_SUB2API_TEMPLATES = (
 
 DEFAULT_NEWAPI_TEMPLATE = """({
   request: {
+    url: "{{baseUrl}}/api/usage/token/",
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": "Bearer {{newApiToken}}",
+      "User-Agent": "cc-switch/1.0"
+    },
+  },
+  extractor: function (response) {
+    const quotaFactor = 500000;
+    const isObject = function(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    };
+    const asNumber = function(value) {
+      const parsed = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const quotaToUsd = function(value) {
+      return value === undefined ? undefined : Math.max(0, value) / quotaFactor;
+    };
+    if (response?.success === false || response?.code === false) {
+      return {
+        isValid: false,
+        invalidMessage: response?.message || "查询失败"
+      };
+    }
+    const data = isObject(response?.data) ? response.data : response;
+    const totalGranted = asNumber(data?.total_granted);
+    const totalUsed = asNumber(data?.total_used);
+    const totalAvailable = asNumber(data?.total_available);
+    const unlimitedQuota = data?.unlimited_quota === true || (totalGranted !== undefined && totalGranted < 0);
+    if (
+      !unlimitedQuota &&
+      totalGranted === undefined &&
+      totalUsed === undefined &&
+      totalAvailable === undefined
+    ) {
+      return {
+        isValid: false,
+        invalidMessage: response?.message || "响应缺少 NewAPI token usage 字段"
+      };
+    }
+    return {
+      isValid: true,
+      planName: data?.name || (unlimitedQuota ? "无限额度" : "Token 额度"),
+      remaining: unlimitedQuota ? null : quotaToUsd(totalAvailable),
+      used: quotaToUsd(totalUsed),
+      total: unlimitedQuota ? null : quotaToUsd(totalGranted),
+      unit: "USD",
+      extra: unlimitedQuota ? "unlimited_quota" : ""
+    };
+  },
+})"""
+
+LEGACY_NEWAPI_TEMPLATES = (
+    """({
+  request: {
     url: "{{baseUrl}}/api/user/self",
     method: "GET",
     headers: {
@@ -157,7 +215,8 @@ DEFAULT_NEWAPI_TEMPLATE = """({
       invalidMessage: response.message || "查询失败"
     };
   },
-})"""
+})""",
+)
 
 DEFAULT_CUSTOM_TEMPLATE = """({
   request: {
@@ -216,7 +275,7 @@ class UsageQueryConfig:
         self.account_id = int(self.account_id)
         self.enabled = bool(self.enabled)
         self.template_type = normalize_template_type(self.template_type)
-        self.base_url = str(self.base_url or "").strip().rstrip("/")
+        self.base_url = normalize_base_url(str(self.base_url or ""), self.template_type)
         self.api_key = str(self.api_key or "")
         self.access_token = str(self.access_token or "")
         self.user_id = str(self.user_id or "").strip()
@@ -394,15 +453,30 @@ def default_template(template_type: object) -> str:
 def normalize_default_template(template_type: object, code: str) -> str:
     if not code:
         return default_template(template_type)
-    if normalize_template_type(template_type) == "sub2api":
+    normalized_type = normalize_template_type(template_type)
+    if normalized_type == "sub2api":
         legacy_codes = {normalize_template_code(template) for template in LEGACY_SUB2API_TEMPLATES}
         if normalize_template_code(code) in legacy_codes:
             return default_template("sub2api")
+    if normalized_type == "newapi":
+        legacy_codes = {normalize_template_code(template) for template in LEGACY_NEWAPI_TEMPLATES}
+        if normalize_template_code(code) in legacy_codes:
+            return default_template("newapi")
     return code
 
 
 def normalize_template_code(code: str) -> str:
     return "".join(str(code or "").split())
+
+
+def normalize_base_url(value: str, template_type: object = "") -> str:
+    cleaned = str(value or "").strip().rstrip("/")
+    if normalize_template_type(template_type) != "newapi":
+        return cleaned
+    parsed = urlsplit(cleaned)
+    if parsed.scheme in {"http", "https"} and parsed.netloc and parsed.path.rstrip("/") == "/v1":
+        return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+    return cleaned
 
 
 def normalize_timeout(value: object) -> int:
@@ -562,6 +636,7 @@ def replace_template_vars(script: str, config: UsageQueryConfig) -> str:
         script.replace("{{apiKey}}", js_string_content(config.api_key))
         .replace("{{baseUrl}}", js_string_content(config.base_url))
         .replace("{{accessToken}}", js_string_content(config.access_token))
+        .replace("{{newApiToken}}", js_string_content(config.api_key or config.access_token))
         .replace("{{userId}}", js_string_content(config.user_id))
     )
 

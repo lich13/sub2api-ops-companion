@@ -85,6 +85,8 @@ from .usage_query import (
     execute_usage_query,
     fill_account_credentials,
     is_query_due,
+    normalize_template_code,
+    normalize_template_type,
     public_config,
     should_pause_for_depleted,
 )
@@ -544,14 +546,22 @@ def usage_query_config_from_form(
     user: str,
 ) -> UsageQueryConfig:
     template_type = str(raw.get("template_type") or existing.template_type or "sub2api")
+    selected_template = normalize_template_type(template_type)
+    existing_template = normalize_template_type(existing.template_type)
     api_key = str(raw.get("api_key") or "").strip()
     access_token = str(raw.get("access_token") or "").strip()
-    selected_template = template_type.strip().lower()
+    submitted_code = str(raw.get("code") or "").strip()
+    existing_default_code = existing.code or default_template(existing_template)
+    if (
+        selected_template != existing_template
+        and normalize_template_code(submitted_code) == normalize_template_code(existing_default_code)
+    ):
+        submitted_code = default_template(selected_template)
     return UsageQueryConfig(
         account_id=account_id,
         enabled=True,
         template_type=template_type,
-        code=str(raw.get("code") or "").strip() or default_template(template_type),
+        code=submitted_code or default_template(template_type),
         base_url=str(raw.get("base_url") or "").strip(),
         api_key=api_key or (existing.api_key if existing.template_type == selected_template else ""),
         access_token=access_token or (existing.access_token if existing.template_type == selected_template else ""),
