@@ -36,7 +36,7 @@ class UpdateError(RuntimeError):
 def _run_git(args: list[str], workdir: Path, settings: Any, timeout: int = 20) -> str:
     env = os.environ.copy()
     result = subprocess.run(
-        ["git", "-C", str(workdir), *args],
+        ["git", "-c", f"safe.directory={workdir}", "-C", str(workdir), *args],
         check=False,
         capture_output=True,
         env=env,

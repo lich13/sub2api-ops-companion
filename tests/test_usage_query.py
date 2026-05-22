@@ -27,10 +27,14 @@ class UsageQueryTests(unittest.TestCase):
         self.assertIn('"User-Agent": "cc-switch/1.0"', DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("response?.remaining ?? response?.quota?.remaining ?? response?.balance", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("response?.usage?.total?.actual_cost", DEFAULT_SUB2API_TEMPLATE)
-        self.assertIn("{{baseUrl}}/api/usage/token/", DEFAULT_NEWAPI_TEMPLATE)
-        self.assertIn('"Authorization": "Bearer {{newApiToken}}"', DEFAULT_NEWAPI_TEMPLATE)
-        self.assertIn("total_available", DEFAULT_NEWAPI_TEMPLATE)
-        self.assertNotIn("New-Api-User", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertIn("{{baseUrl}}/api/user/self", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertIn('"Authorization": "Bearer {{accessToken}}"', DEFAULT_NEWAPI_TEMPLATE)
+        self.assertIn('"New-Api-User": "{{userId}}"', DEFAULT_NEWAPI_TEMPLATE)
+        self.assertIn("data?.quota", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertIn("data?.used_quota", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertNotIn("/api/usage/token/", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertNotIn("tokenForUsage", DEFAULT_NEWAPI_TEMPLATE)
+        self.assertNotIn("total_available", DEFAULT_NEWAPI_TEMPLATE)
 
     def test_sub2api_query_computes_actual_available_from_multiplier(self) -> None:
         requests: list[dict[str, Any]] = []
@@ -219,7 +223,65 @@ class UsageQueryTests(unittest.TestCase):
 
         self.assertEqual(config.code, DEFAULT_NEWAPI_TEMPLATE)
 
-    def test_newapi_query_prefers_api_key_for_token_usage_endpoint(self) -> None:
+    def test_legacy_newapi_token_usage_template_is_upgraded(self) -> None:
+        legacy_token_template = """({
+  request: { url: "{{baseUrl}}/api/usage/token/", method: "GET" },
+  extractor: function(response) {
+    return { remaining: response?.data?.total_available / 500000, unit: "USD" };
+  },
+})"""
+
+        config = UsageQueryConfig.from_dict(
+            10,
+            {
+                "template_type": "newapi",
+                "code": legacy_token_template,
+            },
+        )
+
+        self.assertEqual(config.code, DEFAULT_NEWAPI_TEMPLATE)
+
+    def test_newapi_query_prefers_user_self_when_access_token_and_user_id_are_set(self) -> None:
+        requests: list[dict[str, Any]] = []
+
+        def fake_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+            requests.append(request)
+            return {
+                "success": True,
+                "data": {
+                    "username": "lt",
+                    "group": "default",
+                    "quota": 487908,
+                    "used_quota": 34934908,
+                },
+            }
+
+        result = execute_usage_query(
+            UsageQueryConfig(
+                account_id=10,
+                enabled=True,
+                template_type="newapi",
+                base_url="https://newapi.example.com",
+                api_key="sk-newapi",
+                access_token="access-token",
+                user_id="42",
+                upstream_multiplier=2,
+            ),
+            opener=fake_opener,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(requests[0]["url"], "https://newapi.example.com/api/user/self")
+        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer access-token")
+        self.assertEqual(requests[0]["headers"]["New-Api-User"], "42")
+        self.assertEqual(result["plan_name"], "default")
+        self.assertEqual(result["remaining"], 0.975816)
+        self.assertEqual(result["used"], 69.869816)
+        self.assertEqual(result["total"], 70.845632)
+        self.assertEqual(result["actual_available"], 0.487908)
+        self.assertEqual(result["extra"], "user_self")
+
+    def test_newapi_query_rejects_token_usage_shape_without_user_quota(self) -> None:
         requests: list[dict[str, Any]] = []
 
         def fake_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
@@ -249,43 +311,20 @@ class UsageQueryTests(unittest.TestCase):
             opener=fake_opener,
         )
 
-        self.assertTrue(result["success"])
-        self.assertEqual(requests[0]["url"], "https://newapi.example.com/api/usage/token/")
-        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer sk-newapi")
-        self.assertNotIn("New-Api-User", requests[0]["headers"])
-        self.assertEqual(result["plan_name"], "lt-token")
-        self.assertEqual(result["remaining"], 7.5)
-        self.assertEqual(result["used"], 2.5)
-        self.assertEqual(result["total"], 10.0)
-        self.assertEqual(result["actual_available"], 3.75)
-
-    def test_newapi_query_falls_back_to_access_token_when_api_key_missing(self) -> None:
-        requests: list[dict[str, Any]] = []
-
-        def fake_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
-            requests.append(request)
-            return {"success": True, "data": {"total_available": 500000}}
-
-        result = execute_usage_query(
-            UsageQueryConfig(
-                account_id=10,
-                enabled=True,
-                template_type="newapi",
-                base_url="https://newapi.example.com",
-                access_token="access-token",
-            ),
-            opener=fake_opener,
-        )
-
-        self.assertTrue(result["success"])
+        self.assertFalse(result["success"])
+        self.assertEqual(requests[0]["url"], "https://newapi.example.com/api/user/self")
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer access-token")
+        self.assertEqual(requests[0]["headers"]["New-Api-User"], "42")
+        self.assertIn("响应缺少 NewAPI 用户额度字段", result["error"])
+        self.assertIsNone(result["remaining"])
+        self.assertIsNone(result["actual_available"])
 
     def test_newapi_base_url_strips_openai_v1_suffix(self) -> None:
         requests: list[dict[str, Any]] = []
 
         def fake_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
             requests.append(request)
-            return {"success": True, "data": {"total_available": 500000}}
+            return {"success": True, "data": {"quota": 500000, "used_quota": 250000, "group": "default"}}
 
         result = execute_usage_query(
             UsageQueryConfig(
@@ -294,70 +333,15 @@ class UsageQueryTests(unittest.TestCase):
                 template_type="newapi",
                 base_url="https://newapi.example.com/v1/",
                 access_token="access-token",
+                user_id="42",
             ),
             opener=fake_opener,
         )
 
         self.assertTrue(result["success"])
-        self.assertEqual(requests[0]["url"], "https://newapi.example.com/api/usage/token/")
-
-    def test_newapi_query_handles_unlimited_quota_shape(self) -> None:
-        result = execute_usage_query(
-            UsageQueryConfig(
-                account_id=10,
-                enabled=True,
-                template_type="newapi",
-                base_url="https://newapi.example.com",
-                access_token="access-token",
-                user_id="42",
-            ),
-            opener=lambda _request, _timeout: {
-                "code": True,
-                "message": "ok",
-                "data": {
-                    "name": "unlimited-token",
-                    "total_granted": -1,
-                    "total_used": 940655,
-                    "total_available": -940656,
-                    "unlimited_quota": True,
-                },
-            },
-        )
-
-        self.assertTrue(result["success"])
-        self.assertEqual(result["plan_name"], "unlimited-token")
-        self.assertIsNone(result["remaining"])
-        self.assertEqual(result["used"], 1.88131)
-        self.assertIsNone(result["total"])
-        self.assertIsNone(result["actual_available"])
-        self.assertEqual(result["extra"], "unlimited_quota")
-
-    def test_newapi_query_clamps_negative_non_unlimited_available(self) -> None:
-        result = execute_usage_query(
-            UsageQueryConfig(
-                account_id=10,
-                enabled=True,
-                template_type="newapi",
-                base_url="https://newapi.example.com",
-                access_token="access-token",
-                user_id="42",
-            ),
-            opener=lambda _request, _timeout: {
-                "success": True,
-                "data": {
-                    "total_granted": 1000000,
-                    "total_used": 1250000,
-                    "total_available": -250000,
-                    "unlimited_quota": False,
-                },
-            },
-        )
-
-        self.assertTrue(result["success"])
-        self.assertEqual(result["remaining"], 0.0)
-        self.assertEqual(result["used"], 2.5)
-        self.assertEqual(result["total"], 2.0)
-        self.assertEqual(result["actual_available"], 0.0)
+        self.assertEqual(requests[0]["url"], "https://newapi.example.com/api/user/self")
+        self.assertEqual(result["remaining"], 1.0)
+        self.assertEqual(result["used"], 0.5)
 
     def test_custom_template_runs_request_and_extractor(self) -> None:
         code = """({
