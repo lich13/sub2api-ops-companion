@@ -484,6 +484,37 @@ class GuardMainTests(unittest.TestCase):
         self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
         self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
 
+    def test_usage_query_fill_credentials_preserves_return_anchor(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "credentials": {
+                "base_url": "https://quota.example.com",
+                "api_key": "secret-from-account",
+            },
+        }
+
+        class FakeRequest:
+            async def form(self) -> dict[str, str]:
+                return {
+                    "return_to": "/sub2ops/speed?group=default#usage-query-9",
+                    "template_type": "sub2api",
+                    "base_url": "",
+                    "api_key": "",
+                    "upstream_multiplier": "1",
+                    "timeout_seconds": "10",
+                }
+
+        response = asyncio.run(main_module.usage_query_fill_credentials(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
+
+        self.assertEqual(store.config(9).base_url, "https://quota.example.com")
+        self.assertEqual(store.config(9).api_key, "secret-from-account")
+        self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
+        self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
+
     def test_usage_query_config_form_switches_default_code_to_selected_template(self) -> None:
         config = main_module.usage_query_config_from_form(
             4,
