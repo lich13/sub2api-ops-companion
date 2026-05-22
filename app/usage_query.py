@@ -133,13 +133,14 @@ LEGACY_SUB2API_TEMPLATES = (
 
 DEFAULT_NEWAPI_TEMPLATE = """({
   request: {
-    url: "{{baseUrl}}/api/usage/token/",
+    url: "{{baseUrl}}/api/user/self",
     method: "GET",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
-      "Authorization": "Bearer {{newApiToken}}",
-      "User-Agent": "cc-switch/1.0"
+      "Authorization": "Bearer {{accessToken}}",
+      "User-Agent": "cc-switch/1.0",
+      "New-Api-User": "{{userId}}"
     },
   },
   extractor: function (response) {
@@ -161,29 +162,24 @@ DEFAULT_NEWAPI_TEMPLATE = """({
       };
     }
     const data = isObject(response?.data) ? response.data : response;
-    const totalGranted = asNumber(data?.total_granted);
-    const totalUsed = asNumber(data?.total_used);
-    const totalAvailable = asNumber(data?.total_available);
-    const unlimitedQuota = data?.unlimited_quota === true || (totalGranted !== undefined && totalGranted < 0);
-    if (
-      !unlimitedQuota &&
-      totalGranted === undefined &&
-      totalUsed === undefined &&
-      totalAvailable === undefined
-    ) {
+    const userQuota = asNumber(data?.quota);
+    const userUsedQuota = asNumber(data?.used_quota);
+    if (userQuota === undefined) {
       return {
         isValid: false,
-        invalidMessage: response?.message || "响应缺少 NewAPI token usage 字段"
+        invalidMessage: response?.message || "响应缺少 NewAPI 用户额度字段"
       };
     }
+    const remaining = quotaToUsd(userQuota);
+    const used = quotaToUsd(userUsedQuota);
     return {
       isValid: true,
-      planName: data?.name || (unlimitedQuota ? "无限额度" : "Token 额度"),
-      remaining: unlimitedQuota ? null : quotaToUsd(totalAvailable),
-      used: quotaToUsd(totalUsed),
-      total: unlimitedQuota ? null : quotaToUsd(totalGranted),
+      planName: data?.group || data?.username || "用户额度",
+      remaining,
+      used,
+      total: remaining !== undefined && used !== undefined ? remaining + used : undefined,
       unit: "USD",
-      extra: unlimitedQuota ? "unlimited_quota" : ""
+      extra: "user_self"
     };
   },
 })"""
@@ -460,7 +456,8 @@ def normalize_default_template(template_type: object, code: str) -> str:
             return default_template("sub2api")
     if normalized_type == "newapi":
         legacy_codes = {normalize_template_code(template) for template in LEGACY_NEWAPI_TEMPLATES}
-        if normalize_template_code(code) in legacy_codes:
+        normalized_code = normalize_template_code(code)
+        if normalized_code in legacy_codes or ("/api/usage/token/" in code and "total_available" in code):
             return default_template("newapi")
     return code
 
@@ -636,7 +633,6 @@ def replace_template_vars(script: str, config: UsageQueryConfig) -> str:
         script.replace("{{apiKey}}", js_string_content(config.api_key))
         .replace("{{baseUrl}}", js_string_content(config.base_url))
         .replace("{{accessToken}}", js_string_content(config.access_token))
-        .replace("{{newApiToken}}", js_string_content(config.api_key or config.access_token))
         .replace("{{userId}}", js_string_content(config.user_id))
     )
 
