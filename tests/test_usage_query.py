@@ -24,6 +24,7 @@ class UsageQueryTests(unittest.TestCase):
         self.assertIn("{{baseUrl}}/v1/usage", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn('"Authorization": "Bearer {{apiKey}}"', DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("response?.remaining ?? response?.quota?.remaining ?? response?.balance", DEFAULT_SUB2API_TEMPLATE)
+        self.assertIn("response?.usage?.total?.actual_cost", DEFAULT_SUB2API_TEMPLATE)
         self.assertIn("{{baseUrl}}/api/user/self", DEFAULT_NEWAPI_TEMPLATE)
         self.assertIn('"New-Api-User": "{{userId}}"', DEFAULT_NEWAPI_TEMPLATE)
         self.assertIn("response.data.quota / 500000", DEFAULT_NEWAPI_TEMPLATE)
@@ -69,6 +70,7 @@ class UsageQueryTests(unittest.TestCase):
                 "isValid": True,
                 "planName": "钱包余额",
                 "remaining": 319.8202155,
+                "usage": {"total": {"actual_cost": 180.1797845}},
                 "unit": "USD",
             },
         )
@@ -76,6 +78,8 @@ class UsageQueryTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["plan_name"], "钱包余额")
         self.assertEqual(result["remaining"], 319.8202155)
+        self.assertEqual(result["used"], 180.1797845)
+        self.assertEqual(result["total"], 500.0)
         self.assertEqual(result["actual_available"], 319.8202155)
 
     def test_account_credentials_fill_missing_base_url_and_api_key(self) -> None:

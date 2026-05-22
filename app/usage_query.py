@@ -23,9 +23,14 @@ DEFAULT_SUB2API_TEMPLATE = """({
     }
   },
   extractor: function(response) {
-    const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-    const total = response?.total ?? response?.quota?.total;
-    const used = response?.used ?? response?.quota?.used;
+    const asNumber = function(value) {
+      const parsed = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const remaining = asNumber(response?.remaining ?? response?.quota?.remaining ?? response?.balance);
+    const used = asNumber(response?.used ?? response?.quota?.used ?? response?.usage?.total?.actual_cost ?? response?.usage?.total?.cost);
+    const explicitTotal = asNumber(response?.total ?? response?.quota?.total);
+    const total = explicitTotal ?? (remaining !== undefined && used !== undefined ? remaining + used : undefined);
     const unit = response?.unit ?? response?.quota?.unit ?? "USD";
     return {
       isValid: response?.is_active ?? response?.isValid ?? true,
