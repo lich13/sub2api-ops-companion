@@ -14,7 +14,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db"
 
 from app import main as main_module
 from app.guard_store import GuardStore
-from app.usage_query import UsageQueryConfig, UsageQueryStore
+from app.usage_query import DEFAULT_NEWAPI_TEMPLATE, DEFAULT_SUB2API_TEMPLATE, UsageQueryConfig, UsageQueryStore
 
 
 class FakeCapabilityDB:
@@ -483,6 +483,27 @@ class GuardMainTests(unittest.TestCase):
         self.assertTrue(store.config(9).enabled)
         self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
         self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
+
+    def test_usage_query_config_form_switches_default_code_to_selected_template(self) -> None:
+        config = main_module.usage_query_config_from_form(
+            4,
+            {
+                "template_type": "newapi",
+                "base_url": "https://lt.example.com",
+                "access_token": "access-token",
+                "user_id": "42",
+                "code": DEFAULT_SUB2API_TEMPLATE,
+                "upstream_multiplier": "1",
+                "timeout_seconds": "10",
+            },
+            UsageQueryConfig(account_id=4, template_type="sub2api"),
+            "tester",
+        )
+
+        self.assertEqual(config.template_type, "newapi")
+        self.assertEqual(config.code, DEFAULT_NEWAPI_TEMPLATE)
+        self.assertEqual(config.access_token, "access-token")
+        self.assertEqual(config.user_id, "42")
 
     def test_usage_query_settings_save_persists_global_switches_and_seconds(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
