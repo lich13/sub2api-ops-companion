@@ -142,6 +142,103 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("没有启用额度查询", reply)
 
+    async def test_quota_command_uses_last_success_snapshot_when_live_query_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="sub2api",
+                    use_account_credentials=True,
+                    code="""({
+  request: {
+    url: "{{baseUrl}}/v1/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function(response) {
+    const asNumber = function(value) {
+      const parsed = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const remaining = asNumber(response?.remaining ?? response?.quota?.remaining ?? response?.balance);
+    const used = asNumber(response?.used ?? response?.quota?.used ?? response?.usage?.total?.actual_cost ?? response?.usage?.total?.cost);
+    const explicitTotal = asNumber(response?.total ?? response?.quota?.total);
+    const total = explicitTotal ?? (remaining !== undefined && used !== undefined ? remaining + used : undefined);
+    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+    return {
+      isValid: response?.is_active ?? response?.isValid ?? true,
+      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
+      remaining,
+      total,
+      used,
+      unit
+    };
+  }
+})""",
+                    upstream_multiplier=0.5,
+                )
+            )
+            store.save_result(
+                7,
+                {
+                    "account_id": 7,
+                    "template_type": "sub2api",
+                    "success": True,
+                    "data": [],
+                    "error": "",
+                    "queried_at": "2026-05-22T00:00:00+00:00",
+                    "plan_name": "wallet",
+                    "extra": "",
+                    "remaining": 12.5,
+                    "used": 27.5,
+                    "total": 20.0,
+                    "unit": "USD",
+                    "invalid_message": "",
+                    "upstream_multiplier": 0.5,
+                    "actual_available": 25.0,
+                },
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "snapshot-account",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {
+                            "base_url": "https://quota.example.com",
+                            "api_key": "sk-test",
+                        },
+                    }
+
+            async def failing_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                raise TimeoutError("boom")
+
+            bot = TelegramOpsBot(
+                settings,
+                FakeDB(),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+                usage_query_opener=failing_opener,
+            )
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("沿用快照：1 个", reply)
+            self.assertIn("#7 snapshot-account：可用 25 USD / 总额 40 USD / wallet / 快照", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["success"], True)
+
     def test_account_action_keyboard_has_only_direct_account_actions(self) -> None:
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})
         callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]

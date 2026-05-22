@@ -520,16 +520,28 @@ class TelegramOpsBot:
 
         lines = ["额度查询"]
         failed = 0
+        snapshot_count = 0
         for config in configs[:30]:
             row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
             hydrated = apply_account_credentials(config, row)
+            previous = store.result(config.account_id)
             result = await self._execute_quota_query(hydrated)
+            if result.get("success"):
+                store.save_result(config.account_id, result)
+                lines.append(format_quota_line(hydrated, row, result))
+                continue
+            if previous.get("success"):
+                snapshot_count += 1
+                lines.append(format_quota_line(hydrated, row, previous, "快照"))
+                continue
             store.save_result(config.account_id, result)
             if not result.get("success"):
                 failed += 1
             lines.append(format_quota_line(hydrated, row, result))
         if len(configs) > 30:
             lines.append(f"... 另有 {len(configs) - 30} 个已启用账号未展开")
+        if snapshot_count:
+            lines.append(f"沿用快照：{snapshot_count} 个")
         if failed:
             lines.append(f"失败：{failed} 个")
         return "\n".join(lines), None
@@ -860,7 +872,12 @@ def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_quota_line(config: UsageQueryConfig, row: dict[str, Any] | None, result: dict[str, Any]) -> str:
+def format_quota_line(
+    config: UsageQueryConfig,
+    row: dict[str, Any] | None,
+    result: dict[str, Any],
+    suffix: str = "",
+) -> str:
     account_id = int((row or {}).get("id") or config.account_id)
     account_name = str((row or {}).get("name") or "-")
     prefix = f"#{account_id} {account_name}"
@@ -876,6 +893,8 @@ def format_quota_line(config: UsageQueryConfig, row: dict[str, Any] | None, resu
     ]
     if result.get("plan_name"):
         parts.append(str(result.get("plan_name")))
+    if suffix:
+        parts.append(suffix)
     return " / ".join(parts)
 
 
