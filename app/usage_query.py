@@ -302,7 +302,7 @@ def normalize_default_template(template_type: object, code: str) -> str:
 
 
 def normalize_template_code(code: str) -> str:
-    return "\n".join(line.rstrip() for line in str(code or "").strip().splitlines())
+    return "".join(str(code or "").split())
 
 
 def normalize_timeout(value: object) -> int:
