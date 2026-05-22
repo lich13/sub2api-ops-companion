@@ -5,12 +5,28 @@ import re
 import subprocess
 import threading
 import time
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
 APP_VERSION = "0.1.0"
 REPO_SLUG = "lich13/sub2api-ops-companion"
 REPO_WEB_URL = f"https://github.com/{REPO_SLUG}"
+REBUILD_REQUIRED_PATTERNS = (
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+    "requirements*.txt",
+    "pyproject.toml",
+    "poetry.lock",
+    "Pipfile",
+    "Pipfile.lock",
+    "setup.py",
+    "setup.cfg",
+    "uv.lock",
+)
 
 
 class UpdateError(RuntimeError):
@@ -71,6 +87,34 @@ def _latest_remote_tag(workdir: Path, settings: Any) -> str:
     if not versions:
         return ""
     return sorted(versions, key=_version_key)[-1]
+
+
+def _changed_files(workdir: Path, settings: Any, before: str, target: str) -> list[str]:
+    output = _run_git(["diff", "--name-only", before, target], workdir, settings, timeout=30)
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _requires_rebuild(path: str) -> bool:
+    normalized = path.lstrip("./")
+    return any(fnmatch(normalized, pattern) for pattern in REBUILD_REQUIRED_PATTERNS)
+
+
+def _reject_rebuild_required_update(workdir: Path, settings: Any, before: str, target: str) -> None:
+    changed = _changed_files(workdir, settings, before, target)
+    rebuild_files = [path for path in changed if _requires_rebuild(path)]
+    if not rebuild_files:
+        return
+    preview = ", ".join(rebuild_files[:5])
+    if len(rebuild_files) > 5:
+        preview += f" 等 {len(rebuild_files)} 个文件"
+    raise UpdateError(
+        "本次更新包含依赖或容器构建文件变更"
+        f"（{preview}）。为避免 Docker 旧镜像加载新源码导致 502，已取消面板内热更新；"
+        f"请在云机 {workdir} 执行：git fetch --prune origin "
+        f"{getattr(settings, 'update_branch', 'main') or 'main'} && "
+        f"git reset --hard origin/{getattr(settings, 'update_branch', 'main') or 'main'} && "
+        "docker compose up -d --build"
+    )
 
 
 def version_info(settings: Any, force: bool = False) -> dict[str, Any]:
@@ -156,6 +200,7 @@ def perform_update(settings: Any) -> dict[str, Any]:
             "after_commit": before,
             "after_commit_short": _short_commit(before),
         }
+    _reject_rebuild_required_update(workdir, settings, before, target)
     _run_git(["reset", "--hard", f"origin/{branch}"], workdir, settings, timeout=60)
     after = _run_git(["rev-parse", "HEAD"], workdir, settings)
     return {
