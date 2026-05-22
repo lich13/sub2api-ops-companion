@@ -37,6 +37,16 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn('id="usage-query-{{ row.id }}"', template)
         self.assertIn('value="{{ return_to }}#usage-query-{{ row.id }}"', template)
 
+    def test_usage_query_hash_script_opens_target_editor(self) -> None:
+        base_template = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+        script = (REPO_ROOT / "app" / "static" / "usage-query.js").read_text(encoding="utf-8")
+
+        self.assertIn("usage-query.js", base_template)
+        self.assertIn("location.hash", script)
+        self.assertIn("usage-query-", script)
+        self.assertIn("details.open = true", script)
+        self.assertIn("scrollIntoView", script)
+
     def test_usage_query_styles_are_scoped_to_speed_quota_ui(self) -> None:
         style = (REPO_ROOT / "app" / "static" / "style.css").read_text(encoding="utf-8")
 
