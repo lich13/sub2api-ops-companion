@@ -22,6 +22,7 @@ class Settings:
     guard_quality_hours: int = 24
     guard_state_path: str = "/data/guard-state.json"
     guard_event_batch_size: int = 100
+    usage_query_state_path: str = "/data/usage-query-state.json"
     telegram_config_path: str = "/data/telegram-config.json"
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
@@ -131,6 +132,7 @@ def load_settings() -> Settings:
         guard_quality_hours=int_env("GUARD_QUALITY_HOURS", 24, 1, 720),
         guard_state_path=os.getenv("GUARD_STATE_PATH", "/data/guard-state.json"),
         guard_event_batch_size=int_env("GUARD_EVENT_BATCH_SIZE", 100, 1, 500),
+        usage_query_state_path=os.getenv("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json"),
         telegram_config_path=telegram_config_path,
         telegram_enabled=bool_value(telegram_enabled_raw, bool(telegram_bot_token.strip())),
         telegram_bot_token=telegram_bot_token,

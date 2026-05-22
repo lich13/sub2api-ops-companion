@@ -13,7 +13,8 @@
 ## 功能
 
 - 账号稳定性：按账号展开成功量、账号质量错误、错误率、`403 blocked`、余额/额度、限流、5xx/流式截断，并支持按错误率排序。
-- 账号速度：按账号展示首 Token（秒）、平均耗时（秒）、tokens/秒和时间范围内消耗。
+- 账号速度：按账号展示首 Token（秒）、平均耗时（秒）、tokens/秒、时间范围内消耗，以及可选的实时剩余额度快照。
+- 额度查询：每个账号可配置 Sub2API、NewAPI 或自定义 `request/extractor` 模板，保存 API Key/Access Token、上游倍率和自动查询间隔；速度列表会展示原始剩余额度和按 `剩余额度 / 上游倍率` 还原的实际可用量。
 - 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
 - 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
@@ -54,6 +55,7 @@ docker compose up -d --build
 - `GUARD_BALANCE_ERROR_MAX_AGE_HOURS`：余额/额度追加扫尾只处理最近多少小时内的最后报错，默认 `24`，范围 `1-720`。
 - `GUARD_STATE_PATH`：Guard cursor、circuit 和策略状态文件，默认 `/data/guard-state.json`。
 - `GUARD_EVENT_BATCH_SIZE`：每轮 Guard 最多处理的错误/成功事件数，默认 `100`。
+- `USAGE_QUERY_STATE_PATH`：账号额度查询配置、密钥和最新快照文件，默认 `/data/usage-query-state.json`；文件会按 `0600` 写入。
 - `TELEGRAM_CONFIG_PATH`：Telegram 面板配置持久化文件，默认 `/data/telegram-config.json`。
 - `TELEGRAM_BOT_TOKEN`：可选初始值。面板保存后以 `TELEGRAM_CONFIG_PATH` 文件为准。
 - `TELEGRAM_STATE_PATH`：配对状态持久化文件，默认 `/data/telegram-state.json`。
@@ -126,6 +128,18 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 如果 Sub2API 定时测试计划开启了 `auto_recover`，companion 会按 `scheduled_test_results.id` 增量读取成功结果；只要账号当时仍有停调度、rate-limit、overload、临时不可调度或错误状态，就会清理这些运行态并推送“账号已自动恢复”通知，消息下方附带同样的账号操作按钮。
 
+## 账号额度查询
+
+进入 `/sub2ops/speed` 后，在“额度”列展开单个账号的“配置额度查询”：
+
+- `Sub2API` 模板默认请求 `{{baseUrl}}/user/balance`，使用 `Authorization: Bearer {{apiKey}}`，提取 `response.balance` 为 USD 剩余额度。
+- `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}`，把 `quota`、`used_quota` 除以 `500000` 后展示为 USD。
+- `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
+- `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。
+- 开启“可用量≤0 时 Auto Guard 硬停”后，后台 Guard 会按账号配置的自动查询间隔刷新额度；只有查询成功且实际可用量小于等于 `0`，才会把非 OAuth 账号硬停调度。查询失败只保存失败快照，不会当作额度耗尽处理。
+
+密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。
+
 ## 定时恢复
 
 进入 `/sub2ops/scheduled-tests` 可以给账号创建或更新上游 `scheduled_test_plans`：
@@ -168,6 +182,6 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把命中的活跃非 OAuth 账号永久停调度，不设置冷却时间。即使账号已被上游 rate-limit 标记成不可调度，也会被升级为明确的硬暂停；但追加扫尾只看最近 `GUARD_BALANCE_ERROR_MAX_AGE_HOURS` 小时内的最后报错，旧报错过期后不会再补处理。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 1m/3m/5m 短冷却。Guard 面板里的三类开关可以分别停用硬停、429 冷却、5xx/流式冷却；停用后只记录信号和游标，不会改账号调度状态。白名单账号可在 Guard 策略里通过下拉菜单勾选；白名单账号的 403、429、5xx、流式错误只记录信号，不自动暂停或冷却，Telegram 错误链路推送也会跳过这些普通报错；只有连续额度/余额错误达到白名单额度阈值（默认 10）时才会硬停，并且只有账号已硬停调度后才继续推送该白名单账号的错误链路。余额/额度兜底扫尾会跳过白名单账号以保留连续计数语义。后台自动 Guard、余额/额度兜底扫尾、定时测试自动恢复和队列自动调整都会跳过 `type=oauth` 账号，避免自动改动 OAuth 账号状态。
+自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把命中的活跃非 OAuth 账号永久停调度，不设置冷却时间。即使账号已被上游 rate-limit 标记成不可调度，也会被升级为明确的硬暂停；但追加扫尾只看最近 `GUARD_BALANCE_ERROR_MAX_AGE_HOURS` 小时内的最后报错，旧报错过期后不会再补处理。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 1m/3m/5m 短冷却。Guard 面板里的三类开关可以分别停用硬停、429 冷却、5xx/流式冷却；停用后只记录信号和游标，不会改账号调度状态。白名单账号可在 Guard 策略里通过下拉菜单勾选；白名单账号的 403、429、5xx、流式错误只记录信号，不自动暂停或冷却，Telegram 错误链路推送也会跳过这些普通报错；只有连续额度/余额错误达到白名单额度阈值（默认 10）时才会硬停。余额/额度兜底扫尾会跳过白名单账号以保留连续计数语义。速度页额度查询的“可用量≤0 时 Auto Guard 硬停”是逐账号显式开关，查询失败不会停号；启用后若查询成功且实际可用量小于等于 0，会硬停对应非 OAuth 账号。后台自动 Guard、余额/额度兜底扫尾、额度查询硬停、定时测试自动恢复和队列自动调整都会跳过 `type=oauth` 账号，避免自动改动 OAuth 账号状态。
 
 现有自动恢复依赖 Sub2API 原生 `scheduled_test_plans` / `scheduled_test_results`：面板创建定时测试计划，Sub2API runner 到点执行，Companion 只消费 `auto_recover=true` 且结果为 `success` 的记录来清理账号异常运行态并推送 Telegram。当前不会由 Auto Guard 自动创建短期临时测试，也不会在恢复后自动删除临时计划。
