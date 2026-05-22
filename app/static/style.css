@@ -2599,7 +2599,7 @@ dd {
 }
 
 .usage-query-detail-row td {
-  padding: 0 14px 14px 254px;
+  padding: 0 14px 18px;
   background: #fbfcfb;
 }
 
@@ -2650,11 +2650,11 @@ dd {
 
 .usage-query-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(118px, 1fr));
-  gap: 10px;
-  width: min(980px, calc(100vw - 96px));
-  margin-top: 10px;
-  padding: 12px;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  width: min(1280px, 100%);
+  margin-top: 12px;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fbfcfb;
@@ -2677,6 +2677,7 @@ dd {
 }
 
 .usage-query-toggle,
+.usage-query-account-credentials-toggle,
 .usage-query-guard-toggle {
   align-self: end;
   min-height: 38px;
@@ -3420,7 +3421,7 @@ pre {
   }
 
   .usage-query-form {
-    width: min(720px, calc(100vw - 64px));
+    width: 100%;
   }
 
   .usage-query-detail-row td {

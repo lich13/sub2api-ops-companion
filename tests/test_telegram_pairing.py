@@ -31,6 +31,7 @@ from app.telegram_bot import (
     normalize_pairing_code,
     recovery_alert,
 )
+from app.usage_query import UsageQueryConfig, UsageQueryStore
 
 
 async def guard_runner(_: str) -> list[dict[str, Any]]:
@@ -82,6 +83,64 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn("不再通过文本命令做账号运维", reply)
             self.assertIsNone(keyboard)
+
+    async def test_quota_command_queries_enabled_configs_and_shows_available_and_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="custom",
+                    code="""({
+  request: {url: "https://quota.example.com/7", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {planName: "wallet", remaining: response.remaining, total: response.total, unit: "USD"};
+  }
+})""",
+                    upstream_multiplier=0.5,
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "quota-account",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {},
+                    }
+
+            async def quota_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                return {"remaining": 12.5, "total": 20.0}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=quota_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("额度查询", reply)
+            self.assertIn("#7 quota-account", reply)
+            self.assertIn("可用 25 USD", reply)
+            self.assertIn("总额 40 USD", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
+
+    async def test_quota_command_reports_no_enabled_configs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = make_settings(str(Path(tmpdir) / "state.json"))
+            settings.usage_query_state_path = str(Path(tmpdir) / "usage-query-state.json")
+            bot = TelegramOpsBot(settings, object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "额度")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("没有启用额度查询", reply)
 
     def test_account_action_keyboard_has_only_direct_account_actions(self) -> None:
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})

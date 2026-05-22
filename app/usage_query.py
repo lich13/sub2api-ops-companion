@@ -5,7 +5,7 @@ import math
 import threading
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -16,18 +16,24 @@ import quickjs
 
 DEFAULT_SUB2API_TEMPLATE = """({
   request: {
-    url: "{{baseUrl}}/user/balance",
+    url: "{{baseUrl}}/v1/usage",
     method: "GET",
     headers: {
-      "Authorization": "Bearer {{apiKey}}",
-      "User-Agent": "cc-switch/1.0"
+      "Authorization": "Bearer {{apiKey}}"
     }
   },
   extractor: function(response) {
+    const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+    const total = response?.total ?? response?.quota?.total;
+    const used = response?.used ?? response?.quota?.used;
+    const unit = response?.unit ?? response?.quota?.unit ?? "USD";
     return {
-      isValid: response.is_active || true,
-      remaining: response.balance,
-      unit: "USD"
+      isValid: response?.is_active ?? response?.isValid ?? true,
+      planName: response?.planName ?? response?.plan_name ?? response?.quota?.planName ?? "",
+      remaining,
+      total,
+      used,
+      unit
     };
   }
 })"""
@@ -104,6 +110,7 @@ class UsageQueryConfig:
     api_key: str = ""
     access_token: str = ""
     user_id: str = ""
+    use_account_credentials: bool = True
     timeout_seconds: int = 10
     upstream_multiplier: float = 1.0
     guard_disable_on_zero: bool = False
@@ -118,6 +125,7 @@ class UsageQueryConfig:
         self.api_key = str(self.api_key or "")
         self.access_token = str(self.access_token or "")
         self.user_id = str(self.user_id or "").strip()
+        self.use_account_credentials = bool(self.use_account_credentials)
         self.timeout_seconds = normalize_timeout(self.timeout_seconds)
         self.upstream_multiplier = normalize_multiplier(self.upstream_multiplier)
         self.guard_disable_on_zero = bool(self.guard_disable_on_zero)
@@ -276,6 +284,49 @@ def numeric_or_none(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def apply_account_credentials(config: UsageQueryConfig, account_row: dict[str, Any] | None) -> UsageQueryConfig:
+    if not config.use_account_credentials or not account_row:
+        return config
+    credentials = account_credentials(account_row)
+    base_url = config.base_url or credentials.get("base_url", "")
+    api_key = config.api_key or credentials.get("api_key", "")
+    access_token = config.access_token or credentials.get("access_token", "")
+    if base_url == config.base_url and api_key == config.api_key and access_token == config.access_token:
+        return config
+    return replace(config, base_url=base_url, api_key=api_key, access_token=access_token)
+
+
+def account_credentials(account_row: dict[str, Any]) -> dict[str, str]:
+    payloads = [json_object(account_row.get("credentials")), json_object(account_row.get("extra")), account_row]
+    return {
+        "base_url": first_string(payloads, ("base_url", "baseUrl", "api_base", "apiBase", "api_url", "apiUrl", "url")),
+        "api_key": first_string(payloads, ("api_key", "apiKey", "key", "token", "secret_key", "secretKey")),
+        "access_token": first_string(payloads, ("access_token", "accessToken")),
+    }
+
+
+def json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def first_string(payloads: list[dict[str, Any]], keys: tuple[str, ...]) -> str:
+    for payload in payloads:
+        for key in keys:
+            value = payload.get(key)
+            if value in (None, ""):
+                continue
+            return str(value).strip()
+    return ""
 
 
 def execute_usage_query(
