@@ -14,6 +14,14 @@ from zoneinfo import ZoneInfo
 from . import account_ops
 from .db import Database
 from .settings import Settings
+from .usage_query import (
+    UsageOpener,
+    UsageQueryConfig,
+    UsageQueryStore,
+    actual_available,
+    apply_account_credentials,
+    execute_usage_query,
+)
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 ACCOUNT_PAGE_SIZE = 8
@@ -22,6 +30,7 @@ PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然�
 
 GuardRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
 GuardConfig = Callable[[], dict[str, Any]]
+AsyncUsageOpener = Callable[[dict[str, Any], int], Awaitable[Any]]
 
 
 class TelegramOpsBot:
@@ -31,11 +40,13 @@ class TelegramOpsBot:
         db: Database,
         guard_runner: GuardRunner,
         guard_config: GuardConfig,
+        usage_query_opener: AsyncUsageOpener | UsageOpener | None = None,
     ) -> None:
         self.settings = settings
         self.db = db
         self.guard_runner = guard_runner
         self.guard_config = guard_config
+        self.usage_query_opener = usage_query_opener
         self._state_lock = asyncio.Lock()
 
     async def run(self) -> None:
@@ -258,6 +269,9 @@ class TelegramOpsBot:
     ) -> tuple[str, dict[str, Any] | None]:
         parts = text.split()
         command = normalize_command(parts[0] if parts else "")
+
+        if command in {"/quota", "/usage", "quota", "usage", "额度", "查额度"}:
+            return await self._quota_reply()
 
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
             return (
@@ -491,6 +505,51 @@ class TelegramOpsBot:
     def _account_detail(self, account_id: int) -> dict[str, Any] | None:
         rows = self._quality_rows()
         return account_ops.account_by_id(rows, account_id) or account_ops.fallback_account(self.db, account_id)
+
+    def _usage_query_account_row(self, account_id: int) -> dict[str, Any] | None:
+        try:
+            return account_ops.fallback_account(self.db, account_id, True)
+        except Exception:
+            return account_ops.fallback_account(self.db, account_id, False)
+
+    async def _quota_reply(self) -> tuple[str, dict[str, Any] | None]:
+        store = UsageQueryStore(self.settings.usage_query_state_path)
+        configs = [config for config in store.configs() if config.enabled]
+        if not configs:
+            return "没有启用额度查询的账号。请先在速度页为账号开启额度查询。", None
+
+        lines = ["额度查询"]
+        failed = 0
+        for config in configs[:30]:
+            row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
+            hydrated = apply_account_credentials(config, row)
+            result = await self._execute_quota_query(hydrated)
+            store.save_result(config.account_id, result)
+            if not result.get("success"):
+                failed += 1
+            lines.append(format_quota_line(hydrated, row, result))
+        if len(configs) > 30:
+            lines.append(f"... 另有 {len(configs) - 30} 个已启用账号未展开")
+        if failed:
+            lines.append(f"失败：{failed} 个")
+        return "\n".join(lines), None
+
+    async def _execute_quota_query(self, config: UsageQueryConfig) -> dict[str, Any]:
+        opener = self.usage_query_opener
+        if opener is None:
+            return await asyncio.to_thread(execute_usage_query, config)
+
+        async def async_opener(request: dict[str, Any], timeout: int) -> Any:
+            value = opener(request, timeout)
+            if hasattr(value, "__await__"):
+                return await value  # type: ignore[misc]
+            return value
+
+        return await asyncio.to_thread(
+            execute_usage_query,
+            config,
+            opener=lambda request, timeout: asyncio.run(async_opener(request, timeout)),
+        )
 
     async def _allowed(self, chat_id: int, user_id: int) -> bool:
         state = await self._load_state()
@@ -799,6 +858,36 @@ def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     if len(actions) > 10:
         lines.append(f"... 另有 {len(actions) - 10} 个动作")
     return "\n".join(lines)
+
+
+def format_quota_line(config: UsageQueryConfig, row: dict[str, Any] | None, result: dict[str, Any]) -> str:
+    account_id = int((row or {}).get("id") or config.account_id)
+    account_name = str((row or {}).get("name") or "-")
+    prefix = f"#{account_id} {account_name}"
+    if not result.get("success"):
+        return f"{prefix}：查询失败，{truncate(str(result.get('error') or '未知错误'), 160)}"
+
+    unit = str(result.get("unit") or "")
+    available = result.get("actual_available")
+    total = actual_available(result.get("total"), result.get("upstream_multiplier") or config.upstream_multiplier)
+    parts = [
+        f"{prefix}：可用 {format_quota_amount(available, unit)}",
+        f"总额 {format_quota_amount(total, unit)}",
+    ]
+    if result.get("plan_name"):
+        parts.append(str(result.get("plan_name")))
+    return " / ".join(parts)
+
+
+def format_quota_amount(value: Any, unit: str) -> str:
+    if value in (None, ""):
+        return "-"
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    rendered = f"{numeric:.6f}".rstrip("0").rstrip(".")
+    return f"{rendered} {unit}".strip()
 
 
 def bj_time(value: Any) -> str:

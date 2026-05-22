@@ -13,8 +13,14 @@ class UsageQueryUITests(unittest.TestCase):
 
         self.assertIn('data-column="quota"', template)
         self.assertIn('<th data-col="quota">额度</th>', template)
+        self.assertNotIn('data-column="state"', template)
+        self.assertNotIn('data-column="priority"', template)
+        self.assertNotIn('<th data-col="state">状态</th>', template)
+        self.assertNotIn('<th data-col="priority">优先级</th>', template)
+        self.assertIn('colspan="8"', template)
         self.assertIn('action="{{ base_path }}/usage-query/accounts/{{ row.id }}"', template)
         self.assertIn('name="template_type"', template)
+        self.assertIn('name="use_account_credentials"', template)
         self.assertIn('name="upstream_multiplier"', template)
         self.assertIn('name="guard_disable_on_zero"', template)
         self.assertIn('formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query"', template)
@@ -25,6 +31,8 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn(".quota-cell", style)
         self.assertIn(".usage-query-config", style)
         self.assertIn(".usage-query-template-select", style)
+        self.assertIn("width: min(1280px, 100%);", style)
+        self.assertNotIn("padding: 0 14px 14px 254px;", style)
 
 
 if __name__ == "__main__":

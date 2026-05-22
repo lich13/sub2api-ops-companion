@@ -78,6 +78,7 @@ from .usage_query import (
     TEMPLATE_LABELS,
     UsageQueryConfig,
     UsageQueryStore,
+    apply_account_credentials,
     default_template,
     execute_usage_query,
     is_query_due,
@@ -414,6 +415,10 @@ def usage_query_account_row(account_id: int) -> dict[str, Any] | None:
     return account_ops.fallback_account(db, int(account_id), account_routing_capability()["load_factor"])
 
 
+def hydrate_usage_query_config(config: UsageQueryConfig, row: dict[str, Any] | None = None) -> UsageQueryConfig:
+    return apply_account_credentials(config, row if row is not None else usage_query_account_row(config.account_id))
+
+
 def usage_template_options(selected: str) -> list[dict[str, Any]]:
     return [
         {
@@ -448,6 +453,7 @@ def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, 
         "api_key_set": bool(config.api_key),
         "access_token_set": bool(config.access_token),
         "user_id_set": bool(config.user_id),
+        "use_account_credentials": config.use_account_credentials,
         "timeout_seconds": config.timeout_seconds,
         "upstream_multiplier": config.upstream_multiplier,
         "guard_disable_on_zero": config.guard_disable_on_zero,
@@ -525,6 +531,7 @@ def usage_query_config_from_form(
         api_key=api_key or (existing.api_key if existing.template_type == selected_template else ""),
         access_token=access_token or (existing.access_token if existing.template_type == selected_template else ""),
         user_id=str(raw.get("user_id") or "").strip(),
+        use_account_credentials=form_truthy(raw.get("use_account_credentials")),
         timeout_seconds=int_param(str(raw.get("timeout_seconds")), 10, 2, 30),
         upstream_multiplier=float_param(raw.get("upstream_multiplier"), 1.0, 0.0001, 1_000_000.0),
         guard_disable_on_zero=form_truthy(raw.get("guard_disable_on_zero")),
@@ -974,7 +981,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         checked_count += 1
         result = store.result(config.account_id)
         if is_query_due(config, result):
-            result = execute_usage_query(config)
+            result = execute_usage_query(hydrate_usage_query_config(config, row))
             store.save_result(config.account_id, result)
             queried_count += 1
         if not should_pause_for_depleted(result):
@@ -1573,7 +1580,7 @@ async def usage_query_account_query(request: Request, user: AuthUser, account_id
     store = usage_query_store()
     config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
     store.save_config(config)
-    result = execute_usage_query(config)
+    result = execute_usage_query(hydrate_usage_query_config(config))
     store.save_result(account_id, result)
     write_audit(
         settings.audit_path,
@@ -1615,7 +1622,7 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
         if row and is_oauth_account(row):
             skipped_oauth += 1
             continue
-        result = execute_usage_query(config)
+        result = execute_usage_query(hydrate_usage_query_config(config, row))
         store.save_result(config.account_id, result)
         queried += 1
         if not result.get("success"):
