@@ -2696,7 +2696,17 @@ dd {
   min-width: 150px;
 }
 
-.usage-query-global-settings input {
+.usage-query-global-settings .checkbox-label {
+  min-width: 0;
+  align-self: center;
+}
+
+.usage-query-global-settings .checkbox-label input {
+  width: 16px;
+  min-width: 16px;
+}
+
+.usage-query-global-settings input[type="number"] {
   width: 96px;
 }
 

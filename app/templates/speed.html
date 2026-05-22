@@ -66,14 +66,24 @@
     <div class="table-actions">
       <form class="usage-query-global-settings" method="post" action="{{ base_path }}/usage-query/settings">
         <input type="hidden" name="return_to" value="{{ return_to }}" />
-        <label>自动查询间隔（全局）
-          <input name="auto_query_interval_minutes" type="number" min="0" max="1440" value="{{ usage_query_settings.auto_query_interval_minutes }}" />
+        <input type="hidden" name="usage_query_enabled" value="0" />
+        <label class="checkbox-label">
+          <input type="checkbox" name="usage_query_enabled" value="1" {{ 'checked' if usage_query_settings.usage_query_enabled else '' }} />
+          启用查询
         </label>
-        <button type="submit">保存间隔</button>
+        <input type="hidden" name="guard_disable_on_zero" value="0" />
+        <label class="checkbox-label">
+          <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if usage_query_settings.guard_disable_on_zero else '' }} />
+          可用量≤0 时 Auto Guard 硬停
+        </label>
+        <label>自动查询间隔（全局，秒）
+          <input name="auto_query_interval_seconds" type="number" min="0" max="86400" value="{{ usage_query_settings.auto_query_interval_seconds }}" />
+        </label>
+        <button type="submit">保存全局设置</button>
       </form>
       <form method="post" action="{{ base_path }}/usage-query/query-enabled">
         <input type="hidden" name="return_to" value="{{ return_to }}" />
-        <button class="primary" type="submit">查询已启用额度</button>
+        <button class="primary" type="submit">查询已配置额度</button>
       </form>
       <details class="column-picker">
         <summary>选择列</summary>
@@ -153,11 +163,14 @@
                   <span class="pill bad">查询失败</span>
                   <div class="cell-sub quota-error">{{ result.error }}</div>
                   <div class="cell-sub tiny">更新 {{ result.queried_at | bj_time }}</div>
-                {% elif cfg.enabled %}
+                {% elif usage.configured and usage_query_settings.usage_query_enabled %}
                   <span class="pill warn">待查询</span>
                   <div class="cell-sub">倍率 {{ cfg.upstream_multiplier | quota }}</div>
+                {% elif usage.configured %}
+                  <span class="pill muted">查询已关闭</span>
+                  <div class="cell-sub">全局启用后会刷新剩余额度</div>
                 {% else %}
-                  <span class="pill muted">未启用</span>
+                  <span class="pill muted">未配置</span>
                   <div class="cell-sub">配置后可显示剩余额度</div>
                 {% endif %}
               </div>
@@ -169,16 +182,12 @@
               {% endif %}
             </td>
           </tr>
-          <tr class="usage-query-detail-row">
+          <tr class="usage-query-detail-row" id="usage-query-{{ row.id }}">
             <td data-col="quota" colspan="8">
               <details class="usage-query-config">
                 <summary>{{ '编辑额度查询' if usage.configured else '配置额度查询' }} #{{ row.id }}</summary>
                 <form class="usage-query-form" method="post" action="{{ base_path }}/usage-query/accounts/{{ row.id }}" autocomplete="off">
-                  <input type="hidden" name="return_to" value="{{ return_to }}" />
-                  <label class="checkbox-label usage-query-toggle">
-                    <input type="checkbox" name="enabled" value="1" {{ 'checked' if cfg.enabled else '' }} />
-                    启用查询
-                  </label>
+                  <input type="hidden" name="return_to" value="{{ return_to }}#usage-query-{{ row.id }}" />
                   <label>模板
                     <select class="usage-query-template-select" name="template_type">
                       {% for option in usage.template_options %}
@@ -204,16 +213,11 @@
                   <label>超时秒数
                     <input name="timeout_seconds" type="number" min="2" max="30" value="{{ cfg.timeout_seconds }}" />
                   </label>
-                  <label class="checkbox-label usage-query-guard-toggle">
-                    <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if cfg.guard_disable_on_zero else '' }} />
-                    可用量≤0 时 Auto Guard 硬停
-                  </label>
                   <label class="usage-query-code">提取器代码
                     <textarea name="code" spellcheck="false">{{ cfg.code }}</textarea>
                   </label>
                   <div class="usage-query-actions">
                     <button class="primary" type="submit">保存</button>
-                    <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query">保存并查询</button>
                     <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/fill-credentials">从账号读取 Base URL / API Key</button>
                     {% if usage.configured %}
                       <button class="link-button clear-token" type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/delete">移除配置</button>

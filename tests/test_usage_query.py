@@ -254,7 +254,11 @@ class UsageQueryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "usage-query-state.json"
             store = UsageQueryStore(str(path))
-            store.save_auto_query_interval_minutes(15)
+            store.save_usage_query_settings(
+                usage_query_enabled=False,
+                guard_disable_on_zero=False,
+                auto_query_interval_seconds=15,
+            )
             store.save_config(
                 UsageQueryConfig(
                     account_id=9,
@@ -273,9 +277,25 @@ class UsageQueryTests(unittest.TestCase):
 
             self.assertEqual(reloaded.config(9).api_key, "secret")
             self.assertEqual(reloaded.config(9).upstream_multiplier, 0.5)
-            self.assertEqual(reloaded.auto_query_interval_minutes(), 15)
+            self.assertFalse(reloaded.usage_query_enabled())
+            self.assertFalse(reloaded.guard_disable_on_zero())
+            self.assertEqual(reloaded.auto_query_interval_seconds(), 15)
             self.assertEqual(reloaded.result(9)["actual_available"], 2)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+    def test_store_migrates_legacy_global_auto_query_minutes_to_seconds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "usage-query-state.json"
+            path.write_text(
+                '{"configs": {}, "results": {}, "settings": {"auto_query_interval_minutes": 15}}',
+                encoding="utf-8",
+            )
+
+            reloaded = UsageQueryStore(str(path))
+
+            self.assertTrue(reloaded.usage_query_enabled())
+            self.assertTrue(reloaded.guard_disable_on_zero())
+            self.assertEqual(reloaded.auto_query_interval_seconds(), 900)
 
     def test_store_preserves_existing_results_when_saving_config_from_stale_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -296,12 +316,13 @@ class UsageQueryTests(unittest.TestCase):
         now = datetime(2026, 5, 22, 8, 0, tzinfo=timezone.utc)
 
         self.assertTrue(is_query_due(config, {}, now))
-        self.assertFalse(is_query_due(config, {}, now, interval_minutes=0))
+        self.assertFalse(is_query_due(config, {}, now, interval_seconds=0))
         self.assertFalse(
             is_query_due(
                 config,
                 {"queried_at": "2026-05-22T07:45:00+00:00"},
                 now,
+                interval_seconds=1800,
             )
         )
         self.assertTrue(
@@ -309,7 +330,7 @@ class UsageQueryTests(unittest.TestCase):
                 UsageQueryConfig(account_id=9, enabled=True, auto_query_interval_minutes=1440),
                 {"queried_at": "2026-05-22T07:44:59+00:00"},
                 now,
-                interval_minutes=15,
+                interval_seconds=900,
             )
         )
         self.assertTrue(

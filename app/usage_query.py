@@ -187,6 +187,8 @@ DEFAULT_TEMPLATES = {
 
 UsageOpener = Callable[[dict[str, Any], int], Any]
 _STORE_LOCK = threading.Lock()
+DEFAULT_AUTO_QUERY_INTERVAL_SECONDS = 3600
+MAX_AUTO_QUERY_INTERVAL_SECONDS = 86400
 
 
 class UsageQueryError(ValueError):
@@ -248,9 +250,12 @@ class UsageQueryStore:
             return {"configs": {}, "results": {}, "settings": {}}
         if not isinstance(data, dict):
             return {"configs": {}, "results": {}, "settings": {}}
-        data.setdefault("configs", {})
-        data.setdefault("results", {})
-        data.setdefault("settings", {})
+        if not isinstance(data.get("configs"), dict):
+            data["configs"] = {}
+        if not isinstance(data.get("results"), dict):
+            data["results"] = {}
+        if not isinstance(data.get("settings"), dict):
+            data["settings"] = {}
         return data
 
     def _write(self) -> None:
@@ -278,17 +283,54 @@ class UsageQueryStore:
             result.append(UsageQueryConfig.from_dict(account_id, raw if isinstance(raw, dict) else {}))
         return result
 
-    def auto_query_interval_minutes(self) -> int:
+    def usage_query_enabled(self) -> bool:
         settings = self._data.get("settings") or {}
         if not isinstance(settings, dict):
-            return normalize_interval(None)
-        return normalize_interval(settings.get("auto_query_interval_minutes"))
+            return True
+        return normalize_bool_setting(settings.get("usage_query_enabled"), True)
 
-    def save_auto_query_interval_minutes(self, value: object) -> None:
+    def guard_disable_on_zero(self) -> bool:
+        settings = self._data.get("settings") or {}
+        if not isinstance(settings, dict):
+            return True
+        return normalize_bool_setting(settings.get("guard_disable_on_zero"), True)
+
+    def auto_query_interval_seconds(self) -> int:
+        settings = self._data.get("settings") or {}
+        if not isinstance(settings, dict):
+            return normalize_interval_seconds(None)
+        if "auto_query_interval_seconds" in settings:
+            return normalize_interval_seconds(settings.get("auto_query_interval_seconds"))
+        legacy_minutes = normalize_interval(settings.get("auto_query_interval_minutes"))
+        return normalize_interval_seconds(legacy_minutes * 60)
+
+    def auto_query_interval_minutes(self) -> int:
+        return self.auto_query_interval_seconds() // 60
+
+    def save_usage_query_settings(
+        self,
+        *,
+        usage_query_enabled: object | None = None,
+        guard_disable_on_zero: object | None = None,
+        auto_query_interval_seconds: object | None = None,
+    ) -> None:
         with _STORE_LOCK:
             self._data = self._read()
-            self._data.setdefault("settings", {})["auto_query_interval_minutes"] = normalize_interval(value)
+            settings = self._data.setdefault("settings", {})
+            if not isinstance(settings, dict):
+                settings = {}
+                self._data["settings"] = settings
+            if usage_query_enabled is not None:
+                settings["usage_query_enabled"] = normalize_bool_setting(usage_query_enabled, True)
+            if guard_disable_on_zero is not None:
+                settings["guard_disable_on_zero"] = normalize_bool_setting(guard_disable_on_zero, True)
+            if auto_query_interval_seconds is not None:
+                settings["auto_query_interval_seconds"] = normalize_interval_seconds(auto_query_interval_seconds)
+                settings.pop("auto_query_interval_minutes", None)
             self._write()
+
+    def save_auto_query_interval_minutes(self, value: object) -> None:
+        self.save_usage_query_settings(auto_query_interval_seconds=normalize_interval(value) * 60)
 
     def save_config(self, config: UsageQueryConfig) -> None:
         with _STORE_LOCK:
@@ -377,6 +419,27 @@ def normalize_interval(value: object) -> int:
     except (TypeError, ValueError):
         parsed = 60
     return max(0, min(1440, parsed))
+
+
+def normalize_interval_seconds(value: object) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        parsed = DEFAULT_AUTO_QUERY_INTERVAL_SECONDS
+    return max(0, min(MAX_AUTO_QUERY_INTERVAL_SECONDS, parsed))
+
+
+def normalize_bool_setting(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 
 def normalize_multiplier(value: object) -> float:
@@ -663,9 +726,15 @@ def is_query_due(
     config: UsageQueryConfig,
     result: dict[str, Any],
     now: datetime | None = None,
+    interval_seconds: object | None = None,
     interval_minutes: object | None = None,
 ) -> bool:
-    interval = normalize_interval(config.auto_query_interval_minutes if interval_minutes is None else interval_minutes)
+    if interval_seconds is not None:
+        interval = normalize_interval_seconds(interval_seconds)
+    elif interval_minutes is not None:
+        interval = normalize_interval(interval_minutes) * 60
+    else:
+        interval = normalize_interval(config.auto_query_interval_minutes) * 60
     if interval <= 0:
         return False
     queried_at = str(result.get("queried_at") or "")
@@ -678,7 +747,7 @@ def is_query_due(
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    return (current - parsed.astimezone(timezone.utc)).total_seconds() >= interval * 60
+    return (current - parsed.astimezone(timezone.utc)).total_seconds() >= interval
 
 
 def public_config(config: UsageQueryConfig) -> dict[str, Any]:
