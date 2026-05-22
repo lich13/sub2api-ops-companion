@@ -133,8 +133,9 @@ https://你的-sub2api-域名/sub2ops/sso/start
 进入 `/sub2ops/speed` 后，在“额度”列展开单个账号的“配置额度查询”：
 
 - `Sub2API` 模板默认请求 `{{baseUrl}}/v1/usage`，使用 `Authorization: Bearer {{apiKey}}` 和 `User-Agent: cc-switch/1.0`，兼容 `remaining`、`quota.remaining` 和 `balance` 字段；若接口没有直接返回 `total`，会尝试用 `remaining + usage.total.actual_cost/cost` 推导总额。
-- `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}`，把 `quota`、`used_quota` 除以 `500000` 后展示为 USD。
+- `NewAPI` 模板默认请求 `{{baseUrl}}/api/usage/token/`，使用 `Authorization: Bearer {{newApiToken}}`；`newApiToken` 优先取 API Key，缺失时回退 Access Token。模板按 `total_available`、`total_used`、`total_granted` 读取 token usage，并除以 `500000` 展示为 USD；旧的 `/api/user/self` 默认模板会在读取配置时自动升级。
 - `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
+- NewAPI 的 Base URL 会把末尾 `/v1` 自动归一为站点根地址，避免把管理接口拼成 `/v1/api/usage/token/`；从其它内置模板切到 NewAPI 时，如果表单里的代码仍是旧默认模板，后端会兜底替换成当前 NewAPI 默认模板。
 - 点击“从账号读取 Base URL / API Key”会从 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key` 读取并保存到当前额度查询配置。
 - `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。面板会按当前配置倍率重新计算旧快照的实际可用量。
 - 自动查询间隔是速度页顶部的全局设置，后台 Guard 对所有启用额度查询的账号使用同一个间隔。
