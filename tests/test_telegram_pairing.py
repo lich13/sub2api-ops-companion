@@ -144,6 +144,65 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("没有配置额度查询", reply)
 
+    async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="custom",
+                    code="""({
+  request: {url: "https://quota.example.com/deleted", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                    upstream_multiplier=0.5,
+                )
+            )
+            store.save_result(
+                7,
+                {
+                    "account_id": 7,
+                    "template_type": "custom",
+                    "success": True,
+                    "data": [],
+                    "error": "",
+                    "queried_at": "2026-05-22T00:00:00+00:00",
+                    "remaining": 12.5,
+                    "unit": "USD",
+                    "upstream_multiplier": 0.5,
+                    "actual_available": 25.0,
+                },
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return None
+
+            query_calls = 0
+
+            async def quota_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                nonlocal query_calls
+                query_calls += 1
+                return {"remaining": 99.0}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=quota_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertEqual(query_calls, 0)
+            self.assertNotIn("#7", reply)
+            self.assertNotIn("25 USD", reply)
+            self.assertIn("跳过已删除账号：1 个", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
+
     async def test_quota_command_uses_last_success_snapshot_when_live_query_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"

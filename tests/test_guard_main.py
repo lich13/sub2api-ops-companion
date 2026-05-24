@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("OPS_SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
@@ -623,6 +624,26 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(actions, [])
         self.assertEqual(paused, [])
         self.assertFalse(store.result(9)["success"])
+
+    def test_usage_query_batch_skips_missing_accounts(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True))
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: None  # type: ignore[assignment]
+
+        def unexpected_query(_config: Any) -> dict[str, Any]:
+            raise AssertionError("deleted accounts must not be queried")
+
+        main_module.execute_usage_query = unexpected_query  # type: ignore[assignment]
+
+        response = asyncio.run(main_module.usage_query_query_enabled("tester", return_to="/sub2ops/speed"))
+        message = parse_qs(urlsplit(response.headers["location"]).query)["msg"][0]
+
+        self.assertEqual(store.result(9), {})
+        self.assertIn("已查询 0 个已配置账号", message)
+        self.assertIn("跳过已删除 1 个", message)
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"skipped_missing": 1', audit_text)
 
     def test_enrich_guard_rows_adds_problem_for_guard_template(self) -> None:
         rows = [

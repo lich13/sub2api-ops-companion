@@ -1777,18 +1777,29 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     store = usage_query_store()
     queried = 0
     failed = 0
+    skipped_missing = 0
     skipped_oauth = 0
     if not store.usage_query_enabled():
         write_audit(
             settings.audit_path,
             "usage_query_batch_query",
-            {"user": user, "queried": 0, "failed": 0, "skipped_oauth": 0, "usage_query_enabled": False},
+            {
+                "user": user,
+                "queried": 0,
+                "failed": 0,
+                "skipped_missing": 0,
+                "skipped_oauth": 0,
+                "usage_query_enabled": False,
+            },
         )
         return redirect_with_msg(return_to, "全局额度查询已关闭，未查询账号")
     for config in store.configs():
         if not usage_query_configured(config):
             continue
         row = usage_query_account_row(config.account_id)
+        if not row:
+            skipped_missing += 1
+            continue
         if row and is_oauth_account(row):
             skipped_oauth += 1
             continue
@@ -1804,11 +1815,15 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
             "user": user,
             "queried": queried,
             "failed": failed,
+            "skipped_missing": skipped_missing,
             "skipped_oauth": skipped_oauth,
             "usage_query_enabled": True,
         },
     )
-    return redirect_with_msg(return_to, f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个")
+    return redirect_with_msg(
+        return_to,
+        f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过已删除 {skipped_missing} 个，跳过 OAuth {skipped_oauth} 个",
+    )
 
 
 @app.get("/scheduled-tests", response_class=HTMLResponse)
