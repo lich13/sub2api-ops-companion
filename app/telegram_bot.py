@@ -540,9 +540,13 @@ class TelegramOpsBot:
 
         account_lines: list[str] = []
         totals: dict[str, float] = {}
+        skipped_missing = 0
         skipped_oauth = 0
         for config in configs[:30]:
             row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
+            if not row:
+                skipped_missing += 1
+                continue
             if row and is_oauth_account(row):
                 skipped_oauth += 1
                 continue
@@ -565,6 +569,8 @@ class TelegramOpsBot:
             f"总可用：{format_quota_totals(totals)}",
             *account_lines,
         ]
+        if skipped_missing:
+            lines.append(f"跳过已删除账号：{skipped_missing} 个")
         if skipped_oauth:
             lines.append(f"跳过 OAuth：{skipped_oauth} 个")
         if len(configs) > 30:
