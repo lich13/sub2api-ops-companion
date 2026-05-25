@@ -82,9 +82,6 @@
         <label>自动查询间隔（全局，秒）
           <input name="auto_query_interval_seconds" type="number" min="0" max="86400" value="{{ usage_query_settings.auto_query_interval_seconds }}" />
         </label>
-        <label>Sub2API Admin Token
-          <input type="password" name="sub2api_admin_token" placeholder="{{ '已保存，留空保留' if usage_query_settings.sub2api_admin_token_saved else 'Sub2API Admin Token' }}" autocomplete="new-password" />
-        </label>
         <button type="submit">保存全局设置</button>
       </form>
       <form method="post" action="{{ base_path }}/usage-query/query-enabled">

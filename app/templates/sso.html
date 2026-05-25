@@ -24,6 +24,10 @@
     <span>允许角色</span>
     <strong>{{ sso.required_role }}</strong>
   </div>
+  <div class="metric-card {{ 'warning' if not sso.sub2api_admin_token_saved else '' }}">
+    <span>管理员 API Key</span>
+    <strong>{{ '已保存' if sso.sub2api_admin_token_saved else '未设置' }}</strong>
+  </div>
 </section>
 
 <section class="sso-layout">
@@ -71,6 +75,17 @@
       <label class="sso-field">
         <span>验证超时（秒）</span>
         <input class="wide-input mono" name="verify_timeout_seconds" type="number" min="1" max="20" value="{{ sso.verify_timeout_seconds }}" />
+      </label>
+      <label class="sso-field sso-wide-field">
+        <span>Sub2API 管理员 API Key</span>
+        <input
+          class="wide-input mono"
+          type="password"
+          name="sub2api_admin_token"
+          placeholder="{{ '已保存，留空保留' if sso.sub2api_admin_token_saved else 'sk-admin...' }}"
+          autocomplete="new-password"
+          spellcheck="false"
+        />
       </label>
     </div>
 
