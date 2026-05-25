@@ -546,7 +546,8 @@ class TelegramOpsBot:
             if not row:
                 continue
             if row and is_oauth_account(row):
-                line = await asyncio.to_thread(format_oauth_quota_line, row, config.account_id)
+                previous = store.result(config.account_id)
+                line = await asyncio.to_thread(format_oauth_quota_line, row, config.account_id, previous)
                 if line:
                     account_lines.append(line)
                 continue
@@ -564,7 +565,7 @@ class TelegramOpsBot:
                 continue
             store.save_result(config.account_id, result)
             account_lines.append(format_quota_line(hydrated, row, result))
-        oauth_lines = await self._current_oauth_quota_lines(seen_account_ids)
+        oauth_lines = await self._current_oauth_quota_lines(seen_account_ids, store)
         account_lines.extend(oauth_lines)
         if not configs and not account_lines:
             return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
@@ -577,7 +578,11 @@ class TelegramOpsBot:
             lines.append(f"... 另有 {len(configs) - 30} 个已配置账号未展开")
         return "\n".join(lines), None
 
-    async def _current_oauth_quota_lines(self, seen_account_ids: set[int]) -> list[str]:
+    async def _current_oauth_quota_lines(
+        self,
+        seen_account_ids: set[int],
+        store: UsageQueryStore | None = None,
+    ) -> list[str]:
         try:
             rows = await asyncio.to_thread(self._quality_rows)
         except Exception:
@@ -590,7 +595,9 @@ class TelegramOpsBot:
             full_row = await asyncio.to_thread(self._usage_query_account_row, account_id)
             if not full_row:
                 continue
-            line = await asyncio.to_thread(format_oauth_quota_line, full_row, account_id)
+            active_store = store or UsageQueryStore(self.settings.usage_query_state_path)
+            previous = active_store.result(account_id)
+            line = await asyncio.to_thread(format_oauth_quota_line, full_row, account_id, previous)
             if line:
                 lines.append(line)
             seen_account_ids.add(account_id)
@@ -937,11 +944,21 @@ def format_quota_line(
     return f"{prefix}：可用 {format_quota_amount(quota_available(result, config), unit)}"
 
 
-def format_oauth_quota_line(row: dict[str, Any], fallback_account_id: int = 0) -> str:
-    helper = getattr(usage_query_module, "oauth_quota_windows", None)
-    if not callable(helper):
-        return ""
-    summary = helper(row)
+def format_oauth_quota_line(
+    row: dict[str, Any],
+    fallback_account_id: int = 0,
+    result: dict[str, Any] | None = None,
+) -> str:
+    summary = None
+    if isinstance(result, dict):
+        cached = result.get("oauth_quota")
+        if isinstance(cached, dict):
+            summary = cached
+    if summary is None:
+        helper = getattr(usage_query_module, "oauth_quota_windows", None)
+        if not callable(helper):
+            return ""
+        summary = helper(row)
     if not isinstance(summary, dict):
         return ""
     account_id = int(row.get("id") or row.get("account_id") or fallback_account_id)
@@ -951,7 +968,7 @@ def format_oauth_quota_line(row: dict[str, Any], fallback_account_id: int = 0) -
     rendered = " / ".join(format_oauth_quota_window(window) for window in windows if isinstance(window, dict))
     if not rendered:
         return ""
-    return f"#{account_id} {account_name} · Codex {plan_type}：{rendered}"
+    return f"#{account_id} {account_name} · {plan_type}：{rendered}"
 
 
 def remaining_oauth_quota_windows(raw_windows: Any) -> list[dict[str, Any]]:
@@ -986,7 +1003,26 @@ def format_oauth_quota_window(window: dict[str, Any]) -> str:
     if remaining_percent in (None, ""):
         used_percent = numeric_value(window.get("used_percent"))
         remaining_percent = None if used_percent is None else max(0.0, 100.0 - used_percent)
-    return f"{label} 剩余 {format_quota_percent(remaining_percent)}"
+    rendered = f"{label} 剩余 {format_quota_percent(remaining_percent)}"
+    reset_at = str(window.get("reset_at") or "").strip()
+    if reset_at:
+        rendered += f"（恢复 {format_oauth_reset_time(reset_at)}）"
+    return rendered
+
+
+def format_oauth_reset_time(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=BEIJING_TZ)
+    return parsed.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
 
 
 def numeric_value(value: Any) -> float | None:

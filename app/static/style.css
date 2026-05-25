@@ -2642,15 +2642,22 @@ dd {
 
 .quota-window-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 34px;
   padding: 3px 8px;
   border: 1px solid #bbf7d0;
   border-radius: 8px;
   color: #166534;
   background: #f0fdf4;
   white-space: nowrap;
+}
+
+.quota-window-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .quota-window-chip span {
@@ -2670,6 +2677,12 @@ dd {
   color: var(--danger);
   border-color: #fecaca;
   background: #fff1f2;
+}
+
+.quota-window-reset {
+  opacity: 0.72;
+  font-size: 11px !important;
+  font-weight: 600 !important;
 }
 
 .quota-error {

@@ -42,6 +42,8 @@ class GuardMainTests(unittest.TestCase):
         self.original_usage_query_store = getattr(main_module, "usage_query_store", None)
         self.original_usage_query_account_row = getattr(main_module, "usage_query_account_row", None)
         self.original_execute_usage_query = getattr(main_module, "execute_usage_query", None)
+        self.original_execute_oauth_usage_query = getattr(main_module, "execute_oauth_usage_query", None)
+        self.original_usage_query_oauth_account_rows = getattr(main_module, "usage_query_oauth_account_rows", None)
         self.original_pause_account_op = main_module.account_ops.pause_account
         self.original_resume_account_op = main_module.account_ops.resume_account
         self.original_guard_pause_account = main_module.account_ops.guard_pause_account
@@ -75,6 +77,14 @@ class GuardMainTests(unittest.TestCase):
             main_module.usage_query_account_row = self.original_usage_query_account_row  # type: ignore[assignment]
         if self.original_execute_usage_query is not None:
             main_module.execute_usage_query = self.original_execute_usage_query  # type: ignore[assignment]
+        if self.original_execute_oauth_usage_query is not None:
+            main_module.execute_oauth_usage_query = self.original_execute_oauth_usage_query  # type: ignore[assignment]
+        elif hasattr(main_module, "execute_oauth_usage_query"):
+            delattr(main_module, "execute_oauth_usage_query")
+        if self.original_usage_query_oauth_account_rows is not None:
+            main_module.usage_query_oauth_account_rows = self.original_usage_query_oauth_account_rows  # type: ignore[assignment]
+        elif hasattr(main_module, "usage_query_oauth_account_rows"):
+            delattr(main_module, "usage_query_oauth_account_rows")
         main_module.account_ops.pause_account = self.original_pause_account_op
         main_module.account_ops.resume_account = self.original_resume_account_op
         main_module.account_ops.guard_pause_account = self.original_guard_pause_account
@@ -550,6 +560,7 @@ class GuardMainTests(unittest.TestCase):
                         "usage_query_enabled": "0",
                         "guard_disable_on_zero": "0",
                         "auto_query_interval_seconds": "30",
+                        "sub2api_admin_token": "admin-secret",
                     }
                 )
 
@@ -565,6 +576,11 @@ class GuardMainTests(unittest.TestCase):
         self.assertFalse(store.usage_query_enabled())
         self.assertFalse(store.guard_disable_on_zero())
         self.assertEqual(store.auto_query_interval_seconds(), 30)
+        self.assertEqual(store.sub2api_admin_token(), "admin-secret")
+        self.assertTrue(main_module.usage_query_settings(store)["sub2api_admin_token_saved"])
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertNotIn("admin-secret", audit_text)
+        self.assertIn('"sub2api_admin_token_set": true', audit_text)
         self.assertIn("/sub2ops/speed?msg=", response.headers["location"])
 
     def test_usage_query_view_recalculates_actual_available_with_current_multiplier(self) -> None:
@@ -600,6 +616,8 @@ class GuardMainTests(unittest.TestCase):
         sql, params = capture_db.fetch_all_calls[0]
         self.assertIn("a.credentials", sql)
         self.assertIn("a.extra", sql)
+        self.assertIn("codex_5h_reset_after_seconds", sql)
+        self.assertIn("codex_7d_window_minutes", sql)
         self.assertIsNotNone(params)
         assert params is not None
         self.assertEqual(params["group_names"], ["openai-default"])
@@ -644,7 +662,35 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"][0]["remaining_percent"], 0.0)
         self.assertEqual(calls[0]["credentials"]["plan_type"], "plus")
 
-    def test_speed_template_renders_oauth_plan_badge_percent_chips_and_update_time(self) -> None:
+    def test_enrich_usage_query_rows_prefers_empty_success_oauth_query_result(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_result(
+            9,
+            {
+                "account_id": 9,
+                "template_type": "oauth",
+                "success": True,
+                "oauth_quota": {"plan_type": "pro", "ui_windows": [], "telegram_windows": []},
+            },
+        )
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+
+        enriched = main_module.enrich_usage_query_rows(
+            [
+                {
+                    "id": 9,
+                    "name": "oauth-account",
+                    "type": "oauth",
+                    "credentials": {"plan_type": "free"},
+                    "extra": {"codex_7d_used_percent": 10},
+                }
+            ]
+        )
+
+        self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "pro")
+        self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"], [])
+
+    def test_speed_template_renders_oauth_plan_badge_window_reset_time_and_admin_token_field(self) -> None:
         rendered = main_module.templates.get_template("speed.html").render(
             {
                 "app_name": "Sub2Ops",
@@ -680,19 +726,14 @@ class GuardMainTests(unittest.TestCase):
                             "depleted": False,
                         },
                         "oauth_quota": {
-                            "plan_type": "plus",
+                            "plan_type": "free",
                             "ui_windows": [
-                                {
-                                    "key": "codex_5h",
-                                    "label": "5h",
-                                    "used_percent": 42.5,
-                                    "remaining_percent": 57.5,
-                                },
                                 {
                                     "key": "codex_7d",
                                     "label": "7d",
                                     "used_percent": 100.0,
                                     "remaining_percent": 0.0,
+                                    "reset_at": "2026-05-28T22:30:00+00:00",
                                 },
                             ],
                         },
@@ -719,6 +760,7 @@ class GuardMainTests(unittest.TestCase):
                     "usage_query_enabled": True,
                     "guard_disable_on_zero": True,
                     "auto_query_interval_seconds": 3600,
+                    "sub2api_admin_token_saved": True,
                 },
                 "dashboard": {
                     "success_count": 0,
@@ -737,32 +779,204 @@ class GuardMainTests(unittest.TestCase):
         )
 
         self.assertIn("oauth-quota", rendered)
-        self.assertIn("计划 plus", rendered)
-        self.assertIn("5h", rendered)
-        self.assertIn("57.5%", rendered)
+        self.assertIn("oauth-plan-badge", rendered)
+        self.assertIn("free", rendered)
+        self.assertNotIn("计划 free", rendered)
+        self.assertNotIn(">5h<", rendered)
         self.assertIn("7d", rendered)
         self.assertIn("0%", rendered)
-        self.assertIn("更新 2026-05-25 16:30", rendered)
+        self.assertIn("恢复 2026-05-29 06:30", rendered)
+        self.assertNotIn("更新 2026-05-25 16:30", rendered)
+        self.assertIn('name="sub2api_admin_token"', rendered)
+        self.assertIn("已保存，留空保留", rendered)
 
-    def test_usage_query_guard_skips_oauth_accounts(self) -> None:
+    def test_usage_query_guard_refreshes_oauth_accounts_without_pausing_them(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=True,
+            auto_query_interval_seconds=1,
+            sub2api_admin_token="admin-secret",
+        )
         store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
+        main_module.settings.sub2api_verify_base_url = "https://verify.example.com"
         main_module.usage_query_store = lambda: store  # type: ignore[assignment]
         main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
             "id": 9,
             "name": "oauth-account",
+            "platform": "openai",
             "type": "oauth",
             "schedulable": True,
+            "credentials": {"plan_type": "plus"},
+            "extra": {"codex_7d_used_percent": 10},
         }
-        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
-            "success": True,
-            "remaining": 0,
-            "actual_available": 0,
-        }
+        calls: list[tuple[int, str, str]] = []
+        paused: list[int] = []
+
+        def fake_oauth_query(account_id: int, base_url: str, admin_token: str, **_kwargs: Any) -> dict[str, Any]:
+            calls.append((account_id, base_url, admin_token))
+            return {
+                "account_id": account_id,
+                "template_type": "oauth",
+                "success": True,
+                "queried_at": "2026-05-25T08:00:00+00:00",
+                "oauth_quota": {"plan_type": "plus", "ui_windows": []},
+            }
+
+        def unexpected_usage_query(_config: Any) -> dict[str, Any]:
+            raise AssertionError("OAuth guard refresh must not use the generic usage query template")
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_usage_query = unexpected_usage_query  # type: ignore[assignment]
+        main_module.account_ops.guard_pause_account = lambda _db, account_id, _reason: paused.append(account_id)  # type: ignore[assignment]
 
         actions = main_module.run_usage_query_guard("test")
 
         self.assertEqual(actions, [])
+        self.assertEqual(paused, [])
+        self.assertEqual(calls, [(9, "https://verify.example.com", "admin-secret")])
+        self.assertEqual(store.result(9)["template_type"], "oauth")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"oauth_queried_count": 1', audit_text)
+
+    def test_oauth_usage_query_base_url_falls_back_to_env_when_sso_file_is_blank(self) -> None:
+        data_dir = Path(self.tmpdir.name)
+        sso_path = data_dir / "sso-config.json"
+        sso_path.write_text('{"base_url": "", "verify_base_url": ""}', encoding="utf-8")
+        main_module.settings.sso_config_path = str(sso_path)
+        main_module.settings.sub2api_verify_base_url = "https://verify.example.com"
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+
+        self.assertEqual(main_module.oauth_usage_query_base_url(), "https://verify.example.com")
+
+    def test_usage_query_guard_refreshes_current_oauth_accounts_without_saved_config(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=True,
+            auto_query_interval_seconds=1,
+            sub2api_admin_token="admin-secret",
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 12,
+                "name": "oauth-current",
+                "platform": "openai",
+                "type": "oauth",
+                "schedulable": True,
+                "credentials": {"plan_type": "plus"},
+                "extra": {"codex_7d_used_percent": 20},
+            }
+        ]
+        calls: list[int] = []
+        paused: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            calls.append(account_id)
+            return {
+                "account_id": account_id,
+                "template_type": "oauth",
+                "success": True,
+                "queried_at": "2026-05-25T08:00:00+00:00",
+            }
+
+        def unexpected_usage_query(_config: Any) -> dict[str, Any]:
+            raise AssertionError("current OAuth guard refresh must not use generic usage query")
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_usage_query = unexpected_usage_query  # type: ignore[assignment]
+        main_module.account_ops.guard_pause_account = lambda _db, account_id, _reason: paused.append(account_id)  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(paused, [])
+        self.assertEqual(calls, [12])
+        self.assertEqual(store.result(12)["template_type"], "oauth")
+
+    def test_usage_query_batch_queries_oauth_with_global_admin_token_and_no_skip_message(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            sub2api_admin_token="admin-secret",
+        )
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, template_type="sub2api"))
+        store.save_config(UsageQueryConfig(account_id=10, enabled=True, template_type="sub2api"))
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        rows = {
+            9: {"id": 9, "name": "api-account", "type": "api", "schedulable": True},
+            10: {
+                "id": 10,
+                "name": "oauth-account",
+                "platform": "openai",
+                "type": "oauth",
+                "schedulable": True,
+                "credentials": {"plan_type": "pro"},
+                "extra": {"codex_7d_used_percent": 20},
+            },
+        }
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda account_id: rows.get(account_id)  # type: ignore[assignment]
+        generic_calls: list[int] = []
+        oauth_calls: list[int] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            generic_calls.append(config.account_id)
+            return {"success": True, "remaining": 3, "actual_available": 3, "queried_at": "2026-05-25T08:00:00+00:00"}
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            oauth_calls.append(account_id)
+            return {"account_id": account_id, "template_type": "oauth", "success": True, "queried_at": "2026-05-25T08:00:00+00:00"}
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+
+        response = asyncio.run(main_module.usage_query_query_enabled("tester", return_to="/sub2ops/speed"))
+        message = parse_qs(urlsplit(response.headers["location"]).query)["msg"][0]
+
+        self.assertEqual(generic_calls, [9])
+        self.assertEqual(oauth_calls, [10])
+        self.assertEqual(store.result(10)["template_type"], "oauth")
+        self.assertIn("已查询 2 个已配置账号", message)
+        self.assertIn("失败 0 个", message)
+        self.assertNotIn("跳过 OAuth", message)
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"oauth_queried": 1', audit_text)
+
+    def test_usage_query_batch_counts_oauth_missing_admin_token_failure_without_blocking_non_oauth(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, template_type="sub2api"))
+        store.save_config(UsageQueryConfig(account_id=10, enabled=True, template_type="sub2api"))
+        rows = {
+            9: {"id": 9, "name": "api-account", "type": "api", "schedulable": True},
+            10: {"id": 10, "name": "oauth-account", "platform": "openai", "type": "oauth", "schedulable": True},
+        }
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda account_id: rows.get(account_id)  # type: ignore[assignment]
+        generic_calls: list[int] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            generic_calls.append(config.account_id)
+            return {
+                "success": True,
+                "remaining": 3,
+                "actual_available": 3,
+                "queried_at": "2026-05-25T08:00:00+00:00",
+            }
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
+
+        response = asyncio.run(main_module.usage_query_query_enabled("tester", return_to="/sub2ops/speed"))
+        message = parse_qs(urlsplit(response.headers["location"]).query)["msg"][0]
+
+        self.assertEqual(generic_calls, [9])
+        self.assertTrue(store.result(9)["success"])
+        self.assertFalse(store.result(10)["success"])
+        self.assertIn("已查询 2 个已配置账号", message)
+        self.assertIn("失败 1 个", message)
 
     def test_usage_query_guard_does_not_pause_failed_queries(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
