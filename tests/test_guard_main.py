@@ -14,6 +14,7 @@ os.environ.setdefault("OPS_SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 from app import main as main_module
+from app import usage_query as usage_query_module
 from app.guard_store import GuardStore
 from app.usage_query import DEFAULT_NEWAPI_TEMPLATE, DEFAULT_SUB2API_TEMPLATE, UsageQueryConfig, UsageQueryStore
 
@@ -581,6 +582,168 @@ class GuardMainTests(unittest.TestCase):
         self.assertAlmostEqual(view["result"]["actual_available"], 478.01124833333336)
         self.assertEqual(view["result"]["upstream_multiplier"], 0.06)
 
+    def test_load_speed_quality_projects_read_only_oauth_quota_fields(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.fetch_all_calls.append((sql, params))
+                return []
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+
+        rows = main_module.load_speed_quality(["openai-default"], "openai", None, None)
+
+        self.assertEqual(rows, [])
+        sql, params = capture_db.fetch_all_calls[0]
+        self.assertIn("a.credentials", sql)
+        self.assertIn("a.extra", sql)
+        self.assertIsNotNone(params)
+        assert params is not None
+        self.assertEqual(params["group_names"], ["openai-default"])
+        self.assertEqual(params["platform"], "openai")
+
+    def test_enrich_usage_query_rows_adds_oauth_quota_from_usage_query_helper(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        calls: list[dict[str, Any]] = []
+        missing = object()
+        original_helper = getattr(usage_query_module, "oauth_quota_windows", missing)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+
+        def fake_oauth_quota_windows(row: dict[str, Any]) -> dict[str, Any]:
+            calls.append(row)
+            return {
+                "plan_type": "plus",
+                "ui_windows": [
+                    {"key": "codex_5h", "label": "5h", "used_percent": 100.0, "remaining_percent": 0.0}
+                ],
+            }
+
+        try:
+            usage_query_module.oauth_quota_windows = fake_oauth_quota_windows  # type: ignore[attr-defined]
+            enriched = main_module.enrich_usage_query_rows(
+                [
+                    {
+                        "id": 9,
+                        "name": "oauth-account",
+                        "type": "oauth",
+                        "credentials": {"plan_type": "plus"},
+                        "extra": {"codex_5h_used_percent": 100},
+                    }
+                ]
+            )
+        finally:
+            if original_helper is missing:
+                delattr(usage_query_module, "oauth_quota_windows")
+            else:
+                usage_query_module.oauth_quota_windows = original_helper  # type: ignore[attr-defined]
+
+        self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "plus")
+        self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"][0]["remaining_percent"], 0.0)
+        self.assertEqual(calls[0]["credentials"]["plan_type"], "plus")
+
+    def test_speed_template_renders_oauth_plan_badge_percent_chips_and_update_time(self) -> None:
+        rendered = main_module.templates.get_template("speed.html").render(
+            {
+                "app_name": "Sub2Ops",
+                "active": "speed",
+                "base_path": "/sub2ops",
+                "current_user": "tester",
+                "version": {"current_version": "test"},
+                "msg": "",
+                "rows": [
+                    {
+                        "id": 9,
+                        "name": "oauth-account",
+                        "type": "oauth",
+                        "concurrency": 1,
+                        "platform": "openai",
+                        "success_window": 0,
+                        "output_tokens_window": 0,
+                        "avg_first_token_ms": None,
+                        "avg_duration_ms": None,
+                        "avg_ms_per_output_token": None,
+                        "usage_total_cost": 0,
+                        "usage_actual_cost": 0,
+                        "usage_request_count": 0,
+                        "usage_total_tokens": 0,
+                        "last_success_at": None,
+                        "rate_limit_reset_at": None,
+                        "updated_at": "2026-05-25T08:30:00+00:00",
+                        "usage_query": {
+                            "configured": False,
+                            "config": {"upstream_multiplier": 1},
+                            "result": {},
+                            "template_options": [],
+                            "depleted": False,
+                        },
+                        "oauth_quota": {
+                            "plan_type": "plus",
+                            "ui_windows": [
+                                {
+                                    "key": "codex_5h",
+                                    "label": "5h",
+                                    "used_percent": 42.5,
+                                    "remaining_percent": 57.5,
+                                },
+                                {
+                                    "key": "codex_7d",
+                                    "label": "7d",
+                                    "used_percent": 100.0,
+                                    "remaining_percent": 0.0,
+                                },
+                            ],
+                        },
+                    }
+                ],
+                "groups": [{"name": "openai-default", "platform": "openai"}],
+                "group": "openai-default",
+                "group_selection": {
+                    "default_value": "openai-default",
+                    "label": "默认分组",
+                    "options": [
+                        {"name": "openai-default", "platform": "openai", "checked": True, "is_default": True}
+                    ],
+                },
+                "platform": "openai",
+                "time_range": {
+                    "label": "最近 24 小时",
+                    "preset": "",
+                    "presets": [],
+                    "start_date": "",
+                    "end_date": "",
+                },
+                "usage_query_settings": {
+                    "usage_query_enabled": True,
+                    "guard_disable_on_zero": True,
+                    "auto_query_interval_seconds": 3600,
+                },
+                "dashboard": {
+                    "success_count": 0,
+                    "output_tokens": 0,
+                    "avg_first_token_ms": None,
+                    "avg_duration_ms": None,
+                    "avg_ms_per_output_token": None,
+                    "usage_total_cost": 0,
+                    "usage_total_tokens": 0,
+                    "enabled_count": 0,
+                    "configured_count": 0,
+                    "depleted_count": 0,
+                },
+                "return_to": "/sub2ops/speed",
+            }
+        )
+
+        self.assertIn("oauth-quota", rendered)
+        self.assertIn("计划 plus", rendered)
+        self.assertIn("5h", rendered)
+        self.assertIn("57.5%", rendered)
+        self.assertIn("7d", rendered)
+        self.assertIn("0%", rendered)
+        self.assertIn("更新 2026-05-25 16:30", rendered)
+
     def test_usage_query_guard_skips_oauth_accounts(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_config(UsageQueryConfig(account_id=9, enabled=True, guard_disable_on_zero=True))
@@ -641,7 +804,7 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(store.result(9), {})
         self.assertIn("已查询 0 个已配置账号", message)
-        self.assertIn("跳过已删除 1 个", message)
+        self.assertNotIn("跳过已删除", message)
         audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
         self.assertIn('"skipped_missing": 1', audit_text)
 

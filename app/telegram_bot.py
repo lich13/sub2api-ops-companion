@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import account_ops
+from . import usage_query as usage_query_module
 from .db import Database
 from .guard_engine import is_oauth_account
 from .settings import Settings
@@ -535,20 +536,19 @@ class TelegramOpsBot:
         if not store.usage_query_enabled():
             return "全局额度查询已关闭。请先在速度页开启额度查询。", None
         configs = [config for config in store.configs() if usage_query_configured(config)]
-        if not configs:
-            return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
 
         account_lines: list[str] = []
         totals: dict[str, float] = {}
-        skipped_missing = 0
-        skipped_oauth = 0
+        seen_account_ids: set[int] = set()
         for config in configs[:30]:
+            seen_account_ids.add(config.account_id)
             row = await asyncio.to_thread(self._usage_query_account_row, config.account_id)
             if not row:
-                skipped_missing += 1
                 continue
             if row and is_oauth_account(row):
-                skipped_oauth += 1
+                line = await asyncio.to_thread(format_oauth_quota_line, row, config.account_id)
+                if line:
+                    account_lines.append(line)
                 continue
             hydrated = apply_account_credentials(config, row)
             previous = store.result(config.account_id)
@@ -564,18 +564,37 @@ class TelegramOpsBot:
                 continue
             store.save_result(config.account_id, result)
             account_lines.append(format_quota_line(hydrated, row, result))
+        oauth_lines = await self._current_oauth_quota_lines(seen_account_ids)
+        account_lines.extend(oauth_lines)
+        if not configs and not account_lines:
+            return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
         lines = [
             "额度查询",
             f"总可用：{format_quota_totals(totals)}",
             *account_lines,
         ]
-        if skipped_missing:
-            lines.append(f"跳过已删除账号：{skipped_missing} 个")
-        if skipped_oauth:
-            lines.append(f"跳过 OAuth：{skipped_oauth} 个")
         if len(configs) > 30:
             lines.append(f"... 另有 {len(configs) - 30} 个已配置账号未展开")
         return "\n".join(lines), None
+
+    async def _current_oauth_quota_lines(self, seen_account_ids: set[int]) -> list[str]:
+        try:
+            rows = await asyncio.to_thread(self._quality_rows)
+        except Exception:
+            return []
+        lines: list[str] = []
+        for row in rows:
+            account_id = int(row.get("id") or row.get("account_id") or 0)
+            if account_id <= 0 or account_id in seen_account_ids or not is_oauth_account(row):
+                continue
+            full_row = await asyncio.to_thread(self._usage_query_account_row, account_id)
+            if not full_row:
+                continue
+            line = await asyncio.to_thread(format_oauth_quota_line, full_row, account_id)
+            if line:
+                lines.append(line)
+            seen_account_ids.add(account_id)
+        return lines
 
     async def _execute_quota_query(self, config: UsageQueryConfig) -> dict[str, Any]:
         opener = self.usage_query_opener
@@ -918,6 +937,67 @@ def format_quota_line(
     return f"{prefix}：可用 {format_quota_amount(quota_available(result, config), unit)}"
 
 
+def format_oauth_quota_line(row: dict[str, Any], fallback_account_id: int = 0) -> str:
+    helper = getattr(usage_query_module, "oauth_quota_windows", None)
+    if not callable(helper):
+        return ""
+    summary = helper(row)
+    if not isinstance(summary, dict):
+        return ""
+    account_id = int(row.get("id") or row.get("account_id") or fallback_account_id)
+    account_name = str(row.get("name") or "-")
+    plan_type = str(summary.get("plan_type") or "oauth")
+    windows = remaining_oauth_quota_windows(summary.get("telegram_windows") or summary.get("ui_windows"))
+    rendered = " / ".join(format_oauth_quota_window(window) for window in windows if isinstance(window, dict))
+    if not rendered:
+        return ""
+    return f"#{account_id} {account_name} · Codex {plan_type}：{rendered}"
+
+
+def remaining_oauth_quota_windows(raw_windows: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_windows, list):
+        return []
+    windows: list[dict[str, Any]] = []
+    for window in raw_windows:
+        if not isinstance(window, dict):
+            continue
+        used_percent = numeric_value(window.get("used_percent"))
+        if used_percent is not None:
+            if used_percent >= 100:
+                continue
+            windows.append(window)
+            continue
+        remaining = numeric_value(window.get("remaining"))
+        if remaining is not None and remaining > 0:
+            windows.append(window)
+    return windows
+
+
+def format_oauth_quota_window(window: dict[str, Any]) -> str:
+    label = str(window.get("label") or "-")
+    remaining = numeric_value(window.get("remaining"))
+    total = numeric_value(window.get("total"))
+    unit = str(window.get("unit") or "").strip()
+    if remaining is not None and total is not None:
+        return f"{label} 剩余 {format_quota_amount(remaining, unit)} / {format_quota_amount(total, unit)}"
+    if remaining is not None:
+        return f"{label} 剩余 {format_quota_amount(remaining, unit)}"
+    remaining_percent = window.get("remaining_percent")
+    if remaining_percent in (None, ""):
+        used_percent = numeric_value(window.get("used_percent"))
+        remaining_percent = None if used_percent is None else max(0.0, 100.0 - used_percent)
+    return f"{label} 剩余 {format_quota_percent(remaining_percent)}"
+
+
+def numeric_value(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def quota_available(result: dict[str, Any], config: UsageQueryConfig) -> float | None:
     recalculated = actual_available(result.get("remaining"), config.upstream_multiplier)
     if recalculated is not None:
@@ -952,6 +1032,17 @@ def format_quota_amount(value: Any, unit: str) -> str:
         return "-"
     rendered = f"{numeric:.6f}".rstrip("0").rstrip(".")
     return f"{rendered} {unit}".strip()
+
+
+def format_quota_percent(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    rendered = f"{numeric:.2f}".rstrip("0").rstrip(".")
+    return f"{rendered}%"
 
 
 def bj_time(value: Any) -> str:
