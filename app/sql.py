@@ -230,8 +230,12 @@ SPEED_SQL = QUALITY_SQL.replace(
       'codex_usage_updated_at', a.extra->>'codex_usage_updated_at',
       'codex_5h_used_percent', a.extra->'codex_5h_used_percent',
       'codex_5h_reset_at', a.extra->>'codex_5h_reset_at',
+      'codex_5h_reset_after_seconds', a.extra->'codex_5h_reset_after_seconds',
+      'codex_5h_window_minutes', a.extra->'codex_5h_window_minutes',
       'codex_7d_used_percent', a.extra->'codex_7d_used_percent',
-      'codex_7d_reset_at', a.extra->>'codex_7d_reset_at'
+      'codex_7d_reset_at', a.extra->>'codex_7d_reset_at',
+      'codex_7d_reset_after_seconds', a.extra->'codex_7d_reset_after_seconds',
+      'codex_7d_window_minutes', a.extra->'codex_7d_window_minutes'
     )) AS extra,
     a.status,
 """,

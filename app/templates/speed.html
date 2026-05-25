@@ -82,6 +82,9 @@
         <label>自动查询间隔（全局，秒）
           <input name="auto_query_interval_seconds" type="number" min="0" max="86400" value="{{ usage_query_settings.auto_query_interval_seconds }}" />
         </label>
+        <label>Sub2API Admin Token
+          <input type="password" name="sub2api_admin_token" placeholder="{{ '已保存，留空保留' if usage_query_settings.sub2api_admin_token_saved else 'Sub2API Admin Token' }}" autocomplete="new-password" />
+        </label>
         <button type="submit">保存全局设置</button>
       </form>
       <form method="post" action="{{ base_path }}/usage-query/query-enabled">
@@ -158,15 +161,19 @@
                 {% if oauth %}
                   <div class="oauth-quota">
                     <div class="oauth-quota-head">
-                      <span class="pill oauth-plan-badge">计划 {{ oauth.plan_type or 'oauth' }}</span>
-                      <span class="cell-sub tiny">更新 {{ (oauth.updated_at or row.updated_at) | bj_time }}</span>
+                      <span class="pill oauth-plan-badge">{{ oauth.plan_type or 'oauth' }}</span>
                     </div>
                     {% if oauth.ui_windows %}
                       <div class="oauth-quota-windows">
                         {% for window in oauth.ui_windows %}
                           <span class="quota-window-chip {{ 'depleted' if window.remaining_percent is not none and window.remaining_percent <= 0 else '' }}">
-                            <span>{{ window.label }}</span>
-                            <strong>{{ percent_value(window.remaining_percent) }}</strong>
+                            <span class="quota-window-main">
+                              <span>{{ window.label }}</span>
+                              <strong>{{ percent_value(window.remaining_percent) }}</strong>
+                            </span>
+                            {% if window.reset_at %}
+                              <span class="quota-window-reset">恢复 {{ window.reset_at | bj_time }}</span>
+                            {% endif %}
                           </span>
                         {% endfor %}
                       </div>

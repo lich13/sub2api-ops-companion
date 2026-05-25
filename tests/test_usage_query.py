@@ -13,6 +13,7 @@ from app.usage_query import (
     UsageQueryConfig,
     UsageQueryStore,
     apply_account_credentials,
+    execute_oauth_usage_query,
     execute_usage_query,
     fill_account_credentials,
     is_query_due,
@@ -252,7 +253,11 @@ class UsageQueryTests(unittest.TestCase):
                 "extra": {
                     "plan_type": "team",
                     "codex_5h_used_percent": "42.5%",
+                    "codex_5h_reset_at": "2026-05-25T14:30:00Z",
+                    "codex_5h_window_minutes": 300,
                     "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-05-29T06:00:00Z",
+                    "codex_7d_reset_after_seconds": 3600,
                 },
             }
         )
@@ -267,6 +272,8 @@ class UsageQueryTests(unittest.TestCase):
                     "used_percent": 42.5,
                     "remaining_percent": 57.5,
                     "depleted": False,
+                    "reset_at": "2026-05-25T14:30:00Z",
+                    "window_minutes": 300,
                 },
                 {
                     "key": "codex_7d",
@@ -274,10 +281,49 @@ class UsageQueryTests(unittest.TestCase):
                     "used_percent": 100.0,
                     "remaining_percent": 0.0,
                     "depleted": True,
+                    "reset_at": "2026-05-29T06:00:00Z",
+                    "reset_after_seconds": 3600,
                 },
             ],
         )
         self.assertEqual(summary["telegram_windows"], [summary["ui_windows"][0]])
+
+    def test_oauth_quota_windows_hide_free_five_hour_and_keep_reset_time(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "free"},
+                "extra": {
+                    "codex_5h_used_percent": 0,
+                    "codex_5h_reset_at": "2026-05-25T10:00:00Z",
+                    "codex_7d_used_percent": 25,
+                    "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                },
+            }
+        )
+
+        self.assertEqual(summary["plan_type"], "free")
+        self.assertEqual([window["label"] for window in summary["ui_windows"]], ["7d"])
+        self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 75.0)
+        self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-05-28T22:30:00Z")
+
+    def test_oauth_quota_windows_derives_reset_at_from_usage_update_and_reset_after_seconds(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_usage_updated_at": "2026-05-25T00:00:00+00:00",
+                    "codex_5h_used_percent": 12,
+                    "codex_5h_reset_after_seconds": 1800,
+                    "codex_7d_used_percent": 30,
+                    "codex_7d_reset_after_seconds": 3600,
+                },
+            }
+        )
+
+        self.assertEqual([window["label"] for window in summary["ui_windows"]], ["5h", "7d"])
+        self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 88.0)
+        self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-05-25T00:30:00+00:00")
+        self.assertEqual(summary["ui_windows"][1]["reset_at"], "2026-05-25T01:00:00+00:00")
 
     def test_oauth_quota_windows_fall_back_plan_type_and_clamp_remaining_percent(self) -> None:
         summary = oauth_quota_windows(
@@ -362,6 +408,63 @@ class UsageQueryTests(unittest.TestCase):
         self.assertEqual(result["total"], 70.845632)
         self.assertEqual(result["actual_available"], 0.487908)
         self.assertEqual(result["extra"], "user_self")
+
+    def test_oauth_active_query_calls_sub2api_admin_usage_endpoint_and_normalizes_windows(self) -> None:
+        requests: list[dict[str, Any]] = []
+
+        def fake_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+            requests.append(request)
+            return {
+                "code": 0,
+                "message": "success",
+                "data": {
+                    "five_hour": {
+                        "utilization": 12,
+                        "resets_at": "2026-05-25T10:30:00Z",
+                        "remaining_seconds": 1800,
+                    },
+                    "seven_day": {
+                        "utilization": 100,
+                        "resets_at": "2026-05-28T22:30:00Z",
+                        "window_stats": {"window_minutes": 10080},
+                    },
+                },
+            }
+
+        result = execute_oauth_usage_query(
+            8,
+            "https://sub2api.example.com/",
+            "admin-token",
+            account_row={"id": 8, "credentials": {"plan_type": "plus"}, "extra": {}},
+            opener=fake_opener,
+            now=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            requests[0]["url"],
+            "https://sub2api.example.com/api/v1/admin/accounts/8/usage?source=active&force=true",
+        )
+        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer admin-token")
+        self.assertEqual(result["template_type"], "oauth")
+        self.assertEqual(result["source"], "sub2api_admin_usage")
+        self.assertEqual(result["oauth_quota"]["plan_type"], "plus")
+        self.assertEqual(result["oauth_quota"]["ui_windows"][0]["label"], "5h")
+        self.assertEqual(result["oauth_quota"]["ui_windows"][0]["remaining_percent"], 88.0)
+        self.assertEqual(result["oauth_quota"]["ui_windows"][0]["reset_at"], "2026-05-25T10:30:00Z")
+        self.assertEqual(result["oauth_quota"]["telegram_windows"], [result["oauth_quota"]["ui_windows"][0]])
+
+    def test_oauth_active_query_requires_base_url_and_admin_token(self) -> None:
+        result = execute_oauth_usage_query(
+            8,
+            "",
+            "",
+            now=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["template_type"], "oauth")
+        self.assertIn("Sub2API", result["error"])
 
     def test_newapi_query_rejects_token_usage_shape_without_user_quota(self) -> None:
         requests: list[dict[str, Any]] = []
@@ -474,6 +577,7 @@ class UsageQueryTests(unittest.TestCase):
                 usage_query_enabled=False,
                 guard_disable_on_zero=False,
                 auto_query_interval_seconds=15,
+                sub2api_admin_token="admin-secret",
             )
             store.save_config(
                 UsageQueryConfig(
@@ -496,8 +600,12 @@ class UsageQueryTests(unittest.TestCase):
             self.assertFalse(reloaded.usage_query_enabled())
             self.assertFalse(reloaded.guard_disable_on_zero())
             self.assertEqual(reloaded.auto_query_interval_seconds(), 15)
+            self.assertEqual(reloaded.sub2api_admin_token(), "admin-secret")
             self.assertEqual(reloaded.result(9)["actual_available"], 2)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+            reloaded.save_usage_query_settings(sub2api_admin_token="")
+            self.assertEqual(UsageQueryStore(str(path)).sub2api_admin_token(), "admin-secret")
 
     def test_store_migrates_legacy_global_auto_query_minutes_to_seconds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

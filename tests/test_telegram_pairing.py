@@ -173,7 +173,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                         "credentials": {"plan_type": "free"},
                         "extra": {
                             "codex_5h_used_percent": 25,
-                            "codex_7d_used_percent": 100,
+                            "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                            "codex_7d_used_percent": 25,
+                            "codex_7d_reset_at": "2026-05-28T22:30:00Z",
                         },
                     }
 
@@ -184,8 +186,8 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("#8 oauth-account", reply)
             self.assertIn("free", reply)
-            self.assertIn("5h 剩余 75%", reply)
-            self.assertNotIn("7d", reply)
+            self.assertNotIn("5h", reply)
+            self.assertIn("7d 剩余 75%（恢复 05-29 06:30）", reply)
 
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -278,7 +280,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                         "credentials": {"plan_type": "plus"},
                         "extra": {
                             "codex_5h_used_percent": 80,
+                            "codex_5h_reset_at": "2026-05-25T10:30:00Z",
                             "codex_7d_used_percent": 100,
+                            "codex_7d_reset_at": "2026-05-28T22:30:00Z",
                         },
                     }
 
@@ -296,12 +300,66 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertEqual(query_calls, 0)
             self.assertIn("#8 oauth-account", reply)
-            self.assertIn("Codex plus", reply)
-            self.assertIn("5h 剩余 20%", reply)
+            self.assertIn("· plus：", reply)
+            self.assertNotIn("Codex plus", reply)
+            self.assertIn("5h 剩余 20%（恢复 05-25 18:30）", reply)
             self.assertNotIn("7d", reply)
             self.assertNotIn("Codex oauth", reply)
             self.assertNotIn("跳过 OAuth", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
+
+    async def test_quota_command_prefers_saved_oauth_active_usage_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(UsageQueryConfig(account_id=8, enabled=True, template_type="sub2api"))
+            store.save_result(
+                8,
+                {
+                    "account_id": 8,
+                    "template_type": "oauth",
+                    "success": True,
+                    "oauth_quota": {
+                        "plan_type": "pro",
+                        "telegram_windows": [
+                            {
+                                "key": "codex_7d",
+                                "label": "7d",
+                                "used_percent": 30,
+                                "remaining_percent": 70,
+                                "reset_at": "2026-05-30T00:30:00Z",
+                            }
+                        ],
+                        "ui_windows": [],
+                    },
+                },
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 8,
+                        "name": "oauth-account",
+                        "platform": "openai",
+                        "type": "oauth",
+                        "schedulable": True,
+                        "credentials": {"plan_type": "free"},
+                        "extra": {
+                            "codex_7d_used_percent": 90,
+                            "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                        },
+                    }
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("#8 oauth-account · pro：7d 剩余 70%（恢复 05-30 08:30）", reply)
+            self.assertNotIn("free：7d 剩余 10%", reply)
 
     async def test_quota_command_omits_oauth_account_when_no_remaining_codex_windows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

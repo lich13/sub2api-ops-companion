@@ -6,7 +6,7 @@ import threading
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -245,8 +245,22 @@ _STORE_LOCK = threading.Lock()
 DEFAULT_AUTO_QUERY_INTERVAL_SECONDS = 3600
 MAX_AUTO_QUERY_INTERVAL_SECONDS = 86400
 OAUTH_QUOTA_WINDOW_FIELDS = (
-    ("codex_5h", "5h", "codex_5h_used_percent", "codex_5h_reset_at"),
-    ("codex_7d", "7d", "codex_7d_used_percent", "codex_7d_reset_at"),
+    (
+        "codex_5h",
+        "5h",
+        "codex_5h_used_percent",
+        "codex_5h_reset_at",
+        "codex_5h_reset_after_seconds",
+        "codex_5h_window_minutes",
+    ),
+    (
+        "codex_7d",
+        "7d",
+        "codex_7d_used_percent",
+        "codex_7d_reset_at",
+        "codex_7d_reset_after_seconds",
+        "codex_7d_window_minutes",
+    ),
 )
 
 
@@ -366,12 +380,19 @@ class UsageQueryStore:
     def auto_query_interval_minutes(self) -> int:
         return self.auto_query_interval_seconds() // 60
 
+    def sub2api_admin_token(self) -> str:
+        settings = self._data.get("settings") or {}
+        if not isinstance(settings, dict):
+            return ""
+        return str(settings.get("sub2api_admin_token") or "").strip()
+
     def save_usage_query_settings(
         self,
         *,
         usage_query_enabled: object | None = None,
         guard_disable_on_zero: object | None = None,
         auto_query_interval_seconds: object | None = None,
+        sub2api_admin_token: object | None = None,
     ) -> None:
         with _STORE_LOCK:
             self._data = self._read()
@@ -386,6 +407,10 @@ class UsageQueryStore:
             if auto_query_interval_seconds is not None:
                 settings["auto_query_interval_seconds"] = normalize_interval_seconds(auto_query_interval_seconds)
                 settings.pop("auto_query_interval_minutes", None)
+            if sub2api_admin_token is not None:
+                token = str(sub2api_admin_token or "").strip()
+                if token:
+                    settings["sub2api_admin_token"] = token
             self._write()
 
     def save_auto_query_interval_minutes(self, value: object) -> None:
@@ -578,18 +603,25 @@ def account_credentials(account_row: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def oauth_quota_windows(account_row: dict[str, Any] | None) -> dict[str, Any]:
+def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any]:
     row = account_row or {}
     credentials = json_object(row.get("credentials"))
     extra = json_object(row.get("extra"))
-    plan_type = first_string([credentials], ("plan_type", "chatgpt_plan_type")) or first_string([extra], ("plan_type",)) or "oauth"
+    plan_type = normalize_oauth_plan_type(
+        first_string([credentials], ("plan_type", "chatgpt_plan_type")) or first_string([extra], ("plan_type",)) or "oauth"
+    )
+    updated_at = first_string([extra], ("codex_usage_updated_at",))
     windows: list[dict[str, Any]] = []
-    for key, label, used_field, reset_field in OAUTH_QUOTA_WINDOW_FIELDS:
+    for key, label, used_field, reset_field, reset_after_field, window_minutes_field in OAUTH_QUOTA_WINDOW_FIELDS:
+        if plan_type.lower() == "free" and key == "codex_5h":
+            continue
         used_percent = percent_or_none(extra.get(used_field))
         if used_percent is None:
             continue
         clamped_used = clamp_percent(used_percent)
-        reset_at = first_string([extra], (reset_field,))
+        reset_after_seconds = numeric_or_none(extra.get(reset_after_field))
+        window_minutes = numeric_or_none(extra.get(window_minutes_field))
+        reset_at = oauth_reset_at(first_string([extra], (reset_field,)), reset_after_seconds, updated_at, now)
         window = {
             "key": key,
             "label": label,
@@ -599,13 +631,59 @@ def oauth_quota_windows(account_row: dict[str, Any] | None) -> dict[str, Any]:
         }
         if reset_at:
             window["reset_at"] = reset_at
+        if reset_after_seconds is not None:
+            window["reset_after_seconds"] = int(reset_after_seconds)
+        if window_minutes is not None:
+            window["window_minutes"] = int(window_minutes)
         windows.append(window)
     return {
         "plan_type": plan_type,
-        "updated_at": first_string([extra], ("codex_usage_updated_at",)),
+        "updated_at": updated_at,
         "ui_windows": windows,
         "telegram_windows": [window for window in windows if window["used_percent"] < 100],
     }
+
+
+def normalize_oauth_plan_type(value: object) -> str:
+    text = str(value or "").strip()
+    for prefix in ("计划 ", "Codex ", "codex "):
+        if text.startswith(prefix):
+            text = text[len(prefix) :].strip()
+    if not text:
+        return "oauth"
+    lowered = text.lower()
+    if lowered in {"free", "plus", "pro", "team", "enterprise", "oauth"}:
+        return lowered
+    return text
+
+
+def oauth_reset_at(
+    explicit_reset_at: str,
+    reset_after_seconds: float | None,
+    updated_at: str,
+    now: datetime | None = None,
+) -> str:
+    if explicit_reset_at:
+        return explicit_reset_at
+    if reset_after_seconds is None:
+        return ""
+    base = parse_iso_datetime(updated_at) or now
+    if base is None:
+        return ""
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    return (base.astimezone(timezone.utc) + timedelta(seconds=max(0, int(reset_after_seconds)))).isoformat()
+
+
+def parse_iso_datetime(value: object) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def json_object(value: Any) -> dict[str, Any]:
@@ -676,6 +754,137 @@ def execute_usage_query(
             "plan_name": "",
             "invalid_message": "",
         }
+
+
+def execute_oauth_usage_query(
+    account_id: int,
+    base_url: str,
+    admin_token: str,
+    *,
+    account_row: dict[str, Any] | None = None,
+    opener: UsageOpener | None = None,
+    timeout_seconds: int = 10,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    queried_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    account_id = int(account_id)
+    base = str(base_url or "").strip().rstrip("/")
+    token = str(admin_token or "").strip()
+    if not base or not token:
+        return build_oauth_failure_result(account_id, "缺少 Sub2API 地址或 Admin Token", queried_at, account_row)
+    request = {
+        "url": f"{base}/api/v1/admin/accounts/{account_id}/usage?source=active&force=true",
+        "method": "GET",
+        "headers": {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+    }
+    try:
+        validate_oauth_usage_request(request)
+        payload = (opener or open_usage_request)(request, normalize_timeout(timeout_seconds))
+        data = oauth_usage_payload_data(payload)
+        summary = oauth_quota_from_usage_data(data, account_row, now=now)
+        return {
+            "account_id": account_id,
+            "template_type": "oauth",
+            "success": True,
+            "data": data,
+            "error": "",
+            "queried_at": queried_at,
+            "remaining": None,
+            "actual_available": None,
+            "upstream_multiplier": 1.0,
+            "unit": "%",
+            "plan_name": summary.get("plan_type", "oauth"),
+            "invalid_message": "",
+            "oauth_quota": summary,
+            "source": "sub2api_admin_usage",
+        }
+    except Exception as exc:
+        return build_oauth_failure_result(account_id, str(exc), queried_at, account_row)
+
+
+def build_oauth_failure_result(
+    account_id: int,
+    error: str,
+    queried_at: str,
+    account_row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "account_id": int(account_id),
+        "template_type": "oauth",
+        "success": False,
+        "data": {},
+        "error": error,
+        "queried_at": queried_at,
+        "remaining": None,
+        "actual_available": None,
+        "upstream_multiplier": 1.0,
+        "unit": "%",
+        "plan_name": "",
+        "invalid_message": error,
+        "oauth_quota": oauth_quota_windows(account_row),
+        "source": "sub2api_admin_usage",
+    }
+
+
+def validate_oauth_usage_request(request: dict[str, Any]) -> None:
+    parsed = urlsplit(str(request.get("url") or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise UsageQueryError("Sub2API 地址必须是 http/https 完整 URL")
+
+
+def oauth_usage_payload_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise UsageQueryError("Sub2API usage 响应必须是对象")
+    if "data" not in payload:
+        return payload
+    code = payload.get("code")
+    success = payload.get("success")
+    if success is False or code not in (None, 0, "0"):
+        message = str(payload.get("message") or payload.get("error") or "Sub2API usage 查询失败")
+        raise UsageQueryError(message)
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise UsageQueryError("Sub2API usage 响应缺少 data 对象")
+    return data
+
+
+def oauth_quota_from_usage_data(
+    data: dict[str, Any],
+    account_row: dict[str, Any] | None = None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    row = dict(account_row or {})
+    credentials = json_object(row.get("credentials"))
+    extra = json_object(row.get("extra"))
+    merged_extra = dict(extra)
+    for source_key, prefix in (("five_hour", "codex_5h"), ("seven_day", "codex_7d")):
+        window = data.get(source_key)
+        if not isinstance(window, dict):
+            continue
+        used_percent = (
+            window.get("utilization")
+            if "utilization" in window
+            else window.get("used_percent", window.get("used"))
+        )
+        if used_percent is not None:
+            merged_extra[f"{prefix}_used_percent"] = used_percent
+        reset_at = first_string([window], ("resets_at", "reset_at"))
+        if reset_at:
+            merged_extra[f"{prefix}_reset_at"] = reset_at
+        reset_after = window.get("remaining_seconds", window.get("reset_after_seconds"))
+        if reset_after is not None:
+            merged_extra[f"{prefix}_reset_after_seconds"] = reset_after
+        window_stats = json_object(window.get("window_stats"))
+        window_minutes = window.get("window_minutes", window_stats.get("window_minutes"))
+        if window_minutes is not None:
+            merged_extra[f"{prefix}_window_minutes"] = window_minutes
+    row["credentials"] = credentials
+    row["extra"] = merged_extra
+    return oauth_quota_windows(row, now=now)
 
 
 def replace_template_vars(script: str, config: UsageQueryConfig) -> str:
