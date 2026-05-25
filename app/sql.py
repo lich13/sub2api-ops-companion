@@ -218,6 +218,33 @@ QUALITY_SQL_COMPAT_NO_LOAD_FACTOR = QUALITY_SQL.replace(
 )
 
 
+SPEED_SQL = QUALITY_SQL.replace(
+    "    a.type,\n    a.status,\n",
+    """    a.type,
+    jsonb_strip_nulls(jsonb_build_object(
+      'plan_type', a.credentials->>'plan_type',
+      'chatgpt_plan_type', a.credentials->>'chatgpt_plan_type'
+    )) AS credentials,
+    jsonb_strip_nulls(jsonb_build_object(
+      'plan_type', a.extra->>'plan_type',
+      'codex_usage_updated_at', a.extra->>'codex_usage_updated_at',
+      'codex_5h_used_percent', a.extra->'codex_5h_used_percent',
+      'codex_5h_reset_at', a.extra->>'codex_5h_reset_at',
+      'codex_7d_used_percent', a.extra->'codex_7d_used_percent',
+      'codex_7d_reset_at', a.extra->>'codex_7d_reset_at'
+    )) AS extra,
+    a.status,
+""",
+    1,
+)
+
+
+SPEED_SQL_COMPAT_NO_LOAD_FACTOR = SPEED_SQL.replace(
+    "    a.load_factor,\n    COALESCE(NULLIF(a.load_factor, 0), NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+    "    NULL::integer AS load_factor,\n    COALESCE(NULLIF(a.concurrency, 0), 1) AS effective_load_factor,\n",
+)
+
+
 QUALITY_ALL_ACCOUNTS_SQL = QUALITY_SQL.replace(
     """WITH group_accounts AS (
   SELECT DISTINCT ON (a.id)

@@ -244,6 +244,10 @@ UsageOpener = Callable[[dict[str, Any], int], Any]
 _STORE_LOCK = threading.Lock()
 DEFAULT_AUTO_QUERY_INTERVAL_SECONDS = 3600
 MAX_AUTO_QUERY_INTERVAL_SECONDS = 86400
+OAUTH_QUOTA_WINDOW_FIELDS = (
+    ("codex_5h", "5h", "codex_5h_used_percent", "codex_5h_reset_at"),
+    ("codex_7d", "7d", "codex_7d_used_percent", "codex_7d_reset_at"),
+)
 
 
 class UsageQueryError(ValueError):
@@ -574,6 +578,36 @@ def account_credentials(account_row: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def oauth_quota_windows(account_row: dict[str, Any] | None) -> dict[str, Any]:
+    row = account_row or {}
+    credentials = json_object(row.get("credentials"))
+    extra = json_object(row.get("extra"))
+    plan_type = first_string([credentials], ("plan_type", "chatgpt_plan_type")) or first_string([extra], ("plan_type",)) or "oauth"
+    windows: list[dict[str, Any]] = []
+    for key, label, used_field, reset_field in OAUTH_QUOTA_WINDOW_FIELDS:
+        used_percent = percent_or_none(extra.get(used_field))
+        if used_percent is None:
+            continue
+        clamped_used = clamp_percent(used_percent)
+        reset_at = first_string([extra], (reset_field,))
+        window = {
+            "key": key,
+            "label": label,
+            "used_percent": clamped_used,
+            "remaining_percent": clamp_percent(100 - used_percent),
+            "depleted": used_percent >= 100,
+        }
+        if reset_at:
+            window["reset_at"] = reset_at
+        windows.append(window)
+    return {
+        "plan_type": plan_type,
+        "updated_at": first_string([extra], ("codex_usage_updated_at",)),
+        "ui_windows": windows,
+        "telegram_windows": [window for window in windows if window["used_percent"] < 100],
+    }
+
+
 def json_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -586,13 +620,29 @@ def json_object(value: Any) -> dict[str, Any]:
     return {}
 
 
+def percent_or_none(value: object) -> float | None:
+    if isinstance(value, str):
+        value = value.strip().removesuffix("%").strip()
+    return numeric_or_none(value)
+
+
+def clamp_percent(value: object) -> float:
+    numeric = numeric_or_none(value)
+    if numeric is None:
+        return 0.0
+    return max(0.0, min(100.0, numeric))
+
+
 def first_string(payloads: list[dict[str, Any]], keys: tuple[str, ...]) -> str:
     for payload in payloads:
         for key in keys:
             value = payload.get(key)
             if value in (None, ""):
                 continue
-            return str(value).strip()
+            text = str(value).strip()
+            if not text:
+                continue
+            return text
     return ""
 
 

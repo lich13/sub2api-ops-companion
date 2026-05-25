@@ -144,6 +144,49 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("没有配置额度查询", reply)
 
+    async def test_quota_command_includes_oauth_account_without_usage_query_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+
+            class FakeDB:
+                def fetch_all(self, _sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                    return [
+                        {
+                            "id": 8,
+                            "name": "oauth-account",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "schedulable": True,
+                        }
+                    ]
+
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 8,
+                        "name": "oauth-account",
+                        "platform": "openai",
+                        "type": "oauth",
+                        "schedulable": True,
+                        "credentials": {"plan_type": "free"},
+                        "extra": {
+                            "codex_5h_used_percent": 25,
+                            "codex_7d_used_percent": 100,
+                        },
+                    }
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("#8 oauth-account", reply)
+            self.assertIn("free", reply)
+            self.assertIn("5h 剩余 75%", reply)
+            self.assertNotIn("7d", reply)
+
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"
@@ -200,8 +243,108 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(query_calls, 0)
             self.assertNotIn("#7", reply)
             self.assertNotIn("25 USD", reply)
-            self.assertIn("跳过已删除账号：1 个", reply)
+            self.assertNotIn("跳过已删除账号", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
+
+    async def test_quota_command_includes_oauth_codex_windows_without_http_query_or_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=8,
+                    enabled=True,
+                    template_type="custom",
+                    code="""({
+  request: {url: "https://quota.example.com/oauth", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 8,
+                        "name": "oauth-account",
+                        "platform": "openai",
+                        "type": "oauth",
+                        "schedulable": True,
+                        "credentials": {"plan_type": "plus"},
+                        "extra": {
+                            "codex_5h_used_percent": 80,
+                            "codex_7d_used_percent": 100,
+                        },
+                    }
+
+            query_calls = 0
+
+            async def quota_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                nonlocal query_calls
+                query_calls += 1
+                return {"remaining": 99.0}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=quota_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertEqual(query_calls, 0)
+            self.assertIn("#8 oauth-account", reply)
+            self.assertIn("Codex plus", reply)
+            self.assertIn("5h 剩余 20%", reply)
+            self.assertNotIn("7d", reply)
+            self.assertNotIn("Codex oauth", reply)
+            self.assertNotIn("跳过 OAuth", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
+
+    async def test_quota_command_omits_oauth_account_when_no_remaining_codex_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=8,
+                    enabled=True,
+                    template_type="custom",
+                    code="""({
+  request: {url: "https://quota.example.com/oauth", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 8,
+                        "name": "oauth-account",
+                        "platform": "openai",
+                        "type": "oauth",
+                        "schedulable": True,
+                        "credentials": {"plan_type": "plus"},
+                        "extra": {"codex_5h_used_percent": 100},
+                    }
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertNotIn("#8 oauth-account", reply)
+            self.assertNotIn("plus", reply)
+            self.assertNotIn("跳过 OAuth", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
 
     async def test_quota_command_uses_last_success_snapshot_when_live_query_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
