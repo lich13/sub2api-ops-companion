@@ -1048,7 +1048,7 @@ def quota_available(result: dict[str, Any], config: UsageQueryConfig) -> float |
 
 
 def add_quota_total(totals: dict[str, float], value: float | None, unit: str) -> None:
-    if value is None:
+    if value is None or value <= 0:
         return
     totals[unit] = totals.get(unit, 0.0) + value
 

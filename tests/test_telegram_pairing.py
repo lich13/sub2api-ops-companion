@@ -133,6 +133,110 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("wallet", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
 
+    async def test_quota_command_excludes_non_positive_available_from_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="custom",
+                    code="""({
+  request: {url: "https://quota.example.com/7", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                    upstream_multiplier=1,
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "depleted-account",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {},
+                    }
+
+            async def quota_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                return {"remaining": -0.0586}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=quota_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("总可用：-", reply)
+            self.assertIn("#7 depleted-account：可用 -0.0586 USD", reply)
+            self.assertNotIn("总可用：-0.0586 USD", reply)
+
+    async def test_quota_command_excludes_non_positive_snapshot_from_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="sub2api",
+                    use_account_credentials=True,
+                    code="""({
+  request: {url: "{{baseUrl}}/v1/usage", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                    upstream_multiplier=1,
+                )
+            )
+            store.save_result(
+                7,
+                {
+                    "account_id": 7,
+                    "template_type": "sub2api",
+                    "success": True,
+                    "remaining": -0.0586,
+                    "unit": "USD",
+                    "upstream_multiplier": 1.0,
+                    "actual_available": -0.0586,
+                    "queried_at": "2026-05-22T00:00:00+00:00",
+                },
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "snapshot-depleted",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {"base_url": "https://quota.example.com", "api_key": "sk-test"},
+                    }
+
+            async def failing_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                raise TimeoutError("boom")
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=failing_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("总可用：-", reply)
+            self.assertIn("#7 snapshot-depleted：可用 -0.0586 USD", reply)
+            self.assertNotIn("总可用：-0.0586 USD", reply)
+
     async def test_quota_command_reports_no_configured_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             settings = make_settings(str(Path(tmpdir) / "state.json"))
