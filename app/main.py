@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import account_ops
+from . import usage_query as usage_query_module
 from .audit import read_audit, write_audit
 from .db import Database
 from .group_selection import ALL_GROUP_VALUE, DEFAULT_GROUP_NAME, build_group_selection, unique_group_values
@@ -50,6 +51,8 @@ from .sql import (
     PLATFORM_OPTIONS_SQL,
     QUALITY_SQL,
     REQUESTS_SQL,
+    SPEED_SQL,
+    SPEED_SQL_COMPAT_NO_LOAD_FACTOR,
     SCHEDULED_TEST_ACCOUNTS_SQL,
     SCHEDULED_TEST_CAPABILITY_SQL,
     SCHEDULED_TEST_DELETE_SQL,
@@ -412,6 +415,20 @@ def load_quality(
     )
 
 
+def load_speed_quality(
+    group_names: list[str],
+    platform: str,
+    range_start: datetime | None,
+    range_end: datetime | None,
+) -> list[dict[str, Any]]:
+    capability = account_routing_capability()
+    sql = SPEED_SQL if capability["load_factor"] else SPEED_SQL_COMPAT_NO_LOAD_FACTOR
+    return db.fetch_all(
+        sql,
+        {"group_names": group_names, "platform": platform, "range_start": range_start, "range_end": range_end},
+    )
+
+
 def usage_query_store() -> UsageQueryStore:
     return UsageQueryStore(settings.usage_query_state_path)
 
@@ -481,6 +498,7 @@ def enrich_usage_query_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         account_id = int(row.get("id") or 0)
         item = dict(row)
         item["usage_query"] = usage_query_view(store.config(account_id), store.result(account_id))
+        item["oauth_quota"] = usage_query_module.oauth_quota_windows(item) if is_oauth_account(item) else {}
         enriched.append(item)
     return enriched
 
@@ -1596,7 +1614,7 @@ def speed_view(
     selected_range = build_time_range(time_range, start_date, end_date, hours)
     store = usage_query_store()
     rows = enrich_usage_query_rows(sort_speed_rows(
-        load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
+        load_speed_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
     ))
     dashboard = build_speed_dashboard(rows)
     dashboard.update(usage_query_dashboard(rows, store))
@@ -1822,7 +1840,7 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     )
     return redirect_with_msg(
         return_to,
-        f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过已删除 {skipped_missing} 个，跳过 OAuth {skipped_oauth} 个",
+        f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个",
     )
 
 

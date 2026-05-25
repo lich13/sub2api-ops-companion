@@ -16,6 +16,7 @@ from app.usage_query import (
     execute_usage_query,
     fill_account_credentials,
     is_query_due,
+    oauth_quota_windows,
     should_pause_for_depleted,
 )
 
@@ -240,6 +241,87 @@ class UsageQueryTests(unittest.TestCase):
         )
 
         self.assertEqual(config.code, DEFAULT_NEWAPI_TEMPLATE)
+
+    def test_oauth_quota_windows_parse_plan_type_and_percent_windows(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {
+                    "plan_type": "pro",
+                    "chatgpt_plan_type": "plus",
+                },
+                "extra": {
+                    "plan_type": "team",
+                    "codex_5h_used_percent": "42.5%",
+                    "codex_7d_used_percent": 100,
+                },
+            }
+        )
+
+        self.assertEqual(summary["plan_type"], "pro")
+        self.assertEqual(
+            summary["ui_windows"],
+            [
+                {
+                    "key": "codex_5h",
+                    "label": "5h",
+                    "used_percent": 42.5,
+                    "remaining_percent": 57.5,
+                    "depleted": False,
+                },
+                {
+                    "key": "codex_7d",
+                    "label": "7d",
+                    "used_percent": 100.0,
+                    "remaining_percent": 0.0,
+                    "depleted": True,
+                },
+            ],
+        )
+        self.assertEqual(summary["telegram_windows"], [summary["ui_windows"][0]])
+
+    def test_oauth_quota_windows_fall_back_plan_type_and_clamp_remaining_percent(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": '{"plan_type": "   ", "chatgpt_plan_type": "plus"}',
+                "extra": '{"plan_type": "team", "codex_5h_used_percent": 150, "codex_7d_used_percent": -5}',
+            }
+        )
+
+        self.assertEqual(summary["plan_type"], "plus")
+        self.assertEqual(summary["ui_windows"][0]["used_percent"], 100.0)
+        self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 0.0)
+        self.assertEqual(summary["ui_windows"][1]["used_percent"], 0.0)
+        self.assertEqual(summary["ui_windows"][1]["remaining_percent"], 100.0)
+        self.assertEqual(summary["telegram_windows"], [summary["ui_windows"][1]])
+
+    def test_oauth_quota_windows_default_plan_type_and_skip_invalid_percent_values(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {},
+                "extra": {
+                    "plan_type": "",
+                    "codex_5h_used_percent": "",
+                    "codex_7d_used_percent": "not-a-number",
+                },
+            }
+        )
+
+        self.assertEqual(summary["plan_type"], "oauth")
+        self.assertEqual(summary["ui_windows"], [])
+        self.assertEqual(summary["telegram_windows"], [])
+
+    def test_oauth_quota_windows_use_extra_plan_type_before_oauth_default(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {},
+                "extra": {
+                    "plan_type": "team",
+                    "codex_5h_used_percent": 0,
+                },
+            }
+        )
+
+        self.assertEqual(summary["plan_type"], "team")
 
     def test_newapi_query_prefers_user_self_when_access_token_and_user_id_are_set(self) -> None:
         requests: list[dict[str, Any]] = []

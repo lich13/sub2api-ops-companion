@@ -2616,6 +2616,62 @@ dd {
   font-weight: 750;
 }
 
+.oauth-quota {
+  display: grid;
+  gap: 7px;
+}
+
+.oauth-quota-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oauth-plan-badge {
+  color: #0369a1;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.oauth-quota-windows {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.quota-window-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  background: #f0fdf4;
+  white-space: nowrap;
+}
+
+.quota-window-chip span {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.quota-window-chip strong {
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.quota-window-chip.depleted {
+  color: var(--danger);
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
 .quota-error {
   display: -webkit-box;
   overflow: hidden;

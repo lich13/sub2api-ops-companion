@@ -8,6 +8,9 @@
 {% macro tokens_per_second_value(value) %}
   {% if value is not none and value > 0 %}{{ "%.2f"|format(1000 / value) }} tokens/s{% else %}-{% endif %}
 {% endmacro %}
+{% macro percent_value(value) %}
+  {% if value is not none %}{{ "%.1f"|format(value)|replace(".0", "") }}%{% else %}-{% endif %}
+{% endmacro %}
 
 <section class="page-title">
   <div>
@@ -150,8 +153,28 @@
               {% set usage = row.usage_query %}
               {% set cfg = usage.config %}
               {% set result = usage.result %}
+              {% set oauth = row.oauth_quota %}
               <div class="quota-snapshot">
-                {% if result and result.success %}
+                {% if oauth %}
+                  <div class="oauth-quota">
+                    <div class="oauth-quota-head">
+                      <span class="pill oauth-plan-badge">计划 {{ oauth.plan_type or 'oauth' }}</span>
+                      <span class="cell-sub tiny">更新 {{ (oauth.updated_at or row.updated_at) | bj_time }}</span>
+                    </div>
+                    {% if oauth.ui_windows %}
+                      <div class="oauth-quota-windows">
+                        {% for window in oauth.ui_windows %}
+                          <span class="quota-window-chip {{ 'depleted' if window.remaining_percent is not none and window.remaining_percent <= 0 else '' }}">
+                            <span>{{ window.label }}</span>
+                            <strong>{{ percent_value(window.remaining_percent) }}</strong>
+                          </span>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <div class="cell-sub">未返回 5h/7d 窗口</div>
+                    {% endif %}
+                  </div>
+                {% elif result and result.success %}
                   <span class="pill {{ 'bad' if usage.depleted else 'good' }}">{{ '可用≤0' if usage.depleted else '有额度' }}</span>
                   <strong>{{ result.actual_available | quota }} {{ result.unit }}</strong>
                   <div class="cell-sub">原始 {{ result.remaining | quota }} / 倍率 {{ cfg.upstream_multiplier | quota }}</div>
