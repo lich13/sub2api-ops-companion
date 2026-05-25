@@ -2232,12 +2232,15 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
 @app.get("/sso", response_class=HTMLResponse)
 def sso_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     sso_runtime = current_sso_config()
+    usage_store = usage_query_store()
+    sso_panel = build_sso_panel_config(sso_runtime, base_path=settings.base_path)
+    sso_panel["sub2api_admin_token_saved"] = bool(usage_store.sub2api_admin_token())
     return render(
         request,
         "sso.html",
         {
             "active": "sso",
-            "sso": build_sso_panel_config(sso_runtime, base_path=settings.base_path),
+            "sso": sso_panel,
             "sso_config_path": settings.sso_config_path,
             "msg": msg,
         },
@@ -2473,6 +2476,7 @@ def sso_config_save(
     required_role: str = Form("admin"),
     session_ttl_seconds: int = Form(86400),
     verify_timeout_seconds: int = Form(5),
+    sub2api_admin_token: str = Form(""),
 ) -> Response:
     clean_base_url = base_url.strip().rstrip("/")
     clean_verify_base_url = verify_base_url.strip().rstrip("/")
@@ -2507,6 +2511,9 @@ def sso_config_save(
         verify_timeout_seconds=verify_timeout_seconds,
         updated_by=user,
     )
+    usage_store = usage_query_store()
+    usage_store.save_usage_query_settings(sub2api_admin_token=sub2api_admin_token)
+    admin_token_set = bool(str(sub2api_admin_token or "").strip())
     write_audit(
         settings.audit_path,
         "ops_sso_config_update",
@@ -2516,6 +2523,8 @@ def sso_config_save(
             "base_url_set": bool(clean_base_url),
             "verify_base_url_set": bool(clean_verify_base_url),
             "required_role": required_role.strip() or "admin",
+            "sub2api_admin_token_set": admin_token_set,
+            "sub2api_admin_token_saved": bool(usage_store.sub2api_admin_token()),
         },
     )
     return RedirectResponse(
