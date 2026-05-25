@@ -32,6 +32,7 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn('name="usage_query_enabled"', template)
         self.assertIn('name="guard_disable_on_zero"', template)
         self.assertIn('name="auto_query_interval_seconds"', template)
+        self.assertIn('name="sub2api_admin_token"', template)
         self.assertNotIn('name="auto_query_interval_minutes"', template)
         self.assertIn('自动查询间隔（全局，秒）', template)
         self.assertIn('id="usage-query-{{ row.id }}"', template)

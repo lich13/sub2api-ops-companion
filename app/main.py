@@ -85,6 +85,7 @@ from .usage_query import (
     account_credentials,
     apply_account_credentials,
     default_template,
+    execute_oauth_usage_query,
     execute_usage_query,
     fill_account_credentials,
     is_query_due,
@@ -437,6 +438,43 @@ def usage_query_account_row(account_id: int) -> dict[str, Any] | None:
     return account_ops.fallback_account(db, int(account_id), account_routing_capability()["load_factor"])
 
 
+def usage_query_oauth_account_rows() -> list[dict[str, Any]]:
+    load_factor_sql = (
+        """
+          load_factor,
+          COALESCE(NULLIF(load_factor, 0), NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+        if account_routing_capability()["load_factor"]
+        else """
+          NULL::integer AS load_factor,
+          COALESCE(NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+    )
+    return db.fetch_all(
+        f"""
+        SELECT
+          id,
+          name,
+          platform,
+          type,
+          credentials,
+          extra,
+          status,
+          schedulable,
+          priority AS account_priority,
+          NULL::integer AS group_priority,
+          concurrency,
+{load_factor_sql}
+          updated_at
+        FROM accounts
+        WHERE deleted_at IS NULL
+          AND lower(coalesce(platform, '')) = 'openai'
+          AND lower(coalesce(type, '')) = 'oauth'
+        ORDER BY id
+        """
+    )
+
+
 def hydrate_usage_query_config(config: UsageQueryConfig, row: dict[str, Any] | None = None) -> UsageQueryConfig:
     return apply_account_credentials(config, row if row is not None else usage_query_account_row(config.account_id))
 
@@ -471,6 +509,14 @@ def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[s
     }
 
 
+def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(result, dict):
+        quota = result.get("oauth_quota")
+        if isinstance(quota, dict) and result.get("success"):
+            return quota
+    return usage_query_module.oauth_quota_windows(row)
+
+
 def usage_query_configured(config: UsageQueryConfig) -> bool:
     return bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token)
 
@@ -491,14 +537,49 @@ def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, 
     }
 
 
+def oauth_usage_query_base_url() -> str:
+    fallback = str(
+        getattr(settings, "sub2api_verify_base_url", "") or getattr(settings, "sub2api_base_url", "") or ""
+    ).strip()
+    try:
+        sso_runtime = current_sso_config()
+        return str(sso_runtime.verify_base_url or sso_runtime.base_url or fallback).strip()
+    except Exception:
+        return fallback
+
+
+def run_oauth_usage_query(
+    account_id: int,
+    row: dict[str, Any],
+    store: UsageQueryStore,
+    *,
+    timeout_seconds: int = 10,
+) -> dict[str, Any]:
+    return execute_oauth_usage_query(
+        int(account_id),
+        oauth_usage_query_base_url(),
+        store.sub2api_admin_token(),
+        account_row=row,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def usage_query_oauth_config(account_id: int, store: UsageQueryStore) -> UsageQueryConfig:
+    config = store.config(account_id)
+    if usage_query_configured(config):
+        return config
+    return UsageQueryConfig(account_id=account_id, enabled=True, template_type="sub2api")
+
+
 def enrich_usage_query_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     store = usage_query_store()
     enriched: list[dict[str, Any]] = []
     for row in rows:
         account_id = int(row.get("id") or 0)
         item = dict(row)
-        item["usage_query"] = usage_query_view(store.config(account_id), store.result(account_id))
-        item["oauth_quota"] = usage_query_module.oauth_quota_windows(item) if is_oauth_account(item) else {}
+        result = store.result(account_id)
+        item["usage_query"] = usage_query_view(store.config(account_id), result)
+        item["oauth_quota"] = oauth_quota_for_row(item, result) if is_oauth_account(item) else {}
         enriched.append(item)
     return enriched
 
@@ -520,6 +601,7 @@ def usage_query_settings(store: UsageQueryStore | None = None) -> dict[str, Any]
         "usage_query_enabled": active_store.usage_query_enabled(),
         "guard_disable_on_zero": active_store.guard_disable_on_zero(),
         "auto_query_interval_seconds": active_store.auto_query_interval_seconds(),
+        "sub2api_admin_token_saved": bool(active_store.sub2api_admin_token()),
     }
 
 
@@ -1022,7 +1104,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     checked_count = 0
     queried_count = 0
-    skipped_oauth_count = 0
+    oauth_checked_count = 0
+    oauth_queried_count = 0
+    oauth_failed_count = 0
     if not usage_enabled:
         write_audit(
             settings.audit_path,
@@ -1031,7 +1115,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
                 "actor": actor,
                 "checked_count": 0,
                 "queried_count": 0,
-                "skipped_oauth_count": 0,
+                "oauth_checked_count": 0,
+                "oauth_queried_count": 0,
+                "oauth_failed_count": 0,
                 "action_count": 0,
                 "usage_query_enabled": False,
                 "guard_disable_on_zero": hard_stop_enabled,
@@ -1045,7 +1131,14 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         if not row:
             continue
         if is_oauth_account(row):
-            skipped_oauth_count += 1
+            oauth_checked_count += 1
+            result = store.result(config.account_id)
+            if is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
+                result = run_oauth_usage_query(config.account_id, row, store, timeout_seconds=config.timeout_seconds)
+                store.save_result(config.account_id, result)
+                oauth_queried_count += 1
+                if not result.get("success"):
+                    oauth_failed_count += 1
             continue
         if not row.get("schedulable", True):
             continue
@@ -1082,6 +1175,25 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         }
         write_audit(settings.audit_path, "guard_auto_usage_query_pause_account", action)
         actions.append(action)
+    configured_account_ids = {config.account_id for config in store.configs()}
+    try:
+        oauth_rows = usage_query_oauth_account_rows()
+    except Exception:
+        oauth_rows = []
+    for row in oauth_rows:
+        account_id = int(row.get("id") or 0)
+        if account_id <= 0 or account_id in configured_account_ids or not is_oauth_account(row):
+            continue
+        oauth_checked_count += 1
+        config = usage_query_oauth_config(account_id, store)
+        result = store.result(account_id)
+        if not is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
+            continue
+        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
+        store.save_result(account_id, result)
+        oauth_queried_count += 1
+        if not result.get("success"):
+            oauth_failed_count += 1
     write_audit(
         settings.audit_path,
         "guard_auto_usage_query_scan",
@@ -1089,7 +1201,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             "actor": actor,
             "checked_count": checked_count,
             "queried_count": queried_count,
-            "skipped_oauth_count": skipped_oauth_count,
+            "oauth_checked_count": oauth_checked_count,
+            "oauth_queried_count": oauth_queried_count,
+            "oauth_failed_count": oauth_failed_count,
             "action_count": len(actions),
             "usage_query_enabled": usage_enabled,
             "guard_disable_on_zero": hard_stop_enabled,
@@ -1648,12 +1762,21 @@ async def usage_query_config_save(request: Request, user: AuthUser, account_id: 
     store.save_config(config)
     row = usage_query_account_row(account_id)
     if row and is_oauth_account(row):
+        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
+        store.save_result(account_id, result)
         write_audit(
             settings.audit_path,
             "usage_query_config_save",
-            {**usage_query_audit_payload(config, user), "query_skipped": "oauth"},
+            {
+                **usage_query_audit_payload(config, user),
+                "query_success": result.get("success"),
+                "oauth_query": True,
+                "error": result.get("error") if not result.get("success") else "",
+            },
         )
-        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，OAuth 账号已跳过查询")
+        if result.get("success"):
+            return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，并刷新 OAuth 额度成功")
+        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，OAuth 额度查询失败：{result.get('error') or '未知错误'}")
     result = execute_usage_query(hydrate_usage_query_config(config, row))
     store.save_result(account_id, result)
     write_audit(
@@ -1704,7 +1827,9 @@ async def usage_query_settings_save(
         usage_query_enabled=query_enabled,
         guard_disable_on_zero=hard_stop_enabled,
         auto_query_interval_seconds=interval,
+        sub2api_admin_token=raw.get("sub2api_admin_token"),
     )
+    admin_token_set = bool(str(raw.get("sub2api_admin_token") or "").strip())
     write_audit(
         settings.audit_path,
         "usage_query_settings_save",
@@ -1713,6 +1838,8 @@ async def usage_query_settings_save(
             "usage_query_enabled": query_enabled,
             "guard_disable_on_zero": hard_stop_enabled,
             "auto_query_interval_seconds": interval,
+            "sub2api_admin_token_set": admin_token_set,
+            "sub2api_admin_token_saved": bool(store.sub2api_admin_token()),
         },
     )
     return redirect_with_msg(return_to, f"已保存全局额度查询设置：自动间隔 {interval} 秒")
@@ -1755,12 +1882,21 @@ async def usage_query_account_query(request: Request, user: AuthUser, account_id
     store.save_config(config)
     row = usage_query_account_row(account_id)
     if row and is_oauth_account(row):
+        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
+        store.save_result(account_id, result)
         write_audit(
             settings.audit_path,
             "usage_query_account_query",
-            {**usage_query_audit_payload(config, user), "query_skipped": "oauth"},
+            {
+                **usage_query_audit_payload(config, user),
+                "success": result.get("success"),
+                "oauth_query": True,
+                "error": result.get("error") if not result.get("success") else "",
+            },
         )
-        return redirect_with_msg(return_to, f"账号 #{account_id} 是 OAuth 账号，已跳过额度查询")
+        if result.get("success"):
+            return redirect_with_msg(return_to, f"账号 #{account_id} OAuth 额度查询成功")
+        return redirect_with_msg(return_to, f"账号 #{account_id} OAuth 额度查询失败：{result.get('error') or '未知错误'}")
     result = execute_usage_query(hydrate_usage_query_config(config, row))
     store.save_result(account_id, result)
     write_audit(
@@ -1796,7 +1932,8 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     queried = 0
     failed = 0
     skipped_missing = 0
-    skipped_oauth = 0
+    oauth_queried = 0
+    oauth_failed = 0
     if not store.usage_query_enabled():
         write_audit(
             settings.audit_path,
@@ -1806,26 +1943,48 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
                 "queried": 0,
                 "failed": 0,
                 "skipped_missing": 0,
-                "skipped_oauth": 0,
+                "oauth_queried": 0,
+                "oauth_failed": 0,
                 "usage_query_enabled": False,
             },
         )
         return redirect_with_msg(return_to, "全局额度查询已关闭，未查询账号")
+    seen_account_ids: set[int] = set()
     for config in store.configs():
         if not usage_query_configured(config):
             continue
+        seen_account_ids.add(config.account_id)
         row = usage_query_account_row(config.account_id)
         if not row:
             skipped_missing += 1
             continue
         if row and is_oauth_account(row):
-            skipped_oauth += 1
-            continue
-        result = execute_usage_query(hydrate_usage_query_config(config, row))
+            result = run_oauth_usage_query(config.account_id, row, store, timeout_seconds=config.timeout_seconds)
+            oauth_queried += 1
+        else:
+            result = execute_usage_query(hydrate_usage_query_config(config, row))
         store.save_result(config.account_id, result)
         queried += 1
         if not result.get("success"):
             failed += 1
+            if row and is_oauth_account(row):
+                oauth_failed += 1
+    try:
+        oauth_rows = usage_query_oauth_account_rows()
+    except Exception:
+        oauth_rows = []
+    for row in oauth_rows:
+        account_id = int(row.get("id") or 0)
+        if account_id <= 0 or account_id in seen_account_ids or not is_oauth_account(row):
+            continue
+        config = usage_query_oauth_config(account_id, store)
+        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
+        store.save_result(account_id, result)
+        queried += 1
+        oauth_queried += 1
+        if not result.get("success"):
+            failed += 1
+            oauth_failed += 1
     write_audit(
         settings.audit_path,
         "usage_query_batch_query",
@@ -1834,13 +1993,14 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
             "queried": queried,
             "failed": failed,
             "skipped_missing": skipped_missing,
-            "skipped_oauth": skipped_oauth,
+            "oauth_queried": oauth_queried,
+            "oauth_failed": oauth_failed,
             "usage_query_enabled": True,
         },
     )
     return redirect_with_msg(
         return_to,
-        f"已查询 {queried} 个已配置账号，失败 {failed} 个，跳过 OAuth {skipped_oauth} 个",
+        f"已查询 {queried} 个已配置账号，失败 {failed} 个",
     )
 
 
