@@ -55,6 +55,7 @@ class GuardMainTests(unittest.TestCase):
             base_path="/sub2ops",
             guard_state_path=str(data_dir / "guard-state.json"),
             usage_query_state_path=str(data_dir / "usage-query-state.json"),
+            sso_config_path=str(data_dir / "sso-config.json"),
             guard_enabled=True,
             guard_interval_seconds=5,
             guard_balance_error_threshold=1,
@@ -583,6 +584,42 @@ class GuardMainTests(unittest.TestCase):
         self.assertIn('"sub2api_admin_token_set": true', audit_text)
         self.assertIn("/sub2ops/speed?msg=", response.headers["location"])
 
+    def test_sso_config_save_persists_sub2api_admin_key_without_leaking_plaintext(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+
+        response = main_module.sso_config_save(
+            "tester",
+            enabled="1",
+            base_url="https://sub2api.example.com",
+            verify_base_url="http://sub2api:8080",
+            required_role="admin",
+            session_ttl_seconds=86400,
+            verify_timeout_seconds=5,
+            sub2api_admin_token="admin-secret",
+        )
+
+        self.assertEqual(store.sub2api_admin_token(), "admin-secret")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertNotIn("admin-secret", audit_text)
+        self.assertIn('"sub2api_admin_token_set": true', audit_text)
+        self.assertIn('"sub2api_admin_token_saved": true', audit_text)
+        self.assertIn("/sub2ops/sso?msg=", response.headers["location"])
+
+        response = main_module.sso_config_save(
+            "tester",
+            enabled="1",
+            base_url="https://sub2api.example.com",
+            verify_base_url="http://sub2api:8080",
+            required_role="admin",
+            session_ttl_seconds=86400,
+            verify_timeout_seconds=5,
+            sub2api_admin_token="",
+        )
+
+        self.assertEqual(store.sub2api_admin_token(), "admin-secret")
+        self.assertIn("/sub2ops/sso?msg=", response.headers["location"])
+
     def test_usage_query_view_recalculates_actual_available_with_current_multiplier(self) -> None:
         view = main_module.usage_query_view(
             UsageQueryConfig(account_id=9, enabled=True, upstream_multiplier=0.06),
@@ -690,7 +727,7 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "pro")
         self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"], [])
 
-    def test_speed_template_renders_oauth_plan_badge_window_reset_time_and_admin_token_field(self) -> None:
+    def test_speed_template_renders_oauth_plan_badge_window_reset_time_without_admin_token_field(self) -> None:
         rendered = main_module.templates.get_template("speed.html").render(
             {
                 "app_name": "Sub2Ops",
@@ -787,8 +824,7 @@ class GuardMainTests(unittest.TestCase):
         self.assertIn("0%", rendered)
         self.assertIn("恢复 2026-05-29 06:30", rendered)
         self.assertNotIn("更新 2026-05-25 16:30", rendered)
-        self.assertIn('name="sub2api_admin_token"', rendered)
-        self.assertIn("已保存，留空保留", rendered)
+        self.assertNotIn('name="sub2api_admin_token"', rendered)
 
     def test_usage_query_guard_refreshes_oauth_accounts_without_pausing_them(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
