@@ -178,6 +178,54 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("#7 depleted-account：可用 -0.0586 USD", reply)
             self.assertNotIn("总可用：-0.0586 USD", reply)
 
+    async def test_quota_command_uses_latest_account_credentials_not_stale_state_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="sub2api",
+                    base_url="https://stale-state.example.com",
+                    api_key="stale-state-secret",
+                    use_account_credentials=True,
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "synced-account",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {
+                            "base_url": "https://current-account.example.com",
+                            "api_key": "current-account-secret",
+                        },
+                    }
+
+            requests: list[dict[str, Any]] = []
+
+            async def quota_opener(request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                requests.append(request)
+                return {"remaining": 4.0, "unit": "USD"}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=quota_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("#7 synced-account：可用 4 USD", reply)
+            self.assertEqual(requests[0]["url"], "https://current-account.example.com/v1/usage")
+            self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer current-account-secret")
+            self.assertEqual(UsageQueryStore(str(usage_path)).config(7).base_url, "https://stale-state.example.com")
+
     async def test_quota_command_excludes_non_positive_snapshot_from_total(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"

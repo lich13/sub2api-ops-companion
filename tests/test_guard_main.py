@@ -351,6 +351,8 @@ class GuardMainTests(unittest.TestCase):
                 account_id=9,
                 enabled=False,
                 guard_disable_on_zero=False,
+                base_url="https://stale.example.com",
+                api_key="sk-stale",
                 upstream_multiplier=0.5,
                 auto_query_interval_minutes=60,
             )
@@ -362,15 +364,25 @@ class GuardMainTests(unittest.TestCase):
             "name": "quota-account",
             "type": "api",
             "schedulable": True,
+            "credentials": {
+                "base_url": "https://account.example.com",
+                "api_key": "sk-account",
+            },
         }
-        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
-            "success": True,
-            "remaining": 0,
-            "actual_available": 0,
-            "unit": "USD",
-            "upstream_multiplier": 0.5,
-            "queried_at": "2026-05-22T08:00:00+00:00",
-        }
+        queried_configs: list[UsageQueryConfig] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            queried_configs.append(config)
+            return {
+                "success": True,
+                "remaining": 0,
+                "actual_available": 0,
+                "unit": "USD",
+                "upstream_multiplier": 0.5,
+                "queried_at": "2026-05-22T08:00:00+00:00",
+            }
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
         main_module.account_ops.guard_pause_account = lambda _db, account_id, reason: paused.append(  # type: ignore[assignment]
             (account_id, reason)
         ) or {"id": account_id, "name": "quota-account", "schedulable": False}
@@ -381,6 +393,10 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(paused[0][0], 9)
         self.assertIn("usage query depleted", paused[0][1])
         self.assertEqual(store.result(9)["actual_available"], 0)
+        self.assertEqual(queried_configs[0].base_url, "https://account.example.com")
+        self.assertEqual(queried_configs[0].api_key, "sk-account")
+        self.assertEqual(store.config(9).base_url, "https://stale.example.com")
+        self.assertEqual(store.config(9).api_key, "sk-stale")
 
     def test_usage_query_guard_uses_global_auto_query_interval_seconds(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -471,21 +487,31 @@ class GuardMainTests(unittest.TestCase):
             "name": "quota-account",
             "type": "api",
             "schedulable": True,
+            "credentials": {
+                "base_url": "https://account.example.com",
+                "api_key": "secret-from-account",
+            },
         }
-        main_module.execute_usage_query = lambda _config: {  # type: ignore[assignment]
-            "success": True,
-            "remaining": 3,
-            "actual_available": 6,
-            "queried_at": "2026-05-22T08:00:00+00:00",
-        }
+        queried_configs: list[UsageQueryConfig] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            queried_configs.append(config)
+            return {
+                "success": True,
+                "remaining": 3,
+                "actual_available": 6,
+                "queried_at": "2026-05-22T08:00:00+00:00",
+            }
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
 
         class FakeRequest:
             async def form(self) -> dict[str, str]:
                 return {
                     "return_to": "/sub2ops/speed?group=default#usage-query-9",
                     "template_type": "sub2api",
-                    "base_url": "https://quota.example.com",
-                    "api_key": "secret",
+                    "base_url": "https://stale-form.example.com",
+                    "api_key": "stale-form-secret",
                     "upstream_multiplier": "0.5",
                     "timeout_seconds": "10",
                 }
@@ -494,8 +520,70 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(store.result(9)["actual_available"], 6)
         self.assertTrue(store.config(9).enabled)
+        self.assertEqual(store.config(9).base_url, "")
+        self.assertEqual(store.config(9).api_key, "")
+        self.assertEqual(queried_configs[0].base_url, "https://account.example.com")
+        self.assertEqual(queried_configs[0].api_key, "secret-from-account")
         self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
         self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"base_url": "https://account.example.com"', audit_text)
+        self.assertIn('"api_key_set": true', audit_text)
+        self.assertNotIn("stale-form", audit_text)
+
+    def test_usage_query_manual_query_uses_latest_account_credentials(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(
+            UsageQueryConfig(
+                account_id=9,
+                enabled=True,
+                template_type="sub2api",
+                base_url="https://stale-state.example.com",
+                api_key="stale-state-secret",
+            )
+        )
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "quota-account",
+            "type": "api",
+            "schedulable": True,
+            "credentials": {
+                "base_url": "https://current-account.example.com",
+                "api_key": "current-account-secret",
+            },
+        }
+        queried_configs: list[UsageQueryConfig] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            queried_configs.append(config)
+            return {
+                "success": True,
+                "remaining": 8,
+                "actual_available": 8,
+                "queried_at": "2026-05-22T08:00:00+00:00",
+            }
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
+
+        class FakeRequest:
+            async def form(self) -> dict[str, str]:
+                return {
+                    "return_to": "/sub2ops/speed#usage-query-9",
+                    "template_type": "sub2api",
+                    "base_url": "https://stale-form.example.com",
+                    "api_key": "stale-form-secret",
+                    "upstream_multiplier": "1",
+                    "timeout_seconds": "10",
+                }
+
+        response = asyncio.run(main_module.usage_query_account_query(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
+
+        self.assertEqual(store.config(9).base_url, "https://stale-state.example.com")
+        self.assertEqual(store.config(9).api_key, "stale-state-secret")
+        self.assertEqual(queried_configs[0].base_url, "https://current-account.example.com")
+        self.assertEqual(queried_configs[0].api_key, "current-account-secret")
+        self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
 
     def test_usage_query_fill_credentials_preserves_return_anchor(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -515,16 +603,17 @@ class GuardMainTests(unittest.TestCase):
                 return {
                     "return_to": "/sub2ops/speed?group=default#usage-query-9",
                     "template_type": "sub2api",
-                    "base_url": "",
-                    "api_key": "",
+                    "base_url": "https://stale-form.example.com",
+                    "api_key": "stale-form-secret",
                     "upstream_multiplier": "1",
                     "timeout_seconds": "10",
                 }
 
         response = asyncio.run(main_module.usage_query_fill_credentials(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
 
-        self.assertEqual(store.config(9).base_url, "https://quota.example.com")
-        self.assertEqual(store.config(9).api_key, "secret-from-account")
+        self.assertEqual(store.config(9).base_url, "")
+        self.assertEqual(store.config(9).api_key, "")
+        self.assertTrue(store.config(9).use_account_credentials)
         self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
         self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
 
@@ -546,8 +635,32 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(config.template_type, "newapi")
         self.assertEqual(config.code, DEFAULT_NEWAPI_TEMPLATE)
+        self.assertEqual(config.base_url, "")
+        self.assertEqual(config.api_key, "")
         self.assertEqual(config.access_token, "access-token")
         self.assertEqual(config.user_id, "42")
+
+    def test_usage_query_config_form_preserves_existing_stale_base_url_and_api_key(self) -> None:
+        config = main_module.usage_query_config_from_form(
+            4,
+            {
+                "template_type": "sub2api",
+                "base_url": "https://submitted.example.com",
+                "api_key": "submitted-secret",
+                "upstream_multiplier": "1",
+                "timeout_seconds": "10",
+            },
+            UsageQueryConfig(
+                account_id=4,
+                template_type="sub2api",
+                base_url="https://stale-state.example.com",
+                api_key="stale-state-secret",
+            ),
+            "tester",
+        )
+
+        self.assertEqual(config.base_url, "https://stale-state.example.com")
+        self.assertEqual(config.api_key, "stale-state-secret")
 
     def test_usage_query_settings_save_persists_global_switches_and_seconds(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -938,11 +1051,28 @@ class GuardMainTests(unittest.TestCase):
             usage_query_enabled=True,
             sub2api_admin_token="admin-secret",
         )
-        store.save_config(UsageQueryConfig(account_id=9, enabled=True, template_type="sub2api"))
+        store.save_config(
+            UsageQueryConfig(
+                account_id=9,
+                enabled=True,
+                template_type="sub2api",
+                base_url="https://stale.example.com",
+                api_key="sk-stale",
+            )
+        )
         store.save_config(UsageQueryConfig(account_id=10, enabled=True, template_type="sub2api"))
         main_module.settings.sub2api_base_url = "https://sub2api.example.com"
         rows = {
-            9: {"id": 9, "name": "api-account", "type": "api", "schedulable": True},
+            9: {
+                "id": 9,
+                "name": "api-account",
+                "type": "api",
+                "schedulable": True,
+                "credentials": {
+                    "base_url": "https://account.example.com",
+                    "api_key": "sk-account",
+                },
+            },
             10: {
                 "id": 10,
                 "name": "oauth-account",
@@ -956,10 +1086,12 @@ class GuardMainTests(unittest.TestCase):
         main_module.usage_query_store = lambda: store  # type: ignore[assignment]
         main_module.usage_query_account_row = lambda account_id: rows.get(account_id)  # type: ignore[assignment]
         generic_calls: list[int] = []
+        generic_configs: list[UsageQueryConfig] = []
         oauth_calls: list[int] = []
 
         def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
             generic_calls.append(config.account_id)
+            generic_configs.append(config)
             return {"success": True, "remaining": 3, "actual_available": 3, "queried_at": "2026-05-25T08:00:00+00:00"}
 
         def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -973,6 +1105,10 @@ class GuardMainTests(unittest.TestCase):
         message = parse_qs(urlsplit(response.headers["location"]).query)["msg"][0]
 
         self.assertEqual(generic_calls, [9])
+        self.assertEqual(generic_configs[0].base_url, "https://account.example.com")
+        self.assertEqual(generic_configs[0].api_key, "sk-account")
+        self.assertEqual(store.config(9).base_url, "https://stale.example.com")
+        self.assertEqual(store.config(9).api_key, "sk-stale")
         self.assertEqual(oauth_calls, [10])
         self.assertEqual(store.result(10)["template_type"], "oauth")
         self.assertIn("已查询 2 个已配置账号", message)
