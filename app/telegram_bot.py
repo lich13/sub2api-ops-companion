@@ -584,7 +584,7 @@ class TelegramOpsBot:
         store: UsageQueryStore | None = None,
     ) -> list[str]:
         try:
-            rows = await asyncio.to_thread(self._quality_rows)
+            rows = await asyncio.to_thread(account_ops.current_oauth_accounts, self.db)
         except Exception:
             return []
         lines: list[str] = []

@@ -804,6 +804,38 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(params["group_names"], ["openai-default"])
         self.assertEqual(params["platform"], "openai")
 
+    def test_usage_query_oauth_account_rows_projects_current_oauth_fields(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.fetch_all_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                self.fetch_all_calls.append((sql, params))
+                return [
+                    {
+                        "id": 9,
+                        "name": "oauth-account",
+                        "platform": "openai",
+                        "type": "oauth",
+                        "credentials": {"plan_type": "plus"},
+                        "extra": {"codex_7d_used_percent": 20},
+                    }
+                ]
+
+        capture_db = CaptureDB()
+        main_module.db = capture_db  # type: ignore[assignment]
+
+        rows = main_module.usage_query_oauth_account_rows()
+
+        self.assertEqual(rows[0]["id"], 9)
+        sql, params = capture_db.fetch_all_calls[0]
+        self.assertIn("credentials", sql)
+        self.assertIn("extra", sql)
+        self.assertIn("deleted_at IS NULL", sql)
+        self.assertIn("lower(coalesce(platform, '')) = 'openai'", sql)
+        self.assertIn("lower(coalesce(type, '')) = 'oauth'", sql)
+        self.assertIsNone(params)
+
     def test_enrich_usage_query_rows_adds_oauth_quota_from_usage_query_helper(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         calls: list[dict[str, Any]] = []
