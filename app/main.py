@@ -439,40 +439,7 @@ def usage_query_account_row(account_id: int) -> dict[str, Any] | None:
 
 
 def usage_query_oauth_account_rows() -> list[dict[str, Any]]:
-    load_factor_sql = (
-        """
-          load_factor,
-          COALESCE(NULLIF(load_factor, 0), NULLIF(concurrency, 0), 1) AS effective_load_factor,
-        """
-        if account_routing_capability()["load_factor"]
-        else """
-          NULL::integer AS load_factor,
-          COALESCE(NULLIF(concurrency, 0), 1) AS effective_load_factor,
-        """
-    )
-    return db.fetch_all(
-        f"""
-        SELECT
-          id,
-          name,
-          platform,
-          type,
-          credentials,
-          extra,
-          status,
-          schedulable,
-          priority AS account_priority,
-          NULL::integer AS group_priority,
-          concurrency,
-{load_factor_sql}
-          updated_at
-        FROM accounts
-        WHERE deleted_at IS NULL
-          AND lower(coalesce(platform, '')) = 'openai'
-          AND lower(coalesce(type, '')) = 'oauth'
-        ORDER BY id
-        """
-    )
+    return account_ops.current_oauth_accounts(db, account_routing_capability()["load_factor"])
 
 
 def hydrate_usage_query_config(config: UsageQueryConfig, row: dict[str, Any] | None = None) -> UsageQueryConfig:
