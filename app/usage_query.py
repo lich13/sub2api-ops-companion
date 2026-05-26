@@ -570,28 +570,16 @@ def numeric_or_none(value: object) -> float | None:
 
 
 def apply_account_credentials(config: UsageQueryConfig, account_row: dict[str, Any] | None) -> UsageQueryConfig:
-    if not config.use_account_credentials or not account_row:
+    credentials = account_credentials(account_row or {})
+    base_url = credentials.get("base_url", "")
+    api_key = credentials.get("api_key", "")
+    if base_url == config.base_url and api_key == config.api_key and config.use_account_credentials:
         return config
-    credentials = account_credentials(account_row)
-    base_url = config.base_url or credentials.get("base_url", "")
-    api_key = config.api_key or credentials.get("api_key", "")
-    access_token = config.access_token or credentials.get("access_token", "")
-    if base_url == config.base_url and api_key == config.api_key and access_token == config.access_token:
-        return config
-    return replace(config, base_url=base_url, api_key=api_key, access_token=access_token)
+    return replace(config, base_url=base_url, api_key=api_key, use_account_credentials=True)
 
 
 def fill_account_credentials(config: UsageQueryConfig, account_row: dict[str, Any] | None) -> UsageQueryConfig:
-    if not account_row:
-        return config
-    credentials = account_credentials(account_row)
-    return replace(
-        config,
-        base_url=credentials.get("base_url", "") or config.base_url,
-        api_key=credentials.get("api_key", "") or config.api_key,
-        access_token=credentials.get("access_token", "") or config.access_token,
-        use_account_credentials=False,
-    )
+    return replace(config, use_account_credentials=True)
 
 
 def account_credentials(account_row: dict[str, Any]) -> dict[str, str]:
@@ -1082,9 +1070,10 @@ def is_query_due(
 
 def public_config(config: UsageQueryConfig) -> dict[str, Any]:
     payload = config.to_dict()
+    payload["base_url"] = ""
     payload["api_key"] = ""
     payload["access_token"] = ""
-    payload["api_key_saved"] = bool(config.api_key)
+    payload["api_key_saved"] = False
     payload["access_token_saved"] = bool(config.access_token)
     payload["template_label"] = TEMPLATE_LABELS[config.template_type]
     return payload
