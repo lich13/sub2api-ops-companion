@@ -36,7 +36,7 @@ AsyncUsageOpener = Callable[[dict[str, Any], int], Awaitable[Any]]
 
 
 def usage_query_configured(config: UsageQueryConfig) -> bool:
-    return bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token)
+    return bool(config.updated_at or config.enabled or config.access_token)
 
 
 class TelegramOpsBot:

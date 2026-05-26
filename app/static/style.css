@@ -2745,6 +2745,18 @@ dd {
   font-weight: 700;
 }
 
+.usage-query-credential-note {
+  align-self: end;
+  min-height: 38px;
+  border: 1px dashed rgba(15, 118, 110, 0.28);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: rgba(15, 118, 110, 0.06);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .usage-query-toggle,
 .usage-query-guard-toggle {
   align-self: end;

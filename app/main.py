@@ -518,7 +518,7 @@ def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = Non
 
 
 def usage_query_configured(config: UsageQueryConfig) -> bool:
-    return bool(config.updated_at or config.enabled or config.base_url or config.api_key or config.access_token)
+    return bool(config.updated_at or config.enabled or config.access_token)
 
 
 def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, Any]:
@@ -648,7 +648,6 @@ def usage_query_config_from_form(
     template_type = str(raw.get("template_type") or existing.template_type or "sub2api")
     selected_template = normalize_template_type(template_type)
     existing_template = normalize_template_type(existing.template_type)
-    api_key = str(raw.get("api_key") or "").strip()
     access_token = str(raw.get("access_token") or "").strip()
     submitted_code = str(raw.get("code") or "").strip()
     existing_default_code = existing.code or default_template(existing_template)
@@ -662,11 +661,11 @@ def usage_query_config_from_form(
         enabled=True,
         template_type=template_type,
         code=submitted_code or default_template(template_type),
-        base_url=str(raw.get("base_url") or "").strip(),
-        api_key=api_key or (existing.api_key if existing.template_type == selected_template else ""),
+        base_url=existing.base_url,
+        api_key=existing.api_key,
         access_token=access_token or (existing.access_token if existing.template_type == selected_template else ""),
         user_id=str(raw.get("user_id") or "").strip(),
-        use_account_credentials=existing.use_account_credentials,
+        use_account_credentials=True,
         timeout_seconds=int_param(str(raw.get("timeout_seconds")), 10, 2, 30),
         upstream_multiplier=float_param(raw.get("upstream_multiplier"), 1.0, 0.0001, 1_000_000.0),
         guard_disable_on_zero=True,
@@ -1777,13 +1776,14 @@ async def usage_query_config_save(request: Request, user: AuthUser, account_id: 
         if result.get("success"):
             return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，并刷新 OAuth 额度成功")
         return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，OAuth 额度查询失败：{result.get('error') or '未知错误'}")
-    result = execute_usage_query(hydrate_usage_query_config(config, row))
+    hydrated = hydrate_usage_query_config(config, row)
+    result = execute_usage_query(hydrated)
     store.save_result(account_id, result)
     write_audit(
         settings.audit_path,
         "usage_query_config_save",
         {
-            **usage_query_audit_payload(config, user),
+            **usage_query_audit_payload(hydrated, user),
             "query_success": result.get("success"),
             "remaining": result.get("remaining"),
             "actual_available": result.get("actual_available"),
@@ -1855,20 +1855,22 @@ async def usage_query_fill_credentials(request: Request, user: AuthUser, account
     row = usage_query_account_row(account_id)
     filled = fill_account_credentials(base_config, row)
     store.save_config(filled)
-    credentials_found = any(account_credentials(row or {}).values())
+    hydrated = hydrate_usage_query_config(filled, row)
+    credentials = account_credentials(row or {})
+    credentials_found = bool(credentials.get("base_url") or credentials.get("api_key"))
     write_audit(
         settings.audit_path,
         "usage_query_fill_credentials",
         {
-            **usage_query_audit_payload(filled, user),
+            **usage_query_audit_payload(hydrated, user),
             "credentials_found": credentials_found,
-            "base_url_filled": bool(filled.base_url),
-            "api_key_filled": bool(filled.api_key),
-            "access_token_filled": bool(filled.access_token),
+            "base_url_filled": bool(hydrated.base_url),
+            "api_key_filled": bool(hydrated.api_key),
+            "access_token_filled": bool(hydrated.access_token),
         },
     )
     if credentials_found:
-        return redirect_with_msg(return_to, f"已从账号 #{account_id} 读取 Base URL / API Key")
+        return redirect_with_msg(return_to, f"账号 #{account_id} 已改为实时读取 Base URL / API Key")
     return redirect_with_msg(return_to, f"账号 #{account_id} 没有可读取的 Base URL / API Key")
 
 
@@ -1897,13 +1899,14 @@ async def usage_query_account_query(request: Request, user: AuthUser, account_id
         if result.get("success"):
             return redirect_with_msg(return_to, f"账号 #{account_id} OAuth 额度查询成功")
         return redirect_with_msg(return_to, f"账号 #{account_id} OAuth 额度查询失败：{result.get('error') or '未知错误'}")
-    result = execute_usage_query(hydrate_usage_query_config(config, row))
+    hydrated = hydrate_usage_query_config(config, row)
+    result = execute_usage_query(hydrated)
     store.save_result(account_id, result)
     write_audit(
         settings.audit_path,
         "usage_query_account_query",
         {
-            **usage_query_audit_payload(config, user),
+            **usage_query_audit_payload(hydrated, user),
             "success": result.get("success"),
             "remaining": result.get("remaining"),
             "actual_available": result.get("actual_available"),

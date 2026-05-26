@@ -222,12 +222,7 @@
                       {% endfor %}
                     </select>
                   </label>
-                  <label>Base URL
-                    <input name="base_url" value="{{ cfg.base_url }}" placeholder="https://sub2api.example.com" />
-                  </label>
-                  <label>API Key
-                    <input type="password" name="api_key" placeholder="{{ '已保存，留空保留' if cfg.api_key_saved else 'Sub2API API Key' }}" autocomplete="new-password" />
-                  </label>
+                  <div class="usage-query-credential-note">Base URL / API Key：从账号本体实时读取</div>
                   <label>Access Token
                     <input type="password" name="access_token" placeholder="{{ '已保存，留空保留' if cfg.access_token_saved else 'NewAPI Access Token' }}" autocomplete="new-password" />
                   </label>
@@ -245,7 +240,6 @@
                   </label>
                   <div class="usage-query-actions">
                     <button class="primary" type="submit">保存</button>
-                    <button type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/fill-credentials">从账号读取 Base URL / API Key</button>
                     {% if usage.configured %}
                       <button class="link-button clear-token" type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/delete">移除配置</button>
                     {% endif %}

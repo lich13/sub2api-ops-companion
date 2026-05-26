@@ -18,6 +18,7 @@ from app.usage_query import (
     fill_account_credentials,
     is_query_due,
     oauth_quota_windows,
+    public_config,
     should_pause_for_depleted,
 )
 
@@ -113,13 +114,36 @@ class UsageQueryTests(unittest.TestCase):
         self.assertEqual(hydrated.api_key, "sk-from-account")
         self.assertTrue(hydrated.use_account_credentials)
 
-    def test_account_credentials_do_not_override_manual_values(self) -> None:
+    def test_account_credentials_do_not_fill_access_token_from_account_row(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="newapi",
+            use_account_credentials=True,
+        )
+        hydrated = apply_account_credentials(
+            config,
+            {
+                "credentials": {
+                    "base_url": "https://newapi.example.com",
+                    "api_key": "sk-from-account",
+                    "access_token": "access-token-from-account",
+                }
+            },
+        )
+
+        self.assertEqual(hydrated.base_url, "https://newapi.example.com")
+        self.assertEqual(hydrated.api_key, "sk-from-account")
+        self.assertEqual(hydrated.access_token, "")
+
+    def test_account_credentials_override_stale_manual_base_url_and_api_key(self) -> None:
         config = UsageQueryConfig(
             account_id=5,
             enabled=True,
             template_type="sub2api",
             base_url="https://manual.example.com",
             api_key="sk-manual",
+            access_token="token-from-config",
             use_account_credentials=True,
         )
         hydrated = apply_account_credentials(
@@ -132,16 +156,64 @@ class UsageQueryTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(hydrated.base_url, "https://manual.example.com")
-        self.assertEqual(hydrated.api_key, "sk-manual")
+        self.assertEqual(hydrated.base_url, "https://codex.ciii.club")
+        self.assertEqual(hydrated.api_key, "sk-from-account")
+        self.assertEqual(hydrated.access_token, "token-from-config")
 
-    def test_fill_account_credentials_overwrites_form_values_from_database(self) -> None:
+    def test_account_credentials_force_live_sync_even_when_old_config_disabled_it(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="sub2api",
+            base_url="https://codex.ciii.club",
+            api_key="sk-from-account",
+            use_account_credentials=False,
+        )
+        hydrated = apply_account_credentials(
+            config,
+            {
+                "credentials": {
+                    "base_url": "https://codex.ciii.club",
+                    "api_key": "sk-from-account",
+                }
+            },
+        )
+
+        self.assertEqual(hydrated.base_url, "https://codex.ciii.club")
+        self.assertEqual(hydrated.api_key, "sk-from-account")
+        self.assertTrue(hydrated.use_account_credentials)
+
+    def test_account_credentials_are_rehydrated_from_latest_account_row(self) -> None:
+        config = UsageQueryConfig(
+            account_id=5,
+            enabled=True,
+            template_type="sub2api",
+            base_url="https://stale.example.com",
+            api_key="sk-stale",
+            use_account_credentials=True,
+        )
+        first = apply_account_credentials(
+            config,
+            {"credentials": {"base_url": "https://old-account.example.com", "api_key": "sk-old-account"}},
+        )
+        second = apply_account_credentials(
+            config,
+            {"credentials": {"base_url": "https://new-account.example.com", "api_key": "sk-new-account"}},
+        )
+
+        self.assertEqual(first.base_url, "https://old-account.example.com")
+        self.assertEqual(first.api_key, "sk-old-account")
+        self.assertEqual(second.base_url, "https://new-account.example.com")
+        self.assertEqual(second.api_key, "sk-new-account")
+
+    def test_fill_account_credentials_keeps_live_sync_instead_of_static_copy(self) -> None:
         config = UsageQueryConfig(
             account_id=5,
             enabled=True,
             template_type="sub2api",
             base_url="https://old.example.com",
             api_key="sk-old",
+            access_token="token-from-config",
             use_account_credentials=False,
         )
         filled = fill_account_credentials(
@@ -154,9 +226,29 @@ class UsageQueryTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(filled.base_url, "https://codex.ciii.club")
-        self.assertEqual(filled.api_key, "sk-from-account")
-        self.assertFalse(filled.use_account_credentials)
+        self.assertEqual(filled.base_url, "https://old.example.com")
+        self.assertEqual(filled.api_key, "sk-old")
+        self.assertNotEqual(filled.base_url, "https://codex.ciii.club")
+        self.assertNotEqual(filled.api_key, "sk-from-account")
+        self.assertEqual(filled.access_token, "token-from-config")
+        self.assertTrue(filled.use_account_credentials)
+
+    def test_public_config_ignores_stale_static_base_url_and_api_key(self) -> None:
+        payload = public_config(
+            UsageQueryConfig(
+                account_id=5,
+                enabled=True,
+                template_type="sub2api",
+                base_url="https://stale.example.com",
+                api_key="sk-stale",
+                access_token="token-from-config",
+            )
+        )
+
+        self.assertEqual(payload["base_url"], "")
+        self.assertEqual(payload["api_key"], "")
+        self.assertFalse(payload["api_key_saved"])
+        self.assertTrue(payload["access_token_saved"])
 
     def test_legacy_default_sub2api_template_is_upgraded(self) -> None:
         legacy_template = """({
