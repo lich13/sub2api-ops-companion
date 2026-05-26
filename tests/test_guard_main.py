@@ -43,6 +43,7 @@ class GuardMainTests(unittest.TestCase):
         self.original_usage_query_account_row = getattr(main_module, "usage_query_account_row", None)
         self.original_execute_usage_query = getattr(main_module, "execute_usage_query", None)
         self.original_execute_oauth_usage_query = getattr(main_module, "execute_oauth_usage_query", None)
+        self.original_run_oauth_usage_query = getattr(main_module, "run_oauth_usage_query", None)
         self.original_usage_query_oauth_account_rows = getattr(main_module, "usage_query_oauth_account_rows", None)
         self.original_pause_account_op = main_module.account_ops.pause_account
         self.original_resume_account_op = main_module.account_ops.resume_account
@@ -82,6 +83,10 @@ class GuardMainTests(unittest.TestCase):
             main_module.execute_oauth_usage_query = self.original_execute_oauth_usage_query  # type: ignore[assignment]
         elif hasattr(main_module, "execute_oauth_usage_query"):
             delattr(main_module, "execute_oauth_usage_query")
+        if self.original_run_oauth_usage_query is not None:
+            main_module.run_oauth_usage_query = self.original_run_oauth_usage_query  # type: ignore[assignment]
+        elif hasattr(main_module, "run_oauth_usage_query"):
+            delattr(main_module, "run_oauth_usage_query")
         if self.original_usage_query_oauth_account_rows is not None:
             main_module.usage_query_oauth_account_rows = self.original_usage_query_oauth_account_rows  # type: ignore[assignment]
         elif hasattr(main_module, "usage_query_oauth_account_rows"):
@@ -479,7 +484,7 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(paused, [])
         self.assertEqual(store.result(9)["actual_available"], 0)
 
-    def test_usage_query_config_save_queries_and_preserves_return_anchor(self) -> None:
+    def test_usage_query_config_save_only_saves_and_preserves_return_anchor(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         main_module.usage_query_store = lambda: store  # type: ignore[assignment]
         main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
@@ -492,18 +497,11 @@ class GuardMainTests(unittest.TestCase):
                 "api_key": "secret-from-account",
             },
         }
-        queried_configs: list[UsageQueryConfig] = []
 
-        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
-            queried_configs.append(config)
-            return {
-                "success": True,
-                "remaining": 3,
-                "actual_available": 6,
-                "queried_at": "2026-05-22T08:00:00+00:00",
-            }
+        def unexpected_usage_query(_config: UsageQueryConfig) -> dict[str, Any]:
+            raise AssertionError("saving usage query config should not run a quota query")
 
-        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
+        main_module.execute_usage_query = unexpected_usage_query  # type: ignore[assignment]
 
         class FakeRequest:
             async def form(self) -> dict[str, str]:
@@ -518,18 +516,51 @@ class GuardMainTests(unittest.TestCase):
 
         response = asyncio.run(main_module.usage_query_config_save(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
 
-        self.assertEqual(store.result(9)["actual_available"], 6)
+        self.assertEqual(store.result(9), {})
         self.assertTrue(store.config(9).enabled)
         self.assertEqual(store.config(9).base_url, "")
         self.assertEqual(store.config(9).api_key, "")
-        self.assertEqual(queried_configs[0].base_url, "https://account.example.com")
-        self.assertEqual(queried_configs[0].api_key, "secret-from-account")
         self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
         self.assertIn("/sub2ops/speed?group=default&msg=", response.headers["location"])
+        self.assertIn("%E5%B7%B2%E4%BF%9D%E5%AD%98%E8%B4%A6%E5%8F%B7+%239+%E7%9A%84%E9%A2%9D%E5%BA%A6%E6%9F%A5%E8%AF%A2%E9%85%8D%E7%BD%AE", response.headers["location"])
         audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
-        self.assertIn('"base_url": "https://account.example.com"', audit_text)
-        self.assertIn('"api_key_set": true', audit_text)
+        self.assertIn('"account_id": 9', audit_text)
         self.assertNotIn("stale-form", audit_text)
+        self.assertNotIn("query_success", audit_text)
+        self.assertNotIn("actual_available", audit_text)
+
+    def test_usage_query_config_save_does_not_refresh_oauth_usage(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+            "id": 9,
+            "name": "oauth-account",
+            "type": "oauth",
+            "schedulable": True,
+            "credentials": {"plan_type": "plus"},
+        }
+
+        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("saving OAuth usage query config should not run active usage query")
+
+        main_module.run_oauth_usage_query = unexpected_oauth_query  # type: ignore[assignment]
+
+        class FakeRequest:
+            async def form(self) -> dict[str, str]:
+                return {
+                    "return_to": "/sub2ops/speed#usage-query-9",
+                    "template_type": "sub2api",
+                    "timeout_seconds": "10",
+                }
+
+        response = asyncio.run(main_module.usage_query_config_save(FakeRequest(), "tester", 9))  # type: ignore[arg-type]
+
+        self.assertEqual(store.result(9), {})
+        self.assertTrue(store.config(9).enabled)
+        self.assertTrue(response.headers["location"].endswith("#usage-query-9"))
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"account_id": 9', audit_text)
+        self.assertNotIn("oauth_query", audit_text)
 
     def test_usage_query_manual_query_uses_latest_account_credentials(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -839,6 +870,89 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "pro")
         self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"], [])
+
+    def test_speed_view_reuses_single_usage_query_store_for_render(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(UsageQueryConfig(account_id=9, enabled=True, template_type="sub2api"))
+        store.save_result(
+            9,
+            {
+                "account_id": 9,
+                "success": True,
+                "remaining": 5,
+                "actual_available": 5,
+                "queried_at": "2026-05-22T08:00:00+00:00",
+            },
+        )
+        store_calls = 0
+        captured_context: dict[str, Any] = {}
+        original_load_groups = main_module.load_groups
+        original_build_group_selection = main_module.build_group_selection
+        original_build_time_range = main_module.build_time_range
+        original_load_speed_quality = main_module.load_speed_quality
+        original_sort_speed_rows = main_module.sort_speed_rows
+        original_build_speed_dashboard = main_module.build_speed_dashboard
+        original_render = main_module.render
+
+        def fake_store() -> UsageQueryStore:
+            nonlocal store_calls
+            store_calls += 1
+            return store
+
+        class FakeQueryParams:
+            def getlist(self, _name: str) -> list[str]:
+                return []
+
+        fake_request = SimpleNamespace(
+            query_params=FakeQueryParams(),
+            url=SimpleNamespace(query=""),
+        )
+
+        try:
+            main_module.usage_query_store = fake_store  # type: ignore[assignment]
+            main_module.load_groups = lambda: [{"name": "openai-default", "platform": "openai"}]  # type: ignore[assignment]
+            main_module.build_group_selection = lambda _selected, _groups: {  # type: ignore[assignment]
+                "selected": ["openai-default"],
+                "default_value": "openai-default",
+                "label": "默认分组",
+                "options": [],
+            }
+            main_module.build_time_range = lambda *_args: {  # type: ignore[assignment]
+                "start_at": None,
+                "end_at": None,
+            }
+            main_module.load_speed_quality = lambda *_args: [  # type: ignore[assignment]
+                {
+                    "id": 9,
+                    "name": "quota-account",
+                    "type": "api",
+                    "credentials": {},
+                    "extra": {},
+                }
+            ]
+            main_module.sort_speed_rows = lambda rows: rows  # type: ignore[assignment]
+            main_module.build_speed_dashboard = lambda _rows: {"success_count": 0}  # type: ignore[assignment]
+
+            def fake_render(_request: Any, _template: str, context: dict[str, Any]) -> Any:
+                captured_context.update(context)
+                return SimpleNamespace(status_code=200)
+
+            main_module.render = fake_render  # type: ignore[assignment]
+
+            response = main_module.speed_view(fake_request, "tester")  # type: ignore[arg-type]
+        finally:
+            main_module.load_groups = original_load_groups  # type: ignore[assignment]
+            main_module.build_group_selection = original_build_group_selection  # type: ignore[assignment]
+            main_module.build_time_range = original_build_time_range  # type: ignore[assignment]
+            main_module.load_speed_quality = original_load_speed_quality  # type: ignore[assignment]
+            main_module.sort_speed_rows = original_sort_speed_rows  # type: ignore[assignment]
+            main_module.build_speed_dashboard = original_build_speed_dashboard  # type: ignore[assignment]
+            main_module.render = original_render  # type: ignore[assignment]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(store_calls, 1)
+        self.assertTrue(captured_context["rows"][0]["usage_query"]["configured"])
+        self.assertEqual(captured_context["dashboard"]["configured_count"], 1)
 
     def test_speed_template_renders_oauth_plan_badge_window_reset_time_without_admin_token_field(self) -> None:
         rendered = main_module.templates.get_template("speed.html").render(

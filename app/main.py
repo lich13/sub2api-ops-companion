@@ -571,14 +571,17 @@ def usage_query_oauth_config(account_id: int, store: UsageQueryStore) -> UsageQu
     return UsageQueryConfig(account_id=account_id, enabled=True, template_type="sub2api")
 
 
-def enrich_usage_query_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    store = usage_query_store()
+def enrich_usage_query_rows(rows: list[dict[str, Any]], store: UsageQueryStore | None = None) -> list[dict[str, Any]]:
+    active_store = store or usage_query_store()
+    configs = {config.account_id: config for config in active_store.configs()}
+    results = active_store.results()
     enriched: list[dict[str, Any]] = []
     for row in rows:
         account_id = int(row.get("id") or 0)
         item = dict(row)
-        result = store.result(account_id)
-        item["usage_query"] = usage_query_view(store.config(account_id), result)
+        config = configs.get(account_id) or UsageQueryConfig(account_id=account_id)
+        result = results.get(account_id) or {}
+        item["usage_query"] = usage_query_view(config, result)
         item["oauth_quota"] = oauth_quota_for_row(item, result) if is_oauth_account(item) else {}
         enriched.append(item)
     return enriched
@@ -1726,9 +1729,12 @@ def speed_view(
     group_selection = build_group_selection(request.query_params.getlist("group"), groups)
     selected_range = build_time_range(time_range, start_date, end_date, hours)
     store = usage_query_store()
-    rows = enrich_usage_query_rows(sort_speed_rows(
-        load_speed_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
-    ))
+    rows = enrich_usage_query_rows(
+        sort_speed_rows(
+            load_speed_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"])
+        ),
+        store,
+    )
     dashboard = build_speed_dashboard(rows)
     dashboard.update(usage_query_dashboard(rows, store))
     return render(
@@ -1760,39 +1766,13 @@ async def usage_query_config_save(request: Request, user: AuthUser, account_id: 
     config = usage_query_config_from_form(account_id, raw, store.config(account_id), user)
     store.save_config(config)
     row = usage_query_account_row(account_id)
-    if row and is_oauth_account(row):
-        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
-        store.save_result(account_id, result)
-        write_audit(
-            settings.audit_path,
-            "usage_query_config_save",
-            {
-                **usage_query_audit_payload(config, user),
-                "query_success": result.get("success"),
-                "oauth_query": True,
-                "error": result.get("error") if not result.get("success") else "",
-            },
-        )
-        if result.get("success"):
-            return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，并刷新 OAuth 额度成功")
-        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，OAuth 额度查询失败：{result.get('error') or '未知错误'}")
     hydrated = hydrate_usage_query_config(config, row)
-    result = execute_usage_query(hydrated)
-    store.save_result(account_id, result)
     write_audit(
         settings.audit_path,
         "usage_query_config_save",
-        {
-            **usage_query_audit_payload(hydrated, user),
-            "query_success": result.get("success"),
-            "remaining": result.get("remaining"),
-            "actual_available": result.get("actual_available"),
-            "error": result.get("error") if not result.get("success") else "",
-        },
+        usage_query_audit_payload(hydrated, user),
     )
-    if result.get("success"):
-        return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，并查询成功")
-    return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置，查询失败：{result.get('error') or '未知错误'}")
+    return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置")
 
 
 @app.post("/usage-query/settings")
