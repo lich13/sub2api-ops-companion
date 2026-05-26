@@ -23,7 +23,7 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn('name="access_token"', template)
         self.assertIn('name="user_id"', template)
         self.assertIn('name="timeout_seconds"', template)
-        self.assertIn('Base URL / API Key：从账号本体实时读取', template)
+        self.assertNotIn('Base URL / API Key：从账号本体实时读取', template)
         self.assertNotIn('name="base_url"', template)
         self.assertNotIn('name="api_key"', template)
         self.assertNotIn("Sub2API API Key", template)
@@ -61,9 +61,10 @@ class UsageQueryUITests(unittest.TestCase):
 
         self.assertIn(".quota-cell", style)
         self.assertIn(".usage-query-config", style)
-        self.assertIn(".usage-query-credential-note", style)
+        self.assertNotIn(".usage-query-credential-note", style)
         self.assertIn(".usage-query-template-select", style)
-        self.assertIn("width: min(1280px, 100%);", style)
+        self.assertIn("grid-template-columns: repeat(3, minmax(180px, 1fr));", style)
+        self.assertIn("min-height: 108px;", style)
         self.assertNotIn("padding: 0 14px 14px 254px;", style)
 
 

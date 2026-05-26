@@ -136,7 +136,7 @@ https://你的-sub2api-域名/sub2ops/sso/start
 - `NewAPI` 模板默认请求 `{{baseUrl}}/api/user/self`，使用 `Authorization: Bearer {{accessToken}}` 和 `New-Api-User: {{userId}}` 读取真实用户额度；模板按 `quota`、`used_quota` 读取用户剩余和已用额度，并除以 `500000` 展示为 USD。不会回退到 `/api/usage/token/` 或 API Key 的 token usage 口径；旧的 `/api/user/self` 默认模板和上一版 `/api/usage/token/` 默认模板会在读取配置时自动升级。
 - `自定义` 模板使用和 cc-switch 一致的 `({ request, extractor })` 形态：JS 只声明请求和提取器，HTTP 请求由 Companion 后端统一执行，返回对象或对象数组字段可包含 `planName`、`extra`、`isValid`、`invalidMessage`、`total`、`used`、`remaining`、`unit`。
 - NewAPI 的 Base URL 会把末尾 `/v1` 自动归一为站点根地址，避免把管理接口拼成 `/v1/api/user/self`；从其它内置模板切到 NewAPI 时，如果表单里的代码仍是旧默认模板，后端会兜底替换成当前 NewAPI 默认模板。
-- 点击“从账号读取 Base URL / API Key”会从 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key` 读取并保存到当前额度查询配置。
+- Base URL / API Key 不在额度查询表单里单独维护；保存配置、手动查询、批量查询、自动查询和 Telegram `/quota` 都会实时读取 Sub2API `accounts.credentials.base_url` 和 `accounts.credentials.api_key`。
 - `上游倍率` 用于还原实际可用量，展示值为 `remaining / upstream_multiplier`；例如倍率 `0.5`、剩余额度 `12` 时，实际可用量显示为 `24`。面板会按当前配置倍率重新计算旧快照的实际可用量。
 - 自动查询间隔是速度页顶部的全局设置，后台 Guard 对所有启用额度查询的账号使用同一个间隔。
 - 开启“可用量≤0 时 Auto Guard 硬停”后，后台 Guard 会按全局自动查询间隔刷新额度；只有查询成功且实际可用量小于等于 `0`，才会把非 OAuth 账号硬停调度。查询失败只保存失败快照，不会当作额度耗尽处理。
