@@ -46,6 +46,43 @@ def quality_rows(db: Database, group: str, platform: str, hours: int) -> list[di
     )
 
 
+def current_oauth_accounts(db: Database, load_factor_supported: bool = False) -> list[dict[str, Any]]:
+    load_factor_sql = (
+        """
+          load_factor,
+          COALESCE(NULLIF(load_factor, 0), NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+        if load_factor_supported
+        else """
+          NULL::integer AS load_factor,
+          COALESCE(NULLIF(concurrency, 0), 1) AS effective_load_factor,
+        """
+    )
+    return db.fetch_all(
+        f"""
+        SELECT
+          id,
+          name,
+          platform,
+          type,
+          credentials,
+          extra,
+          status,
+          schedulable,
+          priority AS account_priority,
+          NULL::integer AS group_priority,
+          concurrency,
+{load_factor_sql}
+          updated_at
+        FROM accounts
+        WHERE deleted_at IS NULL
+          AND lower(coalesce(platform, '')) = 'openai'
+          AND lower(coalesce(type, '')) = 'oauth'
+        ORDER BY id
+        """
+    )
+
+
 def account_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "total": len(rows),
