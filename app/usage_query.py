@@ -640,8 +640,6 @@ def has_valid_oauth_five_hour_window(extra: dict[str, Any]) -> bool:
         return False
     if extra.get("codex_5h_active_usage_window") is True:
         return True
-    if used_percent >= 100 and first_string([extra], ("codex_5h_reset_at",)):
-        return True
     return bool(
         extra.get("codex_5h_reset_after_seconds") not in (None, "")
         or extra.get("codex_5h_window_minutes") not in (None, "")

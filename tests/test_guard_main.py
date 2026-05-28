@@ -1588,14 +1588,32 @@ class GuardMainTests(unittest.TestCase):
                 "platform": "openai",
                 "type": "oauth",
                 "credentials": {"plan_type": "free"},
-                "extra": {
-                    "codex_5h_used_percent": 100,
-                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
-                    "codex_7d_used_percent": 40,
-                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
-                },
+                "extra": {},
             }
         ]
+        store.save_result(
+            26,
+            {
+                "success": True,
+                "queried_at": "2026-05-24T23:58:00+00:00",
+                "data": {
+                    "five_hour": {"utilization": 100, "resets_at": "2026-05-25T00:00:00+00:00"},
+                    "seven_day": {"utilization": 40, "resets_at": "2026-05-26T00:00:00+00:00"},
+                },
+                "oauth_quota": {
+                    "plan_type": "free",
+                    "ui_windows": [
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 40,
+                            "remaining_percent": 60,
+                            "reset_at": "2026-05-26T00:00:00+00:00",
+                        }
+                    ],
+                },
+            },
+        )
         usage_calls: list[int] = []
         test_calls: list[int] = []
 
