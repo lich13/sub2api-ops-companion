@@ -888,6 +888,46 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"][0]["remaining_percent"], 0.0)
         self.assertEqual(calls[0]["credentials"]["plan_type"], "plus")
 
+    def test_oauth_quota_for_row_rebuilds_stale_cached_summary_from_active_usage_data(self) -> None:
+        summary = main_module.oauth_quota_for_row(
+            {
+                "id": 26,
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {},
+            },
+            {
+                "success": True,
+                "data": {
+                    "five_hour": {
+                        "utilization": 19,
+                        "resets_at": "2026-05-29T11:24:06+08:00",
+                        "remaining_seconds": 17714,
+                    },
+                    "seven_day": {
+                        "utilization": 51,
+                        "resets_at": "2026-06-04T11:30:55+08:00",
+                        "remaining_seconds": 536523,
+                    },
+                },
+                "oauth_quota": {
+                    "plan_type": "free",
+                    "ui_windows": [
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 51,
+                            "remaining_percent": 49,
+                        }
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(summary["plan_type"], "plus")
+        self.assertEqual([window["label"] for window in summary["ui_windows"]], ["5h", "7d"])
+        self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 81.0)
+
     def test_enrich_usage_query_rows_prefers_empty_success_oauth_query_result(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_result(
@@ -1534,6 +1574,59 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(usage_calls, [9])
         self.assertEqual(test_calls, [9])
         self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["trigger_window_labels"], ["5h"])
+
+    def test_oauth_recovery_scan_treats_active_five_hour_usage_as_non_free(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 26,
+                "name": "growing.generic.7p+g5@icloud.com",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
+                    "codex_7d_used_percent": 40,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        ]
+        usage_calls: list[int] = []
+        test_calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {
+                "success": True,
+                "oauth_quota": usage_query_module.oauth_quota_from_usage_data(
+                    {
+                        "five_hour": {"utilization": 0, "resets_at": "2026-05-25T05:00:00+00:00"},
+                        "seven_day": {"utilization": 40, "resets_at": "2026-05-26T00:00:00+00:00"},
+                    },
+                    {"credentials": {"plan_type": "free"}, "extra": {}},
+                    now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+                ),
+            }
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = lambda account_id, *_args, **_kwargs: (  # type: ignore[assignment]
+            test_calls.append(account_id) or {"success": True}
+        )
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(usage_calls, [26])
+        self.assertEqual(test_calls, [26])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["plan_type"], "plus")
         self.assertEqual(events[0]["trigger_window_labels"], ["5h"])
 
     def test_oauth_recovery_scan_probes_seven_day_early_before_reset(self) -> None:

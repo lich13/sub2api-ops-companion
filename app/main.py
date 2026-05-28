@@ -483,6 +483,11 @@ def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[s
 
 def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
     if isinstance(result, dict):
+        data = result.get("data")
+        if result.get("success") and isinstance(data, dict) and (
+            isinstance(data.get("five_hour"), dict) or isinstance(data.get("seven_day"), dict)
+        ):
+            return usage_query_module.oauth_quota_from_usage_data(data, row)
         quota = result.get("oauth_quota")
         if isinstance(quota, dict) and result.get("success"):
             return quota
@@ -1719,13 +1724,32 @@ async def telegram_recovery_alert_loop() -> None:
                 try:
                     state = await bot.oauth_recovery_state()
                     oauth_recovery_rows = await asyncio.to_thread(scan_oauth_quota_recovery_alerts, state=state)
-                    if oauth_recovery_rows and await bot.notify_oauth_quota_recovery_alerts(oauth_recovery_rows):
-                        mark_oauth_recovery_alerts_notified(state, oauth_recovery_rows)
-                        await bot.save_oauth_recovery_state(state)
+                    delivered_oauth_recovery_rows = (
+                        await bot.notify_oauth_quota_recovery_alerts(oauth_recovery_rows) if oauth_recovery_rows else []
+                    )
+                    if oauth_recovery_rows:
+                        if delivered_oauth_recovery_rows:
+                            mark_oauth_recovery_alerts_notified(state, delivered_oauth_recovery_rows)
+                            await bot.save_oauth_recovery_state(state)
+                        delivered_ids = {
+                            int(row.get("account_id") or 0)
+                            for row in delivered_oauth_recovery_rows
+                        }
                         write_audit(
                             settings.audit_path,
                             "telegram_oauth_quota_recovery_push",
-                            {"row_count": len(oauth_recovery_rows)},
+                            {
+                                "row_count": len(oauth_recovery_rows),
+                                "delivered_count": len(delivered_oauth_recovery_rows),
+                                "delivered_account_ids": [
+                                    int(row.get("account_id") or 0) for row in delivered_oauth_recovery_rows
+                                ],
+                                "undelivered_account_ids": [
+                                    int(row.get("account_id") or 0)
+                                    for row in oauth_recovery_rows
+                                    if int(row.get("account_id") or 0) not in delivered_ids
+                                ],
+                            },
                         )
                 except Exception as exc:
                     write_audit(settings.audit_path, "telegram_oauth_quota_recovery_error", {"stage": "loop", "error": str(exc)})

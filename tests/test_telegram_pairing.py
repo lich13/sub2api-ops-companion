@@ -893,7 +893,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                 [{"account_id": 9, "account_name": "lt", "plan_type": "plus", "window_labels": ["5h", "7d"]}]
             )
 
-            self.assertTrue(delivered)
+            self.assertEqual([row["account_id"] for row in delivered], [9])
             self.assertEqual(calls[0][0], 123)
             self.assertIn("OAuth 账号额度已恢复可用", calls[0][1])
 
@@ -913,7 +913,31 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                 [{"account_id": 9, "account_name": "lt", "plan_type": "plus", "window_labels": ["5h", "7d"]}]
             )
 
-            self.assertFalse(delivered)
+            self.assertEqual(delivered, [])
+
+    async def test_oauth_recovery_notify_returns_only_rows_delivered_to_every_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = make_settings(str(Path(tmpdir) / "state.json"))
+            settings.telegram_enabled = True
+            settings.telegram_bot_token = "token"
+            settings.telegram_allowed_chat_ids = [123, 456]
+            bot = TelegramOpsBot(settings, object(), guard_runner, guard_config)  # type: ignore[arg-type]
+            calls: list[tuple[int, str]] = []
+
+            async def fake_send(chat_id: int, text: str, _keyboard: dict[str, Any] | None = None) -> bool:
+                calls.append((chat_id, text))
+                return "despond" in text or chat_id != 456
+
+            bot._send_message = fake_send  # type: ignore[method-assign]
+            delivered = await bot.notify_oauth_quota_recovery_alerts(
+                [
+                    {"account_id": 26, "account_name": "growing.generic.7p+g5@icloud.com", "plan_type": "plus"},
+                    {"account_id": 27, "account_name": "despond.dipper-0e+g5@icloud.com", "plan_type": "plus"},
+                ]
+            )
+
+            self.assertEqual([row["account_id"] for row in delivered], [27])
+            self.assertEqual(len(calls), 4)
 
     def test_error_chain_alert_includes_request_account_and_message(self) -> None:
         text = error_chain_alert(

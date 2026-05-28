@@ -156,19 +156,22 @@ class TelegramOpsBot:
             for chat_id in chat_ids:
                 await self._send_message(chat_id, alert_text, keyboard)
 
-    async def notify_oauth_quota_recovery_alerts(self, rows: list[dict[str, Any]]) -> bool:
+    async def notify_oauth_quota_recovery_alerts(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not self.enabled:
-            return False
+            return []
         chat_ids = await self.allowed_chat_ids()
         if not chat_ids:
-            return False
-        sent = 0
+            return []
+        delivered: list[dict[str, Any]] = []
         for row in rows:
             alert_text = oauth_quota_recovery_alert(row)
+            sent_count = 0
             for chat_id in chat_ids:
                 if await self._send_message(chat_id, alert_text):
-                    sent += 1
-        return sent > 0
+                    sent_count += 1
+            if sent_count == len(chat_ids):
+                delivered.append(row)
+        return delivered
 
     async def allowed_chat_ids(self) -> list[int]:
         state = await self._load_state()
