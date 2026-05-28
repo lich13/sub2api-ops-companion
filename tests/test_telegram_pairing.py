@@ -28,6 +28,7 @@ from app.telegram_bot import (
     account_actions_keyboard,
     error_chain_alert,
     format_oauth_quota_line,
+    oauth_quota_recovery_alert,
     format_guard_actions,
     normalize_pairing_code,
     recovery_alert,
@@ -862,6 +863,58 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await bot.error_alert_cursor_id(), 123)
             self.assertEqual(await bot.recovery_alert_cursor_id(), 456)
 
+    async def test_oauth_recovery_state_persists_dedupe_without_nesting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            state = await bot.oauth_recovery_state()
+            state["oauth_account_recovery_alerts"] = {"9:reset": {"account_id": 9}}
+            await bot.save_oauth_recovery_state(state)
+
+            reloaded = await bot.oauth_recovery_state()
+            self.assertEqual(reloaded["oauth_account_recovery_alerts"], {"9:reset": {"account_id": 9}})
+            self.assertNotIn("oauth_account_recovery_alerts", reloaded["oauth_account_recovery_alerts"]["9:reset"])
+
+    async def test_oauth_recovery_notify_reports_delivery_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = make_settings(str(Path(tmpdir) / "state.json"))
+            settings.telegram_enabled = True
+            settings.telegram_bot_token = "token"
+            settings.telegram_allowed_chat_ids = [123]
+            bot = TelegramOpsBot(settings, object(), guard_runner, guard_config)  # type: ignore[arg-type]
+            calls: list[tuple[int, str]] = []
+
+            async def fake_send(chat_id: int, text: str, _keyboard: dict[str, Any] | None = None) -> bool:
+                calls.append((chat_id, text))
+                return True
+
+            bot._send_message = fake_send  # type: ignore[method-assign]
+            delivered = await bot.notify_oauth_quota_recovery_alerts(
+                [{"account_id": 9, "account_name": "lt", "plan_type": "plus", "window_labels": ["5h", "7d"]}]
+            )
+
+            self.assertTrue(delivered)
+            self.assertEqual(calls[0][0], 123)
+            self.assertIn("OAuth 账号额度已恢复可用", calls[0][1])
+
+    async def test_oauth_recovery_notify_reports_delivery_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = make_settings(str(Path(tmpdir) / "state.json"))
+            settings.telegram_enabled = True
+            settings.telegram_bot_token = "token"
+            settings.telegram_allowed_chat_ids = [123]
+            bot = TelegramOpsBot(settings, object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            async def fake_send(_chat_id: int, _text: str, _keyboard: dict[str, Any] | None = None) -> bool:
+                return False
+
+            bot._send_message = fake_send  # type: ignore[method-assign]
+            delivered = await bot.notify_oauth_quota_recovery_alerts(
+                [{"account_id": 9, "account_name": "lt", "plan_type": "plus", "window_labels": ["5h", "7d"]}]
+            )
+
+            self.assertFalse(delivered)
+
     def test_error_chain_alert_includes_request_account_and_message(self) -> None:
         text = error_chain_alert(
             {
@@ -903,6 +956,42 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("openai / oauth", text)
         self.assertIn("gpt-test", text)
         self.assertIn("2.35s", text)
+
+    def test_oauth_quota_recovery_alert_includes_plan_windows_and_test_status(self) -> None:
+        text = oauth_quota_recovery_alert(
+            {
+                "account_id": 9,
+                "account_name": "lt",
+                "plan_type": "plus",
+                "window_labels": ["5h", "7d"],
+                "reset_at": "2026-05-25T00:00:00+00:00",
+                "remaining_summary": "5h 100% / 7d 100%",
+                "test_latency_ms": 2345,
+                "test_model_id": "gpt-test",
+            }
+        )
+
+        self.assertIn("OAuth 账号额度已恢复可用", text)
+        self.assertIn("#9 lt · plus：5h/7d 已恢复，测试通过", text)
+        self.assertIn("当前剩余：5h 100% / 7d 100%", text)
+        self.assertIn("测试模型：gpt-test", text)
+        self.assertIn("测试耗时：2.35s", text)
+
+    def test_oauth_quota_recovery_alert_omits_free_five_hour_window(self) -> None:
+        text = oauth_quota_recovery_alert(
+            {
+                "account_id": 9,
+                "account_name": "free-account",
+                "plan_type": "free",
+                "window_labels": ["7d"],
+                "reset_at": "2026-05-25T00:00:00+00:00",
+                "remaining_summary": "7d 100%",
+                "test_latency_ms": 1000,
+            }
+        )
+
+        self.assertIn("#9 free-account · free：7d 已恢复，测试通过", text)
+        self.assertNotIn("5h", text)
 
     def test_guard_action_message_includes_action_reason_and_load_factor(self) -> None:
         text = format_guard_actions(

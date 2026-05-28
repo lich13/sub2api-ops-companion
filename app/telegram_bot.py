@@ -156,6 +156,20 @@ class TelegramOpsBot:
             for chat_id in chat_ids:
                 await self._send_message(chat_id, alert_text, keyboard)
 
+    async def notify_oauth_quota_recovery_alerts(self, rows: list[dict[str, Any]]) -> bool:
+        if not self.enabled:
+            return False
+        chat_ids = await self.allowed_chat_ids()
+        if not chat_ids:
+            return False
+        sent = 0
+        for row in rows:
+            alert_text = oauth_quota_recovery_alert(row)
+            for chat_id in chat_ids:
+                if await self._send_message(chat_id, alert_text):
+                    sent += 1
+        return sent > 0
+
     async def allowed_chat_ids(self) -> list[int]:
         state = await self._load_state()
         return unique_ints(list(self.settings.telegram_allowed_chat_ids) + list(state.get("paired_chat_ids") or []))
@@ -186,6 +200,19 @@ class TelegramOpsBot:
             state = await self._load_state_unlocked()
             state["recovery_alert_cursor_id"] = max(0, int(cursor_id or 0))
             state["recovery_alert_cursor_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+            await asyncio.to_thread(self._save_state_sync, state)
+
+    async def oauth_recovery_state(self) -> dict[str, Any]:
+        async with self._state_lock:
+            return await self._load_state_unlocked()
+
+    async def save_oauth_recovery_state(self, oauth_state: dict[str, Any]) -> None:
+        async with self._state_lock:
+            state = await self._load_state_unlocked()
+            raw = oauth_state.get("oauth_account_recovery_alerts")
+            state["oauth_account_recovery_alerts"] = dict(raw) if isinstance(raw, dict) else {}
+            state.pop("oauth_account_recovery_pending", None)
+            state["oauth_account_recovery_alerts_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
             await asyncio.to_thread(self._save_state_sync, state)
 
     async def _handle_update(self, update: dict[str, Any]) -> None:
@@ -660,7 +687,7 @@ class TelegramOpsBot:
         chat_id: int,
         text: str,
         keyboard: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         body: dict[str, Any] = {
             "chat_id": chat_id,
             "text": truncate(text, 3800),
@@ -668,7 +695,7 @@ class TelegramOpsBot:
         }
         if keyboard:
             body["reply_markup"] = keyboard
-        await self._api("sendMessage", body)
+        return bool((await self._api("sendMessage", body)).get("ok"))
 
     async def _api(self, method: str, payload: dict[str, Any], timeout: int = 15) -> dict[str, Any]:
         return await asyncio.to_thread(self._api_sync, method, payload, timeout)
@@ -910,6 +937,27 @@ def recovery_alert(row: dict[str, Any], account: dict[str, Any] | None = None) -
         lines.append(f"恢复时间：{bj_time(row.get('finished_at') or row.get('created_at'))}")
     if account:
         lines.append(f"当前状态：{account_ops.account_state(account)}")
+    return "\n".join(lines)
+
+
+def oauth_quota_recovery_alert(row: dict[str, Any]) -> str:
+    account_id = row.get("account_id") or row.get("id") or "-"
+    account_name = row.get("account_name") or row.get("name") or "-"
+    plan_type = str(row.get("plan_type") or "oauth")
+    window_labels = [str(item) for item in (row.get("window_labels") or []) if str(item)]
+    windows = "/".join(window_labels) or "-"
+    lines = [
+        "OAuth 账号额度已恢复可用",
+        f"#{account_id} {account_name} · {plan_type}：{windows} 已恢复，测试通过",
+    ]
+    if row.get("remaining_summary"):
+        lines.append(f"当前剩余：{row.get('remaining_summary')}")
+    if row.get("reset_at"):
+        lines.append(f"恢复时间：{format_oauth_reset_time(row.get('reset_at'))}")
+    if row.get("test_model_id"):
+        lines.append(f"测试模型：{row.get('test_model_id')}")
+    if row.get("test_latency_ms") not in (None, ""):
+        lines.append(f"测试耗时：{format_seconds(row.get('test_latency_ms'))}")
     return "\n".join(lines)
 
 
