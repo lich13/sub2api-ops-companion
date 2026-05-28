@@ -928,6 +928,35 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual([window["label"] for window in summary["ui_windows"]], ["5h", "7d"])
         self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 81.0)
 
+    def test_oauth_quota_for_row_rebuilds_remaining_seconds_from_original_query_time(self) -> None:
+        summary = main_module.oauth_quota_for_row(
+            {
+                "id": 26,
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {},
+            },
+            {
+                "success": True,
+                "queried_at": "2026-05-29T00:00:00+00:00",
+                "data": {
+                    "five_hour": {
+                        "utilization": 19,
+                        "remaining_seconds": 3600,
+                    },
+                    "seven_day": {
+                        "utilization": 51,
+                        "remaining_seconds": 7200,
+                    },
+                },
+                "oauth_quota": {"plan_type": "free", "ui_windows": []},
+            },
+        )
+
+        self.assertEqual(summary["plan_type"], "plus")
+        self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-05-29T01:00:00+00:00")
+        self.assertEqual(summary["ui_windows"][1]["reset_at"], "2026-05-29T02:00:00+00:00")
+
     def test_enrich_usage_query_rows_prefers_empty_success_oauth_query_result(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_result(
