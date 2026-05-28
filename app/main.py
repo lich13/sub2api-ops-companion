@@ -94,6 +94,7 @@ from .usage_query import (
     normalize_template_code,
     normalize_template_type,
     oauth_account_recovery_candidate_from_probe,
+    oauth_account_recovery_early_probe_due,
     oauth_account_recovery_probe_due,
     public_config,
     should_pause_for_depleted,
@@ -564,7 +565,11 @@ def execute_sub2api_account_test(
     base = str(base_url or oauth_usage_query_base_url()).strip().rstrip("/")
     token = str(admin_token or usage_query_store().sub2api_admin_token()).strip()
     if not base or not token:
-        return {"success": False, "error": "缺少 Sub2API 地址或 Admin Token"}
+        return {
+            "success": False,
+            "error": "缺少 Sub2API 地址或 Admin Token",
+            "error_code": "missing_sub2api_admin_credentials",
+        }
     body = {"model_id": str(model_id or ""), "prompt": "", "mode": ""}
     request = {
         "url": f"{base}/api/v1/admin/accounts/{int(account_id)}/test",
@@ -582,8 +587,15 @@ def execute_sub2api_account_test(
         result = parse_sub2api_account_test_sse(payload)
         result["latency_ms"] = int((time.monotonic() - started_at) * 1000)
         return result
+    except TimeoutError as exc:
+        return {"success": False, "error": str(exc) or "请求超时", "error_code": "timeout"}
+    except urllib.error.HTTPError as exc:
+        preview = exc.read(200).decode("utf-8", errors="replace")
+        return {"success": False, "error": preview or f"HTTP {exc.code}", "error_code": f"http_{exc.code}"}
+    except urllib.error.URLError as exc:
+        return {"success": False, "error": str(exc.reason), "error_code": "network_error"}
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": str(exc), "error_code": "account_test_error"}
 
 
 def open_sub2api_account_test_stream(request: dict[str, Any], timeout_seconds: int) -> str:
@@ -594,14 +606,8 @@ def open_sub2api_account_test_stream(request: dict[str, Any], timeout_seconds: i
         headers={str(k): str(v) for k, v in (request.get("headers") or {}).items()},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=max(2, min(60, int(timeout_seconds or 30)))) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        preview = exc.read(200).decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code}: {preview}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"请求失败: {exc.reason}") from exc
+    with urllib.request.urlopen(req, timeout=max(2, min(60, int(timeout_seconds or 30)))) as response:
+        raw = response.read()
     return raw.decode("utf-8", errors="replace")
 
 
@@ -621,14 +627,44 @@ def parse_sub2api_account_test_sse(payload: str) -> dict[str, Any]:
             continue
         event_type = str(event.get("type") or "")
         if event_type == "error":
-            return {"success": False, "error": str(event.get("error") or "账号测试失败")}
+            return {
+                "success": False,
+                "error": normalize_account_test_error_message(event),
+                "error_code": normalize_account_test_error_code(event),
+            }
         if event_type == "content" and event.get("text"):
             texts.append(str(event.get("text") or ""))
         if event_type == "test_complete" and event.get("success") is True:
             saw_success = True
     if not saw_success:
-        return {"success": False, "error": "账号测试未返回成功事件"}
+        return {"success": False, "error": "账号测试未返回成功事件", "error_code": "missing_success_event"}
     return {"success": True, "response_text": "".join(texts).strip()}
+
+
+def normalize_account_test_error_code(event: dict[str, Any]) -> str:
+    candidates = [
+        event.get("code"),
+        event.get("error_code"),
+        event.get("status_code"),
+    ]
+    nested = event.get("error")
+    if isinstance(nested, dict):
+        candidates.append(nested.get("code"))
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return "unknown_test_error"
+
+
+def normalize_account_test_error_message(event: dict[str, Any]) -> str:
+    error = event.get("error")
+    if isinstance(error, dict):
+        for key in ("message", "error", "detail", "code"):
+            text = str(error.get(key) or "").strip()
+            if text:
+                return text
+    return str(error or event.get("message") or event.get("detail") or "账号测试失败")
 
 
 def usage_query_oauth_config(account_id: int, store: UsageQueryStore) -> UsageQueryConfig:
@@ -1322,6 +1358,7 @@ def scan_oauth_quota_recovery_alerts(
     events: list[dict[str, Any]] = []
     checked_count = 0
     queried_count = 0
+    early_probe_count = 0
     tested_count = 0
     test_failed_count = 0
     for row in rows:
@@ -1331,16 +1368,36 @@ def scan_oauth_quota_recovery_alerts(
         cached_result = active_store.result(account_id)
         summary = oauth_quota_for_row(row, cached_result)
         due_candidate = oauth_account_recovery_probe_due(summary, now=current)
+        early_probe = False
         if not due_candidate:
-            continue
-        dedupe_key = oauth_recovery_dedupe_key(account_id, due_candidate)
-        if dedupe_key in dedupe:
+            cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
+            due_candidate = cached_probe if isinstance(cached_probe, dict) else None
+            if not due_candidate:
+                config = usage_query_oauth_config(account_id, active_store)
+                early_interval = min(active_store.auto_query_interval_seconds() or 60, 60)
+                due_candidate = oauth_account_recovery_early_probe_due(
+                    summary,
+                    cached_result,
+                    now=current,
+                    interval_seconds=early_interval,
+                )
+                if not due_candidate:
+                    continue
+                early_probe = True
+            else:
+                config = usage_query_oauth_config(account_id, active_store)
+        else:
+            config = usage_query_oauth_config(account_id, active_store)
+        if oauth_recovery_success_dedupe_key(account_id, due_candidate) in dedupe:
             continue
         checked_count += 1
-        config = usage_query_oauth_config(account_id, active_store)
         result = run_oauth_usage_query(account_id, row, active_store, timeout_seconds=config.timeout_seconds)
+        result = dict(result)
+        result["oauth_recovery_probe"] = due_candidate
         active_store.save_result(account_id, result)
         queried_count += 1
+        if early_probe:
+            early_probe_count += 1
         if not result.get("success"):
             write_audit(
                 settings.audit_path,
@@ -1352,8 +1409,8 @@ def scan_oauth_quota_recovery_alerts(
         candidate = oauth_account_recovery_candidate_from_probe(refreshed_summary, due_candidate, now=current)
         if not candidate:
             continue
-        dedupe_key = oauth_recovery_dedupe_key(account_id, candidate)
-        if dedupe_key in dedupe:
+        success_dedupe_key = oauth_recovery_success_dedupe_key(account_id, candidate)
+        if success_dedupe_key in dedupe:
             continue
         model_id = scheduled_test_model_for_account(account_id)
         test_result = execute_sub2api_account_test(
@@ -1366,6 +1423,7 @@ def scan_oauth_quota_recovery_alerts(
         tested_count += 1
         if not test_result.get("success"):
             test_failed_count += 1
+            failure_dedupe_key = oauth_recovery_failure_dedupe_key(account_id, candidate, test_result)
             write_audit(
                 settings.audit_path,
                 "telegram_oauth_quota_recovery_error",
@@ -1373,13 +1431,30 @@ def scan_oauth_quota_recovery_alerts(
                     "stage": "account_test",
                     "account_id": account_id,
                     "error": test_result.get("error") or "",
+                    "error_code": test_result.get("error_code") or "",
                     "model_id": model_id,
                 },
             )
+            if failure_dedupe_key not in dedupe:
+                event = oauth_recovery_event(
+                    row,
+                    candidate,
+                    test_result,
+                    model_id,
+                    failure_dedupe_key,
+                    status="test_failed",
+                )
+                events.append(event)
+                pending[failure_dedupe_key] = {
+                    "account_id": account_id,
+                    "fingerprint": candidate.get("fingerprint"),
+                    "error_code": test_result.get("error_code") or "",
+                    "checked_at": current.isoformat(),
+                }
             continue
-        event = oauth_recovery_event(row, candidate, test_result, model_id, dedupe_key)
+        event = oauth_recovery_event(row, candidate, test_result, model_id, success_dedupe_key, status="recovered")
         events.append(event)
-        pending[dedupe_key] = {
+        pending[success_dedupe_key] = {
             "account_id": account_id,
             "fingerprint": candidate.get("fingerprint"),
             "checked_at": current.isoformat(),
@@ -1390,6 +1465,7 @@ def scan_oauth_quota_recovery_alerts(
         {
             "checked_count": checked_count,
             "queried_count": queried_count,
+            "early_probe_count": early_probe_count,
             "tested_count": tested_count,
             "test_failed_count": test_failed_count,
             "push_count": len(events),
@@ -1402,12 +1478,22 @@ def oauth_recovery_dedupe_key(account_id: int, candidate: dict[str, Any]) -> str
     return f"{int(account_id)}:{candidate.get('fingerprint') or ''}"
 
 
+def oauth_recovery_success_dedupe_key(account_id: int, candidate: dict[str, Any]) -> str:
+    return f"success:{oauth_recovery_dedupe_key(account_id, candidate)}"
+
+
+def oauth_recovery_failure_dedupe_key(account_id: int, candidate: dict[str, Any], test_result: dict[str, Any]) -> str:
+    code = str(test_result.get("error_code") or "unknown_test_error").strip() or "unknown_test_error"
+    return f"failure:{oauth_recovery_dedupe_key(account_id, candidate)}:{code}"
+
+
 def oauth_recovery_event(
     row: dict[str, Any],
     candidate: dict[str, Any],
     test_result: dict[str, Any],
     model_id: str,
     dedupe_key: str = "",
+    status: str = "recovered",
 ) -> dict[str, Any]:
     return {
         "account_id": int(row.get("id") or 0),
@@ -1416,8 +1502,12 @@ def oauth_recovery_event(
         "type": row.get("type") or "oauth",
         "plan_type": candidate.get("plan_type") or "oauth",
         "window_labels": candidate.get("window_labels") or [],
+        "trigger_window_labels": candidate.get("trigger_window_labels") or [],
         "reset_at": candidate.get("reset_at") or "",
         "remaining_summary": candidate.get("remaining_summary") or "",
+        "status": status,
+        "error": test_result.get("error") or "",
+        "error_code": test_result.get("error_code") or "",
         "test_latency_ms": test_result.get("latency_ms"),
         "test_model_id": model_id,
         "test_response_text": test_result.get("response_text") or "",

@@ -1382,12 +1382,12 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["account_id"], 9)
         self.assertEqual(events[0]["window_labels"], ["5h", "7d"])
-        self.assertEqual(events[0]["dedupe_key"], "9:2026-05-25T00:00:00+00:00|2026-05-25T00:00:00+00:00")
+        self.assertEqual(events[0]["dedupe_key"], "success:9:2026-05-25T00:00:00+00:00|2026-05-25T00:00:00+00:00")
         self.assertEqual(store.result(9)["template_type"], "oauth")
         self.assertFalse(state["oauth_account_recovery_alerts"])
         self.assertIn(events[0]["dedupe_key"], state["oauth_account_recovery_pending"])
 
-    def test_oauth_recovery_scan_does_not_test_when_seven_day_still_depleted(self) -> None:
+    def test_oauth_recovery_scan_does_not_test_when_seven_day_still_depleted_after_active_usage(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
         main_module.settings.sub2api_base_url = "https://sub2api.example.com"
@@ -1448,7 +1448,44 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertEqual(usage_calls, [9])
 
-    def test_oauth_recovery_scan_waits_for_latest_required_reset_before_active_usage(self) -> None:
+    def test_oauth_recovery_scan_waits_for_unavailable_five_hour_but_not_available_seven_day(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T01:00:00+00:00",
+                    "codex_7d_used_percent": 40,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        ]
+
+        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("active usage must wait until the depleted five-hour reset time")
+
+        def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("account test must not run before the depleted five-hour reset time")
+
+        main_module.execute_oauth_usage_query = unexpected_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[attr-defined]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 30, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(events, [])
+
+    def test_oauth_recovery_scan_does_not_wait_for_available_seven_day_future_reset(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
         main_module.settings.sub2api_base_url = "https://sub2api.example.com"
@@ -1463,27 +1500,152 @@ class GuardMainTests(unittest.TestCase):
                 "extra": {
                     "codex_5h_used_percent": 100,
                     "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
-                    "codex_7d_used_percent": 100,
+                    "codex_7d_used_percent": 40,
                     "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
                 },
             }
         ]
+        usage_calls: list[int] = []
+        test_calls: list[int] = []
 
-        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-            raise AssertionError("active usage must wait until the latest required reset time")
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {
+                "success": True,
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {"key": "codex_7d", "label": "7d", "used_percent": 40, "remaining_percent": 60},
+                    ],
+                },
+            }
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = lambda account_id, *_args, **_kwargs: (  # type: ignore[assignment]
+            test_calls.append(account_id) or {"success": True}
+        )
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(usage_calls, [9])
+        self.assertEqual(test_calls, [9])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["trigger_window_labels"], ["5h"])
+
+    def test_oauth_recovery_scan_probes_seven_day_early_before_reset(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            auto_query_interval_seconds=3600,
+            sub2api_admin_token="admin-secret",
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-25T00:00:00+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-26T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+        ]
+        usage_calls: list[int] = []
+        test_calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {
+                "success": True,
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {"key": "codex_7d", "label": "7d", "used_percent": 0, "remaining_percent": 100},
+                    ],
+                },
+            }
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = lambda account_id, *_args, **_kwargs: (  # type: ignore[assignment]
+            test_calls.append(account_id) or {"success": True}
+        )
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(usage_calls, [9])
+        self.assertEqual(test_calls, [9])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["trigger_window_labels"], ["7d"])
+
+    def test_oauth_recovery_scan_keeps_probe_after_active_usage_failure_without_test_alert(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
+                    "codex_7d_used_percent": 40,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        ]
+        usage_calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {"success": False, "error": "upstream unavailable"}
 
         def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-            raise AssertionError("account test must not run before the latest required reset time")
+            raise AssertionError("active usage failure must not run account test or emit test failure")
 
-        main_module.execute_oauth_usage_query = unexpected_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
         main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[attr-defined]
 
         events = main_module.scan_oauth_quota_recovery_alerts(
             state={},
-            now=datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual(events, [])
+        self.assertEqual(usage_calls, [9])
+        self.assertEqual(store.result(9)["oauth_recovery_probe"]["trigger_window_labels"], ["5h"])
 
     def test_oauth_recovery_scan_retries_after_account_test_failure_and_dedupes_success(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -1498,7 +1660,7 @@ class GuardMainTests(unittest.TestCase):
                 "type": "oauth",
                 "credentials": {"plan_type": "free"},
                 "extra": {
-                    "codex_7d_used_percent": 0,
+                    "codex_7d_used_percent": 100,
                     "codex_7d_reset_at": "2026-05-25T00:00:00+00:00",
                 },
             }
@@ -1527,7 +1689,7 @@ class GuardMainTests(unittest.TestCase):
             nonlocal test_calls
             test_calls += 1
             if test_calls == 1:
-                return {"success": False, "error": "still failing"}
+                return {"success": False, "error": "still failing", "error_code": "rate_limited"}
             return {"success": True, "latency_ms": 1000}
 
         main_module.execute_sub2api_account_test = flaky_account_test  # type: ignore[attr-defined]
@@ -1541,8 +1703,11 @@ class GuardMainTests(unittest.TestCase):
             state=state,
             now=datetime(2026, 5, 25, 0, 0, 2, tzinfo=timezone.utc),
         )
-        self.assertEqual(first, [])
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["status"], "test_failed")
+        self.assertEqual(first[0]["error_code"], "rate_limited")
         self.assertEqual(len(second), 1)
+        self.assertEqual(second[0]["status"], "recovered")
         self.assertEqual(test_calls, 2)
         self.assertFalse(state["oauth_account_recovery_alerts"])
         self.assertIn(second[0]["dedupe_key"], state["oauth_account_recovery_pending"])
@@ -1558,6 +1723,69 @@ class GuardMainTests(unittest.TestCase):
         )
         self.assertEqual(third, [])
         self.assertEqual(test_calls, 2)
+
+    def test_oauth_recovery_scan_dedupes_failure_by_error_code_but_allows_changed_code_and_success(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {"codex_7d_used_percent": 100, "codex_7d_reset_at": "2026-05-25T00:00:00+00:00"},
+            }
+        ]
+        main_module.execute_oauth_usage_query = lambda account_id, *_args, **_kwargs: {  # type: ignore[attr-defined]
+            "account_id": account_id,
+            "template_type": "oauth",
+            "success": True,
+            "oauth_quota": {
+                "plan_type": "free",
+                "ui_windows": [
+                    {"key": "codex_7d", "label": "7d", "used_percent": 0, "remaining_percent": 100}
+                ],
+            },
+        }
+        test_results = [
+            {"success": False, "error": "rate limit", "error_code": "rate_limited"},
+            {"success": False, "error": "rate limit", "error_code": "rate_limited"},
+            {"success": False, "error": "auth", "error_code": "unauthorized"},
+            {"success": True},
+        ]
+
+        def fake_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            return test_results.pop(0)
+
+        main_module.execute_sub2api_account_test = fake_account_test  # type: ignore[attr-defined]
+        state: dict[str, Any] = {}
+
+        first = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+        main_module.mark_oauth_recovery_alerts_notified(state, first)
+        second = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 0, 0, 2, tzinfo=timezone.utc),
+        )
+        third = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 0, 0, 3, tzinfo=timezone.utc),
+        )
+        main_module.mark_oauth_recovery_alerts_notified(state, third)
+        fourth = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 0, 0, 4, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(first[0]["status"], "test_failed")
+        self.assertEqual(second, [])
+        self.assertEqual(third[0]["error_code"], "unauthorized")
+        self.assertEqual(fourth[0]["status"], "recovered")
 
     def test_oauth_recovery_scan_stages_dedupe_until_notification_is_confirmed(self) -> None:
         state: dict[str, Any] = {}
@@ -1590,6 +1818,9 @@ class GuardMainTests(unittest.TestCase):
             'data: {"type":"error","error":"rate limit"}\n\n'
             'data: {"type":"test_complete","success":true}\n\n'
         )
+        coded_error = main_module.parse_sub2api_account_test_sse(
+            'data: {"type":"error","error":{"code":"rate_limited","message":"limit"}}\n\n'
+        )
         incomplete = main_module.parse_sub2api_account_test_sse('data: {"type":"content","text":"pong"}\n\n')
 
         self.assertTrue(success["success"])
@@ -1597,7 +1828,11 @@ class GuardMainTests(unittest.TestCase):
         self.assertTrue(compact_success["success"])
         self.assertFalse(error["success"])
         self.assertIn("rate limit", error["error"])
+        self.assertFalse(coded_error["success"])
+        self.assertEqual(coded_error["error_code"], "rate_limited")
+        self.assertEqual(coded_error["error"], "limit")
         self.assertFalse(incomplete["success"])
+        self.assertEqual(incomplete["error_code"], "missing_success_event")
 
     def test_usage_query_guard_does_not_pause_failed_queries(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)

@@ -19,6 +19,8 @@ from app.usage_query import (
     is_query_due,
     oauth_account_recovery_candidate,
     oauth_account_recovery_candidate_from_probe,
+    oauth_account_recovery_early_probe_due,
+    oauth_account_recovery_probe_due,
     oauth_quota_windows,
     public_config,
     should_pause_for_depleted,
@@ -483,12 +485,12 @@ class UsageQueryTests(unittest.TestCase):
 
         self.assertIsNone(candidate)
 
-    def test_oauth_recovery_candidate_waits_until_latest_required_reset_time(self) -> None:
-        summary = oauth_quota_windows(
+    def test_oauth_recovery_probe_does_not_wait_for_available_seven_day_future_reset(self) -> None:
+        probe = oauth_quota_windows(
             {
                 "credentials": {"plan_type": "pro"},
                 "extra": {
-                    "codex_5h_used_percent": 0,
+                    "codex_5h_used_percent": 100,
                     "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
                     "codex_7d_used_percent": 10,
                     "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
@@ -496,19 +498,95 @@ class UsageQueryTests(unittest.TestCase):
             }
         )
 
-        before = oauth_account_recovery_candidate(
-            summary,
-            now=datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc),
+        before = oauth_account_recovery_probe_due(
+            probe,
+            now=datetime(2026, 5, 24, 23, 59, 59, tzinfo=timezone.utc),
         )
-        after = oauth_account_recovery_candidate(
-            summary,
-            now=datetime(2026, 5, 26, 0, 0, 1, tzinfo=timezone.utc),
+        after = oauth_account_recovery_probe_due(
+            probe,
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
         )
 
         self.assertIsNone(before)
         self.assertIsNotNone(after)
         self.assertEqual(after["window_labels"], ["5h", "7d"])
-        self.assertEqual(after["fingerprint"], "2026-05-25T00:00:00+00:00|2026-05-26T00:00:00+00:00")
+        self.assertEqual(after["trigger_window_labels"], ["5h"])
+        self.assertEqual(after["fingerprint"], "2026-05-25T00:00:00+00:00")
+
+    def test_oauth_recovery_probe_does_not_trigger_before_five_hour_reset(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "pro"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T01:00:00+00:00",
+                    "codex_7d_used_percent": 10,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        )
+
+        candidate = oauth_account_recovery_probe_due(
+            summary,
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_oauth_recovery_early_probe_checks_depleted_seven_day_before_reset_after_interval(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "pro"},
+                "extra": {
+                    "codex_5h_used_percent": 0,
+                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        )
+        recent_result = {"queried_at": "2026-05-25T00:00:30+00:00"}
+        stale_result = {"queried_at": "2026-05-25T00:00:00+00:00"}
+
+        before_interval = oauth_account_recovery_early_probe_due(
+            summary,
+            recent_result,
+            now=datetime(2026, 5, 25, 0, 1, 0, tzinfo=timezone.utc),
+            interval_seconds=60,
+        )
+        after_interval = oauth_account_recovery_early_probe_due(
+            summary,
+            stale_result,
+            now=datetime(2026, 5, 25, 0, 1, 1, tzinfo=timezone.utc),
+            interval_seconds=3600,
+        )
+
+        self.assertIsNone(before_interval)
+        self.assertIsNotNone(after_interval)
+        self.assertTrue(after_interval["early_probe"])
+        self.assertEqual(after_interval["fingerprint"], "2026-05-26T00:00:00+00:00")
+
+    def test_oauth_recovery_early_probe_does_not_skip_unrecovered_five_hour(self) -> None:
+        summary = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "pro"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T02:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        )
+
+        candidate = oauth_account_recovery_early_probe_due(
+            summary,
+            {"queried_at": "2026-05-25T00:00:00+00:00"},
+            now=datetime(2026, 5, 25, 0, 1, 1, tzinfo=timezone.utc),
+            interval_seconds=60,
+        )
+
+        self.assertIsNone(candidate)
 
     def test_oauth_recovery_candidate_from_probe_uses_probe_reset_after_active_refresh(self) -> None:
         probe = oauth_quota_windows(
@@ -562,9 +640,7 @@ class UsageQueryTests(unittest.TestCase):
             now=datetime(2026, 5, 25, 1, 0, 1, tzinfo=timezone.utc),
         )
 
-        self.assertIsNotNone(candidate)
-        self.assertEqual(candidate["window_labels"], ["7d"])
-        self.assertEqual(candidate["fingerprint"], "2026-05-25T01:00:00+00:00")
+        self.assertIsNone(candidate)
 
     def test_newapi_query_prefers_user_self_when_access_token_and_user_id_are_set(self) -> None:
         requests: list[dict[str, Any]] = []

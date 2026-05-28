@@ -946,10 +946,23 @@ def oauth_quota_recovery_alert(row: dict[str, Any]) -> str:
     plan_type = str(row.get("plan_type") or "oauth")
     window_labels = [str(item) for item in (row.get("window_labels") or []) if str(item)]
     windows = "/".join(window_labels) or "-"
-    lines = [
-        "OAuth 账号额度已恢复可用",
-        f"#{account_id} {account_name} · {plan_type}：{windows} 已恢复，测试通过",
-    ]
+    status = str(row.get("status") or "recovered")
+    if status == "test_failed":
+        lines = [
+            "OAuth 账号额度恢复后测试失败",
+            f"#{account_id} {account_name} · {plan_type}：{windows} 已有额度，测试失败",
+            f"错误代码：{row.get('error_code') or 'unknown_test_error'}",
+        ]
+        if row.get("error"):
+            lines.append(f"错误信息：{truncate(str(row.get('error') or ''), 240)}")
+    else:
+        lines = [
+            "OAuth 账号额度已恢复可用",
+            f"#{account_id} {account_name} · {plan_type}：{windows} 已恢复，测试通过",
+        ]
+    trigger_labels = [str(item) for item in (row.get("trigger_window_labels") or []) if str(item)]
+    if trigger_labels:
+        lines.append(f"触发窗口：{'/'.join(trigger_labels)}")
     if row.get("remaining_summary"):
         lines.append(f"当前剩余：{row.get('remaining_summary')}")
     if row.get("reset_at"):
