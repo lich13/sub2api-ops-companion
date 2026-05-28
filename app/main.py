@@ -487,7 +487,8 @@ def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = Non
         if result.get("success") and isinstance(data, dict) and (
             isinstance(data.get("five_hour"), dict) or isinstance(data.get("seven_day"), dict)
         ):
-            return usage_query_module.oauth_quota_from_usage_data(data, row)
+            query_time = usage_query_module.parse_iso_datetime(result.get("queried_at"))
+            return usage_query_module.oauth_quota_from_usage_data(data, row, now=query_time)
         quota = result.get("oauth_quota")
         if isinstance(quota, dict) and result.get("success"):
             return quota
