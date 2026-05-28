@@ -1647,6 +1647,72 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(usage_calls, [9])
         self.assertEqual(store.result(9)["oauth_recovery_probe"]["trigger_window_labels"], ["5h"])
 
+    def test_oauth_recovery_cached_probe_respects_active_usage_retry_interval(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            auto_query_interval_seconds=3600,
+            sub2api_admin_token="admin-secret",
+        )
+        store.save_result(
+            9,
+            {
+                "success": False,
+                "error": "HTTP 401",
+                "error_code": "http_401",
+                "queried_at": "2026-05-25T00:00:01+00:00",
+                "oauth_recovery_probe": {
+                    "plan_type": "plus",
+                    "fingerprint": "2026-05-25T00:00:00+00:00",
+                    "reset_at": "2026-05-25T00:00:00+00:00",
+                    "window_labels": ["5h", "7d"],
+                    "trigger_window_labels": ["5h"],
+                },
+            },
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
+                    "codex_7d_used_percent": 40,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        ]
+        usage_calls: list[datetime] = []
+
+        def fake_oauth_query(_account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(_kwargs.get("now") or datetime.now(timezone.utc))
+            return {"success": False, "error": "HTTP 401", "error_code": "http_401"}
+
+        def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("active usage failure must not run account test")
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[attr-defined]
+
+        early = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 30, tzinfo=timezone.utc),
+        )
+        due = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(early, [])
+        self.assertEqual(due, [])
+        self.assertEqual(len(usage_calls), 1)
+        self.assertEqual(store.result(9)["error_code"], "http_401")
+
     def test_oauth_recovery_scan_retries_after_account_test_failure_and_dedupes_success(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
@@ -1833,6 +1899,30 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(coded_error["error"], "limit")
         self.assertFalse(incomplete["success"])
         self.assertEqual(incomplete["error_code"], "missing_success_event")
+
+    def test_sub2api_account_test_uses_admin_api_key_header(self) -> None:
+        captured: dict[str, Any] = {}
+        original_open = main_module.open_sub2api_account_test_stream
+
+        def fake_open(request: dict[str, Any], _timeout_seconds: int) -> str:
+            captured.update(request)
+            return 'data: {"type":"test_complete","success":true}\n\n'
+
+        main_module.open_sub2api_account_test_stream = fake_open  # type: ignore[assignment]
+        try:
+            result = main_module.execute_sub2api_account_test(
+                9,
+                "gpt-test",
+                base_url="https://sub2api.example.com/",
+                admin_token="admin-secret",
+            )
+        finally:
+            main_module.open_sub2api_account_test_stream = original_open  # type: ignore[assignment]
+
+        self.assertTrue(result["success"])
+        self.assertEqual(captured["url"], "https://sub2api.example.com/api/v1/admin/accounts/9/test")
+        self.assertEqual(captured["headers"]["x-api-key"], "admin-secret")
+        self.assertNotIn("Authorization", captured["headers"])
 
     def test_usage_query_guard_does_not_pause_failed_queries(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
