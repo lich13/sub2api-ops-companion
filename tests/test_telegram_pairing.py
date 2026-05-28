@@ -27,6 +27,7 @@ from app.telegram_bot import (
     TelegramOpsBot,
     account_actions_keyboard,
     error_chain_alert,
+    format_oauth_quota_line,
     format_guard_actions,
     normalize_pairing_code,
     recovery_alert,
@@ -133,7 +134,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("wallet", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
 
-    async def test_quota_command_excludes_non_positive_available_from_total(self) -> None:
+    async def test_quota_command_excludes_non_positive_available_from_reply(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"
             usage_path = Path(tmpdir) / "usage-query-state.json"
@@ -174,9 +175,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             reply, keyboard = await bot._text_reply(100, 200, "/quota")
 
             self.assertIsNone(keyboard)
-            self.assertIn("总可用：-", reply)
-            self.assertIn("#7 depleted-account：可用 -0.0586 USD", reply)
-            self.assertNotIn("总可用：-0.0586 USD", reply)
+            self.assertIn("没有配置额度查询", reply)
+            self.assertNotIn("#7 depleted-account", reply)
+            self.assertNotIn("-0.0586 USD", reply)
 
     async def test_quota_command_uses_latest_account_credentials_not_stale_state_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -281,9 +282,55 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             reply, keyboard = await bot._text_reply(100, 200, "/quota")
 
             self.assertIsNone(keyboard)
-            self.assertIn("总可用：-", reply)
-            self.assertIn("#7 snapshot-depleted：可用 -0.0586 USD", reply)
-            self.assertNotIn("总可用：-0.0586 USD", reply)
+            self.assertIn("没有配置额度查询", reply)
+            self.assertNotIn("#7 snapshot-depleted", reply)
+            self.assertNotIn("-0.0586 USD", reply)
+
+    async def test_quota_command_omits_non_positive_live_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(
+                UsageQueryConfig(
+                    account_id=7,
+                    enabled=True,
+                    template_type="sub2api",
+                    use_account_credentials=True,
+                    code="""({
+  request: {url: "{{baseUrl}}/v1/usage", method: "GET", headers: {}},
+  extractor: function(response) {
+    return {remaining: response.remaining, unit: "USD"};
+  }
+})""",
+                    upstream_multiplier=1,
+                )
+            )
+
+            class FakeDB:
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    return {
+                        "id": 7,
+                        "name": "live-depleted",
+                        "platform": "openai",
+                        "type": "apikey",
+                        "schedulable": True,
+                        "credentials": {"base_url": "https://quota.example.com", "api_key": "sk-test"},
+                    }
+
+            async def depleted_opener(_request: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                return {"remaining": 0, "unit": "USD"}
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config, usage_query_opener=depleted_opener)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("没有配置额度查询", reply)
+            self.assertNotIn("#7 live-depleted", reply)
+            self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 0.0)
 
     async def test_quota_command_reports_no_configured_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -395,10 +442,11 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("额度查询", reply)
             self.assertIn("总可用：-", reply)
-            self.assertIn("#9 current-oauth · plus：7d 剩余 60%（恢复 05-29 06:30）", reply)
+            self.assertIn("#9 current-oauth · plus：5h 恢复 05-25 18:30", reply)
             self.assertNotIn("没有配置额度查询", reply)
             self.assertNotIn("deleted-oauth", reply)
-            self.assertNotIn("5h", reply)
+            self.assertNotIn("7d", reply)
+            self.assertNotIn("剩余 60%", reply)
 
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -513,8 +561,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("#8 oauth-account", reply)
             self.assertIn("· plus：", reply)
             self.assertNotIn("Codex plus", reply)
-            self.assertIn("5h 剩余 20%（恢复 05-25 18:30）", reply)
-            self.assertNotIn("7d", reply)
+            self.assertIn("7d 恢复 05-29 06:30", reply)
+            self.assertNotIn("5h", reply)
+            self.assertNotIn("剩余 20%", reply)
             self.assertNotIn("Codex oauth", reply)
             self.assertNotIn("跳过 OAuth", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
@@ -571,6 +620,42 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("#8 oauth-account · pro：7d 剩余 70%（恢复 05-30 08:30）", reply)
             self.assertNotIn("free：7d 剩余 10%", reply)
+
+    async def test_oauth_quota_line_prefers_five_hour_reset_when_seven_day_has_remaining(self) -> None:
+        line = format_oauth_quota_line(
+            {
+                "id": 8,
+                "name": "oauth-account",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                    "codex_7d_used_percent": 40,
+                    "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                },
+            }
+        )
+
+        self.assertEqual(line, "#8 oauth-account · plus：5h 恢复 05-25 18:30")
+
+    async def test_oauth_quota_line_prefers_seven_day_reset_when_seven_day_depleted(self) -> None:
+        line = format_oauth_quota_line(
+            {
+                "id": 8,
+                "name": "oauth-account",
+                "type": "oauth",
+                "credentials": {"plan_type": "pro"},
+                "extra": {
+                    "codex_5h_used_percent": 80,
+                    "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                },
+            }
+        )
+
+        self.assertEqual(line, "#8 oauth-account · pro：7d 恢复 05-29 06:30")
 
     async def test_quota_command_omits_oauth_account_when_no_remaining_codex_windows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
