@@ -964,6 +964,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                 "account_name": "lt",
                 "plan_type": "plus",
                 "window_labels": ["5h", "7d"],
+                "trigger_window_labels": ["5h"],
                 "reset_at": "2026-05-25T00:00:00+00:00",
                 "remaining_summary": "5h 100% / 7d 100%",
                 "test_latency_ms": 2345,
@@ -973,9 +974,31 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("OAuth 账号额度已恢复可用", text)
         self.assertIn("#9 lt · plus：5h/7d 已恢复，测试通过", text)
+        self.assertIn("触发窗口：5h", text)
         self.assertIn("当前剩余：5h 100% / 7d 100%", text)
         self.assertIn("测试模型：gpt-test", text)
         self.assertIn("测试耗时：2.35s", text)
+
+    def test_oauth_quota_recovery_alert_includes_test_failure_code_and_message(self) -> None:
+        text = oauth_quota_recovery_alert(
+            {
+                "account_id": 9,
+                "account_name": "lt",
+                "plan_type": "plus",
+                "window_labels": ["5h", "7d"],
+                "trigger_window_labels": ["7d"],
+                "status": "test_failed",
+                "error_code": "rate_limited",
+                "error": "rate limit",
+                "test_latency_ms": 1000,
+            }
+        )
+
+        self.assertIn("OAuth 账号额度恢复后测试失败", text)
+        self.assertIn("#9 lt · plus：5h/7d 已有额度，测试失败", text)
+        self.assertIn("错误代码：rate_limited", text)
+        self.assertIn("错误信息：rate limit", text)
+        self.assertIn("触发窗口：7d", text)
 
     def test_oauth_quota_recovery_alert_omits_free_five_hour_window(self) -> None:
         text = oauth_quota_recovery_alert(
