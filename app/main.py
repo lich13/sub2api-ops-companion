@@ -7,6 +7,8 @@ import time
 import asyncio
 import json
 import math
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -91,6 +93,8 @@ from .usage_query import (
     is_query_due,
     normalize_template_code,
     normalize_template_type,
+    oauth_account_recovery_candidate_from_probe,
+    oauth_account_recovery_probe_due,
     public_config,
     should_pause_for_depleted,
 )
@@ -529,6 +533,102 @@ def run_oauth_usage_query(
         account_row=row,
         timeout_seconds=timeout_seconds,
     )
+
+
+def scheduled_test_model_for_account(account_id: int) -> str:
+    try:
+        row = db.fetch_one(
+            """
+            SELECT model_id
+            FROM scheduled_test_plans
+            WHERE account_id = %(account_id)s
+              AND enabled = true
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+            """,
+            {"account_id": int(account_id)},
+        )
+    except Exception:
+        return ""
+    return str((row or {}).get("model_id") or "").strip()
+
+
+def execute_sub2api_account_test(
+    account_id: int,
+    model_id: str = "",
+    *,
+    base_url: str = "",
+    admin_token: str = "",
+    timeout_seconds: int = 30,
+) -> dict[str, Any]:
+    base = str(base_url or oauth_usage_query_base_url()).strip().rstrip("/")
+    token = str(admin_token or usage_query_store().sub2api_admin_token()).strip()
+    if not base or not token:
+        return {"success": False, "error": "缺少 Sub2API 地址或 Admin Token"}
+    body = {"model_id": str(model_id or ""), "prompt": "", "mode": ""}
+    request = {
+        "url": f"{base}/api/v1/admin/accounts/{int(account_id)}/test",
+        "method": "POST",
+        "headers": {
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        "body": body,
+    }
+    try:
+        started_at = time.monotonic()
+        payload = open_sub2api_account_test_stream(request, timeout_seconds)
+        result = parse_sub2api_account_test_sse(payload)
+        result["latency_ms"] = int((time.monotonic() - started_at) * 1000)
+        return result
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def open_sub2api_account_test_stream(request: dict[str, Any], timeout_seconds: int) -> str:
+    data = json.dumps(request.get("body") or {}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        str(request["url"]),
+        data=data,
+        headers={str(k): str(v) for k, v in (request.get("headers") or {}).items()},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=max(2, min(60, int(timeout_seconds or 30)))) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        preview = exc.read(200).decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {preview}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"请求失败: {exc.reason}") from exc
+    return raw.decode("utf-8", errors="replace")
+
+
+def parse_sub2api_account_test_sse(payload: str) -> dict[str, Any]:
+    texts: list[str] = []
+    saw_success = False
+    for line in str(payload or "").splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        raw = line.removeprefix("data:").strip()
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == "error":
+            return {"success": False, "error": str(event.get("error") or "账号测试失败")}
+        if event_type == "content" and event.get("text"):
+            texts.append(str(event.get("text") or ""))
+        if event_type == "test_complete" and event.get("success") is True:
+            saw_success = True
+    if not saw_success:
+        return {"success": False, "error": "账号测试未返回成功事件"}
+    return {"success": True, "response_text": "".join(texts).strip()}
 
 
 def usage_query_oauth_config(account_id: int, store: UsageQueryStore) -> UsageQueryConfig:
@@ -1182,6 +1282,179 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     return actions
 
 
+def scan_oauth_quota_recovery_alerts(
+    *,
+    state: dict[str, Any],
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    active_store = usage_query_store()
+    if not active_store.usage_query_enabled():
+        return []
+    base_url = oauth_usage_query_base_url()
+    admin_token = active_store.sub2api_admin_token()
+    if not base_url or not admin_token:
+        write_audit(
+            settings.audit_path,
+            "telegram_oauth_quota_recovery_scan",
+            {
+                "skipped": "missing_sub2api_admin_credentials",
+                "base_url_set": bool(base_url),
+                "admin_token_set": bool(admin_token),
+            },
+        )
+        return []
+    try:
+        rows = usage_query_oauth_account_rows()
+    except Exception as exc:
+        write_audit(settings.audit_path, "telegram_oauth_quota_recovery_error", {"stage": "load_accounts", "error": str(exc)})
+        return []
+
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    dedupe = state.setdefault("oauth_account_recovery_alerts", {})
+    if not isinstance(dedupe, dict):
+        dedupe = {}
+        state["oauth_account_recovery_alerts"] = dedupe
+    pending = state.setdefault("oauth_account_recovery_pending", {})
+    if not isinstance(pending, dict):
+        pending = {}
+        state["oauth_account_recovery_pending"] = pending
+
+    events: list[dict[str, Any]] = []
+    checked_count = 0
+    queried_count = 0
+    tested_count = 0
+    test_failed_count = 0
+    for row in rows:
+        account_id = int(row.get("id") or 0)
+        if account_id <= 0 or not is_oauth_account(row):
+            continue
+        cached_result = active_store.result(account_id)
+        summary = oauth_quota_for_row(row, cached_result)
+        due_candidate = oauth_account_recovery_probe_due(summary, now=current)
+        if not due_candidate:
+            continue
+        dedupe_key = oauth_recovery_dedupe_key(account_id, due_candidate)
+        if dedupe_key in dedupe:
+            continue
+        checked_count += 1
+        config = usage_query_oauth_config(account_id, active_store)
+        result = run_oauth_usage_query(account_id, row, active_store, timeout_seconds=config.timeout_seconds)
+        active_store.save_result(account_id, result)
+        queried_count += 1
+        if not result.get("success"):
+            write_audit(
+                settings.audit_path,
+                "telegram_oauth_quota_recovery_error",
+                {"stage": "active_usage", "account_id": account_id, "error": result.get("error") or ""},
+            )
+            continue
+        refreshed_summary = result.get("oauth_quota") if isinstance(result.get("oauth_quota"), dict) else {}
+        candidate = oauth_account_recovery_candidate_from_probe(refreshed_summary, due_candidate, now=current)
+        if not candidate:
+            continue
+        dedupe_key = oauth_recovery_dedupe_key(account_id, candidate)
+        if dedupe_key in dedupe:
+            continue
+        model_id = scheduled_test_model_for_account(account_id)
+        test_result = execute_sub2api_account_test(
+            account_id,
+            model_id,
+            base_url=base_url,
+            admin_token=admin_token,
+            timeout_seconds=max(10, config.timeout_seconds),
+        )
+        tested_count += 1
+        if not test_result.get("success"):
+            test_failed_count += 1
+            write_audit(
+                settings.audit_path,
+                "telegram_oauth_quota_recovery_error",
+                {
+                    "stage": "account_test",
+                    "account_id": account_id,
+                    "error": test_result.get("error") or "",
+                    "model_id": model_id,
+                },
+            )
+            continue
+        event = oauth_recovery_event(row, candidate, test_result, model_id, dedupe_key)
+        events.append(event)
+        pending[dedupe_key] = {
+            "account_id": account_id,
+            "fingerprint": candidate.get("fingerprint"),
+            "checked_at": current.isoformat(),
+        }
+    write_audit(
+        settings.audit_path,
+        "telegram_oauth_quota_recovery_scan",
+        {
+            "checked_count": checked_count,
+            "queried_count": queried_count,
+            "tested_count": tested_count,
+            "test_failed_count": test_failed_count,
+            "push_count": len(events),
+        },
+    )
+    return events
+
+
+def oauth_recovery_dedupe_key(account_id: int, candidate: dict[str, Any]) -> str:
+    return f"{int(account_id)}:{candidate.get('fingerprint') or ''}"
+
+
+def oauth_recovery_event(
+    row: dict[str, Any],
+    candidate: dict[str, Any],
+    test_result: dict[str, Any],
+    model_id: str,
+    dedupe_key: str = "",
+) -> dict[str, Any]:
+    return {
+        "account_id": int(row.get("id") or 0),
+        "account_name": row.get("name") or "-",
+        "platform": row.get("platform") or "openai",
+        "type": row.get("type") or "oauth",
+        "plan_type": candidate.get("plan_type") or "oauth",
+        "window_labels": candidate.get("window_labels") or [],
+        "reset_at": candidate.get("reset_at") or "",
+        "remaining_summary": candidate.get("remaining_summary") or "",
+        "test_latency_ms": test_result.get("latency_ms"),
+        "test_model_id": model_id,
+        "test_response_text": test_result.get("response_text") or "",
+        "dedupe_key": dedupe_key,
+        "fingerprint": candidate.get("fingerprint") or "",
+    }
+
+
+def mark_oauth_recovery_alerts_notified(
+    state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> None:
+    if not rows:
+        return
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    dedupe = state.setdefault("oauth_account_recovery_alerts", {})
+    if not isinstance(dedupe, dict):
+        dedupe = {}
+        state["oauth_account_recovery_alerts"] = dedupe
+    pending = state.get("oauth_account_recovery_pending")
+    if not isinstance(pending, dict):
+        pending = {}
+    for row in rows:
+        key = str(row.get("dedupe_key") or "")
+        if not key:
+            continue
+        dedupe[key] = {
+            "account_id": int(row.get("account_id") or 0),
+            "fingerprint": row.get("fingerprint") or "",
+            "notified_at": current,
+        }
+        pending.pop(key, None)
+    state["oauth_account_recovery_pending"] = pending
+
+
 def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     guard_state["running"] = True
     guard_state["last_error"] = ""
@@ -1348,6 +1621,19 @@ async def telegram_recovery_alert_loop() -> None:
         try:
             bot = telegram_bot
             if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
+                try:
+                    state = await bot.oauth_recovery_state()
+                    oauth_recovery_rows = await asyncio.to_thread(scan_oauth_quota_recovery_alerts, state=state)
+                    if oauth_recovery_rows and await bot.notify_oauth_quota_recovery_alerts(oauth_recovery_rows):
+                        mark_oauth_recovery_alerts_notified(state, oauth_recovery_rows)
+                        await bot.save_oauth_recovery_state(state)
+                        write_audit(
+                            settings.audit_path,
+                            "telegram_oauth_quota_recovery_push",
+                            {"row_count": len(oauth_recovery_rows)},
+                        )
+                except Exception as exc:
+                    write_audit(settings.audit_path, "telegram_oauth_quota_recovery_error", {"stage": "loop", "error": str(exc)})
                 cursor_id = await bot.recovery_alert_cursor_id()
                 if cursor_id <= 0:
                     current_id = await asyncio.to_thread(current_scheduled_test_result_id)

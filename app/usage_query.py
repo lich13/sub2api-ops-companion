@@ -632,6 +632,131 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
     }
 
 
+def oauth_account_recovery_candidate(
+    summary: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    return oauth_account_recovery_candidate_from_probe(summary, summary, now=now)
+
+
+def oauth_account_recovery_candidate_from_probe(
+    summary: dict[str, Any] | None,
+    probe: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(summary, dict):
+        return None
+    windows = oauth_windows_by_key(summary.get("ui_windows") or summary.get("windows"))
+    plan_type = normalize_oauth_plan_type(summary.get("plan_type") or "oauth")
+    required_keys = ("codex_7d",) if plan_type == "free" else ("codex_5h", "codex_7d")
+    required: list[dict[str, Any]] = []
+    for key in required_keys:
+        window = windows.get(key)
+        if not isinstance(window, dict):
+            return None
+        used_percent = percent_or_none(window.get("used_percent"))
+        if used_percent is None or used_percent >= 100:
+            return None
+        required.append(window)
+    reset_info = oauth_recovery_reset_info(probe if isinstance(probe, dict) else summary, required_keys, now=now)
+    if not reset_info:
+        return None
+    latest_reset, reset_values = reset_info
+    return {
+        "plan_type": plan_type,
+        "windows": required,
+        "window_labels": [str(window.get("label") or "-") for window in required],
+        "fingerprint": "|".join(reset_values),
+        "reset_at": latest_reset.isoformat(),
+        "remaining_summary": " / ".join(
+            f"{window.get('label') or '-'} {format_percent_value(window.get('remaining_percent'))}" for window in required
+        ),
+    }
+
+
+def oauth_recovery_reset_info(
+    summary: dict[str, Any] | None,
+    required_keys: tuple[str, ...],
+    *,
+    now: datetime | None = None,
+) -> tuple[datetime, list[str]] | None:
+    if not isinstance(summary, dict):
+        return None
+    windows = oauth_windows_by_key(summary.get("ui_windows") or summary.get("windows"))
+    reset_times: list[datetime] = []
+    reset_values: list[str] = []
+    for key in required_keys:
+        window = windows.get(key)
+        if not isinstance(window, dict):
+            return None
+        reset_at = first_string([window], ("reset_at",))
+        reset_time = parse_iso_datetime(reset_at)
+        if not reset_at or reset_time is None:
+            return None
+        if reset_time.tzinfo is None:
+            reset_time = reset_time.replace(tzinfo=timezone.utc)
+        reset_times.append(reset_time.astimezone(timezone.utc))
+        reset_values.append(reset_at)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    latest_reset = max(reset_times)
+    if current < latest_reset:
+        return None
+    return latest_reset, reset_values
+
+
+def oauth_account_recovery_probe_due(
+    summary: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(summary, dict):
+        return None
+    windows = oauth_windows_by_key(summary.get("ui_windows"))
+    plan_type = normalize_oauth_plan_type(summary.get("plan_type") or "oauth")
+    required_keys = ("codex_7d",) if plan_type == "free" else ("codex_5h", "codex_7d")
+    reset_info = oauth_recovery_reset_info(summary, required_keys, now=now)
+    if not reset_info:
+        return None
+    latest_reset, reset_values = reset_info
+    required = [windows[key] for key in required_keys]
+    return {
+        "plan_type": plan_type,
+        "windows": required,
+        "window_labels": [str(window.get("label") or "-") for window in required],
+        "fingerprint": "|".join(reset_values),
+        "reset_at": latest_reset.isoformat(),
+    }
+
+
+def oauth_windows_by_key(raw_windows: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_windows, list):
+        return {}
+    windows: dict[str, dict[str, Any]] = {}
+    for window in raw_windows:
+        if not isinstance(window, dict):
+            continue
+        key = str(window.get("key") or "").strip()
+        label = str(window.get("label") or "").strip().lower()
+        if not key:
+            if label == "5h":
+                key = "codex_5h"
+            elif label == "7d":
+                key = "codex_7d"
+        if key:
+            windows[key] = window
+    return windows
+
+
+def format_percent_value(value: object) -> str:
+    numeric = numeric_or_none(value)
+    if numeric is None:
+        return "-"
+    rendered = f"{numeric:.2f}".rstrip("0").rstrip(".")
+    return f"{rendered}%"
+
+
 def normalize_oauth_plan_type(value: object) -> str:
     text = str(value or "").strip()
     for prefix in ("计划 ", "Codex ", "codex "):
@@ -754,7 +879,8 @@ def execute_oauth_usage_query(
     timeout_seconds: int = 10,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    queried_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    query_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    queried_at = query_now.isoformat()
     account_id = int(account_id)
     base = str(base_url or "").strip().rstrip("/")
     token = str(admin_token or "").strip()
@@ -772,7 +898,7 @@ def execute_oauth_usage_query(
         validate_oauth_usage_request(request)
         payload = (opener or open_usage_request)(request, normalize_timeout(timeout_seconds))
         data = oauth_usage_payload_data(payload)
-        summary = oauth_quota_from_usage_data(data, account_row, now=now)
+        summary = oauth_quota_from_usage_data(data, account_row, now=query_now)
         return {
             "account_id": account_id,
             "template_type": "oauth",
