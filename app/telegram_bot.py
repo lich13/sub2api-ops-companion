@@ -556,18 +556,19 @@ class TelegramOpsBot:
             result = await self._execute_quota_query(hydrated)
             if result.get("success"):
                 store.save_result(config.account_id, result)
-                account_lines.append(format_quota_line(hydrated, row, result))
-                add_quota_total(totals, quota_available(result, hydrated), str(result.get("unit") or ""))
+                if quota_result_has_positive_available(result, hydrated):
+                    account_lines.append(format_quota_line(hydrated, row, result))
+                    add_quota_total(totals, quota_available(result, hydrated), str(result.get("unit") or ""))
                 continue
             if previous.get("success"):
-                account_lines.append(format_quota_line(hydrated, row, previous))
-                add_quota_total(totals, quota_available(previous, hydrated), str(previous.get("unit") or ""))
+                if quota_result_has_positive_available(previous, hydrated):
+                    account_lines.append(format_quota_line(hydrated, row, previous))
+                    add_quota_total(totals, quota_available(previous, hydrated), str(previous.get("unit") or ""))
                 continue
             store.save_result(config.account_id, result)
-            account_lines.append(format_quota_line(hydrated, row, result))
         oauth_lines = await self._current_oauth_quota_lines(seen_account_ids, store)
         account_lines.extend(oauth_lines)
-        if not configs and not account_lines:
+        if not account_lines:
             return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
         lines = [
             "额度查询",
@@ -964,11 +965,70 @@ def format_oauth_quota_line(
     account_id = int(row.get("id") or row.get("account_id") or fallback_account_id)
     account_name = str(row.get("name") or "-")
     plan_type = str(summary.get("plan_type") or "oauth")
+    reset_window = select_oauth_telegram_reset_window(summary, plan_type)
+    if reset_window:
+        rendered_reset = format_oauth_reset_window(reset_window)
+        if rendered_reset:
+            return f"#{account_id} {account_name} · {plan_type}：{rendered_reset}"
     windows = remaining_oauth_quota_windows(summary.get("telegram_windows") or summary.get("ui_windows"))
     rendered = " / ".join(format_oauth_quota_window(window) for window in windows if isinstance(window, dict))
     if not rendered:
         return ""
     return f"#{account_id} {account_name} · {plan_type}：{rendered}"
+
+
+def select_oauth_telegram_reset_window(summary: dict[str, Any], plan_type: str) -> dict[str, Any] | None:
+    windows = oauth_windows_by_key(summary.get("ui_windows"))
+    seven_day = windows.get("codex_7d")
+    five_hour = windows.get("codex_5h")
+    if seven_day and oauth_window_is_depleted(seven_day) and str(seven_day.get("reset_at") or "").strip():
+        return seven_day
+    if (
+        str(plan_type or "").strip().lower() != "free"
+        and seven_day
+        and not oauth_window_is_depleted(seven_day)
+        and five_hour
+        and str(five_hour.get("reset_at") or "").strip()
+    ):
+        return five_hour
+    return None
+
+
+def oauth_windows_by_key(raw_windows: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_windows, list):
+        return {}
+    windows: dict[str, dict[str, Any]] = {}
+    for window in raw_windows:
+        if not isinstance(window, dict):
+            continue
+        key = str(window.get("key") or "").strip()
+        label = str(window.get("label") or "").strip().lower()
+        if not key:
+            if label == "5h":
+                key = "codex_5h"
+            elif label == "7d":
+                key = "codex_7d"
+        if key:
+            windows[key] = window
+    return windows
+
+
+def oauth_window_is_depleted(window: dict[str, Any]) -> bool:
+    depleted = window.get("depleted")
+    if isinstance(depleted, bool):
+        return depleted
+    if isinstance(depleted, str) and depleted.strip().lower() in {"1", "true", "yes"}:
+        return True
+    used_percent = numeric_value(window.get("used_percent"))
+    return bool(used_percent is not None and used_percent >= 100)
+
+
+def format_oauth_reset_window(window: dict[str, Any]) -> str:
+    reset_at = str(window.get("reset_at") or "").strip()
+    if not reset_at:
+        return ""
+    label = str(window.get("label") or "-")
+    return f"{label} 恢复 {format_oauth_reset_time(reset_at)}"
 
 
 def remaining_oauth_quota_windows(raw_windows: Any) -> list[dict[str, Any]]:
@@ -1045,6 +1105,11 @@ def quota_available(result: dict[str, Any], config: UsageQueryConfig) -> float |
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def quota_result_has_positive_available(result: dict[str, Any], config: UsageQueryConfig) -> bool:
+    available = quota_available(result, config)
+    return bool(available is not None and available > 0)
 
 
 def add_quota_total(totals: dict[str, float], value: float | None, unit: str) -> None:
