@@ -969,13 +969,19 @@ def execute_oauth_usage_query(
     base = str(base_url or "").strip().rstrip("/")
     token = str(admin_token or "").strip()
     if not base or not token:
-        return build_oauth_failure_result(account_id, "缺少 Sub2API 地址或 Admin Token", queried_at, account_row)
+        return build_oauth_failure_result(
+            account_id,
+            "缺少 Sub2API 地址或 Admin Token",
+            queried_at,
+            account_row,
+            error_code="missing_sub2api_admin_credentials",
+        )
     request = {
         "url": f"{base}/api/v1/admin/accounts/{account_id}/usage?source=active&force=true",
         "method": "GET",
         "headers": {
             "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
+            "x-api-key": token,
         },
     }
     try:
@@ -1000,7 +1006,13 @@ def execute_oauth_usage_query(
             "source": "sub2api_admin_usage",
         }
     except Exception as exc:
-        return build_oauth_failure_result(account_id, str(exc), queried_at, account_row)
+        return build_oauth_failure_result(
+            account_id,
+            str(exc),
+            queried_at,
+            account_row,
+            error_code=usage_query_error_code(exc),
+        )
 
 
 def build_oauth_failure_result(
@@ -1008,6 +1020,8 @@ def build_oauth_failure_result(
     error: str,
     queried_at: str,
     account_row: dict[str, Any] | None = None,
+    *,
+    error_code: str = "",
 ) -> dict[str, Any]:
     return {
         "account_id": int(account_id),
@@ -1024,7 +1038,34 @@ def build_oauth_failure_result(
         "invalid_message": error,
         "oauth_quota": oauth_quota_windows(account_row),
         "source": "sub2api_admin_usage",
+        "error_code": error_code or usage_query_error_code(error),
     }
+
+
+def usage_query_error_code(error: object) -> str:
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, urllib.error.HTTPError):
+        return f"http_{int(error.code)}"
+    if isinstance(error, urllib.error.URLError):
+        return "network_error"
+    text = str(error or "").strip()
+    upper = text.upper()
+    if upper.startswith("HTTP "):
+        digits = ""
+        for char in text[5:]:
+            if char.isdigit():
+                digits += char
+                continue
+            break
+        if digits:
+            return f"http_{digits}"
+    lowered = text.lower()
+    if "timeout" in lowered or "timed out" in lowered or "超时" in text:
+        return "timeout"
+    if "network" in lowered or "urlerror" in lowered or "请求失败" in text:
+        return "network_error"
+    return "usage_query_error"
 
 
 def validate_oauth_usage_request(request: dict[str, Any]) -> None:

@@ -577,7 +577,7 @@ def execute_sub2api_account_test(
         "headers": {
             "Accept": "text/event-stream",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
+            "x-api-key": token,
         },
         "body": body,
     }
@@ -1367,27 +1367,27 @@ def scan_oauth_quota_recovery_alerts(
             continue
         cached_result = active_store.result(account_id)
         summary = oauth_quota_for_row(row, cached_result)
+        config = usage_query_oauth_config(account_id, active_store)
+        probe_interval = min(active_store.auto_query_interval_seconds() or 60, 60)
+        if probe_interval <= 0:
+            probe_interval = 60
         due_candidate = oauth_account_recovery_probe_due(summary, now=current)
         early_probe = False
         if not due_candidate:
             cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
             due_candidate = cached_probe if isinstance(cached_probe, dict) else None
             if not due_candidate:
-                config = usage_query_oauth_config(account_id, active_store)
-                early_interval = min(active_store.auto_query_interval_seconds() or 60, 60)
                 due_candidate = oauth_account_recovery_early_probe_due(
                     summary,
                     cached_result,
                     now=current,
-                    interval_seconds=early_interval,
+                    interval_seconds=probe_interval,
                 )
                 if not due_candidate:
                     continue
                 early_probe = True
-            else:
-                config = usage_query_oauth_config(account_id, active_store)
-        else:
-            config = usage_query_oauth_config(account_id, active_store)
+        if not is_query_due(config, cached_result, now=current, interval_seconds=probe_interval):
+            continue
         if oauth_recovery_success_dedupe_key(account_id, due_candidate) in dedupe:
             continue
         checked_count += 1
@@ -1402,7 +1402,12 @@ def scan_oauth_quota_recovery_alerts(
             write_audit(
                 settings.audit_path,
                 "telegram_oauth_quota_recovery_error",
-                {"stage": "active_usage", "account_id": account_id, "error": result.get("error") or ""},
+                {
+                    "stage": "active_usage",
+                    "account_id": account_id,
+                    "error": result.get("error") or "",
+                    "error_code": result.get("error_code") or "",
+                },
             )
             continue
         refreshed_summary = result.get("oauth_quota") if isinstance(result.get("oauth_quota"), dict) else {}

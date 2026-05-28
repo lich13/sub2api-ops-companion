@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app import usage_query as usage_query_module
 from app.usage_query import (
     DEFAULT_NEWAPI_TEMPLATE,
     DEFAULT_SUB2API_TEMPLATE,
@@ -718,7 +719,8 @@ class UsageQueryTests(unittest.TestCase):
             requests[0]["url"],
             "https://sub2api.example.com/api/v1/admin/accounts/8/usage?source=active&force=true",
         )
-        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer admin-token")
+        self.assertEqual(requests[0]["headers"]["x-api-key"], "admin-token")
+        self.assertNotIn("Authorization", requests[0]["headers"])
         self.assertEqual(result["template_type"], "oauth")
         self.assertEqual(result["source"], "sub2api_admin_usage")
         self.assertEqual(result["oauth_quota"]["plan_type"], "plus")
@@ -757,6 +759,20 @@ class UsageQueryTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["template_type"], "oauth")
         self.assertIn("Sub2API", result["error"])
+
+    def test_oauth_active_query_normalizes_http_error_code(self) -> None:
+        result = execute_oauth_usage_query(
+            8,
+            "https://sub2api.example.com",
+            "admin-token",
+            opener=lambda _request, _timeout: (_ for _ in ()).throw(
+                usage_query_module.UsageQueryError('HTTP 401: {"code":"INVALID_TOKEN"}')
+            ),
+            now=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "http_401")
 
     def test_newapi_query_rejects_token_usage_shape_without_user_quota(self) -> None:
         requests: list[dict[str, Any]] = []
