@@ -598,6 +598,8 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
     plan_type = normalize_oauth_plan_type(
         first_string([credentials], ("plan_type", "chatgpt_plan_type")) or first_string([extra], ("plan_type",)) or "oauth"
     )
+    if plan_type == "free" and has_valid_oauth_five_hour_window(extra):
+        plan_type = "plus"
     updated_at = first_string([extra], ("codex_usage_updated_at",))
     windows: list[dict[str, Any]] = []
     for key, label, used_field, reset_field, reset_after_field, window_minutes_field in OAUTH_QUOTA_WINDOW_FIELDS:
@@ -630,6 +632,20 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
         "ui_windows": windows,
         "telegram_windows": [window for window in windows if window["used_percent"] < 100],
     }
+
+
+def has_valid_oauth_five_hour_window(extra: dict[str, Any]) -> bool:
+    used_percent = percent_or_none(extra.get("codex_5h_used_percent"))
+    if used_percent is None:
+        return False
+    if extra.get("codex_5h_active_usage_window") is True:
+        return True
+    if used_percent >= 100 and first_string([extra], ("codex_5h_reset_at",)):
+        return True
+    return bool(
+        extra.get("codex_5h_reset_after_seconds") not in (None, "")
+        or extra.get("codex_5h_window_minutes") not in (None, "")
+    )
 
 
 def oauth_account_recovery_candidate(
@@ -1111,6 +1127,8 @@ def oauth_quota_from_usage_data(
         )
         if used_percent is not None:
             merged_extra[f"{prefix}_used_percent"] = used_percent
+            if source_key == "five_hour":
+                merged_extra["codex_5h_active_usage_window"] = True
         reset_at = first_string([window], ("resets_at", "reset_at"))
         if reset_at:
             merged_extra[f"{prefix}_reset_at"] = reset_at
