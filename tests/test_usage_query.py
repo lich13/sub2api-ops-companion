@@ -404,7 +404,7 @@ class UsageQueryTests(unittest.TestCase):
         self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 75.0)
         self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-05-28T22:30:00Z")
 
-    def test_oauth_active_usage_keeps_five_hour_window_when_stored_plan_is_stale_free(self) -> None:
+    def test_oauth_active_usage_does_not_promote_free_plan_from_five_hour_window(self) -> None:
         summary = oauth_quota_from_usage_data(
             {
                 "five_hour": {
@@ -421,6 +421,31 @@ class UsageQueryTests(unittest.TestCase):
                 },
             },
             {"credentials": {"plan_type": "free"}, "extra": {}},
+            now=datetime(2026, 5, 29, 6, 28, 51, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(summary["plan_type"], "free")
+        self.assertEqual([window["label"] for window in summary["ui_windows"]], ["7d"])
+        self.assertEqual(summary["ui_windows"][0]["remaining_percent"], 49.0)
+        self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-06-04T11:30:55+08:00")
+
+    def test_oauth_active_usage_keeps_five_hour_when_current_account_plan_is_plus(self) -> None:
+        summary = oauth_quota_from_usage_data(
+            {
+                "five_hour": {
+                    "utilization": 19,
+                    "resets_at": "2026-05-29T11:24:06+08:00",
+                    "remaining_seconds": 17714,
+                    "window_stats": {"window_minutes": 300},
+                },
+                "seven_day": {
+                    "utilization": 51,
+                    "resets_at": "2026-06-04T11:30:55+08:00",
+                    "remaining_seconds": 536523,
+                    "window_stats": {"window_minutes": 10080},
+                },
+            },
+            {"credentials": {"plan_type": "plus"}, "extra": {}},
             now=datetime(2026, 5, 29, 6, 28, 51, tzinfo=timezone.utc),
         )
 
