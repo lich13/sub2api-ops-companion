@@ -1367,11 +1367,23 @@ def scan_oauth_quota_recovery_alerts(
         probe_interval = min(active_store.auto_query_interval_seconds() or 60, 60)
         if probe_interval <= 0:
             probe_interval = 60
+        cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
         due_candidate = oauth_account_recovery_probe_due(summary, now=current)
         early_probe = False
+        throttle_probe = False
+        if (
+            due_candidate
+            and isinstance(cached_probe, dict)
+            and not bool(cached_result.get("success"))
+            and str(cached_probe.get("fingerprint") or "")
+            == str(due_candidate.get("fingerprint") or "")
+        ):
+            throttle_probe = True
         if not due_candidate:
-            cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
             due_candidate = cached_probe if isinstance(cached_probe, dict) else None
+            if due_candidate:
+                early_probe = bool(due_candidate.get("early_probe"))
+                throttle_probe = True
             if not due_candidate:
                 due_candidate = oauth_account_recovery_early_probe_due(
                     summary,
@@ -1382,7 +1394,8 @@ def scan_oauth_quota_recovery_alerts(
                 if not due_candidate:
                     continue
                 early_probe = True
-        if not is_query_due(config, cached_result, now=current, interval_seconds=probe_interval):
+                throttle_probe = True
+        if throttle_probe and not is_query_due(config, cached_result, now=current, interval_seconds=probe_interval):
             continue
         if oauth_recovery_success_dedupe_key(account_id, due_candidate) in dedupe:
             continue
