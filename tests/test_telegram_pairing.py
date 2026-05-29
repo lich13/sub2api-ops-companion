@@ -443,11 +443,10 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertIn("额度查询", reply)
             self.assertIn("总可用：-", reply)
-            self.assertIn("#9 current-oauth · plus：5h 恢复 05-25 18:30", reply)
+            self.assertIn("#9 current-oauth · plus：7d 剩余 60%（恢复 05-29 06:30）", reply)
             self.assertNotIn("没有配置额度查询", reply)
             self.assertNotIn("deleted-oauth", reply)
-            self.assertNotIn("7d", reply)
-            self.assertNotIn("剩余 60%", reply)
+            self.assertNotIn("5h", reply)
 
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -562,9 +561,8 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("#8 oauth-account", reply)
             self.assertIn("· plus：", reply)
             self.assertNotIn("Codex plus", reply)
-            self.assertIn("7d 恢复 05-29 06:30", reply)
-            self.assertNotIn("5h", reply)
-            self.assertNotIn("剩余 20%", reply)
+            self.assertIn("5h 剩余 20%（恢复 05-25 18:30）", reply)
+            self.assertNotIn("7d", reply)
             self.assertNotIn("Codex oauth", reply)
             self.assertNotIn("跳过 OAuth", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
@@ -686,7 +684,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("plus", line)
         self.assertNotIn("5h", line)
 
-    async def test_oauth_quota_line_prefers_five_hour_reset_when_seven_day_has_remaining(self) -> None:
+    async def test_oauth_quota_line_shows_remaining_percent_for_available_windows(self) -> None:
         line = format_oauth_quota_line(
             {
                 "id": 8,
@@ -702,9 +700,10 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        self.assertEqual(line, "#8 oauth-account · plus：5h 恢复 05-25 18:30")
+        self.assertEqual(line, "#8 oauth-account · plus：7d 剩余 60%（恢复 05-29 06:30）")
+        self.assertNotIn("5h", line)
 
-    async def test_oauth_quota_line_prefers_seven_day_reset_when_seven_day_depleted(self) -> None:
+    async def test_oauth_quota_line_hides_depleted_seven_day_and_shows_available_five_hour(self) -> None:
         line = format_oauth_quota_line(
             {
                 "id": 8,
@@ -720,7 +719,8 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        self.assertEqual(line, "#8 oauth-account · pro：7d 恢复 05-29 06:30")
+        self.assertEqual(line, "#8 oauth-account · pro：5h 剩余 20%（恢复 05-25 18:30）")
+        self.assertNotIn("7d", line)
 
     async def test_quota_command_omits_oauth_account_when_no_remaining_codex_windows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
