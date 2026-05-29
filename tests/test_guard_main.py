@@ -1304,6 +1304,63 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(calls, [12])
         self.assertEqual(store.result(12)["template_type"], "oauth")
 
+    def test_usage_query_guard_skips_oauth_refresh_when_telegram_switch_disabled(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=True,
+            auto_query_interval_seconds=1,
+            sub2api_admin_token="admin-secret",
+        )
+        store.save_config(UsageQueryConfig(account_id=7, enabled=True, guard_disable_on_zero=True))
+        main_module.settings.telegram_oauth_usage_refresh_enabled = False
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+
+        def fake_account_row(account_id: int) -> dict[str, Any] | None:
+            if account_id == 7:
+                return {
+                    "id": 7,
+                    "name": "api-account",
+                    "platform": "openai",
+                    "type": "apikey",
+                    "schedulable": True,
+                    "credentials": {"base_url": "https://account.example.com", "api_key": "sk-account"},
+                }
+            return None
+
+        main_module.usage_query_account_row = fake_account_row  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 12,
+                "name": "oauth-current",
+                "platform": "openai",
+                "type": "oauth",
+                "schedulable": True,
+                "credentials": {"plan_type": "plus"},
+                "extra": {"codex_7d_used_percent": 20},
+            }
+        ]
+        queried_configs: list[UsageQueryConfig] = []
+
+        def fake_usage_query(config: UsageQueryConfig) -> dict[str, Any]:
+            queried_configs.append(config)
+            return {"success": True, "actual_available": 1, "queried_at": "2026-05-25T08:00:00+00:00"}
+
+        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("OAuth usage refresh is disabled from Telegram settings")
+
+        main_module.execute_usage_query = fake_usage_query  # type: ignore[assignment]
+        main_module.execute_oauth_usage_query = unexpected_oauth_query  # type: ignore[attr-defined]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual([config.account_id for config in queried_configs], [7])
+        self.assertEqual(store.result(7)["success"], True)
+        self.assertEqual(store.result(12), {})
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"oauth_skipped_disabled_count": 1', audit_text)
+
     def test_usage_query_batch_queries_oauth_with_global_admin_token_and_no_skip_message(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(
@@ -1512,6 +1569,113 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(store.result(9)["template_type"], "oauth")
         self.assertFalse(state["oauth_account_recovery_alerts"])
         self.assertIn(events[0]["dedupe_key"], state["oauth_account_recovery_pending"])
+
+    def test_oauth_recovery_scan_ignores_generic_error_alert_switch(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.settings.telegram_error_alert_enabled = False
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-24T23:59:51+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-25T00:00:00+00:00",
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-25T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {"id": 9, "name": "lt", "platform": "openai", "type": "oauth", "credentials": {"plan_type": "plus"}}
+        ]
+        main_module.execute_oauth_usage_query = lambda *_args, **_kwargs: {  # type: ignore[attr-defined]
+            "success": True,
+            "template_type": "oauth",
+            "oauth_quota": {
+                "plan_type": "plus",
+                "ui_windows": [
+                    {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                    {"key": "codex_7d", "label": "7d", "used_percent": 0, "remaining_percent": 100},
+                ],
+            },
+        }
+        main_module.execute_sub2api_account_test = lambda *_args, **_kwargs: {"success": True}  # type: ignore[assignment]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(events), 1)
+
+    def test_oauth_recovery_scan_skips_when_monitor_disabled(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.settings.telegram_oauth_recovery_monitor_enabled = False
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {"id": 9, "name": "lt", "platform": "openai", "type": "oauth", "credentials": {"plan_type": "plus"}}
+        ]
+
+        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("OAuth recovery monitor is disabled")
+
+        def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("OAuth recovery monitor is disabled")
+
+        main_module.execute_oauth_usage_query = unexpected_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[assignment]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(events, [])
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("oauth_recovery_monitor_disabled", audit_text)
+
+    def test_oauth_recovery_suppression_marks_dedupe_without_notification(self) -> None:
+        state: dict[str, Any] = {
+            "oauth_account_recovery_pending": {
+                "success:9:reset": {"account_id": 9, "fingerprint": "reset"},
+            }
+        }
+
+        main_module.suppress_oauth_recovery_alerts(
+            state,
+            [{"account_id": 9, "fingerprint": "reset", "dedupe_key": "success:9:reset"}],
+            now=datetime(2026, 5, 25, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(
+            state["oauth_account_recovery_alerts"]["success:9:reset"],
+            {
+                "account_id": 9,
+                "fingerprint": "reset",
+                "suppressed_at": "2026-05-25T00:00:00+00:00",
+                "reason": "oauth_recovery_push_disabled",
+            },
+        )
+        self.assertEqual(state["oauth_account_recovery_pending"], {})
 
     def test_oauth_recovery_scan_does_not_test_when_seven_day_still_depleted_after_active_usage(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)

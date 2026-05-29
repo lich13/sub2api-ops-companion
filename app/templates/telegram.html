@@ -63,6 +63,41 @@
   </div>
 </section>
 
+<section class="panel telegram-oauth-panel">
+  <div class="section-head compact-head">
+    <div>
+      <h3>OAuth 账号监控</h3>
+      <p>这些开关只影响后台自动监控和 Telegram 恢复推送，不影响 /quota 或速度页手动查询。</p>
+    </div>
+  </div>
+  <form class="telegram-oauth-settings" method="post" action="{{ base_path }}/telegram/oauth-settings">
+    <label class="telegram-oauth-toggle">
+      <input type="checkbox" name="oauth_usage_refresh_enabled" value="1" {{ 'checked' if telegram.oauth_usage_refresh_enabled else '' }} />
+      <span>
+        <strong>后台额度刷新</strong>
+        <em>Auto Guard 定时刷新 OAuth active usage</em>
+      </span>
+    </label>
+    <label class="telegram-oauth-toggle">
+      <input type="checkbox" name="oauth_recovery_monitor_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_monitor_enabled else '' }} />
+      <span>
+        <strong>恢复可用监控</strong>
+        <em>7d 提前探测、到点确认和账号测试</em>
+      </span>
+    </label>
+    <label class="telegram-oauth-toggle">
+      <input type="checkbox" name="oauth_recovery_push_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_push_enabled else '' }} />
+      <span>
+        <strong>恢复结果推送</strong>
+        <em>额度恢复和测试失败通知 Telegram</em>
+      </span>
+    </label>
+    <div class="telegram-oauth-actions">
+      <button class="primary" type="submit">保存 OAuth 开关</button>
+    </div>
+  </form>
+</section>
+
 <section class="panel split-panel telegram-split">
   <div>
     <h3>当前绑定</h3>
