@@ -1059,6 +1059,9 @@ def build_telegram_config() -> dict[str, Any]:
         "paired_user_ids": paired_user_ids,
         "push_target_count": push_target_count,
         "control_user_count": control_user_count,
+        "oauth_usage_refresh_enabled": telegram_oauth_usage_refresh_enabled(),
+        "oauth_recovery_monitor_enabled": telegram_oauth_recovery_monitor_enabled(),
+        "oauth_recovery_push_enabled": telegram_oauth_recovery_push_enabled(),
         "binding_status": "未启用"
         if not settings.telegram_bot_token.strip()
         else ("已绑定" if push_target_count or control_user_count else "待配对"),
@@ -1099,6 +1102,24 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         settings.telegram_error_alert_interval_seconds = int_param(str(payload.get("error_alert_interval_seconds")), 2, 1, 60)
     if "error_alert_batch_size" in payload:
         settings.telegram_error_alert_batch_size = int_param(str(payload.get("error_alert_batch_size")), 50, 1, 100)
+    if "oauth_usage_refresh_enabled" in payload:
+        settings.telegram_oauth_usage_refresh_enabled = bool(payload.get("oauth_usage_refresh_enabled", True))
+    if "oauth_recovery_monitor_enabled" in payload:
+        settings.telegram_oauth_recovery_monitor_enabled = bool(payload.get("oauth_recovery_monitor_enabled", True))
+    if "oauth_recovery_push_enabled" in payload:
+        settings.telegram_oauth_recovery_push_enabled = bool(payload.get("oauth_recovery_push_enabled", True))
+
+
+def telegram_oauth_usage_refresh_enabled() -> bool:
+    return bool(getattr(settings, "telegram_oauth_usage_refresh_enabled", True))
+
+
+def telegram_oauth_recovery_monitor_enabled() -> bool:
+    return bool(getattr(settings, "telegram_oauth_recovery_monitor_enabled", True))
+
+
+def telegram_oauth_recovery_push_enabled() -> bool:
+    return bool(getattr(settings, "telegram_oauth_recovery_push_enabled", True))
 
 
 async def restart_telegram_bot() -> None:
@@ -1208,6 +1229,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     oauth_checked_count = 0
     oauth_queried_count = 0
     oauth_failed_count = 0
+    oauth_skipped_disabled_count = 0
     if not usage_enabled:
         write_audit(
             settings.audit_path,
@@ -1219,6 +1241,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
                 "oauth_checked_count": 0,
                 "oauth_queried_count": 0,
                 "oauth_failed_count": 0,
+                "oauth_skipped_disabled_count": 0,
                 "action_count": 0,
                 "usage_query_enabled": False,
                 "guard_disable_on_zero": hard_stop_enabled,
@@ -1233,6 +1256,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             continue
         if is_oauth_account(row):
             oauth_checked_count += 1
+            if not telegram_oauth_usage_refresh_enabled():
+                oauth_skipped_disabled_count += 1
+                continue
             result = store.result(config.account_id)
             if is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
                 result = run_oauth_usage_query(config.account_id, row, store, timeout_seconds=config.timeout_seconds)
@@ -1286,6 +1312,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         if account_id <= 0 or account_id in configured_account_ids or not is_oauth_account(row):
             continue
         oauth_checked_count += 1
+        if not telegram_oauth_usage_refresh_enabled():
+            oauth_skipped_disabled_count += 1
+            continue
         config = usage_query_oauth_config(account_id, store)
         result = store.result(account_id)
         if not is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
@@ -1305,6 +1334,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             "oauth_checked_count": oauth_checked_count,
             "oauth_queried_count": oauth_queried_count,
             "oauth_failed_count": oauth_failed_count,
+            "oauth_skipped_disabled_count": oauth_skipped_disabled_count,
             "action_count": len(actions),
             "usage_query_enabled": usage_enabled,
             "guard_disable_on_zero": hard_stop_enabled,
@@ -1319,6 +1349,13 @@ def scan_oauth_quota_recovery_alerts(
     state: dict[str, Any],
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
+    if not telegram_oauth_recovery_monitor_enabled():
+        write_audit(
+            settings.audit_path,
+            "telegram_oauth_quota_recovery_scan",
+            {"skipped": "oauth_recovery_monitor_disabled"},
+        )
+        return []
     active_store = usage_query_store()
     if not active_store.usage_query_enabled():
         return []
@@ -1559,6 +1596,36 @@ def mark_oauth_recovery_alerts_notified(
     state["oauth_account_recovery_pending"] = pending
 
 
+def suppress_oauth_recovery_alerts(
+    state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> None:
+    if not rows:
+        return
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    dedupe = state.setdefault("oauth_account_recovery_alerts", {})
+    if not isinstance(dedupe, dict):
+        dedupe = {}
+        state["oauth_account_recovery_alerts"] = dedupe
+    pending = state.get("oauth_account_recovery_pending")
+    if not isinstance(pending, dict):
+        pending = {}
+    for row in rows:
+        key = str(row.get("dedupe_key") or "")
+        if not key:
+            continue
+        dedupe[key] = {
+            "account_id": int(row.get("account_id") or 0),
+            "fingerprint": row.get("fingerprint") or "",
+            "suppressed_at": current,
+            "reason": "oauth_recovery_push_disabled",
+        }
+        pending.pop(key, None)
+    state["oauth_account_recovery_pending"] = pending
+
+
 def run_auto_guard_once(actor: str = "auto_guard") -> list[dict[str, Any]]:
     guard_state["running"] = True
     guard_state["last_error"] = ""
@@ -1724,14 +1791,17 @@ async def telegram_recovery_alert_loop() -> None:
     while True:
         try:
             bot = telegram_bot
-            if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
+            if bot is not None and bot.enabled:
                 try:
                     state = await bot.oauth_recovery_state()
                     oauth_recovery_rows = await asyncio.to_thread(scan_oauth_quota_recovery_alerts, state=state)
-                    delivered_oauth_recovery_rows = (
-                        await bot.notify_oauth_quota_recovery_alerts(oauth_recovery_rows) if oauth_recovery_rows else []
-                    )
+                    delivered_oauth_recovery_rows: list[dict[str, Any]] = []
                     if oauth_recovery_rows:
+                        if telegram_oauth_recovery_push_enabled():
+                            delivered_oauth_recovery_rows = await bot.notify_oauth_quota_recovery_alerts(oauth_recovery_rows)
+                        else:
+                            suppress_oauth_recovery_alerts(state, oauth_recovery_rows)
+                            await bot.save_oauth_recovery_state(state)
                         if delivered_oauth_recovery_rows:
                             mark_oauth_recovery_alerts_notified(state, delivered_oauth_recovery_rows)
                             await bot.save_oauth_recovery_state(state)
@@ -1753,6 +1823,7 @@ async def telegram_recovery_alert_loop() -> None:
                                     for row in oauth_recovery_rows
                                     if int(row.get("account_id") or 0) not in delivered_ids
                                 ],
+                                "suppressed": not telegram_oauth_recovery_push_enabled(),
                             },
                         )
                 except Exception as exc:
@@ -2824,6 +2895,37 @@ async def telegram_config_save(
         },
     )
     return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存，配对码已生成')}", status_code=303)
+
+
+@app.post("/telegram/oauth-settings")
+async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Response:
+    form = await request.form()
+    oauth_usage_refresh_enabled = bool(form.getlist("oauth_usage_refresh_enabled"))
+    oauth_recovery_monitor_enabled = bool(form.getlist("oauth_recovery_monitor_enabled"))
+    oauth_recovery_push_enabled = bool(form.getlist("oauth_recovery_push_enabled"))
+    existing = telegram_config_file()
+    payload = {
+        **existing,
+        "oauth_usage_refresh_enabled": oauth_usage_refresh_enabled,
+        "oauth_recovery_monitor_enabled": oauth_recovery_monitor_enabled,
+        "oauth_recovery_push_enabled": oauth_recovery_push_enabled,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": user,
+    }
+    save_telegram_runtime_config(payload)
+    apply_telegram_runtime_config(payload)
+    await restart_telegram_bot()
+    write_audit(
+        settings.audit_path,
+        "telegram_oauth_settings_update",
+        {
+            "user": user,
+            "oauth_usage_refresh_enabled": oauth_usage_refresh_enabled,
+            "oauth_recovery_monitor_enabled": oauth_recovery_monitor_enabled,
+            "oauth_recovery_push_enabled": oauth_recovery_push_enabled,
+        },
+    )
+    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('OAuth 账号监控开关已保存')}", status_code=303)
 
 
 @app.post("/sso-config")

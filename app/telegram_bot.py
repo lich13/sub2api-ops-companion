@@ -157,7 +157,7 @@ class TelegramOpsBot:
                 await self._send_message(chat_id, alert_text, keyboard)
 
     async def notify_oauth_quota_recovery_alerts(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        if not self.enabled:
+        if not self.enabled or not getattr(self.settings, "telegram_oauth_recovery_push_enabled", True):
             return []
         chat_ids = await self.allowed_chat_ids()
         if not chat_ids:

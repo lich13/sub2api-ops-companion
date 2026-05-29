@@ -38,6 +38,9 @@ class Settings:
     telegram_error_alert_enabled: bool = True
     telegram_error_alert_interval_seconds: int = 2
     telegram_error_alert_batch_size: int = 50
+    telegram_oauth_usage_refresh_enabled: bool = True
+    telegram_oauth_recovery_monitor_enabled: bool = True
+    telegram_oauth_recovery_push_enabled: bool = True
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
@@ -186,6 +189,18 @@ def load_settings() -> Settings:
             50,
             1,
             100,
+        ),
+        telegram_oauth_usage_refresh_enabled=bool_value(
+            telegram_config.get("oauth_usage_refresh_enabled", os.getenv("TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED")),
+            True,
+        ),
+        telegram_oauth_recovery_monitor_enabled=bool_value(
+            telegram_config.get("oauth_recovery_monitor_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED")),
+            True,
+        ),
+        telegram_oauth_recovery_push_enabled=bool_value(
+            telegram_config.get("oauth_recovery_push_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED")),
+            True,
         ),
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
