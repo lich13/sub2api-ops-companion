@@ -1014,16 +1014,7 @@ def format_oauth_quota_line(
     fallback_account_id: int = 0,
     result: dict[str, Any] | None = None,
 ) -> str:
-    summary = None
-    if isinstance(result, dict):
-        cached = result.get("oauth_quota")
-        if isinstance(cached, dict):
-            summary = cached
-    if summary is None:
-        helper = getattr(usage_query_module, "oauth_quota_windows", None)
-        if not callable(helper):
-            return ""
-        summary = helper(row)
+    summary = oauth_quota_summary_for_row(row, result)
     if not isinstance(summary, dict):
         return ""
     account_id = int(row.get("id") or row.get("account_id") or fallback_account_id)
@@ -1039,6 +1030,10 @@ def format_oauth_quota_line(
     if not rendered:
         return ""
     return f"#{account_id} {account_name} · {plan_type}：{rendered}"
+
+
+def oauth_quota_summary_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
+    return usage_query_module.oauth_quota_summary_from_result(row, result)
 
 
 def select_oauth_telegram_reset_window(summary: dict[str, Any], plan_type: str) -> dict[str, Any] | None:

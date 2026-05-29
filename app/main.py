@@ -482,17 +482,7 @@ def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[s
 
 
 def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
-    if isinstance(result, dict):
-        data = result.get("data")
-        if result.get("success") and isinstance(data, dict) and (
-            isinstance(data.get("five_hour"), dict) or isinstance(data.get("seven_day"), dict)
-        ):
-            query_time = usage_query_module.parse_iso_datetime(result.get("queried_at"))
-            return usage_query_module.oauth_quota_from_usage_data(data, row, now=query_time)
-        quota = result.get("oauth_quota")
-        if isinstance(quota, dict) and result.get("success"):
-            return quota
-    return usage_query_module.oauth_quota_windows(row)
+    return usage_query_module.oauth_quota_summary_from_result(row, result)
 
 
 def usage_query_configured(config: UsageQueryConfig) -> bool:

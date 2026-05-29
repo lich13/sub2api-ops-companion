@@ -569,7 +569,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("跳过 OAuth", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
 
-    async def test_quota_command_prefers_saved_oauth_active_usage_result(self) -> None:
+    async def test_quota_command_rebuilds_saved_oauth_result_with_current_account_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"
             usage_path = Path(tmpdir) / "usage-query-state.json"
@@ -583,6 +583,16 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                     "account_id": 8,
                     "template_type": "oauth",
                     "success": True,
+                    "data": {
+                        "five_hour": {
+                            "utilization": 0,
+                            "resets_at": "2026-05-25T10:30:00Z",
+                        },
+                        "seven_day": {
+                            "utilization": 30,
+                            "resets_at": "2026-05-30T00:30:00Z",
+                        },
+                    },
                     "oauth_quota": {
                         "plan_type": "pro",
                         "telegram_windows": [
@@ -619,8 +629,62 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             reply, keyboard = await bot._text_reply(100, 200, "/quota")
 
             self.assertIsNone(keyboard)
-            self.assertIn("#8 oauth-account · pro：7d 剩余 70%（恢复 05-30 08:30）", reply)
-            self.assertNotIn("free：7d 剩余 10%", reply)
+            self.assertIn("#8 oauth-account · free：7d 剩余 70%（恢复 05-30 08:30）", reply)
+            self.assertNotIn("pro：", reply)
+            self.assertNotIn("5h", reply)
+
+    async def test_oauth_quota_line_sanitizes_cached_plus_snapshot_for_current_free_account(self) -> None:
+        line = format_oauth_quota_line(
+            {
+                "id": 8,
+                "name": "oauth-account",
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {},
+            },
+            result={
+                "success": True,
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 0,
+                            "remaining_percent": 100,
+                            "reset_at": "2026-05-25T10:30:00Z",
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 30,
+                            "remaining_percent": 70,
+                            "reset_at": "2026-05-30T00:30:00Z",
+                        },
+                    ],
+                    "telegram_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 0,
+                            "remaining_percent": 100,
+                            "reset_at": "2026-05-25T10:30:00Z",
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 30,
+                            "remaining_percent": 70,
+                            "reset_at": "2026-05-30T00:30:00Z",
+                        },
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(line, "#8 oauth-account · free：7d 剩余 70%（恢复 05-30 08:30）")
+        self.assertNotIn("plus", line)
+        self.assertNotIn("5h", line)
 
     async def test_oauth_quota_line_prefers_five_hour_reset_when_seven_day_has_remaining(self) -> None:
         line = format_oauth_quota_line(
