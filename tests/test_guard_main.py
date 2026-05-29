@@ -1417,6 +1417,32 @@ class GuardMainTests(unittest.TestCase):
         )
         main_module.settings.sub2api_base_url = "https://sub2api.example.com"
         main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-24T23:59:51+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-25T00:00:00+00:00",
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-25T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
         main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
             {
                 "id": 9,
