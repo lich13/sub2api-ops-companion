@@ -893,7 +893,7 @@ class GuardMainTests(unittest.TestCase):
             {
                 "id": 26,
                 "type": "oauth",
-                "credentials": {"plan_type": "free"},
+                "credentials": {"plan_type": "plus"},
                 "extra": {},
             },
             {
@@ -933,7 +933,7 @@ class GuardMainTests(unittest.TestCase):
             {
                 "id": 26,
                 "type": "oauth",
-                "credentials": {"plan_type": "free"},
+                "credentials": {"plan_type": "plus"},
                 "extra": {},
             },
             {
@@ -957,7 +957,7 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(summary["ui_windows"][0]["reset_at"], "2026-05-29T01:00:00+00:00")
         self.assertEqual(summary["ui_windows"][1]["reset_at"], "2026-05-29T02:00:00+00:00")
 
-    def test_enrich_usage_query_rows_prefers_empty_success_oauth_query_result(self) -> None:
+    def test_enrich_usage_query_rows_sanitizes_stale_oauth_query_plan_with_current_account(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_result(
             9,
@@ -965,7 +965,37 @@ class GuardMainTests(unittest.TestCase):
                 "account_id": 9,
                 "template_type": "oauth",
                 "success": True,
-                "oauth_quota": {"plan_type": "pro", "ui_windows": [], "telegram_windows": []},
+                "oauth_quota": {
+                    "plan_type": "pro",
+                    "ui_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 0,
+                            "remaining_percent": 100,
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 10,
+                            "remaining_percent": 90,
+                        },
+                    ],
+                    "telegram_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 0,
+                            "remaining_percent": 100,
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 10,
+                            "remaining_percent": 90,
+                        },
+                    ],
+                },
             },
         )
         main_module.usage_query_store = lambda: store  # type: ignore[assignment]
@@ -982,8 +1012,9 @@ class GuardMainTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "pro")
-        self.assertEqual(enriched[0]["oauth_quota"]["ui_windows"], [])
+        self.assertEqual(enriched[0]["oauth_quota"]["plan_type"], "free")
+        self.assertEqual([window["label"] for window in enriched[0]["oauth_quota"]["ui_windows"]], ["7d"])
+        self.assertEqual([window["label"] for window in enriched[0]["oauth_quota"]["telegram_windows"]], ["7d"])
 
     def test_speed_view_reuses_single_usage_query_store_for_render(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -1616,7 +1647,7 @@ class GuardMainTests(unittest.TestCase):
                 "name": "growing.generic.7p+g5@icloud.com",
                 "platform": "openai",
                 "type": "oauth",
-                "credentials": {"plan_type": "free"},
+                "credentials": {"plan_type": "plus"},
                 "extra": {},
             }
         ]
@@ -1655,7 +1686,7 @@ class GuardMainTests(unittest.TestCase):
                         "five_hour": {"utilization": 0, "resets_at": "2026-05-25T05:00:00+00:00"},
                         "seven_day": {"utilization": 40, "resets_at": "2026-05-26T00:00:00+00:00"},
                     },
-                    {"credentials": {"plan_type": "free"}, "extra": {}},
+                    {"credentials": {"plan_type": "plus"}, "extra": {}},
                     now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
                 ),
             }
@@ -1675,6 +1706,61 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["plan_type"], "plus")
         self.assertEqual(events[0]["trigger_window_labels"], ["5h"])
+
+    def test_oauth_recovery_scan_does_not_treat_free_active_five_hour_as_plus(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 1,
+                "name": "free-oauth",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+                "extra": {},
+            }
+        ]
+        store.save_result(
+            1,
+            {
+                "success": True,
+                "queried_at": "2026-05-24T23:58:00+00:00",
+                "data": {
+                    "five_hour": {"utilization": 100, "resets_at": "2026-05-25T00:00:00+00:00"},
+                    "seven_day": {"utilization": 40, "resets_at": "2026-05-26T00:00:00+00:00"},
+                },
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {
+                            "key": "codex_5h",
+                            "label": "5h",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-05-25T00:00:00+00:00",
+                        },
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 40,
+                            "remaining_percent": 60,
+                            "reset_at": "2026-05-26T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
+        main_module.execute_oauth_usage_query = lambda *_args, **_kwargs: self.fail("free 5h must not trigger active usage")  # type: ignore[assignment]
+        main_module.execute_sub2api_account_test = lambda *_args, **_kwargs: self.fail("free 5h must not trigger account test")  # type: ignore[assignment]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(events, [])
 
     def test_oauth_recovery_scan_probes_seven_day_early_before_reset(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
