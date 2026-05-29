@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import sys
 import types
 import unittest
 from pathlib import Path
 from typing import Any
+
+import os
+
+os.environ.setdefault("OPS_SESSION_SECRET", "test-session-secret")
+os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 psycopg_rows = types.ModuleType("psycopg.rows")
 psycopg_rows.dict_row = object()
@@ -34,6 +40,7 @@ from app.telegram_bot import (
     recovery_alert,
 )
 from app.usage_query import UsageQueryConfig, UsageQueryStore
+from app import main as main_module
 
 
 async def guard_runner(_: str) -> list[dict[str, Any]]:
@@ -1002,6 +1009,90 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual([row["account_id"] for row in delivered], [27])
             self.assertEqual(len(calls), 4)
+
+    async def test_oauth_recovery_notify_skips_when_push_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = make_settings(str(Path(tmpdir) / "state.json"))
+            settings.telegram_enabled = True
+            settings.telegram_bot_token = "token"
+            settings.telegram_allowed_chat_ids = [123]
+            settings.telegram_oauth_recovery_push_enabled = False
+            bot = TelegramOpsBot(settings, object(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            async def unexpected_send(_chat_id: int, _text: str, _keyboard: dict[str, Any] | None = None) -> bool:
+                raise AssertionError("OAuth recovery push is disabled")
+
+            bot._send_message = unexpected_send  # type: ignore[method-assign]
+            delivered = await bot.notify_oauth_quota_recovery_alerts(
+                [{"account_id": 9, "account_name": "lt", "plan_type": "plus", "window_labels": ["5h", "7d"]}]
+            )
+
+            self.assertEqual(delivered, [])
+
+    def test_telegram_template_contains_oauth_monitoring_switches(self) -> None:
+        template = (Path(__file__).resolve().parents[1] / "app" / "templates" / "telegram.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("OAuth 账号监控", template)
+        self.assertIn('action="{{ base_path }}/telegram/oauth-settings"', template)
+        self.assertIn('name="oauth_usage_refresh_enabled"', template)
+        self.assertIn('name="oauth_recovery_monitor_enabled"', template)
+        self.assertIn('name="oauth_recovery_push_enabled"', template)
+
+    async def test_telegram_oauth_settings_save_preserves_token_and_updates_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "telegram-config.json"
+            audit_path = Path(tmpdir) / "audit.jsonl"
+            original_settings = main_module.settings
+            original_restart = main_module.restart_telegram_bot
+            main_module.settings = make_settings(str(Path(tmpdir) / "state.json"))
+            main_module.settings.telegram_config_path = str(config_path)
+            main_module.settings.audit_path = str(audit_path)
+            main_module.settings.telegram_bot_token = "123:test"
+            main_module.save_telegram_runtime_config(
+                {
+                    "enabled": True,
+                    "bot_token": "123:test",
+                    "pairing_enabled": True,
+                    "pairing_code": "ABCD-EFGH",
+                    "oauth_usage_refresh_enabled": True,
+                    "oauth_recovery_monitor_enabled": True,
+                    "oauth_recovery_push_enabled": True,
+                }
+            )
+            restart_calls = 0
+
+            async def fake_restart() -> None:
+                nonlocal restart_calls
+                restart_calls += 1
+
+            class FakeForm:
+                def getlist(self, key: str) -> list[str]:
+                    values = {
+                        "oauth_recovery_monitor_enabled": ["1"],
+                    }
+                    return values.get(key, [])
+
+            class FakeRequest:
+                async def form(self) -> FakeForm:
+                    return FakeForm()
+
+            try:
+                main_module.restart_telegram_bot = fake_restart  # type: ignore[assignment]
+                response = await main_module.telegram_oauth_settings_save(FakeRequest(), "tester")  # type: ignore[arg-type]
+            finally:
+                main_module.settings = original_settings
+                main_module.restart_telegram_bot = original_restart  # type: ignore[assignment]
+
+            saved = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(saved["bot_token"], "123:test")
+            self.assertFalse(saved["oauth_usage_refresh_enabled"])
+            self.assertTrue(saved["oauth_recovery_monitor_enabled"])
+            self.assertFalse(saved["oauth_recovery_push_enabled"])
+            self.assertEqual(restart_calls, 1)
+            self.assertIn('"oauth_usage_refresh_enabled": false', audit_path.read_text(encoding="utf-8"))
 
     def test_error_chain_alert_includes_request_account_and_message(self) -> None:
         text = error_chain_alert(

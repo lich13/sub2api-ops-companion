@@ -147,6 +147,24 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertFalse(hasattr(loaded, "basic_user"))
         self.assertFalse(hasattr(loaded, "basic_password"))
 
+    def test_settings_loads_oauth_telegram_switches_from_environment(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
+                "OPS_SESSION_SECRET": "session-secret-only",
+                "TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED": "0",
+                "TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED": "false",
+                "TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED": "off",
+            },
+            clear=True,
+        ):
+            loaded = load_settings()
+
+        self.assertFalse(loaded.telegram_oauth_usage_refresh_enabled)
+        self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
+        self.assertFalse(loaded.telegram_oauth_recovery_push_enabled)
+
 
 if __name__ == "__main__":
     unittest.main()
