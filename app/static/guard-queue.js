@@ -1,7 +1,4 @@
 (() => {
-  const lists = Array.from(document.querySelectorAll("[data-guard-sort-list]"));
-  if (!lists.length) return;
-
   let dragged = null;
   let pendingFrame = null;
   let pendingList = null;
@@ -20,8 +17,6 @@
       if (down) down.disabled = index === listItems.length - 1;
     });
   };
-
-  const syncAll = () => lists.forEach(syncList);
 
   const afterElement = (list, y) => {
     const listItems = items(list);
@@ -52,48 +47,67 @@
     }
   };
 
-  lists.forEach((list) => {
-    items(list).forEach((item) => {
-      item.addEventListener("dragstart", (event) => {
-        dragged = item;
-        event.dataTransfer.effectAllowed = "move";
-        const input = item.querySelector('input[name="account_order"]');
-        event.dataTransfer.setData("text/plain", input ? input.value : "");
-        window.requestAnimationFrame(() => item.classList.add("dragging"));
+  const syncRoot = (root) => {
+    root.querySelectorAll("[data-guard-sort-list]").forEach(syncList);
+  };
+
+  const wireGuardQueue = (root = document) => {
+    const lists = Array.from(root.querySelectorAll("[data-guard-sort-list]"));
+    if (!lists.length) return;
+
+    lists.forEach((list) => {
+      if (list.dataset.guardQueueWired === "1") {
+        syncList(list);
+        return;
+      }
+      list.dataset.guardQueueWired = "1";
+
+      items(list).forEach((item) => {
+        item.addEventListener("dragstart", (event) => {
+          dragged = item;
+          event.dataTransfer.effectAllowed = "move";
+          const input = item.querySelector('input[name="account_order"]');
+          event.dataTransfer.setData("text/plain", input ? input.value : "");
+          window.requestAnimationFrame(() => item.classList.add("dragging"));
+        });
+
+        item.addEventListener("dragend", () => {
+          if (pendingFrame) window.cancelAnimationFrame(pendingFrame);
+          pendingFrame = null;
+          pendingList = null;
+          item.classList.remove("dragging");
+          dragged = null;
+          syncRoot(root);
+        });
       });
 
-      item.addEventListener("dragend", () => {
-        if (pendingFrame) window.cancelAnimationFrame(pendingFrame);
-        pendingFrame = null;
-        pendingList = null;
-        item.classList.remove("dragging");
-        dragged = null;
-        syncAll();
+      list.addEventListener("dragover", (event) => {
+        if (!dragged || dragged.closest("[data-guard-sort-list]") !== list) return;
+        event.preventDefault();
+        pendingList = list;
+        pendingY = event.clientY;
+        if (!pendingFrame) pendingFrame = window.requestAnimationFrame(moveDragged);
       });
-    });
 
-    list.addEventListener("dragover", (event) => {
-      if (!dragged || dragged.closest("[data-guard-sort-list]") !== list) return;
-      event.preventDefault();
-      pendingList = list;
-      pendingY = event.clientY;
-      if (!pendingFrame) pendingFrame = window.requestAnimationFrame(moveDragged);
-    });
+      list.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-guard-move]");
+        if (!button) return;
+        const item = button.closest("[data-guard-sort-item]");
+        if (!item) return;
+        if (button.dataset.guardMove === "up" && item.previousElementSibling) {
+          list.insertBefore(item, item.previousElementSibling);
+        }
+        if (button.dataset.guardMove === "down" && item.nextElementSibling) {
+          list.insertBefore(item.nextElementSibling, item);
+        }
+        syncList(list);
+      });
 
-    list.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-guard-move]");
-      if (!button) return;
-      const item = button.closest("[data-guard-sort-item]");
-      if (!item) return;
-      if (button.dataset.guardMove === "up" && item.previousElementSibling) {
-        list.insertBefore(item, item.previousElementSibling);
-      }
-      if (button.dataset.guardMove === "down" && item.nextElementSibling) {
-        list.insertBefore(item.nextElementSibling, item);
-      }
       syncList(list);
     });
-  });
+  };
 
-  syncAll();
+  window.sub2opsWireGuardQueue = wireGuardQueue;
+
+  document.addEventListener("DOMContentLoaded", () => wireGuardQueue(document));
 })();

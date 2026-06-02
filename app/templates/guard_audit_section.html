@@ -1,0 +1,55 @@
+<div class="guard-loaded-section table-panel guard-table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>最近 Guard 记录</h3>
+      <p>来自本服务 `/data/audit.jsonl`，只显示 Guard 相关事件。</p>
+    </div>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="guard-audit">
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="time" checked />时间</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="event" checked />事件</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-audit" data-column="payload" checked />动作/原因</label>
+        <button type="button" class="link-button columns-reset" data-table="guard-audit">重置列</button>
+      </div>
+    </details>
+  </div>
+  {% if guard.recent_events %}
+    <div class="table-wrap">
+      <table class="data-table guard-audit-table" data-table-id="guard-audit">
+        <thead>
+          <tr>
+            <th data-col="time">时间</th>
+            <th data-col="event">事件</th>
+            <th data-col="account">账号</th>
+            <th data-col="payload">动作/原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in guard.recent_events %}
+            <tr>
+              <td data-col="time" class="mono nowrap">{{ item.ts | bj_time }}</td>
+              <td data-col="event"><span class="audit-event mono">{{ item.event }}</span></td>
+              <td data-col="account">
+                {% if item.payload.account_id %}
+                  #{{ item.payload.account_id }} {{ item.payload.name }}
+                {% elif item.payload.updated %}
+                  #{{ item.payload.updated.id }} {{ item.payload.updated.name }}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td data-col="payload" class="audit-payload">{{ item.payload.reason or item.payload.error or item.payload }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <strong>暂无 Guard 审计记录</strong>
+      <p>后台扫描或手动执行后会在这里出现记录。</p>
+    </div>
+  {% endif %}
+</div>

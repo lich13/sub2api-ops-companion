@@ -80,6 +80,10 @@ class GuardAccountRoutingTests(unittest.TestCase):
 
     def test_guard_template_exposes_policy_and_account_routing_controls(self) -> None:
         template = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
+        queue_template = (REPO_ROOT / "app" / "templates" / "guard_queue_section.html").read_text(encoding="utf-8")
+        routing_template = (REPO_ROOT / "app" / "templates" / "guard_routing_section.html").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('action="{{ base_path }}/guard/policy"', template)
         self.assertIn('name="failure_threshold"', template)
@@ -91,21 +95,21 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('data-allow-empty="1"', template)
         self.assertIn("data-group-picker-clear", template)
         self.assertNotIn('<textarea name="whitelist_account_ids"', template)
-        self.assertIn('action="{{ base_path }}/guard/account-routing"', template)
-        self.assertIn('action="{{ base_path }}/guard/queue/auto"', template)
-        self.assertIn('action="{{ base_path }}/guard/queue/reorder"', template)
-        self.assertIn('name="queue_group"', template)
-        self.assertIn('name="account_order"', template)
+        self.assertIn('action="{{ base_path }}/guard/account-routing"', routing_template)
+        self.assertIn('action="{{ base_path }}/guard/queue/auto"', queue_template)
+        self.assertIn('action="{{ base_path }}/guard/queue/reorder"', queue_template)
+        self.assertIn('name="queue_group"', queue_template)
+        self.assertIn('name="account_order"', queue_template)
         self.assertIn("guard.quality_hours", template)
-        self.assertIn('action="{{ base_path }}/accounts/{{ row.id }}/pause"', template)
-        self.assertIn('action="{{ base_path }}/accounts/{{ row.id }}/resume"', template)
-        self.assertIn('name="return_to" value="guard"', template)
-        self.assertIn("manual switch pause from guard queue", template)
-        self.assertIn('name="priority"', template)
-        self.assertIn('name="load_factor"', template)
-        self.assertIn("accounts.load_factor", template)
-        self.assertNotIn('name="tier"', template)
-        self.assertNotIn('value="standby"', template)
+        self.assertIn('action="{{ base_path }}/accounts/{{ row.id }}/pause"', queue_template)
+        self.assertIn('action="{{ base_path }}/accounts/{{ row.id }}/resume"', queue_template)
+        self.assertIn('name="return_to" value="guard"', queue_template)
+        self.assertIn("manual switch pause from guard queue", queue_template)
+        self.assertIn('name="priority"', routing_template)
+        self.assertIn('name="load_factor"', routing_template)
+        self.assertIn("accounts.load_factor", routing_template)
+        self.assertNotIn('name="tier"', template + queue_template + routing_template)
+        self.assertNotIn('value="standby"', template + queue_template + routing_template)
 
     def test_guard_template_does_not_add_guard_scan_platform_or_hours_filters(self) -> None:
         template = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
