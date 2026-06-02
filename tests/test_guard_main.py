@@ -1097,7 +1097,59 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(store_calls, 1)
         self.assertTrue(captured_context["rows"][0]["usage_query"]["configured"])
+        self.assertNotIn("template_options", captured_context["rows"][0]["usage_query"])
+        self.assertNotIn("default_code", captured_context["rows"][0]["usage_query"]["config"])
         self.assertEqual(captured_context["dashboard"]["configured_count"], 1)
+
+    def test_usage_query_editor_partial_renders_full_form_for_account(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_config(
+            UsageQueryConfig(
+                account_id=9,
+                enabled=True,
+                template_type="newapi",
+                access_token="lt-token",
+                user_id="1001",
+                upstream_multiplier=0.06,
+                timeout_seconds=12,
+            )
+        )
+        original_usage_query_store = main_module.usage_query_store
+        original_usage_query_account_row = main_module.usage_query_account_row
+
+        try:
+            main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+            main_module.usage_query_account_row = lambda _account_id: {  # type: ignore[assignment]
+                "id": 9,
+                "name": "lt",
+                "type": "api",
+                "credentials": {"base_url": "https://new.example.com", "api_key": "sk-account"},
+            }
+            response = main_module.usage_query_account_editor(
+                object(),  # type: ignore[arg-type]
+                "tester",
+                9,
+                return_to="/sub2ops/speed?group=default#usage-query-9",
+            )
+        finally:
+            main_module.usage_query_store = original_usage_query_store  # type: ignore[assignment]
+            main_module.usage_query_account_row = original_usage_query_account_row  # type: ignore[assignment]
+
+        body = response.body.decode("utf-8")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="usage-query-form"', body)
+        self.assertIn('action="/sub2ops/usage-query/accounts/9"', body)
+        self.assertIn('name="template_type"', body)
+        self.assertIn('value="newapi" selected', body)
+        self.assertIn('name="access_token"', body)
+        self.assertIn("已保存，留空保留", body)
+        self.assertIn('name="user_id" value="1001"', body)
+        self.assertIn('name="upstream_multiplier"', body)
+        self.assertIn('value="0.06"', body)
+        self.assertIn('name="timeout_seconds"', body)
+        self.assertIn('name="code"', body)
+        self.assertIn("移除配置", body)
+        self.assertNotIn("sk-account", body)
 
     def test_speed_template_renders_oauth_plan_badge_window_reset_time_without_admin_token_field(self) -> None:
         rendered = main_module.templates.get_template("speed.html").render(

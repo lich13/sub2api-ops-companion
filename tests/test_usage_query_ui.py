@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -8,8 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class UsageQueryUITests(unittest.TestCase):
-    def test_speed_template_exposes_quota_column_and_config_form(self) -> None:
+    def test_speed_template_exposes_quota_column_and_lazy_editor(self) -> None:
         template = (REPO_ROOT / "app" / "templates" / "speed.html").read_text(encoding="utf-8")
+        partial = (REPO_ROOT / "app" / "templates" / "usage_query_editor.html").read_text(encoding="utf-8")
 
         self.assertIn('data-column="quota"', template)
         self.assertIn('<th data-col="quota">额度</th>', template)
@@ -18,24 +22,30 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertNotIn('<th data-col="state">状态</th>', template)
         self.assertNotIn('<th data-col="priority">优先级</th>', template)
         self.assertIn('colspan="8"', template)
-        self.assertIn('action="{{ base_path }}/usage-query/accounts/{{ row.id }}"', template)
-        self.assertIn('name="template_type"', template)
-        self.assertIn('name="access_token"', template)
-        self.assertIn('name="user_id"', template)
-        self.assertIn('name="timeout_seconds"', template)
+        self.assertIn('data-usage-query-editor-url="{{ base_path }}/usage-query/accounts/{{ row.id }}/editor', template)
+        self.assertIn('data-usage-query-editor-target', template)
+        self.assertNotIn('class="usage-query-form"', template)
+        self.assertNotIn('name="template_type"', template)
+        self.assertNotIn('name="access_token"', template)
+        self.assertIn('action="{{ base_path }}/usage-query/accounts/{{ account_id }}"', partial)
+        self.assertIn('name="template_type"', partial)
+        self.assertIn('name="access_token"', partial)
+        self.assertIn('name="user_id"', partial)
+        self.assertIn('name="timeout_seconds"', partial)
         self.assertNotIn('Base URL / API Key：从账号本体实时读取', template)
-        self.assertNotIn('name="base_url"', template)
-        self.assertNotIn('name="api_key"', template)
-        self.assertNotIn("Sub2API API Key", template)
-        self.assertNotIn("cfg.api_key_saved", template)
-        self.assertNotIn('name="use_account_credentials"', template)
-        self.assertNotIn('fill-credentials', template)
-        self.assertIn('name="upstream_multiplier"', template)
-        self.assertNotIn('class="checkbox-label usage-query-toggle"', template)
-        self.assertNotIn('class="checkbox-label usage-query-guard-toggle"', template)
-        self.assertNotIn('name="enabled"', template)
-        self.assertNotIn('保存并查询', template)
-        self.assertNotIn('formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query"', template)
+        self.assertNotIn('Base URL / API Key：从账号本体实时读取', partial)
+        self.assertNotIn('name="base_url"', template + partial)
+        self.assertNotIn('name="api_key"', template + partial)
+        self.assertNotIn("Sub2API API Key", template + partial)
+        self.assertNotIn("cfg.api_key_saved", template + partial)
+        self.assertNotIn('name="use_account_credentials"', template + partial)
+        self.assertNotIn('fill-credentials', template + partial)
+        self.assertIn('name="upstream_multiplier"', partial)
+        self.assertNotIn('class="checkbox-label usage-query-toggle"', template + partial)
+        self.assertNotIn('class="checkbox-label usage-query-guard-toggle"', template + partial)
+        self.assertNotIn('name="enabled"', template + partial)
+        self.assertNotIn('保存并查询', template + partial)
+        self.assertNotIn('formaction="{{ base_path }}/usage-query/accounts/{{ row.id }}/query"', template + partial)
         self.assertIn('action="{{ base_path }}/usage-query/settings"', template)
         self.assertIn('name="usage_query_enabled"', template)
         self.assertIn('name="guard_disable_on_zero"', template)
@@ -44,23 +54,103 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertNotIn('name="auto_query_interval_minutes"', template)
         self.assertIn('自动查询间隔（全局，秒）', template)
         self.assertIn('id="usage-query-{{ row.id }}"', template)
-        self.assertIn('value="{{ return_to }}#usage-query-{{ row.id }}"', template)
+        self.assertIn('name="return_to" value="{{ return_to }}"', partial)
 
-    def test_usage_query_hash_script_opens_target_editor(self) -> None:
+    def test_usage_query_hash_script_opens_and_lazy_loads_target_editor(self) -> None:
         base_template = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
         script = (REPO_ROOT / "app" / "static" / "usage-query.js").read_text(encoding="utf-8")
 
         self.assertIn("usage-query.js", base_template)
+        self.assertIn("usage-query.js?v=20260602-speed-lazy-editor", base_template)
         self.assertIn("location.hash", script)
         self.assertIn("usage-query-", script)
         self.assertIn("details.open = true", script)
+        self.assertIn("data-usage-query-editor-url", script)
+        self.assertIn("data-usage-query-editor-loaded", script)
+        self.assertIn("fetch(", script)
         self.assertIn("scrollIntoView", script)
+
+    def test_navigation_busy_script_marks_internal_get_links_only(self) -> None:
+        base_template = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+        script = (REPO_ROOT / "app" / "static" / "navigation.js").read_text(encoding="utf-8")
+
+        self.assertIn("navigation.js", base_template)
+        self.assertIn("style.css?v=20260602-speed-lazy-editor", base_template)
+        self.assertIn("navigation-pending", script)
+        self.assertIn("event.defaultPrevented", script)
+        self.assertIn('getAttribute("target") === "_blank"', script)
+        self.assertIn("isSameDocumentNavigation", script)
+
+    def test_navigation_busy_script_behavior(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not available")
+        script_path = REPO_ROOT / "app" / "static" / "navigation.js"
+        test_script = textwrap.dedent(
+            f"""
+            const fs = require('fs');
+            const vm = require('vm');
+            const script = fs.readFileSync({str(script_path)!r}, 'utf8');
+
+            function runClick(href, attrs = {{}}, eventAttrs = {{}}) {{
+              const bodyClasses = new Set();
+              const linkClasses = new Set();
+              const link = {{
+                href,
+                hasAttribute: (name) => Boolean(attrs[name]),
+                getAttribute: (name) => attrs[name] || null,
+                classList: {{ add: (name) => linkClasses.add(name) }},
+                setAttribute: (name, value) => {{ attrs[name] = value; }},
+              }};
+              let listener = null;
+              const document = {{
+                body: {{ classList: {{ add: (name) => bodyClasses.add(name) }} }},
+                addEventListener: (type, callback) => {{ if (type === 'click') listener = callback; }},
+              }};
+              const window = {{ location: {{ href: 'https://ops.example.com/speed?group=a#top' }} }};
+              vm.runInNewContext(script, {{ document, window, URL }});
+              listener(Object.assign({{
+                defaultPrevented: false,
+                button: 0,
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: false,
+                altKey: false,
+                target: {{ closest: () => link }},
+              }}, eventAttrs));
+              return {{
+                bodyPending: bodyClasses.has('navigation-pending'),
+                linkPending: linkClasses.has('pending'),
+                ariaBusy: attrs['aria-busy'] || null,
+              }};
+            }}
+
+            const cases = {{
+              internal: runClick('https://ops.example.com/stability'),
+              hashOnly: runClick('https://ops.example.com/speed?group=a#usage-query-9'),
+              sameUrl: runClick('https://ops.example.com/speed?group=a#top'),
+              external: runClick('https://external.example.com/speed'),
+              blank: runClick('https://ops.example.com/stability', {{ target: '_blank' }}),
+              download: runClick('https://ops.example.com/export', {{ download: '1' }}),
+              modified: runClick('https://ops.example.com/stability', {{}}, {{ metaKey: true }}),
+            }};
+            const assert = require('assert');
+            assert.deepStrictEqual(cases.internal, {{ bodyPending: true, linkPending: true, ariaBusy: 'true' }});
+            for (const [name, result] of Object.entries(cases)) {{
+              if (name === 'internal') continue;
+              assert.deepStrictEqual(result, {{ bodyPending: false, linkPending: false, ariaBusy: null }}, name);
+            }}
+            """
+        )
+        subprocess.run([node, "-e", test_script], check=True)
 
     def test_usage_query_styles_are_scoped_to_speed_quota_ui(self) -> None:
         style = (REPO_ROOT / "app" / "static" / "style.css").read_text(encoding="utf-8")
 
         self.assertIn(".quota-cell", style)
         self.assertIn(".usage-query-config", style)
+        self.assertIn(".usage-query-editor-placeholder", style)
+        self.assertIn("body.navigation-pending", style)
         self.assertNotIn(".usage-query-credential-note", style)
         self.assertIn(".usage-query-template-select", style)
         self.assertIn("grid-template-columns: repeat(3, minmax(180px, 1fr));", style)

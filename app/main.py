@@ -463,22 +463,32 @@ def usage_template_options(selected: str) -> list[dict[str, Any]]:
     ]
 
 
-def usage_query_view(config: UsageQueryConfig, result: dict[str, Any]) -> dict[str, Any]:
+def usage_query_view(
+    config: UsageQueryConfig,
+    result: dict[str, Any],
+    *,
+    include_editor: bool = False,
+) -> dict[str, Any]:
     public = public_config(config)
-    public["default_code"] = default_template(config.template_type)
+    if include_editor:
+        public["default_code"] = default_template(config.template_type)
+    else:
+        public.pop("code", None)
     display_result = dict(result)
     if display_result.get("success"):
         recalculated = actual_available(display_result.get("remaining"), config.upstream_multiplier)
         if recalculated is not None:
             display_result["actual_available"] = recalculated
             display_result["upstream_multiplier"] = config.upstream_multiplier
-    return {
+    view = {
         "configured": usage_query_configured(config),
         "config": public,
         "result": display_result,
-        "template_options": usage_template_options(config.template_type),
         "depleted": should_pause_for_depleted(display_result),
     }
+    if include_editor:
+        view["template_options"] = usage_template_options(config.template_type)
+    return view
 
 
 def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -487,6 +497,16 @@ def oauth_quota_for_row(row: dict[str, Any], result: dict[str, Any] | None = Non
 
 def usage_query_configured(config: UsageQueryConfig) -> bool:
     return bool(config.updated_at or config.enabled or config.access_token)
+
+
+def usage_query_editor_view(
+    account_id: int,
+    store: UsageQueryStore | None = None,
+) -> dict[str, Any]:
+    active_store = store or usage_query_store()
+    config = active_store.config(account_id)
+    result = active_store.result(account_id)
+    return usage_query_view(config, result, include_editor=True)
 
 
 def usage_query_audit_payload(config: UsageQueryConfig, user: str) -> dict[str, Any]:
@@ -2220,6 +2240,29 @@ async def usage_query_config_save(request: Request, user: AuthUser, account_id: 
         usage_query_audit_payload(hydrated, user),
     )
     return redirect_with_msg(return_to, f"已保存账号 #{account_id} 的额度查询配置")
+
+
+@app.get("/usage-query/accounts/{account_id}/editor", response_class=HTMLResponse)
+def usage_query_account_editor(
+    request: Request,
+    _: AuthUser,
+    account_id: int,
+    return_to: str = "",
+) -> HTMLResponse:
+    row = usage_query_account_row(account_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="account not found")
+    usage = usage_query_editor_view(account_id)
+    html = templates.get_template("usage_query_editor.html").render(
+        {
+            "base_path": settings.base_path,
+            "account_id": int(account_id),
+            "account": row,
+            "usage": usage,
+            "return_to": return_to or f"{settings.base_path}/speed#usage-query-{int(account_id)}",
+        }
+    )
+    return HTMLResponse(html)
 
 
 @app.post("/usage-query/settings")
