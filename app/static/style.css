@@ -1589,6 +1589,80 @@ dd {
   word-break: break-word;
 }
 
+.guard-lazy-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.guard-lazy-section {
+  display: grid;
+  gap: 12px;
+}
+
+.guard-lazy-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.guard-lazy-head h3,
+.guard-lazy-head p {
+  margin: 0;
+}
+
+.guard-lazy-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.guard-section-placeholder {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 52px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.guard-section-placeholder strong,
+.guard-section-placeholder p {
+  margin: 0;
+}
+
+.guard-section-placeholder p {
+  font-size: 12px;
+}
+
+.guard-section-loading .loading-dot,
+.guard-section-placeholder .loading-dot {
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(15, 118, 110, 0.22);
+  border-top-color: var(--primary);
+  border-radius: 999px;
+  animation: spin 0.7s linear infinite;
+}
+
+.guard-section-error {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-color: rgba(220, 38, 38, 0.24);
+  color: var(--danger);
+  background: #fff7f7;
+}
+
+.guard-loaded-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .routing-mini-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(74px, 1fr)) auto;

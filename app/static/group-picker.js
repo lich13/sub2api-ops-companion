@@ -1,6 +1,4 @@
 (() => {
-  const pickers = document.querySelectorAll("[data-group-picker]");
-
   const optionLabel = (input) => input.closest("label")?.querySelector("span")?.textContent?.trim() || input.value;
 
   const selectedOptions = (picker) => Array.from(picker.querySelectorAll("[data-group-picker-option]:checked"));
@@ -43,46 +41,57 @@
     updateLabel(picker);
   };
 
-  pickers.forEach((picker) => {
-    const options = Array.from(picker.querySelectorAll("[data-group-picker-option]"));
-    const defaultButton = picker.querySelector("[data-group-picker-default]");
-    const allButton = picker.querySelector("[data-group-picker-all]");
-    const clearButton = picker.querySelector("[data-group-picker-clear]");
+  const wireGroupPickers = (root = document) => {
+    root.querySelectorAll("[data-group-picker]").forEach((picker) => {
+      if (picker.dataset.groupPickerWired === "1") {
+        updateLabel(picker);
+        return;
+      }
+      picker.dataset.groupPickerWired = "1";
+      const options = Array.from(picker.querySelectorAll("[data-group-picker-option]"));
+      const defaultButton = picker.querySelector("[data-group-picker-default]");
+      const allButton = picker.querySelector("[data-group-picker-all]");
+      const clearButton = picker.querySelector("[data-group-picker-clear]");
 
-    options.forEach((option) => {
-      option.addEventListener("change", () => {
+      options.forEach((option) => {
+        option.addEventListener("change", () => {
+          ensureSelection(picker);
+          updateLabel(picker);
+        });
+      });
+
+      defaultButton?.addEventListener("click", () => {
+        const defaultOption = options.find((option) => option.dataset.defaultGroup === "1") || options[0];
+        options.forEach((option) => {
+          option.checked = option === defaultOption;
+        });
+        updateLabel(picker);
+      });
+
+      allButton?.addEventListener("click", () => {
+        options.forEach((option) => {
+          option.checked = true;
+        });
+        updateLabel(picker);
+      });
+
+      clearButton?.addEventListener("click", () => {
+        options.forEach((option) => {
+          option.checked = false;
+        });
         ensureSelection(picker);
         updateLabel(picker);
       });
-    });
 
-    defaultButton?.addEventListener("click", () => {
-      const defaultOption = options.find((option) => option.dataset.defaultGroup === "1") || options[0];
-      options.forEach((option) => {
-        option.checked = option === defaultOption;
+      picker.closest("form")?.addEventListener("submit", () => {
+        ensureSelection(picker);
       });
+
       updateLabel(picker);
     });
+  };
 
-    allButton?.addEventListener("click", () => {
-      options.forEach((option) => {
-        option.checked = true;
-      });
-      updateLabel(picker);
-    });
+  window.sub2opsWireGroupPickers = wireGroupPickers;
 
-    clearButton?.addEventListener("click", () => {
-      options.forEach((option) => {
-        option.checked = false;
-      });
-      ensureSelection(picker);
-      updateLabel(picker);
-    });
-
-    picker.closest("form")?.addEventListener("submit", () => {
-      ensureSelection(picker);
-    });
-
-    updateLabel(picker);
-  });
+  document.addEventListener("DOMContentLoaded", () => wireGroupPickers(document));
 })();

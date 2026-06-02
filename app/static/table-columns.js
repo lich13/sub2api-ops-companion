@@ -14,10 +14,15 @@
     });
   }
 
-  function wireTable(tableId) {
-    var table = document.querySelector('[data-table-id="' + tableId + '"]');
-    var toggles = Array.from(document.querySelectorAll('.column-toggle[data-table="' + tableId + '"]'));
-    var reset = document.querySelector('.columns-reset[data-table="' + tableId + '"]');
+  function scopedQuery(root, selector) {
+    return Array.from((root || document).querySelectorAll(selector));
+  }
+
+  function wireTable(root, table) {
+    var tableId = table ? table.dataset.tableId : "";
+    var scope = root || document;
+    var toggles = scopedQuery(scope, '.column-toggle[data-table="' + tableId + '"]');
+    var reset = scope.querySelector ? scope.querySelector('.columns-reset[data-table="' + tableId + '"]') : null;
     if (!table || toggles.length === 0) {
       return;
     }
@@ -35,6 +40,10 @@
     }
 
     toggles.forEach(function (toggle) {
+      if (toggle.getAttribute("data-column-toggle-wired") === "1") {
+        return;
+      }
+      toggle.setAttribute("data-column-toggle-wired", "1");
       toggle.addEventListener("change", function () {
         hiddenColumns = toggles.filter(function (item) {
           return !item.checked;
@@ -47,6 +56,11 @@
     });
 
     if (reset) {
+      if (reset.getAttribute("data-columns-reset-wired") === "1") {
+        apply();
+        return;
+      }
+      reset.setAttribute("data-columns-reset-wired", "1");
       reset.addEventListener("click", function () {
         hiddenColumns = [];
         localStorage.removeItem(storageKey);
@@ -57,9 +71,16 @@
     apply();
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll("[data-table-id]").forEach(function (table) {
-      wireTable(table.dataset.tableId);
+  function wireTableColumns(root) {
+    var scope = root || document;
+    scopedQuery(scope, "[data-table-id]").forEach(function (table) {
+      wireTable(scope, table);
     });
+  }
+
+  window.sub2opsWireTableColumns = wireTableColumns;
+
+  document.addEventListener("DOMContentLoaded", function () {
+    wireTableColumns(document);
   });
 })();
