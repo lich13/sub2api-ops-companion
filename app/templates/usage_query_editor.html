@@ -1,0 +1,32 @@
+{% set cfg = usage.config %}
+<form class="usage-query-form" method="post" action="{{ base_path }}/usage-query/accounts/{{ account_id }}" autocomplete="off">
+  <input type="hidden" name="return_to" value="{{ return_to }}" />
+  <label>模板
+    <select class="usage-query-template-select" name="template_type">
+      {% for option in usage.template_options %}
+        <option value="{{ option.value }}" {{ 'selected' if option.selected else '' }}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Access Token
+    <input type="password" name="access_token" placeholder="{{ '已保存，留空保留' if cfg.access_token_saved else 'NewAPI Access Token' }}" autocomplete="new-password" />
+  </label>
+  <label>User ID
+    <input name="user_id" value="{{ cfg.user_id }}" placeholder="NewAPI 用户 ID" />
+  </label>
+  <label>上游倍率
+    <input name="upstream_multiplier" type="number" min="0.0001" step="0.0001" value="{{ cfg.upstream_multiplier }}" />
+  </label>
+  <label>超时秒数
+    <input name="timeout_seconds" type="number" min="2" max="30" value="{{ cfg.timeout_seconds }}" />
+  </label>
+  <label class="usage-query-code">提取器代码
+    <textarea name="code" spellcheck="false">{{ cfg.code }}</textarea>
+  </label>
+  <div class="usage-query-actions">
+    <button class="primary" type="submit">保存</button>
+    {% if usage.configured %}
+      <button class="link-button clear-token" type="submit" formaction="{{ base_path }}/usage-query/accounts/{{ account_id }}/delete">移除配置</button>
+    {% endif %}
+  </div>
+</form>

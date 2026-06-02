@@ -327,6 +327,31 @@ a:hover {
   background: var(--primary-soft);
 }
 
+body.navigation-pending {
+  cursor: progress;
+}
+
+body.navigation-pending .nav a {
+  pointer-events: none;
+}
+
+.nav a.pending {
+  border-color: rgba(15, 118, 110, 0.28);
+  color: var(--primary);
+  background: rgba(15, 118, 110, 0.14);
+}
+
+.nav a.pending::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  margin-left: 7px;
+  border: 2px solid rgba(15, 118, 110, 0.22);
+  border-top-color: var(--primary);
+  border-radius: 999px;
+  animation: spin 0.7s linear infinite;
+}
+
 .page-title,
 .section-head,
 .split-panel,
@@ -2715,6 +2740,32 @@ dd {
 
 .usage-query-config > summary::-webkit-details-marker {
   display: none;
+}
+
+.usage-query-editor-placeholder {
+  display: grid;
+  align-items: center;
+  min-height: 48px;
+  width: min(1280px, 100%);
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fbfcfb;
+  font-size: 12px;
+}
+
+.usage-query-editor-loading {
+  color: var(--primary);
+  border-style: solid;
+  background: var(--primary-soft);
+}
+
+.usage-query-editor-error {
+  color: var(--danger);
+  border-color: #fecaca;
+  background: #fff1f2;
 }
 
 .usage-query-form {
