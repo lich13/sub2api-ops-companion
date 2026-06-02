@@ -1,0 +1,84 @@
+<div class="guard-loaded-section table-panel guard-table-panel">
+  <div class="section-head table-toolbar">
+    <div>
+      <h3>账号路由</h3>
+      <p>优先级和负载因子都能在这里改。负载因子只在上游数据库支持时启用。</p>
+    </div>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="guard-routing">
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="state" checked />状态</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="routing" checked />调度参数</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="signal" checked />最近信号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="next" checked />下次恢复</label>
+        <button type="button" class="link-button columns-reset" data-table="guard-routing">重置列</button>
+      </div>
+    </details>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table guard-table guard-routing-table" data-table-id="guard-routing">
+      <thead>
+        <tr>
+          <th data-col="account">账号</th>
+          <th data-col="state">状态</th>
+          <th data-col="routing">调度参数</th>
+          <th data-col="signal">最近信号</th>
+          <th data-col="next">下次恢复</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% set circuit = row.guard_circuit or {} %}
+          <tr class="{{ row.problem.level }}">
+            <td data-col="account">
+              <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
+              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
+              <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
+            </td>
+            <td data-col="state">
+              {% if row.schedulable %}
+                <span class="pill good">可调度</span>
+              {% else %}
+                <span class="pill bad">已停</span>
+              {% endif %}
+              <div class="cell-sub">{{ row.problem.title }}</div>
+              <div class="cell-sub mono tiny">Guard {{ circuit.state or 'closed' }}</div>
+            </td>
+            <td data-col="routing">
+              <form class="routing-mini-form" method="post" action="{{ base_path }}/guard/account-routing">
+                <input type="hidden" name="account_id" value="{{ row.id }}" />
+                <input type="hidden" name="reason" value="guard panel account routing update" />
+                <label>优先级
+                  <input type="number" name="priority" min="1" value="{{ row.account_priority or 50 }}" />
+                </label>
+                <label>负载因子
+                  <input
+                    type="number"
+                    name="load_factor"
+                    min="1"
+                    value="{{ row.load_factor or '' }}"
+                    placeholder="{{ row.concurrency or 1 }}"
+                    {{ 'disabled' if not guard.account_routing.load_factor else '' }}
+                  />
+                </label>
+                <button type="submit">保存</button>
+              </form>
+              {% if not guard.account_routing.load_factor %}
+                <div class="cell-sub">当前 Sub2API 数据库没有 accounts.load_factor，无法降载，只能改优先级。</div>
+              {% endif %}
+            </td>
+            <td data-col="signal">
+              <div class="cell-sub mono">last={{ circuit.last_event_key or '-' }}</div>
+              <div class="cell-sub mono">category={{ circuit.last_category or '-' }}</div>
+            </td>
+            <td data-col="next">
+              <div class="cell-sub mono">opened={{ circuit.opened_at or '-' }}</div>
+              <div class="cell-sub mono">load={{ circuit.last_applied_load_factor or '-' }}</div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

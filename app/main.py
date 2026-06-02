@@ -395,6 +395,10 @@ def load_account_options(platform: str) -> list[dict[str, Any]]:
     return db.fetch_all(ACCOUNT_OPTIONS_SQL, {"platform": platform})
 
 
+def load_guard_account_options() -> list[dict[str, Any]]:
+    return load_account_options("")
+
+
 def account_routing_capability() -> dict[str, bool]:
     try:
         row = db.fetch_one(ACCOUNT_ROUTING_CAPABILITY_SQL) or {}
@@ -882,7 +886,7 @@ def scheduled_tests_url(group_values: list[str], platform: str, include_all: boo
     return f"{settings.base_path}/scheduled-tests?{urlencode(query)}"
 
 
-def guard_config(policy: GuardPolicy | None = None) -> dict[str, Any]:
+def guard_config(policy: GuardPolicy | None = None, *, include_recent_events: bool = True) -> dict[str, Any]:
     policy = policy or guard_policy_from_store()
     policy_payload = asdict(policy)
     policy_payload["whitelist_account_ids_text"] = ", ".join(str(item) for item in policy.whitelist_account_ids)
@@ -897,7 +901,9 @@ def guard_config(policy: GuardPolicy | None = None) -> dict[str, Any]:
         "state": guard_state,
         "policy": policy_payload,
         "account_routing": account_routing_capability(),
-        "recent_events": read_audit(settings.audit_path, limit=12, event_prefix="guard_"),
+        "recent_events": read_audit(settings.audit_path, limit=12, event_prefix="guard_")
+        if include_recent_events
+        else [],
     }
 
 
@@ -975,6 +981,116 @@ def guard_whitelist_options(rows: list[dict[str, Any]], policy: GuardPolicy) -> 
             }
         )
     return options
+
+
+def guard_whitelist_account_options(accounts: list[dict[str, Any]], policy: GuardPolicy) -> list[dict[str, Any]]:
+    selected = set(policy.whitelist_account_ids)
+    seen: set[int] = set()
+    options: list[dict[str, Any]] = []
+    for row in accounts:
+        try:
+            account_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if account_id <= 0 or account_id in seen:
+            continue
+        seen.add(account_id)
+        name = str(row.get("name") or f"Account {account_id}").strip()
+        meta_parts = [str(value).strip() for value in (row.get("type"), row.get("platform")) if str(value or "").strip()]
+        options.append(
+            {
+                "id": account_id,
+                "label": f"#{account_id} {name}",
+                "meta": " / ".join(meta_parts),
+                "checked": account_id in selected,
+            }
+        )
+    for account_id in sorted(selected - seen):
+        options.append(
+            {
+                "id": account_id,
+                "label": f"#{account_id} 当前列表未返回",
+                "meta": "已保存",
+                "checked": True,
+            }
+        )
+    return options
+
+
+def guard_section_cards(queue_query: str = "") -> list[dict[str, str]]:
+    queue_suffix = f"?{queue_query}" if queue_query else ""
+    return [
+        {
+            "key": "queue",
+            "title": "分组队列",
+            "description": "按需加载各分组调度队列、拖拽排序和队列保存。",
+            "url": f"{settings.base_path}/guard/sections/queue{queue_suffix}",
+        },
+        {
+            "key": "suggestions",
+            "title": "自动动作与人工建议",
+            "description": "按需加载当前 Guard 建议和人工执行入口。",
+            "url": f"{settings.base_path}/guard/sections/suggestions",
+        },
+        {
+            "key": "routing",
+            "title": "账号路由",
+            "description": "按需加载账号优先级、负载因子和最近信号。",
+            "url": f"{settings.base_path}/guard/sections/routing",
+        },
+        {
+            "key": "audit",
+            "title": "最近 Guard 记录",
+            "description": "按需加载最近 Guard 审计记录。",
+            "url": f"{settings.base_path}/guard/sections/audit",
+        },
+    ]
+
+
+def guard_queue_section_query(request: Request) -> str:
+    query_params = getattr(request, "query_params", None)
+    if not hasattr(query_params, "getlist"):
+        return ""
+    pairs = [("queue_group", value) for value in query_params.getlist("queue_group")]
+    return urlencode(pairs)
+
+
+def guard_queue_context(request: Request) -> dict[str, Any]:
+    groups = load_groups()
+    query_params = getattr(request, "query_params", None)
+    queue_group_values = query_params.getlist("queue_group") if hasattr(query_params, "getlist") else []
+    queue_group_selection = build_group_selection(queue_group_values, groups)
+    queue_rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), queue_group_selection)
+    return {
+        "active": "guard",
+        "queue_rows": queue_rows,
+        "queue_groups": group_queue_rows(queue_rows),
+        "groups": groups,
+        "queue_group_selection": queue_group_selection,
+    }
+
+
+def guard_quality_context(*, include_suggestions: bool = False, include_routing: bool = False) -> dict[str, Any]:
+    rows = enrich_guard_rows(load_guard_quality())
+    context: dict[str, Any] = {
+        "active": "guard",
+        "rows": rows,
+        "guard": guard_config(include_recent_events=False),
+    }
+    if include_suggestions:
+        context["suggestions"] = [s for row in rows if (s := guard_suggestion(row))]
+    if include_routing:
+        context["guard"] = guard_config(include_recent_events=False)
+    return context
+
+
+def guard_audit_context() -> dict[str, Any]:
+    return {
+        "active": "guard",
+        "guard": {
+            "recent_events": read_audit(settings.audit_path, limit=12, event_prefix="guard_"),
+        },
+    }
 
 
 def filter_guard_queue_rows(rows: list[dict[str, Any]], group_selection: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2661,31 +2777,38 @@ def guard_view(
     _: AuthUser,
     msg: str = "",
 ) -> HTMLResponse:
-    groups = load_groups()
-    query_params = getattr(request, "query_params", None)
-    queue_group_values = query_params.getlist("queue_group") if hasattr(query_params, "getlist") else []
-    queue_group_selection = build_group_selection(queue_group_values, groups)
     policy = guard_policy_from_store()
-    rows = enrich_guard_rows(load_guard_quality())
-    queue_rows = filter_guard_queue_rows(enrich_guard_rows(load_guard_queue_quality()), queue_group_selection)
-    queue_groups = group_queue_rows(queue_rows)
-    suggestions = [s for row in rows if (s := guard_suggestion(row))]
     return render(
         request,
         "guard.html",
         {
             "active": "guard",
-            "rows": rows,
-            "queue_rows": queue_rows,
-            "queue_groups": queue_groups,
-            "suggestions": suggestions,
-            "guard": guard_config(policy),
-            "whitelist_options": guard_whitelist_options(rows, policy),
-            "groups": groups,
-            "queue_group_selection": queue_group_selection,
+            "guard": guard_config(policy, include_recent_events=False),
+            "whitelist_options": guard_whitelist_account_options(load_guard_account_options(), policy),
+            "guard_section_cards": guard_section_cards(guard_queue_section_query(request)),
             "msg": msg,
         },
     )
+
+
+@app.get("/guard/sections/queue", response_class=HTMLResponse)
+def guard_section_queue(request: Request, _: AuthUser) -> HTMLResponse:
+    return render(request, "guard_queue_section.html", guard_queue_context(request))
+
+
+@app.get("/guard/sections/suggestions", response_class=HTMLResponse)
+def guard_section_suggestions(request: Request, _: AuthUser) -> HTMLResponse:
+    return render(request, "guard_suggestions_section.html", guard_quality_context(include_suggestions=True))
+
+
+@app.get("/guard/sections/routing", response_class=HTMLResponse)
+def guard_section_routing(request: Request, _: AuthUser) -> HTMLResponse:
+    return render(request, "guard_routing_section.html", guard_quality_context(include_routing=True))
+
+
+@app.get("/guard/sections/audit", response_class=HTMLResponse)
+def guard_section_audit(request: Request, _: AuthUser) -> HTMLResponse:
+    return render(request, "guard_audit_section.html", guard_audit_context())
 
 
 @app.get("/telegram", response_class=HTMLResponse)

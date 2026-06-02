@@ -75,11 +75,30 @@ class UsageQueryUITests(unittest.TestCase):
         script = (REPO_ROOT / "app" / "static" / "navigation.js").read_text(encoding="utf-8")
 
         self.assertIn("navigation.js", base_template)
-        self.assertIn("style.css?v=20260602-speed-lazy-editor", base_template)
+        self.assertIn("navigation.js?v=20260603-guard-lazy", base_template)
+        self.assertIn("style.css?v=20260603-guard-lazy", base_template)
+        self.assertIn("guard-sections.js?v=20260603-guard-lazy", base_template)
         self.assertIn("navigation-pending", script)
         self.assertIn("event.defaultPrevented", script)
         self.assertIn('getAttribute("target") === "_blank"', script)
         self.assertIn("isSameDocumentNavigation", script)
+
+    def test_guard_template_lazy_loads_heavy_sections(self) -> None:
+        template = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
+        script = (REPO_ROOT / "app" / "static" / "guard-sections.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-guard-section-url", template)
+        self.assertIn("/guard/sections/queue", template)
+        self.assertIn("/guard/sections/suggestions", template)
+        self.assertIn("/guard/sections/routing", template)
+        self.assertIn("/guard/sections/audit", template)
+        self.assertIn("data-guard-section-target", template)
+        self.assertNotIn("guard-queue-card", template)
+        self.assertNotIn("guard-routing-table", template)
+        self.assertNotIn("guard-audit-table", template)
+        self.assertIn("IntersectionObserver", script)
+        self.assertIn("data-guard-section-loaded", script)
+        self.assertIn("fetch(", script)
 
     def test_navigation_busy_script_behavior(self) -> None:
         node = shutil.which("node")

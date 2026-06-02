@@ -2581,10 +2581,151 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertIs(result, captured["context"])
         self.assertEqual(captured["template"], "guard.html")
-        self.assertEqual(captured["context"]["rows"][0]["id"], 9)
+        self.assertIn("guard_section_cards", captured["context"])
+        self.assertNotIn("rows", captured["context"])
+        self.assertNotIn("queue_rows", captured["context"])
+        self.assertNotIn("queue_groups", captured["context"])
+        self.assertNotIn("suggestions", captured["context"])
         self.assertNotIn("group", captured["context"])
         self.assertNotIn("platform", captured["context"])
         self.assertNotIn("hours", captured["context"])
+
+    def test_guard_view_defers_heavy_sections_to_partials(self) -> None:
+        captured: dict[str, Any] = {}
+        original_load_guard_quality = main_module.load_guard_quality
+        original_load_guard_queue_quality = main_module.load_guard_queue_quality
+        original_guard_config = main_module.guard_config
+        original_read_audit = main_module.read_audit
+        original_render = main_module.render
+
+        def fail_heavy_quality() -> list[dict[str, Any]]:
+            raise AssertionError("guard_view must not load full quality rows")
+
+        def fail_queue_quality() -> list[dict[str, Any]]:
+            raise AssertionError("guard_view must not load queue rows")
+
+        def capture_render(_request: Any, template: str, context: dict[str, Any]) -> Any:
+            captured["template"] = template
+            captured["context"] = context
+            return context
+
+        try:
+            main_module.load_guard_quality = fail_heavy_quality  # type: ignore[assignment]
+            main_module.load_guard_queue_quality = fail_queue_quality  # type: ignore[assignment]
+            main_module.guard_config = lambda policy=None, **kwargs: {  # type: ignore[assignment]
+                **original_guard_config(policy, **kwargs),
+                "recent_events": [],
+            }
+            main_module.read_audit = lambda *_args, **_kwargs: []  # type: ignore[assignment]
+            main_module.render = capture_render  # type: ignore[assignment]
+
+            result = main_module.guard_view(object(), "tester")  # type: ignore[arg-type]
+        finally:
+            main_module.load_guard_quality = original_load_guard_quality
+            main_module.load_guard_queue_quality = original_load_guard_queue_quality
+            main_module.guard_config = original_guard_config  # type: ignore[assignment]
+            main_module.read_audit = original_read_audit  # type: ignore[assignment]
+            main_module.render = original_render
+
+        self.assertIs(result, captured["context"])
+        self.assertEqual(captured["template"], "guard.html")
+        self.assertIn("guard_section_cards", captured["context"])
+        self.assertNotIn("rows", captured["context"])
+        self.assertNotIn("queue_rows", captured["context"])
+        self.assertNotIn("queue_groups", captured["context"])
+        self.assertNotIn("suggestions", captured["context"])
+
+    def test_guard_view_preserves_queue_group_query_for_lazy_queue_section(self) -> None:
+        class QueryParams:
+            def getlist(self, key: str) -> list[str]:
+                return ["default", "gpt-5"] if key == "queue_group" else []
+
+        request = type("RequestStub", (), {"query_params": QueryParams()})()
+        captured: dict[str, Any] = {}
+        original_render = main_module.render
+
+        def capture_render(_request: Any, template: str, context: dict[str, Any]) -> Any:
+            captured["template"] = template
+            captured["context"] = context
+            return context
+
+        try:
+            main_module.render = capture_render  # type: ignore[assignment]
+            result = main_module.guard_view(request, "tester")  # type: ignore[arg-type]
+        finally:
+            main_module.render = original_render
+
+        self.assertIs(result, captured["context"])
+        queue_card = next(item for item in captured["context"]["guard_section_cards"] if item["key"] == "queue")
+        self.assertIn("/guard/sections/queue?", queue_card["url"])
+        self.assertIn("queue_group=default", queue_card["url"])
+        self.assertIn("queue_group=gpt-5", queue_card["url"])
+        self.assertNotIn("queue_group", [item["url"] for item in captured["context"]["guard_section_cards"] if item["key"] != "queue"])
+
+    def test_guard_section_partials_render_heavy_blocks(self) -> None:
+        rows = [
+            {
+                "id": 9,
+                "name": "wong",
+                "platform": "openai",
+                "type": "api",
+                "schedulable": True,
+                "concurrency": 2,
+                "account_priority": 30,
+                "group_priority": 1,
+                "group_name": "default",
+                "group_id": 1,
+                "membership_key": "1:9",
+                "blocked_403_window": 0,
+                "balance_or_quota_window": 2,
+                "unstable_5xx_stream_window": 0,
+                "rate_limit_window": 0,
+                "account_quality_errors_window": 2,
+                "success_window": 1,
+                "load_factor": None,
+                "effective_load_factor": 2,
+            }
+        ]
+        captured: dict[str, Any] = {}
+        original_load_guard_quality = main_module.load_guard_quality
+        original_load_guard_queue_quality = main_module.load_guard_queue_quality
+        original_render = main_module.render
+
+        def capture_render(_request: Any, template: str, context: dict[str, Any]) -> Any:
+            captured.setdefault("calls", []).append((template, context))
+            return main_module.templates.get_template(template).render(
+                {
+                    **context,
+                    "base_path": main_module.settings.base_path,
+                    "app_name": "test",
+                    "current_user": "tester",
+                    "version": {"current_version": "test"},
+                }
+            )
+
+        try:
+            main_module.load_guard_quality = lambda: list(rows)  # type: ignore[assignment]
+            main_module.load_guard_queue_quality = lambda: list(rows)  # type: ignore[assignment]
+            main_module.render = capture_render  # type: ignore[assignment]
+
+            queue_html = main_module.guard_section_queue(object(), "tester")  # type: ignore[arg-type]
+            suggestions_html = main_module.guard_section_suggestions(object(), "tester")  # type: ignore[arg-type]
+            routing_html = main_module.guard_section_routing(object(), "tester")  # type: ignore[arg-type]
+            audit_html = main_module.guard_section_audit(object(), "tester")  # type: ignore[arg-type]
+        finally:
+            main_module.load_guard_quality = original_load_guard_quality
+            main_module.load_guard_queue_quality = original_load_guard_queue_quality
+            main_module.render = original_render
+
+        self.assertIn("guard_queue_section.html", [call[0] for call in captured["calls"]])
+        self.assertIn("guard_suggestions_section.html", [call[0] for call in captured["calls"]])
+        self.assertIn("guard_routing_section.html", [call[0] for call in captured["calls"]])
+        self.assertIn("guard_audit_section.html", [call[0] for call in captured["calls"]])
+        self.assertIn("guard-queue-card", queue_html)
+        self.assertIn("data-guard-sort-list", queue_html)
+        self.assertIn("guard/apply", suggestions_html)
+        self.assertIn("routing-mini-form", routing_html)
+        self.assertIn("guard-audit", audit_html)
 
     def test_account_pause_can_return_to_guard_panel(self) -> None:
         calls: list[tuple[int, str]] = []
