@@ -13,8 +13,10 @@ from zoneinfo import ZoneInfo
 
 from . import account_ops
 from . import usage_query as usage_query_module
+from .audit import write_audit
 from .db import Database
 from .guard_engine import is_oauth_account
+from .guard_store import GuardStore
 from .settings import Settings
 from .usage_query import (
     UsageOpener,
@@ -98,6 +100,7 @@ class TelegramOpsBot:
             {
                 "commands": [
                     {"command": "quota", "description": "查询账号额度"},
+                    {"command": "whitelist", "description": "查询 Guard 白名单"},
                 ]
             },
         )
@@ -322,6 +325,9 @@ class TelegramOpsBot:
         if command in {"/quota", "/usage", "quota", "usage", "额度", "查额度"}:
             return await self._quota_reply()
 
+        if command in {"/whitelist", "/wl", "whitelist", "wl", "白名单", "查白名单"}:
+            return await self._whitelist_command_reply(parts, actor(chat_id, user_id))
+
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
             return (
                 "Telegram 命令菜单已关闭。\n\n后续只推送账号异常信息；每条异常消息下方会附带暂停、冷却、恢复和查看详情按钮。",
@@ -352,6 +358,12 @@ class TelegramOpsBot:
         if data.startswith("acct:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._account_detail_reply(account_id)
+        if data.startswith("wladd:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._whitelist_add_reply(account_id, actor(chat_id, user_id))
+        if data.startswith("wlrm:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._whitelist_remove_reply(account_id, actor(chat_id, user_id))
         if data.startswith("pauseask:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._pause_apply_reply(account_id, actor(chat_id, user_id))
@@ -473,6 +485,63 @@ class TelegramOpsBot:
         if not row:
             return f"没有找到账号 #{account_id}", accounts_keyboard()
         return account_detail(row), account_actions_keyboard(row)
+
+    async def _whitelist_command_reply(
+        self,
+        parts: list[str],
+        actor_name: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        if len(parts) >= 3 and normalize_command(parts[1]) in {"remove", "rm", "del", "delete", "移除", "删除"}:
+            account_id = parse_account_id(parts[2])
+            return await self._whitelist_remove_reply(account_id, actor_name)
+        return await self._whitelist_list_reply()
+
+    async def _whitelist_add_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
+        policy, changed = await asyncio.to_thread(GuardStore(self.settings.guard_state_path).add_whitelist_account, account_id)
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        write_audit(
+            self.settings.audit_path,
+            "telegram_whitelist_add",
+            {"account_id": account_id, "actor": actor_name, "changed": changed},
+        )
+        label_text = whitelist_account_label(account_id, row)
+        if changed:
+            text = (
+                f"已将账号 {label_text} 加入 Guard 白名单。\n"
+                "后续非额度错误不会自动暂停；连续额度限制仍按白名单阈值处理。"
+            )
+        else:
+            text = f"账号 {label_text} 已在 Guard 白名单。"
+        return text, whitelist_keyboard(policy.get("whitelist_account_ids") or [])
+
+    async def _whitelist_remove_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
+        policy, changed = await asyncio.to_thread(
+            GuardStore(self.settings.guard_state_path).remove_whitelist_account,
+            account_id,
+        )
+        write_audit(
+            self.settings.audit_path,
+            "telegram_whitelist_remove",
+            {"account_id": account_id, "actor": actor_name, "changed": changed},
+        )
+        if changed:
+            text = f"已将账号 #{account_id} 移出 Guard 白名单。"
+        else:
+            text = f"账号 #{account_id} 不在 Guard 白名单。"
+        list_text, keyboard = await self._whitelist_list_reply(policy)
+        return f"{text}\n\n{list_text}", keyboard
+
+    async def _whitelist_list_reply(self, policy: dict[str, Any] | None = None) -> tuple[str, dict[str, Any] | None]:
+        active_policy = policy or await asyncio.to_thread(GuardStore(self.settings.guard_state_path).policy_config)
+        account_ids = unique_ints(list(active_policy.get("whitelist_account_ids") or []))
+        if not account_ids:
+            return "当前 Guard 白名单为空。", None
+
+        rows = await asyncio.gather(
+            *[asyncio.to_thread(self._account_detail, account_id) for account_id in account_ids]
+        )
+        lines = ["Guard 白名单", *[whitelist_account_label(account_id, row) for account_id, row in zip(account_ids, rows)]]
+        return "\n".join(lines), whitelist_keyboard(account_ids)
 
     async def _pause_confirm_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
         row = await asyncio.to_thread(self._account_detail, account_id)
@@ -808,9 +877,20 @@ def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             first,
-            [{"text": "查看详情", "callback_data": f"acct:{account_id}"}],
+            [
+                {"text": "查看详情", "callback_data": f"acct:{account_id}"},
+                {"text": "加白名单", "callback_data": f"wladd:{account_id}"},
+            ],
         ]
     }
+
+
+def whitelist_keyboard(account_ids: list[Any], limit: int = 20) -> dict[str, Any] | None:
+    parsed = unique_ints(list(account_ids))
+    if not parsed:
+        return None
+    buttons = [[{"text": f"移除 #{account_id}", "callback_data": f"wlrm:{account_id}"}] for account_id in parsed[:limit]]
+    return {"inline_keyboard": buttons}
 
 
 def cooldown_keyboard(account_id: int) -> dict[str, Any]:
@@ -874,6 +954,12 @@ def account_detail(row: dict[str, Any]) -> str:
         if row.get("last_error_message"):
             lines.append(f"错误内容：{truncate(str(row.get('last_error_message')), 1000)}")
     return "\n".join(lines)
+
+
+def whitelist_account_label(account_id: int, row: dict[str, Any] | None) -> str:
+    if not row:
+        return f"#{account_id} 当前账号不存在或已删除"
+    return f"#{account_id} {row.get('name') or '-'}"
 
 
 def account_alert(title: str, action: dict[str, Any], row: dict[str, Any] | None) -> str:
