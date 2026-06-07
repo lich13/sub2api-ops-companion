@@ -39,6 +39,7 @@ from app.telegram_bot import (
     normalize_pairing_code,
     recovery_alert,
 )
+from app.guard_store import GuardStore
 from app.usage_query import UsageQueryConfig, UsageQueryStore
 from app import main as main_module
 
@@ -64,6 +65,21 @@ def make_settings(state_path: str, pairing_code: str = "ABCD-EFGH") -> Settings:
         telegram_pairing_code=pairing_code,
         telegram_state_path=state_path,
     )
+
+
+class WhitelistFakeDB:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+
+    def fetch_all(self, *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return self.rows
+
+    def fetch_one(self, _sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        account_id = int((params or {}).get("account_id") or 0)
+        for row in self.rows:
+            if int(row.get("id") or 0) == account_id:
+                return row
+        return None
 
 
 class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
@@ -892,12 +908,99 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(calls[0][0], "setMyCommands")
             self.assertIn({"command": "quota", "description": "查询账号额度"}, calls[0][1]["commands"])
+            self.assertIn({"command": "whitelist", "description": "查询 Guard 白名单"}, calls[0][1]["commands"])
+
+    async def test_whitelist_callback_adds_account_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            audit_path = Path(tmpdir) / "audit.jsonl"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            settings.audit_path = str(audit_path)
+            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "whitelist_account_ids": [9]})
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._callback_reply(100, 200, "wladd:7")
+            duplicate_reply, _duplicate_keyboard = await bot._callback_reply(100, 200, "wladd:#7")
+
+            policy = GuardStore(str(guard_path)).policy_config()
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["whitelist_account_ids"], [7, 9])
+            self.assertIn("已将账号 #7 target 加入 Guard 白名单", reply)
+            self.assertIn("已在 Guard 白名单", duplicate_reply)
+            self.assertIn("wlrm:7", json.dumps(keyboard, ensure_ascii=False))
+            audit_text = audit_path.read_text(encoding="utf-8")
+            self.assertIn("telegram_whitelist_add", audit_text)
+            self.assertIn('"changed": true', audit_text)
+            self.assertIn('"changed": false', audit_text)
+
+    async def test_whitelist_command_lists_and_removes_accounts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            GuardStore(str(guard_path)).save_policy(
+                {
+                    "failure_threshold": 8,
+                    "success_threshold": 3,
+                    "whitelist_account_ids": [7, 9],
+                }
+            )
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._text_reply(100, 200, "/whitelist")
+            self.assertIn("#7 target", reply)
+            self.assertIn("#9 当前账号不存在或已删除", reply)
+            self.assertIn("wlrm:7", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("wlrm:9", json.dumps(keyboard, ensure_ascii=False))
+
+            reply, keyboard = await bot._text_reply(100, 200, "/wl rm #7")
+            self.assertIn("已将账号 #7 移出 Guard 白名单", reply)
+            self.assertEqual(GuardStore(str(guard_path)).policy_config()["whitelist_account_ids"], [9])
+            self.assertIn("wlrm:9", json.dumps(keyboard, ensure_ascii=False))
+
+            reply, _keyboard = await bot._text_reply(100, 200, "/whitelist remove 7")
+            self.assertIn("账号 #7 不在 Guard 白名单", reply)
+            self.assertEqual(GuardStore(str(guard_path)).policy_config()["whitelist_account_ids"], [9])
+
+    async def test_whitelist_remove_callback_removes_account(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "whitelist_account_ids": [7, 9]})
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 9, "name": "remain", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._callback_reply(100, 200, "wlrm:7")
+
+            self.assertIn("已将账号 #7 移出 Guard 白名单", reply)
+            self.assertEqual(GuardStore(str(guard_path)).policy_config()["whitelist_account_ids"], [9])
+            self.assertNotIn("wlrm:7", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("wlrm:9", json.dumps(keyboard, ensure_ascii=False))
 
     def test_account_action_keyboard_has_only_direct_account_actions(self) -> None:
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})
         callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
 
-        self.assertEqual(callback_data, ["pause:7", "cd:7:5", "cd:7:15", "cd:7:30", "acct:7"])
+        self.assertEqual(callback_data, ["pause:7", "cd:7:5", "cd:7:15", "cd:7:30", "acct:7", "wladd:7"])
         self.assertNotIn("menu", callback_data)
         self.assertNotIn("acctlist:all:0", callback_data)
 

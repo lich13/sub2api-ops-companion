@@ -43,6 +43,35 @@ class GuardStoreTests(unittest.TestCase):
             self.assertEqual(reloaded.policy_config()["success_threshold"], 3)
             self.assertEqual(reloaded.policy_config()["rate_limit_cooldowns"], [5, 15, 30])
 
+    def test_whitelist_helpers_preserve_policy_config(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "guard-state.json"
+            store = GuardStore(str(path))
+            store.save_policy(
+                {
+                    "failure_threshold": 8,
+                    "success_threshold": 3,
+                    "rate_limit_cooldowns": [5, 15, 30],
+                    "whitelist_account_ids": [9],
+                }
+            )
+
+            policy, changed = store.add_whitelist_account(7)
+            self.assertTrue(changed)
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["success_threshold"], 3)
+            self.assertEqual(policy["rate_limit_cooldowns"], [5, 15, 30])
+            self.assertEqual(policy["whitelist_account_ids"], [7, 9])
+
+            policy, changed = GuardStore(str(path)).add_whitelist_account(7)
+            self.assertFalse(changed)
+            self.assertEqual(policy["whitelist_account_ids"], [7, 9])
+
+            policy, changed = GuardStore(str(path)).remove_whitelist_account(9)
+            self.assertTrue(changed)
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["whitelist_account_ids"], [7])
+
 
 if __name__ == "__main__":
     unittest.main()

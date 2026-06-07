@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .guard_policy import GuardCircuit
+from .guard_policy import normalize_account_ids
 
 
 class GuardStore:
@@ -71,3 +72,29 @@ class GuardStore:
     def save_policy(self, policy: dict[str, Any]) -> None:
         self._data["policy"] = dict(policy)
         self._write()
+
+    def add_whitelist_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
+        policy = dict(self.policy_config())
+        current = set(normalize_account_ids(policy.get("whitelist_account_ids")))
+        before = set(current)
+        current.add(int(account_id))
+        normalized = sorted(current)
+        needs_write = policy.get("whitelist_account_ids") != normalized
+        policy["whitelist_account_ids"] = normalized
+        changed = current != before
+        if changed or needs_write:
+            self.save_policy(policy)
+        return policy, changed
+
+    def remove_whitelist_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
+        policy = dict(self.policy_config())
+        current = set(normalize_account_ids(policy.get("whitelist_account_ids")))
+        before = set(current)
+        current.discard(int(account_id))
+        normalized = sorted(current)
+        needs_write = policy.get("whitelist_account_ids") != normalized
+        policy["whitelist_account_ids"] = normalized
+        changed = current != before
+        if changed or needs_write:
+            self.save_policy(policy)
+        return policy, changed
