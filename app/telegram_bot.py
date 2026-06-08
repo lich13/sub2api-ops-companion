@@ -101,6 +101,7 @@ class TelegramOpsBot:
                 "commands": [
                     {"command": "quota", "description": "查询账号额度"},
                     {"command": "whitelist", "description": "查询 Guard 白名单"},
+                    {"command": "endless", "description": "查询 Guard 无尽模式"},
                 ]
             },
         )
@@ -328,6 +329,9 @@ class TelegramOpsBot:
         if command in {"/whitelist", "/wl", "whitelist", "wl", "白名单", "查白名单"}:
             return await self._whitelist_command_reply(parts, actor(chat_id, user_id))
 
+        if command in {"/endless", "endless", "无尽模式", "查无尽"}:
+            return await self._endless_command_reply(parts, actor(chat_id, user_id))
+
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
             return (
                 "Telegram 命令菜单已关闭。\n\n后续只推送账号异常信息；每条异常消息下方会附带暂停、冷却、恢复和查看详情按钮。",
@@ -364,6 +368,12 @@ class TelegramOpsBot:
         if data.startswith("wlrm:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._whitelist_remove_reply(account_id, actor(chat_id, user_id))
+        if data.startswith("endadd:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._endless_add_reply(account_id, actor(chat_id, user_id))
+        if data.startswith("endrm:"):
+            account_id = parse_account_id(data.split(":", 1)[1])
+            return await self._endless_remove_reply(account_id, actor(chat_id, user_id))
         if data.startswith("pauseask:"):
             account_id = parse_account_id(data.split(":", 1)[1])
             return await self._pause_apply_reply(account_id, actor(chat_id, user_id))
@@ -542,6 +552,75 @@ class TelegramOpsBot:
         )
         lines = ["Guard 白名单", *[whitelist_account_label(account_id, row) for account_id, row in zip(account_ids, rows)]]
         return "\n".join(lines), whitelist_keyboard(account_ids)
+
+    async def _endless_command_reply(
+        self,
+        parts: list[str],
+        actor_name: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        if len(parts) >= 3 and normalize_command(parts[1]) in {"remove", "rm", "del", "delete", "移除", "删除"}:
+            account_id = parse_account_id(parts[2])
+            return await self._endless_remove_reply(account_id, actor_name)
+        return await self._endless_list_reply()
+
+    async def _endless_add_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
+        row = await asyncio.to_thread(self._account_detail, account_id)
+        if row and is_oauth_account(row):
+            policy = await asyncio.to_thread(GuardStore(self.settings.guard_state_path).policy_config)
+            write_audit(
+                self.settings.audit_path,
+                "telegram_endless_add_rejected",
+                {"account_id": account_id, "actor": actor_name, "reason": "oauth_account"},
+            )
+            label_text = whitelist_account_label(account_id, row)
+            return (
+                f"OAuth 账号不支持 Guard 无尽模式：{label_text}\n请继续使用 OAuth 专用额度监控与恢复推送。",
+                endless_keyboard(policy.get("endless_account_ids") or []),
+            )
+        policy, changed = await asyncio.to_thread(GuardStore(self.settings.guard_state_path).add_endless_account, account_id)
+        write_audit(
+            self.settings.audit_path,
+            "telegram_endless_add",
+            {"account_id": account_id, "actor": actor_name, "changed": changed},
+        )
+        label_text = whitelist_account_label(account_id, row)
+        if changed:
+            text = (
+                f"已将账号 {label_text} 加入 Guard 无尽模式。\n"
+                "后续会按无尽模式策略处理该账号。"
+            )
+        else:
+            text = f"账号 {label_text} 已在 Guard 无尽模式。"
+        return text, endless_keyboard(policy.get("endless_account_ids") or [])
+
+    async def _endless_remove_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
+        policy, changed = await asyncio.to_thread(
+            GuardStore(self.settings.guard_state_path).remove_endless_account,
+            account_id,
+        )
+        write_audit(
+            self.settings.audit_path,
+            "telegram_endless_remove",
+            {"account_id": account_id, "actor": actor_name, "changed": changed},
+        )
+        if changed:
+            text = f"已将账号 #{account_id} 移出 Guard 无尽模式。"
+        else:
+            text = f"账号 #{account_id} 不在 Guard 无尽模式。"
+        list_text, keyboard = await self._endless_list_reply(policy)
+        return f"{text}\n\n{list_text}", keyboard
+
+    async def _endless_list_reply(self, policy: dict[str, Any] | None = None) -> tuple[str, dict[str, Any] | None]:
+        active_policy = policy or await asyncio.to_thread(GuardStore(self.settings.guard_state_path).policy_config)
+        account_ids = unique_ints(list(active_policy.get("endless_account_ids") or []))
+        if not account_ids:
+            return "当前 Guard 无尽模式为空。", None
+
+        rows = await asyncio.gather(
+            *[asyncio.to_thread(self._account_detail, account_id) for account_id in account_ids]
+        )
+        lines = ["Guard 无尽模式", *[whitelist_account_label(account_id, row) for account_id, row in zip(account_ids, rows)]]
+        return "\n".join(lines), endless_keyboard(account_ids)
 
     async def _pause_confirm_reply(self, account_id: int) -> tuple[str, dict[str, Any]]:
         row = await asyncio.to_thread(self._account_detail, account_id)
@@ -880,6 +959,7 @@ def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
             [
                 {"text": "查看详情", "callback_data": f"acct:{account_id}"},
                 {"text": "加白名单", "callback_data": f"wladd:{account_id}"},
+                {"text": "加无尽模式", "callback_data": f"endadd:{account_id}"},
             ],
         ]
     }
@@ -890,6 +970,14 @@ def whitelist_keyboard(account_ids: list[Any], limit: int = 20) -> dict[str, Any
     if not parsed:
         return None
     buttons = [[{"text": f"移除 #{account_id}", "callback_data": f"wlrm:{account_id}"}] for account_id in parsed[:limit]]
+    return {"inline_keyboard": buttons}
+
+
+def endless_keyboard(account_ids: list[Any], limit: int = 20) -> dict[str, Any] | None:
+    parsed = unique_ints(list(account_ids))
+    if not parsed:
+        return None
+    buttons = [[{"text": f"移出无尽 #{account_id}", "callback_data": f"endrm:{account_id}"}] for account_id in parsed[:limit]]
     return {"inline_keyboard": buttons}
 
 
@@ -984,6 +1072,9 @@ def account_alert(title: str, action: dict[str, Any], row: dict[str, Any] | None
         lines.append(f"异常内容：{truncate(str(action.get('last_message')), 1000)}")
     if action.get("reason"):
         lines.append(f"处理原因：{truncate(str(action.get('reason')), 800)}")
+    endless_plan = format_endless_recovery_plan(action.get("endless_recovery_plan"))
+    if endless_plan:
+        lines.append(f"无尽恢复计划：{endless_plan}")
     return "\n".join(lines)
 
 
@@ -1071,6 +1162,9 @@ def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
             action_label += f" {item.get('minutes')}m"
         if item.get("load_factor"):
             action_label += f" / load_factor={item.get('load_factor')}"
+        plan_label = format_endless_recovery_plan(item.get("endless_recovery_plan"))
+        if plan_label:
+            action_label += f" / 恢复计划：{plan_label}"
         lines.append(
             f"#{item.get('account_id')} {item.get('name') or '-'} · {action_label} · "
             f"{truncate(str(item.get('reason') or ''), 160)}"
@@ -1078,6 +1172,15 @@ def format_guard_actions(title: str, actions: list[dict[str, Any]]) -> str:
     if len(actions) > 10:
         lines.append(f"... 另有 {len(actions) - 10} 个动作")
     return "\n".join(lines)
+
+
+def format_endless_recovery_plan(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    if value.get("scheduled"):
+        return "1m 已创建"
+    error = truncate(str(value.get("error") or "unknown"), 160)
+    return f"1m 创建失败 {error}"
 
 
 def format_quota_line(

@@ -574,6 +574,45 @@ def scheduled_test_model_for_account(account_id: int) -> str:
     return str((row or {}).get("model_id") or "").strip()
 
 
+def ensure_endless_recovery_plan(account_id: int, actor: str, reason: str = "") -> dict[str, Any]:
+    capability = scheduled_test_capability()
+    if not capability.get("available"):
+        error = str(capability.get("message") or "scheduled test capability is not available")
+        result = {"success": False, "account_id": int(account_id), "error": error, "actor": actor}
+        write_audit(settings.audit_path, "guard_endless_recovery_plan_failed", result)
+        return result
+
+    interval = 1
+    payload = {
+        "account_id": int(account_id),
+        "model_id": scheduled_test_model_for_account(int(account_id)),
+        "cron_expression": schedule_cron(interval),
+        "enabled": True,
+        "max_results": 50,
+        "auto_recover": True,
+        "next_run_at": next_aligned_run(datetime.now(timezone.utc), interval),
+    }
+    try:
+        row = db.fetch_one(SCHEDULED_TEST_UPSERT_SQL, payload)
+    except Exception as exc:
+        result = {"success": False, "account_id": int(account_id), "error": str(exc), "actor": actor}
+        write_audit(settings.audit_path, "guard_endless_recovery_plan_failed", result)
+        return result
+
+    result = {
+        "success": True,
+        "account_id": int(account_id),
+        "plan_id": int((row or {}).get("id") or 0),
+        "cron_expression": payload["cron_expression"],
+        "interval_minutes": interval,
+        "auto_recover": True,
+        "actor": actor,
+        "reason": reason,
+    }
+    write_audit(settings.audit_path, "guard_endless_recovery_plan_save", result)
+    return result
+
+
 def execute_sub2api_account_test(
     account_id: int,
     model_id: str = "",
@@ -890,6 +929,7 @@ def guard_config(policy: GuardPolicy | None = None, *, include_recent_events: bo
     policy = policy or guard_policy_from_store()
     policy_payload = asdict(policy)
     policy_payload["whitelist_account_ids_text"] = ", ".join(str(item) for item in policy.whitelist_account_ids)
+    policy_payload["endless_account_ids_text"] = ", ".join(str(item) for item in policy.endless_account_ids)
     return {
         "enabled": settings.guard_enabled,
         "interval_seconds": settings.guard_interval_seconds,
@@ -919,6 +959,7 @@ def guard_policy_from_store() -> GuardPolicy:
         blocked_403_threshold=int_param(str(raw.get("blocked_403_threshold")), 1, 1, 20),
         balance_pause_threshold=int_param(str(raw.get("balance_pause_threshold")), 1, 1, 20),
         whitelist_account_ids=parse_int_csv(raw.get("whitelist_account_ids")),
+        endless_account_ids=parse_int_csv(raw.get("endless_account_ids")),
         whitelist_balance_pause_threshold=int_param(str(raw.get("whitelist_balance_pause_threshold")), 10, 1, 100),
     )
 
@@ -936,6 +977,11 @@ def guard_engine(store: GuardStore | None = None) -> GuardEngine:
         policy=guard_policy_from_store(),
         batch_size=settings.guard_event_batch_size,
         load_factor_supported=capability["load_factor"],
+        endless_recovery_scheduler=lambda action, _updated: ensure_endless_recovery_plan(
+            action.account_id,
+            "auto_guard",
+            action.reason,
+        ),
     )
 
 
@@ -949,8 +995,8 @@ def enrich_guard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def guard_whitelist_options(rows: list[dict[str, Any]], policy: GuardPolicy) -> list[dict[str, Any]]:
-    selected = set(policy.whitelist_account_ids)
+def guard_mode_options(rows: list[dict[str, Any]], selected_account_ids: tuple[int, ...]) -> list[dict[str, Any]]:
+    selected = set(normalize_account_ids(selected_account_ids))
     seen: set[int] = set()
     options: list[dict[str, Any]] = []
     for row in rows:
@@ -983,38 +1029,28 @@ def guard_whitelist_options(rows: list[dict[str, Any]], policy: GuardPolicy) -> 
     return options
 
 
+def guard_whitelist_options(rows: list[dict[str, Any]], policy: GuardPolicy) -> list[dict[str, Any]]:
+    return guard_mode_options(rows, policy.whitelist_account_ids)
+
+
 def guard_whitelist_account_options(accounts: list[dict[str, Any]], policy: GuardPolicy) -> list[dict[str, Any]]:
-    selected = set(policy.whitelist_account_ids)
-    seen: set[int] = set()
-    options: list[dict[str, Any]] = []
-    for row in accounts:
-        try:
-            account_id = int(row.get("id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if account_id <= 0 or account_id in seen:
-            continue
-        seen.add(account_id)
-        name = str(row.get("name") or f"Account {account_id}").strip()
-        meta_parts = [str(value).strip() for value in (row.get("type"), row.get("platform")) if str(value or "").strip()]
-        options.append(
-            {
-                "id": account_id,
-                "label": f"#{account_id} {name}",
-                "meta": " / ".join(meta_parts),
-                "checked": account_id in selected,
-            }
-        )
-    for account_id in sorted(selected - seen):
-        options.append(
-            {
-                "id": account_id,
-                "label": f"#{account_id} 当前列表未返回",
-                "meta": "已保存",
-                "checked": True,
-            }
-        )
-    return options
+    return guard_mode_options(accounts, policy.whitelist_account_ids)
+
+
+def guard_mode_account_options(accounts: list[dict[str, Any]], policy: GuardPolicy) -> dict[str, list[dict[str, Any]]]:
+    oauth_ids = {
+        int(row.get("id") or 0)
+        for row in accounts
+        if str(row.get("type") or "").strip().lower() == "oauth"
+    }
+    non_oauth_accounts = [
+        row for row in accounts if int(row.get("id") or 0) not in oauth_ids
+    ]
+    endless_account_ids = tuple(account_id for account_id in policy.endless_account_ids if account_id not in oauth_ids)
+    return {
+        "whitelist": guard_mode_options(accounts, policy.whitelist_account_ids),
+        "endless": guard_mode_options(non_oauth_accounts, endless_account_ids),
+    }
 
 
 def guard_section_cards(queue_query: str = "") -> list[dict[str, str]]:
@@ -2778,13 +2814,16 @@ def guard_view(
     msg: str = "",
 ) -> HTMLResponse:
     policy = guard_policy_from_store()
+    mode_options = guard_mode_account_options(load_guard_account_options(), policy)
     return render(
         request,
         "guard.html",
         {
             "active": "guard",
             "guard": guard_config(policy, include_recent_events=False),
-            "whitelist_options": guard_whitelist_account_options(load_guard_account_options(), policy),
+            "whitelist_options": mode_options["whitelist"],
+            "endless_options": mode_options["endless"],
+            "mode_options": mode_options,
             "guard_section_cards": guard_section_cards(guard_queue_section_query(request)),
             "msg": msg,
         },
@@ -2874,9 +2913,19 @@ def guard_policy_save(
     blocked_403_threshold: int = Form(1),
     balance_pause_threshold: int = Form(1),
     whitelist_account_ids: list[str] | None = Form(None),
+    endless_account_ids: list[str] | None = Form(None),
     whitelist_balance_pause_threshold: int = Form(10),
 ) -> Response:
-    parsed_whitelist = parse_int_csv(whitelist_account_ids)
+    parsed_whitelist = list(parse_int_csv(whitelist_account_ids))
+    parsed_endless = list(parse_int_csv(endless_account_ids))
+    current_oauth_ids = {
+        int(row.get("id") or 0)
+        for row in load_guard_account_options()
+        if str(row.get("type") or "").strip().lower() == "oauth"
+    }
+    parsed_endless = [account_id for account_id in parsed_endless if account_id not in current_oauth_ids]
+    endless_set = set(parsed_endless)
+    exclusive_whitelist = [account_id for account_id in parsed_whitelist if account_id not in endless_set]
     payload = {
         "hard_pause_enabled": form_truthy(hard_pause_enabled),
         "rate_limit_enabled": form_truthy(rate_limit_enabled),
@@ -2886,7 +2935,8 @@ def guard_policy_save(
         "circuit_timeout_seconds": int_param(str(circuit_timeout_seconds), 60, 5, 3600),
         "blocked_403_threshold": int_param(str(blocked_403_threshold), 1, 1, 20),
         "balance_pause_threshold": int_param(str(balance_pause_threshold), 1, 1, 20),
-        "whitelist_account_ids": list(parsed_whitelist),
+        "whitelist_account_ids": exclusive_whitelist,
+        "endless_account_ids": parsed_endless,
         "whitelist_balance_pause_threshold": int_param(str(whitelist_balance_pause_threshold), 10, 1, 100),
         "updated_by": user,
         "updated_at": datetime.now(timezone.utc).isoformat(),

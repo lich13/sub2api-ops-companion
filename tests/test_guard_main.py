@@ -16,6 +16,8 @@ os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db"
 
 from app import main as main_module
 from app import usage_query as usage_query_module
+from app.guard_engine import GuardEngine
+from app.guard_policy import GuardPolicy
 from app.guard_store import GuardStore
 from app.usage_query import DEFAULT_NEWAPI_TEMPLATE, DEFAULT_SUB2API_TEMPLATE, UsageQueryConfig, UsageQueryStore
 
@@ -249,6 +251,7 @@ class GuardMainTests(unittest.TestCase):
             {
                 "whitelist_account_ids": ["9", "10", "bad", "9"],
                 "whitelist_balance_pause_threshold": 12,
+                "endless_account_ids": ["12", "13", "bad", "12"],
             }
         )
 
@@ -256,20 +259,23 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(policy.whitelist_account_ids, (9, 10))
         self.assertEqual(policy.whitelist_balance_pause_threshold, 12)
+        self.assertEqual(policy.endless_account_ids, (12, 13))
 
-    def test_guard_policy_save_persists_whitelist_settings(self) -> None:
+    def test_guard_policy_save_persists_whitelist_and_endless_settings_exclusively(self) -> None:
         main_module.guard_policy_save(
             "tester",
             hard_pause_enabled="1",
             rate_limit_enabled="1",
             unstable_enabled="1",
-            whitelist_account_ids="9, 10, bad, 9",
+            whitelist_account_ids="9, 10, bad, 9, 12",
+            endless_account_ids=["12", "13", "13"],
             whitelist_balance_pause_threshold=11,
         )
 
         saved = GuardStore(main_module.settings.guard_state_path).policy_config()
 
         self.assertEqual(saved["whitelist_account_ids"], [9, 10])
+        self.assertEqual(saved["endless_account_ids"], [12, 13])
         self.assertEqual(saved["whitelist_balance_pause_threshold"], 11)
 
     def test_guard_policy_save_accepts_checkbox_whitelist_values(self) -> None:
@@ -279,12 +285,39 @@ class GuardMainTests(unittest.TestCase):
             rate_limit_enabled="1",
             unstable_enabled="1",
             whitelist_account_ids=["9", "10", "9"],
+            endless_account_ids=["10", "12"],
+            whitelist_balance_pause_threshold=10,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+
+        self.assertEqual(saved["whitelist_account_ids"], [9])
+        self.assertEqual(saved["endless_account_ids"], [10, 12])
+
+    def test_guard_policy_save_filters_oauth_accounts_from_endless_mode(self) -> None:
+        class AccountOptionDB(FakeCapabilityDB):
+            def fetch_all(self, _sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                return [
+                    {"id": 9, "name": "api", "type": "apikey", "platform": "openai"},
+                    {"id": 10, "name": "oauth", "type": "oauth", "platform": "openai"},
+                ]
+
+        main_module.db = AccountOptionDB()  # type: ignore[assignment]
+
+        main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_account_ids=["9", "10"],
+            endless_account_ids=["10"],
             whitelist_balance_pause_threshold=10,
         )
 
         saved = GuardStore(main_module.settings.guard_state_path).policy_config()
 
         self.assertEqual(saved["whitelist_account_ids"], [9, 10])
+        self.assertEqual(saved["endless_account_ids"], [])
 
     def test_guard_whitelist_options_preserve_selected_missing_accounts(self) -> None:
         options = main_module.guard_whitelist_options(
@@ -298,6 +331,23 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(options[0]["meta"], "api / openai")
         self.assertEqual(options[1]["label"], "#12 当前列表未返回")
         self.assertTrue(options[1]["checked"])
+
+    def test_guard_mode_options_mark_whitelist_and_endless_separately(self) -> None:
+        options = main_module.guard_mode_account_options(
+            [
+                {"id": 9, "name": "primary", "type": "apikey", "platform": "openai"},
+                {"id": 10, "name": "oauth", "type": "oauth", "platform": "openai"},
+            ],
+            main_module.GuardPolicy(whitelist_account_ids=(9,), endless_account_ids=(12,)),
+        )
+
+        self.assertEqual(options["whitelist"][0]["id"], 9)
+        self.assertTrue(options["whitelist"][0]["checked"])
+        self.assertFalse(options["endless"][0]["checked"])
+        self.assertEqual([item["id"] for item in options["whitelist"][:2]], [9, 10])
+        self.assertEqual([item["id"] for item in options["endless"]], [9, 12])
+        self.assertEqual(options["endless"][1]["label"], "#12 当前列表未返回")
+        self.assertTrue(options["endless"][1]["checked"])
 
     def test_telegram_error_alerts_skip_whitelisted_schedulable_accounts(self) -> None:
         policy = main_module.GuardPolicy(whitelist_account_ids=(9,))
@@ -356,6 +406,96 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual([item["account_id"] for item in actions], [10])
         self.assertEqual(capture_db.updated_account_ids, [10])
+
+    def test_ensure_endless_recovery_plan_upserts_one_minute_auto_recover_plan(self) -> None:
+        captured: dict[str, Any] = {}
+
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                captured["sql"] = sql
+                captured["params"] = params
+                return {"id": 77, "account_id": 9, "cron_expression": params["cron_expression"]}  # type: ignore[index]
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.scheduled_test_model_for_account = lambda _account_id: "gpt-existing"  # type: ignore[assignment]
+
+        result = main_module.ensure_endless_recovery_plan(9, "tester")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["plan_id"], 77)
+        self.assertIn("scheduled_test_plans", captured["sql"])
+        params = captured["params"]
+        assert params is not None
+        self.assertEqual(params["account_id"], 9)
+        self.assertEqual(params["model_id"], "gpt-existing")
+        self.assertEqual(params["cron_expression"], "* * * * *")
+        self.assertTrue(params["enabled"])
+        self.assertTrue(params["auto_recover"])
+        self.assertEqual(params["max_results"], 50)
+
+    def test_ensure_endless_recovery_plan_reports_missing_capability_without_db_upsert(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+                raise AssertionError("missing scheduled test capability must not upsert plan")
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": False, "message": "missing tables"}  # type: ignore[assignment]
+
+        result = main_module.ensure_endless_recovery_plan(9, "tester")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "missing tables")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("guard_endless_recovery_plan_failed", audit_text)
+        self.assertIn('"account_id": 9', audit_text)
+
+    def test_endless_guard_pause_triggers_recovery_plan_scheduler(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def __init__(self) -> None:
+                self.paused: list[int] = []
+
+            def fetch_all(self, _sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                if params and "cursor_created_at" in params:
+                    return []
+                return [
+                    {
+                        "error_log_id": 105,
+                        "attempt_no": 1,
+                        "account_id": 9,
+                        "account_name": "endless",
+                        "status_code": 429,
+                        "message": "rate limit",
+                        "created_at": datetime(2026, 5, 18, 10, 0, tzinfo=timezone.utc),
+                    }
+                ]
+
+        capture_db = CaptureDB()
+        store = GuardStore(main_module.settings.guard_state_path)
+        circuit = store.circuit(9)
+        circuit.consecutive_failures = 4
+        store.save_circuit(circuit)
+        scheduled: list[tuple[int, str]] = []
+
+        def fake_pause(_db: Any, account_id: int, _reason: str) -> dict[str, Any]:
+            capture_db.paused.append(account_id)
+            return {"id": account_id, "name": "endless", "schedulable": False}
+
+        main_module.account_ops.guard_pause_account = fake_pause  # type: ignore[assignment]
+        engine = GuardEngine(
+            capture_db,
+            store,
+            main_module.settings.audit_path,
+            GuardPolicy(endless_account_ids=(9,)),
+            endless_recovery_scheduler=lambda action, _updated: scheduled.append((action.account_id, action.reason)),
+        )
+
+        actions = engine.run_once("test")
+
+        self.assertEqual(capture_db.paused, [9])
+        self.assertEqual([item["account_id"] for item in actions], [9])
+        self.assertEqual(actions[0]["endless_recovery_plan"]["scheduled"], True)
+        self.assertEqual(scheduled, [(9, "auto guard endless mode: 5 consecutive errors; provider_rate_limit")])
 
     def test_usage_query_guard_pauses_depleted_non_oauth_account(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)

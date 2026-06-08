@@ -76,12 +76,16 @@ class GuardStore:
     def add_whitelist_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
         policy = dict(self.policy_config())
         current = set(normalize_account_ids(policy.get("whitelist_account_ids")))
+        endless = set(normalize_account_ids(policy.get("endless_account_ids")))
         before = set(current)
         current.add(int(account_id))
+        endless.discard(int(account_id))
         normalized = sorted(current)
-        needs_write = policy.get("whitelist_account_ids") != normalized
+        normalized_endless = sorted(endless)
+        needs_write = policy.get("whitelist_account_ids") != normalized or policy.get("endless_account_ids") != normalized_endless
         policy["whitelist_account_ids"] = normalized
-        changed = current != before
+        policy["endless_account_ids"] = normalized_endless
+        changed = current != before or int(account_id) in set(normalize_account_ids(self.policy_config().get("endless_account_ids")))
         if changed or needs_write:
             self.save_policy(policy)
         return policy, changed
@@ -96,5 +100,48 @@ class GuardStore:
         policy["whitelist_account_ids"] = normalized
         changed = current != before
         if changed or needs_write:
+            self.save_policy(policy)
+        return policy, changed
+
+    def add_endless_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
+        policy = dict(self.policy_config())
+        whitelist = set(normalize_account_ids(policy.get("whitelist_account_ids")))
+        current = set(normalize_account_ids(policy.get("endless_account_ids")))
+        before = set(current)
+        current.add(int(account_id))
+        whitelist.discard(int(account_id))
+        normalized = sorted(current)
+        normalized_whitelist = sorted(whitelist)
+        needs_write = policy.get("endless_account_ids") != normalized or policy.get("whitelist_account_ids") != normalized_whitelist
+        policy["whitelist_account_ids"] = normalized_whitelist
+        policy["endless_account_ids"] = normalized
+        changed = current != before or int(account_id) in set(normalize_account_ids(self.policy_config().get("whitelist_account_ids")))
+        if changed or needs_write:
+            self.save_policy(policy)
+        return policy, changed
+
+    def remove_endless_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
+        policy = dict(self.policy_config())
+        current = set(normalize_account_ids(policy.get("endless_account_ids")))
+        before = set(current)
+        current.discard(int(account_id))
+        normalized = sorted(current)
+        needs_write = policy.get("endless_account_ids") != normalized
+        policy["endless_account_ids"] = normalized
+        if "whitelist_account_ids" in policy:
+            policy["whitelist_account_ids"] = sorted(normalize_account_ids(policy.get("whitelist_account_ids")))
+        changed = current != before
+        if changed or needs_write:
+            self.save_policy(policy)
+        return policy, changed
+
+    def clear_whitelist_accounts(self) -> tuple[dict[str, Any], bool]:
+        policy = dict(self.policy_config())
+        current = normalize_account_ids(policy.get("whitelist_account_ids"))
+        policy["whitelist_account_ids"] = []
+        if "endless_account_ids" in policy:
+            policy["endless_account_ids"] = sorted(normalize_account_ids(policy.get("endless_account_ids")))
+        changed = bool(current)
+        if changed or self.policy_config().get("whitelist_account_ids") != []:
             self.save_policy(policy)
         return policy, changed
