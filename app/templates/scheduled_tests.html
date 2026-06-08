@@ -61,6 +61,11 @@
         <strong>每5分钟</strong>
         <em>整点 5 分钟栅格</em>
       </div>
+      <div class="cadence-card">
+        <span>1 min</span>
+        <strong>每1分钟</strong>
+        <em>最短自动恢复周期</em>
+      </div>
     </div>
   </section>
 
@@ -190,8 +195,10 @@
                           <span class="schedule-option-sub">00 / 30</span>
                         {% elif option.minutes == 15 %}
                           <span class="schedule-option-sub">00 / 15 / 30 / 45</span>
-                        {% else %}
+                        {% elif option.minutes == 5 %}
                           <span class="schedule-option-sub">每 5 分钟</span>
+                        {% else %}
+                          <span class="schedule-option-sub">每 1 分钟</span>
                         {% endif %}
                       </label>
                     {% endfor %}

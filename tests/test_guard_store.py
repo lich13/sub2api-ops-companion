@@ -72,6 +72,56 @@ class GuardStoreTests(unittest.TestCase):
             self.assertEqual(policy["failure_threshold"], 8)
             self.assertEqual(policy["whitelist_account_ids"], [7])
 
+    def test_whitelist_and_endless_helpers_are_mutually_exclusive(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "guard-state.json"
+            store = GuardStore(str(path))
+            store.save_policy(
+                {
+                    "failure_threshold": 8,
+                    "success_threshold": 3,
+                    "whitelist_account_ids": [9],
+                    "endless_account_ids": [7],
+                }
+            )
+
+            policy, changed = store.add_endless_account(9)
+            self.assertTrue(changed)
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["whitelist_account_ids"], [])
+            self.assertEqual(policy["endless_account_ids"], [7, 9])
+
+            policy, changed = GuardStore(str(path)).add_whitelist_account(7)
+            self.assertTrue(changed)
+            self.assertEqual(policy["whitelist_account_ids"], [7])
+            self.assertEqual(policy["endless_account_ids"], [9])
+
+            policy, changed = GuardStore(str(path)).remove_endless_account(9)
+            self.assertTrue(changed)
+            self.assertEqual(policy["whitelist_account_ids"], [7])
+            self.assertEqual(policy["endless_account_ids"], [])
+
+    def test_clear_whitelist_preserves_other_policy_fields_and_endless_accounts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "guard-state.json"
+            store = GuardStore(str(path))
+            store.save_policy(
+                {
+                    "failure_threshold": 8,
+                    "success_threshold": 3,
+                    "whitelist_account_ids": [9],
+                    "endless_account_ids": [7],
+                }
+            )
+
+            policy, changed = store.clear_whitelist_accounts()
+
+            self.assertTrue(changed)
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["success_threshold"], 3)
+            self.assertEqual(policy["whitelist_account_ids"], [])
+            self.assertEqual(policy["endless_account_ids"], [7])
+
 
 if __name__ == "__main__":
     unittest.main()

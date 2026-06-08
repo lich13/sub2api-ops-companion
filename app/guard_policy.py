@@ -54,10 +54,12 @@ class GuardPolicy:
     blocked_403_threshold: int = 1
     balance_pause_threshold: int = 1
     whitelist_account_ids: tuple[int, ...] = ()
+    endless_account_ids: tuple[int, ...] = ()
     whitelist_balance_pause_threshold: int = 10
 
     def __post_init__(self) -> None:
         self.whitelist_account_ids = normalize_account_ids(self.whitelist_account_ids)
+        self.endless_account_ids = normalize_account_ids(self.endless_account_ids)
         self.whitelist_balance_pause_threshold = _positive_int(self.whitelist_balance_pause_threshold, 10)
 
 
@@ -131,6 +133,14 @@ def is_whitelisted_account(policy: GuardPolicy, account_id: object) -> bool:
     return parsed in set(policy.whitelist_account_ids)
 
 
+def is_endless_account(policy: GuardPolicy, account_id: object) -> bool:
+    try:
+        parsed = int(account_id or 0)
+    except (TypeError, ValueError):
+        return False
+    return parsed in set(policy.endless_account_ids)
+
+
 def apply_signal(
     policy: GuardPolicy,
     circuit: GuardCircuit,
@@ -164,6 +174,23 @@ def apply_signal(
         circuit.consecutive_balance_quota_failures += 1
     else:
         circuit.consecutive_balance_quota_failures = 0
+
+    endless = is_endless_account(policy, signal.account_id)
+    if endless:
+        if circuit.consecutive_failures < 5:
+            return _none(signal, "endless mode signal recorded below threshold"), _remember(circuit, signal)
+        circuit.state = "open"
+        circuit.opened_at = now.isoformat()
+        return (
+            GuardAction(
+                kind="pause",
+                account_id=signal.account_id,
+                hard=True,
+                event_id=signal.event_id,
+                reason=f"auto guard endless mode: 5 consecutive errors; {signal.category}",
+            ),
+            _remember(circuit, signal),
+        )
 
     whitelisted = is_whitelisted_account(policy, signal.account_id)
     if whitelisted and signal.category != "provider_balance_or_quota":

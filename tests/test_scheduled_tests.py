@@ -26,7 +26,7 @@ class ScheduledTestHelpersTests(unittest.TestCase):
     def test_interval_options_are_fixed_whole_hour_presets(self) -> None:
         self.assertEqual(
             [(item["minutes"], item["label"]) for item in interval_options()],
-            [(60, "每小时"), (30, "每30分钟"), (15, "每15分钟"), (5, "每5分钟")],
+            [(60, "每小时"), (30, "每30分钟"), (15, "每15分钟"), (5, "每5分钟"), (1, "每1分钟")],
         )
 
     def test_interval_to_cron_uses_whole_hour_aligned_expressions(self) -> None:
@@ -34,12 +34,14 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertEqual(schedule_cron(30), "*/30 * * * *")
         self.assertEqual(schedule_cron(15), "*/15 * * * *")
         self.assertEqual(schedule_cron(5), "*/5 * * * *")
+        self.assertEqual(schedule_cron(1), "* * * * *")
 
     def test_interval_from_cron_round_trips_known_presets(self) -> None:
         self.assertEqual(interval_from_cron("0 * * * *"), 60)
         self.assertEqual(interval_from_cron("*/30 * * * *"), 30)
         self.assertEqual(interval_from_cron("*/15 * * * *"), 15)
         self.assertEqual(interval_from_cron("*/5 * * * *"), 5)
+        self.assertEqual(interval_from_cron("* * * * *"), 1)
         self.assertEqual(interval_from_cron("13 * * * *"), 30)
 
     def test_next_run_is_strictly_after_now_and_aligned_to_hour_grid(self) -> None:
@@ -48,6 +50,7 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertEqual(next_aligned_run(now, 30), datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc))
         self.assertEqual(next_aligned_run(now, 15), datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc))
         self.assertEqual(next_aligned_run(now, 5), datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc))
+        self.assertEqual(next_aligned_run(now, 1), datetime(2026, 5, 14, 10, 30, tzinfo=timezone.utc))
         self.assertEqual(next_aligned_run(now, 60), datetime(2026, 5, 14, 11, 0, tzinfo=timezone.utc))
 
     def test_next_run_rolls_to_next_slot_when_exactly_on_boundary(self) -> None:
@@ -55,9 +58,11 @@ class ScheduledTestHelpersTests(unittest.TestCase):
 
         self.assertEqual(next_aligned_run(now, 30), datetime(2026, 5, 14, 11, 0, tzinfo=timezone.utc))
         self.assertEqual(next_aligned_run(now, 15), datetime(2026, 5, 14, 10, 45, tzinfo=timezone.utc))
+        self.assertEqual(next_aligned_run(now, 1), datetime(2026, 5, 14, 10, 31, tzinfo=timezone.utc))
 
     def test_invalid_interval_defaults_to_30_minutes(self) -> None:
         self.assertEqual(normalize_interval_minutes("5"), 5)
+        self.assertEqual(normalize_interval_minutes("1"), 1)
         self.assertEqual(normalize_interval_minutes("60"), 60)
         self.assertEqual(normalize_interval_minutes("7"), 30)
         self.assertEqual(normalize_interval_minutes("bad"), 30)
@@ -94,6 +99,7 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertIn("每30分钟", page)
         self.assertIn("每15分钟", page)
         self.assertIn("每5分钟", page)
+        self.assertIn("每1分钟", page)
         self.assertIn('name="auto_recover"', page)
         self.assertIn("恢复成功会推送 Telegram", page)
         self.assertIn("scheduled-command-deck", page)

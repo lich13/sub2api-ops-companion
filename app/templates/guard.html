@@ -28,6 +28,10 @@
     <span>信号窗口</span>
     <strong>{{ guard.quality_hours }}h</strong>
   </div>
+  <div class="metric-card {{ 'warning' if guard.policy.endless_account_ids | length > 0 else '' }}">
+    <span>无尽模式</span>
+    <strong>{{ guard.policy.endless_account_ids | length }}</strong>
+  </div>
   <div class="metric-card {{ 'danger' if guard.state.last_error else '' }}">
     <span>上次错误</span>
     <strong>{{ '有' if guard.state.last_error else '无' }}</strong>
@@ -72,52 +76,111 @@
     <label>额度阈值
       <input type="number" name="balance_pause_threshold" min="1" max="20" value="{{ guard.policy.balance_pause_threshold }}" />
     </label>
-    <div class="group-picker-field guard-whitelist-field">
-      <span>白名单账号</span>
-      <details
-        class="group-picker guard-whitelist-picker"
-        data-group-picker
-        data-allow-empty="1"
-        data-empty-label="未设置白名单"
-        data-all-label="全部账号"
-        data-count-suffix="个账号"
-      >
-        <summary>
-          <strong data-group-picker-label>
-            {% if guard.policy.whitelist_account_ids | length == 0 %}
-              未设置白名单
-            {% elif guard.policy.whitelist_account_ids | length == 1 %}
-              1 个账号
-            {% else %}
-              {{ guard.policy.whitelist_account_ids | length }} 个账号
-            {% endif %}
-          </strong>
-        </summary>
-        <div class="group-picker-menu">
-          <div class="group-picker-actions">
-            <button type="button" data-group-picker-clear>清空</button>
-            <button type="button" data-group-picker-all>全选</button>
-          </div>
-          <div class="group-picker-list guard-whitelist-list">
-            {% for item in whitelist_options %}
-              <label>
-                <input
-                  type="checkbox"
-                  name="whitelist_account_ids"
-                  value="{{ item.id }}"
-                  data-group-picker-option
-                  {{ 'checked' if item.checked else '' }}
-                />
-                <span>{{ item.label }}</span>
-                <em>{{ item.meta or '-' }}</em>
-              </label>
-            {% else %}
-              <div class="group-picker-empty">当前没有可选择账号</div>
-            {% endfor %}
-          </div>
+    <div class="guard-mode-grid">
+      <div class="guard-mode-card">
+        <div class="guard-mode-card-head">
+          <span>白名单账号</span>
+          <strong>{{ guard.policy.whitelist_account_ids | length }} 个</strong>
         </div>
-      </details>
-      <small>勾选后，非额度错误只记录；连续额度错误达到阈值才硬停。</small>
+        <div class="group-picker-field guard-mode-field guard-whitelist-field">
+          <details
+            class="group-picker guard-mode-picker guard-whitelist-picker"
+            data-group-picker
+            data-allow-empty="1"
+            data-empty-label="未设置白名单"
+            data-all-label="全部账号"
+            data-count-suffix="个账号"
+          >
+            <summary>
+              <strong data-group-picker-label>
+                {% if guard.policy.whitelist_account_ids | length == 0 %}
+                  未设置白名单
+                {% elif guard.policy.whitelist_account_ids | length == 1 %}
+                  1 个账号
+                {% else %}
+                  {{ guard.policy.whitelist_account_ids | length }} 个账号
+                {% endif %}
+              </strong>
+            </summary>
+            <div class="group-picker-menu">
+              <div class="group-picker-actions">
+                <button type="button" data-group-picker-clear>清空</button>
+                <button type="button" data-group-picker-all>全选</button>
+              </div>
+              <div class="group-picker-list guard-mode-list guard-whitelist-list">
+                {% for item in whitelist_options %}
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="whitelist_account_ids"
+                      value="{{ item.id }}"
+                      data-group-picker-option
+                      {{ 'checked' if item.checked else '' }}
+                    />
+                    <span>{{ item.label }}</span>
+                    <em>{{ item.meta or '-' }}</em>
+                  </label>
+                {% else %}
+                  <div class="group-picker-empty">当前没有可选择账号</div>
+                {% endfor %}
+              </div>
+            </div>
+          </details>
+        </div>
+        <p>非额度错误只记录；连续额度错误达到白名单阈值才硬停。与无尽模式互斥。</p>
+      </div>
+      <div class="guard-mode-card accent">
+        <div class="guard-mode-card-head">
+          <span>无尽模式账号</span>
+          <strong>{{ guard.policy.endless_account_ids | length }} 个</strong>
+        </div>
+        <div class="group-picker-field guard-mode-field guard-endless-field">
+          <details
+            class="group-picker guard-mode-picker guard-endless-picker"
+            data-group-picker
+            data-allow-empty="1"
+            data-empty-label="未设置无尽模式"
+            data-all-label="全部账号"
+            data-count-suffix="个账号"
+          >
+            <summary>
+              <strong data-group-picker-label>
+                {% if guard.policy.endless_account_ids | length == 0 %}
+                  未设置无尽模式
+                {% elif guard.policy.endless_account_ids | length == 1 %}
+                  1 个账号
+                {% else %}
+                  {{ guard.policy.endless_account_ids | length }} 个账号
+                {% endif %}
+              </strong>
+            </summary>
+            <div class="group-picker-menu">
+              <div class="group-picker-actions">
+                <button type="button" data-group-picker-clear>清空</button>
+                <button type="button" data-group-picker-all>全选</button>
+              </div>
+              <div class="group-picker-list guard-mode-list guard-endless-list">
+                {% for item in endless_options %}
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="endless_account_ids"
+                      value="{{ item.id }}"
+                      data-group-picker-option
+                      {{ 'checked' if item.checked else '' }}
+                    />
+                    <span>{{ item.label }}</span>
+                    <em>{{ item.meta or '-' }}</em>
+                  </label>
+                {% else %}
+                  <div class="group-picker-empty">当前没有可选择账号</div>
+                {% endfor %}
+              </div>
+            </div>
+          </details>
+        </div>
+        <p>连续 5 次错误后停用，并创建 1 分钟自动恢复计划；测试通过后按现有恢复链路恢复。</p>
+      </div>
     </div>
     <label>白名单额度阈值
       <input type="number" name="whitelist_balance_pause_threshold" min="1" max="100" value="{{ guard.policy.whitelist_balance_pause_threshold }}" />
@@ -129,7 +192,7 @@
     <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
     <div><dt>页面信号窗口</dt><dd>近 {{ guard.quality_hours }} 小时</dd></div>
     <div><dt>额度扫尾窗口</dt><dd>{{ guard.balance_max_age_hours }} 小时</dd></div>
-    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却；白名单账号只在连续额度错误达到阈值时硬停</dd></div>
+    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却；白名单宽限，无尽模式 5 错停用 + 1 分钟恢复计划</dd></div>
   </dl>
 </section>
 
@@ -165,6 +228,6 @@
 
 <section class="panel compact-panel">
   <h3>判定边界</h3>
-  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。白名单账号的 403、429、5xx、流式错误只记录信号，不会自动暂停或冷却；额度/余额错误必须连续达到白名单阈值才会硬停。</p>
+  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。白名单账号的 403、429、5xx、流式错误只记录信号，不会自动暂停或冷却；额度/余额错误必须连续达到白名单阈值才会硬停。无尽模式只适用于非 OAuth 账号，连续 5 次错误后直接停用，并创建 1 分钟自动恢复计划。</p>
 </section>
 {% endblock %}

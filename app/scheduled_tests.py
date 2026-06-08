@@ -8,6 +8,7 @@ SCHEDULE_INTERVALS: tuple[dict[str, Any], ...] = (
     {"minutes": 30, "label": "每30分钟", "cron": "*/30 * * * *"},
     {"minutes": 15, "label": "每15分钟", "cron": "*/15 * * * *"},
     {"minutes": 5, "label": "每5分钟", "cron": "*/5 * * * *"},
+    {"minutes": 1, "label": "每1分钟", "cron": "* * * * *"},
 )
 DEFAULT_INTERVAL_MINUTES = 30
 
