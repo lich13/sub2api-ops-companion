@@ -945,6 +945,28 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('"changed": true', audit_text)
             self.assertIn('"changed": false', audit_text)
 
+    async def test_whitelist_callback_deletes_endless_recovery_plan_when_mutually_removing_endless(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            GuardStore(str(guard_path)).save_policy({"whitelist_account_ids": [], "endless_account_ids": [7]})
+            deleted: list[tuple[int, str, str]] = []
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+                endless_recovery_plan_deleter=lambda account_id, actor, reason: deleted.append((account_id, actor, reason))
+                or {"success": True, "deleted": True},
+            )
+
+            reply, _keyboard = await bot._callback_reply(100, 200, "wladd:7")
+
+            self.assertIn("恢复计划已删除", reply)
+            self.assertEqual(deleted, [(7, "telegram:control:chat=100:user=200", "telegram_whitelist_add")])
+
     async def test_whitelist_command_lists_and_removes_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"
@@ -1097,6 +1119,30 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(GuardStore(str(guard_path)).policy_config()["endless_account_ids"], [9])
             self.assertIn("endrm:9", json.dumps(remove_keyboard, ensure_ascii=False))
             self.assertIn("账号 #7 不在 Guard 无尽模式", duplicate_reply)
+
+    async def test_endless_command_remove_deletes_recovery_plan_only_when_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "endless_account_ids": [7]})
+            deleted: list[tuple[int, str, str]] = []
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+                endless_recovery_plan_deleter=lambda account_id, actor, reason: deleted.append((account_id, actor, reason))
+                or {"success": True, "deleted": True},
+            )
+
+            remove_reply, _keyboard = await bot._text_reply(100, 200, "/endless rm #7")
+            duplicate_reply, _duplicate_keyboard = await bot._text_reply(100, 200, "/endless rm #7")
+
+            self.assertIn("恢复计划已删除", remove_reply)
+            self.assertIn("账号 #7 不在 Guard 无尽模式", duplicate_reply)
+            self.assertEqual(deleted, [(7, "telegram:control:chat=100:user=200", "telegram_endless_remove")])
 
     async def test_endless_remove_callback_removes_account(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

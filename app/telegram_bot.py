@@ -35,6 +35,7 @@ PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然�
 GuardRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
 GuardConfig = Callable[[], dict[str, Any]]
 AsyncUsageOpener = Callable[[dict[str, Any], int], Awaitable[Any]]
+EndlessRecoveryPlanDeleter = Callable[[int, str, str], dict[str, Any]]
 
 
 def usage_query_configured(config: UsageQueryConfig) -> bool:
@@ -49,12 +50,14 @@ class TelegramOpsBot:
         guard_runner: GuardRunner,
         guard_config: GuardConfig,
         usage_query_opener: AsyncUsageOpener | UsageOpener | None = None,
+        endless_recovery_plan_deleter: EndlessRecoveryPlanDeleter | None = None,
     ) -> None:
         self.settings = settings
         self.db = db
         self.guard_runner = guard_runner
         self.guard_config = guard_config
         self.usage_query_opener = usage_query_opener
+        self.endless_recovery_plan_deleter = endless_recovery_plan_deleter
         self._state_lock = asyncio.Lock()
 
     async def run(self) -> None:
@@ -507,12 +510,19 @@ class TelegramOpsBot:
         return await self._whitelist_list_reply()
 
     async def _whitelist_add_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
+        before_policy = await asyncio.to_thread(GuardStore(self.settings.guard_state_path).policy_config)
+        was_endless = account_id in unique_ints(list(before_policy.get("endless_account_ids") or []))
         policy, changed = await asyncio.to_thread(GuardStore(self.settings.guard_state_path).add_whitelist_account, account_id)
+        cleanup = (
+            await self._delete_endless_recovery_plan(account_id, actor_name, "telegram_whitelist_add")
+            if was_endless
+            else None
+        )
         row = await asyncio.to_thread(self._account_detail, account_id)
         write_audit(
             self.settings.audit_path,
             "telegram_whitelist_add",
-            {"account_id": account_id, "actor": actor_name, "changed": changed},
+            {"account_id": account_id, "actor": actor_name, "changed": changed, "endless_cleanup": cleanup},
         )
         label_text = whitelist_account_label(account_id, row)
         if changed:
@@ -522,6 +532,9 @@ class TelegramOpsBot:
             )
         else:
             text = f"账号 {label_text} 已在 Guard 白名单。"
+        cleanup_text = format_endless_recovery_plan_cleanup(cleanup)
+        if cleanup_text:
+            text = f"{text}\n{cleanup_text}"
         return text, whitelist_keyboard(policy.get("whitelist_account_ids") or [])
 
     async def _whitelist_remove_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
@@ -598,17 +611,40 @@ class TelegramOpsBot:
             GuardStore(self.settings.guard_state_path).remove_endless_account,
             account_id,
         )
+        cleanup = (
+            await self._delete_endless_recovery_plan(account_id, actor_name, "telegram_endless_remove")
+            if changed
+            else None
+        )
         write_audit(
             self.settings.audit_path,
             "telegram_endless_remove",
-            {"account_id": account_id, "actor": actor_name, "changed": changed},
+            {"account_id": account_id, "actor": actor_name, "changed": changed, "endless_cleanup": cleanup},
         )
         if changed:
             text = f"已将账号 #{account_id} 移出 Guard 无尽模式。"
         else:
             text = f"账号 #{account_id} 不在 Guard 无尽模式。"
+        cleanup_text = format_endless_recovery_plan_cleanup(cleanup)
+        if cleanup_text:
+            text = f"{text}\n{cleanup_text}"
         list_text, keyboard = await self._endless_list_reply(policy)
         return f"{text}\n\n{list_text}", keyboard
+
+    async def _delete_endless_recovery_plan(
+        self,
+        account_id: int,
+        actor_name: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if self.endless_recovery_plan_deleter is None:
+            return {
+                "success": False,
+                "deleted": False,
+                "account_id": account_id,
+                "error": "endless recovery plan deleter is not configured",
+            }
+        return await asyncio.to_thread(self.endless_recovery_plan_deleter, account_id, actor_name, reason)
 
     async def _endless_list_reply(self, policy: dict[str, Any] | None = None) -> tuple[str, dict[str, Any] | None]:
         active_policy = policy or await asyncio.to_thread(GuardStore(self.settings.guard_state_path).policy_config)
@@ -1181,6 +1217,17 @@ def format_endless_recovery_plan(value: Any) -> str:
         return "1m 已创建"
     error = truncate(str(value.get("error") or "unknown"), 160)
     return f"1m 创建失败 {error}"
+
+
+def format_endless_recovery_plan_cleanup(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    if value.get("success") and value.get("deleted"):
+        return "无尽恢复计划：1m 恢复计划已删除。"
+    if value.get("success"):
+        return "无尽恢复计划：未找到需要删除的 1m 恢复计划。"
+    error = truncate(str(value.get("error") or "unknown"), 160)
+    return f"无尽恢复计划：删除失败 {error}"
 
 
 def format_quota_line(

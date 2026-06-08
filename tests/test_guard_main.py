@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import inspect
 import tempfile
@@ -51,6 +52,9 @@ class GuardMainTests(unittest.TestCase):
         self.original_usage_query_oauth_account_rows = getattr(main_module, "usage_query_oauth_account_rows", None)
         self.original_scheduled_test_model_for_account = getattr(
             main_module, "scheduled_test_model_for_account", None
+        )
+        self.original_delete_endless_recovery_plan = getattr(
+            main_module, "delete_endless_recovery_plan", None
         )
         self.original_pause_account_op = main_module.account_ops.pause_account
         self.original_resume_account_op = main_module.account_ops.resume_account
@@ -106,6 +110,10 @@ class GuardMainTests(unittest.TestCase):
             main_module.scheduled_test_model_for_account = self.original_scheduled_test_model_for_account  # type: ignore[assignment]
         elif hasattr(main_module, "scheduled_test_model_for_account"):
             delattr(main_module, "scheduled_test_model_for_account")
+        if self.original_delete_endless_recovery_plan is not None:
+            main_module.delete_endless_recovery_plan = self.original_delete_endless_recovery_plan  # type: ignore[assignment]
+        elif hasattr(main_module, "delete_endless_recovery_plan"):
+            delattr(main_module, "delete_endless_recovery_plan")
         main_module.account_ops.pause_account = self.original_pause_account_op
         main_module.account_ops.resume_account = self.original_resume_account_op
         main_module.account_ops.guard_pause_account = self.original_guard_pause_account
@@ -294,6 +302,35 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(saved["whitelist_account_ids"], [9])
         self.assertEqual(saved["endless_account_ids"], [10, 12])
 
+    def test_guard_policy_save_deletes_recovery_plans_for_removed_endless_accounts(self) -> None:
+        GuardStore(main_module.settings.guard_state_path).save_policy(
+            {"whitelist_account_ids": [], "endless_account_ids": [7, 9]}
+        )
+        cleaned: list[tuple[int, str, str]] = []
+
+        def fake_delete(account_id: int, actor: str, reason: str = "") -> dict[str, Any]:
+            cleaned.append((account_id, actor, reason))
+            return {"success": True, "deleted": True, "account_id": account_id}
+
+        main_module.delete_endless_recovery_plan = fake_delete  # type: ignore[assignment]
+
+        response = main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_account_ids=["9"],
+            endless_account_ids=["7"],
+            whitelist_balance_pause_threshold=10,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+
+        self.assertEqual(saved["whitelist_account_ids"], [9])
+        self.assertEqual(saved["endless_account_ids"], [7])
+        self.assertEqual(cleaned, [(9, "tester", "guard_policy_update")])
+        self.assertIn("%E5%B7%B2%E6%B8%85%E7%90%86%201%20%E4%B8%AA%E6%97%A0%E5%B0%BD%E6%81%A2%E5%A4%8D%E8%AE%A1%E5%88%92", response.headers["location"])
+
     def test_guard_policy_save_filters_oauth_accounts_from_endless_mode(self) -> None:
         class AccountOptionDB(FakeCapabilityDB):
             def fetch_all(self, _sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -433,6 +470,57 @@ class GuardMainTests(unittest.TestCase):
         self.assertTrue(params["enabled"])
         self.assertTrue(params["auto_recover"])
         self.assertEqual(params["max_results"], 50)
+        state = json.loads(Path(main_module.settings.guard_state_path).read_text(encoding="utf-8"))
+        self.assertEqual(state["endless_recovery_plans"]["9"]["plan_id"], 77)
+
+    def test_delete_endless_recovery_plan_deletes_recorded_one_minute_auto_recover_plan(self) -> None:
+        captured: dict[str, Any] = {}
+
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                captured["sql"] = sql
+                captured["params"] = params
+                return {"id": 77, "account_id": 9}
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        state_path = Path(main_module.settings.guard_state_path)
+        state_path.write_text(
+            json.dumps({"policy": {}, "endless_recovery_plans": {"9": {"plan_id": 77}}}),
+            encoding="utf-8",
+        )
+
+        result = main_module.delete_endless_recovery_plan(9, "tester", "unit_test")
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["deleted"])
+        self.assertEqual(result["plan_id"], 77)
+        self.assertIn("scheduled_test_plans", captured["sql"])
+        self.assertIn("* * * * *", captured["sql"])
+        self.assertIn("auto_recover = true", captured["sql"])
+        params = captured["params"]
+        assert params is not None
+        self.assertEqual(params["account_id"], 9)
+        self.assertEqual(params["plan_id"], 77)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("9", state.get("endless_recovery_plans") or {})
+
+    def test_delete_endless_recovery_plan_reports_missing_capability_without_db_delete(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+                raise AssertionError("missing scheduled test capability must not delete plan")
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": False, "message": "missing tables"}  # type: ignore[assignment]
+
+        result = main_module.delete_endless_recovery_plan(9, "tester", "unit_test")
+
+        self.assertFalse(result["success"])
+        self.assertFalse(result["deleted"])
+        self.assertEqual(result["error"], "missing tables")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("guard_endless_recovery_plan_delete_failed", audit_text)
+        self.assertIn('"account_id": 9', audit_text)
 
     def test_ensure_endless_recovery_plan_reports_missing_capability_without_db_upsert(self) -> None:
         class CaptureDB(FakeCapabilityDB):

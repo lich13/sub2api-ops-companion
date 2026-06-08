@@ -24,6 +24,7 @@ class GuardStore:
         data.setdefault("cursors", {})
         data.setdefault("circuits", {})
         data.setdefault("policy", {})
+        data.setdefault("endless_recovery_plans", {})
         return data
 
     def _write(self) -> None:
@@ -72,6 +73,21 @@ class GuardStore:
     def save_policy(self, policy: dict[str, Any]) -> None:
         self._data["policy"] = dict(policy)
         self._write()
+
+    def endless_recovery_plan(self, account_id: int) -> dict[str, Any]:
+        raw = (self._data.get("endless_recovery_plans") or {}).get(str(int(account_id))) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def save_endless_recovery_plan(self, account_id: int, plan: dict[str, Any]) -> None:
+        self._data.setdefault("endless_recovery_plans", {})[str(int(account_id))] = dict(plan)
+        self._write()
+
+    def clear_endless_recovery_plan(self, account_id: int) -> dict[str, Any]:
+        plans = self._data.setdefault("endless_recovery_plans", {})
+        existing = plans.pop(str(int(account_id)), None)
+        if existing is not None:
+            self._write()
+        return existing if isinstance(existing, dict) else {}
 
     def add_whitelist_account(self, account_id: int) -> tuple[dict[str, Any], bool]:
         policy = dict(self.policy_config())
