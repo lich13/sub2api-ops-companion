@@ -31,6 +31,7 @@ sys.modules.setdefault("psycopg_pool", psycopg_pool)
 from app.settings import Settings
 from app.telegram_bot import (
     TelegramOpsBot,
+    account_alert,
     account_actions_keyboard,
     error_chain_alert,
     format_oauth_quota_line,
@@ -909,8 +910,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(calls[0][0], "setMyCommands")
             self.assertIn({"command": "quota", "description": "查询账号额度"}, calls[0][1]["commands"])
             self.assertIn({"command": "whitelist", "description": "查询 Guard 白名单"}, calls[0][1]["commands"])
+            self.assertIn({"command": "endless", "description": "查询 Guard 无尽模式"}, calls[0][1]["commands"])
 
-    async def test_whitelist_callback_adds_account_idempotently(self) -> None:
+    async def test_whitelist_callback_adds_account_idempotently_and_removes_endless_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"
             guard_path = Path(tmpdir) / "guard-state.json"
@@ -918,7 +920,9 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             settings = make_settings(str(state_path))
             settings.guard_state_path = str(guard_path)
             settings.audit_path = str(audit_path)
-            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "whitelist_account_ids": [9]})
+            GuardStore(str(guard_path)).save_policy(
+                {"failure_threshold": 8, "whitelist_account_ids": [9], "endless_account_ids": [7, 12]}
+            )
             bot = TelegramOpsBot(
                 settings,
                 WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
@@ -932,6 +936,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             policy = GuardStore(str(guard_path)).policy_config()
             self.assertEqual(policy["failure_threshold"], 8)
             self.assertEqual(policy["whitelist_account_ids"], [7, 9])
+            self.assertEqual(policy["endless_account_ids"], [12])
             self.assertIn("已将账号 #7 target 加入 Guard 白名单", reply)
             self.assertIn("已在 Guard 白名单", duplicate_reply)
             self.assertIn("wlrm:7", json.dumps(keyboard, ensure_ascii=False))
@@ -996,11 +1001,137 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("wlrm:7", json.dumps(keyboard, ensure_ascii=False))
             self.assertIn("wlrm:9", json.dumps(keyboard, ensure_ascii=False))
 
+    async def test_endless_callback_adds_account_idempotently_and_removes_whitelist_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            audit_path = Path(tmpdir) / "audit.jsonl"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            settings.audit_path = str(audit_path)
+            GuardStore(str(guard_path)).save_policy(
+                {"failure_threshold": 8, "whitelist_account_ids": [7, 9], "endless_account_ids": [12]}
+            )
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._callback_reply(100, 200, "endadd:7")
+            duplicate_reply, _duplicate_keyboard = await bot._callback_reply(100, 200, "endadd:#7")
+
+            policy = GuardStore(str(guard_path)).policy_config()
+            self.assertEqual(policy["failure_threshold"], 8)
+            self.assertEqual(policy["whitelist_account_ids"], [9])
+            self.assertEqual(policy["endless_account_ids"], [7, 12])
+            self.assertIn("已将账号 #7 target 加入 Guard 无尽模式", reply)
+            self.assertIn("已在 Guard 无尽模式", duplicate_reply)
+            self.assertIn("endrm:7", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("endrm:12", json.dumps(keyboard, ensure_ascii=False))
+            audit_text = audit_path.read_text(encoding="utf-8")
+            self.assertIn("telegram_endless_add", audit_text)
+            self.assertIn('"changed": true', audit_text)
+            self.assertIn('"changed": false', audit_text)
+
+    async def test_endless_callback_rejects_oauth_accounts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            audit_path = Path(tmpdir) / "audit.jsonl"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            settings.audit_path = str(audit_path)
+            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "endless_account_ids": [12]})
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "oauth-target", "type": "oauth", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._callback_reply(100, 200, "endadd:7")
+
+            policy = GuardStore(str(guard_path)).policy_config()
+            self.assertEqual(policy["endless_account_ids"], [12])
+            self.assertIn("OAuth 账号不支持 Guard 无尽模式", reply)
+            self.assertIn("endrm:12", json.dumps(keyboard, ensure_ascii=False))
+            audit_text = audit_path.read_text(encoding="utf-8")
+            self.assertIn("telegram_endless_add_rejected", audit_text)
+            self.assertIn('"reason": "oauth_account"', audit_text)
+
+    async def test_endless_command_lists_and_removes_accounts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            GuardStore(str(guard_path)).save_policy(
+                {
+                    "failure_threshold": 8,
+                    "success_threshold": 3,
+                    "endless_account_ids": [7, 9],
+                }
+            )
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 7, "name": "target", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._text_reply(100, 200, "/endless")
+            alias_reply, alias_keyboard = await bot._text_reply(100, 200, "查无尽")
+            remove_reply, remove_keyboard = await bot._text_reply(100, 200, "/endless rm #7")
+            duplicate_reply, _duplicate_keyboard = await bot._text_reply(100, 200, "/endless remove 7")
+
+            self.assertIn("Guard 无尽模式", reply)
+            self.assertIn("#7 target", reply)
+            self.assertIn("#9 当前账号不存在或已删除", reply)
+            self.assertIn("endrm:7", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("endrm:9", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("Guard 无尽模式", alias_reply)
+            self.assertIn("endrm:7", json.dumps(alias_keyboard, ensure_ascii=False))
+            self.assertIn("已将账号 #7 移出 Guard 无尽模式", remove_reply)
+            self.assertEqual(GuardStore(str(guard_path)).policy_config()["endless_account_ids"], [9])
+            self.assertIn("endrm:9", json.dumps(remove_keyboard, ensure_ascii=False))
+            self.assertIn("账号 #7 不在 Guard 无尽模式", duplicate_reply)
+
+    async def test_endless_remove_callback_removes_account(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            guard_path = Path(tmpdir) / "guard-state.json"
+            audit_path = Path(tmpdir) / "audit.jsonl"
+            settings = make_settings(str(state_path))
+            settings.guard_state_path = str(guard_path)
+            settings.audit_path = str(audit_path)
+            GuardStore(str(guard_path)).save_policy({"failure_threshold": 8, "endless_account_ids": [7, 9]})
+            bot = TelegramOpsBot(
+                settings,
+                WhitelistFakeDB([{"id": 9, "name": "remain", "schedulable": True}]),  # type: ignore[arg-type]
+                guard_runner,
+                guard_config,
+            )
+
+            reply, keyboard = await bot._callback_reply(100, 200, "endrm:7")
+
+            self.assertIn("已将账号 #7 移出 Guard 无尽模式", reply)
+            self.assertEqual(GuardStore(str(guard_path)).policy_config()["endless_account_ids"], [9])
+            self.assertNotIn("endrm:7", json.dumps(keyboard, ensure_ascii=False))
+            self.assertIn("endrm:9", json.dumps(keyboard, ensure_ascii=False))
+            audit_text = audit_path.read_text(encoding="utf-8")
+            self.assertIn("telegram_endless_remove", audit_text)
+            self.assertIn('"changed": true', audit_text)
+
     def test_account_action_keyboard_has_only_direct_account_actions(self) -> None:
         keyboard = account_actions_keyboard({"id": 7, "schedulable": True})
         callback_data = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
 
-        self.assertEqual(callback_data, ["pause:7", "cd:7:5", "cd:7:15", "cd:7:30", "acct:7", "wladd:7"])
+        self.assertEqual(
+            callback_data,
+            ["pause:7", "cd:7:5", "cd:7:15", "cd:7:30", "acct:7", "wladd:7", "endadd:7"],
+        )
         self.assertNotIn("menu", callback_data)
         self.assertNotIn("acctlist:all:0", callback_data)
 
@@ -1318,6 +1449,46 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cooldown 15m", text)
         self.assertIn("load_factor=1", text)
         self.assertIn("provider rate limit", text)
+
+    def test_guard_action_message_includes_endless_recovery_plan_result(self) -> None:
+        success_text = format_guard_actions(
+            "自动 Guard 已处理",
+            [
+                {
+                    "account_id": 9,
+                    "name": "endless",
+                    "action": "pause",
+                    "reason": "auto guard endless mode",
+                    "endless_recovery_plan": {"scheduled": True, "cron_expression": "* * * * *"},
+                }
+            ],
+        )
+        failed_text = format_guard_actions(
+            "自动 Guard 已处理",
+            [
+                {
+                    "account_id": 10,
+                    "name": "endless-failed",
+                    "action": "pause",
+                    "reason": "auto guard endless mode",
+                    "endless_recovery_plan": {"scheduled": False, "error": "missing scheduled_test_plans"},
+                }
+            ],
+        )
+        alert_text = account_alert(
+            "账号异常",
+            {
+                "account_id": 10,
+                "name": "endless-failed",
+                "action": "pause",
+                "endless_recovery_plan": {"scheduled": False, "error": "missing scheduled_test_plans"},
+            },
+            None,
+        )
+
+        self.assertIn("恢复计划：1m 已创建", success_text)
+        self.assertIn("恢复计划：1m 创建失败 missing scheduled_test_plans", failed_text)
+        self.assertIn("无尽恢复计划：1m 创建失败 missing scheduled_test_plans", alert_text)
 
 
 if __name__ == "__main__":

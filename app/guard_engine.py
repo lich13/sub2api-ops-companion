@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +26,7 @@ class GuardEngine:
         policy: GuardPolicy,
         batch_size: int = 100,
         load_factor_supported: bool = False,
+        endless_recovery_scheduler: Callable[[GuardAction, dict[str, Any]], dict[str, Any] | None] | None = None,
     ) -> None:
         self.db = db
         self.store = store
@@ -32,6 +34,7 @@ class GuardEngine:
         self.policy = policy
         self.batch_size = batch_size
         self.load_factor_supported = load_factor_supported
+        self.endless_recovery_scheduler = endless_recovery_scheduler
 
     def run_once(self, actor: str = "auto_guard") -> list[dict[str, Any]]:
         actions: list[dict[str, Any]] = []
@@ -82,6 +85,8 @@ class GuardEngine:
                 "updated": updated,
                 "actor": actor,
             }
+            if int(action.account_id) in set(self.policy.endless_account_ids):
+                result["endless_recovery_plan"] = self._schedule_endless_recovery(action, updated)
             write_audit(self.audit_path, "guard_auto_pause_account", result)
             return result
 
@@ -119,6 +124,17 @@ class GuardEngine:
             write_audit(self.audit_path, "guard_auto_cooldown_account", result)
             return result
         return None
+
+    def _schedule_endless_recovery(self, action: GuardAction, updated: dict[str, Any]) -> dict[str, Any]:
+        if self.endless_recovery_scheduler is None:
+            return {"scheduled": False, "error": "endless recovery scheduler is not configured"}
+        try:
+            result = self.endless_recovery_scheduler(action, updated)
+        except Exception as exc:
+            return {"scheduled": False, "error": str(exc)}
+        if isinstance(result, dict):
+            return {"scheduled": bool(result.get("success", True)), **result}
+        return {"scheduled": True}
 
     def record_successes(self) -> None:
         rows = self.db.fetch_all(

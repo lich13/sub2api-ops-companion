@@ -1304,21 +1304,64 @@ dd {
   min-height: 38px;
 }
 
-.guard-whitelist-field {
-  grid-column: span 2;
+.guard-mode-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
 
-.guard-whitelist-field small {
+.guard-mode-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.guard-mode-card.accent {
+  border-color: rgba(15, 118, 110, 0.24);
+  background: rgba(15, 118, 110, 0.035);
+}
+
+.guard-mode-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.guard-mode-card-head span {
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.35;
+  font-weight: 700;
 }
 
-.guard-whitelist-picker .group-picker-menu {
-  width: min(460px, calc(100vw - 40px));
+.guard-mode-card-head strong {
+  color: var(--text);
+  font-size: 12px;
 }
 
-.guard-whitelist-list label {
+.guard-mode-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.guard-mode-field {
+  min-width: 0;
+}
+
+.guard-mode-picker .group-picker-menu {
+  width: min(500px, calc(100vw - 40px));
+}
+
+.guard-mode-list label {
   grid-template-columns: 16px minmax(0, 1fr) minmax(76px, auto);
 }
 
@@ -3715,8 +3758,8 @@ pre {
     padding-left: 14px;
   }
 
-  .guard-whitelist-field {
-    grid-column: auto;
+  .guard-mode-grid {
+    grid-template-columns: 1fr;
   }
 
   .guard-queue-filter {

@@ -11,6 +11,61 @@ def now() -> datetime:
 
 
 class GuardPolicyTests(unittest.TestCase):
+    def test_endless_account_ids_default_to_empty(self) -> None:
+        self.assertEqual(GuardPolicy().endless_account_ids, ())
+
+    def test_endless_mode_pauses_after_five_consecutive_errors(self) -> None:
+        policy = GuardPolicy(endless_account_ids=(9,))
+        circuit = GuardCircuit(account_id=9)
+        action = None
+        for index in range(4):
+            action, circuit = apply_signal(
+                policy,
+                circuit,
+                GuardSignal(9, "provider_rate_limit", f"error:{101 + index}:1", now(), event_id=101 + index),
+                now(),
+            )
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.kind, "none")
+        self.assertEqual(circuit.state, "closed")
+        self.assertEqual(circuit.consecutive_failures, 4)
+
+        action, circuit = apply_signal(
+            policy,
+            circuit,
+            GuardSignal(9, "provider_rate_limit", "error:105:1", now(), event_id=105),
+            now(),
+        )
+
+        self.assertEqual(action.kind, "pause")
+        self.assertTrue(action.hard)
+        self.assertEqual(action.reason, "auto guard endless mode: 5 consecutive errors; provider_rate_limit")
+        self.assertEqual(circuit.state, "open")
+        self.assertEqual(circuit.consecutive_failures, 5)
+
+    def test_endless_mode_does_not_cooldown_rate_limit_or_unstable_errors(self) -> None:
+        policy = GuardPolicy(endless_account_ids=(9,), failure_threshold=1)
+        rate_action, rate_circuit = apply_signal(
+            policy,
+            GuardCircuit(account_id=9, consecutive_failures=4),
+            GuardSignal(9, "provider_rate_limit", "error:201:1", now(), event_id=201),
+            now(),
+        )
+        unstable_action, unstable_circuit = apply_signal(
+            policy,
+            GuardCircuit(account_id=9, consecutive_failures=4),
+            GuardSignal(9, "upstream_unstable_5xx_stream", "error:202:1", now(), event_id=202),
+            now(),
+        )
+
+        self.assertEqual(rate_action.kind, "pause")
+        self.assertIsNone(rate_action.minutes)
+        self.assertEqual(rate_circuit.state, "open")
+        self.assertEqual(unstable_action.kind, "pause")
+        self.assertIsNone(unstable_action.minutes)
+        self.assertEqual(unstable_circuit.state, "open")
+
     def test_balance_quota_immediately_hard_pauses(self) -> None:
         action, updated = apply_signal(
             GuardPolicy(),
