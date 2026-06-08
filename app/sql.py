@@ -1147,6 +1147,16 @@ RETURNING id, account_id;
 """
 
 
+SCHEDULED_TEST_DELETE_ENDLESS_SQL = """
+DELETE FROM scheduled_test_plans
+WHERE account_id = %(account_id)s::bigint
+  AND cron_expression = '* * * * *'
+  AND auto_recover = true
+  AND (%(plan_id)s::bigint IS NULL OR id = %(plan_id)s::bigint)
+RETURNING id, account_id;
+"""
+
+
 SCHEDULED_TEST_RESULTS_SQL = """
 SELECT
   r.id,

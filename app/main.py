@@ -58,6 +58,7 @@ from .sql import (
     SCHEDULED_TEST_ACCOUNTS_SQL,
     SCHEDULED_TEST_CAPABILITY_SQL,
     SCHEDULED_TEST_DELETE_SQL,
+    SCHEDULED_TEST_DELETE_ENDLESS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
     SCHEDULED_TEST_RESULTS_SQL,
     SCHEDULED_TEST_UPSERT_SQL,
@@ -599,17 +600,77 @@ def ensure_endless_recovery_plan(account_id: int, actor: str, reason: str = "") 
         write_audit(settings.audit_path, "guard_endless_recovery_plan_failed", result)
         return result
 
+    plan_id = int((row or {}).get("id") or 0)
     result = {
         "success": True,
         "account_id": int(account_id),
-        "plan_id": int((row or {}).get("id") or 0),
+        "plan_id": plan_id,
         "cron_expression": payload["cron_expression"],
         "interval_minutes": interval,
         "auto_recover": True,
         "actor": actor,
         "reason": reason,
     }
+    if plan_id > 0:
+        GuardStore(settings.guard_state_path).save_endless_recovery_plan(
+            int(account_id),
+            {
+                "plan_id": plan_id,
+                "cron_expression": payload["cron_expression"],
+                "auto_recover": True,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "actor": actor,
+                "reason": reason,
+            },
+        )
     write_audit(settings.audit_path, "guard_endless_recovery_plan_save", result)
+    return result
+
+
+def delete_endless_recovery_plan(account_id: int, actor: str, reason: str = "") -> dict[str, Any]:
+    account_id = int(account_id)
+    capability = scheduled_test_capability()
+    if not capability.get("available"):
+        error = str(capability.get("message") or "scheduled test capability is not available")
+        result = {"success": False, "deleted": False, "account_id": account_id, "error": error, "actor": actor}
+        write_audit(settings.audit_path, "guard_endless_recovery_plan_delete_failed", result)
+        return result
+
+    store = GuardStore(settings.guard_state_path)
+    managed = store.endless_recovery_plan(account_id)
+    try:
+        plan_id = int(managed.get("plan_id") or 0) or None
+    except (TypeError, ValueError):
+        plan_id = None
+
+    row: dict[str, Any] | None = None
+    try:
+        row = db.fetch_one(SCHEDULED_TEST_DELETE_ENDLESS_SQL, {"account_id": account_id, "plan_id": plan_id})
+        if not row and plan_id is not None:
+            row = db.fetch_one(SCHEDULED_TEST_DELETE_ENDLESS_SQL, {"account_id": account_id, "plan_id": None})
+    except Exception as exc:
+        result = {
+            "success": False,
+            "deleted": False,
+            "account_id": account_id,
+            "plan_id": plan_id or 0,
+            "error": str(exc),
+            "actor": actor,
+            "reason": reason,
+        }
+        write_audit(settings.audit_path, "guard_endless_recovery_plan_delete_failed", result)
+        return result
+
+    store.clear_endless_recovery_plan(account_id)
+    result = {
+        "success": True,
+        "deleted": bool(row),
+        "account_id": account_id,
+        "plan_id": int((row or {}).get("id") or plan_id or 0),
+        "actor": actor,
+        "reason": reason,
+    }
+    write_audit(settings.audit_path, "guard_endless_recovery_plan_delete", result)
     return result
 
 
@@ -1301,7 +1362,13 @@ async def restart_telegram_bot() -> None:
         with suppress(asyncio.CancelledError):
             await telegram_task
         telegram_task = None
-    telegram_bot = TelegramOpsBot(settings, db, run_auto_guard_threaded, guard_config)
+    telegram_bot = TelegramOpsBot(
+        settings,
+        db,
+        run_auto_guard_threaded,
+        guard_config,
+        endless_recovery_plan_deleter=delete_endless_recovery_plan,
+    )
     if telegram_bot.enabled:
         telegram_task = asyncio.create_task(telegram_bot.run())
 
@@ -2916,6 +2983,8 @@ def guard_policy_save(
     endless_account_ids: list[str] | None = Form(None),
     whitelist_balance_pause_threshold: int = Form(10),
 ) -> Response:
+    previous_policy = guard_policy_from_store()
+    previous_endless_ids = set(previous_policy.endless_account_ids)
     parsed_whitelist = list(parse_int_csv(whitelist_account_ids))
     parsed_endless = list(parse_int_csv(endless_account_ids))
     current_oauth_ids = {
@@ -2942,8 +3011,23 @@ def guard_policy_save(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     guard_store().save_policy(payload)
-    write_audit(settings.audit_path, "guard_policy_update", payload)
-    return RedirectResponse(f"{settings.base_path}/guard?msg={quote('Guard 策略已保存')}", status_code=303)
+    removed_endless_ids = sorted(previous_endless_ids - set(parsed_endless))
+    cleanup_results = [
+        delete_endless_recovery_plan(account_id, user, "guard_policy_update")
+        for account_id in removed_endless_ids
+    ]
+    audit_payload = dict(payload)
+    audit_payload["removed_endless_account_ids"] = removed_endless_ids
+    audit_payload["endless_recovery_plan_cleanup"] = cleanup_results
+    write_audit(settings.audit_path, "guard_policy_update", audit_payload)
+    cleaned_count = sum(1 for item in cleanup_results if item.get("success") and item.get("deleted"))
+    failed_count = sum(1 for item in cleanup_results if not item.get("success"))
+    msg = "Guard 策略已保存"
+    if cleanup_results:
+        msg = f"{msg}，已清理 {cleaned_count} 个无尽恢复计划"
+        if failed_count:
+            msg = f"{msg}，{failed_count} 个清理失败"
+    return RedirectResponse(f"{settings.base_path}/guard?msg={quote(msg)}", status_code=303)
 
 
 @app.post("/guard/queue/reorder")
