@@ -92,6 +92,8 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('name="unstable_enabled"', template)
         self.assertIn('name="whitelist_account_ids"', template)
         self.assertIn('name="endless_account_ids"', template)
+        self.assertIn('name="whitelist_account_ids_present"', template)
+        self.assertIn('name="endless_account_ids_present"', template)
         self.assertIn('name="whitelist_balance_pause_threshold"', template)
         self.assertIn("guard-mode-grid", template)
         self.assertIn("无尽模式账号", template)

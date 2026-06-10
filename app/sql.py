@@ -1157,6 +1157,20 @@ RETURNING id, account_id;
 """
 
 
+SCHEDULED_TEST_ENDLESS_PLANS_SQL = """
+SELECT
+  id AS plan_id,
+  account_id,
+  cron_expression,
+  enabled,
+  auto_recover
+FROM scheduled_test_plans
+WHERE cron_expression = '* * * * *'
+  AND auto_recover = true
+ORDER BY id ASC;
+"""
+
+
 SCHEDULED_TEST_RESULTS_SQL = """
 SELECT
   r.id,
