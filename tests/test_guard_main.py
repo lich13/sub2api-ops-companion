@@ -42,6 +42,11 @@ class GuardMainTests(unittest.TestCase):
         self.original_guard_engine = main_module.guard_engine
         self.original_scheduled_test_capability = main_module.scheduled_test_capability
         self.original_load_recovery_rows = main_module.load_scheduled_test_recovery_alert_rows
+        self.original_load_endless_recovery_plan_rows = getattr(
+            main_module,
+            "load_endless_recovery_plan_rows",
+            None,
+        )
         self.original_run_guard_balance_fallback = main_module.run_guard_balance_fallback
         self.original_usage_query_store = getattr(main_module, "usage_query_store", None)
         self.original_usage_query_account_row = getattr(main_module, "usage_query_account_row", None)
@@ -83,6 +88,10 @@ class GuardMainTests(unittest.TestCase):
         main_module.guard_engine = self.original_guard_engine
         main_module.scheduled_test_capability = self.original_scheduled_test_capability
         main_module.load_scheduled_test_recovery_alert_rows = self.original_load_recovery_rows
+        if self.original_load_endless_recovery_plan_rows is not None:
+            main_module.load_endless_recovery_plan_rows = self.original_load_endless_recovery_plan_rows  # type: ignore[assignment]
+        elif hasattr(main_module, "load_endless_recovery_plan_rows"):
+            delattr(main_module, "load_endless_recovery_plan_rows")
         main_module.run_guard_balance_fallback = self.original_run_guard_balance_fallback
         if self.original_usage_query_store is not None:
             main_module.usage_query_store = self.original_usage_query_store  # type: ignore[assignment]
@@ -164,6 +173,85 @@ class GuardMainTests(unittest.TestCase):
         reloaded = GuardStore(main_module.settings.guard_state_path)
         self.assertEqual(recorded, [(9, 12)])
         self.assertEqual(reloaded.recovery_cursor(), 12)
+
+    def test_recovery_processing_skips_and_cleans_orphaned_endless_plan(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.set_recovery_cursor(10)
+        recorded: list[tuple[int, int]] = []
+        cleaned: list[tuple[int, str, str]] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, account_id: int, result_id: int, _message: str) -> None:
+                recorded.append((account_id, result_id))
+
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_endless_recovery_plan_rows = lambda: [  # type: ignore[assignment]
+            {"plan_id": 5, "account_id": 9, "cron_expression": "* * * * *", "auto_recover": True}
+        ]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
+            {
+                "result_id": 12,
+                "plan_id": 5,
+                "account_id": 9,
+                "model_id": "gpt-test",
+                "cron_expression": "* * * * *",
+                "auto_recover": True,
+                "schedulable": False,
+            }
+        ]
+        main_module.delete_endless_recovery_plan = lambda account_id, actor, reason="": cleaned.append(  # type: ignore[assignment]
+            (account_id, actor, reason)
+        ) or {"success": True, "deleted": True, "account_id": account_id}
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+
+        main_module.process_guard_recovery_circuits()
+
+        reloaded = GuardStore(main_module.settings.guard_state_path)
+        self.assertEqual(recorded, [])
+        self.assertEqual(cleaned, [(9, "auto_guard_recovery", "orphaned_endless_recovery_plan")])
+        self.assertEqual(reloaded.recovery_cursor(), 12)
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("guard_endless_recovery_plan_orphaned", audit_text)
+
+    def test_recovery_processing_allows_current_endless_plan(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.save_policy({"endless_account_ids": [9]})
+        store.set_recovery_cursor(10)
+        recorded: list[tuple[int, int]] = []
+        cleaned: list[int] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, account_id: int, result_id: int, _message: str) -> None:
+                recorded.append((account_id, result_id))
+
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_endless_recovery_plan_rows = lambda: [  # type: ignore[assignment]
+            {"plan_id": 5, "account_id": 9, "cron_expression": "* * * * *", "auto_recover": True}
+        ]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
+            {
+                "result_id": 12,
+                "plan_id": 5,
+                "account_id": 9,
+                "model_id": "gpt-test",
+                "cron_expression": "* * * * *",
+                "auto_recover": True,
+                "schedulable": False,
+            }
+        ]
+        main_module.delete_endless_recovery_plan = lambda account_id, _actor, _reason="": cleaned.append(account_id)  # type: ignore[assignment]
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+
+        main_module.process_guard_recovery_circuits()
+
+        self.assertEqual(recorded, [(9, 12)])
+        self.assertEqual(cleaned, [])
 
     def test_scheduled_test_needs_recovery_includes_account_status(self) -> None:
         self.assertTrue(main_module.scheduled_test_needs_recovery({"account_status": "error", "schedulable": True}))
@@ -301,6 +389,52 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(saved["whitelist_account_ids"], [9])
         self.assertEqual(saved["endless_account_ids"], [10, 12])
+
+    def test_guard_policy_save_preserves_mode_lists_when_fields_are_missing(self) -> None:
+        GuardStore(main_module.settings.guard_state_path).save_policy(
+            {"whitelist_account_ids": [7], "endless_account_ids": [9]}
+        )
+        cleaned: list[int] = []
+        main_module.delete_endless_recovery_plan = lambda account_id, _actor, _reason="": cleaned.append(account_id)  # type: ignore[assignment]
+
+        main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_balance_pause_threshold=10,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+        self.assertEqual(saved["whitelist_account_ids"], [7])
+        self.assertEqual(saved["endless_account_ids"], [9])
+        self.assertEqual(cleaned, [])
+
+    def test_guard_policy_save_allows_explicit_clear_with_present_sentinels(self) -> None:
+        GuardStore(main_module.settings.guard_state_path).save_policy(
+            {"whitelist_account_ids": [7], "endless_account_ids": [9]}
+        )
+        cleaned: list[int] = []
+        main_module.delete_endless_recovery_plan = lambda account_id, _actor, _reason="": cleaned.append(account_id) or {  # type: ignore[assignment]
+            "success": True,
+            "deleted": True,
+            "account_id": account_id,
+        }
+
+        main_module.guard_policy_save(
+            "tester",
+            hard_pause_enabled="1",
+            rate_limit_enabled="1",
+            unstable_enabled="1",
+            whitelist_account_ids_present="1",
+            endless_account_ids_present="1",
+            whitelist_balance_pause_threshold=10,
+        )
+
+        saved = GuardStore(main_module.settings.guard_state_path).policy_config()
+        self.assertEqual(saved["whitelist_account_ids"], [])
+        self.assertEqual(saved["endless_account_ids"], [])
+        self.assertEqual(cleaned, [9])
 
     def test_guard_policy_save_deletes_recovery_plans_for_removed_endless_accounts(self) -> None:
         GuardStore(main_module.settings.guard_state_path).save_policy(

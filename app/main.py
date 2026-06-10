@@ -18,6 +18,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi.params import Form as FormParam
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -59,6 +60,7 @@ from .sql import (
     SCHEDULED_TEST_CAPABILITY_SQL,
     SCHEDULED_TEST_DELETE_SQL,
     SCHEDULED_TEST_DELETE_ENDLESS_SQL,
+    SCHEDULED_TEST_ENDLESS_PLANS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
     SCHEDULED_TEST_RESULTS_SQL,
     SCHEDULED_TEST_UPSERT_SQL,
@@ -674,6 +676,13 @@ def delete_endless_recovery_plan(account_id: int, actor: str, reason: str = "") 
     return result
 
 
+def load_endless_recovery_plan_rows() -> list[dict[str, Any]]:
+    capability = scheduled_test_capability()
+    if not capability.get("available"):
+        return []
+    return db.fetch_all(SCHEDULED_TEST_ENDLESS_PLANS_SQL)
+
+
 def execute_sub2api_account_test(
     account_id: int,
     model_id: str = "",
@@ -854,6 +863,10 @@ def load_guard_queue_quality() -> list[dict[str, Any]]:
 
 def form_truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def submitted_form_value(value: Any) -> Any:
+    return None if isinstance(value, FormParam) else value
 
 
 def redirect_with_msg(location: str, message: str) -> RedirectResponse:
@@ -1981,6 +1994,50 @@ def scheduled_test_needs_recovery(row: dict[str, Any]) -> bool:
     )
 
 
+def is_endless_recovery_plan_row(row: dict[str, Any]) -> bool:
+    cron_expression = " ".join(str(row.get("cron_expression") or "").strip().split())
+    return cron_expression == "* * * * *" and form_truthy(row.get("auto_recover"))
+
+
+def _orphaned_endless_recovery_account_ids(policy: GuardPolicy) -> set[int]:
+    current_endless_ids = set(policy.endless_account_ids)
+    orphaned: set[int] = set()
+    for row in load_endless_recovery_plan_rows():
+        if not is_endless_recovery_plan_row(row):
+            continue
+        try:
+            account_id = int(row.get("account_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if account_id > 0 and account_id not in current_endless_ids:
+            orphaned.add(account_id)
+    return orphaned
+
+
+def is_orphaned_endless_recovery_result(row: dict[str, Any], policy: GuardPolicy, orphaned_account_ids: set[int]) -> bool:
+    if not is_endless_recovery_plan_row(row):
+        return False
+    try:
+        account_id = int(row.get("account_id") or 0)
+    except (TypeError, ValueError):
+        return False
+    return account_id > 0 and account_id not in set(policy.endless_account_ids) and account_id in orphaned_account_ids
+
+
+def cleanup_orphaned_endless_recovery_result(row: dict[str, Any], actor: str = "auto_guard_recovery") -> dict[str, Any]:
+    account_id = int(row.get("account_id") or 0)
+    result = delete_endless_recovery_plan(account_id, actor, "orphaned_endless_recovery_plan")
+    audit_payload = {
+        "account_id": account_id,
+        "plan_id": int(row.get("plan_id") or 0),
+        "result_id": int(row.get("result_id") or 0),
+        "cron_expression": row.get("cron_expression") or "",
+        "cleanup": result if isinstance(result, dict) else {},
+    }
+    write_audit(settings.audit_path, "guard_endless_recovery_plan_orphaned", audit_payload)
+    return audit_payload
+
+
 async def notify_telegram(text: str) -> None:
     if telegram_bot is None:
         return
@@ -2012,10 +2069,15 @@ def process_guard_recovery_circuits() -> None:
     rows = load_scheduled_test_recovery_alert_rows(cursor_id)
     if not rows:
         return
+    policy = guard_policy_from_store()
+    orphaned_endless_account_ids = _orphaned_endless_recovery_account_ids(policy)
     engine = guard_engine(store)
     next_cursor = cursor_id
     for row in rows:
         next_cursor = max(next_cursor, int(row.get("result_id") or cursor_id))
+        if is_orphaned_endless_recovery_result(row, policy, orphaned_endless_account_ids):
+            cleanup_orphaned_endless_recovery_result(row)
+            continue
         if not scheduled_test_needs_recovery(row):
             continue
         engine.record_recovery_success(
@@ -2075,8 +2137,20 @@ async def telegram_recovery_alert_loop() -> None:
                 else:
                     rows = await asyncio.to_thread(load_scheduled_test_recovery_alert_rows, cursor_id)
                     if rows:
-                        engine = guard_engine()
-                        recovery_rows = [row for row in rows if scheduled_test_needs_recovery(row)]
+                        store = guard_store()
+                        policy = guard_policy_from_store()
+                        orphaned_endless_account_ids = await asyncio.to_thread(
+                            _orphaned_endless_recovery_account_ids,
+                            policy,
+                        )
+                        engine = guard_engine(store)
+                        recovery_rows: list[dict[str, Any]] = []
+                        for row in rows:
+                            if is_orphaned_endless_recovery_result(row, policy, orphaned_endless_account_ids):
+                                await asyncio.to_thread(cleanup_orphaned_endless_recovery_result, row)
+                                continue
+                            if scheduled_test_needs_recovery(row):
+                                recovery_rows.append(row)
                         for row in recovery_rows:
                             engine.record_recovery_success(
                                 int(row["account_id"]),
@@ -2981,12 +3055,24 @@ def guard_policy_save(
     balance_pause_threshold: int = Form(1),
     whitelist_account_ids: list[str] | None = Form(None),
     endless_account_ids: list[str] | None = Form(None),
+    whitelist_account_ids_present: str | None = Form(None),
+    endless_account_ids_present: str | None = Form(None),
     whitelist_balance_pause_threshold: int = Form(10),
 ) -> Response:
     previous_policy = guard_policy_from_store()
     previous_endless_ids = set(previous_policy.endless_account_ids)
-    parsed_whitelist = list(parse_int_csv(whitelist_account_ids))
-    parsed_endless = list(parse_int_csv(endless_account_ids))
+    whitelist_values = submitted_form_value(whitelist_account_ids)
+    endless_values = submitted_form_value(endless_account_ids)
+    whitelist_present = submitted_form_value(whitelist_account_ids_present)
+    endless_present = submitted_form_value(endless_account_ids_present)
+    whitelist_submitted = whitelist_present is not None or whitelist_values is not None
+    endless_submitted = endless_present is not None or endless_values is not None
+    parsed_whitelist = list(
+        parse_int_csv(whitelist_values) if whitelist_submitted else previous_policy.whitelist_account_ids
+    )
+    parsed_endless = list(
+        parse_int_csv(endless_values) if endless_submitted else previous_policy.endless_account_ids
+    )
     current_oauth_ids = {
         int(row.get("id") or 0)
         for row in load_guard_account_options()
@@ -3016,12 +3102,13 @@ def guard_policy_save(
         delete_endless_recovery_plan(account_id, user, "guard_policy_update")
         for account_id in removed_endless_ids
     ]
+    normalized_cleanup_results = [item if isinstance(item, dict) else {} for item in cleanup_results]
     audit_payload = dict(payload)
     audit_payload["removed_endless_account_ids"] = removed_endless_ids
-    audit_payload["endless_recovery_plan_cleanup"] = cleanup_results
+    audit_payload["endless_recovery_plan_cleanup"] = normalized_cleanup_results
     write_audit(settings.audit_path, "guard_policy_update", audit_payload)
-    cleaned_count = sum(1 for item in cleanup_results if item.get("success") and item.get("deleted"))
-    failed_count = sum(1 for item in cleanup_results if not item.get("success"))
+    cleaned_count = sum(1 for item in normalized_cleanup_results if item.get("success") and item.get("deleted"))
+    failed_count = sum(1 for item in normalized_cleanup_results if item and not item.get("success"))
     msg = "Guard 策略已保存"
     if cleanup_results:
         msg = f"{msg}，已清理 {cleaned_count} 个无尽恢复计划"
