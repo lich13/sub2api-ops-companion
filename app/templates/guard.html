@@ -82,6 +82,7 @@
           <span>白名单账号</span>
           <strong>{{ guard.policy.whitelist_account_ids | length }} 个</strong>
         </div>
+        <input type="hidden" name="whitelist_account_ids_present" value="1" />
         <div class="group-picker-field guard-mode-field guard-whitelist-field">
           <details
             class="group-picker guard-mode-picker guard-whitelist-picker"
@@ -134,6 +135,7 @@
           <span>无尽模式账号</span>
           <strong>{{ guard.policy.endless_account_ids | length }} 个</strong>
         </div>
+        <input type="hidden" name="endless_account_ids_present" value="1" />
         <div class="group-picker-field guard-mode-field guard-endless-field">
           <details
             class="group-picker guard-mode-picker guard-endless-picker"
