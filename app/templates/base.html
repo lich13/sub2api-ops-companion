@@ -5,15 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/sub2ops-icon.svg?v=20260516-icon" />
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260603-guard-lazy" />
-    <script src="{{ base_path }}/static/table-columns.js?v=20260603-guard-lazy" defer></script>
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260611-slim" />
+    <script src="{{ base_path }}/static/table-columns.js?v=20260611-slim" defer></script>
     <script src="{{ base_path }}/static/time-range.js?v=20260512-speed" defer></script>
-    <script src="{{ base_path }}/static/group-picker.js?v=20260603-guard-lazy" defer></script>
-    <script src="{{ base_path }}/static/schedule-options.js?v=20260515-schedule-1" defer></script>
-    <script src="{{ base_path }}/static/guard-queue.js?v=20260603-guard-lazy" defer></script>
-    <script src="{{ base_path }}/static/guard-sections.js?v=20260603-guard-lazy" defer></script>
-    <script src="{{ base_path }}/static/navigation.js?v=20260603-guard-lazy" defer></script>
-    <script src="{{ base_path }}/static/usage-query.js?v=20260602-speed-lazy-editor" defer></script>
+    <script src="{{ base_path }}/static/group-picker.js?v=20260611-slim" defer></script>
+    <script src="{{ base_path }}/static/guard-queue.js?v=20260611-slim" defer></script>
+    <script src="{{ base_path }}/static/guard-sections.js?v=20260611-slim" defer></script>
+    <script src="{{ base_path }}/static/navigation.js?v=20260611-slim" defer></script>
+    <script src="{{ base_path }}/static/usage-query.js?v=20260611-slim" defer></script>
     <script src="{{ base_path }}/static/version-panel.js?v=20260510-version" defer></script>
   </head>
   <body>
@@ -24,7 +23,7 @@
           <div>
             <h1>{{ app_name }}</h1>
             <div class="brand-meta">
-              <span>账号稳定性、速度和调度 Guard</span>
+              <span>运行面板</span>
               {% if current_user %}
                 <div class="version-widget" data-version-widget data-base-path="{{ base_path }}">
                   <button class="version-pill" type="button" data-version-toggle aria-expanded="false">
@@ -41,7 +40,7 @@
                         <strong data-version-current>v{{ version.current_version }}</strong>
                         <span class="version-check" data-version-check>✓</span>
                       </div>
-                      <p data-version-status>点击查看更新状态</p>
+                      <div class="version-status" data-version-status>状态</div>
                       <dl class="version-meta-list">
                         <div><dt>当前提交</dt><dd class="mono" data-version-current-commit>-</dd></div>
                         <div><dt>远端提交</dt><dd class="mono" data-version-latest-commit>-</dd></div>
@@ -59,10 +58,7 @@
         </div>
         {% if current_user %}
           <nav class="nav">
-            <a class="{{ 'active' if active == 'stability' else '' }}" href="{{ base_path }}/">账号稳定性</a>
             <a class="{{ 'active' if active == 'speed' else '' }}" href="{{ base_path }}/speed">账号速度</a>
-            <a class="{{ 'active' if active == 'requests' else '' }}" href="{{ base_path }}/requests">错误链路</a>
-            <a class="{{ 'active' if active == 'scheduled_tests' else '' }}" href="{{ base_path }}/scheduled-tests">定时恢复</a>
             <a class="{{ 'active' if active == 'guard' else '' }}" href="{{ base_path }}/guard">自动 Guard</a>
             <a class="{{ 'active' if active == 'sso' else '' }}" href="{{ base_path }}/sso">Sub2API 接入</a>
             <a class="{{ 'active' if active == 'telegram' else '' }}" href="{{ base_path }}/telegram">Telegram</a>

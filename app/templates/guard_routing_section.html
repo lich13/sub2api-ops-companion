@@ -2,7 +2,6 @@
   <div class="section-head table-toolbar">
     <div>
       <h3>账号路由</h3>
-      <p>优先级和负载因子都能在这里改。负载因子只在上游数据库支持时启用。</p>
     </div>
     <details class="column-picker">
       <summary>选择列</summary>
@@ -10,8 +9,8 @@
         <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="account" checked />账号</label>
         <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="state" checked />状态</label>
         <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="routing" checked />调度参数</label>
-        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="signal" checked />最近信号</label>
-        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="next" checked />下次恢复</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="signal" checked />信号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="guard-routing" data-column="circuit" checked />断路状态</label>
         <button type="button" class="link-button columns-reset" data-table="guard-routing">重置列</button>
       </div>
     </details>
@@ -23,8 +22,8 @@
           <th data-col="account">账号</th>
           <th data-col="state">状态</th>
           <th data-col="routing">调度参数</th>
-          <th data-col="signal">最近信号</th>
-          <th data-col="next">下次恢复</th>
+          <th data-col="signal">信号</th>
+          <th data-col="circuit">断路状态</th>
         </tr>
       </thead>
       <tbody>
@@ -33,8 +32,7 @@
           <tr class="{{ row.problem.level }}">
             <td data-col="account">
               <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
-              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
-              <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
+              <div class="cell-sub">{{ row.type }} · 并发 {{ row.concurrency or 0 }}</div>
             </td>
             <td data-col="state">
               {% if row.schedulable %}
@@ -43,7 +41,6 @@
                 <span class="pill bad">已停</span>
               {% endif %}
               <div class="cell-sub">{{ row.problem.title }}</div>
-              <div class="cell-sub mono tiny">Guard {{ circuit.state or 'closed' }}</div>
             </td>
             <td data-col="routing">
               <form class="routing-mini-form" method="post" action="{{ base_path }}/guard/account-routing">
@@ -69,12 +66,14 @@
               {% endif %}
             </td>
             <td data-col="signal">
-              <div class="cell-sub mono">last={{ circuit.last_event_key or '-' }}</div>
-              <div class="cell-sub mono">category={{ circuit.last_category or '-' }}</div>
+              <span class="pill {{ 'bad' if row.problem.level == 'bad' else ('warn' if row.problem.level == 'warn' else 'muted') }}">{{ circuit.last_category or row.problem.title or '无' }}</span>
+              <div class="cell-sub">{{ circuit.last_event_key or '-' }}</div>
             </td>
-            <td data-col="next">
-              <div class="cell-sub mono">opened={{ circuit.opened_at or '-' }}</div>
-              <div class="cell-sub mono">load={{ circuit.last_applied_load_factor or '-' }}</div>
+            <td data-col="circuit">
+              <span class="pill muted">{{ circuit.state or 'closed' }}</span>
+              {% if circuit.opened_at %}
+                <div class="cell-sub">{{ circuit.opened_at }}</div>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
