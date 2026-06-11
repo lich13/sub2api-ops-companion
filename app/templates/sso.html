@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="page-title">
+<section class="page-title page-title-compact sso-hero">
   <div>
+    <span class="eyebrow">Sub2API</span>
     <h2>Sub2API 接入</h2>
-    <p>只允许 Sub2API 管理后台自定义菜单换取 Companion 会话，Ops 不再提供独立登录入口。</p>
   </div>
 </section>
 
@@ -35,7 +35,6 @@
     <div class="section-head compact-head">
       <div>
         <h3>Sub2API 免二次登录</h3>
-        <p>Sub2API 菜单首跳携带管理员 token；Companion 校验通过后写入自己的强随机会话，并跳转到干净地址。</p>
       </div>
       <label class="switch-field">
         <input type="checkbox" name="enabled" value="1" {{ 'checked' if sso.enabled else '' }} />
@@ -102,7 +101,6 @@
 
     <div class="sso-submit-row">
       <button class="primary" type="submit">保存接入配置</button>
-      <span>保存后立即生效，不需要重启；Sub2API 源码和镜像不会被修改。</span>
     </div>
   </form>
 
@@ -115,7 +113,6 @@
       <div><dt>会话形式</dt><dd>随机 ID + HMAC，载荷保存在 Ops 本地</dd></div>
       <div><dt>独立登录</dt><dd>已移除</dd></div>
     </dl>
-    <p>未带合法 Sub2API token 的直接公网访问会返回 403，不会展示账号密码表单。</p>
   </aside>
 </section>
 {% endblock %}

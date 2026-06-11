@@ -13,11 +13,9 @@ from app.scheduled_tests import (
 )
 from app.sql import (
     SCHEDULED_TEST_CAPABILITY_SQL,
-    SCHEDULED_TEST_DELETE_SQL,
     SCHEDULED_TEST_DELETE_ENDLESS_SQL,
     SCHEDULED_TEST_ENDLESS_PLANS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
-    SCHEDULED_TEST_RESULTS_SQL,
     SCHEDULED_TEST_UPSERT_SQL,
 )
 
@@ -74,10 +72,8 @@ class ScheduledTestHelpersTests(unittest.TestCase):
             [
                 SCHEDULED_TEST_CAPABILITY_SQL,
                 SCHEDULED_TEST_UPSERT_SQL,
-                SCHEDULED_TEST_DELETE_SQL,
                 SCHEDULED_TEST_DELETE_ENDLESS_SQL,
                 SCHEDULED_TEST_ENDLESS_PLANS_SQL,
-                SCHEDULED_TEST_RESULTS_SQL,
                 SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
             ]
         )
@@ -99,27 +95,13 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertNotIn("a.updated_at >= r.started_at", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
         self.assertIn("a.rate_limited_at", SCHEDULED_TEST_RECOVERY_ALERTS_SQL)
 
-    def test_panel_template_exposes_easy_recovery_controls(self) -> None:
+    def test_scheduled_recovery_is_internal_guard_capability_only(self) -> None:
         base = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
-        page = (REPO_ROOT / "app" / "templates" / "scheduled_tests.html").read_text(encoding="utf-8")
 
-        self.assertIn('active == \'scheduled_tests\'', base)
-        self.assertIn("定时恢复", base)
-        self.assertIn("每小时", page)
-        self.assertIn("每30分钟", page)
-        self.assertIn("每15分钟", page)
-        self.assertIn("每5分钟", page)
-        self.assertIn("每1分钟", page)
-        self.assertIn('name="auto_recover"', page)
-        self.assertIn("恢复成功会推送 Telegram", page)
-        self.assertIn("scheduled-command-deck", page)
-        self.assertIn("scheduled-account-card", page)
-        self.assertIn("schedule-option-grid", page)
-        self.assertIn("schedule-options.js", base)
-        self.assertIn("data-schedule-option", page)
-        self.assertIn('type="radio" name="interval_minutes"', page)
-        self.assertNotIn("schedule-option {{ 'selected'", page)
-        self.assertNotIn("scheduled-test-table", page)
+        self.assertNotIn('active == \'scheduled_tests\'', base)
+        self.assertNotIn("定时恢复", base)
+        self.assertNotIn("schedule-options.js", base)
+        self.assertFalse((REPO_ROOT / "app" / "templates" / "scheduled_tests.html").exists())
 
 
 if __name__ == "__main__":

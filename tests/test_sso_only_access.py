@@ -114,7 +114,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertIn('name="sub2api_admin_token"', template)
         self.assertIn("已保存，留空保留", template)
         self.assertIn("管理员 API Key", template)
-        self.assertIn("Sub2API 源码和镜像不会被修改", template)
+        self.assertNotIn("Sub2API 源码和镜像不会被修改", template)
         self.assertNotIn("Ops Companion 登录", template)
         self.assertNotIn("Turnstile", template)
         self.assertNotIn("Cloudflare", template)

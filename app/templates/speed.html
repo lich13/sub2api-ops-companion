@@ -12,12 +12,12 @@
   {% if value is not none %}{{ "%.1f"|format(value)|replace(".0", "") }}%{% else %}-{% endif %}
 {% endmacro %}
 
-<section class="page-title">
+<section class="page-title page-title-compact speed-hero">
   <div>
+    <span class="eyebrow">Speed</span>
     <h2>账号速度</h2>
-    <p>按账号展示窗口内响应速度、首 Token（秒）、平均耗时（秒）、tokens/秒和消耗。</p>
   </div>
-  <form class="filters inline" method="get" action="{{ base_path }}/speed">
+  <form class="filters inline speed-filters" method="get" action="{{ base_path }}/speed">
     {{ group_picker(group_selection) }}
     <label>平台
       <input name="platform" value="{{ platform }}" />
@@ -27,14 +27,10 @@
   </form>
 </section>
 
-<section class="metric-strip">
-  <div class="metric-card">
+<section class="metric-strip speed-metrics">
+  <div class="metric-card main-metric">
     <span>窗口成功</span>
     <strong>{{ dashboard.success_count }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>输出 Tokens</span>
-    <strong>{{ dashboard.output_tokens | int_commas }}</strong>
   </div>
   <div class="metric-card">
     <span>首 Token（秒）</span>
@@ -56,52 +52,54 @@
   <div class="metric-card {{ 'danger' if dashboard.depleted_count else '' }}">
     <span>额度查询</span>
     <strong>{{ dashboard.enabled_count }}</strong>
-    <span class="metric-footnote">已配置 {{ dashboard.configured_count }} / 耗尽 {{ dashboard.depleted_count }}</span>
+    <span class="metric-footnote">{{ dashboard.configured_count }} 配置 / {{ dashboard.depleted_count }} 耗尽</span>
   </div>
 </section>
 
-<section class="panel table-panel">
-  <div class="section-head table-toolbar">
+<section class="panel speed-control-panel">
+  <form class="usage-query-global-settings speed-query-settings" method="post" action="{{ base_path }}/usage-query/settings">
+    <input type="hidden" name="return_to" value="{{ return_to }}" />
+    <input type="hidden" name="usage_query_enabled" value="0" />
+    <label class="checkbox-label switch-field">
+      <input type="checkbox" name="usage_query_enabled" value="1" {{ 'checked' if usage_query_settings.usage_query_enabled else '' }} />
+      <span>启用额度查询</span>
+    </label>
+    <input type="hidden" name="guard_disable_on_zero" value="0" />
+    <label class="checkbox-label switch-field">
+      <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if usage_query_settings.guard_disable_on_zero else '' }} />
+      <span>可用量≤0 硬停</span>
+    </label>
+    <label>自动间隔（秒）
+      <input name="auto_query_interval_seconds" type="number" min="0" max="86400" value="{{ usage_query_settings.auto_query_interval_seconds }}" />
+    </label>
+    <button type="submit">保存</button>
+  </form>
+  <div class="speed-control-actions">
+    <form method="post" action="{{ base_path }}/usage-query/query-enabled">
+      <input type="hidden" name="return_to" value="{{ return_to }}" />
+      <button class="primary" type="submit">查询已配置额度</button>
+    </form>
+    <details class="column-picker">
+      <summary>选择列</summary>
+      <div class="column-list" data-column-picker="account-speed">
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="account" checked />账号</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="traffic" checked />窗口样本</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token（秒）</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时（秒）</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />tokens/秒</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="usage" checked />消耗</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="quota" checked />额度</label>
+        <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
+        <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="panel table-panel speed-table-panel">
+  <div class="section-head table-toolbar compact-head">
     <div>
       <h3>速度列表</h3>
-      <p>速度统计和消耗都使用当前时间范围内的成功请求，便于按成本和性能一起观察。</p>
-    </div>
-    <div class="table-actions">
-      <form class="usage-query-global-settings" method="post" action="{{ base_path }}/usage-query/settings">
-        <input type="hidden" name="return_to" value="{{ return_to }}" />
-        <input type="hidden" name="usage_query_enabled" value="0" />
-        <label class="checkbox-label">
-          <input type="checkbox" name="usage_query_enabled" value="1" {{ 'checked' if usage_query_settings.usage_query_enabled else '' }} />
-          启用查询
-        </label>
-        <input type="hidden" name="guard_disable_on_zero" value="0" />
-        <label class="checkbox-label">
-          <input type="checkbox" name="guard_disable_on_zero" value="1" {{ 'checked' if usage_query_settings.guard_disable_on_zero else '' }} />
-          可用量≤0 时 Auto Guard 硬停
-        </label>
-        <label>自动查询间隔（全局，秒）
-          <input name="auto_query_interval_seconds" type="number" min="0" max="86400" value="{{ usage_query_settings.auto_query_interval_seconds }}" />
-        </label>
-        <button type="submit">保存全局设置</button>
-      </form>
-      <form method="post" action="{{ base_path }}/usage-query/query-enabled">
-        <input type="hidden" name="return_to" value="{{ return_to }}" />
-        <button class="primary" type="submit">查询已配置额度</button>
-      </form>
-      <details class="column-picker">
-        <summary>选择列</summary>
-        <div class="column-list" data-column-picker="account-speed">
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="account" checked />账号</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="traffic" checked />窗口样本</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="first-token" checked />首 Token（秒）</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="duration" checked />平均耗时（秒）</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="token-speed" checked />tokens/秒</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="usage" checked />消耗</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="quota" checked />额度</label>
-          <label><input type="checkbox" class="column-toggle" data-table="account-speed" data-column="last-success" checked />最近成功</label>
-          <button type="button" class="link-button columns-reset" data-table="account-speed">重置列</button>
-        </div>
-      </details>
     </div>
   </div>
   <div class="table-wrap">
@@ -123,8 +121,11 @@
           <tr>
             <td data-col="account">
               <strong class="account-title"><span class="account-id">#{{ row.id }}</span> {{ row.name }}</strong>
-              <div class="cell-sub">{{ row.type }} / concurrency={{ row.concurrency }}</div>
-              <div class="cell-sub mono tiny">platform={{ row.platform }}</div>
+              <div class="account-meta">
+                <span class="pill muted">{{ row.platform }}</span>
+                <span class="pill muted">{{ row.type }}</span>
+                <span class="pill muted">并发 {{ row.concurrency or 0 }}</span>
+              </div>
             </td>
             <td data-col="traffic">
               <div class="traffic-pair">
@@ -195,10 +196,8 @@
                   <div class="cell-sub">倍率 {{ cfg.upstream_multiplier | quota }}</div>
                 {% elif usage.configured %}
                   <span class="pill muted">查询已关闭</span>
-                  <div class="cell-sub">全局启用后会刷新剩余额度</div>
                 {% else %}
                   <span class="pill muted">未配置</span>
-                  <div class="cell-sub">配置后可显示剩余额度</div>
                 {% endif %}
               </div>
             </td>
@@ -217,7 +216,7 @@
               >
                 <summary>{{ '编辑额度查询' if usage.configured else '配置额度查询' }} #{{ row.id }}</summary>
                 <div class="usage-query-editor-placeholder" data-usage-query-editor-target>
-                  展开后加载额度查询编辑器
+                  加载中
                 </div>
               </details>
             </td>

@@ -4,12 +4,9 @@ import unittest
 from pathlib import Path
 
 from app.quality_sort import (
-    STABILITY_SORT_OPTIONS,
-    normalize_stability_sort,
     sort_speed_rows,
-    sort_stability_rows,
 )
-from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_QUEUE_SQL, QUALITY_ALL_ACCOUNTS_SQL, QUALITY_SQL, REQUESTS_SQL
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_QUEUE_SQL, QUALITY_ALL_ACCOUNTS_SQL, QUALITY_SQL
 from app.time_range import BEIJING_TZ, build_time_range
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -46,12 +43,10 @@ class TimeRangeFilterTests(unittest.TestCase):
         self.assertIsNone(selected["start_at"])
         self.assertIsNone(selected["end_at"])
 
-    def test_quality_and_requests_sql_use_range_bounds(self) -> None:
-        for sql in (QUALITY_SQL, REQUESTS_SQL):
-            with self.subTest(sql=sql[:20]):
-                self.assertIn("%(range_start)s::timestamptz", sql)
-                self.assertIn("%(range_end)s::timestamptz", sql)
-                self.assertNotIn("make_interval(hours => %(hours)s)", sql)
+    def test_quality_sql_uses_range_bounds(self) -> None:
+        self.assertIn("%(range_start)s::timestamptz", QUALITY_SQL)
+        self.assertIn("%(range_end)s::timestamptz", QUALITY_SQL)
+        self.assertNotIn("make_interval(hours => %(hours)s)", QUALITY_SQL)
 
     def test_guard_all_account_sql_keeps_bounded_signal_window(self) -> None:
         for sql in (QUALITY_ALL_ACCOUNTS_SQL, GUARD_QUEUE_SQL):
@@ -59,12 +54,6 @@ class TimeRangeFilterTests(unittest.TestCase):
                 self.assertIn("%(range_start)s::timestamptz", sql)
                 self.assertIn("%(range_end)s::timestamptz", sql)
                 self.assertNotIn("g.name = ANY(%(group_names)s::text[])", sql)
-
-    def test_requests_sql_limits_logs_before_attempt_expansion(self) -> None:
-        self.assertIn("WITH target_logs AS", REQUESTS_SQL)
-        self.assertIn("LIMIT %(scan_limit)s::int", REQUESTS_SQL)
-        self.assertIn("left(replace(coalesce(", REQUESTS_SQL)
-        self.assertIn("left(coalesce(e.upstream_errors::text, ''), 2000)", REQUESTS_SQL)
 
     def test_balance_candidate_sql_filters_age_before_json_expansion(self) -> None:
         self.assertIn("WITH target_logs AS", GUARD_BALANCE_CANDIDATES_SQL)
@@ -83,27 +72,6 @@ class TimeRangeFilterTests(unittest.TestCase):
         self.assertIn("AS usage_total_tokens", QUALITY_SQL)
         self.assertIn("COALESCE(s.usage_total_cost,0) AS usage_total_cost", QUALITY_SQL)
 
-    def test_stability_sort_by_error_rate(self) -> None:
-        rows = [
-            {"id": 1, "group_priority": 1, "account_priority": 1, "error_rate_window_pct": 10, "account_quality_errors_window": 3},
-            {"id": 2, "group_priority": 1, "account_priority": 2, "error_rate_window_pct": 50, "account_quality_errors_window": 1},
-            {"id": 3, "group_priority": 1, "account_priority": 3, "error_rate_window_pct": 50, "account_quality_errors_window": 4},
-        ]
-
-        self.assertEqual([row["id"] for row in sort_stability_rows(rows, "error_rate")], [3, 2, 1])
-        self.assertEqual(normalize_stability_sort("unknown"), "default")
-        self.assertIn("错误率从高到低", {item["label"] for item in STABILITY_SORT_OPTIONS})
-
-    def test_stability_default_sort_prefers_schedulable_then_success_count(self) -> None:
-        rows = [
-            {"id": 1, "schedulable": True, "success_window": 2, "group_priority": 1, "account_priority": 1},
-            {"id": 2, "schedulable": True, "success_window": 9, "group_priority": 9, "account_priority": 9},
-            {"id": 3, "schedulable": False, "success_window": 50, "group_priority": 0, "account_priority": 0},
-            {"id": 4, "schedulable": True, "success_window": 9, "group_priority": 1, "account_priority": 2},
-        ]
-
-        self.assertEqual([row["id"] for row in sort_stability_rows(rows, "default")], [4, 2, 1, 3])
-
     def test_speed_default_sort_prefers_schedulable_then_window_sample_count(self) -> None:
         rows = [
             {"id": 1, "schedulable": True, "success_window": 3, "account_quality_errors_window": 3, "group_priority": 1, "account_priority": 1},
@@ -114,26 +82,16 @@ class TimeRangeFilterTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in sort_speed_rows(rows)], [4, 2, 1, 3])
 
-    def test_stability_and_speed_templates_split_usage_column(self) -> None:
-        stability = (REPO_ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+    def test_speed_template_keeps_usage_column_without_stability_page(self) -> None:
         speed = (REPO_ROOT / "app" / "templates" / "speed.html").read_text(encoding="utf-8")
 
-        self.assertNotIn("历史消耗</th>", stability)
+        self.assertFalse((REPO_ROOT / "app" / "templates" / "index.html").exists())
         self.assertNotIn("历史消耗", speed)
-        self.assertIn('name="sort"', stability)
-        self.assertIn("sort_options", stability)
         self.assertIn("消耗</th>", speed)
         self.assertIn("首 Token（秒）</th>", speed)
         self.assertIn("平均耗时（秒）</th>", speed)
         self.assertIn("tokens/秒</th>", speed)
         self.assertNotIn("ms/token", speed)
-
-    def test_account_panel_uses_fixed_cooldown_presets(self) -> None:
-        stability = (REPO_ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
-
-        self.assertIn("{% for minutes in [5, 15, 30] %}", stability)
-        self.assertIn("冷却 {{ minutes }}m", stability)
-        self.assertNotIn('name="minutes" value="30" aria-label="冷却分钟"', stability)
 
 
 if __name__ == "__main__":

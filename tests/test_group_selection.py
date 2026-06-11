@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from app.group_selection import ALL_GROUP_VALUE, build_group_selection
-from app.sql import QUALITY_SQL, SCHEDULED_TEST_ACCOUNTS_SQL
+from app.sql import QUALITY_SQL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,19 +40,15 @@ class GroupSelectionTests(unittest.TestCase):
 
     def test_panels_use_shared_group_picker(self) -> None:
         base = (REPO_ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
-        stability = (REPO_ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
         speed = (REPO_ROOT / "app" / "templates" / "speed.html").read_text(encoding="utf-8")
-        scheduled = (REPO_ROOT / "app" / "templates" / "scheduled_tests.html").read_text(encoding="utf-8")
         picker = (REPO_ROOT / "app" / "templates" / "group_picker.html").read_text(encoding="utf-8")
 
         self.assertIn("group-picker.js", base)
-        self.assertIn("group_picker(group_selection)", stability)
         self.assertIn("group_picker(group_selection)", speed)
-        self.assertIn("group_picker(group_selection)", scheduled)
         self.assertIn("data-group-picker-default", picker)
         self.assertIn("data-group-picker-all", picker)
         self.assertIn('type="checkbox"', picker)
-        self.assertNotIn('<select name="group">', stability + speed + scheduled)
+        self.assertNotIn('<select name="group">', speed)
 
     def test_group_picker_script_supports_optional_clearable_picker(self) -> None:
         script = (REPO_ROOT / "app" / "static" / "group-picker.js").read_text(encoding="utf-8")
@@ -64,9 +60,8 @@ class GroupSelectionTests(unittest.TestCase):
 
     def test_sql_filters_by_group_array(self) -> None:
         self.assertIn("g.name = ANY(%(group_names)s::text[])", QUALITY_SQL)
-        self.assertIn("g.name = ANY(%(group_names)s::text[])", SCHEDULED_TEST_ACCOUNTS_SQL)
         self.assertIn("SELECT DISTINCT ON (a.id)", QUALITY_SQL)
-        self.assertNotIn("%(group_name)s", QUALITY_SQL + SCHEDULED_TEST_ACCOUNTS_SQL)
+        self.assertNotIn("%(group_name)s", QUALITY_SQL)
 
 
 if __name__ == "__main__":

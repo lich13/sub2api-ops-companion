@@ -1,6 +1,6 @@
 # Sub2API Ops Companion
 
-旁路运维面板，用来补足 Sub2API 原面板里账号质量归因、`upstream_errors` 链路展示和账号调度禁用操作不够直观的问题。
+旁路运维面板，用来补足 Sub2API 原面板里账号速度、额度、自动 Guard、Telegram 运维和 SSO 接入能力。
 
 设计边界：
 
@@ -12,16 +12,13 @@
 
 ## 功能
 
-- 账号稳定性：按账号展开成功量、账号质量错误、错误率、`403 blocked`、余额/额度、限流、5xx/流式截断，并支持按错误率排序。
 - 账号速度：按账号展示首 Token（秒）、平均耗时（秒）、tokens/秒、时间范围内消耗，以及可选的实时剩余额度快照。
 - 额度查询：每个账号可配置 Sub2API、NewAPI 或自定义 `request/extractor` 模板，保存 API Key/Access Token、上游倍率和自动查询间隔；速度列表会展示原始剩余额度和按 `剩余额度 / 上游倍率` 还原的实际可用量。
-- 错误链路展开：把 `ops_error_logs.upstream_errors` 展开，显示同一次请求的 failover 账号链路。
-- 请求定位：按 `request_id` 或 `client_request_id` 查询完整详情。
 - 调度操作：一键暂停账号调度、临时冷却账号、恢复账号调度。
-- 自动 Guard：读取全部账号，按 `ops_error_logs.id` 增量处理错误链路，余额/额度/403 硬停、429 短冷却、5xx/流式冷却三类动作可独立开关；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 1m/3m/5m 短冷却，并清掉上游 rate-limit/overload 运行态；追加的余额/额度扫尾只处理最近 24 小时内仍有异常状态的账号，避免很久以前的过期报错触发补处理；后台自动 Guard 不处理 `type=oauth` 账号。
+- 自动 Guard：按 `ops_error_logs.id` 增量处理上游异常事件，余额/额度/403 硬停、429 短冷却、5xx/流式冷却三类动作可独立开关；429/5xx/流式中断先把 `accounts.load_factor` 降到 1 软降载，再按 1m/3m/5m 短冷却，并清掉上游 rate-limit/overload 运行态；追加的余额/额度扫尾只处理最近 24 小时内仍有异常状态的账号，避免很久以前的过期报错触发补处理；后台自动 Guard 不处理 `type=oauth` 账号。
 - Guard P1/P2 队列：Guard 面板可以按分组切换队列视图，直接把账号设为 P1/P2/备用/降载观察；自动调整会按成功样本把健康账号排到 P1/P2，并把异常、冷却或已停账号降到低优先级和 `load_factor=1`（上游字段存在时）；自动调整会跳过 `type=oauth` 账号。
-- 定时恢复：在面板里直接配置 Sub2API 原生定时测试计划，支持每小时、每30分钟、每15分钟、每5分钟整点对齐检测；测试通过后由 companion 自动清理可恢复异常状态。
-- Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；新错误链路会实时推送，并直接附带账号暂停/恢复/冷却按钮。
+- 无尽模式：指定非 OAuth 账号连续 5 次报错后直接停用，并创建 1 分钟自动恢复计划；测试通过后自动清理可恢复异常状态。白名单与无尽模式互斥。
+- Telegram 远程运维：保存 Bot Token 后生成随机配对码，私聊 `/pair 配对码` 才能绑定；支持 `/quota`、`/whitelist`、`/endless`，并推送 Guard 恢复和 OAuth 额度恢复结果。
 - Sub2API 免二次登录：Sub2API 自定义菜单 iframe 可进入 `/sub2ops/sso/start`，Companion 调 Sub2API `/api/v1/auth/me` 验证管理员 JWT 后换成本服务的不可伪造会话。
 - 面板版本更新：左上角显示当前版本，支持检查 GitHub main 分支并从面板拉取更新后自重启。
 
@@ -124,9 +121,9 @@ https://你的-sub2api-域名/sub2ops/sso/start
 /pair ABCD-EFGH
 ```
 
-不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram Bot 会注册 `/quota` 命令菜单；已配对会话可发送 `/quota`、`/usage` 或 `额度`，立即查询所有已启用额度查询的账号，并返回总可用额度和分账号可用额度。后台会按 `ops_error_logs.id` 做增量扫描，默认每 2 秒检查一次新错误链路，每批最多处理 50 条错误日志；首次启动只记录当前最大 id，避免历史错误刷屏。之后每条带账号的错误链路会推送到当前绑定的 Telegram 会话，并在消息下方附加“暂停”“冷却 5m”“冷却 15m”“冷却 30m”“恢复”“查看详情”等账号操作按钮。
+不会再首次自动绑定陌生会话；重新生成配对码后旧码立即失效，已绑定会话继续可用。Telegram Bot 会注册 `/quota`、`/whitelist` 和 `/endless` 命令菜单；已配对会话可发送 `/quota`、`/usage` 或 `额度`，立即查询所有已启用额度查询的账号，并返回总可用额度和分账号可用额度。`/whitelist` 可列出或移除 Guard 白名单账号，`/endless` 可列出或移除无尽模式账号。
 
-如果 Sub2API 定时测试计划开启了 `auto_recover`，companion 会按 `scheduled_test_results.id` 增量读取成功结果；只要账号当时仍有停调度、rate-limit、overload、临时不可调度或错误状态，就会清理这些运行态并推送“账号已自动恢复”通知，消息下方附带同样的账号操作按钮。
+如果内部恢复计划开启了 `auto_recover`，companion 会按 `scheduled_test_results.id` 增量读取成功结果；只要账号当时仍有停调度、rate-limit、overload、临时不可调度或错误状态，就会清理这些运行态并推送“账号已自动恢复”通知。
 
 ## 账号额度查询
 
@@ -143,21 +140,12 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 密钥只保存在 `USAGE_QUERY_STATE_PATH` 指向的本服务 JSON 文件或上游账号 `credentials` 中，不会写入审计明文，也不会渲染回页面；表单留空会保留已保存密钥。自定义模板允许管理员填写完整 `http/https` 请求 URL，因此只应在可信管理员环境中使用。Telegram `/quota` 只展示总可用额度和分账号可用额度。
 
-## 定时恢复
+## Guard 事件口径
 
-进入 `/sub2ops/scheduled-tests` 可以给账号创建或更新上游 `scheduled_test_plans`：
+自动 Guard 会展开 `ops_error_logs.upstream_errors` 后按实际 `account_id` 归因。
+`account_id` 为空、`none`、`null` 或客户端请求错误不会触发账号级处理。
 
-- 频率固定为每小时、每30分钟、每15分钟、每5分钟，对应 `0 * * * *`、`*/30 * * * *`、`*/15 * * * *`、`*/5 * * * *`，都以整点分钟栅格对齐。
-- 模型可以留空；留空时由 Sub2API 使用对应平台的默认测试模型。
-- 开启“测试通过后自动恢复”会写入 `auto_recover=true`。实际测试由 Sub2API 的 scheduled test runner 执行；成功结果由 companion 接管恢复写回。
-- 自动恢复能清理上游可恢复运行态：`status=error`、rate-limit、overload、临时不可调度、错误状态等；如果账号确实恢复可用，会重新设为可调度并推送 Telegram。
-
-## 质量统计口径
-
-账号质量错误会展开 `ops_error_logs.upstream_errors` 后按实际 `account_id` 归因。
-`account_id` 为空、`none`、`null` 或客户端请求错误不会进入账号质量表，也不会在面板展示或统计。
-
-计入账号质量问题：
+计入 Guard 异常信号：
 
 - `403` 且消息包含 `blocked`。
 - 余额或额度类错误，例如 `insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`insufficient balance`。
@@ -165,7 +153,7 @@ https://你的-sub2api-域名/sub2ops/sso/start
 - `500` 到 `599`。
 - 流式截断或终止事件缺失，例如 `stream ended before a terminal event`。
 
-不计入账号质量问题：
+不计入 Guard 异常信号：
 
 - `account_id IS NULL` 的预路由错误。
 - `error_owner=client` 或 `error_source=client_request`。
@@ -185,6 +173,6 @@ https://你的-sub2api-域名/sub2ops/sso/start
 
 如果错误超过阈值但不切换，先看日志是否出现 `openai.upstream_failover_switching`。当前线上证据显示 `429` 和部分 `502` 会进入 failover，而大量 `500/503/504` 只记录 `openai.forward_failed` 并直接返回，不会自动把账号改成不可调度。
 
-自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把命中的活跃非 OAuth 账号永久停调度，不设置冷却时间。即使账号已被上游 rate-limit 标记成不可调度，也会被升级为明确的硬暂停；但追加扫尾只看最近 `GUARD_BALANCE_ERROR_MAX_AGE_HOURS` 小时内的最后报错，旧报错过期后不会再补处理。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 1m/3m/5m 短冷却。Guard 面板里的三类开关可以分别停用硬停、429 冷却、5xx/流式冷却；停用后只记录信号和游标，不会改账号调度状态。白名单账号可在 Guard 策略里通过下拉菜单勾选；白名单账号的 403、429、5xx、流式错误只记录信号，不自动暂停或冷却，Telegram 错误链路推送也会跳过这些普通报错；只有连续额度/余额错误达到白名单额度阈值（默认 10）时才会硬停。余额/额度兜底扫尾会跳过白名单账号以保留连续计数语义。速度页额度查询的“可用量≤0 时 Auto Guard 硬停”是逐账号显式开关，查询失败不会停号；启用后若查询成功且实际可用量小于等于 0，会硬停对应非 OAuth 账号。后台自动 Guard、余额/额度兜底扫尾、额度查询硬停、定时测试自动恢复和队列自动调整都会跳过 `type=oauth` 账号，避免自动改动 OAuth 账号状态。
+自动 Guard 的边界是控制面 future-request failover，不是同请求内重试。余额/额度不足类确定性错误，例如 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`，会把命中的活跃非 OAuth 账号永久停调度，不设置冷却时间。即使账号已被上游 rate-limit 标记成不可调度，也会被升级为明确的硬暂停；但追加扫尾只看最近 `GUARD_BALANCE_ERROR_MAX_AGE_HOURS` 小时内的最后报错，旧报错过期后不会再补处理。`403 blocked` 会硬停；`429`、`5xx`、流式截断类错误会先尝试 `load_factor=1` 软降载，再按 1m/3m/5m 短冷却。Guard 面板里的三类开关可以分别停用硬停、429 冷却、5xx/流式冷却；停用后只记录信号和游标，不会改账号调度状态。白名单账号可在 Guard 策略里通过下拉菜单勾选；白名单账号只记录信号，不自动暂停或冷却，只有连续额度/余额错误达到白名单额度阈值（默认 10）时才会硬停。无尽模式账号连续 5 次报错后直接停用，并由 companion 托管 1 分钟自动恢复计划；移出无尽模式后，对应托管恢复计划会同步删除。速度页额度查询的“可用量≤0 时 Auto Guard 硬停”是逐账号显式开关，查询失败不会停号；启用后若查询成功且实际可用量小于等于 0，会硬停对应非 OAuth 账号。后台自动 Guard、余额/额度兜底扫尾、额度查询硬停、内部自动恢复和队列自动调整都会跳过 `type=oauth` 账号，避免自动改动 OAuth 账号状态。
 
-现有自动恢复依赖 Sub2API 原生 `scheduled_test_plans` / `scheduled_test_results`：面板创建定时测试计划，Sub2API runner 到点执行，Companion 只消费 `auto_recover=true` 且结果为 `success` 的记录来清理账号异常运行态并推送 Telegram。当前不会由 Auto Guard 自动创建短期临时测试，也不会在恢复后自动删除临时计划。
+内部自动恢复依赖 Sub2API 原生 `scheduled_test_plans` / `scheduled_test_results`：Sub2API runner 到点执行，Companion 只消费 `auto_recover=true` 且结果为 `success` 的记录来清理账号异常运行态并推送 Telegram。公开面板不再提供独立恢复计划页面。

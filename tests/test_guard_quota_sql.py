@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_ERROR_EVENTS_SQL, QUALITY_SQL, TELEGRAM_ERROR_ALERTS_SQL
+from app.sql import GUARD_BALANCE_CANDIDATES_SQL, GUARD_ERROR_EVENTS_SQL, QUALITY_SQL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +36,7 @@ class GuardQuotaSqlTests(unittest.TestCase):
         )
         self.assertIn("pre_consume_token_quota_failed", sample)
         self.assertIn("token quota is not enough", sample)
-        for sql in (QUALITY_SQL, GUARD_BALANCE_CANDIDATES_SQL, TELEGRAM_ERROR_ALERTS_SQL):
+        for sql in (QUALITY_SQL, GUARD_BALANCE_CANDIDATES_SQL):
             with self.subTest(sql=sql[:20]):
                 self.assertIn("search_text ILIKE '%%pre_consume_token_quota_failed%%'", sql)
                 self.assertIn("search_text ILIKE '%%token quota is not enough%%'", sql)
@@ -85,12 +85,10 @@ class GuardQuotaSqlTests(unittest.TestCase):
         self.assertIn("a.type AS account_type", GUARD_ERROR_EVENTS_SQL)
         self.assertNotIn("lower(coalesce(a.type, '')) <> 'oauth'", GUARD_ERROR_EVENTS_SQL)
 
-    def test_telegram_error_alerts_scan_incrementally_by_error_log_id(self) -> None:
-        self.assertIn("WHERE id > %(cursor_id)s::bigint", TELEGRAM_ERROR_ALERTS_SQL)
-        self.assertIn("LIMIT %(limit)s", TELEGRAM_ERROR_ALERTS_SQL)
-        self.assertIn("e.upstream_errors::text", TELEGRAM_ERROR_ALERTS_SQL)
-        self.assertIn("WITH ORDINALITY AS x(elem, ordinality)", TELEGRAM_ERROR_ALERTS_SQL)
-        self.assertIn("COALESCE(c.account_name, a.name) AS account_name", TELEGRAM_ERROR_ALERTS_SQL)
+    def test_telegram_error_alert_sql_is_removed_with_public_error_chain_module(self) -> None:
+        import app.sql as sql_module
+
+        self.assertFalse(hasattr(sql_module, "TELEGRAM_ERROR_ALERTS_SQL"))
 
 
 if __name__ == "__main__":

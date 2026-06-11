@@ -32,12 +32,7 @@ from .guard_engine import GuardEngine, is_oauth_account
 from .guard_policy import GuardPolicy, is_whitelisted_account, normalize_account_ids
 from .guard_queue import auto_queue_plan, group_queue_rows, membership_key, queue_position, reorder_queue_plan
 from .guard_store import GuardStore
-from .quality_sort import (
-    STABILITY_SORT_OPTIONS,
-    normalize_stability_sort,
-    sort_speed_rows,
-    sort_stability_rows,
-)
+from .quality_sort import sort_speed_rows
 from .settings import load_settings
 from .secure_session import create_session_cookie, read_session_cookie
 from .sql import (
@@ -50,27 +45,18 @@ from .sql import (
     QUALITY_ALL_ACCOUNTS_SQL,
     QUALITY_ALL_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     QUALITY_SQL_COMPAT_NO_LOAD_FACTOR,
-    SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR,
     PLATFORM_OPTIONS_SQL,
     QUALITY_SQL,
-    REQUESTS_SQL,
     SPEED_SQL,
     SPEED_SQL_COMPAT_NO_LOAD_FACTOR,
-    SCHEDULED_TEST_ACCOUNTS_SQL,
     SCHEDULED_TEST_CAPABILITY_SQL,
-    SCHEDULED_TEST_DELETE_SQL,
     SCHEDULED_TEST_DELETE_ENDLESS_SQL,
     SCHEDULED_TEST_ENDLESS_PLANS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
-    SCHEDULED_TEST_RESULTS_SQL,
     SCHEDULED_TEST_UPSERT_SQL,
-    TELEGRAM_ERROR_ALERTS_SQL,
 )
 from .scheduled_tests import (
-    interval_from_cron,
-    interval_options,
     next_aligned_run,
-    normalize_interval_minutes,
     schedule_cron,
 )
 from .sso_config import (
@@ -81,7 +67,7 @@ from .sso_config import (
 )
 from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
-from .time_range import build_time_range, clean_query_string, rolling_hours_range
+from .time_range import build_time_range
 from .usage_query import (
     TEMPLATE_LABELS,
     UsageQueryConfig,
@@ -121,7 +107,6 @@ guard_state: dict[str, Any] = {
 }
 telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
-telegram_error_alert_task: asyncio.Task[None] | None = None
 telegram_recovery_alert_task: asyncio.Task[None] | None = None
 TELEGRAM_PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -183,13 +168,12 @@ templates.env.filters["quota"] = quota_number
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global telegram_bot, telegram_task, telegram_error_alert_task, telegram_recovery_alert_task
+    global telegram_bot, telegram_task, telegram_recovery_alert_task
     db.open()
     guard_task: asyncio.Task[None] | None = None
     await restart_telegram_bot()
     if settings.guard_enabled:
         guard_task = asyncio.create_task(auto_guard_loop())
-    telegram_error_alert_task = asyncio.create_task(telegram_error_alert_loop())
     telegram_recovery_alert_task = asyncio.create_task(telegram_recovery_alert_loop())
     try:
         yield
@@ -203,11 +187,6 @@ async def lifespan(_: FastAPI):
             guard_task.cancel()
             with suppress(asyncio.CancelledError):
                 await guard_task
-        if telegram_error_alert_task:
-            telegram_error_alert_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await telegram_error_alert_task
-            telegram_error_alert_task = None
         if telegram_recovery_alert_task:
             telegram_recovery_alert_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -939,66 +918,6 @@ def scheduled_test_capability() -> dict[str, Any]:
     }
 
 
-def scheduled_test_reasons(row: dict[str, Any]) -> list[str]:
-    reasons: list[str] = []
-    if row.get("status") and row.get("status") != "active":
-        reasons.append(f"状态 {row.get('status')}")
-    if not row.get("schedulable", True):
-        reasons.append("已停调度")
-    if account_ops.is_cooling(row):
-        reasons.append("临时冷却")
-    if row.get("rate_limited_at") or row.get("rate_limit_reset_at"):
-        reasons.append("限流状态")
-    if row.get("overload_until"):
-        reasons.append("过载状态")
-    if row.get("error_message"):
-        reasons.append("错误状态")
-    return reasons
-
-
-def load_scheduled_test_accounts(group_names: list[str], platform: str, include_all: bool) -> list[dict[str, Any]]:
-    capability = account_routing_capability()
-    sql = SCHEDULED_TEST_ACCOUNTS_SQL if capability["load_factor"] else SCHEDULED_TEST_ACCOUNTS_SQL_COMPAT_NO_LOAD_FACTOR
-    rows = db.fetch_all(
-        sql,
-        {"group_names": group_names, "platform": platform, "include_all": include_all},
-    )
-    for row in rows:
-        row["plan_interval_minutes"] = interval_from_cron(row.get("plan_cron_expression") or "")
-        row["state_label"] = account_ops.account_state(row)
-        row["recovery_reasons"] = scheduled_test_reasons(row)
-        row["has_plan"] = bool(row.get("plan_id"))
-    return rows
-
-
-def load_scheduled_test_results(plan_id: int | None = None, limit: int = 30) -> list[dict[str, Any]]:
-    return db.fetch_all(
-        SCHEDULED_TEST_RESULTS_SQL,
-        {"plan_id": plan_id, "limit": int_param(str(limit), 30, 1, 100)},
-    )
-
-
-def scheduled_test_dashboard(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "shown_count": len(rows),
-        "recoverable_count": sum(1 for row in rows if row.get("has_recoverable_signal")),
-        "plan_count": sum(1 for row in rows if row.get("plan_id")),
-        "enabled_count": sum(1 for row in rows if row.get("plan_enabled")),
-        "auto_recover_count": sum(1 for row in rows if row.get("plan_auto_recover")),
-    }
-
-
-def scheduled_tests_url(group_values: list[str], platform: str, include_all: bool, msg: str = "") -> str:
-    query: list[tuple[str, str]] = [("platform", platform)]
-    for value in unique_group_values(group_values) or [DEFAULT_GROUP_NAME]:
-        query.append(("group", value))
-    if include_all:
-        query.append(("include_all", "1"))
-    if msg:
-        query.append(("msg", msg))
-    return f"{settings.base_path}/scheduled-tests?{urlencode(query)}"
-
-
 def guard_config(policy: GuardPolicy | None = None, *, include_recent_events: bool = True) -> dict[str, Any]:
     policy = policy or guard_policy_from_store()
     policy_payload = asdict(policy)
@@ -1133,25 +1052,21 @@ def guard_section_cards(queue_query: str = "") -> list[dict[str, str]]:
         {
             "key": "queue",
             "title": "分组队列",
-            "description": "按需加载各分组调度队列、拖拽排序和队列保存。",
             "url": f"{settings.base_path}/guard/sections/queue{queue_suffix}",
         },
         {
             "key": "suggestions",
             "title": "自动动作与人工建议",
-            "description": "按需加载当前 Guard 建议和人工执行入口。",
             "url": f"{settings.base_path}/guard/sections/suggestions",
         },
         {
             "key": "routing",
             "title": "账号路由",
-            "description": "按需加载账号优先级、负载因子和最近信号。",
             "url": f"{settings.base_path}/guard/sections/routing",
         },
         {
             "key": "audit",
             "title": "最近 Guard 记录",
-            "description": "按需加载最近 Guard 审计记录。",
             "url": f"{settings.base_path}/guard/sections/audit",
         },
     ]
@@ -1219,13 +1134,6 @@ def guard_queue_url(queue_group_values: list[Any], msg: str = "") -> str:
         query.append(("msg", msg))
     suffix = urlencode(query)
     return f"{settings.base_path}/guard?{suffix}" if suffix else f"{settings.base_path}/guard"
-
-
-def request_scan_limit(limit: int, account_id: str = "", q: str = "") -> int:
-    multiplier = 50 if str(account_id or "").strip() else 20
-    if str(q or "").strip():
-        multiplier = max(multiplier, 30)
-    return min(max(limit, limit * multiplier), 50000)
 
 
 def parse_int_csv(value: Any) -> tuple[int, ...]:
@@ -1931,36 +1839,6 @@ async def run_auto_guard_threaded(actor: str = "auto_guard") -> list[dict[str, A
         return await asyncio.to_thread(run_auto_guard_once, actor)
 
 
-def current_error_log_id() -> int:
-    row = db.fetch_one("SELECT COALESCE(max(id), 0) AS cursor_id FROM ops_error_logs")
-    return int((row or {}).get("cursor_id") or 0)
-
-
-def load_telegram_error_alert_rows(cursor_id: int) -> list[dict[str, Any]]:
-    return db.fetch_all(
-        TELEGRAM_ERROR_ALERTS_SQL,
-        {
-            "cursor_id": max(0, int(cursor_id or 0)),
-            "limit": settings.telegram_error_alert_batch_size,
-        },
-    )
-
-
-def filter_telegram_error_alert_rows(
-    rows: list[dict[str, Any]],
-    policy: GuardPolicy | None = None,
-) -> list[dict[str, Any]]:
-    active_policy = policy or guard_policy_from_store()
-    filtered: list[dict[str, Any]] = []
-    for row in rows:
-        account_id = row.get("account_id")
-        if not account_id:
-            continue
-        if not is_whitelisted_account(active_policy, account_id):
-            filtered.append(row)
-    return filtered
-
-
 def current_scheduled_test_result_id() -> int:
     capability = scheduled_test_capability()
     if not capability["available"]:
@@ -2178,37 +2056,6 @@ async def telegram_recovery_alert_loop() -> None:
         await asyncio.sleep(settings.telegram_error_alert_interval_seconds)
 
 
-async def telegram_error_alert_loop() -> None:
-    while True:
-        try:
-            bot = telegram_bot
-            if bot is not None and bot.enabled and settings.telegram_error_alert_enabled:
-                cursor_id = await bot.error_alert_cursor_id()
-                if cursor_id <= 0:
-                    await bot.set_error_alert_cursor_id(await asyncio.to_thread(current_error_log_id))
-                else:
-                    rows = await asyncio.to_thread(load_telegram_error_alert_rows, cursor_id)
-                    if rows:
-                        next_cursor = max(int(row.get("error_log_id") or cursor_id) for row in rows)
-                        policy = await asyncio.to_thread(guard_policy_from_store)
-                        account_rows = filter_telegram_error_alert_rows(rows, policy)
-                        if account_rows:
-                            await bot.notify_error_chain_alerts(account_rows)
-                            write_audit(
-                                settings.audit_path,
-                                "telegram_error_alert_push",
-                                {
-                                    "row_count": len(account_rows),
-                                    "from_cursor_id": cursor_id,
-                                    "to_cursor_id": next_cursor,
-                                },
-                            )
-                        await bot.set_error_alert_cursor_id(next_cursor)
-        except Exception as exc:
-            write_audit(settings.audit_path, "telegram_error_alert_error", {"error": str(exc)})
-        await asyncio.sleep(settings.telegram_error_alert_interval_seconds)
-
-
 async def auto_guard_loop() -> None:
     while True:
         try:
@@ -2299,7 +2146,7 @@ def account_problem(row: dict[str, Any]) -> dict[str, str]:
         return {"level": "warn", "title": "限流偏高", "detail": "建议短冷却或降低并发。"}
     if int(row.get("account_quality_errors_window") or 0) > 0:
         return {"level": "warn", "title": "有错误", "detail": "样本不多，先观察链路。"}
-    return {"level": "good", "title": "正常", "detail": "当前窗口没有账号质量错误。"}
+    return {"level": "good", "title": "正常", "detail": "当前窗口没有账号异常。"}
 
 
 def build_dashboard(
@@ -2429,55 +2276,8 @@ def logout(user: AuthUser) -> Response:
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
-def index(
+def render_speed_view(
     request: Request,
-    _: AuthUser,
-    platform: str = "openai",
-    time_range: str = "",
-    start_date: str = "",
-    end_date: str = "",
-    hours: int | None = None,
-    sort: str = "default",
-    msg: str = "",
-) -> HTMLResponse:
-    groups = load_groups()
-    group_selection = build_group_selection(request.query_params.getlist("group"), groups)
-    selected_range = build_time_range(time_range, start_date, end_date, hours)
-    selected_sort = normalize_stability_sort(sort)
-    rows = sort_stability_rows(
-        load_quality(group_selection["selected"], platform, selected_range["start_at"], selected_range["end_at"]),
-        selected_sort,
-    )
-    suggestions = [s for row in rows if (s := guard_suggestion(row))]
-    dashboard = build_dashboard(rows)
-    requests_query = clean_query_string({"platform": platform, **selected_range["query_args"]})
-    return render(
-        request,
-        "index.html",
-        {
-            "active": "stability",
-            "rows": rows,
-            "groups": groups,
-            "group": group_selection["selected"][0],
-            "group_selection": group_selection,
-            "platform": platform,
-            "time_range": selected_range,
-            "sort": selected_sort,
-            "sort_options": STABILITY_SORT_OPTIONS,
-            "requests_query": requests_query,
-            "suggestions": suggestions,
-            "dashboard": dashboard,
-            "guard": guard_config(),
-            "msg": msg,
-        },
-    )
-
-
-@app.get("/speed", response_class=HTMLResponse)
-def speed_view(
-    request: Request,
-    _: AuthUser,
     platform: str = "openai",
     time_range: str = "",
     start_date: str = "",
@@ -2497,6 +2297,7 @@ def speed_view(
     )
     dashboard = build_speed_dashboard(rows)
     dashboard.update(usage_query_dashboard(rows, store))
+    request_path = str(getattr(request.url, "path", "") or f"{settings.base_path}/speed")
     return render(
         request,
         "speed.html",
@@ -2510,11 +2311,38 @@ def speed_view(
             "time_range": selected_range,
             "usage_query_settings": usage_query_settings(store),
             "dashboard": dashboard,
-            "return_to": f"{settings.base_path}/speed"
-            + (f"?{request.url.query}" if request.url.query else ""),
+            "return_to": request_path + (f"?{request.url.query}" if request.url.query else ""),
             "msg": msg,
         },
     )
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(
+    request: Request,
+    _: AuthUser,
+    platform: str = "openai",
+    time_range: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    hours: int | None = None,
+    msg: str = "",
+) -> HTMLResponse:
+    return render_speed_view(request, platform, time_range, start_date, end_date, hours, msg)
+
+
+@app.get("/speed", response_class=HTMLResponse)
+def speed_view(
+    request: Request,
+    _: AuthUser,
+    platform: str = "openai",
+    time_range: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    hours: int | None = None,
+    msg: str = "",
+) -> HTMLResponse:
+    return render_speed_view(request, platform, time_range, start_date, end_date, hours, msg)
 
 
 @app.post("/usage-query/accounts/{account_id}")
@@ -2767,184 +2595,6 @@ async def usage_query_query_enabled(user: AuthUser, return_to: str = Form("/spee
     return redirect_with_msg(
         return_to,
         f"已查询 {queried} 个已配置账号，失败 {failed} 个",
-    )
-
-
-@app.get("/scheduled-tests", response_class=HTMLResponse)
-def scheduled_tests_view(
-    request: Request,
-    _: AuthUser,
-    platform: str = "openai",
-    include_all: str = "",
-    msg: str = "",
-) -> HTMLResponse:
-    groups = load_groups()
-    group_selection = build_group_selection(request.query_params.getlist("group"), groups)
-    capability = scheduled_test_capability()
-    include_all_flag = form_truthy(include_all)
-    rows: list[dict[str, Any]] = []
-    results: list[dict[str, Any]] = []
-    if capability["available"]:
-        rows = load_scheduled_test_accounts(group_selection["selected"], platform, include_all_flag)
-        results = load_scheduled_test_results(limit=30)
-    return render(
-        request,
-        "scheduled_tests.html",
-        {
-            "active": "scheduled_tests",
-            "group": group_selection["selected"][0],
-            "platform": platform,
-            "include_all": include_all_flag,
-            "groups": groups,
-            "group_selection": group_selection,
-            "platform_options": load_platform_options(),
-            "capability": capability,
-            "rows": rows,
-            "results": results,
-            "dashboard": scheduled_test_dashboard(rows),
-            "interval_options": interval_options(),
-            "msg": msg,
-        },
-    )
-
-
-@app.post("/scheduled-tests")
-async def scheduled_test_save(
-    request: Request,
-    user: AuthUser,
-    account_id: int = Form(...),
-    model_id: str = Form(""),
-    interval_minutes: str = Form("30"),
-    enabled: str | None = Form(None),
-    auto_recover: str | None = Form(None),
-    max_results: int = Form(50),
-    platform: str = Form("openai"),
-    include_all: str = Form(""),
-) -> Response:
-    form = await request.form()
-    group_values = [str(value) for value in form.getlist("group")]
-    capability = scheduled_test_capability()
-    include_all_flag = form_truthy(include_all)
-    if not capability["available"]:
-        return RedirectResponse(
-            scheduled_tests_url(group_values, platform, include_all_flag, "上游定时测试表未就绪"),
-            status_code=303,
-        )
-
-    interval = normalize_interval_minutes(interval_minutes)
-    next_run_at = next_aligned_run(datetime.now(timezone.utc), interval)
-    row = db.fetch_one(
-        SCHEDULED_TEST_UPSERT_SQL,
-        {
-            "account_id": account_id,
-            "model_id": model_id.strip(),
-            "cron_expression": schedule_cron(interval),
-            "enabled": form_truthy(enabled),
-            "max_results": int_param(str(max_results), 50, 1, 500),
-            "auto_recover": form_truthy(auto_recover),
-            "next_run_at": next_run_at,
-        },
-    )
-    write_audit(
-        settings.audit_path,
-        "scheduled_test_plan_save",
-        {"user": user, "account_id": account_id, "plan": row, "interval_minutes": interval},
-    )
-    return RedirectResponse(
-        scheduled_tests_url(group_values, platform, include_all_flag, f"已保存账号 #{account_id} 的定时恢复计划"),
-        status_code=303,
-    )
-
-
-@app.post("/scheduled-tests/{plan_id}/delete")
-async def scheduled_test_delete(
-    request: Request,
-    user: AuthUser,
-    plan_id: int,
-    platform: str = Form("openai"),
-    include_all: str = Form(""),
-) -> Response:
-    form = await request.form()
-    group_values = [str(value) for value in form.getlist("group")]
-    row = db.fetch_one(SCHEDULED_TEST_DELETE_SQL, {"plan_id": plan_id})
-    write_audit(settings.audit_path, "scheduled_test_plan_delete", {"user": user, "plan_id": plan_id, "plan": row})
-    return RedirectResponse(
-        scheduled_tests_url(group_values, platform, form_truthy(include_all), f"已删除定时恢复计划 #{plan_id}"),
-        status_code=303,
-    )
-
-
-@app.get("/requests", response_class=HTMLResponse)
-def requests_view(
-    request: Request,
-    _: AuthUser,
-    q: str = "",
-    platform: str = "openai",
-    account_id: str = "",
-    time_range: str = "",
-    start_date: str = "",
-    end_date: str = "",
-    hours: int | None = None,
-    limit: int = 200,
-) -> HTMLResponse:
-    platform = platform.strip()
-    account_id = account_id.strip()
-    selected_range = build_time_range(time_range, start_date, end_date, hours)
-    parsed_limit = int_param(str(limit), 200, 1, 1000)
-    scan_limit = request_scan_limit(parsed_limit, account_id, q)
-    rows = db.fetch_all(
-        REQUESTS_SQL,
-        {
-            "q": q.strip(),
-            "platform": platform,
-            "account_id": nullable_int(account_id),
-            "range_start": selected_range["start_at"],
-            "range_end": selected_range["end_at"],
-            "limit": parsed_limit,
-            "scan_limit": scan_limit,
-        },
-    )
-    return render(
-        request,
-        "requests.html",
-        {
-            "active": "requests",
-            "rows": rows,
-            "q": q.strip(),
-            "platform": platform,
-            "account_id": account_id,
-            "time_range": selected_range,
-            "limit": parsed_limit,
-            "scan_limit": scan_limit,
-            "platform_options": load_platform_options(),
-            "account_options": load_account_options(platform),
-        },
-    )
-
-
-@app.get("/requests/{request_id}", response_class=HTMLResponse)
-def request_detail(request: Request, _: AuthUser, request_id: str) -> HTMLResponse:
-    detail_range = rolling_hours_range(168)
-    rows = db.fetch_all(
-        REQUESTS_SQL,
-        {
-            "q": request_id,
-            "platform": "",
-            "account_id": None,
-            "range_start": detail_range["start_at"],
-            "range_end": detail_range["end_at"],
-            "limit": 200,
-            "scan_limit": request_scan_limit(200, "", request_id),
-        },
-    )
-    return render(
-        request,
-        "request_detail.html",
-        {
-            "active": "requests",
-            "request_id": request_id,
-            "rows": rows,
-        },
     )
 
 

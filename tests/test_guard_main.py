@@ -174,6 +174,19 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(recorded, [(9, 12)])
         self.assertEqual(reloaded.recovery_cursor(), 12)
 
+    def test_public_stability_error_chain_and_scheduled_routes_are_removed(self) -> None:
+        self.assertFalse(hasattr(main_module, "requests_view"))
+        self.assertFalse(hasattr(main_module, "request_detail"))
+        self.assertFalse(hasattr(main_module, "scheduled_tests_view"))
+        self.assertFalse(hasattr(main_module, "scheduled_test_save"))
+        self.assertFalse(hasattr(main_module, "scheduled_test_delete"))
+        route_paths = {getattr(route, "path", "") for route in main_module.app.routes}
+        self.assertNotIn("/requests", route_paths)
+        self.assertNotIn("/requests/{request_id}", route_paths)
+        self.assertNotIn("/scheduled-tests", route_paths)
+        self.assertIn("/", route_paths)
+        self.assertIn("/speed", route_paths)
+
     def test_recovery_processing_skips_and_cleans_orphaned_endless_plan(self) -> None:
         store = GuardStore(main_module.settings.guard_state_path)
         store.set_recovery_cursor(10)
@@ -520,28 +533,10 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(options["endless"][1]["label"], "#12 当前列表未返回")
         self.assertTrue(options["endless"][1]["checked"])
 
-    def test_telegram_error_alerts_skip_whitelisted_schedulable_accounts(self) -> None:
-        policy = main_module.GuardPolicy(whitelist_account_ids=(9,))
-        rows = [
-            {"error_log_id": 101, "account_id": 9, "schedulable": True, "temp_unschedulable_until": None},
-            {"error_log_id": 102, "account_id": 10, "schedulable": True, "temp_unschedulable_until": None},
-        ]
-
-        filtered = main_module.filter_telegram_error_alert_rows(rows, policy)
-
-        self.assertEqual([row["account_id"] for row in filtered], [10])
-
-    def test_telegram_error_alerts_skip_whitelisted_even_when_hard_disabled(self) -> None:
-        policy = main_module.GuardPolicy(whitelist_account_ids=(9,))
-        rows = [
-            {"error_log_id": 101, "account_id": 9, "schedulable": False, "temp_unschedulable_until": None},
-            {"error_log_id": 102, "account_id": 9, "schedulable": True, "temp_unschedulable_until": "2026-05-18T10:05:00+00:00"},
-            {"error_log_id": 103, "account_id": 10, "schedulable": False, "temp_unschedulable_until": None},
-        ]
-
-        filtered = main_module.filter_telegram_error_alert_rows(rows, policy)
-
-        self.assertEqual([row["error_log_id"] for row in filtered], [103])
+    def test_public_telegram_error_alert_pipeline_is_removed(self) -> None:
+        self.assertFalse(hasattr(main_module, "load_telegram_error_alert_rows"))
+        self.assertFalse(hasattr(main_module, "filter_telegram_error_alert_rows"))
+        self.assertFalse(hasattr(main_module, "telegram_error_alert_loop"))
 
     def test_balance_sweep_skips_whitelisted_candidates(self) -> None:
         class CaptureDB(FakeCapabilityDB):
@@ -2870,36 +2865,6 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(params["platform"], "")
         self.assertIsNotNone(params["range_start"])
         self.assertIsNone(params["range_end"])
-
-    def test_request_view_limits_error_logs_before_expanding_attempts(self) -> None:
-        class CaptureDB(FakeCapabilityDB):
-            def __init__(self) -> None:
-                self.calls: list[tuple[str, dict[str, Any] | None]] = []
-
-            def fetch_all(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-                self.calls.append((sql, params))
-                return []
-
-        captured: dict[str, Any] = {}
-        original_render = main_module.render
-        capture_db = CaptureDB()
-
-        def capture_render(_request: Any, _template: str, context: dict[str, Any]) -> Any:
-            captured["context"] = context
-            return context
-
-        try:
-            main_module.db = capture_db  # type: ignore[assignment]
-            main_module.render = capture_render  # type: ignore[assignment]
-
-            main_module.requests_view(object(), "tester", limit=200)  # type: ignore[arg-type]
-        finally:
-            main_module.render = original_render
-
-        request_params = next(params for sql, params in capture_db.calls if "WITH target_logs AS" in sql)
-        assert request_params is not None
-        self.assertEqual(request_params["limit"], 200)
-        self.assertEqual(request_params["scan_limit"], 4000)
 
     def test_guard_view_uses_all_accounts_loader_and_no_filter_context(self) -> None:
         sentinel_rows = [

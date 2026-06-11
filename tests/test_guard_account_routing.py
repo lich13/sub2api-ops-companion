@@ -97,7 +97,6 @@ class GuardAccountRoutingTests(unittest.TestCase):
         self.assertIn('name="whitelist_balance_pause_threshold"', template)
         self.assertIn("guard-mode-grid", template)
         self.assertIn("无尽模式账号", template)
-        self.assertIn("1 分钟自动恢复计划", template)
         self.assertIn('data-allow-empty="1"', template)
         self.assertIn("data-group-picker-clear", template)
         self.assertNotIn('<textarea name="whitelist_account_ids"', template)

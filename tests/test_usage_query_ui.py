@@ -52,7 +52,7 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn('name="auto_query_interval_seconds"', template)
         self.assertNotIn('name="sub2api_admin_token"', template)
         self.assertNotIn('name="auto_query_interval_minutes"', template)
-        self.assertIn('自动查询间隔（全局，秒）', template)
+        self.assertIn('自动间隔（秒）', template)
         self.assertIn('id="usage-query-{{ row.id }}"', template)
         self.assertIn('name="return_to" value="{{ return_to }}"', partial)
 
@@ -61,7 +61,7 @@ class UsageQueryUITests(unittest.TestCase):
         script = (REPO_ROOT / "app" / "static" / "usage-query.js").read_text(encoding="utf-8")
 
         self.assertIn("usage-query.js", base_template)
-        self.assertIn("usage-query.js?v=20260602-speed-lazy-editor", base_template)
+        self.assertIn("usage-query.js?v=20260611-slim", base_template)
         self.assertIn("location.hash", script)
         self.assertIn("usage-query-", script)
         self.assertIn("details.open = true", script)
@@ -75,9 +75,13 @@ class UsageQueryUITests(unittest.TestCase):
         script = (REPO_ROOT / "app" / "static" / "navigation.js").read_text(encoding="utf-8")
 
         self.assertIn("navigation.js", base_template)
-        self.assertIn("navigation.js?v=20260603-guard-lazy", base_template)
-        self.assertIn("style.css?v=20260603-guard-lazy", base_template)
-        self.assertIn("guard-sections.js?v=20260603-guard-lazy", base_template)
+        self.assertIn("navigation.js?v=20260611-slim", base_template)
+        self.assertIn("style.css?v=20260611-slim", base_template)
+        self.assertIn("guard-sections.js?v=20260611-slim", base_template)
+        self.assertNotIn("账号稳定性", base_template)
+        self.assertNotIn("错误链路", base_template)
+        self.assertNotIn("定时恢复", base_template)
+        self.assertNotIn("schedule-options.js", base_template)
         self.assertIn("navigation-pending", script)
         self.assertIn("event.defaultPrevented", script)
         self.assertIn('getAttribute("target") === "_blank"', script)
@@ -99,6 +103,22 @@ class UsageQueryUITests(unittest.TestCase):
         self.assertIn("IntersectionObserver", script)
         self.assertIn("data-guard-section-loaded", script)
         self.assertIn("fetch(", script)
+
+    def test_speed_and_guard_templates_remove_explanatory_copy(self) -> None:
+        speed = (REPO_ROOT / "app" / "templates" / "speed.html").read_text(encoding="utf-8")
+        guard = (REPO_ROOT / "app" / "templates" / "guard.html").read_text(encoding="utf-8")
+        telegram = (REPO_ROOT / "app" / "templates" / "telegram.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("按账号展示窗口内", speed)
+        self.assertNotIn("速度统计和消耗", speed)
+        self.assertNotIn("全局启用后会刷新", speed)
+        self.assertNotIn("展开后加载", speed)
+        self.assertNotIn("自动 Guard 读取全部账号", guard)
+        self.assertNotIn("判定边界", guard)
+        self.assertNotIn("这里控制 Guard", guard)
+        self.assertNotIn("按需加载", guard)
+        self.assertNotIn("错误链路", telegram)
+        self.assertNotIn("定时测试自动恢复", telegram)
 
     def test_navigation_busy_script_behavior(self) -> None:
         node = shutil.which("node")
@@ -145,13 +165,13 @@ class UsageQueryUITests(unittest.TestCase):
             }}
 
             const cases = {{
-              internal: runClick('https://ops.example.com/stability'),
+              internal: runClick('https://ops.example.com/guard'),
               hashOnly: runClick('https://ops.example.com/speed?group=a#usage-query-9'),
               sameUrl: runClick('https://ops.example.com/speed?group=a#top'),
               external: runClick('https://external.example.com/speed'),
-              blank: runClick('https://ops.example.com/stability', {{ target: '_blank' }}),
+              blank: runClick('https://ops.example.com/guard', {{ target: '_blank' }}),
               download: runClick('https://ops.example.com/export', {{ download: '1' }}),
-              modified: runClick('https://ops.example.com/stability', {{}}, {{ metaKey: true }}),
+              modified: runClick('https://ops.example.com/guard', {{}}, {{ metaKey: true }}),
             }};
             const assert = require('assert');
             assert.deepStrictEqual(cases.internal, {{ bodyPending: true, linkPending: true, ariaBusy: 'true' }});
