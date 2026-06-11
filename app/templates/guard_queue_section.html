@@ -2,7 +2,6 @@
   <div class="section-head guard-queue-head">
     <div>
       <h3>分组队列</h3>
-      <p>每个分组内按 P1、P2、P3 依次调度；队列序号写入 account_groups.priority，异常账号可由自动重排放到队尾并降载观察。</p>
     </div>
     <form class="guard-queue-filter" method="get" action="{{ base_path }}/guard">
       <div class="group-picker-field">
@@ -46,7 +45,6 @@
       <input type="hidden" name="queue_group" value="{{ value }}" />
     {% endfor %}
     <button class="primary" type="submit">自动调整队列</button>
-    <span>健康账号按窗口成功次数优先；异常、冷却、已停账号会设为降载观察。</span>
   </form>
 
   <form id="guard-queue-order-form" method="post" action="{{ base_path }}/guard/queue/reorder" hidden></form>
@@ -60,7 +58,7 @@
           <div class="guard-queue-group-head">
             <div>
               <h4>{{ group.label }}</h4>
-              <p>{{ group.rows | length }} 个账号</p>
+              <span class="cell-sub">{{ group.rows | length }} 个账号</span>
             </div>
             {% if group.platform %}
               <span class="pill muted">{{ group.platform }}</span>
@@ -87,7 +85,10 @@
                       </form>
                     {% endif %}
                   </div>
-                  <span>{{ row.type }} / concurrency={{ row.concurrency }}</span>
+                  <span class="queue-account-meta">
+                    <span class="pill muted">{{ row.type }}</span>
+                    <span class="pill muted">并发 {{ row.concurrency or 0 }}</span>
+                  </span>
                 </div>
                 <div class="queue-account-state">
                   {% if row.schedulable %}
@@ -97,10 +98,10 @@
                   {% endif %}
                   <span class="cell-sub">{{ row.problem.title }}</span>
                 </div>
-                <div class="queue-account-metrics mono">
-                  <span>success={{ row.success_window or 0 }}</span>
-                  <span>errors={{ row.account_quality_errors_window or 0 }}</span>
-                  <span>load={{ row.load_factor or row.effective_load_factor or '-' }}</span>
+                <div class="queue-account-metrics">
+                  <span class="pill good">成功 {{ row.success_window or 0 }}</span>
+                  <span class="pill {{ 'bad' if (row.account_quality_errors_window or 0) > 0 else 'muted' }}">异常 {{ row.account_quality_errors_window or 0 }}</span>
+                  <span class="pill muted">负载 {{ row.load_factor or row.effective_load_factor or '-' }}</span>
                 </div>
                 <div class="queue-move-actions">
                   <button type="button" data-guard-move="up" aria-label="上移">↑</button>
@@ -113,12 +114,10 @@
       {% else %}
         <div class="empty-state">
           <strong>当前分组没有账号</strong>
-          <p>切换分组后这里会显示对应的调度队列。</p>
         </div>
       {% endfor %}
     </div>
     <div class="guard-queue-savebar">
-      <span>低序号优先，同一分组从 P1 依次向下排列。</span>
       <button form="guard-queue-order-form" class="primary" type="submit">保存当前顺序</button>
     </div>
   </div>

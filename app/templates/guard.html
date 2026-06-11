@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="page-title">
+<section class="page-title page-title-compact guard-hero">
   <div>
+    <span class="eyebrow">Guard</span>
     <h2>自动 Guard</h2>
-    <p>自动 Guard 读取全部账号的错误链路和成功记录，快速暂停确定性坏账号、冷却临时异常账号，并用定时测试结果恢复；不接管 Sub2API 请求转发。</p>
   </div>
 </section>
 
@@ -42,7 +42,6 @@
   <div class="section-head">
     <div>
       <h3>策略</h3>
-      <p>这里控制 Guard 的熔断与恢复节奏。`priority` 只影响账号调度顺序，不改变稳定性/速度页面的默认排序。</p>
     </div>
     <form method="post" action="{{ base_path }}/guard/run">
       <button class="primary" type="submit">立即扫描并执行</button>
@@ -128,7 +127,6 @@
             </div>
           </details>
         </div>
-        <p>非额度错误只记录；连续额度错误达到白名单阈值才硬停。与无尽模式互斥。</p>
       </div>
       <div class="guard-mode-card accent">
         <div class="guard-mode-card-head">
@@ -181,7 +179,6 @@
             </div>
           </details>
         </div>
-        <p>连续 5 次错误后停用，并创建 1 分钟自动恢复计划；测试通过后按现有恢复链路恢复。</p>
       </div>
     </div>
     <label>白名单额度阈值
@@ -194,15 +191,14 @@
     <div><dt>上次错误</dt><dd class="guard-error-text">{{ guard.state.last_error or '-' }}</dd></div>
     <div><dt>页面信号窗口</dt><dd>近 {{ guard.quality_hours }} 小时</dd></div>
     <div><dt>额度扫尾窗口</dt><dd>{{ guard.balance_max_age_hours }} 小时</dd></div>
-    <div><dt>自动动作</dt><dd>余额/额度不足永久停调度；429/5xx 先软降载后冷却；白名单宽限，无尽模式 5 错停用 + 1 分钟恢复计划</dd></div>
   </dl>
 </section>
 
 {% set fallback_guard_section_cards = [
-  {"key": "queue", "title": "分组队列", "description": "按需加载各分组调度队列、拖拽排序和队列保存。", "url": base_path ~ "/guard/sections/queue"},
-  {"key": "suggestions", "title": "自动动作与人工建议", "description": "按需加载当前 Guard 建议和人工执行入口。", "url": base_path ~ "/guard/sections/suggestions"},
-  {"key": "routing", "title": "账号路由", "description": "按需加载账号优先级、负载因子和最近信号。", "url": base_path ~ "/guard/sections/routing"},
-  {"key": "audit", "title": "最近 Guard 记录", "description": "按需加载最近 Guard 审计记录。", "url": base_path ~ "/guard/sections/audit"},
+  {"key": "queue", "title": "分组队列", "url": base_path ~ "/guard/sections/queue"},
+  {"key": "suggestions", "title": "自动动作与人工建议", "url": base_path ~ "/guard/sections/suggestions"},
+  {"key": "routing", "title": "账号路由", "url": base_path ~ "/guard/sections/routing"},
+  {"key": "audit", "title": "最近 Guard 记录", "url": base_path ~ "/guard/sections/audit"},
 ] %}
 <section class="guard-lazy-grid" aria-label="Guard 详细区块">
   {% for card in guard_section_cards or fallback_guard_section_cards %}
@@ -215,21 +211,14 @@
       <div class="guard-lazy-head">
         <div>
           <h3>{{ card.title }}</h3>
-          <p>{{ card.description }}</p>
         </div>
         <button type="button" class="secondary-button small-button" data-guard-section-load>加载</button>
       </div>
       <div class="guard-section-placeholder" data-guard-section-target>
         <span class="loading-dot" aria-hidden="true"></span>
         <strong>等待加载</strong>
-        <p>滚动到这里或点击加载后获取最新数据。</p>
       </div>
     </section>
   {% endfor %}
-</section>
-
-<section class="panel compact-panel">
-  <h3>判定边界</h3>
-  <p>自动暂停只匹配 `INSUFFICIENT_BALANCE`、`insufficient_user_quota`、`pre_consume_token_quota_failed`、`token quota is not enough`、`用户额度不足`、`额度不足`、`额度已用尽`、`RemainQuota = -...`、`预扣费额度失败`、`剩余额度`、`not enough credits`、`quota exceeded`。命中后会把活跃账号升级为手动恢复，即使账号已处于上游限流或临时冷却；429/5xx/流式错误走 1m/3m/5m 短冷却并清掉旧运行态。白名单账号的 403、429、5xx、流式错误只记录信号，不会自动暂停或冷却；额度/余额错误必须连续达到白名单阈值才会硬停。无尽模式只适用于非 OAuth 账号，连续 5 次错误后直接停用，并创建 1 分钟自动恢复计划。</p>
 </section>
 {% endblock %}

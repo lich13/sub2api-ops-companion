@@ -33,7 +33,6 @@ from app.telegram_bot import (
     TelegramOpsBot,
     account_alert,
     account_actions_keyboard,
-    error_chain_alert,
     format_oauth_quota_line,
     oauth_quota_recovery_alert,
     format_guard_actions,
@@ -100,14 +99,14 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(keyboard)
             self.assertTrue(await bot._allowed(100, 200))
 
-    async def test_text_commands_are_disabled_after_pairing(self) -> None:
+    async def test_unknown_text_command_lists_supported_commands_after_pairing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
             await bot._pair(100, 200, "private", "/pair ABCD-EFGH")
 
             reply, keyboard = await bot._text_reply(100, 200, "/accounts")
 
-            self.assertIn("不再通过文本命令做账号运维", reply)
+            self.assertIn("可用命令：/quota、/whitelist、/endless", reply)
             self.assertIsNone(keyboard)
 
     async def test_quota_command_queries_enabled_configs_and_shows_available_and_total(self) -> None:
@@ -1194,24 +1193,13 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
     def test_pairing_code_normalization_ignores_case_spaces_and_hyphen(self) -> None:
         self.assertEqual(normalize_pairing_code("ab cd-ef gh"), "ABCDEFGH")
 
-    async def test_error_alert_cursor_persists_in_state(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
-
-            self.assertEqual(await bot.error_alert_cursor_id(), 0)
-            await bot.set_error_alert_cursor_id(123)
-
-            self.assertEqual(await bot.error_alert_cursor_id(), 123)
-
-    async def test_recovery_alert_cursor_persists_separately(self) -> None:
+    async def test_recovery_alert_cursor_persists_in_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             bot = TelegramOpsBot(make_settings(str(Path(tmpdir) / "state.json")), object(), guard_runner, guard_config)  # type: ignore[arg-type]
 
             self.assertEqual(await bot.recovery_alert_cursor_id(), 0)
-            await bot.set_error_alert_cursor_id(123)
             await bot.set_recovery_alert_cursor_id(456)
 
-            self.assertEqual(await bot.error_alert_cursor_id(), 123)
             self.assertEqual(await bot.recovery_alert_cursor_id(), 456)
 
     async def test_oauth_recovery_state_persists_dedupe_without_nesting(self) -> None:
@@ -1374,28 +1362,13 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(restart_calls, 1)
             self.assertIn('"oauth_usage_refresh_enabled": false', audit_path.read_text(encoding="utf-8"))
 
-    def test_error_chain_alert_includes_request_account_and_message(self) -> None:
-        text = error_chain_alert(
-            {
-                "request_id": "req-1",
-                "client_request_id": "client-1",
-                "platform": "openai",
-                "model": "gpt-test",
-                "attempt_no": 2,
-                "account_id": 7,
-                "account_name": "acct",
-                "status_code": 429,
-                "category": "provider_rate_limit",
-                "message": "rate limit exceeded",
-            },
-            None,
-        )
+    def test_public_error_chain_telegram_api_is_removed(self) -> None:
+        from app import telegram_bot as telegram_module
 
-        self.assertIn("错误链路异常", text)
-        self.assertIn("req-1", text)
-        self.assertIn("#7 acct", text)
-        self.assertIn("provider_rate_limit", text)
-        self.assertIn("rate limit exceeded", text)
+        self.assertFalse(hasattr(telegram_module, "error_chain_alert"))
+        self.assertFalse(hasattr(TelegramOpsBot, "notify_error_chain_alerts"))
+        self.assertFalse(hasattr(TelegramOpsBot, "error_alert_cursor_id"))
+        self.assertFalse(hasattr(TelegramOpsBot, "set_error_alert_cursor_id"))
 
     def test_recovery_alert_includes_account_plan_and_latency(self) -> None:
         text = recovery_alert(
