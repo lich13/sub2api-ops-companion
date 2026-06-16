@@ -5,15 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/sub2ops-icon.svg?v=20260516-icon" />
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260611-slim" />
-    <script src="{{ base_path }}/static/table-columns.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/time-range.js?v=20260512-speed" defer></script>
-    <script src="{{ base_path }}/static/group-picker.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/guard-queue.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/guard-sections.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/navigation.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/usage-query.js?v=20260611-slim" defer></script>
-    <script src="{{ base_path }}/static/version-panel.js?v=20260510-version" defer></script>
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260617-light" />
+    {% if active in ['speed', 'guard'] %}
+      <script src="{{ base_path }}/static/table-columns.js?v=20260617-light" defer></script>
+      <script src="{{ base_path }}/static/group-picker.js?v=20260617-light" defer></script>
+    {% endif %}
+    {% if active == 'speed' %}
+      <script src="{{ base_path }}/static/time-range.js?v=20260617-light" defer></script>
+      <script src="{{ base_path }}/static/usage-query.js?v=20260617-light" defer></script>
+    {% endif %}
+    {% if active == 'guard' %}
+      <script src="{{ base_path }}/static/guard-queue.js?v=20260617-light" defer></script>
+      <script src="{{ base_path }}/static/guard-sections.js?v=20260617-light" defer></script>
+    {% endif %}
+    <script src="{{ base_path }}/static/navigation.js?v=20260617-light" defer></script>
+    <script src="{{ base_path }}/static/version-panel.js?v=20260617-light" defer></script>
   </head>
   <body>
     <header class="app-header">
