@@ -1,22 +1,22 @@
 :root {
-  color-scheme: dark;
-  --bg: #010102;
-  --surface: #0f1011;
-  --surface-soft: #141516;
-  --surface-lift: #18191a;
-  --text: #f7f8f8;
-  --muted: #d0d6e0;
-  --muted-soft: #8a8f98;
-  --border: #23252a;
-  --border-strong: #34343a;
-  --primary: #5e6ad2;
-  --primary-hover: #828fff;
-  --primary-soft: rgba(94, 106, 210, 0.16);
-  --success: #27a644;
-  --warning: #d99a25;
-  --danger: #e25563;
-  --shadow: none;
-  --shadow-strong: 0 24px 80px rgba(0, 0, 0, 0.45);
+  color-scheme: light;
+  --bg: #f6faf9;
+  --surface: #ffffff;
+  --surface-soft: #f8fbfa;
+  --surface-lift: #f1f7f5;
+  --text: #111827;
+  --muted: #4b5563;
+  --muted-soft: #6b7280;
+  --border: #e5e7eb;
+  --border-strong: #cfd8d5;
+  --primary: #0f766e;
+  --primary-hover: #0b5f59;
+  --primary-soft: rgba(15, 118, 110, 0.09);
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-strong: 0 18px 50px rgba(15, 23, 42, 0.14);
   --radius: 8px;
 }
 
@@ -3055,11 +3055,11 @@ pre {
   }
 }
 
-/* 20260611 slim dark operations surface */
+/* 20260617 Sub2API-compatible light operations surface */
 .app-header {
-  background: rgba(1, 1, 2, 0.86);
+  background: rgba(255, 255, 255, 0.94);
   border-bottom-color: var(--border);
-  box-shadow: none;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
 }
 
 .header-inner {
@@ -3124,7 +3124,7 @@ select:focus,
 textarea:focus,
 .group-picker[open] > summary,
 .time-range-picker[open] > summary {
-  outline: 2px solid rgba(94, 106, 210, 0.38);
+  outline: 2px solid rgba(15, 118, 110, 0.14);
   border-color: var(--primary);
 }
 
@@ -3142,20 +3142,20 @@ textarea:focus,
 .nav a.active,
 .nav a:hover,
 .link-button:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--surface-soft);
+  color: var(--primary);
+  border-color: rgba(15, 118, 110, 0.18);
+  background: var(--primary-soft);
 }
 
 .nav a.pending,
 .nav a.pending:hover {
-  color: #fff;
+  color: var(--primary);
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 
 .nav a.pending::after {
-  border-color: rgba(130, 143, 255, 0.28);
+  border-color: rgba(15, 118, 110, 0.22);
   border-top-color: var(--primary-hover);
 }
 
@@ -3204,7 +3204,7 @@ textarea:focus,
 }
 
 .metric-card.main-metric {
-  border-color: rgba(94, 106, 210, 0.42);
+  border-color: rgba(15, 118, 110, 0.22);
   background: var(--surface-soft);
 }
 
@@ -3242,7 +3242,7 @@ button:hover,
 
 .notice {
   color: var(--text);
-  border-color: rgba(94, 106, 210, 0.42);
+  border-color: rgba(15, 118, 110, 0.18);
   background: var(--primary-soft);
 }
 
@@ -3493,7 +3493,7 @@ dd {
 }
 
 .guard-mode-card.accent {
-  border-color: rgba(94, 106, 210, 0.42);
+  border-color: rgba(15, 118, 110, 0.22);
 }
 
 .guard-queue-card,
@@ -3629,6 +3629,355 @@ dl div,
   color: var(--muted);
   background: var(--surface);
   cursor: pointer;
+}
+
+/* Final light-theme pass for the embedded Sub2API panel. */
+body {
+  background:
+    linear-gradient(180deg, #f4fbf9 0, #f8fbfa 220px, #f6faf9 100%);
+}
+
+.app-header {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom-color: #e5e7eb;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+}
+
+.brand h1,
+.page-title h2,
+.panel h3,
+.table-panel .section-head h3,
+.account-title,
+.route-main,
+.kind-main,
+.suggestion-reason,
+.audit-event,
+.audit-payload,
+.message-preview,
+.priority-main,
+.window-label,
+.command-grid span,
+.step-list,
+.traffic-pair,
+.speed-metric-cell strong,
+.quota-snapshot strong,
+dd {
+  color: var(--text);
+}
+
+.brand-meta,
+.subtle,
+.muted-text,
+.cell-sub,
+.metric-card span,
+.quota-window-reset,
+dt,
+label,
+.filter-label {
+  color: var(--muted);
+}
+
+.cell-sub.tiny,
+.tiny,
+.account-id,
+.chain-label,
+.group-picker-list em {
+  color: var(--muted-soft);
+}
+
+.nav {
+  gap: 5px;
+}
+
+.nav a,
+.link-button {
+  color: var(--muted);
+  border-radius: 8px;
+}
+
+.nav a.active {
+  color: #0f5f59;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #e8f7f3;
+}
+
+.nav a:hover,
+.link-button:hover {
+  color: #0f5f59;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #edf8f5;
+}
+
+body.navigation-pending::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0, #14b8a6 35%, #0f766e 65%, transparent 100%);
+  animation: navProgress 0.9s ease-in-out infinite;
+}
+
+@keyframes navProgress {
+  0% {
+    transform: translateX(-70%);
+  }
+  100% {
+    transform: translateX(70%);
+  }
+}
+
+.panel,
+.metric-card,
+.table-panel,
+.version-popover,
+.group-picker-menu,
+.time-range-menu,
+.column-list {
+  border-color: var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.metric-card {
+  background: #fff;
+}
+
+.metric-card strong {
+  color: var(--text);
+}
+
+.metric-card.main-metric,
+.metric-card.warning {
+  border-color: rgba(180, 83, 9, 0.2);
+  background: #fffdf5;
+}
+
+.metric-card.main-metric {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #f0fdfa;
+}
+
+.metric-card.danger {
+  border-color: rgba(185, 28, 28, 0.2);
+  background: #fff7f7;
+}
+
+input,
+select,
+textarea,
+.group-picker > summary,
+.time-range-picker > summary,
+.column-picker > summary,
+button,
+.button {
+  color: var(--text);
+  background: #fff;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.group-picker[open] > summary,
+.time-range-picker[open] > summary,
+.column-picker[open] > summary {
+  outline: 2px solid rgba(15, 118, 110, 0.14);
+  border-color: var(--primary);
+}
+
+button.primary,
+.button.primary {
+  color: #fff;
+  border-color: #0f766e;
+  background: #0f766e;
+  box-shadow: 0 1px 2px rgba(15, 118, 110, 0.16);
+}
+
+button.primary:hover,
+.button.primary:hover {
+  color: #fff;
+  border-color: #0b5f59;
+  background: #0b5f59;
+}
+
+.switch-field,
+.checkbox-label,
+.telegram-oauth-toggle,
+.pairing-code-panel,
+.guard-mode-card,
+.guard-status-list div,
+dl div,
+.setting-row,
+.usage-query-editor-placeholder,
+.usage-query-form,
+.sso-menu-preview,
+.id-chip,
+.command-pills code,
+.step-list code,
+.command-grid code,
+.inline-empty code {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-soft);
+}
+
+.table-panel .section-head,
+.group-picker-actions,
+.time-range-dates,
+.version-popover-head {
+  background: #f8fbfa;
+  border-color: var(--border);
+}
+
+.table-wrap {
+  background: #fff;
+  border-color: var(--border);
+}
+
+.data-table {
+  color: var(--text);
+  background: #fff;
+}
+
+.data-table th {
+  color: #374151;
+  background: #f8faf9;
+  border-bottom-color: var(--border);
+}
+
+.data-table td {
+  color: var(--text);
+  border-bottom-color: #edf0ef;
+}
+
+.data-table tbody tr:nth-child(even):not(.bad):not(.warn) {
+  background: #fcfdfc;
+}
+
+.data-table tbody tr:hover,
+.account-table tbody tr:hover td[data-col="account"] {
+  background: #f1f8f6;
+}
+
+.account-table th[data-col="account"],
+.account-table td[data-col="account"] {
+  background: #fff;
+  box-shadow: 8px 0 16px rgba(16, 24, 40, 0.04);
+}
+
+.account-table th[data-col="account"] {
+  background: #f8faf9;
+}
+
+.account-table tbody tr.bad,
+.account-table tbody tr.bad td[data-col="account"] {
+  background: #fff7f7;
+}
+
+.account-table tbody tr.warn,
+.account-table tbody tr.warn td[data-col="account"] {
+  background: #fffdf5;
+}
+
+.pill,
+.tag,
+.id-chip,
+.status-badge {
+  color: #374151;
+  border-color: #d9e2df;
+  background: #f8faf9;
+}
+
+.pill.good,
+.traffic-good {
+  color: var(--success);
+}
+
+.pill.bad {
+  color: var(--danger);
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.pill.warn {
+  color: var(--warning);
+  border-color: #fed7aa;
+  background: #fffbeb;
+}
+
+.pill.muted {
+  color: #4b5563;
+  border-color: #e5e7eb;
+  background: #f3f4f6;
+}
+
+.cost-main {
+  color: #0f766e;
+}
+
+.oauth-plan-badge {
+  color: #0f5f59;
+  border-color: #99f6e4;
+  background: #ecfdf5;
+}
+
+.quota-window-chip {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.quota-window-chip.depleted {
+  color: var(--danger);
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.usage-query-detail-row td {
+  background: #f8fbfa;
+}
+
+.usage-query-config > summary {
+  color: #0f5f59;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #e8f7f3;
+}
+
+.guard-mode-card.accent {
+  border-color: rgba(15, 118, 110, 0.24);
+  background: #f0fdfa;
+}
+
+.guard-queue-card,
+.guard-queue-card.warn,
+.guard-queue-card.bad {
+  color: var(--text);
+}
+
+.guard-section-placeholder {
+  color: var(--muted);
+  border-color: #cfd8d5;
+  background: #f8fbfa;
+}
+
+.notice {
+  color: #0f5f59;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #e8f7f3;
+}
+
+pre {
+  color: #e5e7eb;
+  background: #111827;
 }
 
 @media (max-width: 1120px) {

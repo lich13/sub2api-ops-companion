@@ -1,4 +1,6 @@
 (function () {
+  var sectionCache = Object.create(null);
+
   function rewireInsertedContent(root) {
     if (window.sub2opsWireTableColumns) {
       window.sub2opsWireTableColumns(root);
@@ -21,6 +23,19 @@
       return Promise.resolve();
     }
 
+    if (sectionCache[url]) {
+      target.innerHTML = sectionCache[url];
+      target.classList.remove("guard-section-loading", "guard-section-error");
+      section.setAttribute("data-guard-section-loaded", "1");
+      var cachedButton = section.querySelector("[data-guard-section-load]");
+      if (cachedButton) {
+        cachedButton.textContent = "已加载";
+        cachedButton.disabled = true;
+      }
+      rewireInsertedContent(target);
+      return Promise.resolve();
+    }
+
     section.setAttribute("data-guard-section-loading", "1");
     target.classList.remove("guard-section-error");
     target.classList.add("guard-section-loading");
@@ -34,6 +49,7 @@
         return response.text();
       })
       .then(function (html) {
+        sectionCache[url] = html;
         target.innerHTML = html;
         target.classList.remove("guard-section-loading");
         section.setAttribute("data-guard-section-loaded", "1");
@@ -74,24 +90,6 @@
       });
     });
 
-    if ("IntersectionObserver" in window) {
-      var observer = new IntersectionObserver(
-        function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              loadSection(entry.target);
-              observer.unobserve(entry.target);
-            }
-          });
-        },
-        { rootMargin: "220px 0px" },
-      );
-      sections.forEach(function (section) {
-        if (section.getAttribute("data-guard-section-loaded") !== "1") {
-          observer.observe(section);
-        }
-      });
-    }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
