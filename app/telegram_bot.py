@@ -722,6 +722,7 @@ class TelegramOpsBot:
 
         account_lines: list[str] = []
         totals: dict[str, float] = {}
+        oauth_totals: dict[str, dict[str, Any]] = {}
         seen_account_ids: set[int] = set()
         for config in configs[:30]:
             seen_account_ids.add(config.account_id)
@@ -730,7 +731,8 @@ class TelegramOpsBot:
                 continue
             if row and is_oauth_account(row):
                 previous = store.result(config.account_id)
-                line = await asyncio.to_thread(format_oauth_quota_line, row, config.account_id, previous)
+                line, summary = await asyncio.to_thread(format_oauth_quota_line_with_summary, row, config.account_id, previous)
+                add_oauth_quota_totals(oauth_totals, summary)
                 if line:
                     account_lines.append(line)
                 continue
@@ -749,15 +751,15 @@ class TelegramOpsBot:
                     add_quota_total(totals, quota_available(previous, hydrated), str(previous.get("unit") or ""))
                 continue
             store.save_result(config.account_id, result)
-        oauth_lines = await self._current_oauth_quota_lines(seen_account_ids, store)
+        oauth_lines = await self._current_oauth_quota_lines(seen_account_ids, store, oauth_totals)
         account_lines.extend(oauth_lines)
         if not account_lines:
             return "没有配置额度查询的账号。请先在速度页配置额度查询。", None
-        lines = [
-            "额度查询",
-            f"总可用：{format_quota_totals(totals)}",
-            *account_lines,
-        ]
+        lines = ["额度查询", f"总可用：{format_quota_totals(totals)}"]
+        oauth_total_line = format_oauth_quota_totals(oauth_totals)
+        if oauth_total_line:
+            lines.append(oauth_total_line)
+        lines.extend(account_lines)
         if len(configs) > 30:
             lines.append(f"... 另有 {len(configs) - 30} 个已配置账号未展开")
         return "\n".join(lines), None
@@ -766,6 +768,7 @@ class TelegramOpsBot:
         self,
         seen_account_ids: set[int],
         store: UsageQueryStore | None = None,
+        oauth_totals: dict[str, dict[str, Any]] | None = None,
     ) -> list[str]:
         try:
             rows = await asyncio.to_thread(account_ops.current_oauth_accounts, self.db)
@@ -781,7 +784,9 @@ class TelegramOpsBot:
                 continue
             active_store = store or UsageQueryStore(self.settings.usage_query_state_path)
             previous = active_store.result(account_id)
-            line = await asyncio.to_thread(format_oauth_quota_line, full_row, account_id, previous)
+            line, summary = await asyncio.to_thread(format_oauth_quota_line_with_summary, full_row, account_id, previous)
+            if oauth_totals is not None:
+                add_oauth_quota_totals(oauth_totals, summary)
             if line:
                 lines.append(line)
             seen_account_ids.add(account_id)
@@ -1197,21 +1202,81 @@ def format_oauth_quota_line(
     fallback_account_id: int = 0,
     result: dict[str, Any] | None = None,
 ) -> str:
+    line, _summary = format_oauth_quota_line_with_summary(row, fallback_account_id, result)
+    return line
+
+
+def format_oauth_quota_line_with_summary(
+    row: dict[str, Any],
+    fallback_account_id: int = 0,
+    result: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
     summary = oauth_quota_summary_for_row(row, result)
     if not isinstance(summary, dict):
-        return ""
+        return "", {}
     account_id = int(row.get("id") or row.get("account_id") or fallback_account_id)
     account_name = str(row.get("name") or "-")
     plan_type = str(summary.get("plan_type") or "oauth")
     windows = remaining_oauth_quota_windows(summary.get("telegram_windows") or summary.get("ui_windows"))
     rendered = " / ".join(format_oauth_quota_window(window) for window in windows if isinstance(window, dict))
     if not rendered:
-        return ""
-    return f"#{account_id} {account_name} · {plan_type}：{rendered}"
+        return "", summary
+    return f"#{account_id} {account_name} · {plan_type}：{rendered}", summary
 
 
 def oauth_quota_summary_for_row(row: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
     return usage_query_module.oauth_quota_summary_from_result(row, result)
+
+
+def add_oauth_quota_totals(totals: dict[str, dict[str, Any]], summary: dict[str, Any] | None) -> None:
+    if not isinstance(summary, dict):
+        return
+    plan_type = str(summary.get("plan_type") or "oauth").strip() or "oauth"
+    entry = totals.setdefault(plan_type, {"account_count": 0, "windows": {}})
+    entry["account_count"] = int(entry.get("account_count") or 0) + 1
+    windows = entry.setdefault("windows", {})
+    if not isinstance(windows, dict):
+        windows = {}
+        entry["windows"] = windows
+    for window in summary.get("ui_windows") or []:
+        if not isinstance(window, dict):
+            continue
+        label = str(window.get("label") or "").strip()
+        if not label:
+            continue
+        remaining_percent = oauth_window_remaining_percent(window)
+        if remaining_percent is None:
+            continue
+        windows[label] = float(windows.get(label) or 0.0) + remaining_percent
+
+
+def oauth_window_remaining_percent(window: dict[str, Any]) -> float | None:
+    remaining_percent = numeric_value(window.get("remaining_percent"))
+    if remaining_percent is None:
+        used_percent = numeric_value(window.get("used_percent"))
+        if used_percent is None:
+            return None
+        remaining_percent = 100.0 - used_percent
+    return max(0.0, min(100.0, abs(float(remaining_percent))))
+
+
+def format_oauth_quota_totals(totals: dict[str, dict[str, Any]]) -> str:
+    rendered_plans: list[str] = []
+    for plan_type in sorted(totals):
+        entry = totals.get(plan_type) or {}
+        account_count = int(entry.get("account_count") or 0)
+        windows = entry.get("windows") if isinstance(entry.get("windows"), dict) else {}
+        rendered_windows = [
+            f"{label} {format_quota_percent(value)}"
+            for label, value in sorted(windows.items())
+            if numeric_value(value) is not None
+        ]
+        if account_count <= 0 or not rendered_windows:
+            continue
+        rendered_plans.append(f"{plan_type} {account_count} 个：" + " / ".join(rendered_windows))
+    if not rendered_plans:
+        return ""
+    return "OAuth 总余量：" + "；".join(rendered_plans)
 
 
 def remaining_oauth_quota_windows(raw_windows: Any) -> list[dict[str, Any]]:
