@@ -1713,6 +1713,66 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(calls, [12])
         self.assertEqual(store.result(12)["template_type"], "oauth")
 
+    def test_usage_query_guard_refreshes_due_oauth_accounts_with_concurrency(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            guard_disable_on_zero=True,
+            auto_query_interval_seconds=1,
+            sub2api_admin_token="admin-secret",
+        )
+        main_module.settings.telegram_oauth_usage_refresh_concurrency = 4
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_account_row = lambda _account_id: None  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": account_id,
+                "name": f"oauth-{account_id}",
+                "platform": "openai",
+                "type": "oauth",
+                "schedulable": True,
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+            for account_id in range(20, 26)
+        ]
+        active = 0
+        max_active = 0
+        calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            try:
+                calls.append(account_id)
+                import time
+
+                time.sleep(0.02)
+                return {
+                    "account_id": account_id,
+                    "template_type": "oauth",
+                    "success": account_id != 24,
+                    "error": "boom" if account_id == 24 else "",
+                    "queried_at": "2026-05-25T08:00:00+00:00",
+                }
+            finally:
+                active -= 1
+
+        main_module.run_oauth_usage_query = fake_oauth_query  # type: ignore[assignment]
+
+        actions = main_module.run_usage_query_guard("test")
+
+        self.assertEqual(actions, [])
+        self.assertEqual(sorted(calls), [20, 21, 22, 23, 24, 25])
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, 4)
+        self.assertFalse(store.result(24)["success"])
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"oauth_due_count": 6', audit_text)
+        self.assertIn('"oauth_failed_count": 1', audit_text)
+        self.assertIn('"oauth_concurrency": 4', audit_text)
+
     def test_usage_query_guard_skips_oauth_refresh_when_telegram_switch_disabled(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(
@@ -2431,6 +2491,101 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["trigger_window_labels"], ["7d"])
 
+    def test_oauth_recovery_scan_batches_multiple_seven_day_early_probes(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            auto_query_interval_seconds=3600,
+            sub2api_admin_token="admin-secret",
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.settings.telegram_oauth_usage_refresh_concurrency = 4
+        main_module.settings.telegram_oauth_recovery_test_concurrency = 2
+        main_module.settings.telegram_oauth_early_probe_interval_seconds = 15
+        main_module.settings.telegram_oauth_early_probe_batch_size = 3
+        account_ids = [30, 31, 32, 33, 34]
+        for account_id in account_ids:
+            store.save_result(
+                account_id,
+                {
+                    "success": True,
+                    "queried_at": "2026-05-25T00:00:00+00:00",
+                    "oauth_quota": {
+                        "plan_type": "plus",
+                        "ui_windows": [
+                            {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                            {
+                                "key": "codex_7d",
+                                "label": "7d",
+                                "used_percent": 100,
+                                "remaining_percent": 0,
+                                "reset_at": "2026-05-26T00:00:00+00:00",
+                            },
+                        ],
+                    },
+                },
+            )
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": account_id,
+                "name": f"oauth-{account_id}",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+            for account_id in account_ids
+        ]
+        active = 0
+        max_active = 0
+        usage_calls: list[int] = []
+        test_calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            try:
+                usage_calls.append(account_id)
+                import time
+
+                time.sleep(0.02)
+                return {
+                    "account_id": account_id,
+                    "template_type": "oauth",
+                    "success": True,
+                    "oauth_quota": {
+                        "plan_type": "plus",
+                        "ui_windows": [
+                            {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                            {"key": "codex_7d", "label": "7d", "used_percent": 0, "remaining_percent": 100},
+                        ],
+                    },
+                }
+            finally:
+                active -= 1
+
+        main_module.run_oauth_usage_query = fake_oauth_query  # type: ignore[assignment]
+        main_module.execute_sub2api_account_test = lambda account_id, *_args, **_kwargs: (  # type: ignore[assignment]
+            test_calls.append(account_id) or {"success": True}
+        )
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(sorted(usage_calls), [30, 31, 32])
+        self.assertEqual(sorted(test_calls), [30, 31, 32])
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, 4)
+        self.assertEqual(len(events), 3)
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"candidate_count": 5', audit_text)
+        self.assertIn('"early_due_count": 5', audit_text)
+        self.assertIn('"early_probe_batch_size": 3', audit_text)
+
     def test_oauth_recovery_scan_keeps_probe_after_active_usage_failure_without_test_alert(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
@@ -2479,6 +2634,7 @@ class GuardMainTests(unittest.TestCase):
             auto_query_interval_seconds=3600,
             sub2api_admin_token="admin-secret",
         )
+        main_module.settings.telegram_oauth_early_probe_interval_seconds = 60
         store.save_result(
             9,
             {
