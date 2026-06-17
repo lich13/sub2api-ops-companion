@@ -1463,6 +1463,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('name="oauth_recovery_test_concurrency"', template)
         self.assertIn('name="oauth_early_probe_interval_seconds"', template)
         self.assertIn('name="oauth_early_probe_batch_size"', template)
+        self.assertIn('name="oauth_recovery_test_model_id"', template)
 
     async def test_telegram_oauth_settings_save_preserves_token_and_updates_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1504,6 +1505,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                         "oauth_recovery_test_concurrency": "3",
                         "oauth_early_probe_interval_seconds": "10",
                         "oauth_early_probe_batch_size": "12",
+                        "oauth_recovery_test_model_id": "gpt-5.4-mini",
                     }
                     return values.get(key, default)
 
@@ -1519,6 +1521,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                     "oauth_recovery_test_concurrency": main_module.settings.telegram_oauth_recovery_test_concurrency,
                     "oauth_early_probe_interval_seconds": main_module.settings.telegram_oauth_early_probe_interval_seconds,
                     "oauth_early_probe_batch_size": main_module.settings.telegram_oauth_early_probe_batch_size,
+                    "oauth_recovery_test_model_id": main_module.settings.telegram_oauth_recovery_test_model_id,
                 }
             finally:
                 main_module.settings = original_settings
@@ -1534,10 +1537,12 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved["oauth_recovery_test_concurrency"], 3)
             self.assertEqual(saved["oauth_early_probe_interval_seconds"], 10)
             self.assertEqual(saved["oauth_early_probe_batch_size"], 12)
+            self.assertEqual(saved["oauth_recovery_test_model_id"], "gpt-5.4-mini")
             self.assertEqual(runtime_values["oauth_usage_refresh_concurrency"], 6)
             self.assertEqual(runtime_values["oauth_recovery_test_concurrency"], 3)
             self.assertEqual(runtime_values["oauth_early_probe_interval_seconds"], 10)
             self.assertEqual(runtime_values["oauth_early_probe_batch_size"], 12)
+            self.assertEqual(runtime_values["oauth_recovery_test_model_id"], "gpt-5.4-mini")
             self.assertEqual(restart_calls, 1)
             self.assertIn('"oauth_usage_refresh_enabled": false', audit_path.read_text(encoding="utf-8"))
 
@@ -1652,6 +1657,26 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("错误代码：rate_limited", text)
         self.assertIn("错误信息：rate limit", text)
         self.assertIn("触发窗口：7d", text)
+
+    def test_oauth_quota_recovery_alert_includes_auth_failure_stage_and_code(self) -> None:
+        text = oauth_quota_recovery_alert(
+            {
+                "account_id": 9,
+                "account_name": "lt",
+                "plan_type": "plus",
+                "status": "auth_failed",
+                "stage": "active_usage",
+                "error_code": "http_402",
+                "error": "payment required",
+                "checked_at": "2026-05-25T21:00:00+00:00",
+            }
+        )
+
+        self.assertIn("OAuth 账号监控认证异常", text)
+        self.assertIn("#9 lt · plus：active_usage 失败", text)
+        self.assertIn("错误代码：http_402", text)
+        self.assertIn("错误信息：payment required", text)
+        self.assertIn("检测时间：", text)
 
     def test_oauth_quota_recovery_alert_omits_free_five_hour_window(self) -> None:
         text = oauth_quota_recovery_alert(

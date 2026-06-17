@@ -45,6 +45,7 @@ class Settings:
     telegram_oauth_recovery_test_concurrency: int = 2
     telegram_oauth_early_probe_interval_seconds: int = 15
     telegram_oauth_early_probe_batch_size: int = 8
+    telegram_oauth_recovery_test_model_id: str = "gpt-5.4-mini"
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
@@ -242,6 +243,13 @@ def load_settings() -> Settings:
             1,
             50,
         ),
+        telegram_oauth_recovery_test_model_id=str(
+            telegram_config.get(
+                "oauth_recovery_test_model_id",
+                os.getenv("TELEGRAM_OAUTH_RECOVERY_TEST_MODEL_ID", "gpt-5.4-mini"),
+            )
+            or ""
+        ).strip(),
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
         update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),

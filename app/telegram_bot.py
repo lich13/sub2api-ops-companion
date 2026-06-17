@@ -1115,6 +1115,18 @@ def oauth_quota_recovery_alert(row: dict[str, Any]) -> str:
     window_labels = [str(item) for item in (row.get("window_labels") or []) if str(item)]
     windows = "/".join(window_labels) or "-"
     status = str(row.get("status") or "recovered")
+    if status == "auth_failed":
+        stage = str(row.get("stage") or "unknown")
+        lines = [
+            "OAuth 账号监控认证异常",
+            f"#{account_id} {account_name} · {plan_type}：{stage} 失败",
+            f"错误代码：{row.get('error_code') or 'unknown_auth_error'}",
+        ]
+        if row.get("error"):
+            lines.append(f"错误信息：{truncate(str(row.get('error') or ''), 240)}")
+        if row.get("checked_at"):
+            lines.append(f"检测时间：{bj_time(row.get('checked_at'))}")
+        return "\n".join(lines)
     if status == "test_failed":
         lines = [
             "OAuth 账号额度恢复后测试失败",

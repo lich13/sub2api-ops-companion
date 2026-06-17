@@ -79,6 +79,7 @@ class GuardMainTests(unittest.TestCase):
             guard_balance_error_max_age_hours=24,
             guard_quality_hours=24,
             guard_event_batch_size=100,
+            telegram_oauth_recovery_test_model_id="gpt-5.4-mini",
         )
         main_module.db = FakeCapabilityDB()  # type: ignore[assignment]
 
@@ -2021,6 +2022,7 @@ class GuardMainTests(unittest.TestCase):
 
         main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
         main_module.execute_sub2api_account_test = fake_account_test  # type: ignore[attr-defined]
+        main_module.settings.telegram_oauth_recovery_test_model_id = "gpt-5.4-mini"
         main_module.scheduled_test_model_for_account = lambda _account_id: "gpt-test"  # type: ignore[assignment]
 
         state: dict[str, Any] = {}
@@ -2030,7 +2032,7 @@ class GuardMainTests(unittest.TestCase):
         )
 
         self.assertEqual(usage_calls, [9])
-        self.assertEqual(test_calls, [(9, "gpt-test")])
+        self.assertEqual(test_calls, [(9, "gpt-5.4-mini")])
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["account_id"], 9)
         self.assertEqual(events[0]["window_labels"], ["5h", "7d"])
@@ -2038,6 +2040,158 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(store.result(9)["template_type"], "oauth")
         self.assertFalse(state["oauth_account_recovery_alerts"])
         self.assertIn(events[0]["dedupe_key"], state["oauth_account_recovery_pending"])
+
+    def test_oauth_recovery_scan_detects_early_seven_day_reset_from_active_usage_refresh(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(
+            usage_query_enabled=True,
+            sub2api_admin_token="admin-secret",
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.settings.telegram_oauth_recovery_test_model_id = "gpt-5.4-mini"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-25T20:59:40+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-06-01T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+        ]
+        usage_calls: list[int] = []
+        test_calls: list[tuple[int, str]] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {
+                "account_id": account_id,
+                "template_type": "oauth",
+                "success": True,
+                "queried_at": "2026-05-25T21:00:00+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 30,
+                            "remaining_percent": 70,
+                            "reset_at": "2026-06-01T00:00:00+00:00",
+                        },
+                    ],
+                },
+            }
+
+        def fake_account_test(account_id: int, model_id: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            test_calls.append((account_id, model_id))
+            return {"success": True, "latency_ms": 1000}
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = fake_account_test  # type: ignore[attr-defined]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 21, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(usage_calls, [9])
+        self.assertEqual(test_calls, [(9, "gpt-5.4-mini")])
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0]["early_reset_detected"])
+        self.assertEqual(events[0]["trigger_window_labels"], ["7d"])
+        self.assertEqual(events[0]["dedupe_key"], "success:9:early:2026-06-01T00:00:00+00:00")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn('"early_reset_detected": true', audit_text)
+
+    def test_oauth_recovery_scan_pushes_active_usage_auth_failures_once_per_code(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-25T20:59:00+00:00",
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {
+                            "key": "codex_7d",
+                            "label": "7d",
+                            "used_percent": 100,
+                            "remaining_percent": 0,
+                            "reset_at": "2026-06-01T00:00:00+00:00",
+                        },
+                    ],
+                },
+            },
+        )
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+        ]
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            return {
+                "account_id": account_id,
+                "template_type": "oauth",
+                "success": False,
+                "error": "HTTP 401 INVALID_TOKEN",
+                "error_code": "http_401",
+                "queried_at": "2026-05-25T21:00:00+00:00",
+            }
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = lambda *_args, **_kwargs: self.fail("auth failure must not run account test")  # type: ignore[assignment]
+        state: dict[str, Any] = {}
+
+        first = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 21, 0, 0, tzinfo=timezone.utc),
+        )
+        main_module.mark_oauth_recovery_alerts_notified(state, first)
+        second = main_module.scan_oauth_quota_recovery_alerts(
+            state=state,
+            now=datetime(2026, 5, 25, 21, 1, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["status"], "auth_failed")
+        self.assertEqual(first[0]["stage"], "active_usage")
+        self.assertEqual(first[0]["error_code"], "http_401")
+        self.assertEqual(first[0]["dedupe_key"], "auth:9:active_usage:http_401")
+        self.assertEqual(second, [])
 
     def test_oauth_recovery_scan_ignores_generic_error_alert_switch(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
@@ -2140,6 +2294,9 @@ class GuardMainTests(unittest.TestCase):
             {
                 "account_id": 9,
                 "fingerprint": "reset",
+                "stage": "",
+                "error_code": "",
+                "status": "",
                 "suppressed_at": "2026-05-25T00:00:00+00:00",
                 "reason": "oauth_recovery_push_disabled",
             },
@@ -2792,7 +2949,9 @@ class GuardMainTests(unittest.TestCase):
         )
 
         self.assertEqual(early, [])
-        self.assertEqual(due, [])
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]["status"], "auth_failed")
+        self.assertEqual(due[0]["dedupe_key"], "auth:9:active_usage:http_401")
         self.assertEqual(len(usage_calls), 1)
         self.assertEqual(store.result(9)["error_code"], "http_401")
 
