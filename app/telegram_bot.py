@@ -1231,6 +1231,8 @@ def oauth_quota_summary_for_row(row: dict[str, Any], result: dict[str, Any] | No
 def add_oauth_quota_totals(totals: dict[str, dict[str, Any]], summary: dict[str, Any] | None) -> None:
     if not isinstance(summary, dict):
         return
+    if not oauth_summary_has_available_seven_day(summary):
+        return
     plan_type = str(summary.get("plan_type") or "oauth").strip() or "oauth"
     entry = totals.setdefault(plan_type, {"account_count": 0, "windows": {}})
     entry["account_count"] = int(entry.get("account_count") or 0) + 1
@@ -1248,6 +1250,19 @@ def add_oauth_quota_totals(totals: dict[str, dict[str, Any]], summary: dict[str,
         if remaining_percent is None:
             continue
         windows[label] = float(windows.get(label) or 0.0) + remaining_percent
+
+
+def oauth_summary_has_available_seven_day(summary: dict[str, Any]) -> bool:
+    for window in summary.get("ui_windows") or []:
+        if not isinstance(window, dict):
+            continue
+        key = str(window.get("key") or "").strip()
+        label = str(window.get("label") or "").strip().lower()
+        if key != "codex_7d" and label != "7d":
+            continue
+        remaining_percent = oauth_window_remaining_percent(window)
+        return bool(remaining_percent is not None and remaining_percent > 0)
+    return False
 
 
 def oauth_window_remaining_percent(window: dict[str, Any]) -> float | None:

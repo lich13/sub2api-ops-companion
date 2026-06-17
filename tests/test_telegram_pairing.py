@@ -565,6 +565,64 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("free 1 个：5h", reply)
             self.assertNotIn("合计", reply)
 
+    async def test_quota_command_excludes_oauth_account_from_totals_when_seven_day_depleted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+
+            class FakeDB:
+                def fetch_all(self, sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                    lowered = sql.lower()
+                    if "lower(coalesce(platform" in lowered and "lower(coalesce(type" in lowered:
+                        return [
+                            {"id": 8, "name": "seven-day-depleted", "platform": "openai", "type": "oauth"},
+                            {"id": 9, "name": "available-plus", "platform": "openai", "type": "oauth"},
+                        ]
+                    return []
+
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    account_id = int((_params or {}).get("account_id") or 0)
+                    if account_id == 8:
+                        return {
+                            "id": 8,
+                            "name": "seven-day-depleted",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "credentials": {"plan_type": "plus"},
+                            "extra": {
+                                "codex_5h_used_percent": 0,
+                                "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                                "codex_7d_used_percent": 100,
+                                "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                            },
+                        }
+                    if account_id == 9:
+                        return {
+                            "id": 9,
+                            "name": "available-plus",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "credentials": {"plan_type": "plus"},
+                            "extra": {
+                                "codex_5h_used_percent": 50,
+                                "codex_7d_used_percent": 25,
+                            },
+                        }
+                    return None
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("#8 seven-day-depleted · plus：5h 剩余 100%", reply)
+            self.assertIn("#9 available-plus · plus：5h 剩余 50% / 7d 剩余 75%", reply)
+            self.assertIn("OAuth 总余量：plus 1 个：5h 50% / 7d 75%", reply)
+            self.assertNotIn("5h 150%", reply)
+            self.assertNotIn("7d 75% / 5h", reply)
+
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "state.json"

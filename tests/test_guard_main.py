@@ -2207,6 +2207,108 @@ class GuardMainTests(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertEqual(usage_calls, [9])
 
+    def test_oauth_recovery_scan_does_not_test_five_hour_reset_when_seven_day_depleted(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-05-25T00:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-05-26T00:00:00+00:00",
+                },
+            }
+        ]
+        usage_calls: list[int] = []
+
+        def fake_oauth_query(account_id: int, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            usage_calls.append(account_id)
+            return {
+                "success": True,
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {"key": "codex_7d", "label": "7d", "used_percent": 100, "remaining_percent": 0},
+                    ],
+                },
+            }
+
+        def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("5h recovery must not be tested while 7d is depleted")
+
+        main_module.execute_oauth_usage_query = fake_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[attr-defined]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(events, [])
+        self.assertEqual(usage_calls, [9])
+
+    def test_oauth_recovery_scan_does_not_retry_cached_test_when_seven_day_depleted(self) -> None:
+        store = UsageQueryStore(main_module.settings.usage_query_state_path)
+        store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
+        store.save_result(
+            9,
+            {
+                "success": True,
+                "queried_at": "2026-05-25T00:00:00+00:00",
+                "oauth_recovery_probe": {
+                    "plan_type": "plus",
+                    "fingerprint": "2026-05-25T00:00:00+00:00|2026-05-26T00:00:00+00:00",
+                    "reset_at": "2026-05-25T00:00:00+00:00",
+                    "window_labels": ["5h", "7d"],
+                    "trigger_window_labels": ["5h"],
+                },
+                "oauth_quota": {
+                    "plan_type": "plus",
+                    "ui_windows": [
+                        {"key": "codex_5h", "label": "5h", "used_percent": 0, "remaining_percent": 100},
+                        {"key": "codex_7d", "label": "7d", "used_percent": 100, "remaining_percent": 0},
+                    ],
+                },
+            },
+        )
+        main_module.settings.sub2api_base_url = "https://sub2api.example.com"
+        main_module.usage_query_store = lambda: store  # type: ignore[assignment]
+        main_module.usage_query_oauth_account_rows = lambda: [  # type: ignore[assignment]
+            {
+                "id": 9,
+                "name": "lt",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "plus"},
+                "extra": {},
+            }
+        ]
+
+        def unexpected_oauth_query(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("cached successful quota should not need active usage here")
+
+        def unexpected_account_test(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("cached 5h recovery must not be tested while 7d is depleted")
+
+        main_module.execute_oauth_usage_query = unexpected_oauth_query  # type: ignore[attr-defined]
+        main_module.execute_sub2api_account_test = unexpected_account_test  # type: ignore[attr-defined]
+
+        events = main_module.scan_oauth_quota_recovery_alerts(
+            state={},
+            now=datetime(2026, 5, 25, 0, 0, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(events, [])
+
     def test_oauth_recovery_scan_waits_for_unavailable_five_hour_but_not_available_seven_day(self) -> None:
         store = UsageQueryStore(main_module.settings.usage_query_state_path)
         store.save_usage_query_settings(usage_query_enabled=True, sub2api_admin_token="admin-secret")
