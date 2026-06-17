@@ -1307,6 +1307,10 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('name="oauth_usage_refresh_enabled"', template)
         self.assertIn('name="oauth_recovery_monitor_enabled"', template)
         self.assertIn('name="oauth_recovery_push_enabled"', template)
+        self.assertIn('name="oauth_usage_refresh_concurrency"', template)
+        self.assertIn('name="oauth_recovery_test_concurrency"', template)
+        self.assertIn('name="oauth_early_probe_interval_seconds"', template)
+        self.assertIn('name="oauth_early_probe_batch_size"', template)
 
     async def test_telegram_oauth_settings_save_preserves_token_and_updates_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1342,6 +1346,15 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                     }
                     return values.get(key, [])
 
+                def get(self, key: str, default: str | None = None) -> str | None:
+                    values = {
+                        "oauth_usage_refresh_concurrency": "6",
+                        "oauth_recovery_test_concurrency": "3",
+                        "oauth_early_probe_interval_seconds": "10",
+                        "oauth_early_probe_batch_size": "12",
+                    }
+                    return values.get(key, default)
+
             class FakeRequest:
                 async def form(self) -> FakeForm:
                     return FakeForm()
@@ -1349,6 +1362,12 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             try:
                 main_module.restart_telegram_bot = fake_restart  # type: ignore[assignment]
                 response = await main_module.telegram_oauth_settings_save(FakeRequest(), "tester")  # type: ignore[arg-type]
+                runtime_values = {
+                    "oauth_usage_refresh_concurrency": main_module.settings.telegram_oauth_usage_refresh_concurrency,
+                    "oauth_recovery_test_concurrency": main_module.settings.telegram_oauth_recovery_test_concurrency,
+                    "oauth_early_probe_interval_seconds": main_module.settings.telegram_oauth_early_probe_interval_seconds,
+                    "oauth_early_probe_batch_size": main_module.settings.telegram_oauth_early_probe_batch_size,
+                }
             finally:
                 main_module.settings = original_settings
                 main_module.restart_telegram_bot = original_restart  # type: ignore[assignment]
@@ -1359,8 +1378,58 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(saved["oauth_usage_refresh_enabled"])
             self.assertTrue(saved["oauth_recovery_monitor_enabled"])
             self.assertFalse(saved["oauth_recovery_push_enabled"])
+            self.assertEqual(saved["oauth_usage_refresh_concurrency"], 6)
+            self.assertEqual(saved["oauth_recovery_test_concurrency"], 3)
+            self.assertEqual(saved["oauth_early_probe_interval_seconds"], 10)
+            self.assertEqual(saved["oauth_early_probe_batch_size"], 12)
+            self.assertEqual(runtime_values["oauth_usage_refresh_concurrency"], 6)
+            self.assertEqual(runtime_values["oauth_recovery_test_concurrency"], 3)
+            self.assertEqual(runtime_values["oauth_early_probe_interval_seconds"], 10)
+            self.assertEqual(runtime_values["oauth_early_probe_batch_size"], 12)
             self.assertEqual(restart_calls, 1)
             self.assertIn('"oauth_usage_refresh_enabled": false', audit_path.read_text(encoding="utf-8"))
+
+    async def test_telegram_oauth_settings_clamps_monitoring_tuning_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "telegram-config.json"
+            original_settings = main_module.settings
+            original_restart = main_module.restart_telegram_bot
+            main_module.settings = make_settings(str(Path(tmpdir) / "state.json"))
+            main_module.settings.telegram_config_path = str(config_path)
+            main_module.settings.audit_path = str(Path(tmpdir) / "audit.jsonl")
+
+            async def fake_restart() -> None:
+                return None
+
+            class FakeForm:
+                def getlist(self, _key: str) -> list[str]:
+                    return ["1"]
+
+                def get(self, key: str, default: str | None = None) -> str | None:
+                    values = {
+                        "oauth_usage_refresh_concurrency": "99",
+                        "oauth_recovery_test_concurrency": "0",
+                        "oauth_early_probe_interval_seconds": "1",
+                        "oauth_early_probe_batch_size": "999",
+                    }
+                    return values.get(key, default)
+
+            class FakeRequest:
+                async def form(self) -> FakeForm:
+                    return FakeForm()
+
+            try:
+                main_module.restart_telegram_bot = fake_restart  # type: ignore[assignment]
+                await main_module.telegram_oauth_settings_save(FakeRequest(), "tester")  # type: ignore[arg-type]
+            finally:
+                main_module.settings = original_settings
+                main_module.restart_telegram_bot = original_restart  # type: ignore[assignment]
+
+            saved = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["oauth_usage_refresh_concurrency"], 16)
+            self.assertEqual(saved["oauth_recovery_test_concurrency"], 1)
+            self.assertEqual(saved["oauth_early_probe_interval_seconds"], 5)
+            self.assertEqual(saved["oauth_early_probe_batch_size"], 50)
 
     def test_public_error_chain_telegram_api_is_removed(self) -> None:
         from app import telegram_bot as telegram_module
