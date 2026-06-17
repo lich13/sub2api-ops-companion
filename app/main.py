@@ -85,6 +85,7 @@ from .usage_query import (
     normalize_template_type,
     oauth_account_recovery_candidate_from_probe,
     oauth_account_recovery_early_probe_due,
+    oauth_account_recovery_probe_from_reset_comparison,
     oauth_account_recovery_probe_due,
     public_config,
     should_pause_for_depleted,
@@ -568,6 +569,10 @@ def scheduled_test_model_for_account(account_id: int) -> str:
     except Exception:
         return ""
     return str((row or {}).get("model_id") or "").strip()
+
+
+def oauth_recovery_test_model_id() -> str:
+    return str(getattr(settings, "telegram_oauth_recovery_test_model_id", "gpt-5.4-mini") or "").strip()
 
 
 def ensure_endless_recovery_plan(account_id: int, actor: str, reason: str = "") -> dict[str, Any]:
@@ -1234,6 +1239,7 @@ def build_telegram_config() -> dict[str, Any]:
         "oauth_recovery_test_concurrency": telegram_oauth_recovery_test_concurrency(),
         "oauth_early_probe_interval_seconds": telegram_oauth_early_probe_interval_seconds(),
         "oauth_early_probe_batch_size": telegram_oauth_early_probe_batch_size(),
+        "oauth_recovery_test_model_id": oauth_recovery_test_model_id(),
         "binding_status": "未启用"
         if not settings.telegram_bot_token.strip()
         else ("已绑定" if push_target_count or control_user_count else "待配对"),
@@ -1308,6 +1314,10 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
             1,
             50,
         )
+    if "oauth_recovery_test_model_id" in payload:
+        settings.telegram_oauth_recovery_test_model_id = str(
+            payload.get("oauth_recovery_test_model_id") or ""
+        ).strip()
 
 
 def telegram_oauth_usage_refresh_enabled() -> bool:
@@ -1410,6 +1420,63 @@ def run_oauth_account_test_jobs(
                     "error_code": "account_test_error",
                 }
     return results
+
+
+def oauth_auth_failure_error_code(error_code: object) -> str:
+    raw = str(error_code or "").strip()
+    lowered = raw.lower()
+    if lowered in {"http_401", "401"}:
+        return "http_401"
+    if lowered in {"http_402", "402"}:
+        return "http_402"
+    return ""
+
+
+def oauth_auth_failure_dedupe_key(account_id: int, stage: str, error_code: str) -> str:
+    return f"auth:{int(account_id)}:{str(stage or '').strip() or 'unknown'}:{error_code}"
+
+
+def clear_oauth_auth_failure_dedupe(state: dict[str, Any], account_id: int, stage: str) -> None:
+    prefix = f"auth:{int(account_id)}:{str(stage or '').strip() or 'unknown'}:"
+    for bucket_name in ("oauth_account_recovery_alerts", "oauth_account_recovery_pending"):
+        bucket = state.get(bucket_name)
+        if not isinstance(bucket, dict):
+            continue
+        for key in list(bucket.keys()):
+            if str(key).startswith(prefix):
+                bucket.pop(key, None)
+
+
+def oauth_auth_failure_event(
+    row: dict[str, Any],
+    *,
+    stage: str,
+    error: object,
+    error_code: object,
+    checked_at: datetime,
+) -> dict[str, Any] | None:
+    normalized_code = oauth_auth_failure_error_code(error_code)
+    if not normalized_code:
+        return None
+    account_id = int(row.get("id") or row.get("account_id") or 0)
+    if account_id <= 0:
+        return None
+    summary = oauth_quota_for_row(row, None)
+    key = oauth_auth_failure_dedupe_key(account_id, stage, normalized_code)
+    return {
+        "account_id": account_id,
+        "account_name": row.get("name") or "-",
+        "platform": row.get("platform") or "openai",
+        "type": row.get("type") or "oauth",
+        "plan_type": summary.get("plan_type") or "oauth",
+        "status": "auth_failed",
+        "stage": str(stage or "unknown"),
+        "error": str(error or ""),
+        "error_code": normalized_code,
+        "checked_at": checked_at.astimezone(timezone.utc).isoformat(),
+        "dedupe_key": key,
+        "fingerprint": key,
+    }
 
 
 async def restart_telegram_bot() -> None:
@@ -1529,6 +1596,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     oauth_due_count = 0
     oauth_skipped_disabled_count = 0
     oauth_jobs: list[tuple[int, dict[str, Any], UsageQueryConfig]] = []
+    oauth_cached_summaries: dict[int, dict[str, Any]] = {}
     if not usage_enabled:
         write_audit(
             settings.audit_path,
@@ -1566,6 +1634,7 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             result = store.result(config.account_id)
             if is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
                 oauth_due_count += 1
+                oauth_cached_summaries[config.account_id] = oauth_quota_for_row(row, result)
                 oauth_jobs.append((config.account_id, row, config))
             continue
         if not row.get("schedulable", True):
@@ -1620,9 +1689,31 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         if not is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
             continue
         oauth_due_count += 1
+        oauth_cached_summaries[account_id] = oauth_quota_for_row(row, result)
         oauth_jobs.append((account_id, row, config))
     oauth_concurrency = telegram_oauth_usage_refresh_concurrency()
     for account_id, result in run_oauth_usage_query_jobs(oauth_jobs, store, concurrency=oauth_concurrency):
+        if result.get("success") and isinstance(result.get("oauth_quota"), dict):
+            probe = oauth_account_recovery_probe_from_reset_comparison(
+                oauth_cached_summaries.get(account_id),
+                result.get("oauth_quota"),
+            )
+            if probe:
+                result = dict(result)
+                result["oauth_recovery_probe"] = probe
+                write_audit(
+                    settings.audit_path,
+                    "telegram_oauth_quota_recovery_early_reset",
+                    {
+                        "account_id": account_id,
+                        "early_reset_detected": True,
+                        "old_7d_used_percent": probe.get("old_7d_used_percent"),
+                        "new_7d_used_percent": probe.get("new_7d_used_percent"),
+                        "old_reset_at": probe.get("old_reset_at") or "",
+                        "detected_at": probe.get("detected_at") or "",
+                        "source": "auto_guard_refresh",
+                    },
+                )
         store.save_result(account_id, result)
         oauth_queried_count += 1
         if not result.get("success"):
@@ -1703,6 +1794,7 @@ def scan_oauth_quota_recovery_alerts(
     due_candidates: list[dict[str, Any]] = []
     early_candidates: list[dict[str, Any]] = []
     test_candidates: list[dict[str, Any]] = []
+    cached_summaries: dict[int, dict[str, Any]] = {}
     checked_count = 0
     queried_count = 0
     early_probe_count = 0
@@ -1715,6 +1807,7 @@ def scan_oauth_quota_recovery_alerts(
             continue
         cached_result = active_store.result(account_id)
         summary = oauth_quota_for_row(row, cached_result)
+        cached_summaries[account_id] = summary
         config = usage_query_oauth_config(account_id, active_store)
         cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
         if isinstance(cached_probe, dict) and bool(cached_result.get("success")):
@@ -1728,7 +1821,7 @@ def scan_oauth_quota_recovery_alerts(
                             "row": row,
                             "config": config,
                             "candidate": candidate,
-                            "model_id": scheduled_test_model_for_account(account_id),
+                            "model_id": oauth_recovery_test_model_id(),
                             "success_dedupe_key": success_dedupe_key,
                         }
                     )
@@ -1816,15 +1909,52 @@ def scan_oauth_quota_recovery_alerts(
                     "error_code": result.get("error_code") or "",
                 },
             )
+            event = oauth_auth_failure_event(
+                item["row"],
+                stage="active_usage",
+                error=result.get("error") or "",
+                error_code=result.get("error_code") or "",
+                checked_at=current,
+            )
+            if event and event["dedupe_key"] not in dedupe:
+                events.append(event)
+                pending[event["dedupe_key"]] = {
+                    "account_id": account_id,
+                    "error_code": event.get("error_code") or "",
+                    "stage": event.get("stage") or "",
+                    "checked_at": current.isoformat(),
+                }
             continue
+        clear_oauth_auth_failure_dedupe(state, account_id, "active_usage")
         refreshed_summary = result.get("oauth_quota") if isinstance(result.get("oauth_quota"), dict) else {}
-        candidate = oauth_account_recovery_candidate_from_probe(refreshed_summary, due_candidate, now=current)
+        early_reset_probe = oauth_account_recovery_probe_from_reset_comparison(
+            cached_summaries.get(account_id),
+            refreshed_summary,
+            now=current,
+        )
+        if early_reset_probe:
+            result["oauth_recovery_probe"] = early_reset_probe
+            active_store.save_result(account_id, result)
+            write_audit(
+                settings.audit_path,
+                "telegram_oauth_quota_recovery_early_reset",
+                {
+                    "account_id": account_id,
+                    "early_reset_detected": True,
+                    "old_7d_used_percent": early_reset_probe.get("old_7d_used_percent"),
+                    "new_7d_used_percent": early_reset_probe.get("new_7d_used_percent"),
+                    "old_reset_at": early_reset_probe.get("old_reset_at") or "",
+                    "detected_at": early_reset_probe.get("detected_at") or current.isoformat(),
+                },
+            )
+        probe_for_candidate = early_reset_probe or due_candidate
+        candidate = oauth_account_recovery_candidate_from_probe(refreshed_summary, probe_for_candidate, now=current)
         if not candidate:
             continue
         success_dedupe_key = oauth_recovery_success_dedupe_key(account_id, candidate)
         if success_dedupe_key in dedupe:
             continue
-        model_id = scheduled_test_model_for_account(account_id)
+        model_id = oauth_recovery_test_model_id()
         test_candidates.append(
             {
                 "account_id": account_id,
@@ -1856,7 +1986,12 @@ def scan_oauth_quota_recovery_alerts(
         tested_count += 1
         if not test_result.get("success"):
             test_failed_count += 1
-            failure_dedupe_key = oauth_recovery_failure_dedupe_key(account_id, candidate, test_result)
+            auth_error_code = oauth_auth_failure_error_code(test_result.get("error_code"))
+            failure_dedupe_key = (
+                oauth_auth_failure_dedupe_key(account_id, "account_test", auth_error_code)
+                if auth_error_code
+                else oauth_recovery_failure_dedupe_key(account_id, candidate, test_result)
+            )
             write_audit(
                 settings.audit_path,
                 "telegram_oauth_quota_recovery_error",
@@ -1877,14 +2012,18 @@ def scan_oauth_quota_recovery_alerts(
                     failure_dedupe_key,
                     status="test_failed",
                 )
+                if auth_error_code:
+                    event["stage"] = "account_test"
                 events.append(event)
                 pending[failure_dedupe_key] = {
                     "account_id": account_id,
                     "fingerprint": candidate.get("fingerprint"),
                     "error_code": test_result.get("error_code") or "",
+                    "stage": "account_test" if auth_error_code else "",
                     "checked_at": current.isoformat(),
                 }
             continue
+        clear_oauth_auth_failure_dedupe(state, account_id, "account_test")
         event = oauth_recovery_event(row, candidate, test_result, model_id, success_dedupe_key, status="recovered")
         events.append(event)
         pending[success_dedupe_key] = {
@@ -1956,6 +2095,11 @@ def oauth_recovery_event(
         "test_response_text": test_result.get("response_text") or "",
         "dedupe_key": dedupe_key,
         "fingerprint": candidate.get("fingerprint") or "",
+        "early_reset_detected": bool(candidate.get("early_reset_detected")),
+        "old_7d_used_percent": candidate.get("old_7d_used_percent"),
+        "new_7d_used_percent": candidate.get("new_7d_used_percent"),
+        "old_reset_at": candidate.get("old_reset_at") or "",
+        "detected_at": candidate.get("detected_at") or "",
     }
 
 
@@ -1982,6 +2126,9 @@ def mark_oauth_recovery_alerts_notified(
         dedupe[key] = {
             "account_id": int(row.get("account_id") or 0),
             "fingerprint": row.get("fingerprint") or "",
+            "stage": row.get("stage") or "",
+            "error_code": row.get("error_code") or "",
+            "status": row.get("status") or "",
             "notified_at": current,
         }
         pending.pop(key, None)
@@ -2011,6 +2158,9 @@ def suppress_oauth_recovery_alerts(
         dedupe[key] = {
             "account_id": int(row.get("account_id") or 0),
             "fingerprint": row.get("fingerprint") or "",
+            "stage": row.get("stage") or "",
+            "error_code": row.get("error_code") or "",
+            "status": row.get("status") or "",
             "suppressed_at": current,
             "reason": "oauth_recovery_push_disabled",
         }
@@ -3176,6 +3326,7 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     oauth_recovery_test_concurrency = int_param(str(form.get("oauth_recovery_test_concurrency")), 2, 1, 8)
     oauth_early_probe_interval_seconds = int_param(str(form.get("oauth_early_probe_interval_seconds")), 15, 5, 3600)
     oauth_early_probe_batch_size = int_param(str(form.get("oauth_early_probe_batch_size")), 8, 1, 50)
+    oauth_recovery_test_model = str(form.get("oauth_recovery_test_model_id", "gpt-5.4-mini") or "").strip()
     existing = telegram_config_file()
     payload = {
         **existing,
@@ -3186,6 +3337,7 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
         "oauth_recovery_test_concurrency": oauth_recovery_test_concurrency,
         "oauth_early_probe_interval_seconds": oauth_early_probe_interval_seconds,
         "oauth_early_probe_batch_size": oauth_early_probe_batch_size,
+        "oauth_recovery_test_model_id": oauth_recovery_test_model,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": user,
     }
@@ -3204,6 +3356,7 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
             "oauth_recovery_test_concurrency": oauth_recovery_test_concurrency,
             "oauth_early_probe_interval_seconds": oauth_early_probe_interval_seconds,
             "oauth_early_probe_batch_size": oauth_early_probe_batch_size,
+            "oauth_recovery_test_model_id": oauth_recovery_test_model,
         },
     )
     return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('OAuth 账号监控设置已保存')}", status_code=303)

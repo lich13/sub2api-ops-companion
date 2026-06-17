@@ -714,7 +714,7 @@ def oauth_account_recovery_candidate_from_probe(
         if not trigger_info:
             return None
         latest_reset, reset_values, trigger_labels = trigger_info
-    return {
+    candidate = {
         "plan_type": plan_type,
         "windows": required,
         "window_labels": [str(window.get("label") or "-") for window in required],
@@ -724,6 +724,67 @@ def oauth_account_recovery_candidate_from_probe(
         "remaining_summary": " / ".join(
             f"{window.get('label') or '-'} {format_percent_value(window.get('remaining_percent'))}" for window in required
         ),
+    }
+    if isinstance(probe_payload, dict):
+        for key in (
+            "early_reset_detected",
+            "old_7d_used_percent",
+            "new_7d_used_percent",
+            "old_reset_at",
+            "detected_at",
+        ):
+            if key in probe_payload:
+                candidate[key] = probe_payload.get(key)
+    return candidate
+
+
+def oauth_account_recovery_probe_from_reset_comparison(
+    previous_summary: dict[str, Any] | None,
+    refreshed_summary: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(previous_summary, dict) or not isinstance(refreshed_summary, dict):
+        return None
+    previous_windows = oauth_windows_by_key(previous_summary.get("ui_windows") or previous_summary.get("windows"))
+    refreshed_windows = oauth_windows_by_key(refreshed_summary.get("ui_windows") or refreshed_summary.get("windows"))
+    previous_seven_day = previous_windows.get("codex_7d")
+    refreshed_seven_day = refreshed_windows.get("codex_7d")
+    if not isinstance(previous_seven_day, dict) or not isinstance(refreshed_seven_day, dict):
+        return None
+    old_used = percent_or_none(previous_seven_day.get("used_percent"))
+    new_used = percent_or_none(refreshed_seven_day.get("used_percent"))
+    if old_used is None or new_used is None or old_used < 100 or new_used >= 100:
+        return None
+    old_reset_at = first_string([previous_seven_day], ("reset_at",))
+    old_reset_time = parse_iso_datetime(old_reset_at)
+    if not old_reset_at or old_reset_time is None:
+        return None
+    if old_reset_time.tzinfo is None:
+        old_reset_time = old_reset_time.replace(tzinfo=timezone.utc)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if current >= old_reset_time.astimezone(timezone.utc):
+        return None
+    plan_type = normalize_oauth_plan_type(refreshed_summary.get("plan_type") or previous_summary.get("plan_type") or "oauth")
+    required_keys = ("codex_7d",) if plan_type == "free" else ("codex_5h", "codex_7d")
+    required: list[dict[str, Any]] = []
+    for key in required_keys:
+        window = refreshed_windows.get(key)
+        if not isinstance(window, dict):
+            return None
+        required.append(window)
+    return {
+        "plan_type": plan_type,
+        "windows": required,
+        "window_labels": [str(window.get("label") or "-") for window in required],
+        "fingerprint": f"early:{old_reset_at}",
+        "reset_at": old_reset_time.astimezone(timezone.utc).isoformat(),
+        "trigger_window_labels": [str(refreshed_seven_day.get("label") or "7d")],
+        "early_reset_detected": True,
+        "old_7d_used_percent": old_used,
+        "new_7d_used_percent": new_used,
+        "old_reset_at": old_reset_at,
+        "detected_at": current.isoformat(),
     }
 
 

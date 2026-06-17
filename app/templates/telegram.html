@@ -102,6 +102,10 @@
       <span>每轮探测账号</span>
       <input type="number" name="oauth_early_probe_batch_size" min="1" max="50" value="{{ telegram.oauth_early_probe_batch_size }}" />
     </label>
+    <label>
+      <span>测活模型</span>
+      <input type="text" name="oauth_recovery_test_model_id" value="{{ telegram.oauth_recovery_test_model_id }}" spellcheck="false" />
+    </label>
     <div class="telegram-oauth-actions">
       <button class="primary" type="submit">保存 OAuth 设置</button>
     </div>
