@@ -154,6 +154,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("总可用：25 USD", reply)
             self.assertIn("#7 quota-account", reply)
             self.assertIn("可用 25 USD", reply)
+            self.assertNotIn("OAuth 总余量", reply)
             self.assertNotIn("总额", reply)
             self.assertNotIn("wallet", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(7)["actual_available"], 25.0)
@@ -469,7 +470,100 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("#9 current-oauth · plus：7d 剩余 60%（恢复 05-29 06:30）", reply)
             self.assertNotIn("没有配置额度查询", reply)
             self.assertNotIn("deleted-oauth", reply)
-            self.assertNotIn("5h", reply)
+            self.assertNotIn("#9 current-oauth · plus：5h", reply)
+
+    async def test_quota_command_summarizes_oauth_remaining_by_plan_and_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            usage_path = Path(tmpdir) / "usage-query-state.json"
+            settings = make_settings(str(state_path))
+            settings.usage_query_state_path = str(usage_path)
+            store = UsageQueryStore(str(usage_path))
+            store.save_config(UsageQueryConfig(account_id=8, enabled=True, template_type="sub2api"))
+            store.save_result(
+                8,
+                {
+                    "account_id": 8,
+                    "template_type": "oauth",
+                    "success": True,
+                    "oauth_quota": {
+                        "plan_type": "plus",
+                        "ui_windows": [
+                            {"key": "codex_5h", "label": "5h", "used_percent": 20, "remaining_percent": 80},
+                            {"key": "codex_7d", "label": "7d", "used_percent": 30, "remaining_percent": 70},
+                        ],
+                        "telegram_windows": [
+                            {"key": "codex_5h", "label": "5h", "used_percent": 20, "remaining_percent": 80},
+                            {"key": "codex_7d", "label": "7d", "used_percent": 30, "remaining_percent": 70},
+                        ],
+                    },
+                },
+            )
+
+            class FakeDB:
+                def fetch_all(self, sql: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                    lowered = sql.lower()
+                    if "lower(coalesce(platform" in lowered and "lower(coalesce(type" in lowered:
+                        return [
+                            {"id": 8, "name": "configured-plus", "platform": "openai", "type": "oauth"},
+                            {"id": 9, "name": "current-plus", "platform": "openai", "type": "oauth"},
+                            {"id": 10, "name": "current-free", "platform": "openai", "type": "oauth"},
+                        ]
+                    return []
+
+                def fetch_one(self, _sql: str, _params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                    account_id = int((_params or {}).get("account_id") or 0)
+                    rows = {
+                        8: {
+                            "id": 8,
+                            "name": "configured-plus",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "credentials": {"plan_type": "plus"},
+                            "extra": {},
+                        },
+                        9: {
+                            "id": 9,
+                            "name": "current-plus",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "credentials": {"plan_type": "plus"},
+                            "extra": {
+                                "codex_5h_used_percent": 100,
+                                "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                                "codex_7d_used_percent": 40,
+                                "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                            },
+                        },
+                        10: {
+                            "id": 10,
+                            "name": "current-free",
+                            "platform": "openai",
+                            "type": "oauth",
+                            "credentials": {"plan_type": "free"},
+                            "extra": {
+                                "codex_5h_used_percent": 10,
+                                "codex_5h_reset_at": "2026-05-25T10:30:00Z",
+                                "codex_7d_used_percent": 25,
+                                "codex_7d_reset_at": "2026-05-28T22:30:00Z",
+                            },
+                        },
+                    }
+                    return rows.get(account_id)
+
+            bot = TelegramOpsBot(settings, FakeDB(), guard_runner, guard_config)  # type: ignore[arg-type]
+
+            reply, keyboard = await bot._text_reply(100, 200, "/quota")
+
+            self.assertIsNone(keyboard)
+            self.assertIn("#8 configured-plus", reply)
+            self.assertIn("#9 current-plus", reply)
+            self.assertIn("#10 current-free", reply)
+            self.assertIn("OAuth 总余量：", reply)
+            self.assertIn("plus 2 个：5h 80% / 7d 130%", reply)
+            self.assertIn("free 1 个：7d 75%", reply)
+            self.assertNotIn("free 1 个：5h", reply)
+            self.assertNotIn("合计", reply)
 
     async def test_quota_command_skips_deleted_accounts_without_query_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -585,7 +679,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("· plus：", reply)
             self.assertNotIn("Codex plus", reply)
             self.assertIn("5h 剩余 20%（恢复 05-25 18:30）", reply)
-            self.assertNotIn("7d", reply)
+            self.assertNotIn("#8 oauth-account · plus：7d", reply)
             self.assertNotIn("Codex oauth", reply)
             self.assertNotIn("跳过 OAuth", reply)
             self.assertEqual(UsageQueryStore(str(usage_path)).result(8), {})
