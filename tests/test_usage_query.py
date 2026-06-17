@@ -21,6 +21,7 @@ from app.usage_query import (
     oauth_account_recovery_candidate,
     oauth_account_recovery_candidate_from_probe,
     oauth_account_recovery_early_probe_due,
+    oauth_account_recovery_probe_from_reset_comparison,
     oauth_account_recovery_probe_due,
     oauth_quota_from_usage_data,
     oauth_quota_windows,
@@ -673,6 +674,76 @@ class UsageQueryTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         self.assertEqual(candidate["window_labels"], ["5h", "7d"])
         self.assertEqual(candidate["fingerprint"], "2026-05-25T00:00:00+00:00|2026-05-25T00:00:00+00:00")
+
+    def test_oauth_recovery_probe_from_reset_comparison_detects_early_seven_day_reset(self) -> None:
+        previous = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 0,
+                    "codex_5h_reset_at": "2026-05-25T05:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-06-01T00:00:00+00:00",
+                },
+            }
+        )
+        refreshed = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 0,
+                    "codex_5h_reset_at": "2026-05-25T05:00:00+00:00",
+                    "codex_7d_used_percent": 30,
+                    "codex_7d_reset_at": "2026-06-01T00:00:00+00:00",
+                },
+            }
+        )
+
+        probe = oauth_account_recovery_probe_from_reset_comparison(
+            previous,
+            refreshed,
+            now=datetime(2026, 5, 25, 21, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertIsNotNone(probe)
+        assert probe is not None
+        self.assertTrue(probe["early_reset_detected"])
+        self.assertEqual(probe["trigger_window_labels"], ["7d"])
+        self.assertEqual(probe["fingerprint"], "early:2026-06-01T00:00:00+00:00")
+        self.assertEqual(probe["old_7d_used_percent"], 100)
+        self.assertEqual(probe["new_7d_used_percent"], 30)
+
+    def test_oauth_recovery_probe_from_reset_comparison_ignores_five_hour_only_reset(self) -> None:
+        previous = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 100,
+                    "codex_5h_reset_at": "2026-06-01T00:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-06-01T00:00:00+00:00",
+                },
+            }
+        )
+        refreshed = oauth_quota_windows(
+            {
+                "credentials": {"plan_type": "plus"},
+                "extra": {
+                    "codex_5h_used_percent": 0,
+                    "codex_5h_reset_at": "2026-06-01T00:00:00+00:00",
+                    "codex_7d_used_percent": 100,
+                    "codex_7d_reset_at": "2026-06-01T00:00:00+00:00",
+                },
+            }
+        )
+
+        probe = oauth_account_recovery_probe_from_reset_comparison(
+            previous,
+            refreshed,
+            now=datetime(2026, 5, 25, 21, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertIsNone(probe)
 
     def test_oauth_recovery_candidate_free_account_requires_only_seven_day(self) -> None:
         summary = oauth_quota_windows(
