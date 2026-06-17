@@ -9,6 +9,7 @@ import json
 import math
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -363,6 +364,19 @@ def nullable_int(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def parse_datetime_utc(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def load_groups() -> list[dict[str, Any]]:
@@ -1216,6 +1230,10 @@ def build_telegram_config() -> dict[str, Any]:
         "oauth_usage_refresh_enabled": telegram_oauth_usage_refresh_enabled(),
         "oauth_recovery_monitor_enabled": telegram_oauth_recovery_monitor_enabled(),
         "oauth_recovery_push_enabled": telegram_oauth_recovery_push_enabled(),
+        "oauth_usage_refresh_concurrency": telegram_oauth_usage_refresh_concurrency(),
+        "oauth_recovery_test_concurrency": telegram_oauth_recovery_test_concurrency(),
+        "oauth_early_probe_interval_seconds": telegram_oauth_early_probe_interval_seconds(),
+        "oauth_early_probe_batch_size": telegram_oauth_early_probe_batch_size(),
         "binding_status": "未启用"
         if not settings.telegram_bot_token.strip()
         else ("已绑定" if push_target_count or control_user_count else "待配对"),
@@ -1262,6 +1280,34 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         settings.telegram_oauth_recovery_monitor_enabled = bool(payload.get("oauth_recovery_monitor_enabled", True))
     if "oauth_recovery_push_enabled" in payload:
         settings.telegram_oauth_recovery_push_enabled = bool(payload.get("oauth_recovery_push_enabled", True))
+    if "oauth_usage_refresh_concurrency" in payload:
+        settings.telegram_oauth_usage_refresh_concurrency = int_param(
+            str(payload.get("oauth_usage_refresh_concurrency")),
+            4,
+            1,
+            16,
+        )
+    if "oauth_recovery_test_concurrency" in payload:
+        settings.telegram_oauth_recovery_test_concurrency = int_param(
+            str(payload.get("oauth_recovery_test_concurrency")),
+            2,
+            1,
+            8,
+        )
+    if "oauth_early_probe_interval_seconds" in payload:
+        settings.telegram_oauth_early_probe_interval_seconds = int_param(
+            str(payload.get("oauth_early_probe_interval_seconds")),
+            15,
+            5,
+            3600,
+        )
+    if "oauth_early_probe_batch_size" in payload:
+        settings.telegram_oauth_early_probe_batch_size = int_param(
+            str(payload.get("oauth_early_probe_batch_size")),
+            8,
+            1,
+            50,
+        )
 
 
 def telegram_oauth_usage_refresh_enabled() -> bool:
@@ -1274,6 +1320,96 @@ def telegram_oauth_recovery_monitor_enabled() -> bool:
 
 def telegram_oauth_recovery_push_enabled() -> bool:
     return bool(getattr(settings, "telegram_oauth_recovery_push_enabled", True))
+
+
+def telegram_oauth_usage_refresh_concurrency() -> int:
+    return int_param(str(getattr(settings, "telegram_oauth_usage_refresh_concurrency", 4)), 4, 1, 16)
+
+
+def telegram_oauth_recovery_test_concurrency() -> int:
+    return int_param(str(getattr(settings, "telegram_oauth_recovery_test_concurrency", 2)), 2, 1, 8)
+
+
+def telegram_oauth_early_probe_interval_seconds() -> int:
+    return int_param(str(getattr(settings, "telegram_oauth_early_probe_interval_seconds", 15)), 15, 5, 3600)
+
+
+def telegram_oauth_early_probe_batch_size() -> int:
+    return int_param(str(getattr(settings, "telegram_oauth_early_probe_batch_size", 8)), 8, 1, 50)
+
+
+def run_oauth_usage_query_jobs(
+    jobs: list[tuple[int, dict[str, Any], UsageQueryConfig]],
+    store: UsageQueryStore,
+    *,
+    concurrency: int,
+) -> list[tuple[int, dict[str, Any]]]:
+    if not jobs:
+        return []
+    workers = max(1, min(int(concurrency or 1), len(jobs)))
+    results: list[tuple[int, dict[str, Any]]] = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(
+                run_oauth_usage_query,
+                account_id,
+                row,
+                store,
+                timeout_seconds=config.timeout_seconds,
+            ): account_id
+            for account_id, row, config in jobs
+        }
+        for future in as_completed(future_map):
+            account_id = future_map[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = {
+                    "account_id": account_id,
+                    "template_type": "oauth",
+                    "success": False,
+                    "error": str(exc),
+                    "error_code": "oauth_usage_query_error",
+                    "queried_at": datetime.now(timezone.utc).isoformat(),
+                }
+            results.append((account_id, result))
+    return results
+
+
+def run_oauth_account_test_jobs(
+    jobs: list[tuple[int, str, UsageQueryConfig]],
+    *,
+    base_url: str,
+    admin_token: str,
+    concurrency: int,
+) -> dict[int, dict[str, Any]]:
+    if not jobs:
+        return {}
+    workers = max(1, min(int(concurrency or 1), len(jobs)))
+    results: dict[int, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(
+                execute_sub2api_account_test,
+                account_id,
+                model_id,
+                base_url=base_url,
+                admin_token=admin_token,
+                timeout_seconds=max(10, config.timeout_seconds),
+            ): account_id
+            for account_id, model_id, config in jobs
+        }
+        for future in as_completed(future_map):
+            account_id = future_map[future]
+            try:
+                results[account_id] = future.result()
+            except Exception as exc:
+                results[account_id] = {
+                    "success": False,
+                    "error": str(exc),
+                    "error_code": "account_test_error",
+                }
+    return results
 
 
 async def restart_telegram_bot() -> None:
@@ -1379,6 +1515,7 @@ def run_guard_balance_fallback(actor: str) -> list[dict[str, Any]]:
 
 
 def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
+    started_at = time.monotonic()
     store = usage_query_store()
     usage_enabled = store.usage_query_enabled()
     hard_stop_enabled = store.guard_disable_on_zero()
@@ -1389,7 +1526,9 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
     oauth_checked_count = 0
     oauth_queried_count = 0
     oauth_failed_count = 0
+    oauth_due_count = 0
     oauth_skipped_disabled_count = 0
+    oauth_jobs: list[tuple[int, dict[str, Any], UsageQueryConfig]] = []
     if not usage_enabled:
         write_audit(
             settings.audit_path,
@@ -1399,16 +1538,21 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
                 "checked_count": 0,
                 "queried_count": 0,
                 "oauth_checked_count": 0,
+                "oauth_due_count": 0,
                 "oauth_queried_count": 0,
                 "oauth_failed_count": 0,
+                "oauth_concurrency": telegram_oauth_usage_refresh_concurrency(),
                 "oauth_skipped_disabled_count": 0,
                 "action_count": 0,
                 "usage_query_enabled": False,
                 "guard_disable_on_zero": hard_stop_enabled,
+                "duration_ms": int((time.monotonic() - started_at) * 1000),
             },
         )
         return []
-    for config in store.configs():
+    configs = store.configs()
+    configured_account_ids = {config.account_id for config in configs}
+    for config in configs:
         if not usage_query_configured(config):
             continue
         row = usage_query_account_row(config.account_id)
@@ -1421,11 +1565,8 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
                 continue
             result = store.result(config.account_id)
             if is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
-                result = run_oauth_usage_query(config.account_id, row, store, timeout_seconds=config.timeout_seconds)
-                store.save_result(config.account_id, result)
-                oauth_queried_count += 1
-                if not result.get("success"):
-                    oauth_failed_count += 1
+                oauth_due_count += 1
+                oauth_jobs.append((config.account_id, row, config))
             continue
         if not row.get("schedulable", True):
             continue
@@ -1462,7 +1603,6 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         }
         write_audit(settings.audit_path, "guard_auto_usage_query_pause_account", action)
         actions.append(action)
-    configured_account_ids = {config.account_id for config in store.configs()}
     try:
         oauth_rows = usage_query_oauth_account_rows()
     except Exception:
@@ -1479,7 +1619,10 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
         result = store.result(account_id)
         if not is_query_due(config, result, interval_seconds=auto_query_interval_seconds):
             continue
-        result = run_oauth_usage_query(account_id, row, store, timeout_seconds=config.timeout_seconds)
+        oauth_due_count += 1
+        oauth_jobs.append((account_id, row, config))
+    oauth_concurrency = telegram_oauth_usage_refresh_concurrency()
+    for account_id, result in run_oauth_usage_query_jobs(oauth_jobs, store, concurrency=oauth_concurrency):
         store.save_result(account_id, result)
         oauth_queried_count += 1
         if not result.get("success"):
@@ -1492,13 +1635,16 @@ def run_usage_query_guard(actor: str) -> list[dict[str, Any]]:
             "checked_count": checked_count,
             "queried_count": queried_count,
             "oauth_checked_count": oauth_checked_count,
+            "oauth_due_count": oauth_due_count,
             "oauth_queried_count": oauth_queried_count,
             "oauth_failed_count": oauth_failed_count,
+            "oauth_concurrency": oauth_concurrency,
             "oauth_skipped_disabled_count": oauth_skipped_disabled_count,
             "action_count": len(actions),
             "usage_query_enabled": usage_enabled,
             "guard_disable_on_zero": hard_stop_enabled,
             "auto_query_interval_seconds": auto_query_interval_seconds,
+            "duration_ms": int((time.monotonic() - started_at) * 1000),
         },
     )
     return actions
@@ -1548,12 +1694,21 @@ def scan_oauth_quota_recovery_alerts(
         pending = {}
         state["oauth_account_recovery_pending"] = pending
 
+    started_at = time.monotonic()
+    early_probe_interval = telegram_oauth_early_probe_interval_seconds()
+    early_probe_batch_size = telegram_oauth_early_probe_batch_size()
+    active_usage_concurrency = telegram_oauth_usage_refresh_concurrency()
+    test_concurrency = telegram_oauth_recovery_test_concurrency()
     events: list[dict[str, Any]] = []
+    due_candidates: list[dict[str, Any]] = []
+    early_candidates: list[dict[str, Any]] = []
+    test_candidates: list[dict[str, Any]] = []
     checked_count = 0
     queried_count = 0
     early_probe_count = 0
     tested_count = 0
     test_failed_count = 0
+    max_probe_lag_seconds = 0
     for row in rows:
         account_id = int(row.get("id") or 0)
         if account_id <= 0 or not is_oauth_account(row):
@@ -1561,13 +1716,27 @@ def scan_oauth_quota_recovery_alerts(
         cached_result = active_store.result(account_id)
         summary = oauth_quota_for_row(row, cached_result)
         config = usage_query_oauth_config(account_id, active_store)
-        probe_interval = min(active_store.auto_query_interval_seconds() or 60, 60)
-        if probe_interval <= 0:
-            probe_interval = 60
         cached_probe = cached_result.get("oauth_recovery_probe") if isinstance(cached_result, dict) else None
+        if isinstance(cached_probe, dict) and bool(cached_result.get("success")):
+            candidate = oauth_account_recovery_candidate_from_probe(summary, cached_probe, now=current)
+            if candidate:
+                success_dedupe_key = oauth_recovery_success_dedupe_key(account_id, candidate)
+                if success_dedupe_key not in dedupe:
+                    test_candidates.append(
+                        {
+                            "account_id": account_id,
+                            "row": row,
+                            "config": config,
+                            "candidate": candidate,
+                            "model_id": scheduled_test_model_for_account(account_id),
+                            "success_dedupe_key": success_dedupe_key,
+                        }
+                    )
+                continue
         due_candidate = oauth_account_recovery_probe_due(summary, now=current)
+        candidate: dict[str, Any] | None = None
         early_probe = False
-        throttle_probe = False
+        throttle_seconds = 0
         if (
             due_candidate
             and isinstance(cached_probe, dict)
@@ -1575,35 +1744,67 @@ def scan_oauth_quota_recovery_alerts(
             and str(cached_probe.get("fingerprint") or "")
             == str(due_candidate.get("fingerprint") or "")
         ):
-            throttle_probe = True
-        if not due_candidate:
-            due_candidate = cached_probe if isinstance(cached_probe, dict) else None
-            if due_candidate:
-                early_probe = bool(due_candidate.get("early_probe"))
-                throttle_probe = True
-            if not due_candidate:
-                due_candidate = oauth_account_recovery_early_probe_due(
+            throttle_seconds = early_probe_interval
+        if due_candidate:
+            candidate = due_candidate
+        else:
+            candidate = cached_probe if isinstance(cached_probe, dict) else None
+            if candidate:
+                early_probe = bool(candidate.get("early_probe"))
+                throttle_seconds = early_probe_interval
+            if not candidate:
+                candidate = oauth_account_recovery_early_probe_due(
                     summary,
                     cached_result,
                     now=current,
-                    interval_seconds=probe_interval,
+                    interval_seconds=early_probe_interval,
                 )
-                if not due_candidate:
+                if not candidate:
                     continue
                 early_probe = True
-                throttle_probe = True
-        if throttle_probe and not is_query_due(config, cached_result, now=current, interval_seconds=probe_interval):
+                throttle_seconds = early_probe_interval
+        if throttle_seconds and not is_query_due(config, cached_result, now=current, interval_seconds=throttle_seconds):
             continue
-        if oauth_recovery_success_dedupe_key(account_id, due_candidate) in dedupe:
+        if oauth_recovery_success_dedupe_key(account_id, candidate) in dedupe:
             continue
-        checked_count += 1
-        result = run_oauth_usage_query(account_id, row, active_store, timeout_seconds=config.timeout_seconds)
+        item = {
+            "account_id": account_id,
+            "row": row,
+            "config": config,
+            "candidate": candidate,
+            "early_probe": early_probe,
+        }
+        if early_probe:
+            early_candidates.append(item)
+        else:
+            due_candidates.append(item)
+
+    selected_candidates = due_candidates + early_candidates[:early_probe_batch_size]
+    selected_by_account = {int(item["account_id"]): item for item in selected_candidates}
+    checked_count = len(selected_candidates)
+    early_probe_count = sum(1 for item in selected_candidates if item.get("early_probe"))
+    for item in selected_candidates:
+        candidate = item["candidate"]
+        reset_time = None
+        if isinstance(candidate, dict):
+            reset_time = parse_datetime_utc(candidate.get("reset_at"))
+        if reset_time:
+            max_probe_lag_seconds = max(max_probe_lag_seconds, int((current - reset_time).total_seconds()))
+
+    jobs = [
+        (int(item["account_id"]), item["row"], item["config"])
+        for item in selected_candidates
+    ]
+    for account_id, result in run_oauth_usage_query_jobs(jobs, active_store, concurrency=active_usage_concurrency):
+        item = selected_by_account.get(int(account_id))
+        if not item:
+            continue
+        due_candidate = item["candidate"]
         result = dict(result)
+        result.setdefault("queried_at", current.isoformat())
         result["oauth_recovery_probe"] = due_candidate
         active_store.save_result(account_id, result)
         queried_count += 1
-        if early_probe:
-            early_probe_count += 1
         if not result.get("success"):
             write_audit(
                 settings.audit_path,
@@ -1624,13 +1825,34 @@ def scan_oauth_quota_recovery_alerts(
         if success_dedupe_key in dedupe:
             continue
         model_id = scheduled_test_model_for_account(account_id)
-        test_result = execute_sub2api_account_test(
-            account_id,
-            model_id,
-            base_url=base_url,
-            admin_token=admin_token,
-            timeout_seconds=max(10, config.timeout_seconds),
+        test_candidates.append(
+            {
+                "account_id": account_id,
+                "row": item["row"],
+                "config": item["config"],
+                "candidate": candidate,
+                "model_id": model_id,
+                "success_dedupe_key": success_dedupe_key,
+            }
         )
+
+    test_jobs = [
+        (int(item["account_id"]), str(item.get("model_id") or ""), item["config"])
+        for item in test_candidates
+    ]
+    test_results = run_oauth_account_test_jobs(
+        test_jobs,
+        base_url=base_url,
+        admin_token=admin_token,
+        concurrency=test_concurrency,
+    )
+    for item in test_candidates:
+        account_id = int(item["account_id"])
+        row = item["row"]
+        candidate = item["candidate"]
+        model_id = str(item.get("model_id") or "")
+        success_dedupe_key = str(item.get("success_dedupe_key") or "")
+        test_result = test_results.get(account_id) or {"success": False, "error_code": "missing_test_result"}
         tested_count += 1
         if not test_result.get("success"):
             test_failed_count += 1
@@ -1677,9 +1899,19 @@ def scan_oauth_quota_recovery_alerts(
             "checked_count": checked_count,
             "queried_count": queried_count,
             "early_probe_count": early_probe_count,
+            "candidate_count": len(due_candidates) + len(early_candidates),
+            "due_count": len(due_candidates),
+            "early_due_count": len(early_candidates),
+            "test_retry_count": len(test_candidates),
             "tested_count": tested_count,
             "test_failed_count": test_failed_count,
             "push_count": len(events),
+            "duration_ms": int((time.monotonic() - started_at) * 1000),
+            "max_probe_lag_seconds": max_probe_lag_seconds,
+            "active_usage_concurrency": active_usage_concurrency,
+            "test_concurrency": test_concurrency,
+            "early_probe_interval_seconds": early_probe_interval,
+            "early_probe_batch_size": early_probe_batch_size,
         },
     )
     return events
@@ -2940,12 +3172,20 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     oauth_usage_refresh_enabled = bool(form.getlist("oauth_usage_refresh_enabled"))
     oauth_recovery_monitor_enabled = bool(form.getlist("oauth_recovery_monitor_enabled"))
     oauth_recovery_push_enabled = bool(form.getlist("oauth_recovery_push_enabled"))
+    oauth_usage_refresh_concurrency = int_param(str(form.get("oauth_usage_refresh_concurrency")), 4, 1, 16)
+    oauth_recovery_test_concurrency = int_param(str(form.get("oauth_recovery_test_concurrency")), 2, 1, 8)
+    oauth_early_probe_interval_seconds = int_param(str(form.get("oauth_early_probe_interval_seconds")), 15, 5, 3600)
+    oauth_early_probe_batch_size = int_param(str(form.get("oauth_early_probe_batch_size")), 8, 1, 50)
     existing = telegram_config_file()
     payload = {
         **existing,
         "oauth_usage_refresh_enabled": oauth_usage_refresh_enabled,
         "oauth_recovery_monitor_enabled": oauth_recovery_monitor_enabled,
         "oauth_recovery_push_enabled": oauth_recovery_push_enabled,
+        "oauth_usage_refresh_concurrency": oauth_usage_refresh_concurrency,
+        "oauth_recovery_test_concurrency": oauth_recovery_test_concurrency,
+        "oauth_early_probe_interval_seconds": oauth_early_probe_interval_seconds,
+        "oauth_early_probe_batch_size": oauth_early_probe_batch_size,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": user,
     }
@@ -2960,9 +3200,13 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
             "oauth_usage_refresh_enabled": oauth_usage_refresh_enabled,
             "oauth_recovery_monitor_enabled": oauth_recovery_monitor_enabled,
             "oauth_recovery_push_enabled": oauth_recovery_push_enabled,
+            "oauth_usage_refresh_concurrency": oauth_usage_refresh_concurrency,
+            "oauth_recovery_test_concurrency": oauth_recovery_test_concurrency,
+            "oauth_early_probe_interval_seconds": oauth_early_probe_interval_seconds,
+            "oauth_early_probe_batch_size": oauth_early_probe_batch_size,
         },
     )
-    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('OAuth 账号监控开关已保存')}", status_code=303)
+    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('OAuth 账号监控设置已保存')}", status_code=303)
 
 
 @app.post("/sso-config")

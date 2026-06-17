@@ -41,6 +41,10 @@ class Settings:
     telegram_oauth_usage_refresh_enabled: bool = True
     telegram_oauth_recovery_monitor_enabled: bool = True
     telegram_oauth_recovery_push_enabled: bool = True
+    telegram_oauth_usage_refresh_concurrency: int = 4
+    telegram_oauth_recovery_test_concurrency: int = 2
+    telegram_oauth_early_probe_interval_seconds: int = 15
+    telegram_oauth_early_probe_batch_size: int = 8
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
@@ -201,6 +205,42 @@ def load_settings() -> Settings:
         telegram_oauth_recovery_push_enabled=bool_value(
             telegram_config.get("oauth_recovery_push_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED")),
             True,
+        ),
+        telegram_oauth_usage_refresh_concurrency=int_value(
+            telegram_config.get(
+                "oauth_usage_refresh_concurrency",
+                os.getenv("TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY"),
+            ),
+            4,
+            1,
+            16,
+        ),
+        telegram_oauth_recovery_test_concurrency=int_value(
+            telegram_config.get(
+                "oauth_recovery_test_concurrency",
+                os.getenv("TELEGRAM_OAUTH_RECOVERY_TEST_CONCURRENCY"),
+            ),
+            2,
+            1,
+            8,
+        ),
+        telegram_oauth_early_probe_interval_seconds=int_value(
+            telegram_config.get(
+                "oauth_early_probe_interval_seconds",
+                os.getenv("TELEGRAM_OAUTH_EARLY_PROBE_INTERVAL_SECONDS"),
+            ),
+            15,
+            5,
+            3600,
+        ),
+        telegram_oauth_early_probe_batch_size=int_value(
+            telegram_config.get(
+                "oauth_early_probe_batch_size",
+                os.getenv("TELEGRAM_OAUTH_EARLY_PROBE_BATCH_SIZE"),
+            ),
+            8,
+            1,
+            50,
         ),
         update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
         update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
