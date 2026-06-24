@@ -51,6 +51,7 @@ from .sql import (
     SPEED_SQL,
     SPEED_SQL_COMPAT_NO_LOAD_FACTOR,
     SCHEDULED_TEST_CAPABILITY_SQL,
+    SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL,
     SCHEDULED_TEST_DELETE_ENDLESS_SQL,
     SCHEDULED_TEST_ENDLESS_PLANS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
@@ -671,6 +672,76 @@ def delete_endless_recovery_plan(account_id: int, actor: str, reason: str = "") 
         "reason": reason,
     }
     write_audit(settings.audit_path, "guard_endless_recovery_plan_delete", result)
+    return result
+
+
+def delete_auto_recovery_plan(account_id: int, plan_id: int, actor: str, reason: str = "") -> dict[str, Any]:
+    account_id = int(account_id)
+    plan_id = int(plan_id or 0)
+    if plan_id <= 0:
+        result = {
+            "success": True,
+            "deleted": False,
+            "account_id": account_id,
+            "plan_id": 0,
+            "actor": actor,
+            "reason": reason,
+        }
+        write_audit(settings.audit_path, "guard_auto_recovery_plan_delete", result)
+        return result
+
+    capability = scheduled_test_capability()
+    if not capability.get("available"):
+        error = str(capability.get("message") or "scheduled test capability is not available")
+        result = {
+            "success": False,
+            "deleted": False,
+            "account_id": account_id,
+            "plan_id": plan_id,
+            "error": error,
+            "actor": actor,
+            "reason": reason,
+        }
+        write_audit(settings.audit_path, "guard_auto_recovery_plan_delete_failed", result)
+        return result
+
+    try:
+        row = db.fetch_one(
+            SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL,
+            {"account_id": account_id, "plan_id": plan_id},
+        )
+    except Exception as exc:
+        result = {
+            "success": False,
+            "deleted": False,
+            "account_id": account_id,
+            "plan_id": plan_id,
+            "error": str(exc),
+            "actor": actor,
+            "reason": reason,
+        }
+        write_audit(settings.audit_path, "guard_auto_recovery_plan_delete_failed", result)
+        return result
+
+    deleted_plan_id = int((row or {}).get("id") or plan_id)
+    store = GuardStore(settings.guard_state_path)
+    managed = store.endless_recovery_plan(account_id)
+    try:
+        managed_plan_id = int(managed.get("plan_id") or 0)
+    except (TypeError, ValueError):
+        managed_plan_id = 0
+    if row and managed_plan_id == deleted_plan_id:
+        store.clear_endless_recovery_plan(account_id)
+
+    result = {
+        "success": True,
+        "deleted": bool(row),
+        "account_id": account_id,
+        "plan_id": deleted_plan_id,
+        "actor": actor,
+        "reason": reason,
+    }
+    write_audit(settings.audit_path, "guard_auto_recovery_plan_delete", result)
     return result
 
 
@@ -2298,6 +2369,19 @@ def cleanup_orphaned_endless_recovery_result(row: dict[str, Any], actor: str = "
     return audit_payload
 
 
+def delete_auto_recovery_plan_for_result(row: dict[str, Any], actor: str = "auto_guard_recovery") -> dict[str, Any] | None:
+    if not form_truthy(row.get("auto_recover")):
+        return None
+    try:
+        account_id = int(row.get("account_id") or 0)
+        plan_id = int(row.get("plan_id") or 0)
+    except (TypeError, ValueError):
+        return None
+    if account_id <= 0 or plan_id <= 0:
+        return None
+    return delete_auto_recovery_plan(account_id, plan_id, actor, "scheduled_test_recovered")
+
+
 async def notify_telegram(text: str) -> None:
     if telegram_bot is None:
         return
@@ -2340,11 +2424,13 @@ def process_guard_recovery_circuits() -> None:
             continue
         if not scheduled_test_needs_recovery(row):
             continue
-        engine.record_recovery_success(
+        handled = engine.record_recovery_success(
             int(row["account_id"]),
             int(row["result_id"]),
             f"scheduled test success: {row.get('model_id') or ''}",
         )
+        if handled:
+            delete_auto_recovery_plan_for_result(row, "auto_guard_recovery")
     engine.store.set_recovery_cursor(next_cursor)
 
 
@@ -2412,11 +2498,17 @@ async def telegram_recovery_alert_loop() -> None:
                             if scheduled_test_needs_recovery(row):
                                 recovery_rows.append(row)
                         for row in recovery_rows:
-                            engine.record_recovery_success(
+                            handled = engine.record_recovery_success(
                                 int(row["account_id"]),
                                 int(row["result_id"]),
                                 f"scheduled test success: {row.get('model_id') or ''}",
                             )
+                            if handled:
+                                await asyncio.to_thread(
+                                    delete_auto_recovery_plan_for_result,
+                                    row,
+                                    "telegram_scheduled_test_recovery",
+                                )
                         next_cursor = max(int(row.get("result_id") or cursor_id) for row in rows)
                         engine.store.set_recovery_cursor(next_cursor)
                         if recovery_rows:

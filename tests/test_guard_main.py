@@ -61,6 +61,9 @@ class GuardMainTests(unittest.TestCase):
         self.original_delete_endless_recovery_plan = getattr(
             main_module, "delete_endless_recovery_plan", None
         )
+        self.original_delete_auto_recovery_plan = getattr(
+            main_module, "delete_auto_recovery_plan", None
+        )
         self.original_pause_account_op = main_module.account_ops.pause_account
         self.original_resume_account_op = main_module.account_ops.resume_account
         self.original_guard_pause_account = main_module.account_ops.guard_pause_account
@@ -124,6 +127,10 @@ class GuardMainTests(unittest.TestCase):
             main_module.delete_endless_recovery_plan = self.original_delete_endless_recovery_plan  # type: ignore[assignment]
         elif hasattr(main_module, "delete_endless_recovery_plan"):
             delattr(main_module, "delete_endless_recovery_plan")
+        if self.original_delete_auto_recovery_plan is not None:
+            main_module.delete_auto_recovery_plan = self.original_delete_auto_recovery_plan  # type: ignore[assignment]
+        elif hasattr(main_module, "delete_auto_recovery_plan"):
+            delattr(main_module, "delete_auto_recovery_plan")
         main_module.account_ops.pause_account = self.original_pause_account_op
         main_module.account_ops.resume_account = self.original_resume_account_op
         main_module.account_ops.guard_pause_account = self.original_guard_pause_account
@@ -266,6 +273,103 @@ class GuardMainTests(unittest.TestCase):
 
         self.assertEqual(recorded, [(9, 12)])
         self.assertEqual(cleaned, [])
+
+    def test_recovery_processing_deletes_auto_recovery_plan_after_success(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.set_recovery_cursor(10)
+        recorded: list[tuple[int, int]] = []
+        deleted: list[tuple[int, int, str, str]] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, account_id: int, result_id: int, _message: str) -> bool:
+                recorded.append((account_id, result_id))
+                return True
+
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
+            {
+                "result_id": 12,
+                "plan_id": 5,
+                "account_id": 9,
+                "model_id": "gpt-test",
+                "auto_recover": True,
+                "schedulable": False,
+            }
+        ]
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+        main_module.delete_auto_recovery_plan = lambda account_id, plan_id, actor, reason="": deleted.append(  # type: ignore[assignment]
+            (account_id, plan_id, actor, reason)
+        ) or {"success": True, "deleted": True, "account_id": account_id, "plan_id": plan_id}
+
+        main_module.process_guard_recovery_circuits()
+
+        self.assertEqual(recorded, [(9, 12)])
+        self.assertEqual(deleted, [(9, 5, "auto_guard_recovery", "scheduled_test_recovered")])
+
+    def test_recovery_processing_does_not_delete_when_recovery_event_is_duplicate(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.set_recovery_cursor(10)
+        deleted: list[int] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, _account_id: int, _result_id: int, _message: str) -> bool:
+                return False
+
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: [  # type: ignore[assignment]
+            {
+                "result_id": 12,
+                "plan_id": 5,
+                "account_id": 9,
+                "model_id": "gpt-test",
+                "auto_recover": True,
+                "schedulable": False,
+            }
+        ]
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+        main_module.delete_auto_recovery_plan = lambda account_id, *_args, **_kwargs: deleted.append(account_id)  # type: ignore[assignment]
+
+        main_module.process_guard_recovery_circuits()
+
+        self.assertEqual(deleted, [])
+
+    def test_recovery_processing_does_not_delete_without_auto_recover_plan_id(self) -> None:
+        store = GuardStore(main_module.settings.guard_state_path)
+        store.set_recovery_cursor(10)
+        deleted: list[int] = []
+
+        class CaptureEngine:
+            def __init__(self, engine_store: GuardStore) -> None:
+                self.store = engine_store
+
+            def record_recovery_success(self, _account_id: int, _result_id: int, _message: str) -> bool:
+                return True
+
+        rows = [
+            {"result_id": 12, "account_id": 9, "model_id": "gpt-test", "auto_recover": True, "schedulable": False},
+            {
+                "result_id": 13,
+                "plan_id": 6,
+                "account_id": 10,
+                "model_id": "gpt-test",
+                "auto_recover": False,
+                "schedulable": False,
+            },
+        ]
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        main_module.load_scheduled_test_recovery_alert_rows = lambda _cursor: rows  # type: ignore[assignment]
+        main_module.guard_engine = lambda engine_store=None: CaptureEngine(engine_store or store)  # type: ignore[assignment]
+        main_module.delete_auto_recovery_plan = lambda account_id, *_args, **_kwargs: deleted.append(account_id)  # type: ignore[assignment]
+
+        main_module.process_guard_recovery_circuits()
+
+        self.assertEqual(deleted, [])
 
     def test_scheduled_test_needs_recovery_includes_account_status(self) -> None:
         self.assertTrue(main_module.scheduled_test_needs_recovery({"account_status": "error", "schedulable": True}))
@@ -651,6 +755,53 @@ class GuardMainTests(unittest.TestCase):
         audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
         self.assertIn("guard_endless_recovery_plan_delete_failed", audit_text)
         self.assertIn('"account_id": 9', audit_text)
+
+    def test_delete_auto_recovery_plan_deletes_by_plan_id_and_clears_managed_endless_state(self) -> None:
+        captured: dict[str, Any] = {}
+
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                captured["sql"] = sql
+                captured["params"] = params
+                return {"id": params["plan_id"], "account_id": params["account_id"]}  # type: ignore[index]
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": True}  # type: ignore[assignment]
+        state_path = Path(main_module.settings.guard_state_path)
+        state_path.write_text(
+            json.dumps({"policy": {}, "endless_recovery_plans": {"9": {"plan_id": 77}}}),
+            encoding="utf-8",
+        )
+
+        result = main_module.delete_auto_recovery_plan(9, 77, "tester", "unit_test")
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["deleted"])
+        self.assertEqual(result["plan_id"], 77)
+        self.assertIn("scheduled_test_plans", captured["sql"])
+        self.assertIn("auto_recover = true", captured["sql"])
+        self.assertEqual(captured["params"], {"account_id": 9, "plan_id": 77})
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("9", state.get("endless_recovery_plans") or {})
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("guard_auto_recovery_plan_delete", audit_text)
+
+    def test_delete_auto_recovery_plan_reports_missing_capability_without_db_delete(self) -> None:
+        class CaptureDB(FakeCapabilityDB):
+            def fetch_one(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+                raise AssertionError("missing scheduled test capability must not delete plan")
+
+        main_module.db = CaptureDB()  # type: ignore[assignment]
+        main_module.scheduled_test_capability = lambda: {"available": False, "message": "missing tables"}  # type: ignore[assignment]
+
+        result = main_module.delete_auto_recovery_plan(9, 77, "tester", "unit_test")
+
+        self.assertFalse(result["success"])
+        self.assertFalse(result["deleted"])
+        self.assertEqual(result["error"], "missing tables")
+        audit_text = Path(main_module.settings.audit_path).read_text(encoding="utf-8")
+        self.assertIn("guard_auto_recovery_plan_delete_failed", audit_text)
+        self.assertIn('"plan_id": 77', audit_text)
 
     def test_ensure_endless_recovery_plan_reports_missing_capability_without_db_upsert(self) -> None:
         class CaptureDB(FakeCapabilityDB):

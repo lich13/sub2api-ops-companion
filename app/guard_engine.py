@@ -165,7 +165,7 @@ class GuardEngine:
             self.store.save_circuit(circuit)
         self.store.set_success_cursor(latest)
 
-    def record_recovery_success(self, account_id: int, result_id: int, message: str = "scheduled test recovered") -> None:
+    def record_recovery_success(self, account_id: int, result_id: int, message: str = "scheduled test recovered") -> bool:
         signal = GuardSignal(
             account_id=int(account_id),
             category="success",
@@ -176,7 +176,7 @@ class GuardEngine:
         )
         circuit = self.store.circuit(int(account_id))
         if signal.event_key in set(circuit.processed_event_keys):
-            return
+            return False
         account_ops.resume_account(
             self.db,
             self.audit_path,
@@ -187,3 +187,4 @@ class GuardEngine:
         circuit.state = "half_open"
         _, circuit = apply_signal(self.policy, circuit, signal, datetime.now(timezone.utc))
         self.store.save_circuit(circuit)
+        return True

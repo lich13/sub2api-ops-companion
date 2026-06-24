@@ -803,6 +803,15 @@ RETURNING id, account_id;
 """
 
 
+SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL = """
+DELETE FROM scheduled_test_plans
+WHERE id = %(plan_id)s::bigint
+  AND account_id = %(account_id)s::bigint
+  AND auto_recover = true
+RETURNING id, account_id;
+"""
+
+
 SCHEDULED_TEST_ENDLESS_PLANS_SQL = """
 SELECT
   id AS plan_id,
