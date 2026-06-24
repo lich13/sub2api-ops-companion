@@ -224,8 +224,9 @@ class GuardEngineTests(unittest.TestCase):
 
             db = RecoveryFakeDB([])
             engine = GuardEngine(db, store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
-            engine.record_recovery_success(9, 777)
+            handled = engine.record_recovery_success(9, 777)
 
+            self.assertTrue(handled)
             self.assertEqual(store.circuit(9).state, "closed")
             self.assertTrue(any(params.get("account_id") == 9 for _sql, params in db.updates))
 
@@ -238,11 +239,13 @@ class GuardEngineTests(unittest.TestCase):
             store.save_circuit(circuit)
 
             engine = GuardEngine(RecoveryFakeDB([]), store, str(Path(tmp) / "audit.jsonl"), GuardPolicy(success_threshold=1))
-            engine.record_recovery_success(9, 777)
+            first = engine.record_recovery_success(9, 777)
             self.assertEqual(store.circuit(9).state, "closed")
 
-            engine.record_recovery_success(9, 777)
+            second = engine.record_recovery_success(9, 777)
 
+            self.assertTrue(first)
+            self.assertFalse(second)
             self.assertEqual(store.circuit(9).state, "closed")
 
 

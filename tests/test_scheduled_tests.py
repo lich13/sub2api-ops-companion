@@ -13,6 +13,7 @@ from app.scheduled_tests import (
 )
 from app.sql import (
     SCHEDULED_TEST_CAPABILITY_SQL,
+    SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL,
     SCHEDULED_TEST_DELETE_ENDLESS_SQL,
     SCHEDULED_TEST_ENDLESS_PLANS_SQL,
     SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
@@ -72,6 +73,7 @@ class ScheduledTestHelpersTests(unittest.TestCase):
             [
                 SCHEDULED_TEST_CAPABILITY_SQL,
                 SCHEDULED_TEST_UPSERT_SQL,
+                SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL,
                 SCHEDULED_TEST_DELETE_ENDLESS_SQL,
                 SCHEDULED_TEST_ENDLESS_PLANS_SQL,
                 SCHEDULED_TEST_RECOVERY_ALERTS_SQL,
@@ -84,6 +86,10 @@ class ScheduledTestHelpersTests(unittest.TestCase):
         self.assertIn("next_run_at", combined)
         self.assertIn("WITH existing AS", SCHEDULED_TEST_UPSERT_SQL)
         self.assertIn("INSERT INTO scheduled_test_plans", SCHEDULED_TEST_UPSERT_SQL)
+        self.assertIn("id = %(plan_id)s::bigint", SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL)
+        self.assertIn("account_id = %(account_id)s::bigint", SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL)
+        self.assertIn("auto_recover = true", SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL)
+        self.assertNotIn("cron_expression = '* * * * *'", SCHEDULED_TEST_DELETE_AUTO_RECOVERY_SQL)
         self.assertIn("account_id = %(account_id)s::bigint", SCHEDULED_TEST_DELETE_ENDLESS_SQL)
         self.assertIn("cron_expression = '* * * * *'", SCHEDULED_TEST_DELETE_ENDLESS_SQL)
         self.assertIn("auto_recover = true", SCHEDULED_TEST_DELETE_ENDLESS_SQL)
