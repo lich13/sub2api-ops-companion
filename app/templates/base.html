@@ -4,22 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
-    <link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/sub2ops-icon.svg?v=20260516-icon" />
-    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260617-light" />
-    {% if active in ['speed', 'guard'] %}
-      <script src="{{ base_path }}/static/table-columns.js?v=20260617-light" defer></script>
-      <script src="{{ base_path }}/static/group-picker.js?v=20260617-light" defer></script>
-    {% endif %}
-    {% if active == 'speed' %}
-      <script src="{{ base_path }}/static/time-range.js?v=20260617-light" defer></script>
-      <script src="{{ base_path }}/static/usage-query.js?v=20260617-light" defer></script>
-    {% endif %}
-    {% if active == 'guard' %}
-      <script src="{{ base_path }}/static/guard-queue.js?v=20260617-light" defer></script>
-      <script src="{{ base_path }}/static/guard-sections.js?v=20260617-light" defer></script>
-    {% endif %}
-    <script src="{{ base_path }}/static/navigation.js?v=20260617-light" defer></script>
-    <script src="{{ base_path }}/static/version-panel.js?v=20260617-light" defer></script>
+    <link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/sub2ops-icon.svg?v=20260901" />
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css?v=20260901" />
+    <script src="{{ base_path }}/static/navigation.js?v=20260901" defer></script>
+    <script src="{{ base_path }}/static/version-panel.js?v=20260901" defer></script>
   </head>
   <body>
     <header class="app-header">
@@ -29,7 +17,7 @@
           <div>
             <h1>{{ app_name }}</h1>
             <div class="brand-meta">
-              <span>运行面板</span>
+              <span>OAuth 运维</span>
               {% if current_user %}
                 <div class="version-widget" data-version-widget data-base-path="{{ base_path }}">
                   <button class="version-pill" type="button" data-version-toggle aria-expanded="false">
@@ -64,8 +52,6 @@
         </div>
         {% if current_user %}
           <nav class="nav">
-            <a class="{{ 'active' if active == 'speed' else '' }}" href="{{ base_path }}/speed">账号速度</a>
-            <a class="{{ 'active' if active == 'guard' else '' }}" href="{{ base_path }}/guard">自动 Guard</a>
             <a class="{{ 'active' if active == 'sso' else '' }}" href="{{ base_path }}/sso">Sub2API 接入</a>
             <a class="{{ 'active' if active == 'telegram' else '' }}" href="{{ base_path }}/telegram">Telegram</a>
             <form method="post" action="{{ base_path }}/logout">

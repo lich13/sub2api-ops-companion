@@ -19,7 +19,7 @@ from app.settings import load_settings
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def protected_request(path: str = "/speed") -> Request:
+def protected_request(path: str = "/telegram") -> Request:
     return Request(
         {
             "type": "http",
@@ -164,6 +164,22 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertFalse(loaded.telegram_oauth_usage_refresh_enabled)
         self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
         self.assertFalse(loaded.telegram_oauth_recovery_push_enabled)
+
+    def test_removed_guard_settings_are_absent(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
+                "OPS_SESSION_SECRET": "session-secret-only",
+                "GUARD_ENABLED": "true",
+                "GUARD_INTERVAL_SECONDS": "2",
+            },
+            clear=True,
+        ):
+            loaded = load_settings()
+
+        self.assertFalse(hasattr(loaded, "guard_enabled"))
+        self.assertFalse(hasattr(loaded, "guard_interval_seconds"))
 
 
 if __name__ == "__main__":

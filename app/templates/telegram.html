@@ -1,139 +1,134 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="page-title page-title-compact telegram-hero">
+<section class="page-title page-title-compact">
   <div>
     <span class="eyebrow">Telegram</span>
     <h2>Telegram</h2>
   </div>
-  <div class="filters inline">
-    <form method="post" action="{{ base_path }}/telegram/push-test">
-      <button class="primary" type="submit">测试推送</button>
-    </form>
-    <form method="post" action="{{ base_path }}/telegram/guard-run">
-      <button type="submit">执行 Guard</button>
-    </form>
-  </div>
+  <form method="post" action="{{ base_path }}/telegram/push-test">
+    <button class="primary" type="submit">测试推送</button>
+  </form>
 </section>
 
 <section class="metric-strip telegram-metrics">
-  <div class="metric-card {{ 'danger' if not telegram.configured else '' }}">
+  <div class="metric-card {{ 'danger' if not telegram.configured else 'success' }}">
     <span>Bot</span>
     <strong>{{ '已启用' if telegram.configured else '未启用' }}</strong>
   </div>
-  <div class="metric-card {{ 'warning' if telegram.binding_status != '已绑定' else '' }}">
+  <div class="metric-card {{ 'warning' if telegram.binding_status != '已绑定' else 'success' }}">
     <span>绑定</span>
     <strong>{{ telegram.binding_status }}</strong>
   </div>
   <div class="metric-card">
-    <span>推送</span>
+    <span>推送目标</span>
     <strong>{{ telegram.push_target_count }}</strong>
   </div>
   <div class="metric-card">
-    <span>控制</span>
+    <span>控制用户</span>
     <strong>{{ telegram.control_user_count }}</strong>
   </div>
 </section>
 
-<section class="panel telegram-config-panel">
-  <div class="section-head compact-head">
-    <div>
-      <h3>Bot Token 与配对码</h3>
+<div class="settings-grid">
+  <section class="panel telegram-config-panel">
+    <div class="section-head compact-head">
+      <h3>Bot 与配对</h3>
+      <span class="status-dot {{ 'online' if telegram.configured else '' }}"></span>
     </div>
-    <span class="subtle">更新：{{ telegram.config_updated_at | bj_time }}</span>
-  </div>
-
-  <form class="telegram-config-form telegram-token-form" method="post" action="{{ base_path }}/telegram/config" autocomplete="off">
-    <label class="token-field">
-      <span>Bot Token</span>
-      <input class="wide-input" type="password" name="telegram_bot_token" autocomplete="new-password" spellcheck="false" placeholder="{{ telegram.bot_token_preview if telegram.bot_token_set else '粘贴 Bot Token' }}">
-    </label>
-    <button class="primary" type="submit">保存</button>
-  </form>
-
-  <div class="pairing-code-panel">
-    <div>
-      <span>当前配对码</span>
-      <strong>{{ telegram.pairing_code or '保存 Token 后生成' }}</strong>
-    </div>
-    <form method="post" action="{{ base_path }}/telegram/pairing-code/regenerate">
-      <button type="submit">重新生成配对码</button>
+    <form class="stack-form" method="post" action="{{ base_path }}/telegram/config" autocomplete="off">
+      <label>
+        <span>Bot Token</span>
+        <input type="password" name="telegram_bot_token" autocomplete="new-password" spellcheck="false" placeholder="{{ telegram.bot_token_preview if telegram.bot_token_set else '粘贴 Bot Token' }}">
+      </label>
+      <button class="primary" type="submit">保存 Token</button>
     </form>
-  </div>
-</section>
+    <div class="pairing-row">
+      <div>
+        <span>配对码</span>
+        <strong class="mono">{{ telegram.pairing_code or '待生成' }}</strong>
+      </div>
+      <form method="post" action="{{ base_path }}/telegram/pairing-code/regenerate">
+        <button type="submit">重新生成</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel telegram-bindings-panel">
+    <div class="section-head compact-head">
+      <h3>当前绑定</h3>
+    </div>
+    <div class="binding-groups">
+      <div>
+        <span class="field-caption">Chat</span>
+        <div class="id-list">
+          {% for item in telegram.paired_chat_ids %}<span class="id-chip">{{ item }}</span>{% endfor %}
+          {% if not telegram.paired_chat_ids %}<span class="empty-value">未绑定</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        <span class="field-caption">User</span>
+        <div class="id-list">
+          {% for item in telegram.paired_user_ids %}<span class="id-chip">{{ item }}</span>{% endfor %}
+          {% if not telegram.paired_user_ids %}<span class="empty-value">未绑定</span>{% endif %}
+        </div>
+      </div>
+      <div class="command-row">
+        <span class="field-caption">命令</span>
+        <span class="id-chip">/quota</span>
+      </div>
+    </div>
+  </section>
+</div>
 
 <section class="panel telegram-oauth-panel">
   <div class="section-head compact-head">
-    <div>
-      <h3>OAuth 账号监控</h3>
-    </div>
+    <h3>OAuth 账号监控</h3>
   </div>
-  <form class="telegram-oauth-settings" method="post" action="{{ base_path }}/telegram/oauth-settings">
-    <label class="telegram-oauth-toggle">
-      <input type="checkbox" name="oauth_usage_refresh_enabled" value="1" {{ 'checked' if telegram.oauth_usage_refresh_enabled else '' }} />
-      <span>
-        <strong>后台额度刷新</strong>
-      </span>
-    </label>
-    <label class="telegram-oauth-toggle">
-      <input type="checkbox" name="oauth_recovery_monitor_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_monitor_enabled else '' }} />
-      <span>
-        <strong>恢复可用监控</strong>
-      </span>
-    </label>
-    <label class="telegram-oauth-toggle">
-      <input type="checkbox" name="oauth_recovery_push_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_push_enabled else '' }} />
-      <span>
-        <strong>恢复结果推送</strong>
-      </span>
-    </label>
-    <label>
-      <span>刷新并发</span>
-      <input type="number" name="oauth_usage_refresh_concurrency" min="1" max="16" value="{{ telegram.oauth_usage_refresh_concurrency }}" />
-    </label>
-    <label>
-      <span>测试并发</span>
-      <input type="number" name="oauth_recovery_test_concurrency" min="1" max="8" value="{{ telegram.oauth_recovery_test_concurrency }}" />
-    </label>
-    <label>
-      <span>提前探测秒数</span>
-      <input type="number" name="oauth_early_probe_interval_seconds" min="5" max="3600" value="{{ telegram.oauth_early_probe_interval_seconds }}" />
-    </label>
-    <label>
-      <span>每轮探测账号</span>
-      <input type="number" name="oauth_early_probe_batch_size" min="1" max="50" value="{{ telegram.oauth_early_probe_batch_size }}" />
-    </label>
-    <label>
-      <span>测活模型</span>
-      <input type="text" name="oauth_recovery_test_model_id" value="{{ telegram.oauth_recovery_test_model_id }}" spellcheck="false" />
-    </label>
-    <div class="telegram-oauth-actions">
+  <form class="oauth-settings-form" method="post" action="{{ base_path }}/telegram/oauth-settings">
+    <div class="toggle-grid">
+      <label class="setting-toggle">
+        <input type="checkbox" name="oauth_usage_refresh_enabled" value="1" {{ 'checked' if telegram.oauth_usage_refresh_enabled else '' }}>
+        <span><strong>后台额度刷新</strong></span>
+      </label>
+      <label class="setting-toggle">
+        <input type="checkbox" name="oauth_recovery_monitor_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_monitor_enabled else '' }}>
+        <span><strong>恢复可用监控</strong></span>
+      </label>
+      <label class="setting-toggle">
+        <input type="checkbox" name="oauth_recovery_push_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_push_enabled else '' }}>
+        <span><strong>恢复结果推送</strong></span>
+      </label>
+    </div>
+
+    <div class="field-grid oauth-field-grid">
+      <label>
+        <span>常规刷新间隔（秒）</span>
+        <input type="number" name="oauth_regular_refresh_interval_seconds" min="60" max="86400" value="{{ telegram.oauth_regular_refresh_interval_seconds }}">
+      </label>
+      <label>
+        <span>7d 探测间隔（秒）</span>
+        <input type="number" name="oauth_7d_probe_interval_seconds" min="60" max="86400" value="{{ telegram.oauth_7d_probe_interval_seconds }}">
+      </label>
+      <label>
+        <span>active usage 并发</span>
+        <input type="number" name="oauth_usage_refresh_concurrency" min="1" max="16" value="{{ telegram.oauth_usage_refresh_concurrency }}">
+      </label>
+      <label>
+        <span>测活并发</span>
+        <input type="number" name="oauth_recovery_test_concurrency" min="1" max="8" value="{{ telegram.oauth_recovery_test_concurrency }}">
+      </label>
+      <label>
+        <span>单轮账号数</span>
+        <input type="number" name="oauth_early_probe_batch_size" min="1" max="50" value="{{ telegram.oauth_early_probe_batch_size }}">
+      </label>
+      <label>
+        <span>测活模型</span>
+        <input type="text" name="oauth_recovery_test_model_id" value="{{ telegram.oauth_recovery_test_model_id }}" spellcheck="false">
+      </label>
+    </div>
+    <div class="form-actions">
       <button class="primary" type="submit">保存 OAuth 设置</button>
     </div>
   </form>
-</section>
-
-<section class="panel split-panel telegram-split">
-  <div>
-    <h3>当前绑定</h3>
-    <div class="id-list">
-      {% for item in telegram.paired_chat_ids %}
-        <span class="id-chip">Chat {{ item }}</span>
-      {% endfor %}
-      {% for item in telegram.paired_user_ids %}
-        <span class="id-chip">User {{ item }}</span>
-      {% endfor %}
-      {% if not telegram.paired_chat_ids and not telegram.paired_user_ids %}
-        <span class="muted-text">待首次绑定</span>
-      {% endif %}
-    </div>
-  </div>
-  <div>
-    <h3>命令</h3>
-    <div class="command-chip-row">
-      <span class="id-chip">/quota</span>
-      <span class="id-chip">/whitelist</span>
-      <span class="id-chip">/endless</span>
-    </div>
-  </div>
 </section>
 {% endblock %}
