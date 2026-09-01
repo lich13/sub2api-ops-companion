@@ -30,7 +30,7 @@
   </div>
 </section>
 
-<section class="sso-layout">
+<section>
   <form class="panel sso-config-card" method="post" action="{{ base_path }}/sso-config" autocomplete="off">
     <div class="section-head compact-head">
       <div>
@@ -88,31 +88,9 @@
       </label>
     </div>
 
-    <div class="sso-preview-grid">
-      <div class="sso-menu-preview">
-        <span>Sub2API 自定义菜单 URL</span>
-        <code>{{ sso.menu_url or '保存 Sub2API 地址后生成' }}</code>
-      </div>
-      <div class="sso-menu-preview">
-        <span>服务端实际校验 URL</span>
-        <code>{{ sso.verify_url or '默认使用菜单公网地址 + /api/v1/auth/me' }}</code>
-      </div>
-    </div>
-
     <div class="sso-submit-row">
       <button class="primary" type="submit">保存接入配置</button>
     </div>
   </form>
-
-  <aside class="panel sso-help-card">
-    <h3>访问边界</h3>
-    <dl class="status-list">
-      <div><dt>入口</dt><dd class="mono">{{ sso.menu_url or base_path ~ '/sso/start' }}</dd></div>
-      <div><dt>验证接口</dt><dd class="mono">{{ sso.verify_url or '/api/v1/auth/me' }}</dd></div>
-      <div><dt>配置文件</dt><dd class="mono">{{ sso_config_path }}</dd></div>
-      <div><dt>会话形式</dt><dd>随机 ID + HMAC，载荷保存在 Ops 本地</dd></div>
-      <div><dt>独立登录</dt><dd>已移除</dd></div>
-    </dl>
-  </aside>
 </section>
 {% endblock %}
