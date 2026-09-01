@@ -72,7 +72,7 @@ class Sub2APISSORouteTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/sub2ops/speed")
+        self.assertEqual(response.headers["location"], "/sub2ops/telegram")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
         self.assertIn("frame-ancestors", response.headers["Content-Security-Policy"])
