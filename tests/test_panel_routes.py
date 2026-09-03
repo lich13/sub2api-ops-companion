@@ -34,6 +34,14 @@ def request(path: str = "/") -> Request:
 
 
 class PanelRouteTests(unittest.TestCase):
+    def test_oauth_monitor_prefers_internal_sso_verify_base_url(self) -> None:
+        config = SimpleNamespace(
+            base_url="https://public.example.com/",
+            verify_base_url="http://sub2api:8080/",
+        )
+        with patch.object(main_module, "current_sso_config", return_value=config):
+            self.assertEqual(main_module.oauth_base_url(), "http://sub2api:8080")
+
     def test_root_redirects_to_telegram(self) -> None:
         original = main_module.settings
         main_module.settings = SimpleNamespace(base_path="/sub2ops")
