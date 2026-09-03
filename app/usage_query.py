@@ -4,10 +4,10 @@ import json
 import math
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlsplit
-
 
 UsageOpener = Callable[[dict[str, Any], int], Any]
 OAUTH_QUOTA_WINDOW_FIELDS = (
@@ -96,16 +96,42 @@ def first_string(payloads: list[dict[str, Any]], keys: tuple[str, ...]) -> str:
 def parse_iso_datetime(value: object) -> datetime | None:
     if value in (None, ""):
         return None
+    if isinstance(value, bool):
+        return None
     if isinstance(value, datetime):
         parsed = value
     else:
+        text = str(value).strip()
         try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            epoch = float(text)
+        except (TypeError, ValueError):
+            epoch = None
+        if epoch is not None:
+            if not math.isfinite(epoch):
+                return None
+            # Current Unix milliseconds are unambiguously larger than any
+            # practical reset timestamp expressed in seconds.
+            if abs(epoch) >= 100_000_000_000:
+                epoch /= 1000
+            try:
+                return datetime.fromtimestamp(epoch, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
             return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc)
+    except (OverflowError, ValueError):
+        return None
+
+
+def canonical_utc_iso(value: object) -> str:
+    parsed = parse_iso_datetime(value)
+    return parsed.isoformat() if parsed is not None else ""
 
 
 def normalize_oauth_plan_type(value: object) -> str:
@@ -136,19 +162,86 @@ def required_oauth_window_keys(plan_type: object) -> tuple[str, ...]:
 
 
 def oauth_reset_at(
-    explicit_reset_at: str,
+    explicit_reset_at: object,
     reset_after_seconds: float | None,
-    updated_at: str,
+    updated_at: object,
     now: datetime | None = None,
 ) -> str:
-    if explicit_reset_at:
-        return explicit_reset_at
-    if reset_after_seconds is None:
-        return ""
-    base = parse_iso_datetime(updated_at) or now
+    reset_at, _source = oauth_reset_details(explicit_reset_at, reset_after_seconds, updated_at, now)
+    return reset_at
+
+
+def oauth_reset_details(
+    explicit_reset_at: object,
+    reset_after_seconds: float | None,
+    queried_at: object,
+    now: datetime | None = None,
+) -> tuple[str, str]:
+    explicit = canonical_utc_iso(explicit_reset_at)
+    if explicit:
+        return explicit, "server_exact"
+    remaining = numeric_or_none(reset_after_seconds)
+    if remaining is None:
+        return "", ""
+    base = parse_iso_datetime(queried_at) or parse_iso_datetime(now)
     if base is None:
-        return ""
-    return (base.astimezone(timezone.utc) + timedelta(seconds=max(0, int(reset_after_seconds)))).isoformat()
+        return "", ""
+    try:
+        estimated = base + timedelta(seconds=max(0, int(remaining)))
+    except OverflowError:
+        return "", ""
+    return estimated.isoformat(), "estimated_from_remaining"
+
+
+def _window_reset_source(window: dict[str, Any]) -> str:
+    source = str(window.get("reset_source") or "").strip()
+    if source in {"server_exact", "estimated_from_remaining"}:
+        return source
+    if numeric_or_none(window.get("reset_after_seconds")) is not None:
+        return "estimated_from_remaining"
+    return "server_exact"
+
+
+def _recovery_metadata(windows: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized: list[tuple[str, datetime, str]] = []
+    for window in windows:
+        key = str(window.get("key") or "").strip()
+        reset_time = parse_iso_datetime(window.get("reset_at"))
+        if not key or reset_time is None:
+            return {}
+        normalized.append((key, reset_time, _window_reset_source(window)))
+    if not normalized:
+        return {}
+    latest = max(item[1] for item in normalized)
+    return {
+        "recovery_due_at": latest.isoformat(),
+        "recovery_fingerprint": "|".join(f"{key}@{reset_time.isoformat()}" for key, reset_time, _ in normalized),
+        "recovery_reset_source": (
+            "server_exact"
+            if all(source == "server_exact" for _, _, source in normalized)
+            else "estimated_from_remaining"
+        ),
+        "recovery_window_keys": [key for key, _, _ in normalized],
+    }
+
+
+def _with_recovery_metadata(summary: dict[str, Any]) -> dict[str, Any]:
+    for key in (
+        "recovery_due_at",
+        "recovery_fingerprint",
+        "recovery_reset_source",
+        "recovery_window_keys",
+    ):
+        summary.pop(key, None)
+    windows = oauth_windows_by_key(summary.get("ui_windows"))
+    depleted: list[dict[str, Any]] = []
+    for key in required_oauth_window_keys(summary.get("plan_type")):
+        window = windows.get(key)
+        used = percent_or_none((window or {}).get("used_percent"))
+        if window is not None and used is not None and used >= 100:
+            depleted.append(window)
+    summary.update(_recovery_metadata(depleted))
+    return summary
 
 
 def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any]:
@@ -165,7 +258,7 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
             continue
         reset_after_seconds = numeric_or_none(extra.get(reset_after_field))
         window_minutes = numeric_or_none(extra.get(window_minutes_field))
-        reset_at = oauth_reset_at(
+        reset_at, reset_source = oauth_reset_details(
             first_string([extra], (reset_field,)),
             reset_after_seconds,
             updated_at,
@@ -180,17 +273,18 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
         }
         if reset_at:
             item["reset_at"] = reset_at
+            item["reset_source"] = reset_source
         if reset_after_seconds is not None:
             item["reset_after_seconds"] = int(reset_after_seconds)
         if window_minutes is not None:
             item["window_minutes"] = int(window_minutes)
         windows.append(item)
-    return {
+    return _with_recovery_metadata({
         "plan_type": plan_type,
-        "updated_at": updated_at,
+        "updated_at": canonical_utc_iso(updated_at) or updated_at,
         "ui_windows": windows,
         "telegram_windows": [item for item in windows if float(item["used_percent"]) < 100],
-    }
+    })
 
 
 def oauth_windows_by_key(raw_windows: Any) -> dict[str, dict[str, Any]]:
@@ -205,7 +299,7 @@ def oauth_windows_by_key(raw_windows: Any) -> dict[str, dict[str, Any]]:
         if not key:
             key = "codex_5h" if label == "5h" else "codex_7d" if label == "7d" else ""
         if key:
-            windows[key] = dict(raw)
+            windows[key] = {**raw, "key": key}
     return windows
 
 
@@ -216,14 +310,43 @@ def sanitize_oauth_quota_summary(
     plan_type = oauth_plan_type(account_row)
     sanitized = dict(summary)
     sanitized["plan_type"] = plan_type
-    windows = [dict(item) for item in sanitized.get("ui_windows") or [] if isinstance(item, dict)]
+    updated_at = canonical_utc_iso(sanitized.get("updated_at"))
+    if updated_at:
+        sanitized["updated_at"] = updated_at
+    windows: list[dict[str, Any]] = []
+    for item in sanitized.get("ui_windows") or []:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        key = str(normalized.get("key") or "").strip()
+        label = str(normalized.get("label") or "").strip().lower()
+        if not key:
+            key = "codex_5h" if label == "5h" else "codex_7d" if label == "7d" else ""
+        if key:
+            normalized["key"] = key
+        reset_at, reset_source = oauth_reset_details(
+            normalized.get("reset_at"),
+            numeric_or_none(normalized.get("reset_after_seconds")),
+            updated_at,
+        )
+        if reset_at:
+            normalized["reset_at"] = reset_at
+            normalized["reset_source"] = (
+                _window_reset_source(normalized)
+                if canonical_utc_iso(item.get("reset_at"))
+                else reset_source
+            )
+        else:
+            normalized.pop("reset_at", None)
+            normalized.pop("reset_source", None)
+        windows.append(normalized)
     if plan_type == "free":
         windows = [item for item in windows if item.get("key") != "codex_5h"]
     sanitized["ui_windows"] = windows
     sanitized["telegram_windows"] = [
         item for item in windows if (percent_or_none(item.get("used_percent")) or 0) < 100
     ]
-    return sanitized
+    return _with_recovery_metadata(sanitized)
 
 
 def oauth_quota_summary_from_result(
@@ -255,6 +378,10 @@ def oauth_quota_from_usage_data(
     row = dict(account_row or {})
     extra = json_object(row.get("extra"))
     merged_extra = dict(extra)
+    queried_at = parse_iso_datetime(now) or datetime.now(timezone.utc)
+    for prefix in ("codex_5h", "codex_7d"):
+        for suffix in ("used_percent", "reset_at", "reset_after_seconds", "window_minutes", "reset_source"):
+            merged_extra.pop(f"{prefix}_{suffix}", None)
     for source_key, prefix in (("five_hour", "codex_5h"), ("seven_day", "codex_7d")):
         source = data.get(source_key)
         if not isinstance(source, dict):
@@ -262,19 +389,25 @@ def oauth_quota_from_usage_data(
         used_percent = source.get("utilization", source.get("used_percent", source.get("used")))
         if used_percent is not None:
             merged_extra[f"{prefix}_used_percent"] = used_percent
-        reset_at = first_string([source], ("resets_at", "reset_at"))
+        reset_at = ""
+        for field in ("resets_at", "reset_at"):
+            reset_at = canonical_utc_iso(source.get(field))
+            if reset_at:
+                break
         if reset_at:
             merged_extra[f"{prefix}_reset_at"] = reset_at
-        reset_after = source.get("remaining_seconds", source.get("reset_after_seconds"))
+        reset_after = numeric_or_none(source.get("remaining_seconds"))
+        if reset_after is None:
+            reset_after = numeric_or_none(source.get("reset_after_seconds"))
         if reset_after is not None:
             merged_extra[f"{prefix}_reset_after_seconds"] = reset_after
         window_stats = json_object(source.get("window_stats"))
         window_minutes = source.get("window_minutes", window_stats.get("window_minutes"))
         if window_minutes is not None:
             merged_extra[f"{prefix}_window_minutes"] = window_minutes
-    merged_extra["codex_usage_updated_at"] = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    merged_extra["codex_usage_updated_at"] = queried_at.isoformat()
     row["extra"] = merged_extra
-    return oauth_quota_windows(row, now=now)
+    return oauth_quota_windows(row, now=queried_at)
 
 
 def oauth_has_available_seven_day(summary: dict[str, Any] | None) -> bool:
@@ -315,15 +448,17 @@ def oauth_recovery_transition(
     if not previously_full or not oauth_has_available_seven_day(refreshed_summary):
         return None
 
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    reset_values = [str(item.get("reset_at") or "").strip() for item in previously_full]
-    reset_values = [item for item in reset_values if item]
-    fingerprint = "|".join(reset_values) or f"transition:{current.isoformat()}"
+    current = parse_iso_datetime(now) or datetime.now(timezone.utc)
+    recovery_metadata = _recovery_metadata(previously_full)
+    fingerprint = str(recovery_metadata.get("recovery_fingerprint") or "")
+    if not fingerprint:
+        fallback_keys = ",".join(str(item.get("key") or "unknown") for item in previously_full)
+        fingerprint = f"transition:{fallback_keys}@{current.isoformat()}"
     seven_before = previous_windows.get("codex_7d") or {}
     seven_after = refreshed_windows.get("codex_7d") or {}
     old_seven_used = percent_or_none(seven_before.get("used_percent"))
     new_seven_used = percent_or_none(seven_after.get("used_percent"))
-    old_reset_at = str(seven_before.get("reset_at") or "")
+    old_reset_at = canonical_utc_iso(seven_before.get("reset_at"))
     old_reset_time = parse_iso_datetime(old_reset_at)
     early_reset = bool(
         old_seven_used is not None
@@ -337,14 +472,17 @@ def oauth_recovery_transition(
         "plan_type": plan_type,
         "windows": refreshed_required,
         "window_labels": [str(item.get("label") or "-") for item in refreshed_required],
+        "window_keys": [str(item.get("key") or "") for item in previously_full],
         "trigger_window_labels": [str(item.get("label") or "-") for item in previously_full],
-        "fingerprint": f"early:{old_reset_at}" if early_reset else fingerprint,
-        "reset_at": max(reset_values) if reset_values else current.isoformat(),
+        "fingerprint": f"early:{fingerprint}" if early_reset else fingerprint,
+        "reset_at": str(recovery_metadata.get("recovery_due_at") or current.isoformat()),
         "remaining_summary": " / ".join(
             f"{item.get('label') or '-'} {format_percent_value(item.get('remaining_percent'))}"
             for item in refreshed_required
         ),
     }
+    if recovery_metadata.get("recovery_reset_source"):
+        candidate["reset_source"] = recovery_metadata["recovery_reset_source"]
     if early_reset:
         candidate.update(
             {
