@@ -79,7 +79,13 @@ def legacy_recovery_state_path() -> str:
 
 def oauth_base_url() -> str:
     config = current_sso_config()
-    return str(config.base_url or settings.sub2api_base_url or "").strip().rstrip("/")
+    return str(
+        config.verify_base_url
+        or config.base_url
+        or settings.sub2api_verify_base_url
+        or settings.sub2api_base_url
+        or ""
+    ).strip().rstrip("/")
 
 
 async def oauth_monitor_loop() -> None:
