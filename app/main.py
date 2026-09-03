@@ -31,8 +31,13 @@ from .sso_config import (
 )
 from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
 from .telegram_bot import TelegramOpsBot
-from .versioning import APP_VERSION, UpdateError, perform_update, restart_process_soon, version_info
-
+from .versioning import (
+    APP_VERSION,
+    UpdateError,
+    perform_update,
+    restart_process_soon,
+    version_info,
+)
 
 settings = load_settings()
 db = Database(settings.database_url)
@@ -353,6 +358,7 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         "pairing_enabled",
         "oauth_usage_refresh_enabled",
         "oauth_recovery_monitor_enabled",
+        "oauth_night_recovery_cooldown_enabled",
         "oauth_recovery_push_enabled",
     )
     for key in bool_fields:
@@ -433,6 +439,9 @@ def build_telegram_config() -> dict[str, Any]:
         "config_updated_at": existing.get("updated_at"),
         "oauth_usage_refresh_enabled": settings.telegram_oauth_usage_refresh_enabled,
         "oauth_recovery_monitor_enabled": settings.telegram_oauth_recovery_monitor_enabled,
+        "oauth_night_recovery_cooldown_enabled": (
+            settings.telegram_oauth_night_recovery_cooldown_enabled
+        ),
         "oauth_recovery_push_enabled": settings.telegram_oauth_recovery_push_enabled,
         "oauth_usage_refresh_concurrency": settings.telegram_oauth_usage_refresh_concurrency,
         "oauth_recovery_test_concurrency": settings.telegram_oauth_recovery_test_concurrency,
@@ -451,7 +460,7 @@ async def restart_telegram_bot() -> None:
         with suppress(asyncio.CancelledError):
             await telegram_task
         telegram_task = None
-    telegram_bot = TelegramOpsBot(settings, db)
+    telegram_bot = TelegramOpsBot(settings, db, oauth_monitor=oauth_monitor)
     if telegram_bot.enabled:
         telegram_task = asyncio.create_task(telegram_bot.run())
 
@@ -582,6 +591,9 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
         **existing,
         "oauth_usage_refresh_enabled": bool(form.getlist("oauth_usage_refresh_enabled")),
         "oauth_recovery_monitor_enabled": bool(form.getlist("oauth_recovery_monitor_enabled")),
+        "oauth_night_recovery_cooldown_enabled": bool(
+            form.getlist("oauth_night_recovery_cooldown_enabled")
+        ),
         "oauth_recovery_push_enabled": bool(form.getlist("oauth_recovery_push_enabled")),
         "oauth_usage_refresh_concurrency": int_param(form.get("oauth_usage_refresh_concurrency"), 4, 1, 16),
         "oauth_recovery_test_concurrency": int_param(form.get("oauth_recovery_test_concurrency"), 2, 1, 8),

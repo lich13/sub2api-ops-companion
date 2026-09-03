@@ -11,26 +11,29 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import account_ops
-from .oauth_monitor import OAuthStateStore
 from .settings import Settings
 from .usage_query import (
     format_percent_value,
     oauth_has_available_seven_day,
     oauth_quota_summary_from_result,
     oauth_windows_by_key,
+    parse_iso_datetime,
     percent_or_none,
 )
 
-
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然后在私聊中发送 /pair <配对码>。"
+MAX_INFLIGHT_UPDATES = 8
 
 
 class TelegramOpsBot:
-    def __init__(self, settings: Settings, db: Any) -> None:
+    def __init__(self, settings: Settings, db: Any, *, oauth_monitor: Any | None = None) -> None:
         self.settings = settings
         self.db = db
+        self.oauth_monitor = oauth_monitor
         self._state_lock = asyncio.Lock()
+        self._quota_refresh_lock = asyncio.Lock()
+        self._quota_refresh_task: asyncio.Task[dict[str, Any]] | None = None
 
     @property
     def enabled(self) -> bool:
@@ -41,24 +44,51 @@ class TelegramOpsBot:
             return
         await self.sync_commands()
         offset = 0
-        while True:
-            try:
-                response = await self._api(
-                    "getUpdates",
-                    {
-                        "timeout": self.settings.telegram_poll_timeout_seconds,
-                        "offset": offset,
-                        "allowed_updates": ["message", "callback_query"],
-                    },
-                    timeout=self.settings.telegram_poll_timeout_seconds + 10,
-                )
-                for update in response.get("result", []):
-                    offset = int(update.get("update_id", offset)) + 1
-                    await self._handle_update(update)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                await asyncio.sleep(3)
+        update_tasks: set[asyncio.Task[None]] = set()
+        try:
+            while True:
+                try:
+                    while len(update_tasks) >= MAX_INFLIGHT_UPDATES:
+                        done, _pending = await asyncio.wait(
+                            update_tasks, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        update_tasks.difference_update(done)
+                    response = await self._api(
+                        "getUpdates",
+                        {
+                            "timeout": self.settings.telegram_poll_timeout_seconds,
+                            "offset": offset,
+                            "allowed_updates": ["message", "callback_query"],
+                        },
+                        timeout=self.settings.telegram_poll_timeout_seconds + 10,
+                    )
+                    for update in response.get("result", []):
+                        offset = int(update.get("update_id", offset)) + 1
+                        while len(update_tasks) >= MAX_INFLIGHT_UPDATES:
+                            done, _pending = await asyncio.wait(
+                                update_tasks, return_when=asyncio.FIRST_COMPLETED
+                            )
+                            update_tasks.difference_update(done)
+                        task = asyncio.create_task(self._run_update(update))
+                        update_tasks.add(task)
+                        task.add_done_callback(update_tasks.discard)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    await asyncio.sleep(3)
+        finally:
+            for task in update_tasks:
+                task.cancel()
+            if update_tasks:
+                await asyncio.gather(*update_tasks, return_exceptions=True)
+
+    async def _run_update(self, update: dict[str, Any]) -> None:
+        try:
+            await self._handle_update(update)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return
 
     async def sync_commands(self) -> None:
         if self.enabled:
@@ -260,11 +290,24 @@ class TelegramOpsBot:
         return account_ops.fallback_account(self.db, account_id)
 
     async def _quota_reply(self) -> tuple[str, dict[str, Any] | None]:
+        if self.oauth_monitor is None:
+            return "OAuth 额度刷新失败：监控器未就绪。", None
+        try:
+            report = await self._shared_quota_refresh()
+        except TimeoutError:
+            return "OAuth 额度刷新失败：等待 120 秒后超时。", None
+        except Exception as exc:
+            return f"OAuth 额度刷新失败：{exc}", None
+        if report.get("timed_out"):
+            return f"OAuth 额度刷新失败：{report.get('error') or '等待 120 秒后超时'}。", None
+        if report.get("error_code") == "missing_sub2api_admin_credentials":
+            return "OAuth 额度刷新失败：缺少 Sub2API 地址或 Admin API Key。", None
         try:
             rows = await asyncio.to_thread(account_ops.current_oauth_accounts, self.db)
-        except Exception:
-            rows = []
-        results = OAuthStateStore(self.settings.usage_query_state_path).results()
+        except Exception as exc:
+            return f"OAuth 额度刷新失败：读取账号清单失败（{exc}）。", None
+        results = self.oauth_monitor.store.results()
+        refresh_at = parse_iso_datetime(report.get("refresh_at"))
         lines: list[str] = []
         totals: dict[str, dict[str, float]] = {}
         counts: dict[str, int] = {}
@@ -272,6 +315,9 @@ class TelegramOpsBot:
             account_id = int(row.get("id") or 0)
             cached = results.get(account_id)
             if not cached or not cached.get("success"):
+                continue
+            queried_at = parse_iso_datetime(cached.get("queried_at"))
+            if refresh_at is not None and (queried_at is None or queried_at < refresh_at):
                 continue
             summary = oauth_quota_summary_from_result(row, cached)
             if not oauth_has_available_seven_day(summary):
@@ -281,10 +327,37 @@ class TelegramOpsBot:
                 continue
             lines.append(line)
             add_oauth_quota_totals(totals, counts, summary)
+        status = "完成" if report.get("success") else "部分失败"
+        output = [
+            "OAuth 额度",
+            f"刷新：{status} · {bj_time(report.get('refresh_at'))}",
+            (
+                f"成功 {int(report.get('success_count') or 0)} / "
+                f"失败 {int(report.get('failure_count') or 0)} / "
+                f"耗尽 {int(report.get('depleted_count') or 0)} / "
+                f"夜间延后 {int(report.get('night_deferred_count') or 0)} / "
+                f"已恢复 {int(report.get('recovered_count') or 0)}"
+            ),
+        ]
         if not lines:
-            return "暂无可用的 OAuth 额度快照。", None
-        output = ["OAuth 额度", *format_oauth_quota_totals(totals, counts), *lines]
+            output.append("本轮没有可展示的 OAuth 可用额度。")
+            return "\n".join(output), None
+        output.extend([*format_oauth_quota_totals(totals, counts), *lines])
         return "\n".join(output), None
+
+    async def _shared_quota_refresh(self) -> dict[str, Any]:
+        async with self._quota_refresh_lock:
+            task = self._quota_refresh_task
+            if task is None or task.done():
+                task = asyncio.create_task(asyncio.to_thread(self.oauth_monitor.force_refresh, 120))
+                self._quota_refresh_task = task
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=120)
+        finally:
+            if task.done():
+                async with self._quota_refresh_lock:
+                    if self._quota_refresh_task is task:
+                        self._quota_refresh_task = None
 
     async def _allowed(self, chat_id: int, user_id: int) -> bool:
         state = await self._load_state()
@@ -424,7 +497,8 @@ def format_oauth_quota_line(row: dict[str, Any], summary: dict[str, Any]) -> str
 def format_oauth_window(window: dict[str, Any]) -> str:
     text = f"{window.get('label') or '-'} 剩余 {format_percent_value(window.get('remaining_percent'))}"
     if window.get("reset_at"):
-        text += f"（恢复 {bj_time(window.get('reset_at'), '%m-%d %H:%M')}）"
+        label = "预计恢复时间" if window.get("reset_source") == "estimated_from_remaining" else "恢复时间"
+        text += f"（{label} {bj_time(window.get('reset_at'), '%m-%d %H:%M')}）"
     return text
 
 
@@ -479,6 +553,13 @@ def oauth_monitor_alert(event: dict[str, Any]) -> str:
             f"错误码：{event.get('error_code') or 'unknown_test_error'}\n"
             f"错误：{event.get('error') or '-'}\n"
             f"模型：{event.get('model_id') or '-'}"
+        )
+    if status == "recovery_failed":
+        return (
+            "OAuth 账号自动恢复失败，将按退避重试\n"
+            f"{account_text}\n"
+            f"错误码：{event.get('error_code') or 'recovery_failed'}\n"
+            f"错误：{event.get('error') or '-'}"
         )
     stage = "active usage" if event.get("stage") == "active_usage" else str(event.get("stage") or "unknown")
     return (
