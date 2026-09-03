@@ -16,11 +16,12 @@ Sub2API 的旁路 OAuth 运维服务，提供 Telegram 额度监控、账号手�
 - 7d 已耗尽且恢复时间未到时，默认每 3600 秒探测一次提前重置。
 - 当前已耗尽的必要窗口有准确 `reset_at` 时，以最晚恢复时间为准，到点立即查询，不等待常规周期。
 - `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
+- 夜间恢复冷却默认开启；北京时间 `[00:00, 05:00)` 仍探测额度，但不执行恢复测活或账号恢复，待冷却结束后处理。
 - 额度确认恢复后调用 Sub2API account test，默认模型为 `gpt-5.6-luna`。
 - active usage 同一账号不会并发重复请求；一轮结果集中写入状态文件。
 - 测活结果先持久化为待推送事件。Telegram 发送失败只重试发送，不重复测活。
 
-`/quota` 只读取 OAuth 缓存，不会发起 active usage 请求。输出包含套餐分类、5h/7d 剩余百分比、恢复时间和分类汇总。7d 已耗尽的账号不展示、不计入汇总。
+`/quota` 会主动刷新 OAuth 账号状态，再输出套餐分类、5h/7d 剩余百分比、恢复时间和分类汇总。夜间恢复冷却时只刷新和展示状态，不执行恢复操作。
 
 ## 运行
 
@@ -43,6 +44,7 @@ docker compose up -d --build
 - `TELEGRAM_STATE_PATH`：Telegram 配对状态文件。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED`：是否进行常规后台刷新。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
+- `TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED`：是否启用北京时间 `[00:00, 05:00)` 夜间恢复冷却，默认开启；冷却期间只查询，不执行恢复操作。
 - `TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED`：是否推送 OAuth 监控结果。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。
 - `TELEGRAM_OAUTH_RECOVERY_TEST_CONCURRENCY`：account test 并发，默认 `2`。

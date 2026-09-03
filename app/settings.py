@@ -27,6 +27,7 @@ class Settings:
     telegram_poll_timeout_seconds: int = 25
     telegram_oauth_usage_refresh_enabled: bool = True
     telegram_oauth_recovery_monitor_enabled: bool = True
+    telegram_oauth_night_recovery_cooldown_enabled: bool = True
     telegram_oauth_recovery_push_enabled: bool = True
     telegram_oauth_usage_refresh_concurrency: int = 4
     telegram_oauth_recovery_test_concurrency: int = 2
@@ -141,6 +142,13 @@ def load_settings() -> Settings:
         telegram_oauth_recovery_monitor_enabled=bool_value(
             telegram_config.get(
                 "oauth_recovery_monitor_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED")
+            ),
+            True,
+        ),
+        telegram_oauth_night_recovery_cooldown_enabled=bool_value(
+            telegram_config.get(
+                "oauth_night_recovery_cooldown_enabled",
+                os.getenv("TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED"),
             ),
             True,
         ),

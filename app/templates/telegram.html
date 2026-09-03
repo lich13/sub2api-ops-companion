@@ -95,6 +95,10 @@
         <span><strong>恢复可用监控</strong></span>
       </label>
       <label class="setting-toggle">
+        <input type="checkbox" name="oauth_night_recovery_cooldown_enabled" value="1" {{ 'checked' if telegram.oauth_night_recovery_cooldown_enabled else '' }}>
+        <span><strong>夜间恢复冷却</strong></span>
+      </label>
+      <label class="setting-toggle">
         <input type="checkbox" name="oauth_recovery_push_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_push_enabled else '' }}>
         <span><strong>恢复结果推送</strong></span>
       </label>
