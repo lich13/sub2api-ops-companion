@@ -2,11 +2,11 @@
 {% block content %}
 <section class="page-title page-title-compact">
   <div>
-    <span class="eyebrow">Telegram</span>
-    <h2>Telegram</h2>
+    <span class="eyebrow">消息与控制</span>
+    <h2>Telegram 与 Bark</h2>
   </div>
   <form method="post" action="{{ base_path }}/telegram/push-test">
-    <button class="primary" type="submit">测试推送</button>
+    <button type="submit">Telegram Bot 消息测试</button>
   </form>
 </section>
 
@@ -20,13 +20,43 @@
     <strong>{{ telegram.binding_status }}</strong>
   </div>
   <div class="metric-card">
-    <span>推送目标</span>
-    <strong>{{ telegram.push_target_count }}</strong>
+    <span>Bark 事件推送</span>
+    <strong>{{ '已启用' if bark.configured else ('配置文件无效' if not bark.config_valid else ('配置待完善' if bark.enabled else '未启用')) }}</strong>
   </div>
   <div class="metric-card">
     <span>控制用户</span>
     <strong>{{ telegram.control_user_count }}</strong>
   </div>
+</section>
+
+<section class="panel bark-config-panel">
+  <div class="section-head compact-head">
+    <div>
+      <h3>Bark 事件推送</h3>
+      <p class="section-note">OAuth 恢复成功、测活失败、自动恢复失败和认证异常只通过 Bark 主动推送。</p>
+    </div>
+    <span class="status-dot {{ 'online' if bark.configured else '' }}" title="{{ '已就绪' if bark.configured else ('配置文件无效' if not bark.config_valid else '未就绪') }}"></span>
+  </div>
+  <form class="bark-settings-form" method="post" action="{{ base_path }}/bark/config" autocomplete="off">
+    <label class="setting-toggle bark-enable-toggle">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if bark.enabled else '' }}>
+      <span><strong>启用 Bark 推送</strong></span>
+    </label>
+    <label>
+      <span>Device Key · {{ bark.device_key_status }}</span>
+      <input type="password" name="bark_device_key" autocomplete="new-password" spellcheck="false" placeholder="{{ '留空保留现有 Device Key' if bark.device_key_set else '粘贴 Device Key' }}">
+    </label>
+    <label>
+      <span>服务 URL</span>
+      <input type="url" name="bark_server_url" value="{{ bark.server_url }}" autocomplete="off" spellcheck="false" required>
+    </label>
+    <div class="bark-actions">
+      <button class="primary" type="submit">保存 Bark 配置</button>
+    </div>
+  </form>
+  <form class="bark-test-form" method="post" action="{{ base_path }}/bark/push-test">
+    <button type="submit">发送 Bark 测试</button>
+  </form>
 </section>
 
 <div class="settings-grid">
@@ -74,7 +104,10 @@
       </div>
       <div class="command-row">
         <span class="field-caption">命令</span>
-        <span class="id-chip">/quota</span>
+        <div class="id-list">
+          <span class="id-chip">/quota</span>
+          <span class="id-chip">/account &lt;ID&gt;</span>
+        </div>
       </div>
     </div>
   </section>
@@ -97,10 +130,6 @@
       <label class="setting-toggle">
         <input type="checkbox" name="oauth_night_recovery_cooldown_enabled" value="1" {{ 'checked' if telegram.oauth_night_recovery_cooldown_enabled else '' }}>
         <span><strong>夜间恢复冷却</strong></span>
-      </label>
-      <label class="setting-toggle">
-        <input type="checkbox" name="oauth_recovery_push_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_push_enabled else '' }}>
-        <span><strong>恢复结果推送</strong></span>
       </label>
     </div>
 

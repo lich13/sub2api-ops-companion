@@ -8,13 +8,13 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.oauth_monitor import OAuthStateStore
 from app.telegram_bot import (
     TelegramOpsBot,
     account_actions_keyboard,
     format_oauth_window,
-    oauth_monitor_alert,
 )
 
 NOW = datetime(2026, 3, 1, 8, 0, tzinfo=timezone.utc)
@@ -113,12 +113,11 @@ def bot_settings(root: Path) -> SimpleNamespace:
         telegram_state_path=str(root / "telegram-state.json"),
         usage_query_state_path=str(root / "usage-query-state.json"),
         audit_path=str(root / "audit.jsonl"),
-        telegram_oauth_recovery_push_enabled=True,
     )
 
 
 class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_sync_commands_registers_quota_only(self) -> None:
+    async def test_sync_commands_registers_quota_and_account(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([]))
             calls: list[tuple[str, dict[str, object]]] = []
@@ -131,7 +130,85 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             await bot.sync_commands()
 
             commands = calls[0][1]["commands"]
-            self.assertEqual([item["command"] for item in commands], ["quota"])
+            self.assertEqual([item["command"] for item in commands], ["quota", "account"])
+
+    async def test_account_command_returns_detail_and_action_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            row = oauth_account(9, "team-account", "team")
+            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
+
+            text, keyboard = await bot._text_reply("/account 9")
+
+            self.assertIn("#9 team-account", text)
+            serialized = json.dumps(keyboard, ensure_ascii=False)
+            self.assertIn("pause:9", serialized)
+            self.assertIn("cdmenu:9", serialized)
+            self.assertIn("res:9", serialized)
+
+    async def test_account_command_validates_id_and_missing_account(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([]))
+
+            usage, usage_keyboard = await bot._text_reply("/account")
+            invalid, invalid_keyboard = await bot._text_reply("/account nope")
+            missing, missing_keyboard = await bot._text_reply("/account 99")
+
+            self.assertIn("用法", usage)
+            self.assertIsNone(usage_keyboard)
+            self.assertIn("账号 ID 无效", invalid)
+            self.assertIsNone(invalid_keyboard)
+            self.assertIn("没有找到账号 #99", missing)
+            self.assertIsNone(missing_keyboard)
+
+    async def test_account_callbacks_run_pause_cooldown_and_resume_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            row = oauth_account(9, "team-account", "team")
+            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
+            with (
+                patch("app.telegram_bot.account_ops.pause_account", return_value=row) as pause,
+                patch("app.telegram_bot.account_ops.cooldown_account", return_value=row) as cooldown,
+                patch("app.telegram_bot.account_ops.resume_account", return_value=row) as resume,
+            ):
+                pause_text, _ = await bot._callback_reply(100, 200, "pause:9")
+                cooldown_text, _ = await bot._callback_reply(100, 200, "cd:9:30")
+                resume_text, _ = await bot._callback_reply(100, 200, "res:9")
+
+            self.assertIn("已暂停", pause_text)
+            self.assertIn("已冷却账号 30 分钟", cooldown_text)
+            self.assertIn("已恢复", resume_text)
+            pause.assert_called_once_with(
+                bot.db,
+                bot.settings.audit_path,
+                9,
+                "telegram:100:200",
+                "telegram pause by telegram:100:200",
+            )
+            cooldown.assert_called_once_with(
+                bot.db,
+                bot.settings.audit_path,
+                9,
+                "telegram:100:200",
+                30,
+                "telegram cooldown 30m by telegram:100:200",
+            )
+            resume.assert_called_once_with(
+                bot.db,
+                bot.settings.audit_path,
+                9,
+                "telegram:100:200",
+            )
+
+    async def test_cooldown_menu_keeps_all_account_actions_reachable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            row = oauth_account(9, "team-account", "team")
+            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
+
+            text, keyboard = await bot._callback_reply(100, 200, "cdmenu:9")
+
+            self.assertIn("选择冷却时间", text)
+            serialized = json.dumps(keyboard, ensure_ascii=False)
+            for value in ("cd:9:5", "cd:9:15", "cd:9:30", "acct:9"):
+                self.assertIn(value, serialized)
 
     async def test_pairing_still_binds_private_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -389,34 +466,6 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(monitor.calls, 1)
             self.assertEqual(sent, 2)
 
-    async def test_monitor_event_is_only_acknowledged_after_all_chats_receive_it(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            state = {"paired_chat_ids": [10, 20], "paired_user_ids": [], "updated_at": NOW.isoformat()}
-            (root / "telegram-state.json").write_text(json.dumps(state), encoding="utf-8")
-            bot = TelegramOpsBot(bot_settings(root), FakeDb([]))
-            sent: list[int] = []
-
-            async def send(chat_id: int, _text: str, _keyboard: object = None) -> bool:
-                sent.append(chat_id)
-                return chat_id == 10
-
-            bot._send_message = send  # type: ignore[method-assign]
-            event = {
-                "account_id": 9,
-                "account_name": "name",
-                "plan_type": "plus",
-                "status": "recovered",
-                "window_labels": ["5h", "7d"],
-                "model_id": "gpt-5.6-luna",
-            }
-
-            delivered = await bot.notify_oauth_monitor_events([event])
-
-            self.assertEqual(sent, [10, 20])
-            self.assertEqual(delivered, [])
-
-
 class TelegramFormattingTests(unittest.TestCase):
     def test_reset_label_distinguishes_exact_from_estimated(self) -> None:
         base = {
@@ -441,37 +490,6 @@ class TelegramFormattingTests(unittest.TestCase):
         self.assertNotIn("无尽", serialized)
         self.assertNotIn("wladd:", serialized)
         self.assertNotIn("endadd:", serialized)
-
-    def test_auth_and_test_failure_alerts_include_error_code(self) -> None:
-        auth_text = oauth_monitor_alert(
-            {
-                "account_id": 9,
-                "account_name": "name",
-                "plan_type": "plus",
-                "status": "auth_failed",
-                "stage": "active_usage",
-                "error_code": "http_401",
-                "error": "invalid token",
-                "checked_at": NOW.isoformat(),
-            }
-        )
-        failure_text = oauth_monitor_alert(
-            {
-                "account_id": 9,
-                "account_name": "name",
-                "plan_type": "plus",
-                "status": "test_failed",
-                "error_code": "http_502",
-                "error": "upstream failed",
-                "model_id": "gpt-5.6-luna",
-            }
-        )
-
-        self.assertIn("http_401", auth_text)
-        self.assertIn("active usage", auth_text)
-        self.assertIn("http_502", failure_text)
-        self.assertIn("gpt-5.6-luna", failure_text)
-
 
 if __name__ == "__main__":
     unittest.main()
