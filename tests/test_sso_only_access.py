@@ -147,7 +147,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertFalse(hasattr(loaded, "basic_user"))
         self.assertFalse(hasattr(loaded, "basic_password"))
 
-    def test_settings_loads_oauth_telegram_switches_from_environment(self) -> None:
+    def test_settings_loads_oauth_switches_and_ignores_legacy_push_switch(self) -> None:
         with patch.dict(
             os.environ,
             {
@@ -165,7 +165,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
         self.assertFalse(loaded.telegram_oauth_usage_refresh_enabled)
         self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
         self.assertFalse(loaded.telegram_oauth_night_recovery_cooldown_enabled)
-        self.assertFalse(loaded.telegram_oauth_recovery_push_enabled)
+        self.assertFalse(hasattr(loaded, "telegram_oauth_recovery_push_enabled"))
 
     def test_removed_guard_settings_are_absent(self) -> None:
         with patch.dict(

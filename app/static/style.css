@@ -324,6 +324,38 @@ button.primary:hover {
   margin-bottom: 14px;
 }
 
+.bark-config-panel {
+  margin-bottom: 14px;
+}
+
+.section-note {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bark-settings-form {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.65fr) minmax(220px, 1fr) minmax(280px, 1.35fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.bark-enable-toggle {
+  min-height: 40px;
+}
+
+.bark-actions,
+.bark-test-form {
+  display: flex;
+}
+
+.bark-test-form {
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .stack-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -625,6 +657,14 @@ textarea:focus {
   .sso-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .bark-settings-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bark-actions {
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 640px) {
@@ -643,10 +683,9 @@ textarea:focus {
   }
 
   .brand h1 {
-    max-width: 128px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
   }
 
   .nav {
@@ -676,7 +715,8 @@ textarea:focus {
   .sso-metrics,
   .toggle-grid,
   .field-grid,
-  .sso-form-grid {
+  .sso-form-grid,
+  .bark-settings-form {
     grid-template-columns: 1fr;
   }
 
@@ -707,7 +747,41 @@ textarea:focus {
   }
 
   .form-actions button,
-  .sso-submit-row button {
+  .sso-submit-row button,
+  .bark-actions button,
+  .bark-test-form button {
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-inner {
+    min-height: auto;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+    padding: 8px 0;
+  }
+
+  .brand h1 {
+    font-size: 14px;
+  }
+
+  .nav {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .nav > a,
+  .link-button,
+  .nav form {
+    width: 100%;
+  }
+
+  .nav > a,
+  .link-button {
+    padding: 0 4px;
+    white-space: nowrap;
   }
 }
