@@ -4,7 +4,10 @@ import asyncio
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
@@ -19,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .audit import write_audit
+from .bark import BarkNotifier, DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
 from .db import Database
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
 from .secure_session import create_session_cookie, read_session_cookie
@@ -49,6 +53,8 @@ telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
 oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
+bark_notifier = BarkNotifier(settings)
+BARK_CONFIG_LOCK = threading.RLock()
 
 
 def beijing_time(value: Any) -> str:
@@ -88,22 +94,34 @@ def oauth_base_url() -> str:
     ).strip().rstrip("/")
 
 
+async def deliver_oauth_monitor_events(events: list[dict[str, Any]]) -> None:
+    if not events or oauth_monitor is None:
+        return
+    runtime = bark_notifier.runtime_config()
+    if not runtime.config_valid:
+        return
+    if not runtime.enabled:
+        await asyncio.to_thread(
+            oauth_monitor.store.mark_events_delivered,
+            events,
+            suppressed=True,
+        )
+        return
+    delivered = await asyncio.to_thread(
+        bark_notifier.notify_oauth_monitor_events,
+        events,
+        config=runtime,
+    )
+    if delivered:
+        await asyncio.to_thread(oauth_monitor.store.mark_events_delivered, delivered)
+
+
 async def oauth_monitor_loop() -> None:
     while True:
         try:
             if oauth_monitor is not None:
                 events = await asyncio.to_thread(oauth_monitor.run_once)
-                if events:
-                    if not settings.telegram_oauth_recovery_push_enabled:
-                        await asyncio.to_thread(
-                            oauth_monitor.store.mark_events_delivered,
-                            events,
-                            suppressed=True,
-                        )
-                    elif telegram_bot is not None:
-                        delivered = await telegram_bot.notify_oauth_monitor_events(events)
-                        if delivered:
-                            await asyncio.to_thread(oauth_monitor.store.mark_events_delivered, delivered)
+                await deliver_oauth_monitor_events(events)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -335,7 +353,7 @@ def generate_telegram_pairing_code() -> str:
 def telegram_state() -> dict[str, Any]:
     try:
         raw = json.loads(Path(settings.telegram_state_path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         raw = {}
     return raw if isinstance(raw, dict) else {}
 
@@ -344,6 +362,14 @@ def telegram_config_file() -> dict[str, Any]:
     try:
         raw = json.loads(Path(settings.telegram_config_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        raw = {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def bark_config_file() -> dict[str, Any]:
+    try:
+        raw = json.loads(Path(settings.bark_config_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
         raw = {}
     return raw if isinstance(raw, dict) else {}
 
@@ -358,6 +384,37 @@ def save_telegram_runtime_config(payload: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
+def save_bark_runtime_config(payload: dict[str, Any]) -> None:
+    path = Path(settings.bark_config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(file_descriptor, 0o600)
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+            file_descriptor = -1
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+        path.chmod(0o600)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
     bool_fields = (
         "enabled",
@@ -365,7 +422,6 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         "oauth_usage_refresh_enabled",
         "oauth_recovery_monitor_enabled",
         "oauth_night_recovery_cooldown_enabled",
-        "oauth_recovery_push_enabled",
     )
     for key in bool_fields:
         if key in payload:
@@ -401,6 +457,18 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
             str(payload.get("oauth_recovery_test_model_id") or "gpt-5.6-luna").strip()
             or "gpt-5.6-luna"
         )
+
+
+def apply_bark_runtime_config(payload: dict[str, Any]) -> None:
+    with BARK_CONFIG_LOCK:
+        settings.bark_config_valid = True
+        if "enabled" in payload:
+            settings.bark_enabled = bool(payload.get("enabled"))
+        if "device_key" in payload:
+            settings.bark_device_key = str(payload.get("device_key") or "")
+        if "server_url" in payload:
+            settings.bark_server_url = str(payload.get("server_url") or DEFAULT_BARK_SERVER_URL)
+        bark_notifier.configure_from_settings(settings)
 
 
 def ensure_telegram_pairing_code() -> str:
@@ -448,7 +516,6 @@ def build_telegram_config() -> dict[str, Any]:
         "oauth_night_recovery_cooldown_enabled": (
             settings.telegram_oauth_night_recovery_cooldown_enabled
         ),
-        "oauth_recovery_push_enabled": settings.telegram_oauth_recovery_push_enabled,
         "oauth_usage_refresh_concurrency": settings.telegram_oauth_usage_refresh_concurrency,
         "oauth_recovery_test_concurrency": settings.telegram_oauth_recovery_test_concurrency,
         "oauth_early_probe_batch_size": settings.telegram_oauth_early_probe_batch_size,
@@ -456,6 +523,33 @@ def build_telegram_config() -> dict[str, Any]:
         "oauth_7d_probe_interval_seconds": settings.telegram_oauth_7d_probe_interval_seconds,
         "oauth_recovery_test_model_id": settings.telegram_oauth_recovery_test_model_id
         or "gpt-5.6-luna",
+    }
+
+
+def build_bark_config() -> dict[str, Any]:
+    existing = bark_config_file()
+    runtime = bark_notifier.runtime_config()
+    try:
+        server_url = normalize_bark_server_url(runtime.server_url)
+        server_url_valid = True
+    except ValueError:
+        server_url = str(runtime.server_url or DEFAULT_BARK_SERVER_URL)
+        server_url_valid = False
+    key_set = bool(runtime.device_key.strip())
+    return {
+        "configured": bool(
+            runtime.config_valid
+            and runtime.enabled
+            and key_set
+            and server_url_valid
+        ),
+        "config_valid": runtime.config_valid,
+        "enabled": runtime.enabled,
+        "device_key_set": key_set,
+        "device_key_status": "已设置" if key_set else "未设置",
+        "server_url": server_url,
+        "server_url_valid": server_url_valid,
+        "config_updated_at": existing.get("updated_at"),
     }
 
 
@@ -544,7 +638,12 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     return render(
         request,
         "telegram.html",
-        {"active": "telegram", "telegram": build_telegram_config(), "msg": msg},
+        {
+            "active": "telegram",
+            "telegram": build_telegram_config(),
+            "bark": build_bark_config(),
+            "msg": msg,
+        },
     )
 
 
@@ -593,6 +692,7 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     form = await request.form()
     existing = telegram_config_file()
     existing.pop("oauth_early_probe_interval_seconds", None)
+    existing.pop("oauth_recovery_push_enabled", None)
     payload = {
         **existing,
         "oauth_usage_refresh_enabled": bool(form.getlist("oauth_usage_refresh_enabled")),
@@ -600,7 +700,6 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
         "oauth_night_recovery_cooldown_enabled": bool(
             form.getlist("oauth_night_recovery_cooldown_enabled")
         ),
-        "oauth_recovery_push_enabled": bool(form.getlist("oauth_recovery_push_enabled")),
         "oauth_usage_refresh_concurrency": int_param(form.get("oauth_usage_refresh_concurrency"), 4, 1, 16),
         "oauth_recovery_test_concurrency": int_param(form.get("oauth_recovery_test_concurrency"), 2, 1, 8),
         "oauth_early_probe_batch_size": int_param(form.get("oauth_early_probe_batch_size"), 8, 1, 50),
@@ -626,6 +725,71 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     )
     return RedirectResponse(
         f"{settings.base_path}/telegram?msg={quote('OAuth 监控设置已保存')}", status_code=303
+    )
+
+
+@app.post("/bark/config")
+async def bark_config_save(
+    user: AuthUser,
+    enabled: str | None = Form(None),
+    bark_device_key: str = Form(""),
+    bark_server_url: str = Form(DEFAULT_BARK_SERVER_URL),
+) -> Response:
+    with BARK_CONFIG_LOCK:
+        existing = bark_config_file()
+        device_key = bark_device_key.strip() or bark_notifier.runtime_config().device_key.strip()
+        try:
+            server_url = normalize_bark_server_url(
+                bark_server_url.strip() or DEFAULT_BARK_SERVER_URL
+            )
+        except ValueError:
+            return RedirectResponse(
+                f"{settings.base_path}/telegram?msg={quote('Bark 服务 URL 无效；HTTP 仅允许 loopback')}",
+                status_code=303,
+            )
+        is_enabled = form_truthy(enabled)
+        if is_enabled and not device_key:
+            return RedirectResponse(
+                f"{settings.base_path}/telegram?msg={quote('启用 Bark 前需要填写 Device Key')}",
+                status_code=303,
+            )
+        payload = {
+            **existing,
+            "enabled": is_enabled,
+            "device_key": device_key,
+            "server_url": server_url,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": user,
+        }
+        save_bark_runtime_config(payload)
+        apply_bark_runtime_config(payload)
+    write_audit(
+        settings.audit_path,
+        "bark_config_update",
+        {
+            "user": user,
+            "enabled": is_enabled,
+            "device_key_set": bool(device_key),
+            "server_url": server_url,
+        },
+    )
+    return RedirectResponse(
+        f"{settings.base_path}/telegram?msg={quote('Bark 配置已保存')}", status_code=303
+    )
+
+
+@app.post("/bark/push-test")
+async def bark_push_test(user: AuthUser) -> Response:
+    result = await asyncio.to_thread(bark_notifier.push_test)
+    result_code = result.error_code or "ok"
+    message = "Bark 测试推送已发送" if result.success else f"Bark 测试推送失败：{result_code}"
+    write_audit(
+        settings.audit_path,
+        "bark_push_test",
+        {"user": user, "success": result_code == "ok", "result": result_code},
+    )
+    return RedirectResponse(
+        f"{settings.base_path}/telegram?msg={quote(message)}", status_code=303
     )
 
 

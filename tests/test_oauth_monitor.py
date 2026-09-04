@@ -98,7 +98,6 @@ def settings(path: Path) -> SimpleNamespace:
         audit_path=str(path.with_name("audit.jsonl")),
         telegram_oauth_usage_refresh_enabled=True,
         telegram_oauth_recovery_monitor_enabled=True,
-        telegram_oauth_recovery_push_enabled=True,
         telegram_oauth_night_recovery_cooldown_enabled=True,
         telegram_oauth_usage_refresh_concurrency=4,
         telegram_oauth_recovery_test_concurrency=2,

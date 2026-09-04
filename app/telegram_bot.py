@@ -94,7 +94,12 @@ class TelegramOpsBot:
         if self.enabled:
             await self._api(
                 "setMyCommands",
-                {"commands": [{"command": "quota", "description": "查询 OAuth 账号额度"}]},
+                {
+                    "commands": [
+                        {"command": "quota", "description": "查询 OAuth 账号额度"},
+                        {"command": "account", "description": "查看并操作指定账号"},
+                    ]
+                },
             )
 
     async def allowed_chat_ids(self) -> list[int]:
@@ -108,23 +113,6 @@ class TelegramOpsBot:
             return
         for chat_id in await self.allowed_chat_ids():
             await self._send_message(chat_id, text, keyboard)
-
-    async def notify_oauth_monitor_events(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        if not self.enabled or not getattr(self.settings, "telegram_oauth_recovery_push_enabled", True):
-            return []
-        chat_ids = await self.allowed_chat_ids()
-        if not chat_ids:
-            return []
-        delivered: list[dict[str, Any]] = []
-        for event in events:
-            keyboard = account_actions_keyboard(event) if int(event.get("account_id") or 0) > 0 else None
-            sent = [
-                await self._send_message(chat_id, oauth_monitor_alert(event), keyboard)
-                for chat_id in chat_ids
-            ]
-            if sent and all(sent):
-                delivered.append(event)
-        return delivered
 
     async def _handle_update(self, update: dict[str, Any]) -> None:
         callback = update.get("callback_query")
@@ -201,12 +189,26 @@ class TelegramOpsBot:
         return f"配对成功。\nchat_id：{chat_id}\nuser_id：{user_id}", None
 
     async def _text_reply(self, text: str) -> tuple[str, dict[str, Any] | None]:
-        command = normalize_command(text.split()[0] if text.split() else "")
+        parts = text.split()
+        command = normalize_command(parts[0] if parts else "")
         if command in {"/quota", "/usage", "quota", "usage", "额度", "查额度"}:
             return await self._quota_reply()
+        if command in {"/account", "account", "账号"}:
+            if len(parts) < 2:
+                return "用法：/account <账号 ID>", None
+            try:
+                account_id = parse_account_id(parts[1])
+            except (TypeError, ValueError):
+                return "账号 ID 无效。用法：/account <账号 ID>", None
+            return await self._account_detail_reply(account_id)
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
-            return "可用命令：/quota。\n\nOAuth 额度恢复、测活失败和认证异常会按面板开关推送。", None
-        return "可用命令：/quota。", None
+            return (
+                "可用命令：\n"
+                "/quota 查询 OAuth 账号额度\n"
+                "/account <ID> 查看并操作账号\n\n"
+                "OAuth 恢复成功、测活失败、自动恢复失败和认证异常由 Bark 推送。"
+            ), None
+        return "可用命令：/quota、/account <ID>。", None
 
     async def _callback_reply(
         self,
@@ -533,43 +535,6 @@ def format_oauth_quota_totals(
         if parts:
             lines.append(f"{plan}：{' · '.join(parts)}（{counts.get(plan, 0)} 个）")
     return lines
-
-
-def oauth_monitor_alert(event: dict[str, Any]) -> str:
-    account_text = f"#{int(event.get('account_id') or 0)} {event.get('account_name') or '-'} · {event.get('plan_type') or 'oauth'}"
-    status = str(event.get("status") or "")
-    if status == "recovered":
-        windows = "/".join(str(item) for item in event.get("window_labels") or []) or "必要窗口"
-        return (
-            "OAuth 账号额度已恢复可用\n"
-            f"{account_text}\n"
-            f"确认窗口：{windows}\n"
-            f"测试通过：{event.get('model_id') or '-'}"
-        )
-    if status == "test_failed":
-        return (
-            "OAuth 账号额度恢复后测试失败\n"
-            f"{account_text}\n"
-            f"错误码：{event.get('error_code') or 'unknown_test_error'}\n"
-            f"错误：{event.get('error') or '-'}\n"
-            f"模型：{event.get('model_id') or '-'}"
-        )
-    if status == "recovery_failed":
-        return (
-            "OAuth 账号自动恢复失败，将按退避重试\n"
-            f"{account_text}\n"
-            f"错误码：{event.get('error_code') or 'recovery_failed'}\n"
-            f"错误：{event.get('error') or '-'}"
-        )
-    stage = "active usage" if event.get("stage") == "active_usage" else str(event.get("stage") or "unknown")
-    return (
-        "OAuth 账号认证异常\n"
-        f"{account_text}\n"
-        f"阶段：{stage}\n"
-        f"错误码：{event.get('error_code') or '-'}\n"
-        f"错误：{event.get('error') or '-'}\n"
-        f"时间：{bj_time(event.get('checked_at'))}"
-    )
 
 
 def bj_time(value: Any, pattern: str = "%Y-%m-%d %H:%M") -> str:

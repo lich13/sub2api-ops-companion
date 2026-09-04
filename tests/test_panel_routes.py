@@ -180,7 +180,6 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                         ("oauth_usage_refresh_enabled", "1"),
                         ("oauth_recovery_monitor_enabled", "1"),
                         ("oauth_night_recovery_cooldown_enabled", "1"),
-                        ("oauth_recovery_push_enabled", "1"),
                         ("oauth_usage_refresh_concurrency", "5"),
                         ("oauth_recovery_test_concurrency", "3"),
                         ("oauth_early_probe_batch_size", "9"),
@@ -194,7 +193,10 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config_path = root / "telegram-config.json"
-            config_path.write_text('{"oauth_early_probe_interval_seconds": 15}', encoding="utf-8")
+            config_path.write_text(
+                '{"oauth_early_probe_interval_seconds": 15, "oauth_recovery_push_enabled": true}',
+                encoding="utf-8",
+            )
             main_module.settings = SimpleNamespace(
                 telegram_config_path=str(config_path),
                 audit_path=str(root / "audit.jsonl"),
@@ -202,7 +204,6 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                 telegram_oauth_usage_refresh_enabled=True,
                 telegram_oauth_recovery_monitor_enabled=True,
                 telegram_oauth_night_recovery_cooldown_enabled=True,
-                telegram_oauth_recovery_push_enabled=True,
                 telegram_oauth_usage_refresh_concurrency=4,
                 telegram_oauth_recovery_test_concurrency=2,
                 telegram_oauth_early_probe_batch_size=8,
@@ -226,6 +227,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(persisted["oauth_night_recovery_cooldown_enabled"])
         self.assertTrue(applied_night_cooldown)
         self.assertNotIn("oauth_early_probe_interval_seconds", persisted)
+        self.assertNotIn("oauth_recovery_push_enabled", persisted)
 
     async def test_oauth_settings_can_disable_night_recovery_cooldown(self) -> None:
         class FormRequest:
@@ -260,6 +262,15 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn('name="oauth_night_recovery_cooldown_enabled"', template)
         self.assertIn("telegram.oauth_night_recovery_cooldown_enabled", template)
+
+    def test_telegram_template_contains_bark_controls_without_secret_value(self) -> None:
+        template = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
+
+        self.assertIn('action="{{ base_path }}/bark/config"', template)
+        self.assertIn('action="{{ base_path }}/bark/push-test"', template)
+        self.assertIn('name="bark_device_key"', template)
+        self.assertNotIn('value="{{ bark.device_key', template)
+        self.assertIn("Telegram Bot 消息测试", template)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bark import DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
+
 
 @dataclass
 class Settings:
@@ -17,6 +19,11 @@ class Settings:
     app_name: str = "Sub2API Ops Companion"
     usage_query_state_path: str = "/data/usage-query-state.json"
     telegram_config_path: str = "/data/telegram-config.json"
+    bark_config_path: str = "/data/bark-config.json"
+    bark_enabled: bool = False
+    bark_device_key: str = ""
+    bark_server_url: str = "https://api.day.app"
+    bark_config_valid: bool = True
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_pairing_enabled: bool = True
@@ -28,7 +35,6 @@ class Settings:
     telegram_oauth_usage_refresh_enabled: bool = True
     telegram_oauth_recovery_monitor_enabled: bool = True
     telegram_oauth_night_recovery_cooldown_enabled: bool = True
-    telegram_oauth_recovery_push_enabled: bool = True
     telegram_oauth_usage_refresh_concurrency: int = 4
     telegram_oauth_recovery_test_concurrency: int = 2
     telegram_oauth_early_probe_batch_size: int = 8
@@ -59,6 +65,19 @@ def bool_value(raw: object, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def strict_bool_value(raw: object, default: bool) -> tuple[bool, bool]:
+    if raw is None:
+        return default, True
+    if isinstance(raw, bool):
+        return raw, True
+    normalized = str(raw).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True, True
+    if normalized in {"0", "false", "no", "off"}:
+        return False, True
+    return default, False
+
+
 def int_env(name: str, default: int, minimum: int, maximum: int) -> int:
     return int_value(os.getenv(name), default, minimum, maximum)
 
@@ -87,9 +106,38 @@ def int_tuple_value(raw: object) -> tuple[int, ...]:
 def read_json_config(path: str) -> dict[str, object]:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def read_optional_json_config(path: str) -> tuple[dict[str, object], bool]:
+    config_path = Path(path)
+    try:
+        raw = config_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}, True
+    except (OSError, UnicodeError):
+        return {}, False
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}, False
+    return (data, True) if isinstance(data, dict) else ({}, False)
+
+
+def bark_config_schema_valid(config: dict[str, object], parsed: bool) -> bool:
+    if not parsed:
+        return False
+    expected_types = {
+        "enabled": bool,
+        "device_key": str,
+        "server_url": str,
+    }
+    for key, expected_type in expected_types.items():
+        if key in config and not isinstance(config[key], expected_type):
+            return False
+    return True
 
 
 def load_settings() -> Settings:
@@ -99,8 +147,27 @@ def load_settings() -> Settings:
         raise RuntimeError("OPS_SESSION_SECRET must be set")
     telegram_config_path = os.getenv("TELEGRAM_CONFIG_PATH", "/data/telegram-config.json")
     telegram_config = read_json_config(telegram_config_path)
+    bark_config_path = os.getenv("BARK_CONFIG_PATH", "/data/bark-config.json")
+    bark_config, bark_config_valid = read_optional_json_config(bark_config_path)
     bot_token = str(telegram_config.get("bot_token", os.getenv("TELEGRAM_BOT_TOKEN", "")) or "")
     enabled_raw = telegram_config.get("enabled", os.getenv("TELEGRAM_ENABLED"))
+    bark_device_key = str(
+        bark_config.get("device_key", os.getenv("BARK_DEVICE_KEY", "")) or ""
+    )
+    bark_server_url = str(
+        bark_config.get("server_url", os.getenv("BARK_SERVER_URL", DEFAULT_BARK_SERVER_URL))
+        or DEFAULT_BARK_SERVER_URL
+    ).strip() or DEFAULT_BARK_SERVER_URL
+    bark_enabled, bark_enabled_valid = strict_bool_value(
+        bark_config.get("enabled", os.getenv("BARK_ENABLED")), False
+    )
+    bark_config_valid = bark_config_schema_valid(bark_config, bark_config_valid)
+    bark_config_valid = bark_config_valid and bark_enabled_valid
+    if bark_config_valid:
+        try:
+            normalize_bark_server_url(bark_server_url)
+        except ValueError:
+            bark_config_valid = False
 
     return Settings(
         database_url=os.environ["DATABASE_URL"],
@@ -111,6 +178,11 @@ def load_settings() -> Settings:
         session_store_path=os.getenv("OPS_SESSION_STORE_PATH", "/data/sessions.json"),
         usage_query_state_path=os.getenv("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json"),
         telegram_config_path=telegram_config_path,
+        bark_config_path=bark_config_path,
+        bark_enabled=bark_enabled,
+        bark_device_key=bark_device_key,
+        bark_server_url=bark_server_url,
+        bark_config_valid=bark_config_valid,
         telegram_enabled=bool_value(enabled_raw, bool(bot_token.strip())),
         telegram_bot_token=bot_token,
         telegram_pairing_enabled=bool_value(
@@ -150,10 +222,6 @@ def load_settings() -> Settings:
                 "oauth_night_recovery_cooldown_enabled",
                 os.getenv("TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED"),
             ),
-            True,
-        ),
-        telegram_oauth_recovery_push_enabled=bool_value(
-            telegram_config.get("oauth_recovery_push_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED")),
             True,
         ),
         telegram_oauth_usage_refresh_concurrency=int_value(
