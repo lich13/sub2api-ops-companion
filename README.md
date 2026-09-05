@@ -6,7 +6,8 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 
 - OAuth 额度监控：统一调度 active usage，支持准确恢复时间到点查询、7d 提前重置探测和恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
-- Telegram：通过私聊配对，支持 `/quota` 和 `/account <ID>`；账号按钮可手动暂停、冷却或恢复调度。
+- Telegram：通过私聊配对，支持 `/quota`、`/account` 选择 OpenAI 账号，以及 `/account <ID>` 快捷查看；账号按钮可手动暂停、冷却或恢复调度。
+- Key 调度回退：在全部 OpenAI OAuth 账号不可用时，把选定的 OpenAI apikey 打开调度；有可用 OAuth 时再关掉这些 Key。
 - Sub2API SSO：从 Sub2API 自定义菜单进入，验证管理员 JWT 后换取 Companion 本地会话。
 - 面板更新：显示当前版本，可检查 `origin/main` 并在源码无依赖变更时热更新。
 
@@ -45,7 +46,8 @@ docker compose up -d --build
 - `BARK_CONFIG_PATH`：Bark 面板配置文件，默认 `/data/bark-config.json`。
 - `BARK_ENABLED`：是否启用 OAuth 事件的 Bark 推送，默认关闭。
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过面板写入权限为 `0600` 的配置文件。
-- `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。
+- `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。面板不再展示或提交该字段，缺少表单值时保留当前运行时 URL。
+- `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED`：是否进行常规后台刷新。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
 - `TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED`：是否启用北京时间 `[00:00, 05:00)` 夜间恢复冷却，默认开启；冷却期间只查询，不执行恢复操作。

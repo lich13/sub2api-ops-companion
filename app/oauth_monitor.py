@@ -896,6 +896,26 @@ def execute_sub2api_account_recovery(
     }
 
 
+class OAuthEvaluationGuard:
+    def __init__(self, monitor: OAuthMonitor) -> None:
+        self._monitor = monitor
+        self._held = False
+
+    def __enter__(self) -> OAuthEvaluationGuard | None:
+        if not self._monitor._run_lock.acquire(blocking=False):
+            return None
+        self._held = True
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._held:
+            self._monitor._run_lock.release()
+            self._held = False
+
+    def committed_snapshot(self) -> dict[str, Any]:
+        return self._monitor.store.snapshot()
+
+
 class OAuthMonitor:
     def __init__(
         self,
@@ -945,6 +965,17 @@ class OAuthMonitor:
             return True
         metadata = (state.get("scheduler") or {}).get(str(account_id)) or {}
         return key in [str(item) for item in metadata.get("notified_keys") or []]
+
+    def evaluation_guard(self) -> OAuthEvaluationGuard:
+        return OAuthEvaluationGuard(self)
+
+    def committed_snapshot(self) -> dict[str, Any] | None:
+        if not self._run_lock.acquire(blocking=False):
+            return None
+        try:
+            return self.store.snapshot()
+        finally:
+            self._run_lock.release()
 
     def run_once(self, now: datetime | None = None) -> list[dict[str, Any]]:
         if not self._run_lock.acquire(blocking=False):

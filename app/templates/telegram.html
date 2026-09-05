@@ -33,7 +33,6 @@
   <div class="section-head compact-head">
     <div>
       <h3>Bark 事件推送</h3>
-      <p class="section-note">OAuth 恢复成功、测活失败、自动恢复失败和认证异常只通过 Bark 主动推送。</p>
     </div>
     <span class="status-dot {{ 'online' if bark.configured else '' }}" title="{{ '已就绪' if bark.configured else ('配置文件无效' if not bark.config_valid else '未就绪') }}"></span>
   </div>
@@ -45,10 +44,6 @@
     <label>
       <span>Device Key · {{ bark.device_key_status }}</span>
       <input type="password" name="bark_device_key" autocomplete="new-password" spellcheck="false" placeholder="{{ '留空保留现有 Device Key' if bark.device_key_set else '粘贴 Device Key' }}">
-    </label>
-    <label>
-      <span>服务 URL</span>
-      <input type="url" name="bark_server_url" value="{{ bark.server_url }}" autocomplete="off" spellcheck="false" required>
     </label>
     <div class="bark-actions">
       <button class="primary" type="submit">保存 Bark 配置</button>
@@ -106,6 +101,7 @@
         <span class="field-caption">命令</span>
         <div class="id-list">
           <span class="id-chip">/quota</span>
+          <span class="id-chip">/account</span>
           <span class="id-chip">/account &lt;ID&gt;</span>
         </div>
       </div>
@@ -161,6 +157,32 @@
     </div>
     <div class="form-actions">
       <button class="primary" type="submit">保存 OAuth 设置</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel key-fallback-panel">
+  <div class="section-head compact-head">
+    <h3>Key 调度回退</h3>
+  </div>
+  <form class="oauth-settings-form" method="post" action="{{ base_path }}/key-fallback/config">
+    <label class="setting-toggle">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if key_fallback.enabled else '' }}>
+      <span><strong>启用 Key 回退</strong></span>
+    </label>
+    <div class="key-fallback-list">
+      {% for account in key_fallback.accounts %}
+      <label class="setting-toggle">
+        <input type="checkbox" name="managed_account_ids" value="{{ account.id }}" {{ 'checked' if account.id in key_fallback.managed_account_ids else '' }}>
+        <span>#{{ account.id }} {{ account.name }}</span>
+      </label>
+      {% endfor %}
+      {% if not key_fallback.accounts %}
+      <span class="empty-value">暂无 OpenAI apikey 账号</span>
+      {% endif %}
+    </div>
+    <div class="form-actions">
+      <button class="primary" type="submit">保存 Key 回退配置</button>
     </div>
   </form>
 </section>
