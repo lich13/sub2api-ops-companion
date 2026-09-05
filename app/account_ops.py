@@ -50,6 +50,8 @@ def _account_select(where: str) -> str:
       rate_limit_reset_at,
       overload_until,
       error_message,
+      expires_at,
+      auto_pause_on_expired,
       updated_at
     FROM accounts
     WHERE deleted_at IS NULL
@@ -72,6 +74,85 @@ def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
         _account_select("AND id = %(account_id)s").replace("ORDER BY id", "LIMIT 1"),
         {"account_id": int(account_id)},
     )
+
+
+def openai_picker_accounts(db: Database) -> list[dict[str, Any]]:
+    rows = db.fetch_all(
+        """
+        SELECT
+          id,
+          name,
+          platform,
+          type,
+          status,
+          schedulable,
+          temp_unschedulable_until
+        FROM accounts
+        WHERE deleted_at IS NULL
+          AND lower(coalesce(platform, '')) = 'openai'
+          AND lower(coalesce(type, '')) IN ('oauth', 'apikey')
+        ORDER BY id
+        """
+    )
+    picker: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            account_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (
+            account_id <= 0
+            or str(row.get("platform") or "").strip().lower() != "openai"
+            or str(row.get("type") or "").strip().lower() not in {"oauth", "apikey"}
+            or row.get("deleted_at") not in (None, "")
+        ):
+            continue
+        picker.append(dict(row))
+    picker.sort(key=lambda item: int(item.get("id") or 0))
+    return picker
+
+
+def live_openai_apikey_accounts(db: Database) -> list[dict[str, Any]]:
+    rows = db.fetch_all(
+        """
+        SELECT
+          id,
+          name,
+          platform,
+          type,
+          status,
+          schedulable,
+          expires_at,
+          auto_pause_on_expired
+        FROM accounts
+        WHERE deleted_at IS NULL
+          AND lower(coalesce(platform, '')) = 'openai'
+          AND lower(coalesce(type, '')) = 'apikey'
+        ORDER BY id
+        """
+    )
+    accounts: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            account_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (
+            account_id <= 0
+            or str(row.get("platform") or "").strip().lower() != "openai"
+            or str(row.get("type") or "").strip().lower() != "apikey"
+            or row.get("deleted_at") not in (None, "")
+        ):
+            continue
+        accounts.append(dict(row))
+    accounts.sort(key=lambda item: int(item.get("id") or 0))
+    return accounts
+
+
 def pause_account(
     db: Database,
     audit_path: str,

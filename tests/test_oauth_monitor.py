@@ -720,7 +720,12 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 base_url_provider=lambda: "https://sub2api.example.com",
                 inventory_loader=lambda _db: accounts,
                 usage_runner=usage_runner,
-                test_runner=lambda *_args, **_kwargs: {"success": True},
+                test_runner=lambda *_args, **_kwargs: {"success": True, "duration_ms": 1},
+                recovery_runner=lambda *_args, **_kwargs: {"success": True, "method": "recover-state"},
+                account_reader=lambda _db, account_id: next(
+                    (dict(item) for item in accounts if int(item["id"]) == int(account_id)),
+                    None,
+                ),
             )
 
             monitor.run_once(NOW)
@@ -1045,6 +1050,12 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 base_url_provider=lambda: "https://sub2api.example.com",
                 inventory_loader=lambda _db: rows,
                 usage_runner=usage_runner,
+                test_runner=lambda *_args, **_kwargs: {"success": True, "duration_ms": 1},
+                recovery_runner=lambda *_args, **_kwargs: {"success": True, "method": "recover-state"},
+                account_reader=lambda _db, account_id: next(
+                    (dict(item) for item in rows if int(item["id"]) == int(account_id)),
+                    None,
+                ),
             )
 
             report = monitor.force_refresh(now=NOW)
@@ -1075,13 +1086,16 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             )
             entered = threading.Event()
             release = threading.Event()
+            second_waiting = threading.Event()
             calls = 0
 
             def usage_runner(account_id: int, *_args: object, **_kwargs: object) -> dict[str, object]:
+                del account_id
                 nonlocal calls
                 calls += 1
                 entered.set()
-                release.wait(2)
+                if not release.wait(2):
+                    raise TimeoutError("usage runner was not released")
                 return result(summary(), NOW)
 
             row = account()
@@ -1091,19 +1105,44 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 base_url_provider=lambda: "https://sub2api.example.com",
                 inventory_loader=lambda _db: [row],
                 usage_runner=usage_runner,
+                test_runner=lambda *_args, **_kwargs: {"success": True, "duration_ms": 1},
+                recovery_runner=lambda *_args, **_kwargs: {"success": True, "method": "recover-state"},
+                account_reader=lambda _db, account_id: dict(row) if int(account_id) == int(row["id"]) else None,
             )
+            original_wait = monitor._force_condition.wait
+
+            def waiting_wait(*args: object, **kwargs: object) -> bool:
+                second_waiting.set()
+                return bool(original_wait(*args, **kwargs))
+
+            monitor._force_condition.wait = waiting_wait  # type: ignore[method-assign]
             reports: list[dict[str, object]] = []
-            threads = [
-                threading.Thread(target=lambda: reports.append(monitor.force_refresh(now=NOW)))
-                for _ in range(2)
-            ]
+            errors: list[BaseException] = []
+
+            def run_refresh() -> None:
+                try:
+                    reports.append(monitor.force_refresh(now=NOW))
+                except BaseException as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=run_refresh) for _ in range(2)]
+
+            def cleanup() -> None:
+                release.set()
+                for thread in threads:
+                    thread.join(1)
+
+            self.addCleanup(cleanup)
             threads[0].start()
             self.assertTrue(entered.wait(1))
             threads[1].start()
+            self.assertTrue(second_waiting.wait(1))
             release.set()
             for thread in threads:
                 thread.join(2)
+                self.assertFalse(thread.is_alive())
 
+            self.assertEqual(errors, [])
             self.assertEqual(calls, 1)
             self.assertEqual(len(reports), 2)
             self.assertEqual(sum(bool(item.get("coalesced")) for item in reports), 1)
@@ -1120,6 +1159,8 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 settings(state_path),
                 FakeDb([]),
                 base_url_provider=lambda: "https://sub2api.example.com",
+                test_runner=lambda *_args, **_kwargs: {"success": True, "duration_ms": 1},
+                recovery_runner=lambda *_args, **_kwargs: {"success": True, "method": "recover-state"},
             )
             monitor._run_lock.acquire()
             try:
@@ -1211,6 +1252,9 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 base_url_provider=lambda: "https://sub2api.example.com",
                 inventory_loader=lambda _db: [row],
                 usage_runner=usage_runner,
+                test_runner=lambda *_args, **_kwargs: {"success": True, "duration_ms": 1},
+                recovery_runner=lambda *_args, **_kwargs: {"success": True, "method": "recover-state"},
+                account_reader=lambda _db, account_id: dict(row) if int(account_id) == int(row["id"]) else None,
             )
 
             report = monitor.force_refresh(now=NOW)

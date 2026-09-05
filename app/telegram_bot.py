@@ -11,6 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import account_ops
+from .key_fallback import KeyFallbackConfigError
 from .settings import Settings
 from .usage_query import (
     format_percent_value,
@@ -24,13 +25,22 @@ from .usage_query import (
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 PAIRING_CODE_HINT = "请到 Ops 面板的 Telegram 页面查看配对码，然后在私聊中发送 /pair <配对码>。"
 MAX_INFLIGHT_UPDATES = 8
+ACCOUNT_PICKER_PAGE_SIZE = 8
 
 
 class TelegramOpsBot:
-    def __init__(self, settings: Settings, db: Any, *, oauth_monitor: Any | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        db: Any,
+        *,
+        oauth_monitor: Any | None = None,
+        key_fallback: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.db = db
         self.oauth_monitor = oauth_monitor
+        self.key_fallback = key_fallback
         self._state_lock = asyncio.Lock()
         self._quota_refresh_lock = asyncio.Lock()
         self._quota_refresh_task: asyncio.Task[dict[str, Any]] | None = None
@@ -195,20 +205,21 @@ class TelegramOpsBot:
             return await self._quota_reply()
         if command in {"/account", "account", "账号"}:
             if len(parts) < 2:
-                return "用法：/account <账号 ID>", None
+                return await self._account_picker_reply(1)
             try:
                 account_id = parse_account_id(parts[1])
             except (TypeError, ValueError):
-                return "账号 ID 无效。用法：/account <账号 ID>", None
+                return "账号 ID 无效。用法：/account 或 /account <账号 ID>", None
             return await self._account_detail_reply(account_id)
         if command in {"/start", "/help", "/menu", "menu", "菜单"}:
             return (
                 "可用命令：\n"
                 "/quota 查询 OAuth 账号额度\n"
+                "/account 选择 OpenAI 账号\n"
                 "/account <ID> 查看并操作账号\n\n"
                 "OAuth 恢复成功、测活失败、自动恢复失败和认证异常由 Bark 推送。"
             ), None
-        return "可用命令：/quota、/account <ID>。", None
+        return "可用命令：/quota、/account。", None
 
     async def _callback_reply(
         self,
@@ -217,79 +228,191 @@ class TelegramOpsBot:
         data: str,
     ) -> tuple[str, dict[str, Any] | None]:
         actor_name = actor(chat_id, user_id)
+        if data.startswith("acctp:"):
+            return await self._account_picker_reply(parse_picker_page(data.split(":", 1)[1]))
         if data.startswith("acct:"):
-            return await self._account_detail_reply(parse_account_id(data.split(":", 1)[1]))
+            try:
+                account_id = parse_account_id(data.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return "账号 ID 无效。", None
+            return await self._account_detail_reply(account_id)
         if data.startswith(("pauseask:", "pause:")):
-            return await self._pause_reply(parse_account_id(data.split(":", 1)[1]), actor_name)
+            try:
+                account_id = parse_account_id(data.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return "账号 ID 无效。", None
+            return await self._pause_reply(account_id, actor_name)
         if data.startswith(("resask:", "res:")):
-            return await self._resume_reply(parse_account_id(data.split(":", 1)[1]), actor_name)
+            try:
+                account_id = parse_account_id(data.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return "账号 ID 无效。", None
+            return await self._resume_reply(account_id, actor_name)
         if data.startswith("cdmenu:"):
-            return await self._cooldown_menu_reply(parse_account_id(data.split(":", 1)[1]))
+            try:
+                account_id = parse_account_id(data.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return "账号 ID 无效。", None
+            return await self._cooldown_menu_reply(account_id)
         if data.startswith("cd:"):
             _, account_raw, minutes_raw = (data.split(":") + ["", "15"])[:3]
-            return await self._cooldown_reply(
-                parse_account_id(account_raw), parse_minutes(minutes_raw, 15), actor_name
-            )
+            try:
+                account_id = parse_account_id(account_raw)
+            except (TypeError, ValueError):
+                return "账号 ID 无效。", None
+            return await self._cooldown_reply(account_id, parse_minutes(minutes_raw, 15), actor_name)
         return "无法识别这个按钮，可能来自旧消息。", None
+
+    async def _account_picker_reply(self, page: int) -> tuple[str, dict[str, Any] | None]:
+        rows = await asyncio.to_thread(account_ops.openai_picker_accounts, self.db)
+        total = len(rows)
+        if total <= 0:
+            return "当前没有可选择的 OpenAI 账号。", None
+        total_pages = max(1, (total + ACCOUNT_PICKER_PAGE_SIZE - 1) // ACCOUNT_PICKER_PAGE_SIZE)
+        current_page = min(max(1, int(page or 1)), total_pages)
+        start = (current_page - 1) * ACCOUNT_PICKER_PAGE_SIZE
+        chunk = rows[start : start + ACCOUNT_PICKER_PAGE_SIZE]
+        return (
+            f"选择 OpenAI 账号（第 {current_page}/{total_pages} 页）",
+            account_picker_keyboard(chunk, current_page, total_pages),
+        )
 
     async def _account_detail_reply(self, account_id: int) -> tuple[str, dict[str, Any] | None]:
         row = await asyncio.to_thread(self._account_detail, account_id)
         if not row:
             return f"没有找到账号 #{account_id}", None
-        return account_detail(row), account_actions_keyboard(row)
+        picker_page = await asyncio.to_thread(self._picker_page_for, account_id)
+        return account_detail(row), account_actions_keyboard(row, picker_page=picker_page)
 
     async def _pause_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
-        row = await asyncio.to_thread(
-            account_ops.pause_account,
-            self.db,
-            self.settings.audit_path,
-            account_id,
-            actor_name,
-            f"telegram pause by {actor_name}",
-        )
+        try:
+            row = await self._run_manual_account_action(
+                account_id,
+                "pause",
+                actor_name,
+                reason=f"telegram pause by {actor_name}",
+            )
+        except KeyFallbackConfigError:
+            return "操作已中止：无法更新 Key 回退配置。", None
+        except Exception:
+            return "操作已中止：账号操作失败。", None
         if not row:
             return f"暂停失败：没有找到账号 #{account_id}", None
         detail = await asyncio.to_thread(self._account_detail, account_id)
-        return f"已暂停账号。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+        picker_page = await asyncio.to_thread(self._picker_page_for, account_id)
+        return (
+            f"已暂停账号。\n\n{account_detail(detail or row)}",
+            account_actions_keyboard(detail or row, picker_page=picker_page),
+        )
 
     async def _resume_reply(self, account_id: int, actor_name: str) -> tuple[str, dict[str, Any] | None]:
-        row = await asyncio.to_thread(
-            account_ops.resume_account,
-            self.db,
-            self.settings.audit_path,
-            account_id,
-            actor_name,
-        )
+        try:
+            row = await self._run_manual_account_action(
+                account_id,
+                "resume",
+                actor_name,
+            )
+        except KeyFallbackConfigError:
+            return "操作已中止：无法更新 Key 回退配置。", None
+        except Exception:
+            return "操作已中止：账号操作失败。", None
         if not row:
             return f"恢复失败：没有找到账号 #{account_id}", None
         detail = await asyncio.to_thread(self._account_detail, account_id)
-        return f"已恢复账号。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+        picker_page = await asyncio.to_thread(self._picker_page_for, account_id)
+        return (
+            f"已恢复账号。\n\n{account_detail(detail or row)}",
+            account_actions_keyboard(detail or row, picker_page=picker_page),
+        )
 
     async def _cooldown_menu_reply(self, account_id: int) -> tuple[str, dict[str, Any] | None]:
         row = await asyncio.to_thread(self._account_detail, account_id)
         if not row:
             return f"没有找到账号 #{account_id}", None
-        return f"选择冷却时间\n\n{account_detail(row)}", cooldown_keyboard(account_id)
+        picker_page = await asyncio.to_thread(self._picker_page_for, account_id)
+        return f"选择冷却时间\n\n{account_detail(row)}", cooldown_keyboard(account_id, picker_page=picker_page)
 
     async def _cooldown_reply(
         self, account_id: int, minutes: int, actor_name: str
     ) -> tuple[str, dict[str, Any] | None]:
-        row = await asyncio.to_thread(
-            account_ops.cooldown_account,
-            self.db,
-            self.settings.audit_path,
-            account_id,
-            actor_name,
-            minutes,
-            f"telegram cooldown {minutes}m by {actor_name}",
-        )
+        try:
+            row = await self._run_manual_account_action(
+                account_id,
+                "cooldown",
+                actor_name,
+                minutes=minutes,
+                reason=f"telegram cooldown {minutes}m by {actor_name}",
+            )
+        except KeyFallbackConfigError:
+            return "操作已中止：无法更新 Key 回退配置。", None
+        except Exception:
+            return "操作已中止：账号操作失败。", None
         if not row:
             return f"冷却失败：没有找到账号 #{account_id}", None
         detail = await asyncio.to_thread(self._account_detail, account_id)
-        return f"已冷却账号 {minutes} 分钟。\n\n{account_detail(detail or row)}", account_actions_keyboard(detail or row)
+        picker_page = await asyncio.to_thread(self._picker_page_for, account_id)
+        return (
+            f"已冷却账号 {minutes} 分钟。\n\n{account_detail(detail or row)}",
+            account_actions_keyboard(detail or row, picker_page=picker_page),
+        )
+
+    async def _run_manual_account_action(
+        self,
+        account_id: int,
+        action: str,
+        actor_name: str,
+        *,
+        minutes: int | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        controller = self.key_fallback
+        if controller is not None:
+            return await asyncio.to_thread(
+                controller.run_manual_account_action,
+                account_id,
+                action,
+                actor_name=actor_name,
+                minutes=minutes,
+                reason=reason,
+            )
+        if action == "pause":
+            return await asyncio.to_thread(
+                account_ops.pause_account,
+                self.db,
+                self.settings.audit_path,
+                account_id,
+                actor_name,
+                reason or f"telegram pause by {actor_name}",
+            )
+        if action == "resume":
+            return await asyncio.to_thread(
+                account_ops.resume_account,
+                self.db,
+                self.settings.audit_path,
+                account_id,
+                actor_name,
+            )
+        if action == "cooldown":
+            return await asyncio.to_thread(
+                account_ops.cooldown_account,
+                self.db,
+                self.settings.audit_path,
+                account_id,
+                actor_name,
+                int(minutes or 15),
+                reason or f"telegram cooldown {int(minutes or 15)}m by {actor_name}",
+            )
+        return None
 
     def _account_detail(self, account_id: int) -> dict[str, Any] | None:
         return account_ops.fallback_account(self.db, account_id)
+
+    def _picker_page_for(self, account_id: int) -> int:
+        rows = account_ops.openai_picker_accounts(self.db)
+        for index, row in enumerate(rows):
+            if int(row.get("id") or 0) == int(account_id):
+                return index // ACCOUNT_PICKER_PAGE_SIZE + 1
+        return 1
 
     async def _quota_reply(self) -> tuple[str, dict[str, Any] | None]:
         if self.oauth_monitor is None:
@@ -440,8 +563,9 @@ class TelegramOpsBot:
             return {"ok": False, "result": []}
 
 
-def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
+def account_actions_keyboard(row: dict[str, Any], *, picker_page: int = 1) -> dict[str, Any]:
     account_id = int(row.get("id") or row.get("account_id") or 0)
+    page = max(1, int(picker_page or 1))
     return {
         "inline_keyboard": [
             [
@@ -450,11 +574,13 @@ def account_actions_keyboard(row: dict[str, Any]) -> dict[str, Any]:
                 {"text": "恢复", "callback_data": f"res:{account_id}"},
             ],
             [{"text": "查看账号", "callback_data": f"acct:{account_id}"}],
+            [{"text": "返回列表", "callback_data": f"acctp:{page}"}],
         ]
     }
 
 
-def cooldown_keyboard(account_id: int) -> dict[str, Any]:
+def cooldown_keyboard(account_id: int, *, picker_page: int = 1) -> dict[str, Any]:
+    page = max(1, int(picker_page or 1))
     return {
         "inline_keyboard": [
             [
@@ -462,9 +588,48 @@ def cooldown_keyboard(account_id: int) -> dict[str, Any]:
                 {"text": "15 分钟", "callback_data": f"cd:{account_id}:15"},
                 {"text": "30 分钟", "callback_data": f"cd:{account_id}:30"},
             ],
-            [{"text": "返回", "callback_data": f"acct:{account_id}"}],
+            [
+                {"text": "返回", "callback_data": f"acct:{account_id}"},
+                {"text": "返回列表", "callback_data": f"acctp:{page}"},
+            ],
         ]
     }
+
+
+def account_picker_keyboard(
+    rows: list[dict[str, Any]], page: int, total_pages: int
+) -> dict[str, Any]:
+    keyboard: list[list[dict[str, str]]] = []
+    for row in rows:
+        account_id = int(row.get("id") or 0)
+        if account_id <= 0:
+            continue
+        keyboard.append(
+            [{"text": picker_button_label(row), "callback_data": f"acct:{account_id}"}]
+        )
+    nav: list[dict[str, str]] = []
+    if page > 1:
+        nav.append({"text": "上一页", "callback_data": f"acctp:{page - 1}"})
+    if page < total_pages:
+        nav.append({"text": "下一页", "callback_data": f"acctp:{page + 1}"})
+    if nav:
+        keyboard.append(nav)
+    return {"inline_keyboard": keyboard}
+
+
+def picker_button_label(row: dict[str, Any]) -> str:
+    account_id = int(row.get("id") or 0)
+    name = " ".join(str(row.get("name") or "-").split()) or "-"
+    type_label = str(row.get("type") or "-").strip() or "-"
+    state = account_ops.account_state(row)
+    suffix = f" · {type_label} · {state}"
+    prefix = f"#{account_id} "
+    budget = 64 - len(prefix) - len(suffix)
+    if budget < 1:
+        return f"#{account_id}{suffix}"[:64]
+    if len(name) > budget:
+        name = name[: max(1, budget - 1)] + "…"
+    return f"{prefix}{name}{suffix}"
 
 
 def account_detail(row: dict[str, Any]) -> str:
@@ -587,6 +752,14 @@ def parse_minutes(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         parsed = default
     return max(1, min(1440, parsed))
+
+
+def parse_picker_page(value: Any) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 1
+    return parsed if parsed > 0 else 1
 
 
 def actor(chat_id: int, user_id: int) -> str:

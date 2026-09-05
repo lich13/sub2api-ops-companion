@@ -639,6 +639,8 @@ class BarkConfigTests(unittest.TestCase):
 
         self.assertNotIn(secret, json.dumps(panel, ensure_ascii=False))
         self.assertNotIn("device_key", panel)
+        self.assertNotIn("server_url", panel)
+        self.assertNotIn("https://api.day.app", json.dumps(panel, ensure_ascii=False))
         self.assertEqual(panel["device_key_status"], "已设置")
 
 
@@ -712,6 +714,53 @@ class BarkConfigRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replaced["server_url"], "https://bark.example.com")
         self.assertNotIn("old-key", audit)
         self.assertNotIn("new-key", audit)
+
+    async def test_missing_or_blank_server_url_preserves_custom_runtime_url(self) -> None:
+        original = main_module.settings
+        original_notifier = main_module.bark_notifier
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "bark-config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "enabled": True,
+                        "device_key": "old-key",
+                        "server_url": "https://custom.example.com/root",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            main_module.settings = SimpleNamespace(
+                bark_config_path=str(path),
+                bark_enabled=True,
+                bark_device_key="old-key",
+                bark_server_url="https://custom.example.com/root",
+                bark_config_valid=True,
+                base_path="/sub2ops",
+                audit_path=str(root / "audit.jsonl"),
+            )
+            main_module.bark_notifier = BarkNotifier(main_module.settings)
+            try:
+                missing = await main_module.bark_config_save("admin", "on", "")
+                kept_missing = json.loads(path.read_text(encoding="utf-8"))
+                blank = await main_module.bark_config_save("admin", "on", "", "   ")
+                kept_blank = json.loads(path.read_text(encoding="utf-8"))
+                explicit = await main_module.bark_config_save(
+                    "admin", "on", "", "https://bark.example.com/"
+                )
+                replaced = json.loads(path.read_text(encoding="utf-8"))
+            finally:
+                main_module.settings = original
+                main_module.bark_notifier = original_notifier
+
+        self.assertEqual(missing.status_code, 303)
+        self.assertEqual(blank.status_code, 303)
+        self.assertEqual(explicit.status_code, 303)
+        self.assertEqual(kept_missing["server_url"], "https://custom.example.com/root")
+        self.assertEqual(kept_blank["server_url"], "https://custom.example.com/root")
+        self.assertEqual(kept_missing["device_key"], "old-key")
+        self.assertEqual(replaced["server_url"], "https://bark.example.com")
 
     async def test_invalid_server_url_does_not_write_config(self) -> None:
         original = main_module.settings
