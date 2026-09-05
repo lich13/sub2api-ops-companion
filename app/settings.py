@@ -20,6 +20,7 @@ class Settings:
     usage_query_state_path: str = "/data/usage-query-state.json"
     telegram_config_path: str = "/data/telegram-config.json"
     bark_config_path: str = "/data/bark-config.json"
+    key_fallback_config_path: str = "/data/key-fallback-config.json"
     bark_enabled: bool = False
     bark_device_key: str = ""
     bark_server_url: str = "https://api.day.app"
@@ -179,6 +180,9 @@ def load_settings() -> Settings:
         usage_query_state_path=os.getenv("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json"),
         telegram_config_path=telegram_config_path,
         bark_config_path=bark_config_path,
+        key_fallback_config_path=os.getenv(
+            "KEY_FALLBACK_CONFIG_PATH", "/data/key-fallback-config.json"
+        ),
         bark_enabled=bark_enabled,
         bark_device_key=bark_device_key,
         bark_server_url=bark_server_url,

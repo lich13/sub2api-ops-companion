@@ -78,6 +78,7 @@ class PanelRouteTests(unittest.TestCase):
         self.assertIn("/telegram", paths)
         self.assertIn("/sso", paths)
         self.assertIn("/sso/start", paths)
+        self.assertIn("/key-fallback/config", paths)
 
     def test_removed_templates_and_scripts_are_absent(self) -> None:
         for path in (
@@ -270,7 +271,91 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('action="{{ base_path }}/bark/push-test"', template)
         self.assertIn('name="bark_device_key"', template)
         self.assertNotIn('value="{{ bark.device_key', template)
+        self.assertNotIn("bark_server_url", template)
+        self.assertNotIn("服务 URL", template)
+        self.assertNotIn("api.day.app", template)
+        self.assertNotIn("OAuth 恢复成功、测活失败、自动恢复失败和认证异常只通过 Bark 主动推送。", template)
         self.assertIn("Telegram Bot 消息测试", template)
+        self.assertIn('action="{{ base_path }}/key-fallback/config"', template)
+        self.assertIn('name="managed_account_ids"', template)
+        self.assertIn("启用 Key 回退", template)
+
+    def test_telegram_view_html_omits_bark_server_and_device_key(self) -> None:
+        original = main_module.settings
+        secret = "never-render-this-device-key"
+        custom_url = "https://custom-bark.example.com/root"
+        main_module.settings = SimpleNamespace(
+            app_name="Sub2API Ops Companion",
+            base_path="/sub2ops",
+            session_secret="secret",
+            session_store_path="/tmp/missing-sessions.json",
+            session_ttl_seconds=60,
+        )
+        try:
+            with (
+                patch.object(
+                    main_module,
+                    "build_telegram_config",
+                    return_value={
+                        "configured": False,
+                        "bot_token_set": False,
+                        "bot_token_preview": "",
+                        "pairing_code": "",
+                        "binding_status": "未启用",
+                        "paired_chat_ids": [],
+                        "paired_user_ids": [],
+                        "push_target_count": 0,
+                        "control_user_count": 0,
+                        "config_updated_at": None,
+                        "oauth_usage_refresh_enabled": True,
+                        "oauth_recovery_monitor_enabled": True,
+                        "oauth_night_recovery_cooldown_enabled": True,
+                        "oauth_usage_refresh_concurrency": 4,
+                        "oauth_recovery_test_concurrency": 2,
+                        "oauth_early_probe_batch_size": 8,
+                        "oauth_regular_refresh_interval_seconds": 3600,
+                        "oauth_7d_probe_interval_seconds": 3600,
+                        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+                    },
+                ),
+                patch.object(
+                    main_module,
+                    "build_bark_config",
+                    return_value={
+                        "configured": True,
+                        "config_valid": True,
+                        "enabled": True,
+                        "device_key_set": True,
+                        "device_key_status": "已设置",
+                        "server_url_valid": True,
+                        "config_updated_at": None,
+                    },
+                ),
+                patch.object(
+                    main_module,
+                    "build_key_fallback_panel",
+                    return_value={
+                        "enabled": True,
+                        "managed_account_ids": [4],
+                        "config_valid": True,
+                        "config_updated_at": None,
+                        "accounts": [{"id": 4, "name": "panel-key"}],
+                    },
+                ),
+            ):
+                response = main_module.telegram_view(request("/telegram"), "admin")
+        finally:
+            main_module.settings = original
+
+        html = bytes(response.body).decode("utf-8")
+        self.assertNotIn("bark_server_url", html)
+        self.assertNotIn("服务 URL", html)
+        self.assertNotIn("api.day.app", html)
+        self.assertNotIn(custom_url, html)
+        self.assertNotIn(secret, html)
+        self.assertNotIn('type="hidden"', html)
+        self.assertIn("name=\"bark_device_key\"", html)
+        self.assertIn("Bark 事件推送", html)
 
 
 if __name__ == "__main__":

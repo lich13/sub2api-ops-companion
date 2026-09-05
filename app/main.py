@@ -21,9 +21,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import account_ops
 from .audit import write_audit
 from .bark import BarkNotifier, DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
 from .db import Database
+from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackConfigError, KeyFallbackController
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
 from .secure_session import create_session_cookie, read_session_cookie
 from .settings import load_settings
@@ -53,6 +55,8 @@ telegram_bot: TelegramOpsBot | None = None
 telegram_task: asyncio.Task[None] | None = None
 oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
+key_fallback_controller: KeyFallbackController | None = None
+key_fallback_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
 BARK_CONFIG_LOCK = threading.RLock()
 
@@ -129,9 +133,22 @@ async def oauth_monitor_loop() -> None:
         await asyncio.sleep(2)
 
 
+async def key_fallback_loop() -> None:
+    while True:
+        try:
+            if key_fallback_controller is not None:
+                await asyncio.to_thread(key_fallback_controller.run_once)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            write_audit(settings.audit_path, "key_fallback_loop_error", {"error": str(exc)})
+        await asyncio.sleep(EVAL_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global telegram_bot, telegram_task, oauth_monitor, oauth_monitor_task
+    global key_fallback_controller, key_fallback_task
     db.open()
     store = oauth_state_store()
     await asyncio.to_thread(
@@ -146,11 +163,24 @@ async def lifespan(_: FastAPI):
         db,
         base_url_provider=oauth_base_url,
     )
+    key_fallback_controller = KeyFallbackController(
+        settings,
+        db,
+        oauth_monitor=oauth_monitor,
+        base_url_provider=oauth_base_url,
+        admin_token_provider=lambda: oauth_state_store().admin_token(),
+    )
     await restart_telegram_bot()
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
+    key_fallback_task = asyncio.create_task(key_fallback_loop())
     try:
         yield
     finally:
+        if key_fallback_task:
+            key_fallback_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await key_fallback_task
+            key_fallback_task = None
         if oauth_monitor_task:
             oauth_monitor_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -163,6 +193,7 @@ async def lifespan(_: FastAPI):
             telegram_task = None
         telegram_bot = None
         oauth_monitor = None
+        key_fallback_controller = None
         db.close()
 
 
@@ -530,10 +561,9 @@ def build_bark_config() -> dict[str, Any]:
     existing = bark_config_file()
     runtime = bark_notifier.runtime_config()
     try:
-        server_url = normalize_bark_server_url(runtime.server_url)
+        normalize_bark_server_url(runtime.server_url)
         server_url_valid = True
     except ValueError:
-        server_url = str(runtime.server_url or DEFAULT_BARK_SERVER_URL)
         server_url_valid = False
     key_set = bool(runtime.device_key.strip())
     return {
@@ -547,10 +577,36 @@ def build_bark_config() -> dict[str, Any]:
         "enabled": runtime.enabled,
         "device_key_set": key_set,
         "device_key_status": "已设置" if key_set else "未设置",
-        "server_url": server_url,
         "server_url_valid": server_url_valid,
         "config_updated_at": existing.get("updated_at"),
     }
+
+
+def build_key_fallback_panel() -> dict[str, Any]:
+    controller = key_fallback_controller
+    if controller is not None:
+        panel = controller.panel_snapshot()
+    else:
+        panel = {
+            "enabled": False,
+            "managed_account_ids": [],
+            "config_valid": True,
+            "config_updated_at": None,
+        }
+    accounts: list[dict[str, Any]] = []
+    try:
+        for row in account_ops.live_openai_apikey_accounts(db):
+            try:
+                account_id = int(row.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if account_id <= 0:
+                continue
+            accounts.append({"id": account_id, "name": str(row.get("name") or "-")})
+    except Exception:
+        accounts = []
+    panel["accounts"] = accounts
+    return panel
 
 
 async def restart_telegram_bot() -> None:
@@ -560,7 +616,12 @@ async def restart_telegram_bot() -> None:
         with suppress(asyncio.CancelledError):
             await telegram_task
         telegram_task = None
-    telegram_bot = TelegramOpsBot(settings, db, oauth_monitor=oauth_monitor)
+    telegram_bot = TelegramOpsBot(
+        settings,
+        db,
+        oauth_monitor=oauth_monitor,
+        key_fallback=key_fallback_controller,
+    )
     if telegram_bot.enabled:
         telegram_task = asyncio.create_task(telegram_bot.run())
 
@@ -642,6 +703,7 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
             "active": "telegram",
             "telegram": build_telegram_config(),
             "bark": build_bark_config(),
+            "key_fallback": build_key_fallback_panel(),
             "msg": msg,
         },
     )
@@ -728,25 +790,64 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     )
 
 
+@app.post("/key-fallback/config")
+async def key_fallback_config_save(request: Request, user: AuthUser) -> Response:
+    form = await request.form()
+    controller = key_fallback_controller
+    if controller is None:
+        return RedirectResponse(
+            f"{settings.base_path}/telegram?msg={quote('Key 回退控制器未就绪')}",
+            status_code=303,
+        )
+    try:
+        await asyncio.to_thread(
+            controller.save_user_config,
+            enabled=bool(form.getlist("enabled")),
+            managed_account_ids=list(form.getlist("managed_account_ids")),
+            user=user,
+        )
+    except KeyFallbackConfigError as exc:
+        return RedirectResponse(
+            f"{settings.base_path}/telegram?msg={quote(str(exc))}",
+            status_code=303,
+        )
+    except Exception:
+        return RedirectResponse(
+            f"{settings.base_path}/telegram?msg={quote('Key 回退配置保存失败')}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"{settings.base_path}/telegram?msg={quote('Key 回退配置已保存')}",
+        status_code=303,
+    )
+
+
 @app.post("/bark/config")
 async def bark_config_save(
     user: AuthUser,
     enabled: str | None = Form(None),
     bark_device_key: str = Form(""),
-    bark_server_url: str = Form(DEFAULT_BARK_SERVER_URL),
+    bark_server_url: str | None = Form(None),
 ) -> Response:
     with BARK_CONFIG_LOCK:
         existing = bark_config_file()
-        device_key = bark_device_key.strip() or bark_notifier.runtime_config().device_key.strip()
-        try:
-            server_url = normalize_bark_server_url(
-                bark_server_url.strip() or DEFAULT_BARK_SERVER_URL
-            )
-        except ValueError:
-            return RedirectResponse(
-                f"{settings.base_path}/telegram?msg={quote('Bark 服务 URL 无效；HTTP 仅允许 loopback')}",
-                status_code=303,
-            )
+        runtime = bark_notifier.runtime_config()
+        device_key = bark_device_key.strip() or runtime.device_key.strip()
+        provided_url = "" if bark_server_url is None else str(bark_server_url).strip()
+        if provided_url:
+            try:
+                server_url = normalize_bark_server_url(provided_url)
+            except ValueError:
+                return RedirectResponse(
+                    f"{settings.base_path}/telegram?msg={quote('Bark 服务 URL 无效；HTTP 仅允许 loopback')}",
+                    status_code=303,
+                )
+        else:
+            current_url = str(runtime.server_url or "").strip()
+            try:
+                server_url = normalize_bark_server_url(current_url or DEFAULT_BARK_SERVER_URL)
+            except ValueError:
+                server_url = current_url or DEFAULT_BARK_SERVER_URL
         is_enabled = form_truthy(enabled)
         if is_enabled and not device_key:
             return RedirectResponse(

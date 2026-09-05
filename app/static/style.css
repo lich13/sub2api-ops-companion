@@ -337,7 +337,7 @@ button.primary:hover {
 
 .bark-settings-form {
   display: grid;
-  grid-template-columns: minmax(170px, 0.65fr) minmax(220px, 1fr) minmax(280px, 1.35fr) auto;
+  grid-template-columns: minmax(170px, 0.65fr) minmax(280px, 1fr) auto;
   align-items: end;
   gap: 12px;
 }
@@ -460,8 +460,15 @@ textarea:focus {
   align-items: center;
 }
 
-.telegram-oauth-panel {
+.telegram-oauth-panel,
+.key-fallback-panel {
   margin-top: 14px;
+}
+
+.key-fallback-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .oauth-settings-form {
@@ -662,6 +669,10 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .key-fallback-list {
+    grid-template-columns: 1fr;
+  }
+
   .bark-actions {
     justify-content: flex-end;
   }
@@ -716,7 +727,8 @@ textarea:focus {
   .toggle-grid,
   .field-grid,
   .sso-form-grid,
-  .bark-settings-form {
+  .bark-settings-form,
+  .key-fallback-list {
     grid-template-columns: 1fr;
   }
 

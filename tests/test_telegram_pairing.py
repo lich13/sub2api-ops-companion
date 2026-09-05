@@ -153,7 +153,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             invalid, invalid_keyboard = await bot._text_reply("/account nope")
             missing, missing_keyboard = await bot._text_reply("/account 99")
 
-            self.assertIn("用法", usage)
+            self.assertIn("当前没有可选择的 OpenAI 账号", usage)
             self.assertIsNone(usage_keyboard)
             self.assertIn("账号 ID 无效", invalid)
             self.assertIsNone(invalid_keyboard)
