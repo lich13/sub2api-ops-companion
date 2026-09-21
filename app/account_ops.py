@@ -69,6 +69,23 @@ def current_oauth_accounts(db: Database) -> list[dict[str, Any]]:
     )
 
 
+def current_grok_oauth_accounts(db: Database) -> list[dict[str, Any]]:
+    return db.fetch_all(
+        """
+        SELECT id, platform, type, status, schedulable,
+          temp_unschedulable_until, rate_limit_reset_at, overload_until,
+          expires_at, auto_pause_on_expired,
+          jsonb_build_object('grok_needs_reauth',
+            coalesce(extra->'grok_needs_reauth', 'false'::jsonb)) AS extra
+        FROM accounts
+        WHERE deleted_at IS NULL
+          AND lower(coalesce(platform, '')) = 'grok'
+          AND lower(coalesce(type, '')) = 'oauth'
+        ORDER BY id
+        """
+    )
+
+
 def fallback_account(db: Database, account_id: int) -> dict[str, Any] | None:
     return db.fetch_one(
         _account_select("AND id = %(account_id)s").replace("ORDER BY id", "LIMIT 1"),
@@ -114,7 +131,7 @@ def openai_picker_accounts(db: Database) -> list[dict[str, Any]]:
     return picker
 
 
-def live_openai_apikey_accounts(db: Database) -> list[dict[str, Any]]:
+def live_fallback_apikey_accounts(db: Database) -> list[dict[str, Any]]:
     rows = db.fetch_all(
         """
         SELECT
@@ -128,7 +145,7 @@ def live_openai_apikey_accounts(db: Database) -> list[dict[str, Any]]:
           auto_pause_on_expired
         FROM accounts
         WHERE deleted_at IS NULL
-          AND lower(coalesce(platform, '')) = 'openai'
+          AND lower(coalesce(platform, '')) IN ('openai', 'grok')
           AND lower(coalesce(type, '')) = 'apikey'
         ORDER BY id
         """
@@ -143,7 +160,7 @@ def live_openai_apikey_accounts(db: Database) -> list[dict[str, Any]]:
             continue
         if (
             account_id <= 0
-            or str(row.get("platform") or "").strip().lower() != "openai"
+            or str(row.get("platform") or "").strip().lower() not in {"openai", "grok"}
             or str(row.get("type") or "").strip().lower() != "apikey"
             or row.get("deleted_at") not in (None, "")
         ):
