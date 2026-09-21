@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ MAX_CONFIG_VERSION = 1_000_000_000
 MANUAL_ACCOUNT_ACTIONS = {"pause", "cooldown", "resume"}
 SCHEDULABLE_REQUEST_TIMEOUT_SECONDS = 3
 DISPATCH_BUDGET_SECONDS = 10
+FALLBACK_PLATFORMS = ("openai", "grok")
 
 
 def _strict_positive_int(value: object) -> int | None:
@@ -52,7 +54,7 @@ def _strict_positive_int(value: object) -> int | None:
     return None
 
 
-def _is_live_openai_apikey(row: dict[str, Any] | None, account_id: int | None = None) -> bool:
+def _is_live_fallback_apikey(row: dict[str, Any] | None, account_id: int | None = None) -> bool:
     if not isinstance(row, dict):
         return False
     parsed = _strict_positive_int(row.get("id"))
@@ -61,7 +63,7 @@ def _is_live_openai_apikey(row: dict[str, Any] | None, account_id: int | None = 
     if account_id is not None and parsed != int(account_id):
         return False
     return (
-        str(row.get("platform") or "").strip().lower() == "openai"
+        str(row.get("platform") or "").strip().lower() in FALLBACK_PLATFORMS
         and str(row.get("type") or "").strip().lower() == "apikey"
         and row.get("deleted_at") in (None, "")
     )
@@ -138,6 +140,42 @@ def result_is_fresh(result: dict[str, Any] | None, now: datetime, freshness_seco
     if queried_at is None or queried_at > now:
         return False
     return (now - queried_at).total_seconds() <= max(0, int(freshness_seconds))
+
+
+def classify_grok_oauth_account(row: dict[str, Any], now: datetime) -> str:
+    status = row.get("status")
+    schedulable = row.get("schedulable")
+    if not isinstance(status, str) or not status.strip() or not isinstance(schedulable, bool):
+        return UNKNOWN
+    if status.strip().lower() != "active" or not schedulable:
+        return UNAVAILABLE
+    for field in ("temp_unschedulable_until", "rate_limit_reset_at", "overload_until"):
+        value = row.get(field)
+        if value in (None, ""):
+            continue
+        deadline = parse_iso_datetime(value)
+        if deadline is None:
+            return UNKNOWN
+        if deadline > now:
+            return UNAVAILABLE
+    auto_pause = row.get("auto_pause_on_expired", False)
+    if not isinstance(auto_pause, bool):
+        return UNKNOWN
+    if auto_pause and row.get("expires_at") not in (None, ""):
+        expires_at = parse_iso_datetime(row["expires_at"])
+        if expires_at is None:
+            return UNKNOWN
+        if expires_at <= now:
+            return UNAVAILABLE
+    extra = row.get("extra")
+    if extra is None:
+        extra = {}
+    if not isinstance(extra, dict):
+        return UNKNOWN
+    needs_reauth = extra.get("grok_needs_reauth", False)
+    if not isinstance(needs_reauth, bool):
+        return UNKNOWN
+    return UNAVAILABLE if needs_reauth else AVAILABLE
 
 
 def is_auth_error(result: dict[str, Any] | None) -> bool:
@@ -369,7 +407,8 @@ class KeyFallbackController:
         base_url_provider: Callable[[], str],
         admin_token_provider: Callable[[], str],
         oauth_inventory: Callable[[Any], list[dict[str, Any]]] = account_ops.current_oauth_accounts,
-        key_inventory: Callable[[Any], list[dict[str, Any]]] = account_ops.live_openai_apikey_accounts,
+        grok_oauth_inventory: Callable[[Any], list[dict[str, Any]]] = account_ops.current_grok_oauth_accounts,
+        key_inventory: Callable[[Any], list[dict[str, Any]]] = account_ops.live_fallback_apikey_accounts,
         account_reader: Callable[[Any, int], dict[str, Any] | None] = account_ops.fallback_account,
         schedulable_runner: Callable[..., dict[str, Any]] = execute_sub2api_set_schedulable,
         monotonic: Callable[[], float] = time.monotonic,
@@ -380,6 +419,7 @@ class KeyFallbackController:
         self.base_url_provider = base_url_provider
         self.admin_token_provider = admin_token_provider
         self.oauth_inventory = oauth_inventory
+        self.grok_oauth_inventory = grok_oauth_inventory
         self.key_inventory = key_inventory
         self.account_reader = account_reader
         self.schedulable_runner = schedulable_runner
@@ -411,7 +451,7 @@ class KeyFallbackController:
         with self._lock:
             live_ids: set[int] = set()
             for row in self.key_inventory(self.db):
-                if not _is_live_openai_apikey(row):
+                if not _is_live_fallback_apikey(row):
                     continue
                 parsed = _strict_positive_int(row.get("id"))
                 if parsed is not None:
@@ -420,7 +460,7 @@ class KeyFallbackController:
             if stale:
                 listed = "、".join(f"#{account_id}" for account_id in stale)
                 raise KeyFallbackConfigError(
-                    f"Key 回退保存失败：账号 {listed} 不是有效的 OpenAI apikey"
+                    f"Key 回退保存失败：账号 {listed} 不是有效的 OpenAI 或 Grok apikey"
                 )
             current = self._read_config_unlocked()
             written = self._write_config_unlocked(
@@ -534,6 +574,7 @@ class KeyFallbackController:
             "changed_ids": [],
             "failed_ids": [],
             "reason": "",
+            "platform_reasons": {},
         }
         if not config.valid:
             report["skipped"] = True
@@ -545,46 +586,44 @@ class KeyFallbackController:
             return report
         monitor = self.oauth_monitor
         guard_factory = getattr(monitor, "evaluation_guard", None) if monitor is not None else None
-        if monitor is None or not callable(guard_factory):
-            report["skipped"] = True
-            report["reason"] = "monitor_unavailable"
-            return report
-        with guard_factory() as session:
-            if session is None:
-                report["skipped"] = True
-                report["reason"] = "refresh_in_progress"
-                return report
-            snapshot = session.committed_snapshot()
-            if not isinstance(snapshot, dict):
-                report["skipped"] = True
-                report["reason"] = "refresh_in_progress"
-                return report
+        with ExitStack() as stack:
+            snapshot = None
+            if not callable(guard_factory):
+                report["platform_reasons"]["openai"] = "monitor_unavailable"
+            else:
+                try:
+                    session = stack.enter_context(guard_factory())
+                    candidate = session.committed_snapshot() if session is not None else None
+                    if isinstance(candidate, dict):
+                        snapshot = candidate
+                    else:
+                        report["platform_reasons"]["openai"] = "refresh_in_progress"
+                except Exception:
+                    report["platform_reasons"]["openai"] = "monitor_failed"
             return self._observe_and_apply_unlocked(report, config, snapshot, now)
 
-    def _observe_and_apply_unlocked(
+    def _platform_oauth_states(
         self,
-        report: dict[str, Any],
-        config: KeyFallbackConfig,
+        platform: str,
+        inventory: Callable[[Any], list[dict[str, Any]]],
         snapshot: dict[str, Any],
         now: datetime,
-    ) -> dict[str, Any]:
+    ) -> dict[int, str] | None:
         try:
-            oauth_rows = [dict(row) for row in self.oauth_inventory(self.db) if isinstance(row, dict)]
+            oauth_rows = [dict(row) for row in inventory(self.db) if isinstance(row, dict)]
         except Exception:
             write_audit(
                 self.settings.audit_path,
                 "key_fallback_inventory_failed",
-                {"error_code": "inventory_failed"},
+                {"platform": platform, "error_code": "inventory_failed"},
             )
-            report["skipped"] = True
-            report["reason"] = "inventory_failed"
-            return report
+            return None
 
         oauth_rows = [
             row
             for row in oauth_rows
             if _strict_positive_int(row.get("id")) is not None
-            and str(row.get("platform") or "").strip().lower() == "openai"
+            and str(row.get("platform") or "").strip().lower() == platform
             and str(row.get("type") or "").strip().lower() == "oauth"
             and row.get("deleted_at") in (None, "")
         ]
@@ -596,26 +635,45 @@ class KeyFallbackController:
             60,
             86400,
         )
-        states: list[str] = []
         oauth_states: dict[int, str] = {}
         for row in oauth_rows:
             account_id = _strict_positive_int(row.get("id"))
             if account_id is None:
                 continue
-            state = classify_oauth_account(
-                row,
-                latest_completed_oauth_result(results.get(account_id), scheduler_rows.get(account_id)),
-                now,
-                freshness,
-            )
-            states.append(state)
+            if platform == "grok":
+                state = classify_grok_oauth_account(row, now)
+            else:
+                state = classify_oauth_account(
+                    row,
+                    latest_completed_oauth_result(results.get(account_id), scheduler_rows.get(account_id)),
+                    now,
+                    freshness,
+                )
             oauth_states[account_id] = state
-        desired = desired_key_schedulable(states)
-        report["desired"] = desired
-        report["oauth_states"] = oauth_states
-        if desired is None:
+        return oauth_states
+
+    def _observe_and_apply_unlocked(
+        self,
+        report: dict[str, Any],
+        config: KeyFallbackConfig,
+        snapshot: dict[str, Any] | None,
+        now: datetime,
+    ) -> dict[str, Any]:
+        desired_by_platform: dict[str, bool | None] = {}
+        inventories = {"openai": self.oauth_inventory, "grok": self.grok_oauth_inventory}
+        for platform, inventory in inventories.items():
+            states = None
+            if platform != "openai" or snapshot is not None:
+                states = self._platform_oauth_states(platform, inventory, snapshot or {}, now)
+                if states is None:
+                    report["platform_reasons"][platform] = "inventory_failed"
+            desired_by_platform[platform] = desired_key_schedulable(list((states or {}).values()))
+            report["oauth_states" if platform == "openai" else "grok_oauth_states"] = states or {}
+        report["desired"] = desired_by_platform["openai"]
+        report["desired_by_platform"] = desired_by_platform
+        if all(desired is None for desired in desired_by_platform.values()):
             report["skipped"] = True
-            report["reason"] = "keep_existing"
+            report["reason"] = report["platform_reasons"].get("openai", "keep_existing")
             return report
 
         version = config.config_version
@@ -639,7 +697,11 @@ class KeyFallbackController:
                 live = self.account_reader(self.db, account_id)
             except Exception:
                 continue
-            if not _is_live_openai_apikey(live, account_id):
+            if not _is_live_fallback_apikey(live, account_id):
+                continue
+            platform = str(live["platform"]).strip().lower()
+            desired = desired_by_platform[platform]
+            if desired is None:
                 continue
             current_schedulable = (live or {}).get("schedulable") is True
             if current_schedulable is desired:
@@ -657,6 +719,7 @@ class KeyFallbackController:
                     "key_fallback_set_schedulable",
                     {
                         "account_id": account_id,
+                        "platform": platform,
                         "schedulable": desired,
                         "success": True,
                     },
@@ -668,6 +731,7 @@ class KeyFallbackController:
                     "key_fallback_set_schedulable",
                     {
                         "account_id": account_id,
+                        "platform": platform,
                         "schedulable": desired,
                         "success": False,
                         "error_code": str(result.get("error_code") or "schedulable_request_error"),
