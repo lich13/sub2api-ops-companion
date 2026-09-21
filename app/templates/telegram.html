@@ -170,17 +170,21 @@
       <input type="checkbox" name="enabled" value="1" {{ 'checked' if key_fallback.enabled else '' }}>
       <span><strong>启用 Key 回退</strong></span>
     </label>
-    <div class="key-fallback-list">
-      {% for account in key_fallback.accounts %}
-      <label class="setting-toggle">
-        <input type="checkbox" name="managed_account_ids" value="{{ account.id }}" {{ 'checked' if account.id in key_fallback.managed_account_ids else '' }}>
-        <span>#{{ account.id }} {{ account.name }}</span>
-      </label>
-      {% endfor %}
-      {% if not key_fallback.accounts %}
-      <span class="empty-value">暂无 OpenAI apikey 账号</span>
-      {% endif %}
-    </div>
+    {% for platform, label in [('openai', 'OpenAI'), ('grok', 'Grok')] %}
+    <fieldset class="key-fallback-group">
+      <legend>{{ label }}</legend>
+      <div class="key-fallback-list">
+        {% for account in key_fallback.accounts if account.platform == platform %}
+        <label class="setting-toggle">
+          <input type="checkbox" name="managed_account_ids" value="{{ account.id }}" {{ 'checked' if account.id in key_fallback.managed_account_ids else '' }}>
+          <span>#{{ account.id }} {{ account.name }}</span>
+        </label>
+        {% else %}
+        <span class="empty-value">暂无 {{ label }} apikey 账号</span>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endfor %}
     <div class="form-actions">
       <button class="primary" type="submit">保存 Key 回退配置</button>
     </div>

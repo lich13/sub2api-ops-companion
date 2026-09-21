@@ -28,6 +28,7 @@ from app.key_fallback import (
     UNKNOWN,
     KeyFallbackConfigError,
     KeyFallbackController,
+    classify_grok_oauth_account,
     classify_oauth_account,
     desired_key_schedulable,
     execute_sub2api_set_schedulable,
@@ -186,6 +187,7 @@ def make_controller(
     root: Path,
     *,
     oauth_rows: list[dict[str, object]] | None = None,
+    grok_oauth_rows: list[dict[str, object]] | None = None,
     key_rows: list[dict[str, object]] | None = None,
     snapshot: dict[str, object] | None = None,
     busy: bool = False,
@@ -224,6 +226,7 @@ def make_controller(
         base_url_provider=lambda: "http://127.0.0.1:9",
         admin_token_provider=lambda: "admin-test-token",
         oauth_inventory=lambda _db: list(oauth_rows or []),
+        grok_oauth_inventory=lambda _db: list(grok_oauth_rows or []),
         key_inventory=lambda _db: list(key_rows or []),
         account_reader=account_reader or default_reader,  # type: ignore[arg-type]
         schedulable_runner=runner or default_runner,  # type: ignore[arg-type]
@@ -602,7 +605,7 @@ class KeyFallbackConfigTests(unittest.TestCase):
             root = Path(directory)
             controller, _monitor, _calls = make_controller(
                 root,
-                key_rows=[key_row(4), key_row(8, platform="grok"), key_row(9, type="oauth")],
+                key_rows=[key_row(4), key_row(8, platform="anthropic"), key_row(9, type="oauth")],
             )
             with self.assertRaises(KeyFallbackConfigError):
                 controller.save_user_config(enabled=True, managed_account_ids=[4, 99], user="admin")
@@ -1236,7 +1239,7 @@ class KeyFallbackRouteTests(unittest.IsolatedAsyncioTestCase):
                 main_module.key_fallback_controller = original
                 main_module.settings = original_settings
         self.assertEqual(response.status_code, 303)
-        self.assertIn("不是有效的 OpenAI apikey", unquote(response.headers["location"]))
+        self.assertIn("不是有效的 OpenAI 或 Grok apikey", unquote(response.headers["location"]))
         self.assertFalse(Path(fallback_settings(root).key_fallback_config_path).exists())
 
     async def test_valid_save_persists_and_redirects(self) -> None:
@@ -1650,6 +1653,174 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
         self.assertEqual(report["reason"], "refresh_in_progress")
         self.assertEqual(calls, [])
         query.assert_not_called()
+
+
+class GrokFallbackTests(unittest.TestCase):
+    def test_grok_blocking_states_and_unknown_values(self) -> None:
+        future = (NOW + timedelta(minutes=1)).isoformat()
+        past = (NOW - timedelta(minutes=1)).isoformat()
+        cases = [
+            ({}, AVAILABLE),
+            ({"status": "disabled"}, UNAVAILABLE),
+            ({"schedulable": False}, UNAVAILABLE),
+            ({"temp_unschedulable_until": future}, UNAVAILABLE),
+            ({"rate_limit_reset_at": future}, UNAVAILABLE),
+            ({"overload_until": future}, UNAVAILABLE),
+            ({"expires_at": past, "auto_pause_on_expired": True}, UNAVAILABLE),
+            ({"extra": {"grok_needs_reauth": True}}, UNAVAILABLE),
+            ({"expires_at": past, "auto_pause_on_expired": False}, AVAILABLE),
+            ({"expires_at": future, "auto_pause_on_expired": True}, AVAILABLE),
+            ({"temp_unschedulable_until": past, "rate_limit_reset_at": past, "overload_until": past}, AVAILABLE),
+            ({"extra": {"grok_needs_reauth": False, "grok_usage_snapshot": {"status_code": 401}}}, AVAILABLE),
+            ({"status": None}, UNKNOWN),
+            ({"schedulable": "true"}, UNKNOWN),
+            ({"rate_limit_reset_at": "not-a-date"}, UNKNOWN),
+            ({"extra": []}, UNKNOWN),
+            ({"extra": {"grok_needs_reauth": "bad"}}, UNKNOWN),
+            ({"auto_pause_on_expired": "bad"}, UNKNOWN),
+            ({"auto_pause_on_expired": True, "expires_at": "bad"}, UNKNOWN),
+        ]
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                self.assertEqual(classify_grok_oauth_account(oauth_row(2, platform="grok", **fields), NOW), expected)
+
+    def test_platforms_can_dispatch_opposite_states_without_quota_requests(self) -> None:
+        for openai_available in (False, True):
+            with self.subTest(openai_available=openai_available), tempfile.TemporaryDirectory() as directory:
+                controller, _, calls = make_controller(
+                    Path(directory),
+                    oauth_rows=[oauth_row(1, schedulable=openai_available)],
+                    grok_oauth_rows=[oauth_row(2, platform="grok", schedulable=not openai_available)],
+                    key_rows=[key_row(4, schedulable=openai_available), key_row(8, platform="grok", schedulable=not openai_available)],
+                    snapshot={"oauth_results": {"1": success_result()}},
+                )
+                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
+                with patch("app.oauth_monitor.execute_oauth_usage_query") as query:
+                    report = controller.run_once(NOW)
+                self.assertEqual(calls, [(4, not openai_available), (8, openai_available)])
+                self.assertEqual(report["desired_by_platform"], {"openai": not openai_available, "grok": openai_available})
+                query.assert_not_called()
+
+    def test_grok_runs_when_openai_monitor_is_busy_missing_or_failed(self) -> None:
+        for mode in ("busy", "missing", "failed"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                controller, monitor, calls = make_controller(
+                    Path(directory),
+                    oauth_rows=[oauth_row(1, schedulable=False)],
+                    grok_oauth_rows=[oauth_row(2, platform="grok", extra={"grok_needs_reauth": True})],
+                    key_rows=[key_row(4), key_row(8, platform="grok")],
+                    busy=mode == "busy",
+                )
+                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
+                if mode == "missing":
+                    controller.oauth_monitor = None
+                elif mode == "failed":
+                    monitor.evaluation_guard = lambda: (_ for _ in ()).throw(RuntimeError("monitor failed"))
+                report = controller.run_once(NOW)
+                self.assertEqual(calls, [(8, True)])
+                self.assertIsNone(report["desired_by_platform"]["openai"])
+
+    def test_each_platform_inventory_failure_is_isolated(self) -> None:
+        for failing in ("openai", "grok"):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                controller, _, calls = make_controller(
+                    Path(directory),
+                    oauth_rows=[oauth_row(1, schedulable=False)],
+                    grok_oauth_rows=[oauth_row(2, platform="grok", schedulable=False)],
+                    key_rows=[key_row(4), key_row(8, platform="grok")],
+                )
+                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
+                reader = lambda _db: (_ for _ in ()).throw(RuntimeError("private database details"))
+                if failing == "openai":
+                    controller.oauth_inventory = reader
+                else:
+                    controller.grok_oauth_inventory = reader
+                report = controller.run_once(NOW)
+                self.assertEqual(calls, [(8 if failing == "openai" else 4, True)])
+                self.assertEqual(report["platform_reasons"][failing], "inventory_failed")
+                self.assertNotIn("private database details", Path(controller.settings.audit_path).read_text())
+
+    def test_empty_unknown_and_foreign_oauth_inventory_keep_grok_key_state(self) -> None:
+        cases = [[], [oauth_row(2, platform="grok", schedulable=None)], [oauth_row(2)],
+                 [oauth_row(2, platform="grok", deleted_at=NOW.isoformat())],
+                 [oauth_row(2, platform="grok", type="apikey")]]
+        for rows in cases:
+            with self.subTest(rows=rows), tempfile.TemporaryDirectory() as directory:
+                controller, _, calls = make_controller(Path(directory), grok_oauth_rows=rows, key_rows=[key_row(8, platform="grok")])
+                controller.save_user_config(enabled=True, managed_account_ids=[8], user="admin")
+                report = controller.run_once(NOW)
+                self.assertIsNone(report["desired_by_platform"]["grok"])
+                self.assertEqual(calls, [])
+
+    def test_grok_revalidates_selected_key_type_platform_and_deletion(self) -> None:
+        for change in ({"deleted_at": NOW.isoformat()}, {"type": "oauth"}, {"platform": "anthropic"}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                key = key_row(8, platform="grok")
+                controller, _, calls = make_controller(
+                    Path(directory), grok_oauth_rows=[oauth_row(2, platform="grok", schedulable=False)], key_rows=[key],
+                )
+                controller.save_user_config(enabled=True, managed_account_ids=[8], user="admin")
+                key.update(change)
+                controller.run_once(NOW)
+                self.assertEqual(calls, [])
+
+    def test_old_config_is_preserved_and_grok_selection_survives_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller, _, _ = make_controller(Path(directory), key_rows=[key_row(389), key_row(391, platform="grok")])
+            old = controller.save_user_config(enabled=False, managed_account_ids=[389], user="admin")
+            path = Path(controller.settings.key_fallback_config_path)
+            before = path.read_bytes()
+            controller.run_once(NOW)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(controller.load_config(), old)
+            controller.save_user_config(enabled=False, managed_account_ids=[389, 391], user="admin")
+            self.assertEqual(controller.load_config().managed_account_ids, (389, 391))
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+    def test_grok_manual_actions_persist_unmanage_first_and_abort_on_failure(self) -> None:
+        for action, function in (("pause", "pause_account"), ("cooldown", "cooldown_account"), ("resume", "resume_account")):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                controller, _, _ = make_controller(Path(directory), key_rows=[key_row(4), key_row(8, platform="grok")])
+                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
+                def check_unmanaged(*_args):
+                    self.assertEqual(controller.load_config().managed_account_ids, (4,))
+                    return key_row(8, platform="grok")
+                with patch.object(account_ops, function, side_effect=check_unmanaged) as operation:
+                    controller.run_manual_account_action(8, action, actor_name="telegram:test")
+                    operation.assert_called_once()
+                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
+                with patch("app.key_fallback._atomic_write_json", side_effect=OSError("disk")), patch.object(account_ops, function) as operation:
+                    with self.assertRaises(KeyFallbackConfigError):
+                        controller.run_manual_account_action(8, action, actor_name="telegram:test")
+                    operation.assert_not_called()
+
+    def test_grok_capture_uses_only_schedulable_field(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, AdminCapture() as capture:
+            controller, _, _ = make_controller(
+                Path(directory), grok_oauth_rows=[oauth_row(2, platform="grok", schedulable=False)],
+                key_rows=[key_row(8, platform="grok")], runner=execute_sub2api_set_schedulable,
+            )
+            controller.base_url_provider = lambda: capture.url
+            controller.save_user_config(enabled=True, managed_account_ids=[8], user="admin")
+            self.assertEqual(controller.run_once(NOW)["changed_ids"], [8])
+            self.assertEqual(capture.requests[0]["path"], "/api/v1/admin/accounts/8/schedulable")
+            self.assertEqual(capture.requests[0]["payload"], {"schedulable": True})
+
+    def test_fallback_inventory_and_panel_include_only_supported_keys(self) -> None:
+        rows = [key_row(8, platform="grok"), key_row(4), key_row(9, platform="anthropic"),
+                key_row(10, type="oauth"), key_row(11, deleted_at=NOW.isoformat())]
+        db = SimpleNamespace(fetch_all=lambda *_args: rows)
+        self.assertEqual([row["id"] for row in account_ops.live_fallback_apikey_accounts(db)], [4, 8])
+        with patch.object(main_module, "db", db), patch.object(main_module, "key_fallback_controller", None):
+            panel = main_module.build_key_fallback_panel()
+        self.assertEqual([(row["id"], row["platform"]) for row in panel["accounts"]], [(4, "openai"), (8, "grok")])
+        self.assertNotIn("secret-key-material", json.dumps(panel))
+        html = main_module.templates.env.get_template("telegram.html").render(
+            key_fallback=panel, telegram={}, bark={}, base_path="/sub2ops",
+        )
+        self.assertIn("<legend>OpenAI</legend>", html)
+        self.assertIn("<legend>Grok</legend>", html)
+        self.assertIn('name="managed_account_ids" value="8"', html)
 
 
 if __name__ == "__main__":

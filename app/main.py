@@ -595,14 +595,18 @@ def build_key_fallback_panel() -> dict[str, Any]:
         }
     accounts: list[dict[str, Any]] = []
     try:
-        for row in account_ops.live_openai_apikey_accounts(db):
+        for row in account_ops.live_fallback_apikey_accounts(db):
             try:
                 account_id = int(row.get("id") or 0)
             except (TypeError, ValueError):
                 continue
             if account_id <= 0:
                 continue
-            accounts.append({"id": account_id, "name": str(row.get("name") or "-")})
+            accounts.append({
+                "id": account_id,
+                "name": str(row.get("name") or "-"),
+                "platform": str(row["platform"]).strip().lower(),
+            })
     except Exception:
         accounts = []
     panel["accounts"] = accounts

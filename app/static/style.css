@@ -471,6 +471,18 @@ textarea:focus {
   gap: 10px;
 }
 
+.key-fallback-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.key-fallback-group legend {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
 .oauth-settings-form {
   display: grid;
   gap: 20px;
