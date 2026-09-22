@@ -1,12 +1,12 @@
 # Sub2API Ops Companion
 
-Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、Telegram 查询与账号操作，以及 Sub2API SSO 接入。
+Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、Telegram 查询，以及 Sub2API SSO 接入。
 
 ## 功能
 
 - OAuth 额度监控：统一调度 active usage，支持准确恢复时间到点查询、7d 提前重置探测和恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
-- Telegram：通过私聊配对，支持 `/quota`、`/account` 选择 OpenAI 账号，以及 `/account <ID>` 快捷查看；账号按钮可手动暂停、冷却或恢复调度。
+- Telegram：通过私聊配对，使用 `/quota`（兼容 `/usage`）并行刷新 OpenAI、Grok OAuth 额度；Grok 只刷新官方账单，不发送模型请求。长回复按账号分段，历史限流快照单独标明时间。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
 - Sub2API SSO：从 Sub2API 自定义菜单进入，验证管理员 JWT 后换取 Companion 本地会话。
 - 面板更新：显示当前版本，可检查 `origin/main` 并在源码无依赖变更时热更新。
@@ -17,12 +17,12 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 - 7d 已耗尽且恢复时间未到时，默认每 3600 秒探测一次提前重置。
 - 当前已耗尽的必要窗口有准确 `reset_at` 时，以最晚恢复时间为准，到点立即查询，不等待常规周期。
 - `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
-- 夜间恢复冷却默认开启；北京时间 `[00:00, 05:00)` 仍探测额度，但不执行恢复测活或账号恢复，待冷却结束后处理。
+- 即时恢复全天运行；额外每日测活默认北京时间 `05:00`，仅异常推送 Bark，错过不补跑。
 - 额度确认恢复后调用 Sub2API account test，默认模型为 `gpt-5.6-luna`。
 - active usage 同一账号不会并发重复请求；一轮结果集中写入状态文件。
 - 测活结果先持久化为待推送事件。Bark 完整发送失败只重试发送，不重复测活；Bark 关闭时事件按 suppressed 语义确认。
 
-`/quota` 会主动刷新 OAuth 账号状态，再输出套餐分类、5h/7d 剩余百分比、恢复时间和分类汇总。夜间恢复冷却时只刷新和展示状态，不执行恢复操作。
+`/quota` 会主动刷新 OAuth 账号状态，再输出套餐分类、5h/7d 剩余百分比、恢复时间和分类汇总。Grok 独立刷新官方 7d/月度账单，免费账号没有官方账单时明确显示未知；不发送 Grok 模型探测请求。
 
 ## 运行
 
@@ -50,7 +50,8 @@ docker compose up -d --build
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED`：是否进行常规后台刷新。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
-- `TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED`：是否启用北京时间 `[00:00, 05:00)` 夜间恢复冷却，默认开启；冷却期间只查询，不执行恢复操作。
+- `TELEGRAM_OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
+- `TELEGRAM_OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。
 - `TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED`：兼容期废弃，不再控制事件外发；下一次保存 OAuth 设置时会从面板 JSON 移除。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。
 - `TELEGRAM_OAUTH_RECOVERY_TEST_CONCURRENCY`：account test 并发，默认 `2`。
@@ -75,6 +76,8 @@ https://你的-sub2api-域名/sub2ops/sso/start
 Companion 使用首跳参数中的 JWT 请求 `SUB2API_VERIFY_BASE_URL/api/v1/auth/me`，验证成功后写入本地会话 Cookie 并跳转到 `/sub2ops/telegram`。生产环境必须使用 HTTPS，并避免记录首跳 query string。
 
 ## 升级迁移
+
+夜间恢复冷却已退役；即时恢复全天运行。旧夜间配置字段在升级时移除，遗留延后意图重新进入严格恢复检查。每日测活使用独立批次记录，按北京时间日期去重，中断批次不补测；人工暂停或冷却、额度不足和不可调度的账号跳过。Telegram 仅保留查询和配对，旧消息操作按钮不会修改账号。
 
 首次启动新版时会把 `/data/usage-query-state.json` 收缩为管理员 API Key、OAuth 快照和调度元数据。同时幂等删除历史的一分钟自动恢复计划并清理旧状态文件。数据库清理失败时不写完成标记，下次启动会继续重试。审计历史不会被删除。
 

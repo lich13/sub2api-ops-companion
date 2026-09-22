@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page-title page-title-compact">
   <div>
-    <span class="eyebrow">消息与控制</span>
+    <span class="eyebrow">消息与查询</span>
     <h2>Telegram 与 Bark</h2>
   </div>
   <form method="post" action="{{ base_path }}/telegram/push-test">
@@ -24,8 +24,8 @@
     <strong>{{ '已启用' if bark.configured else ('配置文件无效' if not bark.config_valid else ('配置待完善' if bark.enabled else '未启用')) }}</strong>
   </div>
   <div class="metric-card">
-    <span>控制用户</span>
-    <strong>{{ telegram.control_user_count }}</strong>
+    <span>授权用户</span>
+    <strong>{{ telegram.authorized_user_count }}</strong>
   </div>
 </section>
 
@@ -101,8 +101,6 @@
         <span class="field-caption">命令</span>
         <div class="id-list">
           <span class="id-chip">/quota</span>
-          <span class="id-chip">/account</span>
-          <span class="id-chip">/account &lt;ID&gt;</span>
         </div>
       </div>
     </div>
@@ -124,12 +122,16 @@
         <span><strong>恢复可用监控</strong></span>
       </label>
       <label class="setting-toggle">
-        <input type="checkbox" name="oauth_night_recovery_cooldown_enabled" value="1" {{ 'checked' if telegram.oauth_night_recovery_cooldown_enabled else '' }}>
-        <span><strong>夜间恢复冷却</strong></span>
+        <input type="checkbox" name="oauth_daily_test_enabled" value="1" {{ 'checked' if telegram.oauth_daily_test_enabled else '' }}>
+        <span><strong>每日定时测活</strong></span>
       </label>
     </div>
 
     <div class="field-grid oauth-field-grid">
+      <label>
+        <span>测活时间（北京时间）</span>
+        <input type="time" name="oauth_daily_test_time" value="{{ telegram.oauth_daily_test_time }}" required step="60">
+      </label>
       <label>
         <span>常规刷新间隔（秒）</span>
         <input type="number" name="oauth_regular_refresh_interval_seconds" min="60" max="86400" value="{{ telegram.oauth_regular_refresh_interval_seconds }}">

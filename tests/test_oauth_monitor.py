@@ -18,10 +18,8 @@ from app.oauth_monitor import (
     _retry_at,
     account_recovery_confirmed,
     automatic_recovery_eligible,
-    beijing_cooldown_end,
     build_monitor_candidates,
     execute_sub2api_account_recovery,
-    in_beijing_night_cooldown,
     migrate_legacy_recovery_state,
     recovery_block_change_is_safe,
     recovery_block_signature,
@@ -98,7 +96,7 @@ def settings(path: Path) -> SimpleNamespace:
         audit_path=str(path.with_name("audit.jsonl")),
         telegram_oauth_usage_refresh_enabled=True,
         telegram_oauth_recovery_monitor_enabled=True,
-        telegram_oauth_night_recovery_cooldown_enabled=True,
+        telegram_oauth_daily_test_enabled=False,
         telegram_oauth_usage_refresh_concurrency=4,
         telegram_oauth_recovery_test_concurrency=2,
         telegram_oauth_early_probe_batch_size=8,
@@ -311,22 +309,6 @@ class OAuthRecoveryGateTests(unittest.TestCase):
         self.assertEqual(_retry_at(NOW, 3), (NOW + timedelta(minutes=15)).isoformat())
         self.assertEqual(_retry_at(NOW, 4), (NOW + timedelta(minutes=30)).isoformat())
         self.assertEqual(_retry_at(NOW, 99), (NOW + timedelta(minutes=30)).isoformat())
-
-    def test_beijing_night_boundaries_and_utc_date_crossover(self) -> None:
-        cases = (
-            (datetime(2026, 1, 10, 15, 59, tzinfo=timezone.utc), False),  # 23:59
-            (datetime(2026, 1, 10, 16, 0, tzinfo=timezone.utc), True),    # 00:00
-            (datetime(2026, 1, 10, 20, 59, tzinfo=timezone.utc), True),   # 04:59
-            (datetime(2026, 1, 10, 21, 0, tzinfo=timezone.utc), False),   # 05:00
-        )
-        for instant, expected in cases:
-            with self.subTest(instant=instant):
-                self.assertEqual(in_beijing_night_cooldown(instant), expected)
-        self.assertFalse(in_beijing_night_cooldown(cases[1][0], enabled=False))
-        self.assertEqual(
-            beijing_cooldown_end(cases[1][0]),
-            datetime(2026, 1, 10, 21, 0, tzinfo=timezone.utc),
-        )
 
     def test_automatic_recovery_is_strict_and_fail_closed(self) -> None:
         valid = account()
@@ -972,36 +954,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             self.assertEqual(events[0]["status"], "recovery_failed")
             self.assertEqual(events[0]["error_code"], "recovery_state_changed")
 
-    def test_night_force_refresh_defers_until_0500_then_recovers_once(self) -> None:
-        night = datetime(2026, 1, 10, 16, 0, tzinfo=timezone.utc)
-        five_reset = night
-        with tempfile.TemporaryDirectory() as directory:
-            old = summary(five_used=100, five_reset=five_reset)
-            refreshed = summary(five_used=0)
-            monitor, calls = self.make_monitor(Path(directory), old, refreshed)
-
-            night_report = monitor.force_refresh(now=night)
-            intent = monitor.store.scheduler()[1]["recovery_intent"]
-
-            self.assertEqual(calls["test"], 0)
-            self.assertEqual(night_report["night_deferred_count"], 1)
-            self.assertEqual(intent["status"], "deferred")
-            self.assertEqual(
-                intent["deferred_until"],
-                datetime(2026, 1, 10, 21, 0, tzinfo=timezone.utc).isoformat(),
-            )
-
-            morning = datetime(2026, 1, 10, 21, 0, tzinfo=timezone.utc)
-            morning_report = monitor.force_refresh(now=morning)
-            monitor.force_refresh(now=morning + timedelta(minutes=1))
-
-            self.assertEqual(calls["test"], 1)
-            self.assertEqual(morning_report["recovered_count"], 1)
-            self.assertEqual(
-                monitor.store.scheduler()[1]["recovery_intent"]["status"], "recovered"
-            )
-
-    def test_night_cooldown_switch_off_allows_recovery(self) -> None:
+    def test_immediate_recovery_runs_at_0459_beijing(self) -> None:
         night = datetime(2026, 1, 10, 20, 59, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as directory:
             monitor, calls = self.make_monitor(
@@ -1009,12 +962,10 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 summary(five_used=100, five_reset=night),
                 summary(five_used=0),
             )
-            monitor.settings.telegram_oauth_night_recovery_cooldown_enabled = False
 
             report = monitor.force_refresh(now=night)
 
             self.assertEqual(calls["test"], 1)
-            self.assertEqual(report["night_deferred_count"], 0)
             self.assertEqual(report["recovered_count"], 1)
 
     def test_force_refresh_ignores_batch_cap_and_queries_all_accounts(self) -> None:

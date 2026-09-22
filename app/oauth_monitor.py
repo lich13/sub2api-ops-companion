@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 import threading
 import time
 import urllib.error
@@ -15,6 +17,8 @@ from zoneinfo import ZoneInfo
 
 from . import account_ops
 from .audit import write_audit
+from .bark import sanitize_error_text
+from .daily_test import DailyTestSchedule, daily_account_eligible
 from .sql import LEGACY_RECOVERY_PLAN_CLEANUP_SQL
 from .usage_query import (
     execute_oauth_usage_query,
@@ -70,6 +74,8 @@ def _oauth_result(value: Any) -> bool:
 def _normal_recovery_intent(value: object) -> dict[str, Any]:
     intent = dict(value) if isinstance(value, dict) else {}
     status = str(intent.get("status") or "").strip()
+    if status == "deferred":
+        intent.update(status="ready", deferred_until="", next_retry_at="")
     if status == "testing":
         intent["status"] = "retry"
         intent["next_retry_at"] = str(
@@ -149,18 +155,27 @@ class OAuthStateStore:
             "oauth_results": results,
             "scheduler": scheduler,
             "pending_events": pending_events,
+            "daily_test": _json_copy(raw.get("daily_test")) if isinstance(raw.get("daily_test"), dict) else {},
         }
 
     def _write(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        temporary.chmod(0o600)
-        temporary.replace(self.path)
-        self.path.chmod(0o600)
+        fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=f".{self.path.name}.", suffix=".tmp")
+        temporary = Path(name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(self.path)
+            directory_fd = os.open(self.path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def reload(self) -> None:
         with _STORE_LOCK:
@@ -229,6 +244,7 @@ class OAuthStateStore:
         scheduler_updates: dict[int, dict[str, Any]] | None = None,
         pending_events: dict[str, dict[str, Any]] | None = None,
         remove_pending_keys: set[str] | None = None,
+        daily_test: dict[str, Any] | None = None,
     ) -> None:
         with _STORE_LOCK:
             data = self._normalize(self._read_raw())
@@ -244,6 +260,8 @@ class OAuthStateStore:
                 data["pending_events"][str(key)] = dict(event)
             for key in remove_pending_keys or set():
                 data["pending_events"].pop(str(key), None)
+            if daily_test is not None:
+                data["daily_test"] = _json_copy(daily_test)
             self._write(data)
             self._data = data
 
@@ -324,21 +342,6 @@ def _seconds_since(value: object, now: datetime) -> float | None:
 def _due(value: object, interval_seconds: int, now: datetime) -> bool:
     elapsed = _seconds_since(value, now)
     return elapsed is None or elapsed >= interval_seconds
-
-
-def in_beijing_night_cooldown(now: datetime, *, enabled: bool = True) -> bool:
-    if not enabled:
-        return False
-    local = _utc(now).astimezone(BEIJING_TZ)
-    return 0 <= local.hour < 5
-
-
-def beijing_cooldown_end(now: datetime) -> datetime:
-    local = _utc(now).astimezone(BEIJING_TZ)
-    end = local.replace(hour=5, minute=0, second=0, microsecond=0)
-    if local.hour >= 5:
-        end += timedelta(days=1)
-    return end.astimezone(timezone.utc)
 
 
 def _canonical_value(value: object) -> object:
@@ -626,16 +629,14 @@ def build_monitor_candidates(
         intent = _normal_recovery_intent(metadata.get("recovery_intent"))
         intent_status = str(intent.get("status") or "")
         intent_due_value = (
-            intent.get("deferred_until")
-            if intent_status == "deferred"
-            else intent.get("next_retry_at")
+            intent.get("next_retry_at")
             if intent_status in {"retry", "waiting_quota", "testing"}
             else intent.get("due_at")
         )
         intent_due = parse_iso_datetime(intent_due_value)
         if (
             recovery_monitor_enabled
-            and intent_status in {"pending", "ready", "deferred", "retry", "waiting_quota", "testing"}
+            and intent_status in {"pending", "ready", "retry", "waiting_quota", "testing"}
             and (intent_due is None or current >= intent_due)
         ):
             reason, priority = "recovery_intent", 0
@@ -928,6 +929,7 @@ class OAuthMonitor:
         test_runner: Callable[..., dict[str, Any]] = execute_sub2api_account_test,
         recovery_runner: Callable[..., dict[str, Any]] = execute_sub2api_account_recovery,
         account_reader: Callable[[Any, int], dict[str, Any] | None] = account_ops.fallback_account,
+        clock: Callable[[], datetime] = _utc,
     ) -> None:
         self.settings = settings
         self.db = db
@@ -944,6 +946,10 @@ class OAuthMonitor:
         self._force_condition = threading.Condition()
         self._force_running = False
         self._last_force_report: dict[str, Any] = {}
+        self.clock = clock
+        self.daily_schedule = DailyTestSchedule(settings, self.store, _utc(clock()))
+        self._cycle_usage: dict[int, dict[str, Any]] = {}
+        self._cycle_tests: dict[int, dict[str, Any]] = {}
 
     def _refresh_inventory(self, now: datetime, *, force: bool = False) -> None:
         if (
@@ -978,13 +984,122 @@ class OAuthMonitor:
             self._run_lock.release()
 
     def run_once(self, now: datetime | None = None) -> list[dict[str, Any]]:
+        current = _utc(now or self.clock())
+        if self.daily_schedule.enabled:
+            self.daily_schedule.tick(current)
         if not self._run_lock.acquire(blocking=False):
             return self.store.cached_pending_events()
         try:
-            events, _report = self._run_cycle(_utc(now), force=False)
-            return events
+            batch = self.daily_schedule.claim(current) if self.daily_schedule.enabled else None
+            if batch is None:
+                events, _report = self._run_cycle(current, force=False)
+                return events
+            try:
+                _events, _report = self._run_cycle(current, force=False)
+                _events, report = self._run_cycle(
+                    current, force=True, recovery_enabled=False, reuse_cycle_results=True
+                )
+                self._run_daily_batch(current, batch, report)
+            except Exception as exc:
+                batch.update(status="failed", error=sanitize_error_text(str(exc)),
+                             completed_at=current.isoformat())
+                self.daily_schedule.save_batch(batch)
+                write_audit(self.settings.audit_path, "oauth_daily_test_failed",
+                            {"date": batch["date"], "error": batch["error"]})
+            return self.store.cached_pending_events()
         finally:
             self._run_lock.release()
+
+    def _run_daily_batch(self, current: datetime, batch: dict[str, Any], report: dict[str, Any]) -> None:
+        token = self.store.admin_token()
+        base_url = str(self.base_url_provider() or "").rstrip("/")
+        model = str(getattr(self.settings, "telegram_oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID))
+        accounts = batch.setdefault("accounts", {})
+        jobs: list[dict[str, Any]] = []
+        pending: dict[str, dict[str, Any]] = {}
+
+        def finish(row: dict[str, Any], result: dict[str, Any], *, reused: bool = False) -> None:
+            account_id = int(row["id"])
+            record = {
+                "status": "skipped" if result.get("skipped") else "success" if result.get("success") else "failed",
+                "checked_at": current.isoformat(), "model_id": model, "reused_recovery_test": reused,
+                "error_code": str(result.get("error_code") or ""),
+                "error": sanitize_error_text(str(result.get("error") or "")),
+            }
+            accounts[str(account_id)] = record
+            if record["status"] != "failed" or reused:
+                return
+            key = f"daily:{batch['date']}:{account_id}"
+            code = _auth_error_code(record["error_code"])
+            pending[key] = {
+                "account_id": account_id, "account_name": row.get("name") or "-",
+                "plan_type": oauth_plan_type(row), "window_labels": ["每日测活"],
+                "status": "auth_failed" if code else "daily_test_failed",
+                "stage": "daily_test", "checked_at": current.isoformat(),
+                "model_id": model, "error_code": code or record["error_code"],
+                "error": record["error"], "dedupe_key": key,
+            }
+            self.daily_schedule.save_batch(batch, pending_events={key: pending[key]})
+
+        for row in self._accounts:
+            account_id = int(row.get("id") or 0)
+            if account_id <= 0 or str(account_id) in accounts:
+                continue
+            # Claims are persisted before any model requests, so interrupted batches never replay.
+            accounts[str(account_id)] = {"status": "claimed", "claimed_at": current.isoformat()}
+            try:
+                latest = self._read_account(account_id)
+                if not daily_account_eligible(latest, current):
+                    finish(row, {"skipped": True, "error_code": "daily_ineligible"})
+                    continue
+                quota = self._cycle_usage.get(account_id) or {
+                    "success": False, "error": report.get("error") or "本轮额度检查无结果",
+                    "error_code": report.get("error_code") or "daily_quota_missing",
+                }
+                if not quota.get("success"):
+                    finish(row, quota)
+                    continue
+                summary = oauth_quota_summary_from_result(latest, quota)
+                if not _quota_all_required_available(summary):
+                    windows = oauth_windows_by_key(summary.get("ui_windows"))
+                    missing = any(percent_or_none((windows.get(key) or {}).get("remaining_percent")) is None
+                                  for key in required_oauth_window_keys(summary.get("plan_type")))
+                    finish(row, {"skipped": not missing, "error_code": "incomplete_quota" if missing else "quota_insufficient",
+                                 "error": "额度检查缺少必要窗口" if missing else ""})
+                    continue
+                if account_id in self._cycle_tests:
+                    finish(latest, self._cycle_tests[account_id], reused=True)
+                    continue
+                jobs.append(latest)
+            except Exception as exc:
+                finish(row, {"error_code": "account_read_failed", "error": str(exc)})
+        self.daily_schedule.save_batch(batch)
+
+        def test(row: dict[str, Any]) -> dict[str, Any]:
+            try:
+                latest = self._read_account(int(row["id"]))
+                if not daily_account_eligible(latest, current):
+                    return {"skipped": True, "error_code": "daily_state_changed"}
+                return self.test_runner(int(row["id"]), model, base_url=base_url,
+                                        admin_token=token, timeout_seconds=30)
+            except Exception as exc:
+                return {"success": False, "error_code": "daily_test_error", "error": str(exc)}
+
+        workers = _positive_int(getattr(self.settings, "telegram_oauth_recovery_test_concurrency", 2), 2, 1, 8)
+        if jobs:
+            with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as executor:
+                futures = {executor.submit(test, row): row for row in jobs}
+                for future in as_completed(futures):
+                    finish(futures[future], future.result())
+                    self.daily_schedule.save_batch(batch)
+        # The batch and its notifications commit atomically; retries only deliver pending events.
+        batch.update(status="completed", completed_at=current.isoformat())
+        self.daily_schedule.save_batch(batch, pending_events=pending)
+        write_audit(self.settings.audit_path, "oauth_daily_test", {
+            "date": batch["date"], "scheduled_at": batch["scheduled_at"],
+            "counts": {status: sum(item.get("status") == status for item in accounts.values())
+                       for status in ("success", "failed", "skipped")},
+        })
 
     def force_refresh(
         self,
@@ -1040,9 +1155,18 @@ class OAuthMonitor:
                 self._force_condition.notify_all()
         return report
 
-    def _run_cycle(self, current: datetime, *, force: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def _run_cycle(
+        self, current: datetime, *, force: bool, recovery_enabled: bool | None = None,
+        reuse_cycle_results: bool = False,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         started = time.monotonic()
+        prior_usage = dict(self._cycle_usage) if reuse_cycle_results else {}
+        prior_tests = dict(self._cycle_tests) if reuse_cycle_results else {}
+        self._cycle_usage = {}
+        self._cycle_tests = {}
         mode = "force" if force else "scheduled"
+        if recovery_enabled is None:
+            recovery_enabled = bool(getattr(self.settings, "telegram_oauth_recovery_monitor_enabled", True))
         try:
             self._refresh_inventory(current, force=force)
         except Exception as exc:
@@ -1056,7 +1180,6 @@ class OAuthMonitor:
                 "success_count": 0,
                 "failure_count": 0,
                 "depleted_count": 0,
-                "night_deferred_count": 0,
                 "recovered_count": 0,
             }
             write_audit(self.settings.audit_path, "oauth_monitor_inventory_failed", report)
@@ -1101,7 +1224,7 @@ class OAuthMonitor:
                     DEFAULT_SEVEN_DAY_PROBE_SECONDS,
                 ),
                 usage_refresh_enabled=bool(getattr(self.settings, "telegram_oauth_usage_refresh_enabled", True)),
-                recovery_monitor_enabled=bool(getattr(self.settings, "telegram_oauth_recovery_monitor_enabled", True)),
+                recovery_monitor_enabled=recovery_enabled,
             )
         batch_size = _positive_int(
             getattr(self.settings, "telegram_oauth_early_probe_batch_size", 8), 8, 1, 50
@@ -1115,7 +1238,6 @@ class OAuthMonitor:
             "success_count": 0,
             "failure_count": 0,
             "depleted_count": 0,
-            "night_deferred_count": 0,
             "recovered_count": 0,
             "coalesced": False,
         }
@@ -1140,6 +1262,7 @@ class OAuthMonitor:
             _positive_int(getattr(self.settings, "telegram_oauth_usage_refresh_concurrency", 4), 4, 1, 16),
         )
         usage_results: dict[int, dict[str, Any]] = {}
+        usage_results.update(prior_usage)
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {
                 executor.submit(
@@ -1152,6 +1275,7 @@ class OAuthMonitor:
                     now=current,
                 ): item
                 for item in selected
+                if int(item["account_id"]) not in prior_usage
             }
             for future in as_completed(futures):
                 item = futures[future]
@@ -1168,19 +1292,14 @@ class OAuthMonitor:
                         "error_code": "oauth_usage_query_error",
                     }
 
+        self._cycle_usage = usage_results
         successful_results: dict[int, dict[str, Any]] = {}
         scheduler_updates: dict[int, dict[str, Any]] = {}
         pending_updates: dict[str, dict[str, Any]] = {}
         remove_pending: set[str] = set()
         test_jobs: list[tuple[dict[str, Any], dict[str, Any]]] = []
         selected_by_id = {int(item["account_id"]): item for item in selected}
-        night_enabled = bool(
-            getattr(self.settings, "telegram_oauth_night_recovery_cooldown_enabled", True)
-        )
-        night = in_beijing_night_cooldown(current, enabled=night_enabled)
-        recovery_enabled = bool(getattr(self.settings, "telegram_oauth_recovery_monitor_enabled", True))
         depleted_count = 0
-        night_deferred_count = 0
 
         for account_id, refreshed_result in usage_results.items():
             selected_item = selected_by_id[account_id]
@@ -1369,22 +1488,11 @@ class OAuthMonitor:
                 scheduler_updates[account_id] = update
                 continue
             intent["confirmed_at"] = current.isoformat()
-            if night:
-                intent.update(
-                    {
-                        "status": "deferred",
-                        "deferred_until": beijing_cooldown_end(current).isoformat(),
-                        "next_retry_at": "",
-                    }
-                )
-                night_deferred_count += 1
+            retry_at = parse_iso_datetime(intent.get("next_retry_at"))
+            if retry_at is None or current >= retry_at:
+                intent["status"] = "ready"
                 update["recovery_intent"] = intent
-            else:
-                retry_at = parse_iso_datetime(intent.get("next_retry_at"))
-                if retry_at is None or current >= retry_at:
-                    intent["status"] = "ready"
-                    update["recovery_intent"] = intent
-                    test_jobs.append((selected_item, intent))
+                test_jobs.append((selected_item, intent))
             scheduler_updates[account_id] = update
 
         self.store.commit(
@@ -1480,6 +1588,7 @@ class OAuthMonitor:
                             "model_id": model_id,
                         }
 
+        self._cycle_tests = {**prior_tests, **test_results}
         final_updates: dict[int, dict[str, Any]] = {}
         recovered_count = 0
         for item, intent, frozen_row in runnable_jobs:
@@ -1617,9 +1726,7 @@ class OAuthMonitor:
             "success_count": success_count,
             "failure_count": len(selected) - success_count,
             "depleted_count": depleted_count,
-            "night_deferred_count": night_deferred_count,
             "recovered_count": recovered_count,
-            "night_cooldown_active": night,
             "coalesced": False,
             "duration_ms": duration_ms,
         }

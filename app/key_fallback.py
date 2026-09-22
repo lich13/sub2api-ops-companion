@@ -32,7 +32,6 @@ UNKNOWN = "unknown"
 EVAL_INTERVAL_SECONDS = 30
 DEFAULT_FRESHNESS_SECONDS = 3600
 MAX_CONFIG_VERSION = 1_000_000_000
-MANUAL_ACCOUNT_ACTIONS = {"pause", "cooldown", "resume"}
 SCHEDULABLE_REQUEST_TIMEOUT_SECONDS = 3
 DISPATCH_BUDGET_SECONDS = 10
 FALLBACK_PLATFORMS = ("openai", "grok")
@@ -480,82 +479,6 @@ class KeyFallbackController:
             },
         )
         return written
-
-    def release_managed_account(self, account_id: int) -> None:
-        target_id = _strict_positive_int(account_id)
-        if target_id is None:
-            return
-        with self._lock:
-            remaining = self._unmanage_unlocked(target_id)
-        if remaining is not None:
-            write_audit(
-                self.settings.audit_path,
-                "key_fallback_unmanage",
-                {"account_id": target_id, "remaining_managed_account_ids": remaining},
-            )
-
-    def run_manual_account_action(
-        self,
-        account_id: int,
-        action: str,
-        *,
-        actor_name: str,
-        minutes: int | None = None,
-        reason: str | None = None,
-    ) -> dict[str, Any] | None:
-        if action not in MANUAL_ACCOUNT_ACTIONS:
-            raise KeyFallbackConfigError("Key 回退账号操作无效")
-        target_id = _strict_positive_int(account_id)
-        if target_id is None:
-            return None
-        actor = str(actor_name or "")
-        with self._lock:
-            remaining = self._unmanage_unlocked(target_id)
-            if action == "pause":
-                row = account_ops.pause_account(
-                    self.db,
-                    self.settings.audit_path,
-                    target_id,
-                    actor,
-                    reason or f"telegram pause by {actor}",
-                )
-            elif action == "resume":
-                row = account_ops.resume_account(
-                    self.db,
-                    self.settings.audit_path,
-                    target_id,
-                    actor,
-                    reason or "resume account from ops companion",
-                )
-            else:
-                row = account_ops.cooldown_account(
-                    self.db,
-                    self.settings.audit_path,
-                    target_id,
-                    actor,
-                    int(minutes or 15),
-                    reason or f"telegram cooldown {int(minutes or 15)}m by {actor}",
-                )
-        if remaining is not None:
-            write_audit(
-                self.settings.audit_path,
-                "key_fallback_unmanage",
-                {"account_id": target_id, "remaining_managed_account_ids": remaining},
-            )
-        return row
-
-    def _unmanage_unlocked(self, account_id: int) -> list[int] | None:
-        current = self._read_config_unlocked()
-        if not current.valid or account_id not in current.managed_account_ids:
-            return None
-        remaining = [item for item in current.managed_account_ids if item != account_id]
-        self._write_config_unlocked(
-            enabled=current.enabled,
-            managed_account_ids=remaining,
-            config_version=int(current.config_version) + 1,
-            updated_by=f"telegram-unmanage:{account_id}",
-        )
-        return remaining
 
     def run_once(self, now: datetime | None = None) -> dict[str, Any]:
         current = now or datetime.now(timezone.utc)
