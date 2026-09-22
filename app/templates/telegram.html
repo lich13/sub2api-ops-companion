@@ -194,19 +194,23 @@
 </section>
 
 <section class="panel model-guard-panel">
-  {% set guard = model_guard|default({'enabled': false, 'auto_remove': false, 'incidents': []}, true) %}
+  {% set guard = model_guard|default({'openai_enabled': false, 'grok_enabled': false, 'auto_remove': false, 'incidents': []}, true) %}
   <div class="section-head compact-head">
     <div>
       <h3>模型降级保护</h3>
       <span class="field-caption">基于真实使用日志识别进一步降级，并保留可追溯处置记录</span>
     </div>
-    <span class="status-dot {{ 'online' if guard.enabled else '' }}"></span>
+    <span class="status-dot {{ 'online' if guard.openai_enabled or guard.grok_enabled else '' }}"></span>
   </div>
   <form class="oauth-settings-form" method="post" action="{{ base_path }}/model-guard/config">
     <div class="toggle-grid">
       <label class="setting-toggle">
-        <input type="checkbox" name="enabled" value="1" {{ 'checked' if guard.enabled else '' }}>
-        <span><strong>启用模型降级监控</strong></span>
+        <input type="checkbox" name="openai_enabled" value="1" {{ 'checked' if guard.openai_enabled else '' }}>
+        <span><strong>OpenAI 模型降级监控</strong></span>
+      </label>
+      <label class="setting-toggle">
+        <input type="checkbox" name="grok_enabled" value="1" {{ 'checked' if guard.grok_enabled else '' }}>
+        <span><strong>Grok 模型降级监控</strong></span>
       </label>
       <label class="setting-toggle">
         <input type="checkbox" name="auto_remove" value="1" {{ 'checked' if guard.auto_remove else '' }}>
@@ -221,7 +225,7 @@
     <article class="model-guard-item">
       <div class="model-guard-item-head"><strong>#{{ item.account_id }} · {{ item.account_name or '-' }}</strong><span class="id-chip">{{ item.platform or '-' }}/{{ item.account_type or '-' }} · {{ '历史' if item.history else '实时' }}</span></div>
       <div class="model-guard-chain">{{ item.requested_model }} → {{ item.upstream_model or '-' }} → {{ item.response_model or '未知' }}</div>
-      <div class="model-guard-meta">首次 {{ item.first_at|bj_time }} · 最近 {{ item.latest_at|bj_time }} · {{ item.count }} 次 · {{ item.action }}</div>
+      <div class="model-guard-meta">首次 {{ item.first_at|bj_time }} · 最近 {{ item.latest_at|bj_time }} · {{ item.count }} 次{% if item.legacy_aggregate_count %}（旧聚合 {{ item.legacy_aggregate_count }} 次未归链）{% endif %} · {{ item.action }}</div>
     </article>
     {% endfor %}
   </div>

@@ -8,6 +8,7 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - Telegram：通过私聊配对，使用 `/quota`（兼容 `/usage`）并行刷新 OpenAI、Grok OAuth 额度；Grok 只刷新官方账单，不发送模型请求。长回复按账号分段，历史限流快照单独标明时间。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
+- 模型降级保护：按 OpenAI、Grok 独立开关读取真实使用日志；比较实际送上游模型与响应模型。OpenAI 明确的 Astra、Sol、Terra、Luna 档位优先、同档再比较 6/5.6 代际，其他模型和 Grok 使用精确定价快照。共用自动移除开关仅对已启用的平台生效，历史回看只汇总告警。
 - Sub2API SSO：从 Sub2API 自定义菜单进入，验证管理员 JWT 后换取 Companion 本地会话。
 - 面板更新：显示当前版本，可检查 `origin/main` 并在源码无依赖变更时热更新。
 
