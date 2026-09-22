@@ -188,11 +188,17 @@ async def model_guard_loop() -> None:
         try:
             if model_guard is not None:
                 await asyncio.to_thread(model_guard.run_once)
-                await deliver_model_guard_events(await asyncio.to_thread(model_guard.pending_events))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             write_audit(settings.audit_path, "model_guard_loop_error", {"error_code": type(exc).__name__})
+        try:
+            if model_guard is not None:
+                await deliver_model_guard_events(await asyncio.to_thread(model_guard.pending_events))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            write_audit(settings.audit_path, "model_guard_delivery_error", {"error_code": type(exc).__name__})
         await asyncio.sleep(10)
 
 
@@ -704,11 +710,11 @@ def build_key_fallback_panel() -> dict[str, Any]:
 def build_model_guard_panel() -> dict[str, Any]:
     controller = model_guard
     if controller is None:
-        return {"enabled": False, "auto_remove": False, "config_valid": True, "incidents": []}
+        return {"openai_enabled": False, "grok_enabled": False, "auto_remove": False, "config_valid": True, "incidents": []}
     try:
         return controller.panel_snapshot()
     except Exception:
-        return {"enabled": False, "auto_remove": False, "config_valid": False, "incidents": []}
+        return {"openai_enabled": False, "grok_enabled": False, "auto_remove": False, "config_valid": False, "incidents": []}
 
 
 async def restart_telegram_bot() -> None:
@@ -941,7 +947,8 @@ async def model_guard_config_save(request: Request, user: AuthUser) -> Response:
     try:
         await asyncio.to_thread(
             controller.save_config,
-            enabled=bool(form.getlist("enabled")),
+            openai_enabled=bool(form.getlist("openai_enabled")),
+            grok_enabled=bool(form.getlist("grok_enabled")),
             auto_remove=bool(form.getlist("auto_remove")),
             user=user,
         )
