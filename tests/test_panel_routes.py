@@ -110,20 +110,20 @@ class PanelRouteTests(unittest.TestCase):
         self.assertNotIn("/whitelist", telegram)
         self.assertNotIn("/endless", telegram)
 
-    def test_telegram_panel_config_exposes_night_recovery_cooldown(self) -> None:
+    def test_telegram_panel_config_exposes_daily_test(self) -> None:
         with (
             patch.object(main_module, "telegram_state", return_value={}),
             patch.object(main_module, "telegram_config_file", return_value={}),
             patch.object(main_module, "ensure_telegram_pairing_code", return_value=""),
             patch.object(
                 main_module.settings,
-                "telegram_oauth_night_recovery_cooldown_enabled",
+                "telegram_oauth_daily_test_enabled",
                 False,
             ),
         ):
             panel = main_module.build_telegram_config()
 
-        self.assertFalse(panel["oauth_night_recovery_cooldown_enabled"])
+        self.assertFalse(panel["oauth_daily_test_enabled"])
 
     def test_settings_ignore_legacy_fast_probe_and_default_to_luna(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -146,15 +146,15 @@ class PanelRouteTests(unittest.TestCase):
         self.assertEqual(loaded.telegram_oauth_regular_refresh_interval_seconds, 3600)
         self.assertEqual(loaded.telegram_oauth_7d_probe_interval_seconds, 3600)
         self.assertEqual(loaded.telegram_oauth_recovery_test_model_id, "gpt-5.6-luna")
-        self.assertTrue(loaded.telegram_oauth_night_recovery_cooldown_enabled)
+        self.assertTrue(loaded.telegram_oauth_daily_test_enabled)
         self.assertFalse(hasattr(loaded, "telegram_oauth_early_probe_interval_seconds"))
         self.assertFalse(hasattr(loaded, "guard_enabled"))
 
-    def test_night_recovery_cooldown_prefers_json_config_over_environment(self) -> None:
+    def test_daily_test_prefers_json_config_over_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "telegram-config.json"
             config_path.write_text(
-                '{"oauth_night_recovery_cooldown_enabled": false}',
+                '{"oauth_daily_test_enabled": false}',
                 encoding="utf-8",
             )
             with patch.dict(
@@ -163,13 +163,13 @@ class PanelRouteTests(unittest.TestCase):
                     "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
                     "OPS_SESSION_SECRET": "secret",
                     "TELEGRAM_CONFIG_PATH": str(config_path),
-                    "TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED": "true",
+                    "TELEGRAM_OAUTH_DAILY_TEST_ENABLED": "true",
                 },
                 clear=True,
             ):
                 loaded = load_settings()
 
-        self.assertFalse(loaded.telegram_oauth_night_recovery_cooldown_enabled)
+        self.assertFalse(loaded.telegram_oauth_daily_test_enabled)
 
 
 class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -180,7 +180,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                     [
                         ("oauth_usage_refresh_enabled", "1"),
                         ("oauth_recovery_monitor_enabled", "1"),
-                        ("oauth_night_recovery_cooldown_enabled", "1"),
+                        ("oauth_daily_test_enabled", "1"),
                         ("oauth_usage_refresh_concurrency", "5"),
                         ("oauth_recovery_test_concurrency", "3"),
                         ("oauth_early_probe_batch_size", "9"),
@@ -204,7 +204,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                 base_path="/sub2ops",
                 telegram_oauth_usage_refresh_enabled=True,
                 telegram_oauth_recovery_monitor_enabled=True,
-                telegram_oauth_night_recovery_cooldown_enabled=True,
+                telegram_oauth_daily_test_enabled=True,
                 telegram_oauth_usage_refresh_concurrency=4,
                 telegram_oauth_recovery_test_concurrency=2,
                 telegram_oauth_early_probe_batch_size=8,
@@ -215,8 +215,8 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
             try:
                 response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
                 persisted = json.loads(config_path.read_text(encoding="utf-8"))
-                applied_night_cooldown = (
-                    main_module.settings.telegram_oauth_night_recovery_cooldown_enabled
+                applied_daily_test = (
+                    main_module.settings.telegram_oauth_daily_test_enabled
                 )
             finally:
                 main_module.settings = original
@@ -225,12 +225,12 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(persisted["oauth_regular_refresh_interval_seconds"], 5400)
         self.assertEqual(persisted["oauth_7d_probe_interval_seconds"], 7200)
         self.assertEqual(persisted["oauth_recovery_test_model_id"], "gpt-5.6-luna")
-        self.assertTrue(persisted["oauth_night_recovery_cooldown_enabled"])
-        self.assertTrue(applied_night_cooldown)
+        self.assertTrue(persisted["oauth_daily_test_enabled"])
+        self.assertTrue(applied_daily_test)
         self.assertNotIn("oauth_early_probe_interval_seconds", persisted)
         self.assertNotIn("oauth_recovery_push_enabled", persisted)
 
-    async def test_oauth_settings_can_disable_night_recovery_cooldown(self) -> None:
+    async def test_oauth_settings_can_disable_daily_test(self) -> None:
         class FormRequest:
             async def form(self) -> FormData:
                 return FormData()
@@ -243,26 +243,26 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                 telegram_config_path=str(config_path),
                 audit_path=str(root / "audit.jsonl"),
                 base_path="/sub2ops",
-                telegram_oauth_night_recovery_cooldown_enabled=True,
+                telegram_oauth_daily_test_enabled=True,
             )
             try:
                 response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
                 persisted = json.loads(config_path.read_text(encoding="utf-8"))
-                applied_night_cooldown = (
-                    main_module.settings.telegram_oauth_night_recovery_cooldown_enabled
+                applied_daily_test = (
+                    main_module.settings.telegram_oauth_daily_test_enabled
                 )
             finally:
                 main_module.settings = original
 
         self.assertEqual(response.status_code, 303)
-        self.assertFalse(persisted["oauth_night_recovery_cooldown_enabled"])
-        self.assertFalse(applied_night_cooldown)
+        self.assertFalse(persisted["oauth_daily_test_enabled"])
+        self.assertFalse(applied_daily_test)
 
-    def test_telegram_template_renders_night_recovery_cooldown_checkbox(self) -> None:
+    def test_telegram_template_renders_daily_test_checkbox(self) -> None:
         template = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
 
-        self.assertIn('name="oauth_night_recovery_cooldown_enabled"', template)
-        self.assertIn("telegram.oauth_night_recovery_cooldown_enabled", template)
+        self.assertIn('name="oauth_daily_test_enabled"', template)
+        self.assertIn("telegram.oauth_daily_test_enabled", template)
 
     def test_telegram_template_contains_bark_controls_without_secret_value(self) -> None:
         template = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
@@ -309,7 +309,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                         "config_updated_at": None,
                         "oauth_usage_refresh_enabled": True,
                         "oauth_recovery_monitor_enabled": True,
-                        "oauth_night_recovery_cooldown_enabled": True,
+                        "oauth_daily_test_enabled": True,
                         "oauth_usage_refresh_concurrency": 4,
                         "oauth_recovery_test_concurrency": 2,
                         "oauth_early_probe_batch_size": 8,

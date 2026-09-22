@@ -28,7 +28,7 @@ from .db import Database
 from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackConfigError, KeyFallbackController
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
 from .secure_session import create_session_cookie, read_session_cookie
-from .settings import load_settings
+from .settings import daily_test_time, load_settings
 from .sso_config import (
     SSORuntimeConfig,
     build_sso_panel_config,
@@ -133,6 +133,19 @@ async def oauth_monitor_loop() -> None:
         await asyncio.sleep(2)
 
 
+async def daily_schedule_loop() -> None:
+    # This clock keeps ticking while a monitor cycle holds its lock during network I/O.
+    while True:
+        try:
+            if oauth_monitor is not None:
+                await asyncio.to_thread(oauth_monitor.daily_schedule.tick, datetime.now(timezone.utc))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            write_audit(settings.audit_path, "oauth_daily_schedule_error", {"error": "每日测活排程失败"})
+        await asyncio.sleep(1)
+
+
 async def key_fallback_loop() -> None:
     while True:
         try:
@@ -150,6 +163,12 @@ async def lifespan(_: FastAPI):
     global telegram_bot, telegram_task, oauth_monitor, oauth_monitor_task
     global key_fallback_controller, key_fallback_task
     db.open()
+    config = telegram_config_file()
+    migrated = {**config, "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
+                "oauth_daily_test_time": settings.telegram_oauth_daily_test_time}
+    migrated.pop("oauth_night_recovery_cooldown_enabled", None)
+    if config != migrated:
+        save_telegram_runtime_config(migrated)
     store = oauth_state_store()
     await asyncio.to_thread(
         migrate_legacy_recovery_state,
@@ -172,10 +191,14 @@ async def lifespan(_: FastAPI):
     )
     await restart_telegram_bot()
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
+    daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     try:
         yield
     finally:
+        daily_schedule_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await daily_schedule_task
         if key_fallback_task:
             key_fallback_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -408,11 +431,24 @@ def bark_config_file() -> dict[str, Any]:
 def save_telegram_runtime_config(payload: dict[str, Any]) -> None:
     path = Path(settings.telegram_config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.chmod(0o600)
-    temporary.replace(path)
-    path.chmod(0o600)
+    payload = dict(payload)
+    payload.pop("oauth_night_recovery_cooldown_enabled", None)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def save_bark_runtime_config(payload: dict[str, Any]) -> None:
@@ -452,11 +488,15 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         "pairing_enabled",
         "oauth_usage_refresh_enabled",
         "oauth_recovery_monitor_enabled",
-        "oauth_night_recovery_cooldown_enabled",
+        "oauth_daily_test_enabled",
     )
     for key in bool_fields:
         if key in payload:
             setattr(settings, f"telegram_{key}", bool(payload.get(key)))
+    if "oauth_daily_test_time" in payload:
+        settings.telegram_oauth_daily_test_time = daily_test_time(payload["oauth_daily_test_time"])
+    if oauth_monitor is not None:
+        oauth_monitor.daily_schedule.tick(datetime.now(timezone.utc))
     if "bot_token" in payload:
         settings.telegram_bot_token = str(payload.get("bot_token") or "")
     if "pairing_code" in payload:
@@ -540,13 +580,12 @@ def build_telegram_config() -> dict[str, Any]:
         "paired_chat_ids": paired_chats,
         "paired_user_ids": paired_users,
         "push_target_count": len(paired_chats),
-        "control_user_count": len(paired_users),
+        "authorized_user_count": len(paired_users),
         "config_updated_at": existing.get("updated_at"),
         "oauth_usage_refresh_enabled": settings.telegram_oauth_usage_refresh_enabled,
         "oauth_recovery_monitor_enabled": settings.telegram_oauth_recovery_monitor_enabled,
-        "oauth_night_recovery_cooldown_enabled": (
-            settings.telegram_oauth_night_recovery_cooldown_enabled
-        ),
+        "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
+        "oauth_daily_test_time": settings.telegram_oauth_daily_test_time,
         "oauth_usage_refresh_concurrency": settings.telegram_oauth_usage_refresh_concurrency,
         "oauth_recovery_test_concurrency": settings.telegram_oauth_recovery_test_concurrency,
         "oauth_early_probe_batch_size": settings.telegram_oauth_early_probe_batch_size,
@@ -624,7 +663,6 @@ async def restart_telegram_bot() -> None:
         settings,
         db,
         oauth_monitor=oauth_monitor,
-        key_fallback=key_fallback_controller,
     )
     if telegram_bot.enabled:
         telegram_task = asyncio.create_task(telegram_bot.run())
@@ -759,13 +797,17 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     existing = telegram_config_file()
     existing.pop("oauth_early_probe_interval_seconds", None)
     existing.pop("oauth_recovery_push_enabled", None)
+    existing.pop("oauth_night_recovery_cooldown_enabled", None)
+    try:
+        test_time = daily_test_time(form.get("oauth_daily_test_time", "05:00"))
+    except ValueError as exc:
+        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
     payload = {
         **existing,
         "oauth_usage_refresh_enabled": bool(form.getlist("oauth_usage_refresh_enabled")),
         "oauth_recovery_monitor_enabled": bool(form.getlist("oauth_recovery_monitor_enabled")),
-        "oauth_night_recovery_cooldown_enabled": bool(
-            form.getlist("oauth_night_recovery_cooldown_enabled")
-        ),
+        "oauth_daily_test_enabled": bool(form.getlist("oauth_daily_test_enabled")),
+        "oauth_daily_test_time": test_time,
         "oauth_usage_refresh_concurrency": int_param(form.get("oauth_usage_refresh_concurrency"), 4, 1, 16),
         "oauth_recovery_test_concurrency": int_param(form.get("oauth_recovery_test_concurrency"), 2, 1, 8),
         "oauth_early_probe_batch_size": int_param(form.get("oauth_early_probe_batch_size"), 8, 1, 50),

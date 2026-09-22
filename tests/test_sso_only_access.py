@@ -155,7 +155,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
                 "OPS_SESSION_SECRET": "session-secret-only",
                 "TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED": "0",
                 "TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED": "false",
-                "TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED": "off",
+                "TELEGRAM_OAUTH_DAILY_TEST_ENABLED": "off",
                 "TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED": "off",
             },
             clear=True,
@@ -164,7 +164,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
 
         self.assertFalse(loaded.telegram_oauth_usage_refresh_enabled)
         self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
-        self.assertFalse(loaded.telegram_oauth_night_recovery_cooldown_enabled)
+        self.assertFalse(loaded.telegram_oauth_daily_test_enabled)
         self.assertFalse(hasattr(loaded, "telegram_oauth_recovery_push_enabled"))
 
     def test_removed_guard_settings_are_absent(self) -> None:

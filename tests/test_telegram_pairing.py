@@ -13,7 +13,6 @@ from unittest.mock import patch
 from app.oauth_monitor import OAuthStateStore
 from app.telegram_bot import (
     TelegramOpsBot,
-    account_actions_keyboard,
     format_oauth_window,
 )
 
@@ -85,13 +84,13 @@ class FakeMonitor:
     def __init__(self, root: Path, *, report: dict[str, object] | None = None) -> None:
         self.store = OAuthStateStore(str(root / "usage-query-state.json"))
         self.calls = 0
+        self.base_url_provider = lambda: "http://127.0.0.1"
         self.report = report or {
             "success": True,
             "refresh_at": NOW.isoformat(),
             "success_count": len(self.store.results()),
             "failure_count": 0,
             "depleted_count": 0,
-            "night_deferred_count": 0,
             "recovered_count": 0,
         }
 
@@ -104,6 +103,7 @@ class FakeMonitor:
 def bot_settings(root: Path) -> SimpleNamespace:
     return SimpleNamespace(
         telegram_enabled=True,
+        telegram_oauth_usage_refresh_concurrency=4,
         telegram_bot_token="token",
         telegram_poll_timeout_seconds=5,
         telegram_pairing_enabled=True,
@@ -117,7 +117,7 @@ def bot_settings(root: Path) -> SimpleNamespace:
 
 
 class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_sync_commands_registers_quota_and_account(self) -> None:
+    async def test_sync_commands_registers_only_quota(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([]))
             calls: list[tuple[str, dict[str, object]]] = []
@@ -130,85 +130,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             await bot.sync_commands()
 
             commands = calls[0][1]["commands"]
-            self.assertEqual([item["command"] for item in commands], ["quota", "account"])
-
-    async def test_account_command_returns_detail_and_action_buttons(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            row = oauth_account(9, "team-account", "team")
-            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
-
-            text, keyboard = await bot._text_reply("/account 9")
-
-            self.assertIn("#9 team-account", text)
-            serialized = json.dumps(keyboard, ensure_ascii=False)
-            self.assertIn("pause:9", serialized)
-            self.assertIn("cdmenu:9", serialized)
-            self.assertIn("res:9", serialized)
-
-    async def test_account_command_validates_id_and_missing_account(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([]))
-
-            usage, usage_keyboard = await bot._text_reply("/account")
-            invalid, invalid_keyboard = await bot._text_reply("/account nope")
-            missing, missing_keyboard = await bot._text_reply("/account 99")
-
-            self.assertIn("当前没有可选择的 OpenAI 账号", usage)
-            self.assertIsNone(usage_keyboard)
-            self.assertIn("账号 ID 无效", invalid)
-            self.assertIsNone(invalid_keyboard)
-            self.assertIn("没有找到账号 #99", missing)
-            self.assertIsNone(missing_keyboard)
-
-    async def test_account_callbacks_run_pause_cooldown_and_resume_actions(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            row = oauth_account(9, "team-account", "team")
-            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
-            with (
-                patch("app.telegram_bot.account_ops.pause_account", return_value=row) as pause,
-                patch("app.telegram_bot.account_ops.cooldown_account", return_value=row) as cooldown,
-                patch("app.telegram_bot.account_ops.resume_account", return_value=row) as resume,
-            ):
-                pause_text, _ = await bot._callback_reply(100, 200, "pause:9")
-                cooldown_text, _ = await bot._callback_reply(100, 200, "cd:9:30")
-                resume_text, _ = await bot._callback_reply(100, 200, "res:9")
-
-            self.assertIn("已暂停", pause_text)
-            self.assertIn("已冷却账号 30 分钟", cooldown_text)
-            self.assertIn("已恢复", resume_text)
-            pause.assert_called_once_with(
-                bot.db,
-                bot.settings.audit_path,
-                9,
-                "telegram:100:200",
-                "telegram pause by telegram:100:200",
-            )
-            cooldown.assert_called_once_with(
-                bot.db,
-                bot.settings.audit_path,
-                9,
-                "telegram:100:200",
-                30,
-                "telegram cooldown 30m by telegram:100:200",
-            )
-            resume.assert_called_once_with(
-                bot.db,
-                bot.settings.audit_path,
-                9,
-                "telegram:100:200",
-            )
-
-    async def test_cooldown_menu_keeps_all_account_actions_reachable(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            row = oauth_account(9, "team-account", "team")
-            bot = TelegramOpsBot(bot_settings(Path(directory)), FakeDb([row]))
-
-            text, keyboard = await bot._callback_reply(100, 200, "cdmenu:9")
-
-            self.assertIn("选择冷却时间", text)
-            serialized = json.dumps(keyboard, ensure_ascii=False)
-            for value in ("cd:9:5", "cd:9:15", "cd:9:30", "acct:9"):
-                self.assertIn(value, serialized)
+            self.assertEqual([item["command"] for item in commands], ["quota"])
 
     async def test_pairing_still_binds_private_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -353,7 +275,6 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
                     "success_count": 1,
                     "failure_count": 1,
                     "depleted_count": 1,
-                    "night_deferred_count": 1,
                     "recovered_count": 0,
                 },
             )
@@ -368,7 +289,7 @@ class TelegramPairingTests(unittest.IsolatedAsyncioTestCase):
             text, _keyboard = await bot._quota_reply()
 
             self.assertIn("刷新：部分失败", text)
-            self.assertIn("成功 1 / 失败 1 / 耗尽 1 / 夜间延后 1 / 已恢复 0", text)
+            self.assertIn("成功 1 / 失败 1 / 耗尽 1 / 已恢复 0", text)
             self.assertIn("fresh", text)
             self.assertNotIn("stale", text)
 
@@ -478,18 +399,6 @@ class TelegramFormattingTests(unittest.TestCase):
             "预计恢复时间",
             format_oauth_window({**base, "reset_source": "estimated_from_remaining"}),
         )
-
-    def test_account_actions_have_no_guard_whitelist_or_endless_buttons(self) -> None:
-        keyboard = account_actions_keyboard(oauth_account(9, "name", "plus"))
-        serialized = json.dumps(keyboard, ensure_ascii=False)
-
-        self.assertIn("暂停", serialized)
-        self.assertIn("冷却", serialized)
-        self.assertIn("恢复", serialized)
-        self.assertNotIn("白名单", serialized)
-        self.assertNotIn("无尽", serialized)
-        self.assertNotIn("wladd:", serialized)
-        self.assertNotIn("endadd:", serialized)
 
 if __name__ == "__main__":
     unittest.main()
