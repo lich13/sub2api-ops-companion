@@ -198,6 +198,8 @@ def remove_mapping_transaction(db: Any, evidence: dict[str, Any], row: dict[str,
             return False, "模型映射链与日志不一致"
     platform = str(row.get("platform") or "").strip().lower()
     account_type = str(row.get("type") or "").strip().lower()
+    if platform not in {"openai", "grok"} or account_type not in {"oauth", "apikey"}:
+        return False, "账号平台或类型不在监控范围"
     try:
         with db.connection() as conn:
             with conn.transaction():
@@ -304,6 +306,9 @@ class ModelGuard:
         config = self.config()
         state = self._read_state()
         incidents = list((state.get("incidents") or {}).values()) if isinstance(state.get("incidents"), dict) else []
+        for item in incidents:
+            if item.get("history") and item.get("status") == "confirmed" and item.get("action") == "待核实":
+                item["action"] = "历史仅告警"
         incidents.sort(key=lambda item: str(item.get("latest_at") or ""), reverse=True)
         return {"enabled": config.enabled and config.valid, "auto_remove": config.auto_remove and config.valid, "config_valid": config.valid, "config_version": config.config_version, "incidents": incidents[:200], "cursor": state.get("cursor", 0)}
 
@@ -400,6 +405,12 @@ class ModelGuard:
                 incident = incidents.setdefault(key, {"account_id": account_id, "account_name": evidence.get("account_name", "-"), "account_type": evidence.get("account_type", ""), "requested_model": evidence["requested_model"], "platform": evidence["platform"], "first_at": evidence["created_at"], "latest_at": evidence["created_at"], "count": 0, "history": history_batch, "status": evidence["status"], "action": "未执行", "reason": evidence["reason"]})
                 incident["latest_at"] = evidence["created_at"]
                 incident["count"] = int(incident.get("count") or 0) + 1
+                confirmed_seen = bool(incident.get("has_confirmed")) or incident.get("status") == "confirmed"
+                if evidence["status"] == "confirmed":
+                    incident["has_confirmed"] = True
+                    confirmed_seen = True
+                elif evidence["status"] == "unconfirmed":
+                    incident["has_unconfirmed"] = True
                 incident["response_model"] = evidence["response_model"]
                 incident["upstream_model"] = evidence["upstream_model"]
                 incident["log_id"] = log_id
@@ -421,8 +432,9 @@ class ModelGuard:
                         incident["action"] = "已自动移除"
                 elif evidence["status"] == "confirmed":
                     incident["action"] = "历史仅告警" if incident.get("history") else "未执行"
-                else:
+                elif not confirmed_seen:
                     incident["action"] = "待核实"
+                incident["status"] = "confirmed" if confirmed_seen else "unconfirmed"
                 should_notify = incident.get("count") == 1 or incident.get("action") in {"已自动移除", "事务更新失败"}
                 if history_batch and account_id in history_notified:
                     should_notify = False
