@@ -48,6 +48,7 @@ docker compose up -d --build
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过面板写入权限为 `0600` 的配置文件。
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。面板不再展示或提交该字段，缺少表单值时保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
+- `MODEL_GUARD_CONFIG_PATH`、`MODEL_GUARD_STATE_PATH`、`MODEL_GUARD_PRICING_PATH`：模型降级保护的独立配置、游标/事件状态和精确定价快照，默认位于 `/data`，均按 `0600` 原子写入。
 - `TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED`：是否进行常规后台刷新。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
 - `TELEGRAM_OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
