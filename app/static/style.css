@@ -461,8 +461,44 @@ textarea:focus {
 }
 
 .telegram-oauth-panel,
-.key-fallback-panel {
+.key-fallback-panel,
+.model-guard-panel {
   margin-top: 14px;
+}
+
+.model-guard-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.model-guard-item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.model-guard-item-head,
+.model-guard-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.model-guard-chain {
+  margin-top: 8px;
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.model-guard-meta {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .key-fallback-list {

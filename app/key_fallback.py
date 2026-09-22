@@ -101,6 +101,18 @@ class KeyFallbackConfig:
     updated_at: str
     updated_by: str
     valid: bool
+    openai_enabled: bool | None = None
+    grok_enabled: bool | None = None
+
+    def __post_init__(self) -> None:
+        # Keep the old aggregate attribute for API and on-disk compatibility.
+        if self.openai_enabled is None:
+            object.__setattr__(self, "openai_enabled", bool(self.enabled))
+        if self.grok_enabled is None:
+            object.__setattr__(self, "grok_enabled", bool(self.enabled))
+
+    def platform_enabled(self, platform: str) -> bool:
+        return bool(self.openai_enabled if platform == "openai" else self.grok_enabled)
 
 
 def default_key_fallback_config() -> KeyFallbackConfig:
@@ -430,10 +442,37 @@ class KeyFallbackController:
         with self._lock:
             return self._read_config_unlocked()
 
+    def migrate_legacy_config(self) -> bool:
+        """Persist split flags once while preserving the legacy version and IDs."""
+        with self._lock:
+            path = Path(str(getattr(self.settings, "key_fallback_config_path", "") or ""))
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+                return False
+            if not isinstance(raw, dict) or "enabled" not in raw or "openai_enabled" in raw or "grok_enabled" in raw:
+                return False
+            current = self._read_config_unlocked()
+            if not current.valid:
+                return False
+            payload = {
+                "enabled": current.enabled,
+                "openai_enabled": current.platform_enabled("openai"),
+                "grok_enabled": current.platform_enabled("grok"),
+                "managed_account_ids": list(current.managed_account_ids),
+                "config_version": current.config_version,
+                "updated_at": current.updated_at,
+                "updated_by": current.updated_by,
+            }
+            _atomic_write_json(path, payload)
+            return True
+
     def panel_snapshot(self) -> dict[str, Any]:
         config = self.load_config()
         return {
             "enabled": bool(config.enabled and config.valid),
+            "openai_enabled": bool(config.openai_enabled and config.valid),
+            "grok_enabled": bool(config.grok_enabled and config.valid),
             "managed_account_ids": list(config.managed_account_ids),
             "config_valid": config.valid,
             "config_updated_at": config.updated_at or None,
@@ -442,7 +481,9 @@ class KeyFallbackController:
     def save_user_config(
         self,
         *,
-        enabled: bool,
+        enabled: bool | None = None,
+        openai_enabled: bool | None = None,
+        grok_enabled: bool | None = None,
         managed_account_ids: list[Any],
         user: str,
     ) -> KeyFallbackConfig:
@@ -462,8 +503,16 @@ class KeyFallbackController:
                     f"Key 回退保存失败：账号 {listed} 不是有效的 OpenAI 或 Grok apikey"
                 )
             current = self._read_config_unlocked()
+            legacy_enabled = bool(enabled) if enabled is not None else None
+            next_openai = bool(openai_enabled) if openai_enabled is not None else (
+                legacy_enabled if legacy_enabled is not None else current.platform_enabled("openai")
+            )
+            next_grok = bool(grok_enabled) if grok_enabled is not None else (
+                legacy_enabled if legacy_enabled is not None else current.platform_enabled("grok")
+            )
             written = self._write_config_unlocked(
-                enabled=bool(enabled),
+                openai_enabled=next_openai,
+                grok_enabled=next_grok,
                 managed_account_ids=ids,
                 config_version=int(current.config_version) + 1,
                 updated_by=str(user or ""),
@@ -474,6 +523,8 @@ class KeyFallbackController:
             {
                 "user": str(user or ""),
                 "enabled": written.enabled,
+                "openai_enabled": written.openai_enabled,
+                "grok_enabled": written.grok_enabled,
                 "managed_account_ids": list(written.managed_account_ids),
                 "config_version": written.config_version,
             },
@@ -503,7 +554,7 @@ class KeyFallbackController:
             report["skipped"] = True
             report["reason"] = "invalid_config"
             return report
-        if not config.enabled or not config.managed_account_ids:
+        if not (config.openai_enabled or config.grok_enabled) or not config.managed_account_ids:
             report["skipped"] = True
             report["reason"] = "disabled_or_empty"
             return report
@@ -612,7 +663,7 @@ class KeyFallbackController:
                 report["skipped"] = True
                 report["reason"] = "config_changed"
                 break
-            if not latest.enabled or account_id not in latest.managed_account_ids:
+            if account_id not in latest.managed_account_ids:
                 continue
             if account_id not in managed:
                 continue
@@ -623,6 +674,8 @@ class KeyFallbackController:
             if not _is_live_fallback_apikey(live, account_id):
                 continue
             platform = str(live["platform"]).strip().lower()
+            if not latest.platform_enabled(platform):
+                continue
             desired = desired_by_platform[platform]
             if desired is None:
                 continue
@@ -697,12 +750,15 @@ class KeyFallbackController:
             return KeyFallbackConfig(False, (), 0, "", "", False)
         if not isinstance(data, dict):
             return KeyFallbackConfig(False, (), 0, "", "", False)
-        if "enabled" in data:
-            enabled, enabled_ok = strict_bool_value(data.get("enabled"), False)
-            if not enabled_ok:
-                return KeyFallbackConfig(False, (), 0, "", "", False)
-        else:
-            enabled = False
+        legacy_enabled, legacy_ok = strict_bool_value(data.get("enabled"), False)
+        if "enabled" in data and not legacy_ok:
+            return KeyFallbackConfig(False, (), 0, "", "", False)
+        openai_enabled, openai_ok = strict_bool_value(
+            data.get("openai_enabled"), legacy_enabled
+        )
+        grok_enabled, grok_ok = strict_bool_value(data.get("grok_enabled"), legacy_enabled)
+        if not openai_ok or not grok_ok:
+            return KeyFallbackConfig(False, (), 0, "", "", False)
         ids_raw = data.get("managed_account_ids", [])
         if "managed_account_ids" in data and not isinstance(ids_raw, list):
             return KeyFallbackConfig(False, (), 0, "", "", False)
@@ -715,25 +771,30 @@ class KeyFallbackController:
                 ids.append(account_id)
         version = int_value(data.get("config_version"), 0, 0, MAX_CONFIG_VERSION)
         return KeyFallbackConfig(
-            enabled=bool(enabled),
+            enabled=bool(openai_enabled or grok_enabled),
             managed_account_ids=tuple(ids),
             config_version=version,
             updated_at=str(data.get("updated_at") or ""),
             updated_by=str(data.get("updated_by") or ""),
             valid=True,
+            openai_enabled=bool(openai_enabled),
+            grok_enabled=bool(grok_enabled),
         )
 
     def _write_config_unlocked(
         self,
         *,
-        enabled: bool,
+        openai_enabled: bool,
+        grok_enabled: bool,
         managed_account_ids: list[int],
         config_version: int,
         updated_by: str,
     ) -> KeyFallbackConfig:
         updated_at = datetime.now(timezone.utc).isoformat()
         payload = {
-            "enabled": bool(enabled),
+            "enabled": bool(openai_enabled or grok_enabled),
+            "openai_enabled": bool(openai_enabled),
+            "grok_enabled": bool(grok_enabled),
             "managed_account_ids": [int(item) for item in managed_account_ids],
             "config_version": int(config_version),
             "updated_at": updated_at,
@@ -744,12 +805,14 @@ class KeyFallbackController:
         except OSError as exc:
             raise KeyFallbackConfigError("Key 回退配置保存失败") from exc
         return KeyFallbackConfig(
-            enabled=bool(enabled),
+            enabled=bool(openai_enabled or grok_enabled),
             managed_account_ids=tuple(int(item) for item in managed_account_ids),
             config_version=int(config_version),
             updated_at=updated_at,
             updated_by=str(updated_by or ""),
             valid=True,
+            openai_enabled=bool(openai_enabled),
+            grok_enabled=bool(grok_enabled),
         )
 
 
