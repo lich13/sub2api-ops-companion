@@ -286,6 +286,25 @@ class ModelGuardFlowTests(unittest.TestCase):
         self.assertEqual(incidents[0]["status"], "confirmed")
         self.assertIn("1:gpt-6-astra", json.loads(Path(self.settings.model_guard_state_path).read_text())["legacy_incidents"])
 
+    def test_real_migrated_history_sends_one_bark_summary_per_account(self) -> None:
+        self.guard.save_config(openai_enabled=True, grok_enabled=False, auto_remove=False, user="tester")
+        state = json.loads(Path(self.settings.model_guard_state_path).read_text())
+        state.update({"rule_version": 2, "legacy_incidents": {"old:1": {"account_id": 1}}, "incidents": {
+            "chain:a": {"account_id": 1, "account_name": "OpenAI", "platform": "openai", "account_type": "oauth", "requested_model": "gpt-6-astra", "upstream_model": "gpt-6-astra", "response_model": "gpt-5.6-luna", "latest_at": self.now.isoformat(), "count": 2, "history": True, "status": "confirmed", "action": "历史仅告警", "log_id": 10},
+            "chain:b": {"account_id": 1, "account_name": "OpenAI", "platform": "openai", "account_type": "oauth", "requested_model": "gpt-6-sol", "upstream_model": "gpt-6-sol", "response_model": "gpt-5.6-sol", "latest_at": self.now.isoformat(), "count": 3, "history": True, "status": "confirmed", "action": "历史仅告警", "log_id": 11},
+        }})
+        Path(self.settings.model_guard_state_path).write_text(json.dumps(state))
+        self.guard.run_once(self.now)
+        events = self.guard.pending_events()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["kind"], "history_summary")
+        self.assertEqual(events[0]["count"], 5)
+        self.guard.run_once(self.now + timedelta(seconds=1))
+        self.assertEqual(len(self.guard.pending_events()), 1)
+        self.guard.mark_events_delivered(events)
+        self.guard.run_once(self.now + timedelta(seconds=2))
+        self.assertEqual(self.guard.pending_events(), [])
+
     def test_history_pagination_sends_one_account_summary(self) -> None:
         self.guard.save_config(openai_enabled=True, grok_enabled=False, auto_remove=False, user="tester")
         for log_id in range(1, 502):
