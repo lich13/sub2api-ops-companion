@@ -58,6 +58,13 @@ class ModelGuardUnitTests(unittest.TestCase):
         self.assertEqual(unknown["status"], "unconfirmed")
         self.assertEqual(missing["status"], "missing")
 
+    def test_missing_upstream_model_never_confirms_downgrade(self) -> None:
+        result = classify_model_event(
+            {"id": 3, "account_id": 7, "model": "gpt-6-astra", "upstream_response_model": "gpt-5.6-luna"},
+            self.catalog,
+        )
+        self.assertEqual(result["status"], "unconfirmed")
+
     def test_precise_mapping_fails_closed_for_wildcard_or_last_entry(self) -> None:
         row = {"credentials": {"model_mapping": {"gpt-6-astra": "gpt-5.6-sol", "gpt-5.6-sol": "gpt-5.6-sol"}}}
         self.assertEqual(precise_mapping_key(row, "gpt-6-astra", "gpt-5.6-sol"), "gpt-6-astra")
