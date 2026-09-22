@@ -268,15 +268,11 @@ def remove_mapping_transaction(db: Any, evidence: dict[str, Any], row: dict[str,
                     if cur.rowcount != 1:
                         return False, "模型映射并发变化"
                     cur.execute(
-                        "INSERT INTO scheduler_outbox (event_type, account_id, payload, dedup_key) VALUES (%(event_type)s, %(account_id)s, %(payload)s::jsonb, %(dedup_key)s)",
+                        "INSERT INTO scheduler_outbox (event_type, account_id, payload) VALUES (%(event_type)s, %(account_id)s, %(payload)s::jsonb)",
                         {
                             "event_type": "account_changed",
                             "account_id": account_id,
                             "payload": json.dumps({"reason": "model_guard_mapping_removed", "model": key}),
-                            # A consumed outbox row may remain in deployments with
-                            # a partial unique index; leave deduplication to the
-                            # companion incident state and keep scheduler events replayable.
-                            "dedup_key": None,
                         },
                     )
         return True, "已移除精确模型入口"
