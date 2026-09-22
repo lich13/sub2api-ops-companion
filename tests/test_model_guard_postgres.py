@@ -30,7 +30,7 @@ class ModelGuardPostgresTests(unittest.TestCase):
             "credentials jsonb, extra jsonb, deleted_at timestamptz, updated_at timestamptz)"
         )
         self.connection.execute(
-            "CREATE TEMP TABLE scheduler_outbox (event_type text, account_id bigint, payload jsonb, dedup_key text)"
+            "CREATE TEMP TABLE scheduler_outbox (event_type text, account_id bigint, payload jsonb)"
         )
         self.connection.commit()
 
