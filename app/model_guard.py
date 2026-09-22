@@ -522,6 +522,40 @@ class ModelGuard:
         if not event_id or not any(item.get("event_id") == event_id for item in pending):
             pending.append(event)
 
+    def _queue_migration_summaries(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        if int(state.get("migration_summary_version") or 0) >= RULE_VERSION or not state.get("legacy_incidents"):
+            return []
+        grouped: dict[int, dict[str, Any]] = {}
+        for incident in state.get("incidents", {}).values():
+            if not isinstance(incident, dict) or incident.get("status") != "confirmed" or not incident.get("history"):
+                continue
+            account_id = int(incident.get("account_id") or 0)
+            if account_id <= 0:
+                continue
+            event = grouped.setdefault(account_id, {
+                "kind": "history_summary", "event_id": f"migration-history:v{RULE_VERSION}:{account_id}",
+                "account_id": account_id, "account_name": incident.get("account_name", "-"),
+                "account_type": incident.get("account_type", ""), "platform": incident.get("platform", ""),
+                "requested_model": incident.get("requested_model", ""),
+                "upstream_model": incident.get("upstream_model", ""), "response_model": incident.get("response_model", ""),
+                "created_at": incident.get("latest_at", ""), "log_id": incident.get("log_id", 0),
+                "status": "confirmed", "incident": dict(incident), "count": 0,
+            })
+            event["count"] += int(incident.get("count") or 0)
+            if str(incident.get("latest_at") or "") > str(event["created_at"]):
+                event.update(created_at=incident.get("latest_at", ""), log_id=incident.get("log_id", 0),
+                             requested_model=incident.get("requested_model", ""), upstream_model=incident.get("upstream_model", ""),
+                             response_model=incident.get("response_model", ""), incident=dict(incident))
+        state["migration_summary_version"] = RULE_VERSION
+        existing_accounts = {
+            int(item.get("account_id") or 0) for item in state.get("pending_events", [])
+            if item.get("kind") == "history_reclassified"
+        }
+        events = [event for account_id, event in grouped.items() if account_id not in existing_accounts]
+        for event in events:
+            self._queue_event(state, event)
+        return events
+
     def _reconcile_claims(self, state: dict[str, Any]) -> None:
         for claim in state.setdefault("action_claims", {}).values():
             if claim.get("status") != "started":
@@ -547,6 +581,7 @@ class ModelGuard:
                 state.pop(legacy_key, None)
             for event in events:
                 self._queue_event(state, event)
+            events.extend(self._queue_migration_summaries(state))
             self._reconcile_claims(state)
             claims = state.setdefault("action_claims", {})
             for claim_id, claim in list(claims.items()):
