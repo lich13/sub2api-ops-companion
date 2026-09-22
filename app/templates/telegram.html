@@ -168,13 +168,13 @@
     <h3>Key 调度回退</h3>
   </div>
   <form class="oauth-settings-form" method="post" action="{{ base_path }}/key-fallback/config">
-    <label class="setting-toggle">
-      <input type="checkbox" name="enabled" value="1" {{ 'checked' if key_fallback.enabled else '' }}>
-      <span><strong>启用 Key 回退</strong></span>
-    </label>
     {% for platform, label in [('openai', 'OpenAI'), ('grok', 'Grok')] %}
     <fieldset class="key-fallback-group">
       <legend>{{ label }}</legend>
+      <label class="setting-toggle">
+        <input type="checkbox" name="{{ platform }}_enabled" value="1" {{ 'checked' if key_fallback.get(platform ~ '_enabled', key_fallback.get('enabled', false)) else '' }}>
+        <span><strong>启用 Key 回退（{{ label }}）</strong></span>
+      </label>
       <div class="key-fallback-list">
         {% for account in key_fallback.accounts if account.platform == platform %}
         <label class="setting-toggle">
@@ -191,5 +191,40 @@
       <button class="primary" type="submit">保存 Key 回退配置</button>
     </div>
   </form>
+</section>
+
+<section class="panel model-guard-panel">
+  {% set guard = model_guard|default({'enabled': false, 'auto_remove': false, 'incidents': []}, true) %}
+  <div class="section-head compact-head">
+    <div>
+      <h3>模型降级保护</h3>
+      <span class="field-caption">基于真实使用日志识别进一步降级，并保留可追溯处置记录</span>
+    </div>
+    <span class="status-dot {{ 'online' if guard.enabled else '' }}"></span>
+  </div>
+  <form class="oauth-settings-form" method="post" action="{{ base_path }}/model-guard/config">
+    <div class="toggle-grid">
+      <label class="setting-toggle">
+        <input type="checkbox" name="enabled" value="1" {{ 'checked' if guard.enabled else '' }}>
+        <span><strong>启用模型降级监控</strong></span>
+      </label>
+      <label class="setting-toggle">
+        <input type="checkbox" name="auto_remove" value="1" {{ 'checked' if guard.auto_remove else '' }}>
+        <span><strong>确认后自动移除精确入口</strong></span>
+      </label>
+    </div>
+    <div class="form-actions"><button class="primary" type="submit">保存模型保护配置</button></div>
+  </form>
+  {% if guard.incidents %}
+  <div class="model-guard-list">
+    {% for item in guard.incidents %}
+    <article class="model-guard-item">
+      <div class="model-guard-item-head"><strong>#{{ item.account_id }} · {{ item.account_name or '-' }}</strong><span class="id-chip">{{ item.platform or '-' }}/{{ item.account_type or '-' }} · {{ '历史' if item.history else '实时' }}</span></div>
+      <div class="model-guard-chain">{{ item.requested_model }} → {{ item.upstream_model or '-' }} → {{ item.response_model or '未知' }}</div>
+      <div class="model-guard-meta">首次 {{ item.first_at|bj_time }} · 最近 {{ item.latest_at|bj_time }} · {{ item.count }} 次 · {{ item.action }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<span class="empty-value">暂无模型异常记录</span>{% endif %}
 </section>
 {% endblock %}

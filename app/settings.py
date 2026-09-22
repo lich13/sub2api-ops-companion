@@ -22,6 +22,9 @@ class Settings:
     telegram_config_path: str = "/data/telegram-config.json"
     bark_config_path: str = "/data/bark-config.json"
     key_fallback_config_path: str = "/data/key-fallback-config.json"
+    model_guard_config_path: str = "/data/model-guard-config.json"
+    model_guard_state_path: str = "/data/model-guard-state.json"
+    model_guard_pricing_path: str = "/data/model-guard-pricing.json"
     bark_enabled: bool = False
     bark_device_key: str = ""
     bark_server_url: str = "https://api.day.app"
@@ -198,6 +201,15 @@ def load_settings() -> Settings:
         bark_config_path=bark_config_path,
         key_fallback_config_path=os.getenv(
             "KEY_FALLBACK_CONFIG_PATH", "/data/key-fallback-config.json"
+        ),
+        model_guard_config_path=os.getenv(
+            "MODEL_GUARD_CONFIG_PATH", "/data/model-guard-config.json"
+        ),
+        model_guard_state_path=os.getenv(
+            "MODEL_GUARD_STATE_PATH", "/data/model-guard-state.json"
+        ),
+        model_guard_pricing_path=os.getenv(
+            "MODEL_GUARD_PRICING_PATH", "/data/model-guard-pricing.json"
         ),
         bark_enabled=bark_enabled,
         bark_device_key=bark_device_key,
