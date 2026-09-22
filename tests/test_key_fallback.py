@@ -256,7 +256,7 @@ def monitor_settings(root: Path, *, recovery_enabled: bool = False) -> SimpleNam
         key_fallback_config_path=str(root / "key-fallback-config.json"),
         telegram_oauth_usage_refresh_enabled=True,
         telegram_oauth_recovery_monitor_enabled=recovery_enabled,
-        telegram_oauth_night_recovery_cooldown_enabled=True,
+
         telegram_oauth_usage_refresh_concurrency=1,
         telegram_oauth_recovery_test_concurrency=1,
         telegram_oauth_early_probe_batch_size=8,
@@ -706,7 +706,7 @@ class KeyFallbackControllerTests(unittest.TestCase):
                 snapshot=snapshot,
             )
             controller.save_user_config(enabled=True, managed_account_ids=[4, 7], user="admin")
-            with patch("app.account_ops.pause_account") as pause, patch(
+            with patch(
                 "app.usage_query.execute_oauth_usage_query", wraps=execute_oauth_usage_query
             ) as query:
                 report = controller.run_once(now=NOW)
@@ -714,7 +714,7 @@ class KeyFallbackControllerTests(unittest.TestCase):
         self.assertEqual(report["desired"], True)
         self.assertEqual(calls, [(4, True)])
         self.assertEqual(report["changed_ids"], [4])
-        pause.assert_not_called()
+
         query.assert_not_called()
         self.assertEqual(monitor.calls, 1)
         self.assertIsInstance(store, dict)
@@ -838,11 +838,9 @@ class KeyFallbackControllerTests(unittest.TestCase):
         self.assertNotIn(11, calls)
         self.assertNotIn(99, calls)
 
-    def test_night_does_not_block_key_switching_or_recovery_state(self) -> None:
+    def test_key_switching_does_not_mutate_recovery_state(self) -> None:
         snapshot = {"oauth_results": {"1": failure_result("http_401")}}
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "app.account_ops.pause_account"
-        ) as pause, patch("app.oauth_monitor.execute_oauth_usage_query") as usage:
+        with tempfile.TemporaryDirectory() as directory, patch("app.oauth_monitor.execute_oauth_usage_query") as usage:
             controller, monitor, calls = make_controller(
                 Path(directory),
                 oauth_rows=[oauth_row(1, schedulable=False)],
@@ -853,7 +851,7 @@ class KeyFallbackControllerTests(unittest.TestCase):
             report = controller.run_once(now=NIGHT)
         self.assertEqual(report["desired"], True)
         self.assertEqual(calls, [(4, True)])
-        pause.assert_not_called()
+
         usage.assert_not_called()
         self.assertEqual(monitor.calls, 1)
 
@@ -997,218 +995,6 @@ class KeyFallbackOwnershipTests(unittest.IsolatedAsyncioTestCase):
             usage_query_state_path=str(Path(directory) / "usage.json"),
             audit_path=str(Path(directory) / "audit.jsonl"),
         )
-
-    async def test_manual_actions_unmanage_before_pause_and_abort_on_save_failure(self) -> None:
-        row = key_row(4, schedulable=True)
-        row.update({"temp_unschedulable_until": None, "temp_unschedulable_reason": None})
-
-        class TrackingController:
-            def __init__(self) -> None:
-                self.order: list[str] = []
-                self.fail = False
-
-            def run_manual_account_action(
-                self,
-                account_id: int,
-                action: str,
-                *,
-                actor_name: str,
-                minutes: int | None = None,
-                reason: str | None = None,
-            ) -> dict[str, object] | None:
-                del actor_name, minutes, reason
-                self.order.append(f"release:{account_id}")
-                if self.fail:
-                    raise KeyFallbackConfigError("磁盘写入失败")
-                self.order.append(f"{action}:{account_id}")
-                if action == "pause":
-                    return account_ops.pause_account(object(), "audit", account_id, "tg", "pause")
-                if action == "resume":
-                    return account_ops.resume_account(object(), "audit", account_id, "tg")
-                return account_ops.cooldown_account(object(), "audit", account_id, "tg", 15, "cd")
-
-        with tempfile.TemporaryDirectory() as directory:
-            tracker = TrackingController()
-            bot = TelegramOpsBot(
-                self._bot_settings(directory),
-                SimpleNamespace(
-                    fetch_all=lambda *_a, **_k: [row],
-                    fetch_one=lambda *_a, **_k: dict(row),
-                ),
-                key_fallback=tracker,
-            )
-            with (
-                patch("app.account_ops.pause_account", return_value=row) as pause,
-                patch("app.account_ops.cooldown_account", return_value=row) as cooldown,
-                patch("app.account_ops.resume_account", return_value=row) as resume,
-            ):
-                pause_text, _ = await bot._callback_reply(1, 2, "pause:4")
-                cooldown_text, _ = await bot._callback_reply(1, 2, "cd:4:15")
-                resume_text, _ = await bot._callback_reply(1, 2, "res:4")
-                shortcut, _ = await bot._text_reply("/account 4")
-                tracker.fail = True
-                paused_calls = pause.call_count
-                abort_text, abort_keyboard = await bot._callback_reply(1, 2, "pause:4")
-
-                class BoomController:
-                    def run_manual_account_action(self, *_args: object, **_kwargs: object) -> None:
-                        raise RuntimeError("token=secret-value")
-
-                bot.key_fallback = BoomController()
-                boom_text, boom_keyboard = await bot._callback_reply(1, 2, "pause:4")
-
-        self.assertIn("已暂停", pause_text)
-        self.assertIn("已冷却", cooldown_text)
-        self.assertIn("已恢复", resume_text)
-        self.assertIn("#4", shortcut)
-        self.assertEqual(
-            tracker.order[:6],
-            ["release:4", "pause:4", "release:4", "cooldown:4", "release:4", "resume:4"],
-        )
-        self.assertEqual(abort_text, "操作已中止：无法更新 Key 回退配置。")
-        self.assertNotIn("磁盘写入失败", abort_text)
-        self.assertIsNone(abort_keyboard)
-        self.assertEqual(boom_text, "操作已中止：账号操作失败。")
-        self.assertNotIn("secret-value", boom_text)
-        self.assertIsNone(boom_keyboard)
-        self.assertEqual(pause.call_count, paused_calls)
-        self.assertEqual(cooldown.call_count, 1)
-        self.assertEqual(resume.call_count, 1)
-
-    async def test_manual_action_without_controller_still_runs(self) -> None:
-        row = key_row(4, schedulable=True)
-        row.update({"temp_unschedulable_until": None, "temp_unschedulable_reason": None})
-        with tempfile.TemporaryDirectory() as directory:
-            bot = TelegramOpsBot(
-                self._bot_settings(directory),
-                SimpleNamespace(
-                    fetch_all=lambda *_a, **_k: [row],
-                    fetch_one=lambda *_a, **_k: dict(row),
-                ),
-                key_fallback=None,
-            )
-            with patch("app.account_ops.pause_account", return_value=row) as pause:
-                text, _ = await bot._callback_reply(1, 2, "pause:4")
-        self.assertIn("已暂停", text)
-        pause.assert_called_once()
-
-    def test_save_cannot_interleave_unmanage_and_manual_action(self) -> None:
-        snapshot = {"oauth_results": {"1": failure_result("http_401")}}
-        pause_started = threading.Event()
-        pause_proceed = threading.Event()
-        save_done = threading.Event()
-        order: list[str] = []
-        row = key_row(4, schedulable=True)
-
-        def pause_account(*_args: object, **_kwargs: object) -> dict[str, object]:
-            order.append("pause")
-            pause_started.set()
-            pause_proceed.wait(2)
-            return row
-
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "app.key_fallback.account_ops.pause_account",
-            side_effect=pause_account,
-        ) as pause, patch(
-            "app.key_fallback.account_ops.cooldown_account",
-            return_value=row,
-        ) as cooldown, patch(
-            "app.key_fallback.account_ops.resume_account",
-            return_value=row,
-        ) as resume:
-            controller, _monitor, _calls = make_controller(
-                Path(directory),
-                key_rows=[key_row(4), key_row(7)],
-                snapshot=snapshot,
-            )
-            controller.save_user_config(enabled=True, managed_account_ids=[4], user="admin")
-
-            def manual() -> None:
-                controller.run_manual_account_action(
-                    4,
-                    "pause",
-                    actor_name="tg",
-                    reason="telegram pause by tg",
-                )
-                order.append("manual-done")
-
-            def save() -> None:
-                pause_started.wait(2)
-                controller.save_user_config(enabled=True, managed_account_ids=[4], user="admin")
-                order.append("save-done")
-                save_done.set()
-
-            worker = threading.Thread(target=manual)
-            saver = threading.Thread(target=save)
-            worker.start()
-            self.assertTrue(pause_started.wait(2))
-            saver.start()
-            self.assertFalse(save_done.wait(0.05))
-            self.assertNotIn("save-done", order)
-            persisted = json.loads(
-                (Path(directory) / "key-fallback-config.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(persisted["managed_account_ids"], [])
-            pause_proceed.set()
-            worker.join(timeout=2)
-            saver.join(timeout=2)
-            self.assertEqual(order[:2], ["pause", "manual-done"])
-            self.assertIn("save-done", order)
-            controller.save_user_config(enabled=True, managed_account_ids=[4], user="admin")
-            controller.run_manual_account_action(4, "cooldown", actor_name="tg", minutes=15)
-            controller.save_user_config(enabled=True, managed_account_ids=[4], user="admin")
-            controller.run_manual_account_action(4, "resume", actor_name="tg")
-            controller.save_user_config(enabled=True, managed_account_ids=[4], user="admin")
-            with patch("app.key_fallback._atomic_write_json", side_effect=OSError("disk")):
-                with self.assertRaises(KeyFallbackConfigError):
-                    controller.run_manual_account_action(4, "pause", actor_name="tg")
-            self.assertEqual(controller.load_config().managed_account_ids, (4,))
-        self.assertEqual(pause.call_count, 1)
-        self.assertEqual(cooldown.call_count, 1)
-        self.assertEqual(resume.call_count, 1)
-
-    def test_release_keeps_remaining_keys_and_concurrency_is_serialized(self) -> None:
-        snapshot = {"oauth_results": {"1": failure_result("http_401")}}
-        started = threading.Event()
-        proceed = threading.Event()
-        calls: list[int] = []
-
-        def slow_runner(account_id: int, schedulable: bool, **_kwargs: object) -> dict[str, object]:
-            del schedulable
-            calls.append(int(account_id))
-            started.set()
-            proceed.wait(1)
-            return {"success": True}
-
-        with tempfile.TemporaryDirectory() as directory:
-            controller, _monitor, _ignored = make_controller(
-                Path(directory),
-                oauth_rows=[oauth_row(1, schedulable=False)],
-                key_rows=[key_row(4, schedulable=False), key_row(7, schedulable=False)],
-                snapshot=snapshot,
-                runner=slow_runner,
-            )
-            controller.save_user_config(enabled=True, managed_account_ids=[4, 7], user="admin")
-            worker = threading.Thread(target=lambda: controller.run_once(now=NOW))
-            worker.start()
-            self.assertTrue(started.wait(1))
-            released = threading.Event()
-
-            def unmanage() -> None:
-                controller.release_managed_account(4)
-                released.set()
-
-            waiter = threading.Thread(target=unmanage)
-            waiter.start()
-            self.assertFalse(released.wait(0.05))
-            proceed.set()
-            worker.join(timeout=2)
-            waiter.join(timeout=2)
-            config = controller.load_config()
-        self.assertTrue(released.is_set())
-        self.assertEqual(config.managed_account_ids, (7,))
-        self.assertEqual(calls, [4, 7])
-
 
 class KeyFallbackRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_route_requires_auth_and_rejects_stale_selection(self) -> None:
@@ -1524,7 +1310,7 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                     audit_path=str(Path(directory) / "audit.jsonl"),
                     telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
-                    telegram_oauth_night_recovery_cooldown_enabled=True,
+
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
@@ -1568,7 +1354,7 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                     audit_path=str(root / "audit.jsonl"),
                     telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
-                    telegram_oauth_night_recovery_cooldown_enabled=True,
+
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
@@ -1621,7 +1407,7 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                     audit_path=str(root / "audit.jsonl"),
                     telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
-                    telegram_oauth_night_recovery_cooldown_enabled=True,
+
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
@@ -1776,23 +1562,6 @@ class GrokFallbackTests(unittest.TestCase):
             controller.save_user_config(enabled=False, managed_account_ids=[389, 391], user="admin")
             self.assertEqual(controller.load_config().managed_account_ids, (389, 391))
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-
-    def test_grok_manual_actions_persist_unmanage_first_and_abort_on_failure(self) -> None:
-        for action, function in (("pause", "pause_account"), ("cooldown", "cooldown_account"), ("resume", "resume_account")):
-            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
-                controller, _, _ = make_controller(Path(directory), key_rows=[key_row(4), key_row(8, platform="grok")])
-                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
-                def check_unmanaged(*_args):
-                    self.assertEqual(controller.load_config().managed_account_ids, (4,))
-                    return key_row(8, platform="grok")
-                with patch.object(account_ops, function, side_effect=check_unmanaged) as operation:
-                    controller.run_manual_account_action(8, action, actor_name="telegram:test")
-                    operation.assert_called_once()
-                controller.save_user_config(enabled=True, managed_account_ids=[4, 8], user="admin")
-                with patch("app.key_fallback._atomic_write_json", side_effect=OSError("disk")), patch.object(account_ops, function) as operation:
-                    with self.assertRaises(KeyFallbackConfigError):
-                        controller.run_manual_account_action(8, action, actor_name="telegram:test")
-                    operation.assert_not_called()
 
     def test_grok_capture_uses_only_schedulable_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory, AdminCapture() as capture:

@@ -174,6 +174,7 @@ def oauth_event_message(event: dict[str, Any]) -> tuple[str, str]:
     titles = {
         "recovered": "OAuth 账号额度已恢复可用",
         "test_failed": "OAuth 账号额度恢复后测试失败",
+        "daily_test_failed": "OAuth 账号定时测活失败",
         "recovery_failed": "OAuth 账号自动恢复失败",
         "auth_failed": "OAuth 账号认证异常",
     }
@@ -192,7 +193,7 @@ def oauth_event_message(event: dict[str, Any]) -> tuple[str, str]:
         f"模型：{sanitize_error_text(event.get('model_id'), 120)}",
         f"错误码：{sanitize_error_text(event.get('error_code'), 120)}",
     ]
-    if status in {"test_failed", "recovery_failed", "auth_failed"}:
+    if status in {"test_failed", "daily_test_failed", "recovery_failed", "auth_failed"}:
         lines.append(f"错误：{sanitize_error_text(event.get('error'))}")
     if status == "auth_failed":
         lines.append(f"阶段：{stage}")

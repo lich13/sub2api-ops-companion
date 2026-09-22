@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,7 +36,8 @@ class Settings:
     telegram_poll_timeout_seconds: int = 25
     telegram_oauth_usage_refresh_enabled: bool = True
     telegram_oauth_recovery_monitor_enabled: bool = True
-    telegram_oauth_night_recovery_cooldown_enabled: bool = True
+    telegram_oauth_daily_test_enabled: bool = True
+    telegram_oauth_daily_test_time: str = "05:00"
     telegram_oauth_usage_refresh_concurrency: int = 4
     telegram_oauth_recovery_test_concurrency: int = 2
     telegram_oauth_early_probe_batch_size: int = 8
@@ -52,6 +54,20 @@ class Settings:
     sub2api_sso_required_role: str = "admin"
     sub2api_sso_session_ttl_seconds: int = 86400
     sub2api_sso_verify_timeout_seconds: int = 5
+
+
+def daily_test_time(value: object) -> str:
+    text = str(value or "").strip()
+    if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", text):
+        raise ValueError("测活时间必须为 00:00–23:59（北京时间）")
+    return text
+
+
+def load_daily_test_time(value: object) -> str:
+    try:
+        return daily_test_time(value)
+    except ValueError:
+        return "05:00"
 
 
 def bool_env(name: str, default: bool) -> bool:
@@ -221,12 +237,11 @@ def load_settings() -> Settings:
             ),
             True,
         ),
-        telegram_oauth_night_recovery_cooldown_enabled=bool_value(
-            telegram_config.get(
-                "oauth_night_recovery_cooldown_enabled",
-                os.getenv("TELEGRAM_OAUTH_NIGHT_RECOVERY_COOLDOWN_ENABLED"),
-            ),
-            True,
+        telegram_oauth_daily_test_enabled=bool_value(
+            telegram_config.get("oauth_daily_test_enabled", os.getenv("TELEGRAM_OAUTH_DAILY_TEST_ENABLED")), True
+        ),
+        telegram_oauth_daily_test_time=load_daily_test_time(
+            telegram_config.get("oauth_daily_test_time", os.getenv("TELEGRAM_OAUTH_DAILY_TEST_TIME", "05:00"))
         ),
         telegram_oauth_usage_refresh_concurrency=int_value(
             telegram_config.get(
