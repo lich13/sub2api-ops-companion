@@ -131,11 +131,13 @@ class PriceCatalog:
 
 def classify_model_event(log: dict[str, Any], catalog: PriceCatalog) -> dict[str, Any]:
     requested = str(log.get("requested_model") or log.get("model") or "").strip()
-    upstream = str(log.get("upstream_model") or requested).strip()
+    upstream = str(log.get("upstream_model") or "").strip()
     response = str(log.get("upstream_response_model") or "").strip()
     endpoint = str(log.get("inbound_endpoint") or "").lower()
     chain = str(log.get("model_mapping_chain") or "").strip()
-    if normalize_model(upstream) and normalize_model(upstream) == normalize_model(response):
+    if not normalize_model(upstream):
+        status, reason = "unconfirmed", "缺少实际上游模型"
+    elif normalize_model(upstream) == normalize_model(response):
         status, reason = "ok", "响应模型与实际上游模型一致"
     else:
         status, reason = catalog.compare(upstream, response)
