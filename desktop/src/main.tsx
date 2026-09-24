@@ -36,10 +36,11 @@ import {
   type Group,
   type OpsError,
   type Preferences,
-  type UsageWindow,
   type ViewState,
 } from "./types";
 import "./style.css";
+import UsageCell from "./UsageCell";
+import { version as appVersion } from "../package.json";
 
 type Page = "overview" | "accounts" | "events" | "automation" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
@@ -81,65 +82,6 @@ function Switch({
 }
 function Time({ at }: { at: string | null | undefined }) {
   return <time>{fullTime(at)}</time>;
-}
-function UsageWindows({ windows }: { windows: UsageWindow[] }) {
-  if (!windows.length) return <span className="muted">—</span>;
-  return (
-    <div className="quota-windows">
-      {windows.map((w) => {
-        const value = w.used_percent;
-        const state = {
-          known: "",
-          unknown: "未知",
-          stale: "历史快照",
-          error: "上游异常",
-        }[w.status];
-        return (
-          <div
-            className={`quota-window ${w.status} window-${w.key}`}
-            key={w.key}
-          >
-            <div className="quota-label">
-              <span>{w.label}</span>
-              <strong>{value === null ? "—" : `${Math.round(value)}%`}</strong>
-              {state && <span className="quota-state">{state}</span>}
-            </div>
-            {value !== null && (
-              <div
-                className="quota-track"
-                role="progressbar"
-                aria-label={`${w.label}用量`}
-                aria-valuenow={value}
-                aria-valuemin={0}
-                aria-valuemax={Math.max(100, value)}
-              >
-                <i
-                  className={
-                    value >= 100 ? "exhausted" : value >= 80 ? "warning" : ""
-                  }
-                  style={{ width: `${Math.min(100, value)}%` }}
-                />
-              </div>
-            )}
-            {w.limit != null && w.used != null && (
-              <div className="window-count">
-                {w.used.toLocaleString("en-US")} /{" "}
-                {w.limit.toLocaleString("en-US")}
-              </div>
-            )}
-            {w.reset_at && (
-              <div className="quota-time">
-                重置 <Time at={w.reset_at} />
-              </div>
-            )}
-            <div className="quota-time">
-              采集 <Time at={w.observed_at} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
@@ -327,20 +269,25 @@ export default function App() {
             return (
               <div className="recent-account" key={call.account_id}>
                 <div className="group-call">
-                  <span
-                    className={`status-dot ${a?.available ? "good" : "muted"}`}
-                  />
+                  {!compact && (
+                    <span
+                      className={`status-dot ${a?.available ? "good" : "muted"}`}
+                    />
+                  )}
                   <div className="call-info">
                     <strong title={call.account_name}>
                       {call.account_name || `账号 #${call.account_id}`}
                     </strong>
-                    <span>
-                      #{call.account_id} · {call.model}
-                    </span>
+                    {!compact && (
+                      <span>
+                        #{call.account_id} · {call.model}
+                      </span>
+                    )}
                   </div>
                   {a ? schedule(a) : null}
                 </div>
                 <div className="call-time">
+                  {compact && <span>最近调用</span>}
                   <Time at={call.called_at} />
                 </div>
                 {a?.last_error_id ? (
@@ -348,9 +295,15 @@ export default function App() {
                     className="error-link"
                     onClick={() => void openError(a.last_error_id!)}
                   >
-                    <CircleAlert size={12} />
-                    报错 <Time at={a.last_error_at} />
+                    {!compact && <CircleAlert size={12} />}
+                    <span>{compact ? "上次错误" : "报错"}</span>
+                    <Time at={a.last_error_at} />
                   </button>
+                ) : compact ? (
+                  <div className="call-time">
+                    <span>上次错误</span>
+                    <Time at={a?.last_error_at} />
+                  </div>
                 ) : null}
               </div>
             );
@@ -717,7 +670,12 @@ export default function App() {
                               </span>
                             </td>
                             <td>
-                              <UsageWindows windows={a.usage_windows ?? []} />
+                              <UsageCell
+                                account={a}
+                                online={state.online}
+                                refresh={() => command("refresh")}
+                                report={report}
+                              />
                             </td>
                             <td>
                               {a.last_error_id ? (
@@ -1258,7 +1216,7 @@ function SettingsPage({
                     .catch(onError)
                 }
               >
-                0.1.1 · 检查更新 <ExternalLink size={13} />
+                {appVersion} · 检查更新 <ExternalLink size={13} />
               </button>
             </div>
           </section>

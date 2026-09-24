@@ -142,6 +142,106 @@ const accounts: Account[] = [
     usage_windows: [],
   },
 ];
+const stats = {
+  requests: 313,
+  tokens: 46900000,
+  cost: 76.8,
+  standard_cost: 76.8,
+  user_cost: 76.8,
+};
+for (const account of accounts) {
+  account.usage = {
+    branch:
+      account.type === "apikey"
+        ? "apikey"
+        : account.platform === "grok"
+          ? "grok_paid"
+          : "openai_oauth",
+    windows: account.usage_windows,
+    today:
+      account.type === "apikey"
+        ? { requests: 0, tokens: 0, cost: 0, standard_cost: 0, user_cost: 0 }
+        : null,
+    actions:
+      account.type === "apikey"
+        ? []
+        : account.platform === "grok"
+          ? ["probe_quota"]
+          : ["query_usage", "query_reset_credits", "reset_quota"],
+    reset_credits:
+      account.platform === "openai" && account.type === "oauth"
+        ? {
+            available: 1,
+            expires_at: ["2026-10-23T02:52:00+08:00"],
+            observed_at: now,
+          }
+        : null,
+  };
+  for (const window of account.usage.windows) {
+    window.stats = stats;
+    window.color =
+      window.label === "7d" && account.platform === "openai"
+        ? "emerald"
+        : "indigo";
+    if (account.platform === "grok") {
+      window.label = window.key === "requests" ? "7d" : "30d";
+      window.source = "billing_probe";
+    }
+    if (account.platform === "openai" && window.label === "7d")
+      window.estimated_total_cost = 94.81;
+  }
+}
+accounts.push({
+  ...accounts[3],
+  id: 390,
+  name: "Grok · 按量 Key",
+  platform: "grok",
+  managed: false,
+  usage: {
+    branch: "apikey",
+    windows: [
+      {
+        key: "daily",
+        label: "1d",
+        used_percent: 75,
+        reset_at: now,
+        observed_at: now,
+        status: "known",
+        source: "configured_quota",
+        color: "indigo",
+      },
+    ],
+    today: stats,
+    actions: [],
+    reset_credits: null,
+  },
+});
+accounts.push({
+  ...accounts[2],
+  id: 391,
+  name: "Grok · Free",
+  last_error_id: null,
+  last_error_at: null,
+  usage: {
+    branch: "grok_free",
+    windows: [
+      {
+        key: "grok_24h",
+        label: "24h",
+        used_percent: 90,
+        reset_at: null,
+        observed_at: now,
+        status: "known",
+        source: "local_24h",
+        color: "emerald",
+        stats,
+      },
+    ],
+    today: null,
+    actions: ["probe_quota"],
+    reset_credits: null,
+  },
+});
 let state: ViewState = {
   connected: true,
   online: true,
@@ -325,7 +425,7 @@ export async function run(
     return;
   }
   if (name === "show_main") return;
-  if (name === "check_updates") return "预览模式 · 当前版本 0.1.0";
+  if (name === "check_updates") return "预览模式 · 当前版本 0.1.2";
   if (name === "api_request") {
     const path = String(args.path),
       body = args.body as {
@@ -362,6 +462,7 @@ export async function run(
         content_limited: true,
       };
     }
+    if (path.endsWith("/usage-action")) return { message: "预览：操作已完成" };
     if (path.startsWith("/accounts/")) {
       const a = state.snapshot?.accounts.find(
         (a) => a.id === Number(path.split("/")[2]),
