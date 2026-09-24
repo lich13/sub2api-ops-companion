@@ -1,0 +1,6 @@
+{
+  "identifier": "desktop",
+  "description": "Local app windows only",
+  "windows": ["main", "quick"],
+  "permissions": ["core:default"]
+}
