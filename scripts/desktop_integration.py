@@ -72,7 +72,8 @@ def seed():
                    'qa upstream rejected',%s,now()-interval '1 minute','desktop-qa-request') RETURNING id""",
                    (accounts[0],groups[0],json.dumps({"error":{"code":"qa_error","message":"QA error"},"request":{"prompt":"PRIVATE_QA_PROMPT"},"credentials":{"api_key":"PRIVATE_QA_KEY"}}))).fetchone()[0]
         db.execute("UPDATE accounts SET extra=%s WHERE id=%s", (Jsonb({"quota_daily_limit":10,"quota_daily_used":2.5,"private_qa_marker":"HIDDEN_QUOTA_MARKER"}),accounts[0]))
-        db.execute("INSERT INTO accounts(name,platform,type,credentials,extra) VALUES ('QA Grok Usage','grok','oauth','{}',%s)", (Jsonb({"grok_usage_snapshot":{"requests":{"limit":100,"remaining":75},"tokens":{"limit":1000,"remaining":600},"updated_at":"2026-09-24T12:00:00Z","headers":{"authorization":"HIDDEN_HEADER_MARKER"}}}),))
+        db.execute("UPDATE usage_logs SET input_tokens=10,output_tokens=5,cache_creation_tokens=2,cache_read_tokens=3,account_stats_cost=2,account_rate_multiplier=1.5,total_cost=2.5,actual_cost=0.5 WHERE account_id=%s", (accounts[0],))
+        db.execute("INSERT INTO accounts(name,platform,type,credentials,extra) VALUES ('QA Grok Usage','grok','oauth','{}',%s)", (Jsonb({"subscription_tier":"supergrok","grok_billing_snapshot":{"period_type":"weekly","usage_percent":100,"fetched_at":"2026-09-24T12:00:00Z"},"grok_usage_snapshot":{"headers":{"authorization":"HIDDEN_HEADER_MARKER"}}}),))
         db.execute("INSERT INTO accounts(name,platform,type,credentials,extra) VALUES ('QA OpenAI Usage','openai','oauth',%s,%s)", (Jsonb({"plan_type":"free"}),Jsonb({"codex_5h_used_percent":99,"codex_7d_used_percent":31,"codex_usage_updated_at":"2026-09-24T12:00:00Z"})))
     print(json.dumps({"seeded":True,"accounts":accounts,"groups":groups,"error_id":error}))
 
@@ -88,10 +89,16 @@ def verify():
     recent=next(g for g in groups if g['name']=='QA Alpha')['recent_accounts']
     assert [a['account_name'] for a in recent]==['QA Shared','QA Third','QA Fourth']
     assert len({a['account_id'] for a in recent})==3
-    assert shared['usage_windows']==[]  # Monetary Key budgets are not usage windows.
+    assert [(w['label'],w['used_percent']) for w in shared['usage_windows']]==[('1d',25)]
+    assert shared['usage']['today']['requests']==3
+    assert shared['usage']['today']['tokens']==60
+    assert shared['usage']['today']['cost']==9
+    assert shared['usage']['today']['user_cost']==1.5
+    assert shared['usage']['actions']==[]
     assert other['usage_windows']==[]
     grok=next(a for a in accounts if a['name']=='QA Grok Usage')
-    assert [w['used_percent'] for w in grok['usage_windows']]==[25,40]
+    assert [(w['label'],w['used_percent']) for w in grok['usage_windows']]==[('7d',100)]
+    assert grok['usage']['actions']==['probe_quota']
     free=next(a for a in accounts if a['name']=='QA OpenAI Usage')
     assert [(w['key'],w['used_percent']) for w in free['usage_windows']]==[('codex_7d',31)]
     assert shared['success_after_error']

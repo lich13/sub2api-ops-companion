@@ -18,6 +18,33 @@ export type Account = {
   error_message: string;
   success_after_error: boolean;
   usage_windows: UsageWindow[];
+  usage?: UsageSummary;
+};
+export type UsageAction =
+  | "query_usage"
+  | "query_reset_credits"
+  | "reset_quota"
+  | "probe_quota";
+export type UsageStats = {
+  requests: number;
+  tokens: number;
+  cost: number;
+  standard_cost: number;
+  user_cost: number;
+};
+export type UsageSummary = {
+  branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid";
+  windows: UsageWindow[];
+  today: UsageStats | null;
+  actions: UsageAction[];
+  reset_credits: {
+    available: number | null;
+    expires_at: string[];
+    observed_at: string | null;
+  } | null;
+  prepaid_balance?: number | null;
+  monthly_limit?: number | null;
+  monthly_used?: number | null;
 };
 export type UsageWindow = {
   key: string;
@@ -30,6 +57,9 @@ export type UsageWindow = {
   used?: number | null;
   limit?: number | null;
   remaining?: number | null;
+  color?: "indigo" | "emerald" | "purple";
+  stats?: UsageStats | null;
+  estimated_total_cost?: number | null;
 };
 export type RecentAccount = {
   log_id: number;
@@ -127,7 +157,6 @@ export function fullTime(value: string | null | undefined): string {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-GB", {
       timeZone: "Asia/Shanghai",
-      year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -138,7 +167,7 @@ export function fullTime(value: string | null | undefined): string {
       .formatToParts(date)
       .map(({ type, value }) => [type, value]),
   );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
 export function filterAccounts(
   accounts: Account[],

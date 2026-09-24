@@ -10,7 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -21,6 +21,7 @@ from .bark import _urlopen_no_redirect, sanitize_error_text
 from .config_service import ConfigConflict, ConfigService
 from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, latest_completed_oauth_result
 from .quota_snapshot import usage_windows
+from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -113,7 +114,9 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
 
 ACCOUNT_SQL = f"""
 SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.error_message, a.extra,
+ nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
+ a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,
  a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
  coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,
  ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids,
@@ -164,6 +167,12 @@ class DesktopService:
         self._snapshot_lock = threading.Lock()
         self._cached: dict[str, Any] | None = None
         self._cached_at = 0.0
+        self._stats: dict = {}
+        self._stats_at = 0.0
+        self._stats_signature: list = []
+        self._usage_locks: dict[int, threading.Lock] = {}
+        self._usage_locks_guard = threading.Lock()
+        self._uncertain_resets: set[int] = set()
 
     def authenticate(self, key: str, *, fresh: bool = False) -> None:
         if not key or len(key) > 4096 or any(ord(c) < 33 for c in key):
@@ -194,6 +203,7 @@ class DesktopService:
     def invalidate(self) -> None:
         with self._snapshot_lock:
             self._cached_at = 0
+            self._stats_at = 0
 
     def snapshot(self) -> dict[str, Any]:
         with self._snapshot_lock:
@@ -206,8 +216,26 @@ class DesktopService:
             monitor = getattr(r, "oauth_monitor", None)
             state = monitor.store.cached_snapshot() if monitor else {}
             saved, scheduler = state.get("oauth_results", {}), state.get("scheduler", {})
-            accounts = [account_dto(row, now, managed, latest_completed_oauth_result(saved.get(str(row["id"])), scheduler.get(str(row["id"]))))
-                        for row in r.db.fetch_all(ACCOUNT_SQL.format(filter=""))]
+            accounts, specs = [], []
+            for row in r.db.fetch_all(ACCOUNT_SQL.format(filter="")):
+                result = latest_completed_oauth_result(saved.get(str(row["id"])), scheduler.get(str(row["id"])))
+                account = account_dto(row, now, managed, result)
+                account["usage"] = project_usage(row, now, result)
+                specs.extend(stats_specs(row["id"], account["usage"]))
+                accounts.append(account)
+            # Rolling windows move continuously; cache the batch for 15 seconds.
+            # Fixed window/reset changes invalidate within the current minute.
+            signature = [(s["account_id"], s["key"], s["start_at"][:16]) for s in specs]
+            if time.monotonic() - self._stats_at >= 15 or signature != self._stats_signature:
+                try:
+                    self._stats = read_stats(r.db, specs)
+                except Exception:
+                    # Missing statistics are unknown, never synthesized as zero.
+                    self._stats = {}
+                self._stats_at, self._stats_signature = time.monotonic(), signature
+            for account in accounts:
+                attach_stats(account["id"], account["usage"], self._stats, free_token_limit=500_000)
+                account["usage_windows"] = account["usage"]["windows"]
             groups = group_dtos(r.db.fetch_all(GROUP_SQL))
             errors = self.errors(None, None, 20)
             guard = r.build_model_guard_panel()
@@ -278,6 +306,96 @@ class DesktopService:
                                       "code": result.get("error_code") or "readback_mismatch"})
         return {"verified": True, "detached": detached, "account_id": account_id, "schedulable": payload.schedulable}
 
+    def usage_action(self, account_id: int, payload: UsageActionRequest, key: str) -> dict[str, Any]:
+        if account_id <= 0:
+            raise HTTPException(422, "账号编号无效")
+        with self._usage_locks_guard:
+            lock = self._usage_locks.setdefault(account_id, threading.Lock())
+        if not lock.acquire(blocking=False):
+            raise HTTPException(409, "此账号正在执行用量操作，请等待结果")
+        monitor_lock = None
+        try:
+            row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+            if not row:
+                raise HTTPException(404, "账号已删除")
+            now = datetime.now(timezone.utc)
+            if account_dto(row, now, set())["version"] != payload.expected_version:
+                raise HTTPException(409, "账号已变化，请刷新后再操作")
+            usage = project_usage(row, now)
+            if payload.action not in usage["actions"]:
+                raise HTTPException(422, "此账号不支持该用量操作")
+            if payload.action in {"reset_quota", "probe_quota"} and not payload.confirmed:
+                raise HTTPException(409, "请先确认重置次数消耗或模型探测请求")
+            if payload.action == "reset_quota":
+                if account_id in self._uncertain_resets:
+                    raise HTTPException(409, "上次重置结果不确定，请先查询次数确认，禁止重复重置")
+                if not (reset_credits(row.get("extra") or {}, now)["available"] or 0):
+                    raise HTTPException(409, "没有已确认可用的重置次数，请先查询次数")
+            monitor = getattr(self.r, "oauth_monitor", None)
+            if row["platform"] == "openai" and monitor:
+                monitor_lock = monitor._run_lock
+                if not monitor_lock.acquire(blocking=False):
+                    monitor_lock = None
+                    raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
+            action_paths = {
+                "query_usage": ("GET", f"/accounts/{account_id}/usage?source=active&force=true", 30),
+                "query_reset_credits": ("POST", f"/openai/accounts/{account_id}/quota/refresh", 30),
+                "reset_quota": ("POST", f"/openai/accounts/{account_id}/reset-quota", 90),
+                "probe_quota": ("GET", f"/grok/accounts/{account_id}/quota", 90),
+            }
+            method, path, timeout = action_paths[payload.action]
+            request = urllib.request.Request(self.r.oauth_base_url().rstrip("/") + "/api/v1/admin" + path,
+                method=method, data=b"{}" if method == "POST" else None,
+                headers={"x-api-key": key, "Accept": "application/json", "Content-Type": "application/json"})
+            if payload.action == "reset_quota":
+                self._uncertain_resets.add(account_id)
+            code = "unknown"
+            try:
+                with _urlopen_no_redirect(request, timeout=timeout) as response:
+                    body = json.loads(response.read(2_000_000))
+                    if not 200 <= response.status < 300 or body.get("code") != 0:
+                        code = "upstream_rejected"
+                        raise ValueError("upstream rejected")
+                data = body.get("data") or {}
+                if not isinstance(data, dict):
+                    raise ValueError("invalid result")
+                if payload.action == "reset_quota" and data.get("code") not in (None, "success", "ok", 0):
+                    code = clean(data.get("code"), 80)
+                    raise ValueError("reset rejected")
+                if payload.action == "probe_quota" and (data.get("probe_error") or int(data.get("status_code") or 200) >= 400):
+                    code = "probe_failed"
+                    raise ValueError("probe failed")
+                if payload.action == "query_reset_credits" and data.get("cache_persisted") is False:
+                    code = "snapshot_not_saved"
+                    raise ValueError("query snapshot not saved")
+                code = "ok"
+            except urllib.error.HTTPError as exc:
+                code = f"http_{exc.code}"
+            except Exception:
+                if code == "unknown":
+                    code = "result_uncertain"
+            finally:
+                self.invalidate()
+                write_audit(self.r.settings.audit_path, "desktop_usage_action",
+                            {"account_id": account_id, "action": payload.action, "code": code})
+            if code != "ok":
+                raise HTTPException(502, {"message": "操作未确认，未自动重放；请先查询确认实际结果", "code": code})
+            live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+            if not live or (live["platform"], live["type"]) != (row["platform"], row["type"]):
+                raise HTTPException(409, "操作后账号已变化，请刷新确认结果")
+            warning = payload.action == "reset_quota" and (data.get("cache_refreshed") is False or data.get("warning_code"))
+            if payload.action == "query_reset_credits" or payload.action == "reset_quota" and not warning:
+                self._uncertain_resets.discard(account_id)
+            # Re-read the actual saved state, never mirror arbitrary action JSON.
+            account = next((a for a in self.snapshot()["accounts"] if a["id"] == account_id), None)
+            return {"message": "重置已执行，但快照更新未确认；请查询次数，勿重复重置" if warning else {"query_usage": "用量查询完成", "query_reset_credits": "重置次数已查询",
+                                "reset_quota": "重置已执行", "probe_quota": "探测完成"}[payload.action],
+                    "account": account}
+        finally:
+            if monitor_lock:
+                monitor_lock.release()
+            lock.release()
+
 
 class ScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -290,6 +408,13 @@ class ConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: str = Field(min_length=64, max_length=64)
     changes: dict[str, Any]
+
+
+class UsageActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["query_usage", "query_reset_credits", "reset_quota", "probe_quota"]
+    expected_version: str = Field(min_length=64, max_length=64)
+    confirmed: StrictBool = False
 
 
 def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
@@ -333,6 +458,11 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def config(request: Request) -> Any:
         await auth(request)
         return await asyncio.to_thread(service.config.snapshot)
+
+    @router.post("/accounts/{account_id}/usage-action")
+    async def usage_action(account_id: int, payload: UsageActionRequest, request: Request) -> Any:
+        key = await auth(request)
+        return await asyncio.to_thread(service.usage_action, account_id, payload, key)
 
     @router.put("/config/{section}")
     async def save_config(section: str, payload: ConfigRequest, request: Request) -> Any:
