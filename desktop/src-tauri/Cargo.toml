@@ -1,0 +1,36 @@
+[package]
+name = "sub2ops"
+version = "0.1.0"
+description = "Sub2API Ops desktop companion"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "sub2ops_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+keyring = { version = "3", features = ["apple-native"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+# Keep proc-macro dylibs loadable with Apple's current linker; strip can produce
+# a misaligned LINKEDIT string pool on Apple Silicon.
+[profile.release]
+strip = "none"
+
+[profile.release.build-override]
+strip = "none"

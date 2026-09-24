@@ -293,6 +293,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         )
         try:
             with (
+                patch.object(main_module.desktop_service.config, "snapshot", return_value={}),
                 patch.object(
                     main_module,
                     "build_telegram_config",
@@ -353,7 +354,10 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("api.day.app", html)
         self.assertNotIn(custom_url, html)
         self.assertNotIn(secret, html)
-        self.assertNotIn('type="hidden"', html)
+        # Concurrency revisions are non-secret metadata; hidden credentials remain forbidden.
+        import re
+        hidden = re.findall(r'<input[^>]*type="hidden"[^>]*>', html)
+        self.assertTrue(all('name="config_revision"' in field for field in hidden))
         self.assertIn("name=\"bark_device_key\"", html)
         self.assertIn("Bark 事件推送", html)
 
