@@ -37,6 +37,7 @@
     <span class="status-dot {{ 'online' if bark.configured else '' }}" title="{{ '已就绪' if bark.configured else ('配置文件无效' if not bark.config_valid else '未就绪') }}"></span>
   </div>
   <form class="bark-settings-form" method="post" action="{{ base_path }}/bark/config" autocomplete="off">
+    <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('bark', '') }}">
     <label class="setting-toggle bark-enable-toggle">
       <input type="checkbox" name="enabled" value="1" {{ 'checked' if bark.enabled else '' }}>
       <span><strong>启用 Bark 推送</strong></span>
@@ -61,6 +62,7 @@
       <span class="status-dot {{ 'online' if telegram.configured else '' }}"></span>
     </div>
     <form class="stack-form" method="post" action="{{ base_path }}/telegram/config" autocomplete="off">
+      <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('telegram', '') }}">
       <label>
         <span>Bot Token</span>
         <input type="password" name="telegram_bot_token" autocomplete="new-password" spellcheck="false" placeholder="{{ telegram.bot_token_preview if telegram.bot_token_set else '粘贴 Bot Token' }}">
@@ -112,6 +114,7 @@
     <h3>OAuth 账号监控</h3>
   </div>
   <form class="oauth-settings-form" method="post" action="{{ base_path }}/telegram/oauth-settings">
+    <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('oauth', '') }}">
     <div class="toggle-grid">
       <label class="setting-toggle">
         <input type="checkbox" name="oauth_usage_refresh_enabled" value="1" {{ 'checked' if telegram.oauth_usage_refresh_enabled else '' }}>
@@ -168,6 +171,7 @@
     <h3>Key 调度回退</h3>
   </div>
   <form class="oauth-settings-form" method="post" action="{{ base_path }}/key-fallback/config">
+    <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('key_fallback', '') }}">
     {% for platform, label in [('openai', 'OpenAI'), ('grok', 'Grok')] %}
     <fieldset class="key-fallback-group">
       <legend>{{ label }}</legend>
@@ -203,6 +207,7 @@
     <span class="status-dot {{ 'online' if guard.openai_enabled or guard.grok_enabled else '' }}"></span>
   </div>
   <form class="oauth-settings-form" method="post" action="{{ base_path }}/model-guard/config">
+    <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('model_guard', '') }}">
     <div class="toggle-grid">
       <label class="setting-toggle">
         <input type="checkbox" name="openai_enabled" value="1" {{ 'checked' if guard.openai_enabled else '' }}>
