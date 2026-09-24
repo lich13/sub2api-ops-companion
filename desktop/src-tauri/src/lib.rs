@@ -19,6 +19,9 @@ use tokio::sync::{Mutex, Notify};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
+#[cfg(target_os = "macos")]
+mod tray_macos;
+
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
@@ -53,26 +56,28 @@ struct Runtime {
 struct PanelLifecycle {
     generation: u64,
     focused: bool,
+    showing: bool,
 }
 
 impl PanelLifecycle {
     fn show(&mut self, focused: bool) {
         self.generation += 1;
         self.focused = focused;
+        self.showing = false;
     }
     fn focus(&mut self) {
         self.generation += 1;
         self.focused = true;
     }
     fn blur(&mut self) -> Option<u64> {
-        if !self.focused {
+        if !self.focused || self.showing {
             return None;
         }
         self.focused = false;
         Some(self.generation)
     }
     fn can_hide(&self, generation: u64) -> bool {
-        generation == self.generation && !self.focused
+        generation == self.generation && !self.focused && !self.showing
     }
 }
 
@@ -145,7 +150,10 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 .any(|s| path == format!("/actions/{s}"))
                 || path
                     .strip_prefix("/accounts/")
-                    .and_then(|s| s.strip_suffix("/schedulable"))
+                    .and_then(|s| {
+                        s.strip_suffix("/schedulable")
+                            .or_else(|| s.strip_suffix("/usage-action"))
+                    })
                     .is_some_and(|s| s.parse::<u64>().is_ok())
         }
         _ => false,
@@ -165,6 +173,10 @@ async fn http(
         .request(method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key)
         .header("Accept", "application/json");
+    if path.ends_with("/usage-action") {
+        // Explicit probe/reset may take 90 s. No retries are added.
+        req = req.timeout(Duration::from_secs(105));
+    }
     if let Some(body) = body {
         req = req.json(&body);
     }
@@ -458,8 +470,8 @@ fn panel_bounds(
     height: u32,
     scale: f64,
 ) -> (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>) {
-    let w = (440. * scale).min((width as f64 - 16.).max(1.));
-    let h = (640. * scale).min((height as f64 - 16.).max(1.));
+    let w = (420. * scale).min((width as f64 - 16.).max(1.));
+    let h = (560. * scale).min((height as f64 - 16.).max(1.));
     let px = (anchor.x - w + 20.).clamp(
         x as f64 + 8.,
         (x as f64 + width as f64 - w - 8.).max(x as f64 + 8.),
@@ -474,46 +486,79 @@ fn panel_bounds(
     )
 }
 
-fn quick_panel(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let rect = app
-        .tray_by_id("ops")
-        .and_then(|tray| tray.rect().ok().flatten())
-        .ok_or("菜单栏图标暂不可用")?;
+fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let Ok(dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let path = dir.join("panel-diagnostics.log");
+    let truncate = std::fs::metadata(&path).is_ok_and(|m| m.len() > 64 * 1024);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(!truncate)
+        .truncate(truncate)
+        .mode(0o600)
+        .open(path)
+    {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        // Window lifecycle only: no server address, account data or credentials.
+        let _ = writeln!(file, "{stamp} {stage} {detail}");
+    }
+}
+
+fn create_quick(app: &tauri::AppHandle) -> tauri::Result<()> {
+    WebviewWindowBuilder::new(
+        app,
+        "quick",
+        WebviewUrl::App("index.html?panel=quick".into()),
+    )
+    .title("Sub2Ops 快捷面板")
+    .inner_size(420., 560.)
+    .decorations(false)
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .focused(false)
+    .build()?;
+    panel_trace(app, "precreated", "hidden");
+    Ok(())
+}
+
+fn quick_panel(
+    app: &tauri::AppHandle,
+    rect: tauri::Rect,
+) -> Result<(), Box<dyn std::error::Error>> {
+    panel_trace(app, "show_begin", "");
     let position = rect.position.to_physical::<f64>(1.0);
     let size = rect.size.to_physical::<f64>(1.0);
     let anchor = tauri::PhysicalPosition::new(position.x + size.width, position.y + size.height);
-    let window = if let Some(window) = app.get_webview_window("quick") {
-        window
-    } else {
-        WebviewWindowBuilder::new(
-            app,
-            "quick",
-            WebviewUrl::App("index.html?panel=quick".into()),
-        )
-        .title("Sub2Ops 快捷面板")
-        .inner_size(440., 640.)
-        .decorations(false)
-        .resizable(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .visible(false)
-        .build()?
-    };
-    app.state::<Arc<Runtime>>()
-        .panel
-        .lock()
-        .unwrap()
-        .show(window.is_focused().unwrap_or(false));
+    let window = app.get_webview_window("quick").ok_or("快捷窗口未创建")?;
+    {
+        let state = app.state::<Arc<Runtime>>();
+        let mut panel = state.panel.lock().unwrap();
+        panel.show(false);
+        panel.showing = true;
+    }
     let monitors = window.available_monitors()?;
-    let monitor = monitors.iter().find(|m| {
-        let p = m.position();
-        let s = m.size();
-        anchor.x >= p.x as f64
-            && anchor.x < p.x as f64 + s.width as f64
-            && anchor.y >= p.y as f64
-            && anchor.y < p.y as f64 + s.height as f64
-    });
-    if let Some(m) = monitor {
+    let monitor = monitors
+        .iter()
+        .find(|m| {
+            let p = m.position();
+            let s = m.size();
+            anchor.x >= p.x as f64
+                && anchor.x < p.x as f64 + s.width as f64
+                && anchor.y >= p.y as f64
+                && anchor.y < p.y as f64 + s.height as f64
+        })
+        .ok_or("菜单栏边界未匹配到屏幕")?;
+    {
+        let m = monitor;
         let area = m.work_area();
         let (position, size) = panel_bounds(
             anchor,
@@ -525,21 +570,57 @@ fn quick_panel(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
         );
         window.set_size(size)?;
         window.set_position(position)?;
+        panel_trace(
+            app,
+            "positioned",
+            &format!(
+                "x={} y={} width={} height={}",
+                position.x, position.y, size.width, size.height
+            ),
+        );
     }
     #[cfg(target_os = "macos")]
     app.show()?;
     window.show()?;
+    panel_trace(app, "shown", "");
     window.set_focus()?;
+    let focused = window.is_focused()?;
+    {
+        let state = app.state::<Arc<Runtime>>();
+        let mut panel = state.panel.lock().unwrap();
+        panel.showing = false;
+        panel.focused = focused;
+    }
+    panel_trace(
+        app,
+        "focus_requested",
+        if focused { "focused" } else { "awaiting_event" },
+    );
     app.state::<Arc<Runtime>>().wake.notify_one();
     Ok(())
 }
 
 #[tauri::command]
 fn show_quick(app: tauri::AppHandle) -> Result<(), String> {
+    queue_quick(app, None)
+}
+
+fn queue_quick(app: tauri::AppHandle, event_rect: Option<tauri::Rect>) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
-        if quick_panel(&handle).is_err() {
-            let _ = handle.emit("update-result", "无法打开快捷面板");
+        // Tray clicks use the event's geometry. The toolbar alone needs a lookup.
+        let rect = event_rect.or_else(|| {
+            handle
+                .tray_by_id("ops")
+                .and_then(|t| t.rect().ok().flatten())
+        });
+        let result = rect
+            .ok_or_else(|| "菜单栏边界不可用".to_string())
+            .and_then(|rect| quick_panel(&handle, rect).map_err(|e| e.to_string()));
+        if let Err(error) = result {
+            handle.state::<Arc<Runtime>>().panel.lock().unwrap().showing = false;
+            panel_trace(&handle, "show_failed", &error);
+            let _ = handle.emit("update-result", format!("无法打开快捷面板：{error}"));
         }
     })
     .map_err(|_| "无法打开快捷面板".into())
@@ -556,13 +637,17 @@ fn hide_quick(app: tauri::AppHandle) -> Result<(), String> {
             .unwrap()
             .show(false);
         if let Some(window) = handle.get_webview_window("quick") {
-            let _ = window.hide();
+            match window.hide() {
+                Ok(()) => panel_trace(&handle, "hidden", "explicit"),
+                Err(error) => panel_trace(&handle, "hide_failed", &error.to_string()),
+            }
         }
     })
     .map_err(|_| "无法关闭快捷面板".into())
 }
 
 fn defer_panel_blur(app: &tauri::AppHandle) {
+    panel_trace(app, "blur", "");
     let generation = app.state::<Arc<Runtime>>().panel.lock().unwrap().blur();
     let Some(generation) = generation else {
         return;
@@ -576,13 +661,20 @@ fn defer_panel_blur(app: &tauri::AppHandle) {
             if state.pinned.load(Ordering::Relaxed) {
                 return;
             }
-            let mut panel = state.panel.lock().unwrap();
-            if panel.can_hide(generation) {
+            let eligible = state.panel.lock().unwrap().can_hide(generation);
+            if eligible {
                 if let Some(window) = app.get_webview_window("quick") {
                     if !window.is_focused().unwrap_or(true) {
+                        let mut panel = state.panel.lock().unwrap();
+                        if !panel.can_hide(generation) {
+                            return;
+                        }
                         panel.show(false);
                         drop(panel);
-                        let _ = window.hide();
+                        match window.hide() {
+                            Ok(()) => panel_trace(&app, "hidden", "blur"),
+                            Err(error) => panel_trace(&app, "hide_failed", &error.to_string()),
+                        }
                     }
                 }
             }
@@ -606,6 +698,7 @@ pub fn run() {
                 view: Mutex::new(ViewState { connected: key.is_some(), preferences: prefs, ..Default::default() }),
                 key: Mutex::new(key), network: Mutex::new(()), wake: Notify::new(), path });
             app.manage(state.clone());
+            create_quick(app.handle())?;
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
                 &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
@@ -614,13 +707,30 @@ pub fn run() {
             // Original monochrome pulse mark, drawn in memory for the macOS template icon.
             let mut pixels = vec![0u8; 22*22*4];
             for x in 2..20usize { let y = match x { 6..=8 => 11-(x-5)*2, 9..=12 => 5+(x-8)*3, 13..=15 => 17-(x-12)*2, _ => 11 }; for d in 0..2 { let i=((y+d).min(21)*22+x)*4; pixels[i+3]=255; } }
-            TrayIconBuilder::with_id("ops").icon(tauri::image::Image::new_owned(pixels,22,22)).icon_as_template(true).tooltip("Sub2Ops").menu(&menu).show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray,event| { if let TrayIconEvent::Click {button:MouseButton::Left,button_state:MouseButtonState::Up,..}=event {let _=show_quick(tray.app_handle().clone());} })
+            let tray = TrayIconBuilder::with_id("ops").icon(tauri::image::Image::new_owned(pixels,22,22)).icon_as_template(true).tooltip("Sub2Ops").menu(&menu).show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray,event| {
+                    if let TrayIconEvent::Click {button,button_state,rect,..}=event {
+                        panel_trace(tray.app_handle(), "tray_click", &format!("{button:?} {button_state:?}"));
+                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                            if let Err(error) = queue_quick(tray.app_handle().clone(), Some(rect)) {
+                                panel_trace(tray.app_handle(), "dispatch_failed", &error);
+                            }
+                        }
+                        #[cfg(target_os = "macos")]
+                        if button == MouseButton::Right && button_state == MouseButtonState::Down {
+                            if let Err(error) = tray_macos::show_menu(tray) {
+                                panel_trace(tray.app_handle(), "menu_failed", &error.to_string());
+                            }
+                        }
+                    }
+                })
                 .on_menu_event(|app,event| match event.id().as_ref() {
                     "open" => {let _=show_main(app.clone());},
                     "updates" => { let handle=app.clone(); tauri::async_runtime::spawn(async move { let result=check_updates(handle.clone(),handle.state()).await; let _=handle.emit("update-result",result.unwrap_or_else(|e|e)); let _=show_main(handle); }); },
                     "quit" => { app.state::<Arc<Runtime>>().quitting.store(true,Ordering::Relaxed); app.exit(0); }, _=>()
                 }).build(app)?;
+            #[cfg(target_os = "macos")]
+            { tray_macos::install(&tray)?; panel_trace(app.handle(), "tray_ready", "transient_menu_macos27"); }
             let handle=app.handle().clone();
             tauri::async_runtime::spawn(async move { loop {
                 refresh_inner(&handle,&state).await;
@@ -640,7 +750,7 @@ pub fn run() {
             match event {
                 WindowEvent::CloseRequested {api,..} if !state.quitting.load(Ordering::Relaxed) => {api.prevent_close();let _=window.hide();},
                 WindowEvent::Focused(false) if window.label()=="quick" => defer_panel_blur(window.app_handle()),
-                WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();} state.wake.notify_one(); }, _=>()
+                WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); }, _=>()
             }
         })
         .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,preferences,show_main,show_quick,hide_quick,check_updates])

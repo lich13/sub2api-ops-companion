@@ -4,9 +4,10 @@ describe("account evidence", () => {
   it("never invents timestamps", () => {
     expect(fullTime(null)).toBe("暂无记录");
     expect(fullTime("bad")).toBe("时间未知");
-    expect(fullTime("2026-09-24T00:00:00Z")).toBe("2026-09-24 08:00:00");
-    expect(fullTime("2026-09-24T16:00:00Z")).toBe("2026-09-25 00:00:00");
-    expect(fullTime("2026-09-25T00:00:01+08:00")).toBe("2026-09-25 00:00:01");
+    expect(fullTime("2026-09-24T00:00:00Z")).toBe("09-24 08:00:00");
+    expect(fullTime("2026-09-24T16:00:00Z")).toBe("09-25 00:00:00");
+    expect(fullTime("2026-09-25T00:00:01+08:00")).toBe("09-25 00:00:01");
+    expect(fullTime("2026-12-31T16:00:00Z")).toBe("01-01 00:00:00");
   });
   it("combines group and state filters without assuming enabled means available", () => {
     const data = [
