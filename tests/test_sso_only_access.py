@@ -162,7 +162,7 @@ class SSOOnlyAccessTests(unittest.TestCase):
         ):
             loaded = load_settings()
 
-        self.assertFalse(loaded.telegram_oauth_usage_refresh_enabled)
+        self.assertFalse(hasattr(loaded, "telegram_oauth_usage_refresh_enabled"))
         self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
         self.assertFalse(loaded.telegram_oauth_daily_test_enabled)
         self.assertFalse(hasattr(loaded, "telegram_oauth_recovery_push_enabled"))

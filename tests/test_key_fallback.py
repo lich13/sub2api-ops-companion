@@ -178,7 +178,6 @@ def fallback_settings(root: Path) -> SimpleNamespace:
     return SimpleNamespace(
         key_fallback_config_path=str(root / "key-fallback-config.json"),
         audit_path=str(root / "audit.jsonl"),
-        telegram_oauth_regular_refresh_interval_seconds=3600,
         usage_query_state_path=str(root / "usage-query-state.json"),
     )
 
@@ -254,13 +253,11 @@ def monitor_settings(root: Path, *, recovery_enabled: bool = False) -> SimpleNam
         usage_query_state_path=str(root / "usage-query-state.json"),
         audit_path=str(root / "audit.jsonl"),
         key_fallback_config_path=str(root / "key-fallback-config.json"),
-        telegram_oauth_usage_refresh_enabled=True,
         telegram_oauth_recovery_monitor_enabled=recovery_enabled,
 
         telegram_oauth_usage_refresh_concurrency=1,
         telegram_oauth_recovery_test_concurrency=1,
         telegram_oauth_early_probe_batch_size=8,
-        telegram_oauth_regular_refresh_interval_seconds=3600,
         telegram_oauth_7d_probe_interval_seconds=3600,
         telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
     )
@@ -1308,13 +1305,11 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(path),
                     audit_path=str(Path(directory) / "audit.jsonl"),
-                    telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
 
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_regular_refresh_interval_seconds=3600,
                     telegram_oauth_7d_probe_interval_seconds=3600,
                     telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),
@@ -1352,13 +1347,11 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(root / "state.json"),
                     audit_path=str(root / "audit.jsonl"),
-                    telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
 
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_regular_refresh_interval_seconds=3600,
                     telegram_oauth_7d_probe_interval_seconds=3600,
                     telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),
@@ -1405,13 +1398,11 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(root / "state.json"),
                     audit_path=str(root / "audit.jsonl"),
-                    telegram_oauth_usage_refresh_enabled=True,
                     telegram_oauth_recovery_monitor_enabled=True,
 
                     telegram_oauth_usage_refresh_concurrency=1,
                     telegram_oauth_recovery_test_concurrency=1,
                     telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_regular_refresh_interval_seconds=3600,
                     telegram_oauth_7d_probe_interval_seconds=3600,
                     telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),

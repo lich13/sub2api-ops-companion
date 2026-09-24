@@ -143,7 +143,7 @@ class PanelRouteTests(unittest.TestCase):
             ):
                 loaded = load_settings()
 
-        self.assertEqual(loaded.telegram_oauth_regular_refresh_interval_seconds, 3600)
+        self.assertFalse(hasattr(loaded, "telegram_oauth_regular_refresh_interval_seconds"))
         self.assertEqual(loaded.telegram_oauth_7d_probe_interval_seconds, 3600)
         self.assertEqual(loaded.telegram_oauth_recovery_test_model_id, "gpt-5.6-luna")
         self.assertTrue(loaded.telegram_oauth_daily_test_enabled)
@@ -173,18 +173,25 @@ class PanelRouteTests(unittest.TestCase):
 
 
 class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retired_refresh_fields_are_rejected_without_save(self) -> None:
+        class FormRequest:
+            async def form(self):
+                return FormData({"oauth_usage_refresh_enabled": "1"})
+        with patch.object(main_module, "save_telegram_runtime_config") as save:
+            response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
+        self.assertEqual(response.status_code, 303)
+        save.assert_not_called()
+
     async def test_oauth_settings_persist_new_intervals_and_remove_legacy_probe(self) -> None:
         class FormRequest:
             async def form(self) -> FormData:
                 return FormData(
                     [
-                        ("oauth_usage_refresh_enabled", "1"),
                         ("oauth_recovery_monitor_enabled", "1"),
                         ("oauth_daily_test_enabled", "1"),
                         ("oauth_usage_refresh_concurrency", "5"),
                         ("oauth_recovery_test_concurrency", "3"),
                         ("oauth_early_probe_batch_size", "9"),
-                        ("oauth_regular_refresh_interval_seconds", "5400"),
                         ("oauth_7d_probe_interval_seconds", "7200"),
                         ("oauth_recovery_test_model_id", "gpt-5.6-luna"),
                     ]
@@ -195,20 +202,18 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
             root = Path(directory)
             config_path = root / "telegram-config.json"
             config_path.write_text(
-                '{"oauth_early_probe_interval_seconds": 15, "oauth_recovery_push_enabled": true}',
+                '{"oauth_early_probe_interval_seconds":15,"oauth_recovery_push_enabled":true,"oauth_usage_refresh_enabled":true,"oauth_regular_refresh_interval_seconds":60}',
                 encoding="utf-8",
             )
             main_module.settings = SimpleNamespace(
                 telegram_config_path=str(config_path),
                 audit_path=str(root / "audit.jsonl"),
                 base_path="/sub2ops",
-                telegram_oauth_usage_refresh_enabled=True,
                 telegram_oauth_recovery_monitor_enabled=True,
                 telegram_oauth_daily_test_enabled=True,
                 telegram_oauth_usage_refresh_concurrency=4,
                 telegram_oauth_recovery_test_concurrency=2,
                 telegram_oauth_early_probe_batch_size=8,
-                telegram_oauth_regular_refresh_interval_seconds=3600,
                 telegram_oauth_7d_probe_interval_seconds=3600,
                 telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
             )
@@ -222,7 +227,8 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                 main_module.settings = original
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(persisted["oauth_regular_refresh_interval_seconds"], 5400)
+        self.assertNotIn("oauth_regular_refresh_interval_seconds", persisted)
+        self.assertNotIn("oauth_usage_refresh_enabled", persisted)
         self.assertEqual(persisted["oauth_7d_probe_interval_seconds"], 7200)
         self.assertEqual(persisted["oauth_recovery_test_model_id"], "gpt-5.6-luna")
         self.assertTrue(persisted["oauth_daily_test_enabled"])
@@ -308,13 +314,11 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                         "push_target_count": 0,
                         "control_user_count": 0,
                         "config_updated_at": None,
-                        "oauth_usage_refresh_enabled": True,
                         "oauth_recovery_monitor_enabled": True,
                         "oauth_daily_test_enabled": True,
                         "oauth_usage_refresh_concurrency": 4,
                         "oauth_recovery_test_concurrency": 2,
                         "oauth_early_probe_batch_size": 8,
-                        "oauth_regular_refresh_interval_seconds": 3600,
                         "oauth_7d_probe_interval_seconds": 3600,
                         "oauth_recovery_test_model_id": "gpt-5.6-luna",
                     },

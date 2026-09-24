@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { relativeTime, filterAccounts, type Account } from "./types";
+import { fullTime, filterAccounts, type Account } from "./types";
 describe("account evidence", () => {
   it("never invents timestamps", () => {
-    expect(relativeTime(null)).toBe("暂无记录");
-    expect(relativeTime("bad")).toBe("时间未知");
-    expect(
-      relativeTime("2026-09-24T00:00:00Z", Date.parse("2026-09-24T00:02:00Z")),
-    ).toBe("2 分钟前");
+    expect(fullTime(null)).toBe("暂无记录");
+    expect(fullTime("bad")).toBe("时间未知");
+    expect(fullTime("2026-09-24T00:00:00Z")).toBe("2026-09-24 08:00:00");
+    expect(fullTime("2026-09-24T16:00:00Z")).toBe("2026-09-25 00:00:00");
+    expect(fullTime("2026-09-25T00:00:01+08:00")).toBe("2026-09-25 00:00:01");
   });
   it("combines group and state filters without assuming enabled means available", () => {
     const data = [

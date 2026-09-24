@@ -117,10 +117,6 @@
     <input type="hidden" name="config_revision" value="{{ (config_revisions|default({})).get('oauth', '') }}">
     <div class="toggle-grid">
       <label class="setting-toggle">
-        <input type="checkbox" name="oauth_usage_refresh_enabled" value="1" {{ 'checked' if telegram.oauth_usage_refresh_enabled else '' }}>
-        <span><strong>后台额度刷新</strong></span>
-      </label>
-      <label class="setting-toggle">
         <input type="checkbox" name="oauth_recovery_monitor_enabled" value="1" {{ 'checked' if telegram.oauth_recovery_monitor_enabled else '' }}>
         <span><strong>恢复可用监控</strong></span>
       </label>
@@ -136,15 +132,11 @@
         <input type="time" name="oauth_daily_test_time" value="{{ telegram.oauth_daily_test_time }}" required step="60">
       </label>
       <label>
-        <span>常规刷新间隔（秒）</span>
-        <input type="number" name="oauth_regular_refresh_interval_seconds" min="60" max="86400" value="{{ telegram.oauth_regular_refresh_interval_seconds }}">
-      </label>
-      <label>
         <span>7d 探测间隔（秒）</span>
         <input type="number" name="oauth_7d_probe_interval_seconds" min="60" max="86400" value="{{ telegram.oauth_7d_probe_interval_seconds }}">
       </label>
       <label>
-        <span>active usage 并发</span>
+        <span>额度查询并发</span>
         <input type="number" name="oauth_usage_refresh_concurrency" min="1" max="16" value="{{ telegram.oauth_usage_refresh_concurrency }}">
       </label>
       <label>

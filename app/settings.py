@@ -37,14 +37,12 @@ class Settings:
     telegram_allowed_chat_ids: tuple[int, ...] = ()
     telegram_state_path: str = "/data/telegram-state.json"
     telegram_poll_timeout_seconds: int = 25
-    telegram_oauth_usage_refresh_enabled: bool = True
     telegram_oauth_recovery_monitor_enabled: bool = True
     telegram_oauth_daily_test_enabled: bool = True
     telegram_oauth_daily_test_time: str = "05:00"
     telegram_oauth_usage_refresh_concurrency: int = 4
     telegram_oauth_recovery_test_concurrency: int = 2
     telegram_oauth_early_probe_batch_size: int = 8
-    telegram_oauth_regular_refresh_interval_seconds: int = 3600
     telegram_oauth_7d_probe_interval_seconds: int = 3600
     telegram_oauth_recovery_test_model_id: str = "gpt-5.6-luna"
     update_enabled: bool = True
@@ -239,10 +237,6 @@ def load_settings() -> Settings:
             5,
             50,
         ),
-        telegram_oauth_usage_refresh_enabled=bool_value(
-            telegram_config.get("oauth_usage_refresh_enabled", os.getenv("TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED")),
-            True,
-        ),
         telegram_oauth_recovery_monitor_enabled=bool_value(
             telegram_config.get(
                 "oauth_recovery_monitor_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED")
@@ -278,15 +272,6 @@ def load_settings() -> Settings:
             8,
             1,
             50,
-        ),
-        telegram_oauth_regular_refresh_interval_seconds=int_value(
-            telegram_config.get(
-                "oauth_regular_refresh_interval_seconds",
-                os.getenv("TELEGRAM_OAUTH_REGULAR_REFRESH_INTERVAL_SECONDS"),
-            ),
-            3600,
-            60,
-            86400,
         ),
         telegram_oauth_7d_probe_interval_seconds=int_value(
             telegram_config.get(
