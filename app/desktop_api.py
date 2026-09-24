@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .audit import write_audit
 from .bark import _urlopen_no_redirect, sanitize_error_text
 from .config_service import ConfigConflict, ConfigService
-from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable
+from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, latest_completed_oauth_result
+from .quota_snapshot import usage_windows
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -77,16 +78,17 @@ def error_dto(row: dict[str, Any], detail: bool = False) -> dict[str, Any]:
     if detail:
         raw = row.get("upstream_error_detail") or row.get("error_body") or ""
         result["content"] = safe_error_body(raw)
-        result["content_limited"] = bool(raw)  # Always identify this as a sanitized excerpt.
+        result["content_limited"] = "..." in result["content"]
     return result
 
 
-def account_dto(row: dict[str, Any], now: datetime, managed: set[int]) -> dict[str, Any]:
+def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_result: dict[str, Any] | None = None) -> dict[str, Any]:
     fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids",
               "last_success_at", "last_error_at", "last_error_id", "last_error_code", "last_error_status")
     value = {key: row.get(key) for key in fields}
     value["name"] = clean(row.get("name"), 160)
     value["group_ids"] = row.get("group_ids") or []
+    value["usage_windows"] = usage_windows(row, now, quota_result)
     value["managed"] = row["id"] in managed
     value["error_message"] = safe_error_text(row.get("last_error_message") or row.get("error_message"))
     reasons = []
@@ -110,7 +112,8 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int]) -> dict[s
 
 
 ACCOUNT_SQL = f"""
-SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.error_message,
+SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.error_message, a.extra,
+ coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
  coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,
  ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids,
@@ -122,6 +125,34 @@ LEFT JOIN LATERAL (SELECT created_at FROM usage_logs WHERE account_id=a.id ORDER
 LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND {ERROR_WHERE} ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e ON true
 WHERE a.deleted_at IS NULL {{filter}} ORDER BY a.id
 """
+
+GROUP_SQL = """
+SELECT g.id,g.name,g.platform,g.sort_order,u.id AS log_id,u.account_id,
+ a.name AS account_name,u.model,u.upstream_model,u.created_at AS called_at
+FROM groups g LEFT JOIN LATERAL (
+ SELECT latest.* FROM (
+   SELECT DISTINCT ON (account_id) id,account_id,model,upstream_model,created_at
+   FROM usage_logs WHERE group_id=g.id
+   ORDER BY account_id,created_at DESC,id DESC
+ ) latest ORDER BY created_at DESC,id DESC LIMIT 3
+) u ON true LEFT JOIN accounts a ON a.id=u.account_id
+WHERE g.deleted_at IS NULL ORDER BY g.sort_order,g.id,u.created_at DESC,u.id DESC
+"""
+
+
+def group_dtos(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        group = groups.setdefault(row["id"], {**row, "recent_accounts": []})
+        if row.get("account_id") and not any(item["account_id"] == row["account_id"] for item in group["recent_accounts"]):
+            item = {key: row.get(key) for key in ("log_id", "account_id", "account_name", "model", "upstream_model", "called_at")}
+            for key in ("account_name", "model", "upstream_model"):
+                item[key] = clean(item.get(key), 160)
+            group["recent_accounts"].append(item)
+    for group in groups.values():
+        for field in ("name", "account_name", "model", "upstream_model", "upstream_response_model"):
+            group[field] = clean(group.get(field), 160)
+    return list(groups.values())
 
 
 class DesktopService:
@@ -172,19 +203,12 @@ class DesktopService:
             now = datetime.now(timezone.utc)
             config = r.key_fallback_controller.load_config() if r.key_fallback_controller else None
             managed = set(config.managed_account_ids) if config else set()
-            accounts = [account_dto(row, now, managed) for row in r.db.fetch_all(ACCOUNT_SQL.format(filter=""))]
-            groups = r.db.fetch_all("""
-                SELECT g.id,g.name,g.platform,g.sort_order, u.id AS log_id,u.account_id,
-                 a.name AS account_name,u.model,u.upstream_model,u.created_at AS called_at
-                FROM groups g LEFT JOIN LATERAL (
-                  SELECT id,account_id,model,upstream_model,created_at FROM usage_logs
-                  WHERE group_id=g.id ORDER BY created_at DESC,id DESC LIMIT 1
-                ) u ON true LEFT JOIN accounts a ON a.id=u.account_id
-                WHERE g.deleted_at IS NULL ORDER BY g.sort_order,g.id
-            """)
-            for group in groups:
-                for field in ("name", "account_name", "model", "upstream_model", "upstream_response_model"):
-                    group[field] = clean(group.get(field), 160)
+            monitor = getattr(r, "oauth_monitor", None)
+            state = monitor.store.cached_snapshot() if monitor else {}
+            saved, scheduler = state.get("oauth_results", {}), state.get("scheduler", {})
+            accounts = [account_dto(row, now, managed, latest_completed_oauth_result(saved.get(str(row["id"])), scheduler.get(str(row["id"]))))
+                        for row in r.db.fetch_all(ACCOUNT_SQL.format(filter=""))]
+            groups = group_dtos(r.db.fetch_all(GROUP_SQL))
             errors = self.errors(None, None, 20)
             guard = r.build_model_guard_panel()
             incidents = []

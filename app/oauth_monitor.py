@@ -19,6 +19,7 @@ from . import account_ops
 from .audit import write_audit
 from .bark import sanitize_error_text
 from .daily_test import DailyTestSchedule, daily_account_eligible
+from .quota_snapshot import latest_openai_result
 from .sql import LEGACY_RECOVERY_PLAN_CLEANUP_SQL
 from .usage_query import (
     execute_oauth_usage_query,
@@ -34,7 +35,6 @@ from .usage_query import (
 STATE_VERSION = 3
 INVENTORY_REFRESH_SECONDS = 60
 EXACT_RESET_RETRY_SECONDS = 60
-DEFAULT_REGULAR_REFRESH_SECONDS = 3600
 DEFAULT_SEVEN_DAY_PROBE_SECONDS = 3600
 DEFAULT_TEST_MODEL_ID = "gpt-5.6-luna"
 RECOVERY_RETRY_SECONDS = (60, 300, 900, 1800)
@@ -136,6 +136,9 @@ class OAuthStateStore:
                     continue
                 if account_id > 0 and isinstance(value, dict):
                     normalized_row = dict(value)
+                    normalized_row.pop("last_regular_at", None)
+                    if normalized_row.get("last_reason") == "regular_refresh":
+                        normalized_row.pop("last_reason", None)
                     if "recovery_intent" in normalized_row:
                         normalized_row["recovery_intent"] = _normal_recovery_intent(
                             normalized_row.get("recovery_intent")
@@ -598,20 +601,17 @@ def build_monitor_candidates(
     scheduler: dict[int, dict[str, Any]] | dict[str, dict[str, Any]],
     now: datetime,
     *,
-    regular_interval_seconds: int = DEFAULT_REGULAR_REFRESH_SECONDS,
     seven_day_probe_interval_seconds: int = DEFAULT_SEVEN_DAY_PROBE_SECONDS,
-    usage_refresh_enabled: bool = True,
     recovery_monitor_enabled: bool = True,
 ) -> list[dict[str, Any]]:
     current = _utc(now)
-    regular_interval = _positive_int(regular_interval_seconds, 3600, 60, 86400)
     probe_interval = _positive_int(seven_day_probe_interval_seconds, 3600, 60, 86400)
     candidates: list[dict[str, Any]] = []
     for row in accounts:
         account_id = int(row.get("id") or row.get("account_id") or 0)
         if account_id <= 0:
             continue
-        result = results.get(account_id) or {}
+        result = latest_openai_result(row, results.get(account_id), current) or {}
         metadata = _scheduler_row(scheduler, account_id)
         summary = oauth_quota_summary_from_result(row, result)
         windows = oauth_windows_by_key(summary.get("ui_windows"))
@@ -668,7 +668,7 @@ def build_monitor_candidates(
         if (
             not reason
             and not result.get("success")
-            and (usage_refresh_enabled or recovery_monitor_enabled)
+            and recovery_monitor_enabled
             and _due(metadata.get("last_attempt_at"), EXACT_RESET_RETRY_SECONDS, current)
         ):
             reason, priority = "bootstrap", 1
@@ -683,11 +683,6 @@ def build_monitor_candidates(
             last_probe = metadata.get("last_7d_probe_at") or result.get("queried_at")
             if _due(last_probe, probe_interval, current):
                 reason, priority = "seven_day_probe", 2
-
-        if not reason and usage_refresh_enabled:
-            last_regular = metadata.get("last_regular_at") or result.get("queried_at")
-            if _due(last_regular, regular_interval, current):
-                reason, priority = "regular_refresh", 3
 
         if reason:
             candidates.append(
@@ -1213,17 +1208,11 @@ class OAuthMonitor:
                 results,
                 scheduler,
                 current,
-                regular_interval_seconds=getattr(
-                    self.settings,
-                    "telegram_oauth_regular_refresh_interval_seconds",
-                    DEFAULT_REGULAR_REFRESH_SECONDS,
-                ),
                 seven_day_probe_interval_seconds=getattr(
                     self.settings,
                     "telegram_oauth_7d_probe_interval_seconds",
                     DEFAULT_SEVEN_DAY_PROBE_SECONDS,
                 ),
-                usage_refresh_enabled=bool(getattr(self.settings, "telegram_oauth_usage_refresh_enabled", True)),
                 recovery_monitor_enabled=recovery_enabled,
             )
         batch_size = _positive_int(
@@ -1306,8 +1295,6 @@ class OAuthMonitor:
             reason = str(selected_item["reason"])
             metadata = _scheduler_row(scheduler, account_id)
             update: dict[str, Any] = {"last_attempt_at": current.isoformat(), "last_reason": reason}
-            if reason in {"bootstrap", "regular_refresh", "exact_reset", "force_refresh", "recovery_intent"}:
-                update["last_regular_at"] = current.isoformat()
             if reason == "seven_day_probe":
                 update["last_7d_probe_at"] = current.isoformat()
             if reason == "exact_reset":

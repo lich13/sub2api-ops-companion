@@ -212,9 +212,12 @@ async def lifespan(_: FastAPI):
     migrated = {**config, "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
                 "oauth_daily_test_time": settings.telegram_oauth_daily_test_time}
     migrated.pop("oauth_night_recovery_cooldown_enabled", None)
+    migrated.pop("oauth_usage_refresh_enabled", None)
+    migrated.pop("oauth_regular_refresh_interval_seconds", None)
     if config != migrated:
         save_telegram_runtime_config(migrated)
     store = oauth_state_store()
+    await asyncio.to_thread(store.commit)
     await asyncio.to_thread(
         migrate_legacy_recovery_state,
         db,
@@ -487,6 +490,8 @@ def save_telegram_runtime_config(payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(payload)
     payload.pop("oauth_night_recovery_cooldown_enabled", None)
+    payload.pop("oauth_usage_refresh_enabled", None)
+    payload.pop("oauth_regular_refresh_interval_seconds", None)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     temporary = Path(name)
     try:
@@ -540,7 +545,6 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
     bool_fields = (
         "enabled",
         "pairing_enabled",
-        "oauth_usage_refresh_enabled",
         "oauth_recovery_monitor_enabled",
         "oauth_daily_test_enabled",
     )
@@ -567,7 +571,6 @@ def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
         "oauth_usage_refresh_concurrency": (4, 1, 16),
         "oauth_recovery_test_concurrency": (2, 1, 8),
         "oauth_early_probe_batch_size": (8, 1, 50),
-        "oauth_regular_refresh_interval_seconds": (3600, 60, 86400),
         "oauth_7d_probe_interval_seconds": (3600, 60, 86400),
     }
     for key, (default, minimum, maximum) in integer_fields.items():
@@ -636,14 +639,12 @@ def build_telegram_config() -> dict[str, Any]:
         "push_target_count": len(paired_chats),
         "authorized_user_count": len(paired_users),
         "config_updated_at": existing.get("updated_at"),
-        "oauth_usage_refresh_enabled": settings.telegram_oauth_usage_refresh_enabled,
         "oauth_recovery_monitor_enabled": settings.telegram_oauth_recovery_monitor_enabled,
         "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
         "oauth_daily_test_time": settings.telegram_oauth_daily_test_time,
         "oauth_usage_refresh_concurrency": settings.telegram_oauth_usage_refresh_concurrency,
         "oauth_recovery_test_concurrency": settings.telegram_oauth_recovery_test_concurrency,
         "oauth_early_probe_batch_size": settings.telegram_oauth_early_probe_batch_size,
-        "oauth_regular_refresh_interval_seconds": settings.telegram_oauth_regular_refresh_interval_seconds,
         "oauth_7d_probe_interval_seconds": settings.telegram_oauth_7d_probe_interval_seconds,
         "oauth_recovery_test_model_id": settings.telegram_oauth_recovery_test_model_id
         or "gpt-5.6-luna",
@@ -841,21 +842,19 @@ async def telegram_config_save(user: AuthUser, telegram_bot_token: str = Form(""
 @app.post("/telegram/oauth-settings")
 async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Response:
     form = await request.form()
+    if {"oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"} & set(form):
+        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('后台额度刷新已移除，请刷新页面后重试')}", status_code=303)
     try:
         test_time = daily_test_time(form.get("oauth_daily_test_time", "05:00"))
     except ValueError as exc:
         return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
     payload = {
-        "oauth_usage_refresh_enabled": bool(form.getlist("oauth_usage_refresh_enabled")),
         "oauth_recovery_monitor_enabled": bool(form.getlist("oauth_recovery_monitor_enabled")),
         "oauth_daily_test_enabled": bool(form.getlist("oauth_daily_test_enabled")),
         "oauth_daily_test_time": test_time,
         "oauth_usage_refresh_concurrency": int_param(form.get("oauth_usage_refresh_concurrency"), 4, 1, 16),
         "oauth_recovery_test_concurrency": int_param(form.get("oauth_recovery_test_concurrency"), 2, 1, 8),
         "oauth_early_probe_batch_size": int_param(form.get("oauth_early_probe_batch_size"), 8, 1, 50),
-        "oauth_regular_refresh_interval_seconds": int_param(
-            form.get("oauth_regular_refresh_interval_seconds"), 3600, 60, 86400
-        ),
         "oauth_7d_probe_interval_seconds": int_param(
             form.get("oauth_7d_probe_interval_seconds"), 3600, 60, 86400
         ),

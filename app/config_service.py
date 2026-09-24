@@ -18,9 +18,9 @@ class ConfigConflict(ValueError):
 
 
 OAUTH_FIELDS = {
-    "oauth_usage_refresh_enabled", "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled",
+    "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled",
     "oauth_daily_test_time", "oauth_usage_refresh_concurrency", "oauth_recovery_test_concurrency",
-    "oauth_early_probe_batch_size", "oauth_regular_refresh_interval_seconds",
+    "oauth_early_probe_batch_size",
     "oauth_7d_probe_interval_seconds", "oauth_recovery_test_model_id",
 }
 
@@ -89,12 +89,12 @@ class ConfigService:
                     raise ValueError("未知 OAuth 设置")
                 values = {key: current[section][key] for key in OAUTH_FIELDS}
                 values.update(changes)
-                for key in ("oauth_usage_refresh_enabled", "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled"):
+                for key in ("oauth_recovery_monitor_enabled", "oauth_daily_test_enabled"):
                     if not isinstance(values[key], bool):
                         raise ValueError("开关必须为布尔值")
                 values["oauth_daily_test_time"] = daily_test_time(values["oauth_daily_test_time"])
                 limits = {"oauth_usage_refresh_concurrency": (1, 16), "oauth_recovery_test_concurrency": (1, 8),
-                          "oauth_early_probe_batch_size": (1, 50), "oauth_regular_refresh_interval_seconds": (60, 86400),
+                          "oauth_early_probe_batch_size": (1, 50),
                           "oauth_7d_probe_interval_seconds": (60, 86400)}
                 for key, (low, high) in limits.items():
                     if isinstance(values[key], bool) or not isinstance(values[key], int) or not low <= values[key] <= high:
@@ -104,7 +104,7 @@ class ConfigService:
                     raise ValueError("测活模型无效")
                 values["oauth_recovery_test_model_id"] = model
                 payload = {**r.telegram_config_file(), **values, **stamp}
-                for retired in ("oauth_early_probe_interval_seconds", "oauth_recovery_push_enabled", "oauth_night_recovery_cooldown_enabled"):
+                for retired in ("oauth_early_probe_interval_seconds", "oauth_recovery_push_enabled", "oauth_night_recovery_cooldown_enabled", "oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"):
                     payload.pop(retired, None)
                 r.save_telegram_runtime_config(payload)
                 r.apply_telegram_runtime_config(payload)

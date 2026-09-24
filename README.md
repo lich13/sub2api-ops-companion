@@ -52,7 +52,6 @@ docker compose up -d --build
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。面板不再展示或提交该字段，缺少表单值时保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `MODEL_GUARD_CONFIG_PATH`、`MODEL_GUARD_STATE_PATH`、`MODEL_GUARD_PRICING_PATH`：模型降级保护的独立配置、游标/事件状态和精确定价快照，默认位于 `/data`，均按 `0600` 原子写入。
-- `TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED`：是否进行常规后台刷新。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
 - `TELEGRAM_OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
 - `TELEGRAM_OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。
@@ -60,7 +59,6 @@ docker compose up -d --build
 - `TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。
 - `TELEGRAM_OAUTH_RECOVERY_TEST_CONCURRENCY`：account test 并发，默认 `2`。
 - `TELEGRAM_OAUTH_EARLY_PROBE_BATCH_SIZE`：每轮最多处理的 OAuth 账号数，默认 `8`。
-- `TELEGRAM_OAUTH_REGULAR_REFRESH_INTERVAL_SECONDS`：常规刷新间隔，默认 `3600`。
 - `TELEGRAM_OAUTH_7D_PROBE_INTERVAL_SECONDS`：7d 提前重置探测间隔，默认 `3600`。
 - `TELEGRAM_OAUTH_RECOVERY_TEST_MODEL_ID`：恢复测活模型，默认 `gpt-5.6-luna`。
 - `OPS_SSO_CONFIG_PATH`：Sub2API SSO 运行时配置文件。

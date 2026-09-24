@@ -16,7 +16,7 @@ os.environ.setdefault("OPS_SESSION_SECRET", "desktop-test-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 from fastapi import HTTPException
-from app.desktop_api import DesktopService, ScheduleRequest, account_dto, error_dto, safe_error_body
+from app.desktop_api import DesktopService, ScheduleRequest, account_dto, error_dto, safe_error_body, group_dtos
 from app.config_service import ConfigConflict
 from app.key_fallback import KeyFallbackController
 from app import main as main_module
@@ -31,6 +31,15 @@ def row(**changes):
 
 
 class DesktopEvidenceTests(unittest.TestCase):
+    def test_recent_accounts_are_distinct_and_group_scoped(self):
+        def call(group, account, log):
+            return {"id":group,"name":str(group),"platform":"openai","log_id":log,
+                    "account_id":account,"account_name":str(account),"model":"gpt-6-sol","called_at":NOW}
+        result = group_dtos([call(1, 3, 10), call(1, 2, 9), call(1, 2, 8), call(1, 1, 7), call(2, 1, 11)])
+        self.assertEqual([a["account_id"] for a in result[0]["recent_accounts"]], [3, 2, 1])
+        self.assertEqual(result[0]["account_id"], 3)
+        self.assertEqual(result[1]["recent_accounts"][0]["log_id"], 11)
+
     def test_account_dto_never_returns_credentials(self):
         result = account_dto(row(), NOW, {12})
         self.assertNotIn("credentials", result)
@@ -49,6 +58,10 @@ class DesktopEvidenceTests(unittest.TestCase):
             last_success_at=NOW, last_error_at=NOW-timedelta(minutes=1)), NOW, set())
         self.assertTrue(result["available"])
         self.assertTrue(result["success_after_error"])
+
+    def test_new_error_is_not_hidden_by_older_success(self):
+        result = account_dto(row(last_success_at=NOW-timedelta(minutes=1), last_error_at=NOW), NOW, set())
+        self.assertFalse(result["success_after_error"])
 
     def test_no_error_time_is_invented(self):
         result = account_dto(row(error_message="re-auth required"), NOW, set())
@@ -184,6 +197,8 @@ class DesktopConfigTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(Path(s.telegram_config_path).stat().st_mode&0o777,0o600)
                 with self.assertRaises(ConfigConflict):await service.save('oauth',{'oauth_daily_test_time':'07:00'},'test',old)
                 with self.assertRaises(ValueError):await service.save('oauth',{'oauth_daily_test_time':'25:00'},'test')
+                with self.assertRaises(ValueError):await service.save('oauth',{'oauth_usage_refresh_enabled':True},'test')
+                with self.assertRaises(ValueError):await service.save('oauth',{'oauth_regular_refresh_interval_seconds':60},'test')
                 self.assertEqual(json.loads(Path(s.telegram_config_path).read_text())['oauth_daily_test_time'],'06:15')
 
 
