@@ -60,17 +60,20 @@ def seed():
                   for name in ("QA Alpha", "QA Beta")]
         accounts = [db.execute("INSERT INTO accounts(name,platform,type,credentials) VALUES (%s,'openai','apikey',%s) RETURNING id",
                     (name, Jsonb({"base_url":"http://127.0.0.1:18082", "api_key":"qa-upstream-only", "model_mapping":{"gpt-5.6-sol":"gpt-5.6-sol"}}))).fetchone()[0]
-                    for name in ("QA Shared", "QA Secondary")]
-        for account, group in ((accounts[0],groups[0]),(accounts[0],groups[1]),(accounts[1],groups[1])):
+                    for name in ("QA Shared", "QA Secondary", "QA Third", "QA Fourth")]
+        for account, group in ((accounts[0],groups[0]),(accounts[0],groups[1]),(accounts[1],groups[1]),(accounts[2],groups[0]),(accounts[3],groups[0])):
             db.execute("INSERT INTO account_groups(account_id,group_id) VALUES (%s,%s)",(account,group))
         api = db.execute("INSERT INTO api_keys(user_id,key,name,group_id) VALUES (%s,'sk-qa-isolated','QA Gateway',%s) RETURNING id",(user,groups[0])).fetchone()[0]
-        for account, group, ago in ((accounts[0],groups[0],30),(accounts[0],groups[1],20),(accounts[1],groups[1],10)):
+        for account, group, ago in ((accounts[0],groups[0],30),(accounts[0],groups[0],31),(accounts[2],groups[0],40),(accounts[3],groups[0],50),(accounts[0],groups[1],20),(accounts[1],groups[1],10)):
             db.execute("INSERT INTO usage_logs(user_id,api_key_id,account_id,group_id,model,created_at) VALUES (%s,%s,%s,%s,'gpt-5.6-sol',now()-(%s * interval '1 second'))",(user,api,account,group,ago))
         error = db.execute("""INSERT INTO ops_error_logs(account_id,group_id,platform,model,error_phase,error_owner,error_type,
                    status_code,upstream_status_code,error_message,upstream_error_detail,created_at,request_id)
                    VALUES (%s,%s,'openai','gpt-5.6-sol','upstream','provider','upstream_error',502,502,
                    'qa upstream rejected',%s,now()-interval '1 minute','desktop-qa-request') RETURNING id""",
                    (accounts[0],groups[0],json.dumps({"error":{"code":"qa_error","message":"QA error"},"request":{"prompt":"PRIVATE_QA_PROMPT"},"credentials":{"api_key":"PRIVATE_QA_KEY"}}))).fetchone()[0]
+        db.execute("UPDATE accounts SET extra=%s WHERE id=%s", (Jsonb({"quota_daily_limit":10,"quota_daily_used":2.5,"private_qa_marker":"HIDDEN_QUOTA_MARKER"}),accounts[0]))
+        db.execute("INSERT INTO accounts(name,platform,type,credentials,extra) VALUES ('QA Grok Usage','grok','oauth','{}',%s)", (Jsonb({"grok_usage_snapshot":{"requests":{"limit":100,"remaining":75},"tokens":{"limit":1000,"remaining":600},"updated_at":"2026-09-24T12:00:00Z","headers":{"authorization":"HIDDEN_HEADER_MARKER"}}}),))
+        db.execute("INSERT INTO accounts(name,platform,type,credentials,extra) VALUES ('QA OpenAI Usage','openai','oauth',%s,%s)", (Jsonb({"plan_type":"free"}),Jsonb({"codex_5h_used_percent":99,"codex_7d_used_percent":31,"codex_usage_updated_at":"2026-09-24T12:00:00Z"})))
     print(json.dumps({"seeded":True,"accounts":accounts,"groups":groups,"error_id":error}))
 
 
@@ -82,8 +85,17 @@ def verify():
     assert len(shared['group_ids'])==2
     assert next(g for g in groups if g['name']=='QA Alpha')['account_id']==shared['id']
     assert next(g for g in groups if g['name']=='QA Beta')['account_id']==other['id']
+    recent=next(g for g in groups if g['name']=='QA Alpha')['recent_accounts']
+    assert [a['account_name'] for a in recent]==['QA Shared','QA Third','QA Fourth']
+    assert len({a['account_id'] for a in recent})==3
+    assert shared['usage_windows']==[]  # Monetary Key budgets are not usage windows.
+    assert other['usage_windows']==[]
+    grok=next(a for a in accounts if a['name']=='QA Grok Usage')
+    assert [w['used_percent'] for w in grok['usage_windows']]==[25,40]
+    free=next(a for a in accounts if a['name']=='QA OpenAI Usage')
+    assert [(w['key'],w['used_percent']) for w in free['usage_windows']]==[('codex_7d',31)]
     assert shared['success_after_error']
-    assert not any(k in json.dumps(snapshot) for k in ('credentials','qa-upstream-only','PRIVATE_QA_KEY','PRIVATE_QA_PROMPT'))
+    assert not any(k in json.dumps(snapshot) for k in ('credentials','qa-upstream-only','PRIVATE_QA_KEY','PRIVATE_QA_PROMPT','HIDDEN_QUOTA_MARKER','HIDDEN_HEADER_MARKER'))
     _,detail=ops('/errors/'+str(shared['last_error_id']))
     assert 'qa_error' in detail['content'] and 'PRIVATE_QA_' not in json.dumps(detail)
     assert ops('/snapshot',key='invalid')[0]==401
@@ -128,6 +140,13 @@ class MockUpstream(BaseHTTPRequestHandler):
 
 def gateway():
     _,before=ops('/snapshot')
+    # The three-account history fixtures share this group. Keep the gateway
+    # sequence on one disposable account so its error/success evidence is exact.
+    for account in before['accounts']:
+        if account['name'] in ('QA Third', 'QA Fourth') and account['schedulable']:
+            status,result=ops(f"/accounts/{account['id']}/schedulable",'POST',{
+                'schedulable':False,'expected_version':account['version'],'detach_managed':False})
+            assert status==200 and result['verified']
     previous=next(a for a in before['accounts'] if a['name']=='QA Shared')['last_error_id'] or 0
     for content,expected in (('QA success',200),('QA_FORCE_ERROR',500),('QA recovered',200)):
         status,body=request(BASE+'/v1/chat/completions','POST',{'model':'gpt-5.6-sol','messages':[{'role':'user','content':content}],'stream':False},

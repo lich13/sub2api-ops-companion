@@ -17,6 +17,27 @@ export type Account = {
   last_error_status: number | null;
   error_message: string;
   success_after_error: boolean;
+  usage_windows: UsageWindow[];
+};
+export type UsageWindow = {
+  key: string;
+  label: string;
+  used_percent: number | null;
+  reset_at: string | null;
+  observed_at: string | null;
+  status: "known" | "unknown" | "stale" | "error";
+  source: string;
+  used?: number | null;
+  limit?: number | null;
+  remaining?: number | null;
+};
+export type RecentAccount = {
+  log_id: number;
+  account_id: number;
+  account_name: string;
+  model: string;
+  upstream_model: string;
+  called_at: string;
 };
 export type Group = {
   id: number;
@@ -28,6 +49,7 @@ export type Group = {
   upstream_model: string;
   upstream_response_model: string;
   called_at: string | null;
+  recent_accounts?: RecentAccount[];
 };
 export type OpsError = {
   id: number;
@@ -98,26 +120,25 @@ export const initialState: ViewState = {
     launch_at_login: false,
   },
 };
-export function relativeTime(
-  value: string | null | undefined,
-  now = Date.now(),
-): string {
-  if (!value) return "暂无记录";
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) return "时间未知";
-  const seconds = Math.max(0, Math.floor((now - ms) / 1000));
-  if (seconds < 60) return `${seconds} 秒前`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
-  return `${Math.floor(seconds / 86400)} 天前`;
-}
 export function fullTime(value: string | null | undefined): string {
-  return value
-    ? new Date(value).toLocaleString("zh-CN", {
-        timeZone: "Asia/Shanghai",
-        hour12: false,
-      })
-    : "时间未知";
+  if (!value) return "暂无记录";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "时间未知";
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .map(({ type, value }) => [type, value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
 export function filterAccounts(
   accounts: Account[],

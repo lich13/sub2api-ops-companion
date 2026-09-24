@@ -109,7 +109,6 @@ class DailyExecutionTests(unittest.TestCase):
         config = settings(root / "state.json")
         config.telegram_oauth_daily_test_enabled = True
         config.telegram_oauth_daily_test_time = "05:00"
-        config.telegram_oauth_usage_refresh_enabled = False
         config.telegram_oauth_recovery_monitor_enabled = False
         db = FakeDb(rows or [healthy()])
         calls = []

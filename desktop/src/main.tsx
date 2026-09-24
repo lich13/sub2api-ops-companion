@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Bell,
   Check,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -29,13 +30,13 @@ import {
   filterAccounts,
   fullTime,
   initialState,
-  relativeTime,
   type Account,
   type Config,
   type ConfigSection,
   type Group,
   type OpsError,
   type Preferences,
+  type UsageWindow,
   type ViewState,
 } from "./types";
 import "./style.css";
@@ -79,12 +80,72 @@ function Switch({
   );
 }
 function Time({ at }: { at: string | null | undefined }) {
-  return <time title={fullTime(at)}>{relativeTime(at)}</time>;
+  return <time>{fullTime(at)}</time>;
+}
+function UsageWindows({ windows }: { windows: UsageWindow[] }) {
+  if (!windows.length) return <span className="muted">—</span>;
+  return (
+    <div className="quota-windows">
+      {windows.map((w) => {
+        const value = w.used_percent;
+        const state = {
+          known: "",
+          unknown: "未知",
+          stale: "历史快照",
+          error: "上游异常",
+        }[w.status];
+        return (
+          <div
+            className={`quota-window ${w.status} window-${w.key}`}
+            key={w.key}
+          >
+            <div className="quota-label">
+              <span>{w.label}</span>
+              <strong>{value === null ? "—" : `${Math.round(value)}%`}</strong>
+              {state && <span className="quota-state">{state}</span>}
+            </div>
+            {value !== null && (
+              <div
+                className="quota-track"
+                role="progressbar"
+                aria-label={`${w.label}用量`}
+                aria-valuenow={value}
+                aria-valuemin={0}
+                aria-valuemax={Math.max(100, value)}
+              >
+                <i
+                  className={
+                    value >= 100 ? "exhausted" : value >= 80 ? "warning" : ""
+                  }
+                  style={{ width: `${Math.min(100, value)}%` }}
+                />
+              </div>
+            )}
+            {w.limit != null && w.used != null && (
+              <div className="window-count">
+                {w.used.toLocaleString("en-US")} /{" "}
+                {w.limit.toLocaleString("en-US")}
+              </div>
+            )}
+            {w.reset_at && (
+              <div className="quota-time">
+                重置 <Time at={w.reset_at} />
+              </div>
+            )}
+            <div className="quota-time">
+              采集 <Time at={w.observed_at} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("overview"),
+    [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
     [detail, setDetail] = useState<OpsError | null>(null),
@@ -132,6 +193,18 @@ export default function App() {
       return () => clearTimeout(id);
     }
   }, [toast]);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      if (confirm) setConfirm(null);
+      else if (detail || detailBusy) {
+        setDetail(null);
+        setDetailBusy(false);
+      } else if (quick) void command("hide_quick").catch(report);
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [confirm, detail, detailBusy]);
   useEffect(() => {
     if (state.online && (page === "settings" || page === "automation"))
       void api<Config>("GET", "/config").then(setConfig).catch(report);
@@ -213,8 +286,19 @@ export default function App() {
     );
   }
   function groupRow(g: Group, compact = false) {
-    const a = accounts.find((a) => a.id === g.account_id),
-      favorite = state.preferences.favorites.includes(g.id);
+    const favorite = state.preferences.favorites.includes(g.id);
+    const recent =
+      g.recent_accounts ??
+      (g.account_id
+        ? [
+            {
+              account_id: g.account_id,
+              account_name: g.account_name,
+              model: g.model,
+              called_at: g.called_at,
+            },
+          ]
+        : []);
     return (
       <article className={`group-row ${compact ? "compact" : ""}`} key={g.id}>
         <div className="group-heading">
@@ -237,33 +321,41 @@ export default function App() {
             <Star size={15} fill={favorite ? "currentColor" : "none"} />
           </button>
         </div>
-        <div className="group-call">
-          <span className={`status-dot ${a?.available ? "good" : "muted"}`} />
-          <div className="call-info">
-            <strong>
-              {g.account_id
-                ? g.account_name || `账号 #${g.account_id}`
-                : "暂无成功调用"}
-            </strong>
-            <span>
-              {g.account_id
-                ? `#${g.account_id} · ${g.model}`
-                : "等待该分组的首条使用记录"}
-            </span>
-          </div>
-          {a ? schedule(a) : null}
-        </div>
-        <div className="group-footer">
-          <span>{g.called_at ? "最近成功调用" : "尚无记录"}</span>
-          {g.called_at ? <Time at={g.called_at} /> : null}
-          {a?.last_error_id ? (
-            <button
-              className="error-link"
-              onClick={() => void openError(a.last_error_id!)}
-            >
-              <CircleAlert size={12} /> 最近报错 <Time at={a.last_error_at} />
-            </button>
-          ) : null}
+        <div className="recent-accounts">
+          {recent.map((call) => {
+            const a = accounts.find((item) => item.id === call.account_id);
+            return (
+              <div className="recent-account" key={call.account_id}>
+                <div className="group-call">
+                  <span
+                    className={`status-dot ${a?.available ? "good" : "muted"}`}
+                  />
+                  <div className="call-info">
+                    <strong title={call.account_name}>
+                      {call.account_name || `账号 #${call.account_id}`}
+                    </strong>
+                    <span>
+                      #{call.account_id} · {call.model}
+                    </span>
+                  </div>
+                  {a ? schedule(a) : null}
+                </div>
+                <div className="call-time">
+                  <Time at={call.called_at} />
+                </div>
+                {a?.last_error_id ? (
+                  <button
+                    className="error-link"
+                    onClick={() => void openError(a.last_error_id!)}
+                  >
+                    <CircleAlert size={12} />
+                    报错 <Time at={a.last_error_at} />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          {!recent.length && <div className="quiet">暂无成功调用</div>}
         </div>
       </article>
     );
@@ -338,11 +430,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <div className="sidebar-bottom">
-            <ShieldCheck size={15} />
-            <span>云端持续守护</span>
-            <small>0.1.0</small>
-          </div>
         </aside>
       )}
       <main className="main">
@@ -389,8 +476,33 @@ export default function App() {
                 <Pin size={15} />
               </button>
             )}
+            {quick && (
+              <button
+                className="icon-button"
+                title="关闭快捷面板"
+                onClick={() => void command("hide_quick").catch(report)}
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         </header>
+        {quick && state.connected && (
+          <nav className="quick-tabs" aria-label="快捷面板">
+            <button
+              className={quickTab === "groups" ? "active" : ""}
+              onClick={() => setQuickTab("groups")}
+            >
+              分组 <span>{groups.length}</span>
+            </button>
+            <button
+              className={quickTab === "errors" ? "active" : ""}
+              onClick={() => setQuickTab("errors")}
+            >
+              异常 <span>{eventRows.length}</span>
+            </button>
+          </nav>
+        )}
         {state.connected && !state.online && (
           <div className="offline">
             <Unplug size={15} />
@@ -425,43 +537,28 @@ export default function App() {
             </div>
           ) : quick ? (
             <>
-              <div className="section-heading">
-                <h2>最近成功调用</h2>
-                <span>{groups.length} 个分组</span>
-              </div>
-              <div className="quick-groups">
-                {visibleGroups.map((g) => groupRow(g, true))}
-              </div>
-              <div className="section-heading">
-                <h2>最近错误</h2>
-                <span>{errors.length ? `${errors.length} 条` : "暂无"}</span>
-              </div>
-              <div className="error-list">
-                {errors.slice(0, 5).map(errorRow)}
-                {!errors.length && (
-                  <div className="quiet">
-                    <Check size={15} />
-                    暂无账号错误
-                  </div>
-                )}
-              </div>
+              {quickTab === "groups" ? (
+                <div className="quick-groups">
+                  {visibleGroups.map((g) => groupRow(g, true))}
+                  {!groups.length && <Empty text="没有分组记录" />}
+                </div>
+              ) : (
+                <div className="error-list">
+                  {eventRows.map(errorRow)}
+                  {!eventRows.length && (
+                    <div className="quiet">
+                      <Check size={15} />
+                      暂无账号错误
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <>
               <div className="page-heading">
                 <div>
                   <h1>{pages.find((p) => p.id === page)?.label}</h1>
-                  <p>
-                    {
-                      {
-                        overview: "每个分组的最近成功调用与账号状态",
-                        accounts: "按账号控制调度，保留真实可用性与错误证据",
-                        events: "查看上游错误与模型降级记录",
-                        automation: "云端执行，修改即时生效",
-                        settings: "连接服务、消息通道与客户端偏好",
-                      }[page]
-                    }
-                  </p>
                 </div>
                 <span className="updated">
                   <Clock3 size={13} />
@@ -495,7 +592,6 @@ export default function App() {
                   </div>
                   <div className="section-heading">
                     <h2>分组动态</h2>
-                    <span>以成功完成的使用记录为准</span>
                   </div>
                   <div className="groups-grid">
                     {visibleGroups.map((g) => groupRow(g))}
@@ -580,6 +676,7 @@ export default function App() {
                           <th>账号</th>
                           <th>平台 / 类型</th>
                           <th>当前状态</th>
+                          <th>用量窗口</th>
                           <th>最近报错</th>
                           <th>允许调度</th>
                         </tr>
@@ -620,6 +717,9 @@ export default function App() {
                               </span>
                             </td>
                             <td>
+                              <UsageWindows windows={a.usage_windows ?? []} />
+                            </td>
+                            <td>
                               {a.last_error_id ? (
                                 <button
                                   className="error-time"
@@ -644,7 +744,7 @@ export default function App() {
                                   错误时间未知
                                 </span>
                               ) : (
-                                <span className="muted">—</span>
+                                <span className="muted">暂无记录</span>
                               )}
                             </td>
                             <td>{schedule(a)}</td>
@@ -792,7 +892,14 @@ export default function App() {
                   setDetailBusy(false);
                 }}
               >
-                <X size={19} />
+                {quick ? (
+                  <>
+                    <ChevronLeft size={17} />
+                    返回
+                  </>
+                ) : (
+                  <X size={19} />
+                )}
               </button>
             </header>
             {detailBusy ? (
@@ -835,9 +942,9 @@ export default function App() {
                   <pre>
                     {detail.content || detail.message || "没有额外错误内容"}
                   </pre>
-                  <p className="hint">
-                    仅展示脱敏后的错误摘要，长内容可能已截断。
-                  </p>
+                  {detail.content_limited && (
+                    <p className="content-truncated">内容已截断</p>
+                  )}
                   <div className="section-heading">
                     <h3>账号近期错误</h3>
                     <button
@@ -850,6 +957,7 @@ export default function App() {
                           .then((r) => {
                             setHistory(r.items);
                             setPage("events");
+                            setQuickTab("errors");
                             setDetail(null);
                           })
                           .catch(report)
@@ -878,7 +986,6 @@ export default function App() {
               回退管理。继续后将取消此账号的托管选择，并
               {confirm.schedulable ? "关闭" : "打开"}调度。
             </p>
-            <p className="hint">其他账号与平台开关保持原状态。</p>
             <footer>
               <button onClick={() => setConfirm(null)}>取消</button>
               <button
@@ -938,7 +1045,6 @@ function Connection({
         <Plug size={26} />
       </span>
       <h2>{state.connected ? "更换连接" : "连接你的运维服务"}</h2>
-      <p>使用现有 Sub2API 管理员 API Key。</p>
       <label>
         服务地址
         <input
@@ -962,7 +1068,6 @@ function Connection({
           spellCheck={false}
         />
       </label>
-      <p className="hint">Key 保存在 macOS 钥匙串，后台任务继续在云端运行。</p>
       <button className="primary" disabled={busy}>
         {busy ? (
           <LoaderCircle className="spin" size={15} />
@@ -975,14 +1080,12 @@ function Connection({
   );
 }
 const oauthLabels: Record<string, string> = {
-  oauth_usage_refresh_enabled: "后台额度刷新",
   oauth_recovery_monitor_enabled: "额度恢复监控",
   oauth_daily_test_enabled: "每日定时测活",
   oauth_daily_test_time: "测活时间（北京时间）",
-  oauth_usage_refresh_concurrency: "额度刷新并发",
+  oauth_usage_refresh_concurrency: "额度查询并发",
   oauth_recovery_test_concurrency: "测活并发",
   oauth_early_probe_batch_size: "单轮账号上限",
-  oauth_regular_refresh_interval_seconds: "常规刷新间隔（秒）",
   oauth_7d_probe_interval_seconds: "7d 探测间隔（秒）",
   oauth_recovery_test_model_id: "测活模型",
 };
@@ -1028,7 +1131,6 @@ function SettingsPage({
           <ConfigForm
             section="oauth"
             title="OAuth 恢复与测活"
-            description="即时恢复全天运行；每日测活仅覆盖 OpenAI OAuth。"
             value={config.oauth}
             online={state.online}
             onChange={onChange}
@@ -1052,7 +1154,6 @@ function SettingsPage({
           <ConfigForm
             section="key_fallback"
             title="Key 调度回退"
-            description="各平台独立判断 OAuth 可用性，仅控制已选择的 Key 账号。"
             value={config.key_fallback}
             online={state.online}
             onChange={onChange}
@@ -1112,7 +1213,6 @@ function SettingsPage({
           <ConfigForm
             section="model_guard"
             title="模型降级保护"
-            description="读取真实使用日志，保留模型映射语义；历史异常只告警。"
             value={config.model_guard}
             online={state.online}
             onChange={onChange}
@@ -1158,7 +1258,7 @@ function SettingsPage({
                     .catch(onError)
                 }
               >
-                0.1.0 · 检查更新 <ExternalLink size={13} />
+                0.1.1 · 检查更新 <ExternalLink size={13} />
               </button>
             </div>
           </section>
@@ -1197,7 +1297,6 @@ function SettingsPage({
           <ConfigForm
             section="telegram"
             title="Telegram 查询与配对"
-            description="仅保留额度查询和配对，不提供账号操作。"
             value={config.telegram}
             online={state.online}
             onChange={onChange}
@@ -1294,7 +1393,6 @@ function Field({
 function ConfigForm({
   section,
   title,
-  description,
   value,
   online,
   onChange,
@@ -1304,7 +1402,6 @@ function ConfigForm({
 }: {
   section: string;
   title: string;
-  description?: string;
   value: ConfigSection;
   online: boolean;
   onChange: (k: string, c: ConfigSection) => void;
@@ -1356,7 +1453,6 @@ function ConfigForm({
       <div className="settings-heading">
         <div>
           <h2>{title}</h2>
-          {description && <p>{description}</p>}
         </div>
         <button
           className="primary small"

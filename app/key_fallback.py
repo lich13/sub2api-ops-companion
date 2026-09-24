@@ -25,12 +25,12 @@ from .usage_query import (
     required_oauth_window_keys,
     sanitize_oauth_quota_summary,
 )
+from .quota_snapshot import FRESHNESS_SECONDS, latest_openai_result
 
 AVAILABLE = "available"
 UNAVAILABLE = "unavailable"
 UNKNOWN = "unknown"
 EVAL_INTERVAL_SECONDS = 30
-DEFAULT_FRESHNESS_SECONDS = 3600
 MAX_CONFIG_VERSION = 1_000_000_000
 SCHEDULABLE_REQUEST_TIMEOUT_SECONDS = 3
 DISPATCH_BUDGET_SECONDS = 10
@@ -603,12 +603,6 @@ class KeyFallbackController:
         ]
         results = _oauth_results_from_snapshot(snapshot)
         scheduler_rows = _scheduler_from_snapshot(snapshot)
-        freshness = int_value(
-            getattr(self.settings, "telegram_oauth_regular_refresh_interval_seconds", DEFAULT_FRESHNESS_SECONDS),
-            DEFAULT_FRESHNESS_SECONDS,
-            60,
-            86400,
-        )
         oauth_states: dict[int, str] = {}
         for row in oauth_rows:
             account_id = _strict_positive_int(row.get("id"))
@@ -619,9 +613,9 @@ class KeyFallbackController:
             else:
                 state = classify_oauth_account(
                     row,
-                    latest_completed_oauth_result(results.get(account_id), scheduler_rows.get(account_id)),
+                    latest_openai_result(row, latest_completed_oauth_result(results.get(account_id), scheduler_rows.get(account_id)), now),
                     now,
-                    freshness,
+                    FRESHNESS_SECONDS,
                 )
             oauth_states[account_id] = state
         return oauth_states

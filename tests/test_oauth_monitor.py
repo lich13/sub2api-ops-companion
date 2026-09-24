@@ -94,13 +94,11 @@ def settings(path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         usage_query_state_path=str(path),
         audit_path=str(path.with_name("audit.jsonl")),
-        telegram_oauth_usage_refresh_enabled=True,
         telegram_oauth_recovery_monitor_enabled=True,
         telegram_oauth_daily_test_enabled=False,
         telegram_oauth_usage_refresh_concurrency=4,
         telegram_oauth_recovery_test_concurrency=2,
         telegram_oauth_early_probe_batch_size=8,
-        telegram_oauth_regular_refresh_interval_seconds=3600,
         telegram_oauth_7d_probe_interval_seconds=3600,
         telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
     )
@@ -124,6 +122,17 @@ class FakeDb:
 
 
 class OAuthStateStoreTests(unittest.TestCase):
+    def test_retired_refresh_state_is_removed_without_losing_recovery_or_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            path.write_text(json.dumps({"scheduler": {"1": {"last_regular_at": NOW.isoformat(), "last_reason": "regular_refresh", "recovery_intent": {"status":"ready"}}}, "pending_events": {"keep": {"account_id":1}}}))
+            store = OAuthStateStore(str(path)); store.commit()
+            saved = json.loads(path.read_text())
+            self.assertNotIn("last_regular_at", saved["scheduler"]["1"])
+            self.assertNotIn("last_reason", saved["scheduler"]["1"])
+            self.assertEqual(saved["scheduler"]["1"]["recovery_intent"]["status"], "ready")
+            self.assertIn("keep", saved["pending_events"])
+
     def test_v2_testing_intent_migrates_to_retry_in_v3(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "usage-query-state.json"
@@ -225,7 +234,7 @@ class OAuthStateStoreTests(unittest.TestCase):
 
 
 class OAuthMonitorSchedulingTests(unittest.TestCase):
-    def test_regular_refresh_waits_one_hour(self) -> None:
+    def test_available_accounts_never_trigger_periodic_refresh(self) -> None:
         rows = [account()]
         results = {1: result(summary())}
         scheduler = {1: {"last_regular_at": NOW.isoformat()}}
@@ -234,7 +243,8 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
         due = build_monitor_candidates(rows, results, scheduler, NOW + timedelta(seconds=3600))
 
         self.assertEqual(before, [])
-        self.assertEqual([item["reason"] for item in due], ["regular_refresh"])
+        self.assertEqual(due, [])
+        self.assertEqual(build_monitor_candidates(rows, results, scheduler, NOW + timedelta(days=3)), [])
 
     def test_seven_day_probe_waits_one_hour(self) -> None:
         quota = summary(seven_used=100, seven_reset=NOW + timedelta(days=1))
@@ -298,7 +308,7 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
 
         self.assertEqual(
             [(item["account_id"], item["reason"]) for item in candidates],
-            [(1, "exact_reset"), (2, "seven_day_probe"), (3, "regular_refresh")],
+            [(1, "exact_reset"), (2, "seven_day_probe")],
         )
 
 
@@ -668,6 +678,8 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             self.assertEqual(calls["usage"], 0)
             self.assertEqual(inventory_calls, 1)
             self.assertEqual(read_calls, reads_after_first)
+            monitor.run_once(NOW + timedelta(hours=2))
+            self.assertEqual(calls["usage"], 0)
 
     def test_bootstrap_queue_is_bounded_and_advances_between_ticks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
