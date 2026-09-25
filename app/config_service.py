@@ -41,21 +41,14 @@ class ConfigService:
 
     def _snapshot(self, section: str | None = None) -> dict[str, Any]:
         r, s = self.r, self.r.settings
-        telegram = r.telegram_config_file() if section in (None, "oauth", "telegram") else {}
-        state = r.telegram_state() if section in (None, "telegram") else {}
-        oauth = {key: getattr(s, f"telegram_{key}", getattr(Settings, f"telegram_{key}")) for key in sorted(OAUTH_FIELDS)} if section in (None, "oauth") else {}
+        config = r.oauth_config_file() if section in (None, "oauth") else {}
+        oauth = {key: getattr(s, key, getattr(Settings, key)) for key in sorted(OAUTH_FIELDS)} if section in (None, "oauth") else {}
         bark = r.build_bark_config() if section in (None, "bark") else {}
-        tg = {
-            "configured": bool(getattr(s, "telegram_bot_token", "")), "bot_token_set": bool(getattr(s, "telegram_bot_token", "")),
-            "pairing_code": getattr(s, "telegram_pairing_code", "") or telegram.get("pairing_code", ""),
-            "paired_user_count": len(state.get("paired_user_ids") or []),
-            "paired_chat_count": len(state.get("paired_chat_ids") or []),
-        }
         fallback = r.key_fallback_controller.panel_snapshot() if r.key_fallback_controller and section in (None, "key_fallback") else {}
-        result = {"oauth": oauth, "bark": bark, "telegram": tg,
+        result = {"oauth": oauth, "bark": bark,
                   "key_fallback": fallback}
         # Include secret/config updates in revisions, never in response fields.
-        versions = {"oauth": [oauth, telegram], "telegram": [tg, telegram],
+        versions = {"oauth": [oauth, config],
                     "bark": [bark, r.bark_config_file() if section in (None, "bark") else {}],
                     "key_fallback": fallback}
         return {key: {**values, "revision": revision(versions[key])} for key, values in result.items()}
@@ -64,8 +57,6 @@ class ConfigService:
                    expected_revision: str | None = None) -> dict[str, Any]:
         async with self.lock:
             result = await asyncio.to_thread(self._save, section, changes, user, expected_revision)
-            if section == "telegram":
-                await self.r.restart_telegram_bot()
             return result
 
     def _save(self, section: str, changes: dict[str, Any], user: str,
@@ -97,11 +88,11 @@ class ConfigService:
                 if not model or len(model) > 160:
                     raise ValueError("测活模型无效")
                 values["oauth_recovery_test_model_id"] = model
-                payload = {**r.telegram_config_file(), **values, **stamp}
+                payload = {**r.oauth_config_file(), **values, **stamp}
                 for retired in ("oauth_early_probe_interval_seconds", "oauth_recovery_push_enabled", "oauth_night_recovery_cooldown_enabled", "oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"):
                     payload.pop(retired, None)
-                r.save_telegram_runtime_config(payload)
-                r.apply_telegram_runtime_config(payload)
+                r.save_oauth_runtime_config(payload)
+                r.apply_oauth_runtime_config(payload)
             elif section == "bark":
                 if set(changes) - {"enabled", "device_key", "server_url"}:
                     raise ValueError("未知 Bark 设置")
@@ -121,18 +112,6 @@ class ConfigService:
                     payload = {**r.bark_config_file(), "enabled": enabled, "device_key": key, "server_url": url, **stamp}
                     r.save_bark_runtime_config(payload)
                     r.apply_bark_runtime_config(payload)
-            elif section == "telegram":
-                if set(changes) - {"bot_token"}:
-                    raise ValueError("未知 Telegram 设置")
-                token = str(changes.get("bot_token") or "").strip() or s.telegram_bot_token
-                existing = r.telegram_config_file()
-                code = existing.get("pairing_code") or s.telegram_pairing_code
-                if token and not code:
-                    code = r.generate_telegram_pairing_code()
-                payload = {**existing, "enabled": bool(token), "bot_token": token,
-                           "pairing_enabled": True, "pairing_code": code, **stamp}
-                r.save_telegram_runtime_config(payload)
-                r.apply_telegram_runtime_config(payload)
             elif section == "key_fallback":
                 if set(changes) - {"openai_enabled", "grok_enabled", "managed_account_ids"}:
                     raise ValueError("未知 Key 回退设置")
@@ -150,19 +129,3 @@ class ConfigService:
         for key in ("openai_enabled", "grok_enabled"):
             if key in values and not isinstance(values[key], bool):
                 raise ValueError("开关必须为布尔值")
-
-    async def regenerate_pairing(self, user: str) -> str:
-        async with self.lock:
-            def write() -> str:
-                with self.thread_lock:
-                    r = self.r
-                    payload = {**r.telegram_config_file(), "pairing_enabled": True,
-                               "pairing_code": r.generate_telegram_pairing_code(),
-                               "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user}
-                    r.save_telegram_runtime_config(payload)
-                    r.apply_telegram_runtime_config(payload)
-                    write_audit(r.settings.audit_path, "telegram_pairing_code_regenerate", {"user": user})
-                    return payload["pairing_code"]
-            result = await asyncio.to_thread(write)
-            await self.r.restart_telegram_bot()
-            return result

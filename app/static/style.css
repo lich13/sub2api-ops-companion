@@ -397,70 +397,12 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
 
-.pairing-row {
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.pairing-row > div {
-  display: grid;
-  gap: 3px;
-}
-
-.pairing-row span,
 .empty-value {
   color: var(--muted);
   font-size: 12px;
 }
 
-.pairing-row strong {
-  font-size: 18px;
-  letter-spacing: 0;
-}
-
-.binding-groups {
-  display: grid;
-  gap: 16px;
-}
-
-.binding-groups > div {
-  display: grid;
-  gap: 7px;
-}
-
-.id-list {
-  display: flex;
-  min-height: 30px;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.id-chip {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-muted);
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-
-.command-row {
-  grid-template-columns: auto 1fr;
-  align-items: center;
-}
-
-.telegram-oauth-panel,
+.oauth-panel,
 .key-fallback-panel {
   margin-top: 14px;
 }
@@ -758,11 +700,6 @@ textarea:focus {
 
   .panel {
     padding: 16px;
-  }
-
-  .pairing-row {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .form-actions,

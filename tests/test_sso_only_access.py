@@ -19,7 +19,7 @@ from app.settings import load_settings
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def protected_request(path: str = "/telegram") -> Request:
+def protected_request(path: str = "/ops") -> Request:
     return Request(
         {
             "type": "http",
@@ -153,19 +153,19 @@ class SSOOnlyAccessTests(unittest.TestCase):
             {
                 "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
                 "OPS_SESSION_SECRET": "session-secret-only",
-                "TELEGRAM_OAUTH_USAGE_REFRESH_ENABLED": "0",
-                "TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED": "false",
-                "TELEGRAM_OAUTH_DAILY_TEST_ENABLED": "off",
-                "TELEGRAM_OAUTH_RECOVERY_PUSH_ENABLED": "off",
+                "OAUTH_USAGE_REFRESH_ENABLED": "0",
+                "OAUTH_RECOVERY_MONITOR_ENABLED": "false",
+                "OAUTH_DAILY_TEST_ENABLED": "off",
+                "OAUTH_RECOVERY_PUSH_ENABLED": "off",
             },
             clear=True,
         ):
             loaded = load_settings()
 
-        self.assertFalse(hasattr(loaded, "telegram_oauth_usage_refresh_enabled"))
-        self.assertFalse(loaded.telegram_oauth_recovery_monitor_enabled)
-        self.assertFalse(loaded.telegram_oauth_daily_test_enabled)
-        self.assertFalse(hasattr(loaded, "telegram_oauth_recovery_push_enabled"))
+        self.assertFalse(hasattr(loaded, "oauth_usage_refresh_enabled"))
+        self.assertFalse(loaded.oauth_recovery_monitor_enabled)
+        self.assertFalse(loaded.oauth_daily_test_enabled)
+        self.assertFalse(hasattr(loaded, "oauth_recovery_push_enabled"))
 
     def test_removed_guard_settings_are_absent(self) -> None:
         with patch.dict(

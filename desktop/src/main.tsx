@@ -982,16 +982,11 @@ function SettingsPage({
 }) {
   async function action(name: string) {
     try {
-      const result = await api<{ message?: string; pairing_code?: string }>(
+      const result = await api<{ message?: string }>(
         "POST",
         `/actions/${name}`,
       );
-      onMessage(result.message || "配对码已更新");
-      if (result.pairing_code)
-        onChange("telegram", {
-          ...config.telegram,
-          pairing_code: result.pairing_code,
-        });
+      onMessage(result.message || "操作完成");
     } catch (e) {
       onError(e);
     }
@@ -1134,54 +1129,6 @@ function SettingsPage({
                 >
                   发送测试消息
                 </button>
-              </>
-            )}
-          </ConfigForm>
-          <ConfigForm
-            section="telegram"
-            title="Telegram 查询与配对"
-            value={config.telegram}
-            online={state.online}
-            onChange={onChange}
-            onMessage={onMessage}
-            onError={onError}
-          >
-            {(draft, set) => (
-              <>
-                <Field
-                  label={`Bot Token${config.telegram.bot_token_set ? "（已保存，留空保留）" : ""}`}
-                  value={draft.bot_token ?? ""}
-                  type="password"
-                  set={(v) => set("bot_token", v)}
-                />
-                <div className="field">
-                  <span>配对码</span>
-                  <code>
-                    {String(config.telegram.pairing_code || "尚未生成")}
-                  </code>
-                </div>
-                <div className="field">
-                  <span>授权用户</span>
-                  <strong>
-                    {Number(config.telegram.paired_user_count || 0)}
-                  </strong>
-                </div>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    disabled={!state.online}
-                    onClick={() => void action("telegram-pairing")}
-                  >
-                    重新生成配对码
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!state.online}
-                    onClick={() => void action("telegram-test")}
-                  >
-                    Bot 消息测试
-                  </button>
-                </div>
               </>
             )}
           </ConfigForm>

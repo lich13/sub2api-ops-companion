@@ -132,8 +132,6 @@ class DesktopActions:
                 for item in data[:1000] if isinstance(item, dict) and isinstance(item.get("id"), str)]
 
     async def prepare_test(self, account_id: int, payload: TestRequest) -> tuple[Any, Any]:
-        if not payload.confirmed:
-            raise HTTPException(409, "请确认本次测试会发送真实模型请求")
         lock = self.s.account_lock(account_id)
         if not lock.acquire(blocking=False):
             raise HTTPException(409, "此账号正在执行操作")
@@ -204,7 +202,12 @@ class DesktopActions:
                         value: dict[str, Any] = {"type": kind}
                         for field in ("text", "model", "error"):
                             if field in event:
-                                value[field] = safe_error_text(event[field], 16000)
+                                # Content deltas can consist entirely of whitespace.
+                                if kind == "content" and field == "text":
+                                    if isinstance(event[field], str):
+                                        value[field] = event[field]
+                                else:
+                                    value[field] = safe_error_text(event[field], 16000)
                         if kind in {"image", "audio", "video"}:
                             media = str(event.get(f"{kind}_url") or "")
                             remote = urlsplit(media) if not media.startswith("data:") else None
@@ -254,7 +257,7 @@ class DesktopActions:
         batch = self.batch
         if batch is None:
             return
-        limit = max(1, min(16, self.s.r.settings.telegram_oauth_usage_refresh_concurrency))
+        limit = max(1, min(16, self.s.r.settings.oauth_usage_refresh_concurrency))
         monitor = getattr(self.s.r, "oauth_monitor", None)
         async def platform_run(platform: str):
             platform_rows = [r for r in rows if r["platform"] == platform]

@@ -29,7 +29,6 @@ export default function TestDialog({ account, online, close }: {account: Account
   const [prompt, setPrompt] = useState("");
   const [media, setMedia] = useState("");
   const [fileName, setFileName] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
@@ -53,7 +52,7 @@ export default function TestDialog({ account, online, close }: {account: Account
   const imageModel = account.platform === "openai" && mode === "default" && model.startsWith("gpt-image-");
   const hasPrompt = ["image", "video", "search", "tts"].includes(mode) || imageModel;
   function changeMode(next: TestMode) {
-    setMode(next); setModel(preferredModel(models, account.platform, next)); setPrompt(defaults[next] ?? ""); setMedia(""); setFileName(""); setConfirmed(false);
+    setMode(next); setModel(preferredModel(models, account.platform, next)); setPrompt(defaults[next] ?? ""); setMedia(""); setFileName("");
   }
   async function chooseFile(file: File | undefined) {
     setMedia(""); setFileName(""); if (!file) return;
@@ -66,11 +65,11 @@ export default function TestDialog({ account, online, close }: {account: Account
   }
   async function cancel() { cancelled.current = true; await command("cancel_test"); }
   async function start() {
-    if (running.current || !online || !confirmed) return;
+    if (running.current || !online) return;
     running.current = true; cancelled.current = false; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
     let terminal = false;
     try {
-      await runTest(account.id, {expected_version: account.version, confirmed: true, mode, model_id: standalone ? "" : model,
+      await runTest(account.id, {expected_version: account.version, mode, model_id: standalone ? "" : model,
         prompt: hasPrompt ? prompt || (imageModel ? defaults.image : defaults[mode]) || "" : "",
         ...(media ? {[mode === "stt" ? "audio_data_url" : "image_data_url"]: media} : {})}, (event) => {
         if (!alive.current || cancelled.current) return;
@@ -84,7 +83,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     } catch (e) { if (alive.current && !cancelled.current) setError(String(e).replace(/^Error: /, "")); }
     finally {
       running.current = false;
-      if (alive.current) { setBusy(false); setConfirmed(false); if (cancelled.current) setStatus("已取消，未重放请求"); }
+      if (alive.current) { setBusy(false); if (cancelled.current) setStatus("已取消，未重放请求"); }
       void command("refresh");
     }
   }
@@ -93,7 +92,7 @@ export default function TestDialog({ account, online, close }: {account: Account
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
       <div className="test-controls">
         <label>模式<select disabled={busy} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-        {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); setConfirmed(false); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
+        {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
         {((account.platform === "grok" && ["image", "video", "stt"].includes(mode)) || imageModel) && <label className="test-upload">{mode === "stt" ? "音频素材（可选）" : "图片素材（可选）"}<input key={`${mode}-${imageModel}`} type="file" accept={mode === "stt" ? "audio/*,.wav,.mp3,.m4a,.ogg,.webm" : "image/png,image/jpeg,image/webp,image/gif"} disabled={busy} onChange={(e) => void chooseFile(e.target.files?.[0])}/>{fileName && <span>{fileName}</span>}</label>}
       </div>
@@ -103,7 +102,7 @@ export default function TestDialog({ account, online, close }: {account: Account
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer><label><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)}/>确认发送真实请求，可能产生费用并更新账号状态</label>{busy ? <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || loading || !confirmed} onClick={() => void start()}><Play size={13}/>开始测试</button>}</footer>
+      <footer>{busy ? <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || loading} onClick={() => void start()}><Play size={13}/>开始测试</button>}</footer>
     </section>
   </div>;
 }
