@@ -27,7 +27,6 @@ from .audit import write_audit
 from .bark import BarkNotifier, DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
 from .db import Database
 from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackConfigError, KeyFallbackController
-from .model_guard import ModelGuard, model_guard_event_message
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
 from .secure_session import create_session_cookie, read_session_cookie
 from .settings import daily_test_time, load_settings
@@ -59,8 +58,6 @@ oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
 key_fallback_controller: KeyFallbackController | None = None
 key_fallback_task: asyncio.Task[None] | None = None
-model_guard: ModelGuard | None = None
-model_guard_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
 BARK_CONFIG_LOCK = threading.RLock()
 
@@ -162,51 +159,10 @@ async def key_fallback_loop() -> None:
         await asyncio.sleep(EVAL_INTERVAL_SECONDS)
 
 
-async def deliver_model_guard_events(events: list[dict[str, Any]]) -> None:
-    if not events or model_guard is None:
-        return
-    runtime = bark_notifier.runtime_config()
-    if not runtime.config_valid or not runtime.enabled:
-        await asyncio.to_thread(model_guard.mark_events_delivered, events, suppressed=True)
-        return
-    delivered: list[dict[str, Any]] = []
-    for event in events:
-        try:
-            title, body = model_guard_event_message(event)
-            result = await asyncio.to_thread(
-                bark_notifier._push_with_config, title, body, runtime, timeout=3
-            )
-            if result.success:
-                delivered.append(event)
-        except Exception as exc:
-            write_audit(settings.audit_path, "model_guard_delivery_error", {"error_code": type(exc).__name__})
-    if delivered:
-        await asyncio.to_thread(model_guard.mark_events_delivered, delivered)
-
-
-async def model_guard_loop() -> None:
-    while True:
-        try:
-            if model_guard is not None:
-                await asyncio.to_thread(model_guard.run_once)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            write_audit(settings.audit_path, "model_guard_loop_error", {"error_code": type(exc).__name__})
-        try:
-            if model_guard is not None:
-                await deliver_model_guard_events(await asyncio.to_thread(model_guard.pending_events))
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            write_audit(settings.audit_path, "model_guard_delivery_error", {"error_code": type(exc).__name__})
-        await asyncio.sleep(10)
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global telegram_bot, telegram_task, oauth_monitor, oauth_monitor_task
-    global key_fallback_controller, key_fallback_task, model_guard, model_guard_task
+    global key_fallback_controller, key_fallback_task
     db.open()
     config = telegram_config_file()
     migrated = {**config, "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
@@ -238,12 +194,10 @@ async def lifespan(_: FastAPI):
         admin_token_provider=lambda: oauth_state_store().admin_token(),
     )
     await asyncio.to_thread(key_fallback_controller.migrate_legacy_config)
-    model_guard = ModelGuard(settings, db)
     await restart_telegram_bot()
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
-    model_guard_task = asyncio.create_task(model_guard_loop())
     try:
         yield
     finally:
@@ -255,11 +209,6 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await key_fallback_task
             key_fallback_task = None
-        if model_guard_task:
-            model_guard_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await model_guard_task
-            model_guard_task = None
         if oauth_monitor_task:
             oauth_monitor_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -273,7 +222,7 @@ async def lifespan(_: FastAPI):
         telegram_bot = None
         oauth_monitor = None
         key_fallback_controller = None
-        model_guard = None
+        await desktop_service.close()
         db.close()
 
 
@@ -709,16 +658,6 @@ def build_key_fallback_panel() -> dict[str, Any]:
     return panel
 
 
-def build_model_guard_panel() -> dict[str, Any]:
-    controller = model_guard
-    if controller is None:
-        return {"openai_enabled": False, "grok_enabled": False, "auto_remove": False, "config_valid": True, "incidents": []}
-    try:
-        return controller.panel_snapshot()
-    except Exception:
-        return {"openai_enabled": False, "grok_enabled": False, "auto_remove": False, "config_valid": False, "incidents": []}
-
-
 async def restart_telegram_bot() -> None:
     global telegram_bot, telegram_task
     if telegram_task:
@@ -812,7 +751,7 @@ def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
             request,
             "telegram.html",
             {"active": "telegram", "telegram": telegram, "bark": build_bark_config(),
-             "key_fallback": build_key_fallback_panel(), "model_guard": build_model_guard_panel(),
+             "key_fallback": build_key_fallback_panel(),
              "config_revisions": revisions, "msg": msg},
         )
 
@@ -903,25 +842,6 @@ async def key_fallback_config_save(request: Request, user: AuthUser) -> Response
         f"{settings.base_path}/telegram?msg={quote('Key 回退配置已保存')}",
         status_code=303,
     )
-
-
-@app.post("/model-guard/config")
-async def model_guard_config_save(request: Request, user: AuthUser) -> Response:
-    form = await request.form()
-    controller = model_guard
-    if controller is None:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('模型降级保护未就绪')}", status_code=303)
-    try:
-        await desktop_service.config.save("model_guard", {
-            "openai_enabled": bool(form.getlist("openai_enabled")),
-            "grok_enabled": bool(form.getlist("grok_enabled")),
-            "auto_remove": bool(form.getlist("auto_remove")),
-        }, user, form.get("config_revision"))
-    except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
-    except Exception:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('模型降级保护配置保存失败')}", status_code=303)
-    return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('模型降级保护配置已保存')}", status_code=303)
 
 
 @app.post("/bark/config")

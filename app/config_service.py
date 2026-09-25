@@ -52,18 +52,12 @@ class ConfigService:
             "paired_chat_count": len(state.get("paired_chat_ids") or []),
         }
         fallback = r.key_fallback_controller.panel_snapshot() if r.key_fallback_controller and section in (None, "key_fallback") else {}
-        guard = r.model_guard.config() if r.model_guard and section in (None, "model_guard") else None
-        guard_values = {
-            "openai_enabled": bool(guard and guard.openai_enabled),
-            "grok_enabled": bool(guard and guard.grok_enabled),
-            "auto_remove": bool(guard and guard.auto_remove),
-        }
         result = {"oauth": oauth, "bark": bark, "telegram": tg,
-                  "key_fallback": fallback, "model_guard": guard_values}
+                  "key_fallback": fallback}
         # Include secret/config updates in revisions, never in response fields.
         versions = {"oauth": [oauth, telegram], "telegram": [tg, telegram],
                     "bark": [bark, r.bark_config_file() if section in (None, "bark") else {}],
-                    "key_fallback": fallback, "model_guard": [guard_values, str(guard)]}
+                    "key_fallback": fallback}
         return {key: {**values, "revision": revision(versions[key])} for key, values in result.items()}
 
     async def save(self, section: str, changes: dict[str, Any], user: str,
@@ -148,21 +142,12 @@ class ConfigService:
                 values.update(changes)
                 self._validate_switches(values)
                 r.key_fallback_controller.save_user_config(**values, user=user)
-            elif section == "model_guard":
-                if set(changes) - {"openai_enabled", "grok_enabled", "auto_remove"}:
-                    raise ValueError("未知模型保护设置")
-                if r.model_guard is None:
-                    raise ValueError("模型保护尚未就绪")
-                values = {key: current[section][key] for key in ("openai_enabled", "grok_enabled", "auto_remove")}
-                values.update(changes)
-                self._validate_switches(values)
-                r.model_guard.save_config(**values, user=user)
             write_audit(s.audit_path, f"{section}_config_update", {"user": user, "fields": sorted(changes)})
             return self.snapshot(section)[section]
 
     @staticmethod
     def _validate_switches(values: dict[str, Any]) -> None:
-        for key in ("openai_enabled", "grok_enabled", "auto_remove"):
+        for key in ("openai_enabled", "grok_enabled"):
             if key in values and not isinstance(values[key], bool):
                 raise ValueError("开关必须为布尔值")
 

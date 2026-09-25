@@ -28,6 +28,7 @@ import {
 import { api, command, preview, subscribe, updates } from "./bridge";
 import {
   filterAccounts,
+  sortPriority,
   fullTime,
   initialState,
   type Account,
@@ -40,12 +41,13 @@ import {
 } from "./types";
 import "./style.css";
 import UsageCell from "./UsageCell";
+import { MiniUsage, PriorityEditor, QuotaRefresh, RecoveryHistory } from "./AccountControls";
+import TestDialog from "./TestDialog";
 import { version as appVersion } from "../package.json";
 
-type Page = "overview" | "accounts" | "events" | "automation" | "settings";
+type Page = "accounts" | "events" | "automation" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
-  { id: "overview", label: "总览", icon: LayoutDashboard },
   { id: "accounts", label: "账号", icon: Users },
   { id: "events", label: "事件", icon: Bell },
   { id: "automation", label: "自动化", icon: SlidersHorizontal },
@@ -86,7 +88,9 @@ function Time({ at }: { at: string | null | undefined }) {
 export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
     [ready, setReady] = useState(false),
-    [page, setPage] = useState<Page>("overview"),
+    [page, setPage] = useState<Page>("accounts"),
+    [ascending, setAscending] = useState(true),
+    [testAccount, setTestAccount] = useState<Account | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
@@ -138,7 +142,8 @@ export default function App() {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing) return;
-      if (confirm) setConfirm(null);
+      if (testAccount) setTestAccount(null);
+      else if (confirm) setConfirm(null);
       else if (detail || detailBusy) {
         setDetail(null);
         setDetailBusy(false);
@@ -146,7 +151,7 @@ export default function App() {
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [confirm, detail, detailBusy]);
+  }, [confirm, detail, detailBusy, testAccount]);
   useEffect(() => {
     if (state.online && (page === "settings" || page === "automation"))
       void api<Config>("GET", "/config").then(setConfig).catch(report);
@@ -305,6 +310,7 @@ export default function App() {
                     <Time at={a?.last_error_at} />
                   </div>
                 ) : null}
+                {compact && a && <MiniUsage account={a} />}
               </div>
             );
           })}
@@ -357,17 +363,6 @@ export default function App() {
             </span>
             <strong>Sub2Ops</strong>
           </div>
-          <div className="workspace">
-            <span className="workspace-letter">S</span>
-            <div>
-              <strong>运维工作台</strong>
-              <span>
-                {state.preferences.base_url
-                  ? new URL(state.preferences.base_url).hostname
-                  : "尚未连接"}
-              </span>
-            </div>
-          </div>
           <nav>
             {pages.map((p) => (
               <button
@@ -394,7 +389,6 @@ export default function App() {
             </div>
           ) : (
             <div className="breadcrumb">
-              工作台 <ChevronRight size={12} />{" "}
               <strong>{pages.find((p) => p.id === page)?.label}</strong>
             </div>
           )}
@@ -518,55 +512,9 @@ export default function App() {
                   更新于 <Time at={snap.observed_at} />
                 </span>
               </div>
-              {page === "overview" && (
-                <>
-                  <div className="summary-strip">
-                    <div>
-                      <span className="status-dot good" />
-                      <strong>
-                        {accounts.filter((a) => a.available).length}
-                      </strong>
-                      可调度
-                    </div>
-                    <div>
-                      <span className="status-dot warning" />
-                      <strong>
-                        {accounts.filter((a) => !a.available).length}
-                      </strong>
-                      受限或关闭
-                    </div>
-                    <div>
-                      <Layers3 size={14} />
-                      <strong>{groups.length}</strong>分组
-                    </div>
-                    <button onClick={() => setPage("accounts")}>
-                      查看全部账号 <ArrowUpRight size={14} />
-                    </button>
-                  </div>
-                  <div className="section-heading">
-                    <h2>分组动态</h2>
-                  </div>
-                  <div className="groups-grid">
-                    {visibleGroups.map((g) => groupRow(g))}
-                  </div>
-                  {!groups.length && <Empty text="没有分组记录" />}
-                  <div className="section-heading">
-                    <h2>最近错误</h2>
-                    <button
-                      className="text-button"
-                      onClick={() => setPage("events")}
-                    >
-                      全部事件 <ChevronRight size={13} />
-                    </button>
-                  </div>
-                  <div className="error-list">
-                    {errors.slice(0, 6).map(errorRow)}
-                    {!errors.length && <Empty text="暂无账号错误" />}
-                  </div>
-                </>
-              )}
               {page === "accounts" && (
                 <>
+                  <QuotaRefresh online={state.online} report={report} />
                   <div className="filters">
                     <label className="search">
                       <Search size={15} />
@@ -627,36 +575,34 @@ export default function App() {
                       <thead>
                         <tr>
                           <th>账号</th>
-                          <th>平台 / 类型</th>
+                          <th aria-sort={ascending ? "ascending" : "descending"}><button className="sort-button" onClick={() => setAscending(!ascending)}>优先级 {ascending ? "↑" : "↓"}</button></th>
                           <th>当前状态</th>
                           <th>用量窗口</th>
                           <th>最近报错</th>
                           <th>允许调度</th>
+                          <th>操作</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filterAccounts(
+                        {sortPriority(filterAccounts(
                           accounts,
                           query,
                           group,
                           platform,
                           filter,
                           type,
-                        ).map((a) => (
+                        ), ascending).map((a) => (
                           <tr key={a.id}>
-                            <td>
-                              <strong>{a.name}</strong>
-                              <small>
-                                #{a.id}
+                            <td className="account-name">
+                              <strong title={a.name}>{a.name}</strong>
+                              <small className="account-identity">
+                                {a.platform === "openai" ? "OpenAI" : a.platform === "grok" ? "Grok" : a.platform} · {a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}
                                 {a.managed && (
                                   <span className="managed-tag">回退托管</span>
                                 )}
                               </small>
                             </td>
-                            <td>
-                              <span>{a.platform}</span>
-                              <small>{a.type}</small>
-                            </td>
+                            <td><PriorityEditor account={a} online={state.online} report={report} /></td>
                             <td>
                               <span
                                 className={`account-status ${a.available ? "good-text" : ""}`}
@@ -668,6 +614,7 @@ export default function App() {
                                   ? "可调度"
                                   : a.blockers.map((b) => b.label).join(" / ")}
                               </span>
+                              {a.blockers.filter((b) => b.code === "rate_limit_reset_at").map((b) => <small key={b.code} className="limit-until">预计解除 {b.until ? <Time at={b.until} /> : "时间未知"}</small>)}
                             </td>
                             <td>
                               <UsageCell
@@ -706,6 +653,7 @@ export default function App() {
                               )}
                             </td>
                             <td>{schedule(a)}</td>
+                            <td><button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -765,42 +713,7 @@ export default function App() {
                       加载更早记录
                     </button>
                   )}
-                  <div className="section-heading">
-                    <h2>模型降级保护</h2>
-                    <span>{snap.incidents.length} 条记录</span>
-                  </div>
-                  <div className="incident-list">
-                    {snap.incidents.map((i, n) => (
-                      <article key={`${i.account_id}-${n}`}>
-                        <div>
-                          <strong>
-                            {i.account_name}{" "}
-                            <span className="muted">#{i.account_id}</span>
-                          </strong>
-                          <span
-                            className={`pill ${i.status === "confirmed" ? "danger" : "warning"}`}
-                          >
-                            {i.status === "confirmed" ? "确认降级" : "待核实"}
-                          </span>
-                        </div>
-                        <p className="model-chain">
-                          {i.requested_model} <ChevronRight size={12} />
-                          {i.upstream_model} <ChevronRight size={12} />
-                          <strong>{i.response_model}</strong>
-                        </p>
-                        <p>
-                          {i.action} · {i.reason}
-                        </p>
-                        <small>
-                          {i.history ? "历史记录" : "实时记录"} · {i.count} 次 ·
-                          最近 <Time at={i.latest_at} />
-                        </small>
-                      </article>
-                    ))}
-                    {!snap.incidents.length && (
-                      <Empty text="暂无模型异常记录" />
-                    )}
-                  </div>
+                  <RecoveryHistory latest={snap.recoveries ?? []} online={state.online} report={report} />
                 </>
               )}
               {(page === "automation" || page === "settings") &&
@@ -828,8 +741,8 @@ export default function App() {
             <span>
               <Time at={snap?.observed_at} />
             </span>
-            <button onClick={() => void command("show_main").catch(report)}>
-              打开工作台 <ArrowUpRight size={14} />
+                  <button onClick={() => void command("show_main").catch(report)}>
+                    打开主窗口 <ArrowUpRight size={14} />
             </button>
           </footer>
         )}
@@ -956,6 +869,7 @@ export default function App() {
           </section>
         </div>
       )}
+      {testAccount && <TestDialog account={accounts.find((a) => a.id === testAccount.id) ?? testAccount} online={state.online} close={() => setTestAccount(null)} />}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>
@@ -1165,35 +1079,6 @@ function SettingsPage({
                     ) && <p className="hint">没有可选择的 Key 账号</p>}
                   </div>
                 ))}
-              </>
-            )}
-          </ConfigForm>
-          <ConfigForm
-            section="model_guard"
-            title="模型降级保护"
-            value={config.model_guard}
-            online={state.online}
-            onChange={onChange}
-            onMessage={onMessage}
-            onError={onError}
-          >
-            {(draft, set) => (
-              <>
-                <Field
-                  label="OpenAI 监控"
-                  value={draft.openai_enabled}
-                  set={(v) => set("openai_enabled", v)}
-                />
-                <Field
-                  label="Grok 监控"
-                  value={draft.grok_enabled}
-                  set={(v) => set("grok_enabled", v)}
-                />
-                <Field
-                  label="确认降级后自动移除精确模型入口"
-                  value={draft.auto_remove}
-                  set={(v) => set("auto_remove", v)}
-                />
               </>
             )}
           </ConfigForm>

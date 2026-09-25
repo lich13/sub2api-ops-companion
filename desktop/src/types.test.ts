@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fullTime, filterAccounts, type Account } from "./types";
+import { fullTime, filterAccounts, sortPriority, type Account } from "./types";
 describe("account evidence", () => {
   it("never invents timestamps", () => {
     expect(fullTime(null)).toBe("暂无记录");
@@ -36,5 +36,12 @@ describe("account evidence", () => {
     expect(
       filterAccounts(data, "主", "1", "openai", "").map((a) => a.id),
     ).toEqual([1]);
+  });
+  it("sorts priority stably with smaller values first", () => {
+    const data = [
+      { id: 2, priority: 10 }, { id: 1, priority: 2 }, { id: 3, priority: 2 },
+    ] as Account[];
+    expect(sortPriority(data).map((a) => a.id)).toEqual([1, 3, 2]);
+    expect(sortPriority(data, false).map((a) => a.id)).toEqual([2, 1, 3]);
   });
 });

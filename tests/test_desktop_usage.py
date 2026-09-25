@@ -209,8 +209,7 @@ class ReadOnlySnapshotTests(unittest.TestCase):
                 return [account]
             return []
         db.fetch_all.side_effect=fetch
-        runtime=SimpleNamespace(db=db,key_fallback_controller=None,oauth_monitor=None,
-            build_model_guard_panel=lambda:{"incidents":[]})
+        runtime=SimpleNamespace(db=db,key_fallback_controller=None,oauth_monitor=None)
         service=DesktopService(runtime)
         with patch("app.desktop_api._urlopen_no_redirect",side_effect=AssertionError("read refresh sent a request")):
             first=service.snapshot()
