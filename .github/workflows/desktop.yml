@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     tags: ['desktop-v*']
-    paths: ['desktop/**', 'app/**', 'tests/**', '.github/workflows/desktop.yml', 'requirements.txt']
+    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   pull_request:
-    paths: ['desktop/**', 'app/**', 'tests/**', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   workflow_dispatch:
 permissions:
   contents: read

@@ -185,21 +185,21 @@ class DesktopConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_partial_save_and_stale_revision(self):
         from app.config_service import ConfigService
         with tempfile.TemporaryDirectory() as directory:
-            s=Settings(database_url='unused',session_secret='test',session_ttl_seconds=3600,base_path='',audit_path=str(Path(directory)/'audit'),telegram_config_path=str(Path(directory)/'telegram.json'))
+            s=Settings(database_url='unused',session_secret='test',session_ttl_seconds=3600,base_path='',audit_path=str(Path(directory)/'audit'),oauth_config_path=str(Path(directory)/'oauth.json'))
             with patch.object(main_module,'settings',s),patch.object(main_module,'oauth_monitor',None):
-                main_module.save_telegram_runtime_config({'bot_token':'preserve-me','oauth_daily_test_time':'05:00'})
+                main_module.save_oauth_runtime_config({'oauth_recovery_test_model_id':'preserve-model','oauth_daily_test_time':'05:00'})
                 service=ConfigService(main_module)
                 old=service.snapshot('oauth')['oauth']['revision']
                 await service.save('oauth',{'oauth_daily_test_time':'06:15'},'test',old)
-                data=json.loads(Path(s.telegram_config_path).read_text())
-                self.assertEqual(data['bot_token'],'preserve-me')
+                data=json.loads(Path(s.oauth_config_path).read_text())
+                self.assertEqual(data['oauth_recovery_test_model_id'],'gpt-5.6-luna')
                 self.assertEqual(data['oauth_daily_test_time'],'06:15')
-                self.assertEqual(Path(s.telegram_config_path).stat().st_mode&0o777,0o600)
+                self.assertEqual(Path(s.oauth_config_path).stat().st_mode&0o777,0o600)
                 with self.assertRaises(ConfigConflict):await service.save('oauth',{'oauth_daily_test_time':'07:00'},'test',old)
                 with self.assertRaises(ValueError):await service.save('oauth',{'oauth_daily_test_time':'25:00'},'test')
                 with self.assertRaises(ValueError):await service.save('oauth',{'oauth_usage_refresh_enabled':True},'test')
                 with self.assertRaises(ValueError):await service.save('oauth',{'oauth_regular_refresh_interval_seconds':60},'test')
-                self.assertEqual(json.loads(Path(s.telegram_config_path).read_text())['oauth_daily_test_time'],'06:15')
+                self.assertEqual(json.loads(Path(s.oauth_config_path).read_text())['oauth_daily_test_time'],'06:15')
 
 
 if __name__ == '__main__':unittest.main()

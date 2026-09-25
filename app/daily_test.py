@@ -61,8 +61,8 @@ class DailyTestSchedule:
         return self.store.cached_snapshot().get("daily_test") or {"batches": {}}
 
     def _config(self) -> tuple[bool, str]:
-        return (bool(getattr(self.settings, "telegram_oauth_daily_test_enabled", True)),
-                daily_test_time(getattr(self.settings, "telegram_oauth_daily_test_time", "05:00")))
+        return (bool(getattr(self.settings, "oauth_daily_test_enabled", True)),
+                daily_test_time(getattr(self.settings, "oauth_daily_test_time", "05:00")))
 
     @property
     def enabled(self) -> bool:

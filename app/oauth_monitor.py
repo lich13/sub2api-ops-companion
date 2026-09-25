@@ -1032,7 +1032,7 @@ class OAuthMonitor:
     def _run_daily_batch(self, current: datetime, batch: dict[str, Any], report: dict[str, Any]) -> None:
         token = self.store.admin_token()
         base_url = str(self.base_url_provider() or "").rstrip("/")
-        model = str(getattr(self.settings, "telegram_oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID))
+        model = str(getattr(self.settings, "oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID))
         accounts = batch.setdefault("accounts", {})
         jobs: list[dict[str, Any]] = []
         pending: dict[str, dict[str, Any]] = {}
@@ -1104,7 +1104,7 @@ class OAuthMonitor:
             except Exception as exc:
                 return {"success": False, "error_code": "daily_test_error", "error": str(exc)}
 
-        workers = _positive_int(getattr(self.settings, "telegram_oauth_recovery_test_concurrency", 2), 2, 1, 8)
+        workers = _positive_int(getattr(self.settings, "oauth_recovery_test_concurrency", 2), 2, 1, 8)
         if jobs:
             with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as executor:
                 futures = {executor.submit(test, row): row for row in jobs}
@@ -1193,7 +1193,7 @@ class OAuthMonitor:
         self._cycle_tests = {}
         mode = "force" if force else "scheduled"
         if recovery_enabled is None:
-            recovery_enabled = bool(getattr(self.settings, "telegram_oauth_recovery_monitor_enabled", True))
+            recovery_enabled = bool(getattr(self.settings, "oauth_recovery_monitor_enabled", True))
         try:
             self._refresh_inventory(current, force=force)
         except Exception as exc:
@@ -1242,13 +1242,13 @@ class OAuthMonitor:
                 current,
                 seven_day_probe_interval_seconds=getattr(
                     self.settings,
-                    "telegram_oauth_7d_probe_interval_seconds",
+                    "oauth_7d_probe_interval_seconds",
                     DEFAULT_SEVEN_DAY_PROBE_SECONDS,
                 ),
                 recovery_monitor_enabled=recovery_enabled,
             )
         batch_size = _positive_int(
-            getattr(self.settings, "telegram_oauth_early_probe_batch_size", 8), 8, 1, 50
+            getattr(self.settings, "oauth_early_probe_batch_size", 8), 8, 1, 50
         )
         selected = candidates if force else candidates[:batch_size]
         empty_report = {
@@ -1280,7 +1280,7 @@ class OAuthMonitor:
 
         workers = min(
             len(selected),
-            _positive_int(getattr(self.settings, "telegram_oauth_usage_refresh_concurrency", 4), 4, 1, 16),
+            _positive_int(getattr(self.settings, "oauth_usage_refresh_concurrency", 4), 4, 1, 16),
         )
         usage_results: dict[int, dict[str, Any]] = {}
         usage_results.update(prior_usage)
@@ -1574,11 +1574,11 @@ class OAuthMonitor:
 
         test_workers = min(
             len(runnable_jobs),
-            _positive_int(getattr(self.settings, "telegram_oauth_recovery_test_concurrency", 2), 2, 1, 8),
+            _positive_int(getattr(self.settings, "oauth_recovery_test_concurrency", 2), 2, 1, 8),
         )
         test_results: dict[int, dict[str, Any]] = {}
         model_id = str(
-            getattr(self.settings, "telegram_oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID)
+            getattr(self.settings, "oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID)
             or DEFAULT_TEST_MODEL_ID
         ).strip()
         if runnable_jobs:

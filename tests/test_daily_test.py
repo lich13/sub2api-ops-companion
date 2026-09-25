@@ -32,8 +32,8 @@ class DailyScheduleTests(unittest.TestCase):
 
     def make_schedule(self, root):
         config = settings(root / "state.json")
-        config.telegram_oauth_daily_test_enabled = True
-        config.telegram_oauth_daily_test_time = "05:00"
+        config.oauth_daily_test_enabled = True
+        config.oauth_daily_test_time = "05:00"
         store = OAuthStateStore(config.usage_query_state_path)
         return DailyTestSchedule(config, store, BEFORE), config, store
 
@@ -46,14 +46,14 @@ class DailyScheduleTests(unittest.TestCase):
             self.assertEqual(batch["date"], "2026-09-22")
             batch["status"] = "completed"
             schedule.save_batch(batch)
-            config.telegram_oauth_daily_test_time = "06:00"
+            config.oauth_daily_test_time = "06:00"
             schedule.tick(DUE + timedelta(minutes=1))
             schedule.tick(DUE + timedelta(hours=1))
             self.assertIsNone(schedule.claim(DUE + timedelta(hours=1)))
-            config.telegram_oauth_daily_test_enabled = False
+            config.oauth_daily_test_enabled = False
             schedule.tick(DUE + timedelta(hours=2))
             self.assertEqual(store.snapshot()["daily_test"]["next_run_at"], "")
-            config.telegram_oauth_daily_test_enabled = True
+            config.oauth_daily_test_enabled = True
             schedule.tick(DUE + timedelta(days=1, hours=2))
             self.assertEqual(store.snapshot()["daily_test"]["next_run_at"], (DUE + timedelta(days=2, hours=1)).isoformat())
 
@@ -64,7 +64,7 @@ class DailyScheduleTests(unittest.TestCase):
             self.assertIsNone(schedule.claim(DUE + timedelta(minutes=2)))
             self.assertEqual(store.snapshot()["daily_test"]["batches"]["2026-09-22"]["status"], "missed")
             # A newly selected future time is allowed when the prior time was never executed.
-            config.telegram_oauth_daily_test_time = "06:00"
+            config.oauth_daily_test_time = "06:00"
             schedule.tick(DUE + timedelta(minutes=3))
             schedule.tick(DUE + timedelta(hours=1))
             self.assertIsNotNone(schedule.claim(DUE + timedelta(hours=1)))
@@ -107,9 +107,9 @@ class DailyScheduleTests(unittest.TestCase):
 class DailyExecutionTests(unittest.TestCase):
     def make_monitor(self, root, rows=None, usage=None, test=None):
         config = settings(root / "state.json")
-        config.telegram_oauth_daily_test_enabled = True
-        config.telegram_oauth_daily_test_time = "05:00"
-        config.telegram_oauth_recovery_monitor_enabled = False
+        config.oauth_daily_test_enabled = True
+        config.oauth_daily_test_time = "05:00"
+        config.oauth_recovery_monitor_enabled = False
         db = FakeDb(rows or [healthy()])
         calls = []
 
@@ -194,7 +194,7 @@ class DailyExecutionTests(unittest.TestCase):
         row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=DUE.isoformat())
         with tempfile.TemporaryDirectory() as directory:
             monitor, calls = self.make_monitor(Path(directory), rows=[row])
-            monitor.settings.telegram_oauth_recovery_monitor_enabled = True
+            monitor.settings.oauth_recovery_monitor_enabled = True
             monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE), BEFORE)})
             def recover(*_a, **_kw):
                 row.update(rate_limited_at=None, rate_limit_reset_at=None)
@@ -209,7 +209,7 @@ class DailyExecutionTests(unittest.TestCase):
         row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=DUE.isoformat())
         with tempfile.TemporaryDirectory() as directory:
             monitor, calls = self.make_monitor(Path(directory), rows=[row])
-            monitor.settings.telegram_oauth_recovery_monitor_enabled = True
+            monitor.settings.oauth_recovery_monitor_enabled = True
             monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE), BEFORE)})
 
             def recover(*_args, **_kwargs):

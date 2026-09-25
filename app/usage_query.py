@@ -283,7 +283,6 @@ def oauth_quota_windows(account_row: dict[str, Any] | None, *, now: datetime | N
         "plan_type": plan_type,
         "updated_at": canonical_utc_iso(updated_at) or updated_at,
         "ui_windows": windows,
-        "telegram_windows": [item for item in windows if float(item["used_percent"]) < 100],
     })
 
 
@@ -343,9 +342,6 @@ def sanitize_oauth_quota_summary(
     if plan_type == "free":
         windows = [item for item in windows if item.get("key") != "codex_5h"]
     sanitized["ui_windows"] = windows
-    sanitized["telegram_windows"] = [
-        item for item in windows if (percent_or_none(item.get("used_percent")) or 0) < 100
-    ]
     return _with_recovery_metadata(sanitized)
 
 
