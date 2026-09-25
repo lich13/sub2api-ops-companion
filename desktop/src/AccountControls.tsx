@@ -50,14 +50,21 @@ export function QuotaRefresh({ online, report }: {online: boolean; report: (e: u
   const running = useRef(false);
   useEffect(() => {
     if (!online) return;
-    let gone = false; let timer: ReturnType<typeof setTimeout>;
+    let gone = false; let timer: ReturnType<typeof setTimeout> | undefined;
     async function poll() {
-      try { const result = await api<QuotaBatch>("GET", "/quota-refresh"); if (!gone) setBatch(result); }
-      catch { /* Connectivity is reported by the shared snapshot state. */ }
-      if (!gone) timer = setTimeout(() => void poll(), 1000);
+      try {
+        const result = await api<QuotaBatch>("GET", "/quota-refresh");
+        if (!gone) {
+          setBatch(result);
+          if (result.status === "running") timer = setTimeout(() => void poll(), 1000);
+          else if (batch?.status === "running") void command("refresh");
+        }
+      } catch {
+        if (!gone && batch?.status === "running") timer = setTimeout(() => void poll(), 1000);
+      }
     }
     void poll(); return () => { gone = true; clearTimeout(timer); };
-  }, [online]);
+  }, [online, batch?.id, batch?.status === "running"]);
   async function start() {
     if (running.current || !online) return;
     running.current = true; setStarting(true);

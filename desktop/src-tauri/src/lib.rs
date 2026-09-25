@@ -18,6 +18,9 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{oneshot, Mutex, Notify};
 
+mod api_http;
+use api_http::http;
+
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
 #[cfg(target_os = "macos")]
@@ -144,13 +147,13 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 || account_path(plain, "/models")
         }
         "PUT" => {
-            ["oauth", "bark", "telegram", "key_fallback"]
+            ["oauth", "bark", "key_fallback"]
                 .iter()
                 .any(|s| plain == format!("/config/{s}"))
                 && !path.contains('?')
         }
         "POST" => {
-            path == "/quota-refresh" || ["bark-test", "telegram-test", "telegram-pairing"]
+            path == "/quota-refresh" || ["bark-test"]
                 .iter()
                 .any(|s| path == format!("/actions/{s}"))
                 || path
@@ -171,72 +174,15 @@ fn account_path(path: &str, suffix: &str) -> bool {
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
 }
 
-async fn http(
-    client: &reqwest::Client,
-    base: &str,
-    key: &str,
-    method: &str,
-    path: &str,
-    body: Option<Value>,
-) -> Result<Value, String> {
-    let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "请求方式无效")?;
-    let mut req = client
-        .request(method, format!("{base}/api/desktop/v1{path}"))
-        .header("x-api-key", key)
-        .header("Accept", "application/json");
-    if path.ends_with("/usage-action") {
-        // Explicit probe/reset may take 90 s. No retries are added.
-        req = req.timeout(Duration::from_secs(105));
-    }
-    if let Some(body) = body {
-        req = req.json(&body);
-    }
-    let response = req.send().await.map_err(|e| {
-        if e.is_timeout() {
-            "请求超时，未重放操作"
-        } else {
-            "连接失败，请检查网络和服务地址"
-        }
-    })?;
-    let status = response.status();
-    if status.as_u16() == 401 || status.as_u16() == 403 {
-        return Err("管理员 API Key 已失效，请重新连接".into());
-    }
-    let data: Value = response
-        .json()
-        .await
-        .map_err(|_| "服务返回了无法识别的数据")?;
-    if !status.is_success() {
-        let detail = data.get("detail");
-        let message = detail
-            .and_then(Value::as_str)
-            .or_else(|| {
-                detail
-                    .and_then(|d| d.get("message"))
-                    .and_then(Value::as_str)
-            })
-            .unwrap_or("操作失败，请刷新后重试");
-        let suffix = if detail
-            .and_then(|d| d.get("detached"))
-            .and_then(Value::as_bool)
-            == Some(true)
-        {
-            "（该账号已解除托管）"
-        } else {
-            ""
-        };
-        return Err(format!(
-            "{}{} [{}]",
-            message.chars().take(240).collect::<String>(),
-            suffix,
-            status.as_u16()
-        ));
-    }
-    Ok(data)
-}
-
 fn publish(app: &tauri::AppHandle, value: &ViewState) {
     let _ = app.emit("ops-state", value);
+}
+
+fn apply_refresh(view: &mut ViewState, result: Result<Value, String>) {
+    match result {
+        Ok(data) => { view.snapshot = Some(data); view.online = true; view.error.clear(); }
+        Err(error) => { view.online = false; view.error = error; }
+    }
 }
 
 async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
@@ -256,22 +202,13 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         "GET",
         "/snapshot",
         None,
+        &state.path.with_file_name("network-diagnostics.log"),
     )
     .await;
     let _connection = state.network.lock().await;
     if generation != state.generation.load(Ordering::SeqCst) { return; }
     let mut view = state.view.lock().await;
-    match result {
-        Ok(data) => {
-            view.snapshot = Some(data);
-            view.online = true;
-            view.error.clear();
-        }
-        Err(error) => {
-            view.online = false;
-            view.error = error;
-        }
-    }
+    apply_refresh(&mut view, result);
     if let Some(tray) = app.tray_by_id("ops") {
         let text = if view.online {
             "Sub2Ops · 已连接"
@@ -308,6 +245,7 @@ async fn connect(
             "GET",
             "/capabilities",
             None,
+            &state.path.with_file_name("network-diagnostics.log"),
         )
         .await?;
         if data.get("api_version").and_then(Value::as_u64) != Some(1) {
@@ -392,6 +330,7 @@ async fn api_request(
             &method,
             &path,
             body,
+            &state.path.with_file_name("network-diagnostics.log"),
         )
         .await;
     if generation != state.generation.load(Ordering::SeqCst) {
@@ -525,15 +464,34 @@ async fn preferences(
 
 #[tauri::command]
 fn show_main(app: tauri::AppHandle) -> Result<(), String> {
+    queue_main(app, true)
+}
+
+fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
+    if !visible { window.hide().map_err(|_| "无法关闭主窗口")?; }
     #[cfg(target_os = "macos")]
-    app.show().map_err(|_| "无法显示客户端")?;
-    if let Some(w) = app.get_webview_window("main") {
-        w.show().map_err(|_| "无法打开窗口")?;
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+    {
+        let policy = if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
+        app.set_activation_policy(policy).map_err(|_| "无法切换 Dock 状态")?;
+        app.set_dock_visibility(visible).map_err(|_| "无法更新 Dock 图标")?;
+        if visible { app.show().map_err(|_| "无法显示客户端")?; }
+    }
+    if visible {
+        window.show().map_err(|_| "无法打开窗口")?;
+        window.unminimize().map_err(|_| "无法恢复主窗口")?;
+        window.set_focus().map_err(|_| "无法聚焦主窗口")?;
     }
     app.state::<Arc<Runtime>>().wake.notify_one();
+    panel_trace(app, "main_visibility", if visible { "open_dock_visible" } else { "closed_dock_hidden" });
     Ok(())
+}
+
+fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(error) = main_visibility(&handle, visible) { panel_trace(&handle, "main_failed", &error); }
+    }).map_err(|_| "无法调度主窗口操作".to_string())
 }
 
 #[tauri::command]
@@ -796,18 +754,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).build())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            { app.set_activation_policy(tauri::ActivationPolicy::Accessory); app.set_dock_visibility(false); }
             let path = app.path().app_config_dir()?.join("preferences.json");
             let prefs: Preferences = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
             let key = if prefs.base_url.is_empty() { None } else { keyring::Entry::new("com.lich13.sub2ops", &prefs.base_url).ok().and_then(|e| e.get_password().ok()) };
-            let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).build()?,
+            let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never()).build()?,
                 pinned: AtomicBool::new(prefs.pinned), quitting: AtomicBool::new(false), panel: StdMutex::new(PanelLifecycle::default()),
                 view: Mutex::new(ViewState { connected: key.is_some(), preferences: prefs, ..Default::default() }),
                 key: Mutex::new(key), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
                 generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
             create_quick(app.handle())?;
+            main_visibility(app.handle(), true)?;
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
                 &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
@@ -857,7 +814,12 @@ pub fn run() {
         .on_window_event(|window,event| {
             let state=window.state::<Arc<Runtime>>();
             match event {
-                WindowEvent::CloseRequested {api,..} if !state.quitting.load(Ordering::Relaxed) => {api.prevent_close();let _=window.hide();},
+                WindowEvent::CloseRequested {api,..} if !state.quitting.load(Ordering::Relaxed) => {
+                    api.prevent_close();
+                    if window.label() == "main" {
+                        if let Err(error) = queue_main(window.app_handle().clone(), false) { panel_trace(window.app_handle(), "main_failed", &error); }
+                    } else if let Err(error) = window.hide() { panel_trace(window.app_handle(), "hide_failed", &error.to_string()); }
+                },
                 WindowEvent::Focused(false) if window.label()=="quick" => defer_panel_blur(window.app_handle()),
                 WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); }, _=>()
             }
@@ -872,6 +834,19 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transient_failure_keeps_last_data_and_recovers() {
+        let mut view = ViewState::default();
+        let first = serde_json::json!({"observed_at":"2026-09-25T10:00:00Z","accounts":[{"id":1}]});
+        apply_refresh(&mut view, Ok(first.clone()));
+        apply_refresh(&mut view, Err("网关暂不可用 [502]".into()));
+        assert!(!view.online);
+        assert_eq!(view.snapshot, Some(first));
+        let next = serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":2}]});
+        apply_refresh(&mut view, Ok(next.clone()));
+        assert!(view.online && view.error.is_empty());
+        assert_eq!(view.snapshot, Some(next));
+    }
     #[test]
     fn obsolete_blur_cannot_close_a_reopened_panel() {
         let mut panel = PanelLifecycle::default();

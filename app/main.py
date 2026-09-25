@@ -37,7 +37,6 @@ from .sso_config import (
     save_sso_config,
 )
 from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
-from .telegram_bot import TelegramOpsBot
 from .versioning import (
     APP_VERSION,
     UpdateError,
@@ -51,9 +50,6 @@ db = Database(settings.database_url)
 templates = Jinja2Templates(directory="app/templates")
 SESSION_COOKIE = "sub2ops_session"
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
-TELEGRAM_PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-telegram_bot: TelegramOpsBot | None = None
-telegram_task: asyncio.Task[None] | None = None
 oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
 key_fallback_controller: KeyFallbackController | None = None
@@ -161,17 +157,9 @@ async def key_fallback_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global telegram_bot, telegram_task, oauth_monitor, oauth_monitor_task
+    global oauth_monitor, oauth_monitor_task
     global key_fallback_controller, key_fallback_task
     db.open()
-    config = telegram_config_file()
-    migrated = {**config, "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
-                "oauth_daily_test_time": settings.telegram_oauth_daily_test_time}
-    migrated.pop("oauth_night_recovery_cooldown_enabled", None)
-    migrated.pop("oauth_usage_refresh_enabled", None)
-    migrated.pop("oauth_regular_refresh_interval_seconds", None)
-    if config != migrated:
-        save_telegram_runtime_config(migrated)
     store = oauth_state_store()
     await asyncio.to_thread(store.commit)
     await asyncio.to_thread(
@@ -194,7 +182,6 @@ async def lifespan(_: FastAPI):
         admin_token_provider=lambda: oauth_state_store().admin_token(),
     )
     await asyncio.to_thread(key_fallback_controller.migrate_legacy_config)
-    await restart_telegram_bot()
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
@@ -214,12 +201,6 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await oauth_monitor_task
             oauth_monitor_task = None
-        if telegram_task:
-            telegram_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await telegram_task
-            telegram_task = None
-        telegram_bot = None
         oauth_monitor = None
         key_fallback_controller = None
         await desktop_service.close()
@@ -287,9 +268,9 @@ def verify_session(value: str | None) -> str | None:
 
 
 def safe_next(value: str | None) -> str:
-    if value in {"/", "/telegram", "/sso"}:
-        return "/telegram" if value == "/" else str(value)
-    return "/telegram"
+    if value in {"/", "/ops", "/sso"}:
+        return "/ops" if value == "/" else str(value)
+    return "/ops"
 
 
 def origin_from_url(value: str) -> str:
@@ -388,39 +369,9 @@ def form_truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on", "checked"}
 
 
-def mask_secret(value: str) -> str:
-    raw = value.strip()
-    if not raw:
-        return ""
-    return "已设置" if len(raw) <= 10 else f"{raw[:6]}...{raw[-4:]}"
-
-
-def parse_int_csv(value: Any) -> tuple[int, ...]:
-    values: list[int] = []
-    for item in str(value or "").replace(";", ",").split(","):
-        try:
-            values.append(int(item.strip()))
-        except (TypeError, ValueError):
-            continue
-    return tuple(dict.fromkeys(values))
-
-
-def generate_telegram_pairing_code() -> str:
-    raw = "".join(secrets.choice(TELEGRAM_PAIRING_ALPHABET) for _ in range(8))
-    return f"{raw[:4]}-{raw[4:]}"
-
-
-def telegram_state() -> dict[str, Any]:
+def oauth_config_file() -> dict[str, Any]:
     try:
-        raw = json.loads(Path(settings.telegram_state_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        raw = {}
-    return raw if isinstance(raw, dict) else {}
-
-
-def telegram_config_file() -> dict[str, Any]:
-    try:
-        raw = json.loads(Path(settings.telegram_config_path).read_text(encoding="utf-8"))
+        raw = json.loads(Path(settings.oauth_config_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         raw = {}
     return raw if isinstance(raw, dict) else {}
@@ -434,16 +385,18 @@ def bark_config_file() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-def save_telegram_runtime_config(payload: dict[str, Any]) -> None:
-    path = Path(settings.telegram_config_path)
+def save_oauth_runtime_config(payload: dict[str, Any]) -> None:
+    path = Path(settings.oauth_config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = dict(payload)
+    from .config_service import OAUTH_FIELDS
+    payload = {key: value for key, value in payload.items() if key in OAUTH_FIELDS or key in {"updated_at", "updated_by"}}
     payload.pop("oauth_night_recovery_cooldown_enabled", None)
     payload.pop("oauth_usage_refresh_enabled", None)
     payload.pop("oauth_regular_refresh_interval_seconds", None)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     temporary = Path(name)
     try:
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
@@ -490,50 +443,13 @@ def save_bark_runtime_config(payload: dict[str, Any]) -> None:
             pass
 
 
-def apply_telegram_runtime_config(payload: dict[str, Any]) -> None:
-    bool_fields = (
-        "enabled",
-        "pairing_enabled",
-        "oauth_recovery_monitor_enabled",
-        "oauth_daily_test_enabled",
-    )
-    for key in bool_fields:
+def apply_oauth_runtime_config(payload: dict[str, Any]) -> None:
+    from .config_service import OAUTH_FIELDS
+    for key in OAUTH_FIELDS:
         if key in payload:
-            setattr(settings, f"telegram_{key}", bool(payload.get(key)))
-    if "oauth_daily_test_time" in payload:
-        settings.telegram_oauth_daily_test_time = daily_test_time(payload["oauth_daily_test_time"])
+            setattr(settings, key, payload[key])
     if oauth_monitor is not None:
         oauth_monitor.daily_schedule.tick(datetime.now(timezone.utc))
-    if "bot_token" in payload:
-        settings.telegram_bot_token = str(payload.get("bot_token") or "")
-    if "pairing_code" in payload:
-        settings.telegram_pairing_code = str(payload.get("pairing_code") or "")
-    if "allowed_chat_ids" in payload:
-        settings.telegram_allowed_chat_ids = parse_int_csv(
-            ",".join(str(value) for value in payload.get("allowed_chat_ids") or [])
-        )
-    if "allowed_user_ids" in payload:
-        settings.telegram_allowed_user_ids = parse_int_csv(
-            ",".join(str(value) for value in payload.get("allowed_user_ids") or [])
-        )
-    integer_fields = {
-        "oauth_usage_refresh_concurrency": (4, 1, 16),
-        "oauth_recovery_test_concurrency": (2, 1, 8),
-        "oauth_early_probe_batch_size": (8, 1, 50),
-        "oauth_7d_probe_interval_seconds": (3600, 60, 86400),
-    }
-    for key, (default, minimum, maximum) in integer_fields.items():
-        if key in payload:
-            setattr(
-                settings,
-                f"telegram_{key}",
-                int_param(payload.get(key), default, minimum, maximum),
-            )
-    if "oauth_recovery_test_model_id" in payload:
-        settings.telegram_oauth_recovery_test_model_id = (
-            str(payload.get("oauth_recovery_test_model_id") or "gpt-5.6-luna").strip()
-            or "gpt-5.6-luna"
-        )
 
 
 def apply_bark_runtime_config(payload: dict[str, Any]) -> None:
@@ -548,56 +464,9 @@ def apply_bark_runtime_config(payload: dict[str, Any]) -> None:
         bark_notifier.configure_from_settings(settings)
 
 
-def ensure_telegram_pairing_code() -> str:
-    existing = telegram_config_file()
-    code = str(settings.telegram_pairing_code or existing.get("pairing_code") or "").strip()
-    if code or not settings.telegram_bot_token.strip():
-        return code
-    code = generate_telegram_pairing_code()
-    payload = {
-        **existing,
-        "pairing_enabled": True,
-        "pairing_code": code,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "updated_by": existing.get("updated_by") or "system",
-    }
-    save_telegram_runtime_config(payload)
-    apply_telegram_runtime_config(payload)
-    return code
-
-
-def build_telegram_config() -> dict[str, Any]:
-    state = telegram_state()
-    existing = telegram_config_file()
-    paired_chats = sorted(
-        {int(item) for item in state.get("paired_chat_ids") or [] if str(item).lstrip("-").isdigit()}
-    )
-    paired_users = sorted(
-        {int(item) for item in state.get("paired_user_ids") or [] if str(item).lstrip("-").isdigit()}
-    )
-    return {
-        "configured": settings.telegram_enabled and bool(settings.telegram_bot_token.strip()),
-        "bot_token_set": bool(settings.telegram_bot_token.strip()),
-        "bot_token_preview": mask_secret(settings.telegram_bot_token),
-        "pairing_code": ensure_telegram_pairing_code(),
-        "binding_status": "未启用"
-        if not settings.telegram_bot_token.strip()
-        else ("已绑定" if paired_chats or paired_users else "待配对"),
-        "paired_chat_ids": paired_chats,
-        "paired_user_ids": paired_users,
-        "push_target_count": len(paired_chats),
-        "authorized_user_count": len(paired_users),
-        "config_updated_at": existing.get("updated_at"),
-        "oauth_recovery_monitor_enabled": settings.telegram_oauth_recovery_monitor_enabled,
-        "oauth_daily_test_enabled": settings.telegram_oauth_daily_test_enabled,
-        "oauth_daily_test_time": settings.telegram_oauth_daily_test_time,
-        "oauth_usage_refresh_concurrency": settings.telegram_oauth_usage_refresh_concurrency,
-        "oauth_recovery_test_concurrency": settings.telegram_oauth_recovery_test_concurrency,
-        "oauth_early_probe_batch_size": settings.telegram_oauth_early_probe_batch_size,
-        "oauth_7d_probe_interval_seconds": settings.telegram_oauth_7d_probe_interval_seconds,
-        "oauth_recovery_test_model_id": settings.telegram_oauth_recovery_test_model_id
-        or "gpt-5.6-luna",
-    }
+def build_oauth_config() -> dict[str, Any]:
+    from .config_service import OAUTH_FIELDS
+    return {key: getattr(settings, key) for key in OAUTH_FIELDS}
 
 
 def build_bark_config() -> dict[str, Any]:
@@ -658,28 +527,12 @@ def build_key_fallback_panel() -> dict[str, Any]:
     return panel
 
 
-async def restart_telegram_bot() -> None:
-    global telegram_bot, telegram_task
-    if telegram_task:
-        telegram_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await telegram_task
-        telegram_task = None
-    telegram_bot = TelegramOpsBot(
-        settings,
-        db,
-        oauth_monitor=oauth_monitor,
-    )
-    if telegram_bot.enabled:
-        telegram_task = asyncio.create_task(telegram_bot.run())
-
-
 @app.get("/sso/start")
 def sub2api_sso_start(
     request: Request,
     token: str = "",
     user_id: str = "",
-    next: str = "/telegram",
+    next: str = "/ops",
 ) -> Response:
     next_path = safe_next(next)
     client_host = request.client.host if request.client else ""
@@ -736,21 +589,21 @@ def logout(user: AuthUser) -> Response:
 
 @app.get("/")
 def index(request: Request, _: AuthUser, msg: str = "") -> Response:
-    destination = f"{settings.base_path}/telegram"
+    destination = f"{settings.base_path}/ops"
     if msg:
         destination += f"?msg={quote(msg)}"
     return RedirectResponse(destination, status_code=303)
 
 
-@app.get("/telegram", response_class=HTMLResponse)
-def telegram_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
+@app.get("/ops", response_class=HTMLResponse)
+def ops_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     with desktop_service.config.thread_lock:
-        telegram = build_telegram_config()
+        oauth = build_oauth_config()
         revisions = {key: value["revision"] for key, value in desktop_service.config.snapshot().items()}
         return render(
             request,
-            "telegram.html",
-            {"active": "telegram", "telegram": telegram, "bark": build_bark_config(),
+            "ops.html",
+            {"active": "ops", "oauth": oauth, "bark": build_bark_config(),
              "key_fallback": build_key_fallback_panel(),
              "config_revisions": revisions, "msg": msg},
         )
@@ -767,26 +620,15 @@ def sso_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
     )
 
 
-@app.post("/telegram/config")
-async def telegram_config_save(user: AuthUser, telegram_bot_token: str = Form(""), config_revision: str = Form("")) -> Response:
-    try:
-        await desktop_service.config.save("telegram", {"bot_token": telegram_bot_token}, user, config_revision if isinstance(config_revision, str) and config_revision else None)
-    except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
-    return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote('Telegram 配置已保存')}", status_code=303
-    )
-
-
-@app.post("/telegram/oauth-settings")
-async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Response:
+@app.post("/oauth/settings")
+async def oauth_settings_save(request: Request, user: AuthUser) -> Response:
     form = await request.form()
     if {"oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"} & set(form):
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote('后台额度刷新已移除，请刷新页面后重试')}", status_code=303)
+        return RedirectResponse(f"{settings.base_path}/ops?msg={quote('后台额度刷新已移除，请刷新页面后重试')}", status_code=303)
     try:
         test_time = daily_test_time(form.get("oauth_daily_test_time", "05:00"))
     except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
     payload = {
         "oauth_recovery_monitor_enabled": bool(form.getlist("oauth_recovery_monitor_enabled")),
         "oauth_daily_test_enabled": bool(form.getlist("oauth_daily_test_enabled")),
@@ -805,9 +647,9 @@ async def telegram_oauth_settings_save(request: Request, user: AuthUser) -> Resp
     try:
         await desktop_service.config.save("oauth", payload, user, form.get("config_revision"))
     except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
     return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote('OAuth 监控设置已保存')}", status_code=303
+        f"{settings.base_path}/ops?msg={quote('OAuth 监控设置已保存')}", status_code=303
     )
 
 
@@ -817,7 +659,7 @@ async def key_fallback_config_save(request: Request, user: AuthUser) -> Response
     controller = key_fallback_controller
     if controller is None:
         return RedirectResponse(
-            f"{settings.base_path}/telegram?msg={quote('Key 回退控制器未就绪')}",
+            f"{settings.base_path}/ops?msg={quote('Key 回退控制器未就绪')}",
             status_code=303,
         )
     try:
@@ -830,16 +672,16 @@ async def key_fallback_config_save(request: Request, user: AuthUser) -> Response
         }, user, form.get("config_revision"))
     except (KeyFallbackConfigError, ValueError) as exc:
         return RedirectResponse(
-            f"{settings.base_path}/telegram?msg={quote(str(exc))}",
+            f"{settings.base_path}/ops?msg={quote(str(exc))}",
             status_code=303,
         )
     except Exception:
         return RedirectResponse(
-            f"{settings.base_path}/telegram?msg={quote('Key 回退配置保存失败')}",
+            f"{settings.base_path}/ops?msg={quote('Key 回退配置保存失败')}",
             status_code=303,
         )
     return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote('Key 回退配置已保存')}",
+        f"{settings.base_path}/ops?msg={quote('Key 回退配置已保存')}",
         status_code=303,
     )
 
@@ -858,9 +700,9 @@ async def bark_config_save(
             "server_url": bark_server_url,
         }, user, config_revision if isinstance(config_revision, str) and config_revision else None)
     except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/telegram?msg={quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
     return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote('Bark 配置已保存')}", status_code=303
+        f"{settings.base_path}/ops?msg={quote('Bark 配置已保存')}", status_code=303
     )
 
 
@@ -875,7 +717,7 @@ async def bark_push_test(user: AuthUser) -> Response:
         {"user": user, "success": result_code == "ok", "result": result_code},
     )
     return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote(message)}", status_code=303
+        f"{settings.base_path}/ops?msg={quote(message)}", status_code=303
     )
 
 
@@ -930,32 +772,6 @@ def sso_config_save(
     )
     return RedirectResponse(
         f"{settings.base_path}/sso?msg={quote('Sub2API 接入配置已保存')}", status_code=303
-    )
-
-
-@app.post("/telegram/pairing-code/regenerate")
-async def telegram_pairing_code_regenerate(user: AuthUser) -> Response:
-    await desktop_service.config.regenerate_pairing(user)
-    return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote('已重新生成 Telegram 配对码')}", status_code=303
-    )
-
-
-@app.post("/telegram/push-test")
-async def telegram_push_test(user: AuthUser) -> Response:
-    if telegram_bot is None or not telegram_bot.enabled:
-        message = "Telegram 未启用或未配置 Bot Token"
-    else:
-        chat_ids = await telegram_bot.allowed_chat_ids()
-        if not chat_ids:
-            message = "没有可推送 chat，请先完成配对"
-        else:
-            await telegram_bot.notify(
-                f"Sub2API Ops 面板推送测试\n用户：{user}\n时间：{beijing_time(datetime.now(timezone.utc))}"
-            )
-            message = f"已发送测试推送到 {len(chat_ids)} 个 chat"
-    return RedirectResponse(
-        f"{settings.base_path}/telegram?msg={quote(message)}", status_code=303
     )
 
 

@@ -54,7 +54,6 @@ def summary(
     return {
         "plan_type": plan,
         "ui_windows": windows,
-        "telegram_windows": [item for item in windows if float(item["used_percent"]) < 100],
     }
 
 
@@ -94,13 +93,13 @@ def settings(path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         usage_query_state_path=str(path),
         audit_path=str(path.with_name("audit.jsonl")),
-        telegram_oauth_recovery_monitor_enabled=True,
-        telegram_oauth_daily_test_enabled=False,
-        telegram_oauth_usage_refresh_concurrency=4,
-        telegram_oauth_recovery_test_concurrency=2,
-        telegram_oauth_early_probe_batch_size=8,
-        telegram_oauth_7d_probe_interval_seconds=3600,
-        telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+        oauth_recovery_monitor_enabled=True,
+        oauth_daily_test_enabled=False,
+        oauth_usage_refresh_concurrency=4,
+        oauth_recovery_test_concurrency=2,
+        oauth_early_probe_batch_size=8,
+        oauth_7d_probe_interval_seconds=3600,
+        oauth_recovery_test_model_id="gpt-5.6-luna",
     )
 
 
@@ -698,7 +697,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             monitor_settings = settings(state_path)
-            monitor_settings.telegram_oauth_early_probe_batch_size = 2
+            monitor_settings.oauth_early_probe_batch_size = 2
             accounts = [account(value) for value in range(1, 6)]
             called: list[int] = []
 
@@ -1006,7 +1005,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 return payload
 
             monitor_settings = settings(state_path)
-            monitor_settings.telegram_oauth_early_probe_batch_size = 1
+            monitor_settings.oauth_early_probe_batch_size = 1
             monitor = OAuthMonitor(
                 monitor_settings,
                 FakeDb(rows),

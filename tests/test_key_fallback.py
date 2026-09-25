@@ -36,7 +36,6 @@ from app.key_fallback import (
 )
 from app.oauth_monitor import OAuthMonitor
 from app.settings import load_settings
-from app.telegram_bot import TelegramOpsBot
 from app.usage_query import execute_oauth_usage_query, oauth_quota_summary_from_result
 
 NOW = datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc)
@@ -253,13 +252,13 @@ def monitor_settings(root: Path, *, recovery_enabled: bool = False) -> SimpleNam
         usage_query_state_path=str(root / "usage-query-state.json"),
         audit_path=str(root / "audit.jsonl"),
         key_fallback_config_path=str(root / "key-fallback-config.json"),
-        telegram_oauth_recovery_monitor_enabled=recovery_enabled,
+        oauth_recovery_monitor_enabled=recovery_enabled,
 
-        telegram_oauth_usage_refresh_concurrency=1,
-        telegram_oauth_recovery_test_concurrency=1,
-        telegram_oauth_early_probe_batch_size=8,
-        telegram_oauth_7d_probe_interval_seconds=3600,
-        telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+        oauth_usage_refresh_concurrency=1,
+        oauth_recovery_test_concurrency=1,
+        oauth_early_probe_batch_size=8,
+        oauth_7d_probe_interval_seconds=3600,
+        oauth_recovery_test_model_id="gpt-5.6-luna",
     )
 
 
@@ -978,21 +977,6 @@ class KeyFallbackControllerTests(unittest.TestCase):
         self.assertNotIn(9, [item[0] for item in calls])
 
 
-class KeyFallbackOwnershipTests(unittest.IsolatedAsyncioTestCase):
-    def _bot_settings(self, directory: str) -> SimpleNamespace:
-        return SimpleNamespace(
-            telegram_enabled=True,
-            telegram_bot_token="token",
-            telegram_poll_timeout_seconds=5,
-            telegram_pairing_enabled=True,
-            telegram_pairing_code="ABCD-EFGH",
-            telegram_allowed_chat_ids=(),
-            telegram_allowed_user_ids=(),
-            telegram_state_path=str(Path(directory) / "telegram-state.json"),
-            usage_query_state_path=str(Path(directory) / "usage.json"),
-            audit_path=str(Path(directory) / "audit.jsonl"),
-        )
-
 class KeyFallbackRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_route_requires_auth_and_rejects_stale_selection(self) -> None:
         paths = {getattr(route, "path", "") for route in main_module.app.routes}
@@ -1305,13 +1289,13 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(path),
                     audit_path=str(Path(directory) / "audit.jsonl"),
-                    telegram_oauth_recovery_monitor_enabled=True,
+                    oauth_recovery_monitor_enabled=True,
 
-                    telegram_oauth_usage_refresh_concurrency=1,
-                    telegram_oauth_recovery_test_concurrency=1,
-                    telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_7d_probe_interval_seconds=3600,
-                    telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+                    oauth_usage_refresh_concurrency=1,
+                    oauth_recovery_test_concurrency=1,
+                    oauth_early_probe_batch_size=8,
+                    oauth_7d_probe_interval_seconds=3600,
+                    oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),
                 db=SimpleNamespace(fetch_all=lambda *_a, **_k: []),
                 base_url_provider=lambda: "http://127.0.0.1:9",
@@ -1347,13 +1331,13 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(root / "state.json"),
                     audit_path=str(root / "audit.jsonl"),
-                    telegram_oauth_recovery_monitor_enabled=True,
+                    oauth_recovery_monitor_enabled=True,
 
-                    telegram_oauth_usage_refresh_concurrency=1,
-                    telegram_oauth_recovery_test_concurrency=1,
-                    telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_7d_probe_interval_seconds=3600,
-                    telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+                    oauth_usage_refresh_concurrency=1,
+                    oauth_recovery_test_concurrency=1,
+                    oauth_early_probe_batch_size=8,
+                    oauth_7d_probe_interval_seconds=3600,
+                    oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),
                 db=SimpleNamespace(fetch_all=lambda *_a, **_k: []),
                 base_url_provider=lambda: "http://127.0.0.1:9",
@@ -1398,13 +1382,13 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
                 SimpleNamespace(
                     usage_query_state_path=str(root / "state.json"),
                     audit_path=str(root / "audit.jsonl"),
-                    telegram_oauth_recovery_monitor_enabled=True,
+                    oauth_recovery_monitor_enabled=True,
 
-                    telegram_oauth_usage_refresh_concurrency=1,
-                    telegram_oauth_recovery_test_concurrency=1,
-                    telegram_oauth_early_probe_batch_size=8,
-                    telegram_oauth_7d_probe_interval_seconds=3600,
-                    telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+                    oauth_usage_refresh_concurrency=1,
+                    oauth_recovery_test_concurrency=1,
+                    oauth_early_probe_batch_size=8,
+                    oauth_7d_probe_interval_seconds=3600,
+                    oauth_recovery_test_model_id="gpt-5.6-luna",
                 ),
                 db=SimpleNamespace(fetch_all=lambda *_a, **_k: []),
                 base_url_provider=lambda: "http://127.0.0.1:9",
@@ -1575,8 +1559,8 @@ class GrokFallbackTests(unittest.TestCase):
             panel = main_module.build_key_fallback_panel()
         self.assertEqual([(row["id"], row["platform"]) for row in panel["accounts"]], [(4, "openai"), (8, "grok")])
         self.assertNotIn("secret-key-material", json.dumps(panel))
-        html = main_module.templates.env.get_template("telegram.html").render(
-            key_fallback=panel, telegram={}, bark={}, base_path="/sub2ops",
+        html = main_module.templates.env.get_template("ops.html").render(
+            key_fallback=panel, oauth={}, bark={}, base_path="/sub2ops",
         )
         self.assertIn("<legend>OpenAI</legend>", html)
         self.assertIn("<legend>Grok</legend>", html)

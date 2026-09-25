@@ -24,6 +24,7 @@ from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, l
 from .quota_snapshot import usage_windows
 from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
 from .desktop_actions import DesktopActions, PriorityRequest, TestRequest
+from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -431,7 +432,8 @@ class UsageActionRequest(BaseModel):
 
 def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     service = DesktopService(runtime)
-    router = APIRouter(prefix=PREFIX)
+    router = APIRouter(prefix=PREFIX, route_class=DesktopRoute)
+    app.add_middleware(DesktopErrorMiddleware)
 
     async def auth(request: Request) -> str:
         key = request.headers.get("x-api-key", "")
@@ -518,9 +520,9 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
 
     @router.put("/config/{section}")
     async def save_config(section: str, payload: ConfigRequest, request: Request) -> Any:
-        await auth(request)
-        if section not in {"oauth", "bark", "telegram", "key_fallback"}:
+        if section not in {"oauth", "bark", "key_fallback"}:
             raise HTTPException(404, "设置分区不存在")
+        await auth(request)
         try:
             result = await service.config.save(section, payload.changes, "desktop:admin", payload.expected_revision)
         except ConfigConflict as exc:
@@ -532,20 +534,14 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
 
     @router.post("/actions/{action}")
     async def action_run(action: str, request: Request) -> Any:
+        if action != "bark-test":
+            raise HTTPException(404, "未知操作")
         await auth(request)
         if action == "bark-test":
             result = await asyncio.to_thread(runtime.bark_notifier.push_test)
             if not result.success:
                 raise HTTPException(502, f"Bark 测试失败：{result.error_code}")
             return {"message": "Bark 测试消息已发送"}
-        if action == "telegram-test":
-            bot = runtime.telegram_bot
-            if bot is None or not bot.enabled or not await bot.allowed_chat_ids():
-                raise HTTPException(409, "请先配置并配对 Telegram")
-            await bot.notify("Sub2Ops 客户端消息测试")
-            return {"message": "Telegram Bot 测试消息已发送"}
-        if action == "telegram-pairing":
-            return {"pairing_code": await service.config.regenerate_pairing("desktop:admin")}
         raise HTTPException(404, "未知操作")
 
     app.include_router(router)

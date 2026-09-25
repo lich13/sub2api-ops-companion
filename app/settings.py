@@ -19,29 +19,21 @@ class Settings:
     session_store_path: str = "/data/sessions.json"
     app_name: str = "Sub2API Ops Companion"
     usage_query_state_path: str = "/data/usage-query-state.json"
-    telegram_config_path: str = "/data/telegram-config.json"
+    oauth_config_path: str = "/data/oauth-config.json"
     bark_config_path: str = "/data/bark-config.json"
     key_fallback_config_path: str = "/data/key-fallback-config.json"
     bark_enabled: bool = False
     bark_device_key: str = ""
     bark_server_url: str = "https://api.day.app"
     bark_config_valid: bool = True
-    telegram_enabled: bool = False
-    telegram_bot_token: str = ""
-    telegram_pairing_enabled: bool = True
-    telegram_pairing_code: str = ""
-    telegram_allowed_user_ids: tuple[int, ...] = ()
-    telegram_allowed_chat_ids: tuple[int, ...] = ()
-    telegram_state_path: str = "/data/telegram-state.json"
-    telegram_poll_timeout_seconds: int = 25
-    telegram_oauth_recovery_monitor_enabled: bool = True
-    telegram_oauth_daily_test_enabled: bool = True
-    telegram_oauth_daily_test_time: str = "05:00"
-    telegram_oauth_usage_refresh_concurrency: int = 4
-    telegram_oauth_recovery_test_concurrency: int = 2
-    telegram_oauth_early_probe_batch_size: int = 8
-    telegram_oauth_7d_probe_interval_seconds: int = 3600
-    telegram_oauth_recovery_test_model_id: str = "gpt-5.6-luna"
+    oauth_recovery_monitor_enabled: bool = True
+    oauth_daily_test_enabled: bool = True
+    oauth_daily_test_time: str = "05:00"
+    oauth_usage_refresh_concurrency: int = 4
+    oauth_recovery_test_concurrency: int = 2
+    oauth_early_probe_batch_size: int = 8
+    oauth_7d_probe_interval_seconds: int = 3600
+    oauth_recovery_test_model_id: str = "gpt-5.6-luna"
     update_enabled: bool = True
     update_workdir: str = "/workspace"
     update_branch: str = "main"
@@ -107,17 +99,6 @@ def int_value(raw: object, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def int_tuple_value(raw: object) -> tuple[int, ...]:
-    parts = raw if isinstance(raw, (list, tuple)) else str(raw or "").replace(";", ",").split(",")
-    values: list[int] = []
-    for part in parts:
-        try:
-            values.append(int(str(part).strip()))
-        except (TypeError, ValueError):
-            continue
-    return tuple(dict.fromkeys(values))
-
-
 def read_json_config(path: str) -> dict[str, object]:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -160,12 +141,10 @@ def load_settings() -> Settings:
     session_secret = os.getenv("OPS_SESSION_SECRET", "")
     if not session_secret:
         raise RuntimeError("OPS_SESSION_SECRET must be set")
-    telegram_config_path = os.getenv("TELEGRAM_CONFIG_PATH", "/data/telegram-config.json")
-    telegram_config = read_json_config(telegram_config_path)
+    oauth_config_path = os.getenv("OAUTH_CONFIG_PATH", "/data/oauth-config.json")
+    oauth_config = read_json_config(oauth_config_path)
     bark_config_path = os.getenv("BARK_CONFIG_PATH", "/data/bark-config.json")
     bark_config, bark_config_valid = read_optional_json_config(bark_config_path)
-    bot_token = str(telegram_config.get("bot_token", os.getenv("TELEGRAM_BOT_TOKEN", "")) or "")
-    enabled_raw = telegram_config.get("enabled", os.getenv("TELEGRAM_ENABLED"))
     bark_device_key = str(
         bark_config.get("device_key", os.getenv("BARK_DEVICE_KEY", "")) or ""
     )
@@ -192,7 +171,7 @@ def load_settings() -> Settings:
         audit_path=os.getenv("AUDIT_PATH", "/data/audit.jsonl"),
         session_store_path=os.getenv("OPS_SESSION_STORE_PATH", "/data/sessions.json"),
         usage_query_state_path=os.getenv("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json"),
-        telegram_config_path=telegram_config_path,
+        oauth_config_path=oauth_config_path,
         bark_config_path=bark_config_path,
         key_fallback_config_path=os.getenv(
             "KEY_FALLBACK_CONFIG_PATH", "/data/key-fallback-config.json"
@@ -201,79 +180,55 @@ def load_settings() -> Settings:
         bark_device_key=bark_device_key,
         bark_server_url=bark_server_url,
         bark_config_valid=bark_config_valid,
-        telegram_enabled=bool_value(enabled_raw, bool(bot_token.strip())),
-        telegram_bot_token=bot_token,
-        telegram_pairing_enabled=bool_value(
-            telegram_config.get("pairing_enabled", os.getenv("TELEGRAM_PAIRING_ENABLED")), True
-        ),
-        telegram_pairing_code=str(
-            telegram_config.get("pairing_code", os.getenv("TELEGRAM_PAIRING_CODE", "")) or ""
-        ),
-        telegram_allowed_user_ids=int_tuple_value(
-            telegram_config.get("allowed_user_ids", os.getenv("TELEGRAM_ALLOWED_USER_IDS", ""))
-        ),
-        telegram_allowed_chat_ids=int_tuple_value(
-            telegram_config.get("allowed_chat_ids", os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", ""))
-        ),
-        telegram_state_path=str(
-            telegram_config.get("state_path", os.getenv("TELEGRAM_STATE_PATH", "/data/telegram-state.json"))
-            or "/data/telegram-state.json"
-        ),
-        telegram_poll_timeout_seconds=int_value(
-            telegram_config.get("poll_timeout_seconds", os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS")),
-            25,
-            5,
-            50,
-        ),
-        telegram_oauth_recovery_monitor_enabled=bool_value(
-            telegram_config.get(
-                "oauth_recovery_monitor_enabled", os.getenv("TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED")
+        oauth_recovery_monitor_enabled=bool_value(
+            oauth_config.get(
+                "oauth_recovery_monitor_enabled", os.getenv("OAUTH_RECOVERY_MONITOR_ENABLED")
             ),
             True,
         ),
-        telegram_oauth_daily_test_enabled=bool_value(
-            telegram_config.get("oauth_daily_test_enabled", os.getenv("TELEGRAM_OAUTH_DAILY_TEST_ENABLED")), True
+        oauth_daily_test_enabled=bool_value(
+            oauth_config.get("oauth_daily_test_enabled", os.getenv("OAUTH_DAILY_TEST_ENABLED")), True
         ),
-        telegram_oauth_daily_test_time=load_daily_test_time(
-            telegram_config.get("oauth_daily_test_time", os.getenv("TELEGRAM_OAUTH_DAILY_TEST_TIME", "05:00"))
+        oauth_daily_test_time=load_daily_test_time(
+            oauth_config.get("oauth_daily_test_time", os.getenv("OAUTH_DAILY_TEST_TIME", "05:00"))
         ),
-        telegram_oauth_usage_refresh_concurrency=int_value(
-            telegram_config.get(
-                "oauth_usage_refresh_concurrency", os.getenv("TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY")
+        oauth_usage_refresh_concurrency=int_value(
+            oauth_config.get(
+                "oauth_usage_refresh_concurrency", os.getenv("OAUTH_USAGE_REFRESH_CONCURRENCY")
             ),
             4,
             1,
             16,
         ),
-        telegram_oauth_recovery_test_concurrency=int_value(
-            telegram_config.get(
-                "oauth_recovery_test_concurrency", os.getenv("TELEGRAM_OAUTH_RECOVERY_TEST_CONCURRENCY")
+        oauth_recovery_test_concurrency=int_value(
+            oauth_config.get(
+                "oauth_recovery_test_concurrency", os.getenv("OAUTH_RECOVERY_TEST_CONCURRENCY")
             ),
             2,
             1,
             8,
         ),
-        telegram_oauth_early_probe_batch_size=int_value(
-            telegram_config.get(
-                "oauth_early_probe_batch_size", os.getenv("TELEGRAM_OAUTH_EARLY_PROBE_BATCH_SIZE")
+        oauth_early_probe_batch_size=int_value(
+            oauth_config.get(
+                "oauth_early_probe_batch_size", os.getenv("OAUTH_EARLY_PROBE_BATCH_SIZE")
             ),
             8,
             1,
             50,
         ),
-        telegram_oauth_7d_probe_interval_seconds=int_value(
-            telegram_config.get(
+        oauth_7d_probe_interval_seconds=int_value(
+            oauth_config.get(
                 "oauth_7d_probe_interval_seconds",
-                os.getenv("TELEGRAM_OAUTH_7D_PROBE_INTERVAL_SECONDS"),
+                os.getenv("OAUTH_7D_PROBE_INTERVAL_SECONDS"),
             ),
             3600,
             60,
             86400,
         ),
-        telegram_oauth_recovery_test_model_id=str(
-            telegram_config.get(
+        oauth_recovery_test_model_id=str(
+            oauth_config.get(
                 "oauth_recovery_test_model_id",
-                os.getenv("TELEGRAM_OAUTH_RECOVERY_TEST_MODEL_ID", "gpt-5.6-luna"),
+                os.getenv("OAUTH_RECOVERY_TEST_MODEL_ID", "gpt-5.6-luna"),
             )
             or "gpt-5.6-luna"
         ).strip()

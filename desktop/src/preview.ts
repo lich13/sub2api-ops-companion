@@ -1,5 +1,6 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
 import type { ViewState, Account, Config, TestEvent } from "./types";
+import { version as appVersion } from "../package.json";
 const now = new Date().toISOString(),
   before = new Date(Date.now() - 7 * 60e3).toISOString();
 const accounts: Account[] = [
@@ -364,14 +365,6 @@ const config: Config = {
     oauth_recovery_test_model_id: "gpt-5.6-luna",
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
-  telegram: {
-    revision: "3".repeat(64),
-    configured: true,
-    bot_token_set: true,
-    pairing_code: "DEMO-CODE",
-    paired_user_count: 1,
-    paired_chat_count: 1,
-  },
   key_fallback: {
     revision: "4".repeat(64),
     openai_enabled: false,
@@ -416,7 +409,7 @@ export async function run(
     return;
   }
   if (name === "show_main") return;
-  if (name === "check_updates") return "预览模式 · 当前版本 0.1.3";
+  if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
   if (name === "cancel_test") { testCancelled = true; return; }
   if (name === "api_request") {
     const path = String(args.path),
@@ -480,7 +473,7 @@ let testCancelled = false;
 export async function testStream(body: Record<string, unknown>, callback: (event: TestEvent) => void) {
   testCancelled = false;
   callback({type:"test_start", model: String(body.model_id || body.mode)});
-  for (const text of ["预览连接", "测试正常。"]){
+  for (const text of ["Hello", " ", "world!\n", "  Preview output\n", "\t中文 👋\n"]){
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (testCancelled) return;
     callback({type:"content", text});

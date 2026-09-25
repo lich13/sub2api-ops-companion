@@ -805,7 +805,7 @@ class BarkQueueTests(unittest.IsolatedAsyncioTestCase):
         main_module.bark_notifier = self.original_notifier
         self.tmpdir.cleanup()
 
-    async def test_success_is_acknowledged_and_telegram_has_no_monitor_sender(self) -> None:
+    async def test_success_is_acknowledged_without_other_sender(self) -> None:
         class SuccessNotifier:
             def runtime_config(self) -> BarkRuntimeConfig:
                 return BarkRuntimeConfig(True, True, "key", "https://api.day.app")
@@ -827,7 +827,7 @@ class BarkQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.pending_events(), [])
         metadata = self.store.scheduler()[7]
         self.assertFalse(metadata["last_notification_suppressed"])
-        self.assertFalse(hasattr(main_module.TelegramOpsBot, "notify_oauth_monitor_events"))
+        self.assertFalse(hasattr(main_module, "TelegramOpsBot"))
 
     async def test_failure_keeps_pending_for_retry(self) -> None:
         class FailedNotifier:

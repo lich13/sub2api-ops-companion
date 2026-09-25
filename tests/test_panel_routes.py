@@ -42,7 +42,7 @@ class PanelRouteTests(unittest.TestCase):
         with patch.object(main_module, "current_sso_config", return_value=config):
             self.assertEqual(main_module.oauth_base_url(), "http://sub2api:8080")
 
-    def test_root_redirects_to_telegram(self) -> None:
+    def test_root_redirects_to_ops(self) -> None:
         original = main_module.settings
         main_module.settings = SimpleNamespace(base_path="/sub2ops")
         try:
@@ -51,7 +51,7 @@ class PanelRouteTests(unittest.TestCase):
             main_module.settings = original
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/sub2ops/telegram")
+        self.assertEqual(response.headers["location"], "/sub2ops/ops")
 
     def test_removed_routes_are_not_registered(self) -> None:
         paths = {getattr(route, "path", "") for route in main_module.app.routes}
@@ -62,7 +62,7 @@ class PanelRouteTests(unittest.TestCase):
             "/guard/run",
             "/guard/policy",
             "/guard/apply",
-            "/telegram/guard-run",
+            "/ops/guard-run",
             "/usage-query/settings",
             "/usage-query/query-enabled",
             "/usage-query/accounts/{account_id}",
@@ -75,7 +75,7 @@ class PanelRouteTests(unittest.TestCase):
         self.assertFalse(any(path.startswith("/guard") for path in paths))
         self.assertFalse(any(path.startswith("/usage-query") for path in paths))
 
-        self.assertIn("/telegram", paths)
+        self.assertIn("/ops", paths)
         self.assertIn("/sso", paths)
         self.assertIn("/sso/start", paths)
         self.assertIn("/key-fallback/config", paths)
@@ -98,36 +98,35 @@ class PanelRouteTests(unittest.TestCase):
         ):
             self.assertFalse((REPO_ROOT / path).exists(), path)
 
-    def test_navigation_only_contains_sso_and_telegram(self) -> None:
+    def test_navigation_only_contains_sso_and_ops(self) -> None:
         base = (REPO_ROOT / "app/templates/base.html").read_text(encoding="utf-8")
-        telegram = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
+        telegram = (REPO_ROOT / "app/templates/ops.html").read_text(encoding="utf-8")
 
         self.assertIn(" Sub2API 接入".strip(), base)
-        self.assertIn("Telegram", base)
+        self.assertIn("自动化", base)
+        self.assertNotIn("Telegram", base)
         self.assertNotIn("账号速度", base)
         self.assertNotIn("自动 Guard", base)
-        self.assertNotIn("/telegram/guard-run", telegram)
+        self.assertNotIn("/ops/guard-run", telegram)
         self.assertNotIn("/whitelist", telegram)
         self.assertNotIn("/endless", telegram)
 
-    def test_telegram_panel_config_exposes_daily_test(self) -> None:
+    def test_ops_panel_config_exposes_daily_test(self) -> None:
         with (
-            patch.object(main_module, "telegram_state", return_value={}),
-            patch.object(main_module, "telegram_config_file", return_value={}),
-            patch.object(main_module, "ensure_telegram_pairing_code", return_value=""),
+            patch.object(main_module, "oauth_config_file", return_value={}),
             patch.object(
                 main_module.settings,
-                "telegram_oauth_daily_test_enabled",
+                "oauth_daily_test_enabled",
                 False,
             ),
         ):
-            panel = main_module.build_telegram_config()
+            panel = main_module.build_oauth_config()
 
         self.assertFalse(panel["oauth_daily_test_enabled"])
 
     def test_settings_ignore_legacy_fast_probe_and_default_to_luna(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "telegram-config.json"
+            config_path = Path(directory) / "oauth-config.json"
             config_path.write_text(
                 '{"oauth_early_probe_interval_seconds": 15}',
                 encoding="utf-8",
@@ -137,22 +136,22 @@ class PanelRouteTests(unittest.TestCase):
                 {
                     "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
                     "OPS_SESSION_SECRET": "secret",
-                    "TELEGRAM_CONFIG_PATH": str(config_path),
+                    "OAUTH_CONFIG_PATH": str(config_path),
                 },
                 clear=True,
             ):
                 loaded = load_settings()
 
-        self.assertFalse(hasattr(loaded, "telegram_oauth_regular_refresh_interval_seconds"))
-        self.assertEqual(loaded.telegram_oauth_7d_probe_interval_seconds, 3600)
-        self.assertEqual(loaded.telegram_oauth_recovery_test_model_id, "gpt-5.6-luna")
-        self.assertTrue(loaded.telegram_oauth_daily_test_enabled)
-        self.assertFalse(hasattr(loaded, "telegram_oauth_early_probe_interval_seconds"))
+        self.assertFalse(hasattr(loaded, "oauth_regular_refresh_interval_seconds"))
+        self.assertEqual(loaded.oauth_7d_probe_interval_seconds, 3600)
+        self.assertEqual(loaded.oauth_recovery_test_model_id, "gpt-5.6-luna")
+        self.assertTrue(loaded.oauth_daily_test_enabled)
+        self.assertFalse(hasattr(loaded, "oauth_early_probe_interval_seconds"))
         self.assertFalse(hasattr(loaded, "guard_enabled"))
 
     def test_daily_test_prefers_json_config_over_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "telegram-config.json"
+            config_path = Path(directory) / "oauth-config.json"
             config_path.write_text(
                 '{"oauth_daily_test_enabled": false}',
                 encoding="utf-8",
@@ -162,14 +161,14 @@ class PanelRouteTests(unittest.TestCase):
                 {
                     "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
                     "OPS_SESSION_SECRET": "secret",
-                    "TELEGRAM_CONFIG_PATH": str(config_path),
-                    "TELEGRAM_OAUTH_DAILY_TEST_ENABLED": "true",
+                    "OAUTH_CONFIG_PATH": str(config_path),
+                    "OAUTH_DAILY_TEST_ENABLED": "true",
                 },
                 clear=True,
             ):
                 loaded = load_settings()
 
-        self.assertFalse(loaded.telegram_oauth_daily_test_enabled)
+        self.assertFalse(loaded.oauth_daily_test_enabled)
 
 
 class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -177,8 +176,8 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         class FormRequest:
             async def form(self):
                 return FormData({"oauth_usage_refresh_enabled": "1"})
-        with patch.object(main_module, "save_telegram_runtime_config") as save:
-            response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
+        with patch.object(main_module, "save_oauth_runtime_config") as save:
+            response = await main_module.oauth_settings_save(FormRequest(), "admin")
         self.assertEqual(response.status_code, 303)
         save.assert_not_called()
 
@@ -200,28 +199,28 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         original = main_module.settings
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            config_path = root / "telegram-config.json"
+            config_path = root / "oauth-config.json"
             config_path.write_text(
                 '{"oauth_early_probe_interval_seconds":15,"oauth_recovery_push_enabled":true,"oauth_usage_refresh_enabled":true,"oauth_regular_refresh_interval_seconds":60}',
                 encoding="utf-8",
             )
             main_module.settings = SimpleNamespace(
-                telegram_config_path=str(config_path),
+                oauth_config_path=str(config_path),
                 audit_path=str(root / "audit.jsonl"),
                 base_path="/sub2ops",
-                telegram_oauth_recovery_monitor_enabled=True,
-                telegram_oauth_daily_test_enabled=True,
-                telegram_oauth_usage_refresh_concurrency=4,
-                telegram_oauth_recovery_test_concurrency=2,
-                telegram_oauth_early_probe_batch_size=8,
-                telegram_oauth_7d_probe_interval_seconds=3600,
-                telegram_oauth_recovery_test_model_id="gpt-5.6-luna",
+                oauth_recovery_monitor_enabled=True,
+                oauth_daily_test_enabled=True,
+                oauth_usage_refresh_concurrency=4,
+                oauth_recovery_test_concurrency=2,
+                oauth_early_probe_batch_size=8,
+                oauth_7d_probe_interval_seconds=3600,
+                oauth_recovery_test_model_id="gpt-5.6-luna",
             )
             try:
-                response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
+                response = await main_module.oauth_settings_save(FormRequest(), "admin")
                 persisted = json.loads(config_path.read_text(encoding="utf-8"))
                 applied_daily_test = (
-                    main_module.settings.telegram_oauth_daily_test_enabled
+                    main_module.settings.oauth_daily_test_enabled
                 )
             finally:
                 main_module.settings = original
@@ -244,18 +243,18 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         original = main_module.settings
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            config_path = root / "telegram-config.json"
+            config_path = root / "oauth-config.json"
             main_module.settings = SimpleNamespace(
-                telegram_config_path=str(config_path),
+                oauth_config_path=str(config_path),
                 audit_path=str(root / "audit.jsonl"),
                 base_path="/sub2ops",
-                telegram_oauth_daily_test_enabled=True,
+                oauth_daily_test_enabled=True,
             )
             try:
-                response = await main_module.telegram_oauth_settings_save(FormRequest(), "admin")
+                response = await main_module.oauth_settings_save(FormRequest(), "admin")
                 persisted = json.loads(config_path.read_text(encoding="utf-8"))
                 applied_daily_test = (
-                    main_module.settings.telegram_oauth_daily_test_enabled
+                    main_module.settings.oauth_daily_test_enabled
                 )
             finally:
                 main_module.settings = original
@@ -264,14 +263,14 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(persisted["oauth_daily_test_enabled"])
         self.assertFalse(applied_daily_test)
 
-    def test_telegram_template_renders_daily_test_checkbox(self) -> None:
-        template = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
+    def test_ops_template_renders_daily_test_checkbox(self) -> None:
+        template = (REPO_ROOT / "app/templates/ops.html").read_text(encoding="utf-8")
 
         self.assertIn('name="oauth_daily_test_enabled"', template)
-        self.assertIn("telegram.oauth_daily_test_enabled", template)
+        self.assertIn("oauth.oauth_daily_test_enabled", template)
 
-    def test_telegram_template_contains_bark_controls_without_secret_value(self) -> None:
-        template = (REPO_ROOT / "app/templates/telegram.html").read_text(encoding="utf-8")
+    def test_ops_template_contains_bark_controls_without_secret_value(self) -> None:
+        template = (REPO_ROOT / "app/templates/ops.html").read_text(encoding="utf-8")
 
         self.assertIn('action="{{ base_path }}/bark/config"', template)
         self.assertIn('action="{{ base_path }}/bark/push-test"', template)
@@ -281,12 +280,12 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("服务 URL", template)
         self.assertNotIn("api.day.app", template)
         self.assertNotIn("OAuth 恢复成功、测活失败、自动恢复失败和认证异常只通过 Bark 主动推送。", template)
-        self.assertIn("Telegram Bot 消息测试", template)
+        self.assertNotIn("Telegram", template)
         self.assertIn('action="{{ base_path }}/key-fallback/config"', template)
         self.assertIn('name="managed_account_ids"', template)
         self.assertIn("启用 Key 回退", template)
 
-    def test_telegram_view_html_omits_bark_server_and_device_key(self) -> None:
+    def test_ops_view_html_omits_bark_server_and_device_key(self) -> None:
         original = main_module.settings
         secret = "never-render-this-device-key"
         custom_url = "https://custom-bark.example.com/root"
@@ -302,7 +301,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(main_module.desktop_service.config, "snapshot", return_value={}),
                 patch.object(
                     main_module,
-                    "build_telegram_config",
+                    "build_oauth_config",
                     return_value={
                         "configured": False,
                         "bot_token_set": False,
@@ -348,7 +347,7 @@ class OAuthSettingsRouteTests(unittest.IsolatedAsyncioTestCase):
                     },
                 ),
             ):
-                response = main_module.telegram_view(request("/telegram"), "admin")
+                response = main_module.ops_view(request("/ops"), "admin")
         finally:
             main_module.settings = original
 
