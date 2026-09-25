@@ -152,6 +152,21 @@ class OAuthStateStore:
                 if str(key).strip() and isinstance(value, dict):
                     pending_events[str(key)] = dict(value)
 
+        history = {str(key): dict(value) for key, value in (raw.get("recovery_history") or {}).items()
+                   if isinstance(value, dict)} if isinstance(raw.get("recovery_history"), dict) else {}
+        sequence = max([int(value.get("id") or 0) for value in history.values()] + [0])
+        # Legacy timestamps describe a cycle start, not a test completion.
+        for account_id, metadata in scheduler.items():
+            intent = metadata.get("recovery_intent") or {}
+            if intent.get("status") != "recovered":
+                continue
+            key = f"recovery:{account_id}:{intent.get('fingerprint')}:success"
+            if key not in history:
+                sequence += 1
+                history[key] = {"id": sequence, "dedupe_key": key, "account_id": int(account_id),
+                                "account_name": "", "model_id": "", "test_completed_at": None,
+                                "recovered_at": None, "legacy": True}
+
         return {
             "version": STATE_VERSION,
             "settings": settings,
@@ -159,6 +174,7 @@ class OAuthStateStore:
             "scheduler": scheduler,
             "pending_events": pending_events,
             "daily_test": _json_copy(raw.get("daily_test")) if isinstance(raw.get("daily_test"), dict) else {},
+            "recovery_history": history,
         }
 
     def _write(self, data: dict[str, Any]) -> None:
@@ -248,6 +264,7 @@ class OAuthStateStore:
         pending_events: dict[str, dict[str, Any]] | None = None,
         remove_pending_keys: set[str] | None = None,
         daily_test: dict[str, Any] | None = None,
+        recovery_history: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         with _STORE_LOCK:
             data = self._normalize(self._read_raw())
@@ -261,6 +278,11 @@ class OAuthStateStore:
                 data["scheduler"][key] = merged
             for key, event in (pending_events or {}).items():
                 data["pending_events"][str(key)] = dict(event)
+            sequence = max([int(v.get("id") or 0) for v in data["recovery_history"].values()] + [0])
+            for key, event in (recovery_history or {}).items():
+                if key not in data["recovery_history"]:
+                    sequence += 1
+                    data["recovery_history"][key] = {**event, "id": sequence, "dedupe_key": key}
             for key in remove_pending_keys or set():
                 data["pending_events"].pop(str(key), None)
             if daily_test is not None:
@@ -962,6 +984,8 @@ class OAuthMonitor:
         return dict(row) if isinstance(row, dict) else None
 
     def _known_event(self, key: str, account_id: int, state: dict[str, Any]) -> bool:
+        if key in (state.get("recovery_history") or {}) and not state["recovery_history"][key].get("legacy"):
+            return True
         if key in (state.get("pending_events") or {}):
             return True
         metadata = (state.get("scheduler") or {}).get(str(account_id)) or {}
@@ -1017,7 +1041,7 @@ class OAuthMonitor:
             account_id = int(row["id"])
             record = {
                 "status": "skipped" if result.get("skipped") else "success" if result.get("success") else "failed",
-                "checked_at": current.isoformat(), "model_id": model, "reused_recovery_test": reused,
+                "checked_at": result.get("completed_at") or _utc(self.clock()).isoformat(), "model_id": model, "reused_recovery_test": reused,
                 "error_code": str(result.get("error_code") or ""),
                 "error": sanitize_error_text(str(result.get("error") or "")),
             }
@@ -1030,7 +1054,7 @@ class OAuthMonitor:
                 "account_id": account_id, "account_name": row.get("name") or "-",
                 "plan_type": oauth_plan_type(row), "window_labels": ["每日测活"],
                 "status": "auth_failed" if code else "daily_test_failed",
-                "stage": "daily_test", "checked_at": current.isoformat(),
+                "stage": "daily_test", "checked_at": record["checked_at"],
                 "model_id": model, "error_code": code or record["error_code"],
                 "error": record["error"], "dedupe_key": key,
             }
@@ -1075,7 +1099,7 @@ class OAuthMonitor:
                 latest = self._read_account(int(row["id"]))
                 if not daily_account_eligible(latest, current):
                     return {"skipped": True, "error_code": "daily_state_changed"}
-                return self.test_runner(int(row["id"]), model, base_url=base_url,
+                return self._timed_test(int(row["id"]), model, base_url=base_url,
                                         admin_token=token, timeout_seconds=30)
             except Exception as exc:
                 return {"success": False, "error_code": "daily_test_error", "error": str(exc)}
@@ -1088,13 +1112,21 @@ class OAuthMonitor:
                     finish(futures[future], future.result())
                     self.daily_schedule.save_batch(batch)
         # The batch and its notifications commit atomically; retries only deliver pending events.
-        batch.update(status="completed", completed_at=current.isoformat())
+        batch.update(status="completed", completed_at=_utc(self.clock()).isoformat())
         self.daily_schedule.save_batch(batch, pending_events=pending)
         write_audit(self.settings.audit_path, "oauth_daily_test", {
             "date": batch["date"], "scheduled_at": batch["scheduled_at"],
             "counts": {status: sum(item.get("status") == status for item in accounts.values())
                        for status in ("success", "failed", "skipped")},
         })
+
+    def _timed_test(self, account_id: int, model: str, **kwargs: Any) -> dict[str, Any]:
+        try:
+            result = dict(self.test_runner(account_id, model, **kwargs))
+        except Exception as exc:
+            result = {"success": False, "error": str(exc), "error_code": "account_test_error", "model_id": model}
+        result["completed_at"] = _utc(self.clock()).isoformat()
+        return result
 
     def force_refresh(
         self,
@@ -1553,7 +1585,7 @@ class OAuthMonitor:
             with ThreadPoolExecutor(max_workers=max(1, test_workers)) as executor:
                 futures = {
                     executor.submit(
-                        self.test_runner,
+                        self._timed_test,
                         int(item["account_id"]),
                         model_id,
                         base_url=base_url,
@@ -1577,6 +1609,7 @@ class OAuthMonitor:
 
         self._cycle_tests = {**prior_tests, **test_results}
         final_updates: dict[int, dict[str, Any]] = {}
+        history_updates: dict[str, dict[str, Any]] = {}
         recovered_count = 0
         for item, intent, frozen_row in runnable_jobs:
             account_id = int(item["account_id"])
@@ -1639,7 +1672,8 @@ class OAuthMonitor:
                 final_intent.update(
                     {
                         "status": "recovered",
-                        "recovered_at": current.isoformat(),
+                        "recovered_at": _utc(self.clock()).isoformat(),
+                        "test_completed_at": test_result.get("completed_at"),
                         "next_retry_at": "",
                         "deferred_until": "",
                         "last_error": "",
@@ -1670,6 +1704,10 @@ class OAuthMonitor:
                 suffix = f"failure:{final_intent.get('last_error_code') or 'unknown'}"
             final_updates[account_id] = {"recovery_intent": final_intent}
             key = f"recovery:{account_id}:{intent.get('fingerprint')}:{suffix}"
+            if success:
+                history_updates[key] = {"account_id": account_id, "account_name": item["row"].get("name") or "",
+                    "model_id": str(test_result.get("model_id") or model_id), "legacy": False,
+                    "test_completed_at": test_result.get("completed_at"), "recovered_at": final_intent["recovered_at"]}
             if not self._known_event(key, account_id, state):
                 pending_updates[key] = {
                     "account_id": account_id,
@@ -1692,7 +1730,7 @@ class OAuthMonitor:
                     },
                     "status": event_status,
                     "stage": "account_test" if event_status == "auth_failed" else "recovery",
-                    "checked_at": current.isoformat(),
+                    "checked_at": final_intent.get("recovered_at") if success else _utc(self.clock()).isoformat(),
                     "model_id": str(test_result.get("model_id") or model_id),
                     "duration_ms": test_result.get("duration_ms", test_result.get("latency_ms")),
                     "test_success": bool(test_result.get("success")),
@@ -1701,7 +1739,7 @@ class OAuthMonitor:
                     "dedupe_key": key,
                 }
         if final_updates or pending_updates:
-            self.store.commit(scheduler_updates=final_updates, pending_events=pending_updates)
+            self.store.commit(scheduler_updates=final_updates, pending_events=pending_updates, recovery_history=history_updates)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         success_count = sum(1 for value in usage_results.values() if value.get("success"))

@@ -9,7 +9,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.3"
 REPO_SLUG = "lich13/sub2api-ops-companion"
 REPO_WEB_URL = f"https://github.com/{REPO_SLUG}"
 REBUILD_REQUIRED_PATTERNS = (

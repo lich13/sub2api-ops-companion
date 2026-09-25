@@ -10,15 +10,14 @@ macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组�
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - Telegram：通过私聊配对，使用 `/quota`（兼容 `/usage`）并行刷新 OpenAI、Grok OAuth 额度；Grok 只刷新官方账单，不发送模型请求。长回复按账号分段，历史限流快照单独标明时间。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
-- 模型降级保护：按 OpenAI、Grok 独立开关读取真实使用日志；比较实际送上游模型与响应模型。OpenAI 明确的 Astra、Sol、Terra、Luna 档位优先、同档再比较 6/5.6 代际，其他模型和 Grok 使用精确定价快照。共用自动移除开关仅对已启用的平台生效，历史回看只汇总告警。
 - Sub2API SSO：从 Sub2API 自定义菜单进入，验证管理员 JWT 后换取 Companion 本地会话。
 - 面板更新：显示当前版本，可检查 `origin/main` 并在源码无依赖变更时热更新。
 
 ## OAuth 监控机制
 
-- 常规 OAuth 账号默认每 3600 秒刷新一次。
+- 普通后台额度刷新已移除；客户端自动更新只读已有快照与使用日志。
 - 7d 已耗尽且恢复时间未到时，默认每 3600 秒探测一次提前重置。
-- 当前已耗尽的必要窗口有准确 `reset_at` 时，以最晚恢复时间为准，到点立即查询，不等待常规周期。
+- 当前已耗尽的必要窗口有准确 `reset_at` 时，以最晚恢复时间为准，到点立即查询。
 - `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
 - 即时恢复全天运行；额外每日测活默认北京时间 `05:00`，仅异常推送 Bark，错过不补跑。
 - 额度确认恢复后调用 Sub2API account test，默认模型为 `gpt-5.6-luna`。
@@ -51,7 +50,6 @@ docker compose up -d --build
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过面板写入权限为 `0600` 的配置文件。
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。面板不再展示或提交该字段，缺少表单值时保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
-- `MODEL_GUARD_CONFIG_PATH`、`MODEL_GUARD_STATE_PATH`、`MODEL_GUARD_PRICING_PATH`：模型降级保护的独立配置、游标/事件状态和精确定价快照，默认位于 `/data`，均按 `0600` 原子写入。
 - `TELEGRAM_OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
 - `TELEGRAM_OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
 - `TELEGRAM_OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。

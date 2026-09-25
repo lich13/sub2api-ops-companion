@@ -1,6 +1,7 @@
 export type Account = {
   id: number;
   name: string;
+  priority: number;
   platform: string;
   type: string;
   status: string;
@@ -100,28 +101,21 @@ export type OpsError = {
   content?: string;
   content_limited?: boolean;
 };
-export type Incident = {
+export type Recovery = {
+  id: number;
   account_id: number;
   account_name: string;
-  platform: string;
-  account_type: string;
-  requested_model: string;
-  upstream_model: string;
-  response_model: string;
-  status: string;
-  action: string;
-  reason: string;
-  first_at: string;
-  latest_at: string;
-  count: number;
-  history: boolean;
+  model_id: string;
+  test_completed_at: string | null;
+  recovered_at: string | null;
+  legacy: boolean;
 };
 export type Snapshot = {
   observed_at: string;
   accounts: Account[];
   groups: Group[];
   errors: OpsError[];
-  incidents: Incident[];
+  recoveries: Recovery[];
 };
 export type Preferences = {
   base_url: string;
@@ -150,25 +144,34 @@ export const initialState: ViewState = {
     launch_at_login: false,
   },
 };
+const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
 export function fullTime(value: string | null | undefined): string {
   if (!value) return "暂无记录";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "时间未知";
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    })
+    timeFormatter
       .formatToParts(date)
       .map(({ type, value }) => [type, value]),
   );
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
+export function sortPriority(accounts: Account[], ascending = true): Account[] {
+  return [...accounts].sort((a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id);
+}
+export type TestEvent = {
+  type: string; text?: string; model?: string; error?: string; success?: boolean;
+  image_url?: string; audio_url?: string; video_url?: string;
+  duration_ms?: number; completed_at?: string;
+};
+export type QuotaBatch = {
+  id: string; status: string; total: number; completed: number;
+  started_at: string; completed_at: string | null;
+  items: {account_id: number; account_name: string; platform: string; status: string; error?: string}[];
+};
 export function filterAccounts(
   accounts: Account[],
   query: string,
