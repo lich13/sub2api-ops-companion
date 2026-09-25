@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
     },
     time::Duration,
@@ -15,7 +16,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{oneshot, Mutex, Notify};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
@@ -45,6 +46,9 @@ struct Runtime {
     view: Mutex<ViewState>,
     key: Mutex<Option<String>>,
     network: Mutex<()>,
+    snapshot_gate: Mutex<()>,
+    generation: AtomicU64,
+    tests: Mutex<HashMap<String, oneshot::Sender<()>>>,
     wake: Notify,
     path: PathBuf,
     pinned: AtomicBool,
@@ -133,19 +137,20 @@ fn allowed_request(method: &str, path: &str) -> bool {
     let plain = path.split('?').next().unwrap_or("");
     match method {
         "GET" => {
-            matches!(plain, "/config" | "/errors" | "/capabilities")
+            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities")
                 || plain
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
+                || account_path(plain, "/models")
         }
         "PUT" => {
-            ["oauth", "bark", "telegram", "key_fallback", "model_guard"]
+            ["oauth", "bark", "telegram", "key_fallback"]
                 .iter()
                 .any(|s| plain == format!("/config/{s}"))
                 && !path.contains('?')
         }
         "POST" => {
-            ["bark-test", "telegram-test", "telegram-pairing"]
+            path == "/quota-refresh" || ["bark-test", "telegram-test", "telegram-pairing"]
                 .iter()
                 .any(|s| path == format!("/actions/{s}"))
                 || path
@@ -153,11 +158,17 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .and_then(|s| {
                         s.strip_suffix("/schedulable")
                             .or_else(|| s.strip_suffix("/usage-action"))
+                            .or_else(|| s.strip_suffix("/priority"))
                     })
                     .is_some_and(|s| s.parse::<u64>().is_ok())
         }
         _ => false,
     }
+}
+
+fn account_path(path: &str, suffix: &str) -> bool {
+    path.strip_prefix("/accounts/").and_then(|s| s.strip_suffix(suffix))
+        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
 }
 
 async fn http(
@@ -229,9 +240,12 @@ fn publish(app: &tauri::AppHandle, value: &ViewState) {
 }
 
 async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
-    let _gate = state.network.lock().await;
-    let base = state.view.lock().await.preferences.base_url.clone();
-    let key = state.key.lock().await.clone();
+    let Ok(_gate) = state.snapshot_gate.try_lock() else { return; };
+    let (base, key, generation) = {
+        let _connection = state.network.lock().await;
+        (state.view.lock().await.preferences.base_url.clone(), state.key.lock().await.clone(),
+         state.generation.load(Ordering::SeqCst))
+    };
     if base.is_empty() || key.is_none() {
         return;
     }
@@ -244,6 +258,8 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         None,
     )
     .await;
+    let _connection = state.network.lock().await;
+    if generation != state.generation.load(Ordering::SeqCst) { return; }
     let mut view = state.view.lock().await;
     match result {
         Ok(data) => {
@@ -306,6 +322,8 @@ async fn connect(
         prefs.base_url = base;
         save_preferences(&state.path, &prefs)?;
         view.preferences = prefs;
+        state.generation.fetch_add(1, Ordering::SeqCst);
+        state.tests.lock().await.clear();
         view.connected = true;
         view.snapshot = None;
         view.error.clear();
@@ -329,6 +347,8 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
         }
     }
     *state.key.lock().await = None;
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    state.tests.lock().await.clear();
     view.connected = false;
     view.online = false;
     view.snapshot = None;
@@ -347,7 +367,7 @@ async fn refresh(state: State<'_, Arc<Runtime>>) -> Result<(), String> {
 
 #[tauri::command]
 async fn api_request(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
     method: String,
     path: String,
@@ -356,15 +376,16 @@ async fn api_request(
     if !allowed_request(&method, &path) {
         return Err("客户端不允许此操作".into());
     }
-    let result;
-    {
+    let (view, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await.clone();
         if !view.online {
             return Err("当前离线，请恢复连接后操作".into());
         }
         let key = state.key.lock().await.clone().ok_or("尚未连接")?;
-        result = http(
+        (view, key, state.generation.load(Ordering::SeqCst))
+    };
+    let result = http(
             &state.client,
             &view.preferences.base_url,
             &key,
@@ -373,10 +394,97 @@ async fn api_request(
             body,
         )
         .await;
+    if generation != state.generation.load(Ordering::SeqCst) {
+        return Err("连接已切换，旧操作结果已忽略".into());
     }
     if method != "GET" {
-        refresh_inner(&app, &state).await;
+        state.wake.notify_one();
     }
+    result
+}
+
+#[tauri::command]
+async fn cancel_test(window: tauri::WebviewWindow, state: State<'_, Arc<Runtime>>) -> Result<(), String> {
+    if let Some(cancel) = state.tests.lock().await.remove(window.label()) { let _ = cancel.send(()); }
+    Ok(())
+}
+
+async fn media_data(client: &reqwest::Client, value: &str, kind: &str) -> Result<String, String> {
+    use base64::Engine;
+    if value.starts_with(&format!("data:{kind}/")) { return Ok(value.into()); }
+    let url = url::Url::parse(value).map_err(|_| "媒体地址无效")?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return Err("媒体地址必须使用 HTTPS".into());
+    }
+    // This request intentionally carries no admin headers or cookies.
+    let mut response = client.get(url).timeout(Duration::from_secs(90)).send().await.map_err(|_| "无法读取测试媒体")?;
+    if !response.status().is_success() { return Err("测试媒体请求失败".into()); }
+    let mime = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|h| h.to_str().ok())
+        .unwrap_or("").split(';').next().unwrap_or("").to_owned();
+    if !mime.starts_with(&format!("{kind}/")) { return Err("测试媒体类型无效".into()); }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "测试媒体连接中断")? {
+        if bytes.len() + chunk.len() > 64 * 1024 * 1024 { return Err("测试媒体超过 64 MiB".into()); }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+#[tauri::command]
+async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: State<'_, Arc<Runtime>>,
+    account_id: u64, body: Value, on_event: tauri::ipc::Channel<Value>) -> Result<(), String> {
+    if account_id == 0 { return Err("账号无效".into()); }
+    let (base, key, generation) = {
+        let _gate = state.network.lock().await;
+        let view = state.view.lock().await;
+        if !view.online { return Err("当前离线".into()); }
+        (view.preferences.base_url.clone(), state.key.lock().await.clone().ok_or("尚未连接")?, state.generation.load(Ordering::SeqCst))
+    };
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut tests = state.tests.lock().await;
+        if tests.contains_key(window.label()) { return Err("测试正在进行".into()); }
+        tests.insert(window.label().to_string(), tx);
+    }
+    let work = async {
+        let mut response = state.client.post(format!("{base}/api/desktop/v1/accounts/{account_id}/test"))
+            .header("x-api-key", key).header("Accept", "text/event-stream")
+            .timeout(Duration::from_secs(310)).json(&body).send().await.map_err(|_| "测试连接失败")?;
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let data: Value = response.json().await.unwrap_or(Value::Null);
+            return Err(format!("{} [{status}]", data.get("detail").and_then(Value::as_str).unwrap_or("测试请求被拒绝")));
+        }
+        let mut buffer = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| "测试连接中断")? {
+            if generation != state.generation.load(Ordering::SeqCst) { return Err("连接已切换".into()); }
+            buffer.extend_from_slice(&chunk);
+            if buffer.len() > 128 * 1024 * 1024 { return Err("测试输出过大".into()); }
+            while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = buffer.drain(..=end).collect();
+                if !line.starts_with(b"data:") { continue; }
+                if let Ok(mut event) = serde_json::from_slice::<Value>(&line[5..]) {
+                    let kind = event.get("type").and_then(Value::as_str).unwrap_or("").to_string();
+                    if ["image", "audio", "video"].contains(&kind.as_str()) {
+                        let field = format!("{kind}_url");
+                        if let Some(raw) = event.get(&field).and_then(Value::as_str) {
+                            event[&field] = Value::String(media_data(&state.client, raw, &kind).await?);
+                        }
+                    }
+                    on_event.send(event).map_err(|_| "测试窗口已关闭")?;
+                }
+            }
+        }
+        Ok(())
+    };
+    let result = tokio::select! { result=work=>result, _=rx=>Err("测试已取消，未重放请求".into()) };
+    let mut tests = state.tests.lock().await;
+    if tests.get(window.label()).is_some_and(|sender| sender.is_closed()) {
+        tests.remove(window.label());
+    }
+    drop(tests);
+    state.wake.notify_one();
+    let _ = app;
     result
 }
 
@@ -696,7 +804,8 @@ pub fn run() {
             let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).build()?,
                 pinned: AtomicBool::new(prefs.pinned), quitting: AtomicBool::new(false), panel: StdMutex::new(PanelLifecycle::default()),
                 view: Mutex::new(ViewState { connected: key.is_some(), preferences: prefs, ..Default::default() }),
-                key: Mutex::new(key), network: Mutex::new(()), wake: Notify::new(), path });
+                key: Mutex::new(key), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
+                generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
             create_quick(app.handle())?;
             let menu = Menu::with_items(app, &[
@@ -733,14 +842,14 @@ pub fn run() {
             { tray_macos::install(&tray)?; panel_trace(app.handle(), "tray_ready", "transient_menu_macos27"); }
             let handle=app.handle().clone();
             tauri::async_runtime::spawn(async move { loop {
-                refresh_inner(&handle,&state).await;
                 let visible=["main","quick"].iter().any(|label| handle.get_webview_window(label).is_some_and(|w|w.is_visible().unwrap_or(false)));
                 // Wall time advances through macOS sleep. Check locally once a
                 // second so wake does not wait out a suspended 15-second timer.
                 let due=std::time::SystemTime::now()+Duration::from_secs(if visible {2} else {15});
+                refresh_inner(&handle,&state).await;
                 loop {
-                    tokio::select! { _=tokio::time::sleep(Duration::from_secs(1))=>(), _=state.wake.notified()=>break }
                     if std::time::SystemTime::now()>=due {break;}
+                    tokio::select! { _=tokio::time::sleep(Duration::from_millis(100))=>(), _=state.wake.notified()=>break }
                 }
             }});
             Ok(())
@@ -753,7 +862,7 @@ pub fn run() {
                 WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); }, _=>()
             }
         })
-        .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,preferences,show_main,show_quick,hide_quick,check_updates])
+        .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,check_updates])
         .build(tauri::generate_context!()).expect("Sub2Ops failed to start")
         .run(|app,event| {
             if let tauri::RunEvent::Reopen {..}=event {let _=show_main(app.clone());}

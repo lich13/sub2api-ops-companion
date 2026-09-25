@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from .audit import write_audit
@@ -22,6 +23,7 @@ from .config_service import ConfigConflict, ConfigService
 from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, latest_completed_oauth_result
 from .quota_snapshot import usage_windows
 from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
+from .desktop_actions import DesktopActions, PriorityRequest, TestRequest
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -84,10 +86,11 @@ def error_dto(row: dict[str, Any], detail: bool = False) -> dict[str, Any]:
 
 
 def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids",
+    fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids", "priority",
               "last_success_at", "last_error_at", "last_error_id", "last_error_code", "last_error_status")
     value = {key: row.get(key) for key in fields}
     value["name"] = clean(row.get("name"), 160)
+    value["priority"] = int(value["priority"] or 0)
     value["group_ids"] = row.get("group_ids") or []
     value["usage_windows"] = usage_windows(row, now, quota_result)
     value["managed"] = row["id"] in managed
@@ -108,12 +111,12 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     value["available"] = not reasons
     success, error = row.get("last_success_at"), row.get("last_error_at")
     value["success_after_error"] = bool(success and error and success > error)
-    value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at")], default=str).encode()).hexdigest()
+    value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at", "priority")], default=str).encode()).hexdigest()
     return value
 
 
 ACCOUNT_SQL = f"""
-SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.error_message, a.extra,
+SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,
@@ -173,6 +176,24 @@ class DesktopService:
         self._usage_locks: dict[int, threading.Lock] = {}
         self._usage_locks_guard = threading.Lock()
         self._uncertain_resets: set[int] = set()
+        self.actions = DesktopActions(self)
+
+    async def close(self) -> None:
+        await self.actions.close()
+
+    def account_lock(self, account_id: int) -> threading.Lock:
+        with self._usage_locks_guard:
+            return self._usage_locks.setdefault(account_id, threading.Lock())
+
+    def recoveries(self, before_id: int | None = None, limit: int = 50) -> dict[str, Any]:
+        monitor = getattr(self.r, "oauth_monitor", None)
+        records = list((monitor.store.cached_snapshot().get("recovery_history") or {}).values()) if monitor else []
+        records = sorted((r for r in records if before_id is None or r["id"] < before_id), key=lambda r: r["id"], reverse=True)
+        names = {r["id"]: r["name"] for r in self.r.db.fetch_all("SELECT id,name FROM accounts WHERE deleted_at IS NULL")} if records else {}
+        items = [{**{k: row.get(k) for k in ("id", "account_id", "test_completed_at", "recovered_at", "legacy")},
+                  "account_name": clean(row.get("account_name") or names.get(row.get("account_id")), 160),
+                  "model_id": clean(row.get("model_id"), 160)} for row in records[:limit]]
+        return {"items": items, "next_cursor": items[-1]["id"] if len(records) > limit else None}
 
     def authenticate(self, key: str, *, fresh: bool = False) -> None:
         if not key or len(key) > 4096 or any(ord(c) < 33 for c in key):
@@ -238,17 +259,9 @@ class DesktopService:
                 account["usage_windows"] = account["usage"]["windows"]
             groups = group_dtos(r.db.fetch_all(GROUP_SQL))
             errors = self.errors(None, None, 20)
-            guard = r.build_model_guard_panel()
-            incidents = []
-            for item in guard.get("incidents", [])[:100]:
-                allowed = {key: value for key, value in item.items() if key in {
-                    "account_id", "account_name", "platform", "account_type", "type", "requested_model", "upstream_model", "response_model",
-                    "classification", "reason", "action", "action_reason", "first_seen_at", "last_seen_at", "count", "historical", "outcome", "log_id",
-                    "first_at", "last_at", "latest_at", "history", "status", "message", "model", "removed", "removal_reason", "kind",
-                }}
-                incidents.append({k: clean(v, 500) if isinstance(v, str) else v for k, v in allowed.items()})
             self._cached = jsonable_encoder({"schema_version": 1, "observed_at": now, "accounts": accounts,
-                                           "groups": groups, "errors": errors["items"], "incidents": incidents})
+                                           "groups": groups, "errors": errors["items"],
+                                           "recoveries": self.recoveries(limit=20)["items"]})
             self._cached_at = time.monotonic()
             return self._cached
 
@@ -309,8 +322,7 @@ class DesktopService:
     def usage_action(self, account_id: int, payload: UsageActionRequest, key: str) -> dict[str, Any]:
         if account_id <= 0:
             raise HTTPException(422, "账号编号无效")
-        with self._usage_locks_guard:
-            lock = self._usage_locks.setdefault(account_id, threading.Lock())
+        lock = self.account_lock(account_id)
         if not lock.acquire(blocking=False):
             raise HTTPException(409, "此账号正在执行用量操作，请等待结果")
         monitor_lock = None
@@ -454,6 +466,46 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         async with service.config.lock:
             return await asyncio.to_thread(service.set_schedulable, account_id, payload, key)
 
+    @router.get("/recoveries")
+    async def recoveries(request: Request, before_id: int | None = None, limit: int = 50) -> Any:
+        await auth(request)
+        if not 1 <= limit <= 100 or (before_id is not None and before_id < 1):
+            raise HTTPException(422, "分页参数无效")
+        return await asyncio.to_thread(service.recoveries, before_id, limit)
+
+    @router.post("/accounts/{account_id}/priority")
+    async def priority(account_id: int, payload: PriorityRequest, request: Request) -> Any:
+        key = await auth(request)
+        return await service.actions.set_priority(account_id, payload, key)
+
+    @router.get("/accounts/{account_id}/models")
+    async def models(account_id: int, request: Request) -> Any:
+        key = await auth(request)
+        return await service.actions.models(account_id, key)
+
+    @router.post("/accounts/{account_id}/test")
+    async def test(account_id: int, payload: TestRequest, request: Request) -> Any:
+        key = await auth(request)
+        async def stream():
+            try:
+                locks = await service.actions.prepare_test(account_id, payload)
+                async for chunk in service.actions.test_stream(account_id, payload, key, locks):
+                    yield chunk
+            except HTTPException as exc:
+                yield "data: " + json.dumps({"type": "error", "error": safe_error_text(exc.detail, 240)}) + "\n\n"
+        return StreamingResponse(stream(),
+            media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @router.post("/quota-refresh")
+    async def quota_refresh(request: Request) -> Any:
+        key = await auth(request)
+        return await service.actions.start_batch(key)
+
+    @router.get("/quota-refresh")
+    async def quota_progress(request: Request) -> Any:
+        await auth(request)
+        return service.actions.batch_view()
+
     @router.get("/config")
     async def config(request: Request) -> Any:
         await auth(request)
@@ -467,6 +519,8 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     @router.put("/config/{section}")
     async def save_config(section: str, payload: ConfigRequest, request: Request) -> Any:
         await auth(request)
+        if section not in {"oauth", "bark", "telegram", "key_fallback"}:
+            raise HTTPException(404, "设置分区不存在")
         try:
             result = await service.config.save(section, payload.changes, "desktop:admin", payload.expected_revision)
         except ConfigConflict as exc:

@@ -1,10 +1,11 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
-import type { ViewState, Account, Config } from "./types";
+import type { ViewState, Account, Config, TestEvent } from "./types";
 const now = new Date().toISOString(),
   before = new Date(Date.now() - 7 * 60e3).toISOString();
 const accounts: Account[] = [
   {
     id: 101,
+    priority: 1,
     name: "Codex · 主力",
     platform: "openai",
     type: "oauth",
@@ -45,6 +46,7 @@ const accounts: Account[] = [
   },
   {
     id: 102,
+    priority: 5,
     name: "Codex · 备用账号 · 用于验证长名称的显示与调度开关",
     platform: "openai",
     type: "oauth",
@@ -76,6 +78,7 @@ const accounts: Account[] = [
   },
   {
     id: 201,
+    priority: 2,
     name: "Grok · Super",
     platform: "grok",
     type: "oauth",
@@ -122,6 +125,7 @@ const accounts: Account[] = [
   },
   {
     id: 389,
+    priority: 50,
     name: "OpenAI · 按量备用",
     platform: "openai",
     type: "apikey",
@@ -334,22 +338,15 @@ let state: ViewState = {
         resolved: false,
       },
     ],
-    incidents: [
+    recoveries: [
       {
+        id: 1,
         account_id: 102,
         account_name: accounts[1].name,
-        platform: "openai",
-        account_type: "oauth",
-        requested_model: "gpt-6-astra",
-        upstream_model: "gpt-6-astra",
-        response_model: "gpt-5.6-luna",
-        status: "confirmed",
-        action: "历史仅告警",
-        reason: "OpenAI 档位下降",
-        first_at: before,
-        latest_at: now,
-        count: 3,
-        history: true,
+        model_id: "gpt-5.6-luna",
+        test_completed_at: before,
+        recovered_at: now,
+        legacy: false,
       },
     ],
   },
@@ -380,12 +377,6 @@ const config: Config = {
     openai_enabled: false,
     grok_enabled: false,
     managed_account_ids: [389],
-  },
-  model_guard: {
-    revision: "5".repeat(64),
-    openai_enabled: true,
-    grok_enabled: true,
-    auto_remove: true,
   },
 };
 const listeners = new Set<(s: ViewState) => void>();
@@ -425,7 +416,8 @@ export async function run(
     return;
   }
   if (name === "show_main") return;
-  if (name === "check_updates") return "预览模式 · 当前版本 0.1.2";
+  if (name === "check_updates") return "预览模式 · 当前版本 0.1.3";
+  if (name === "cancel_test") { testCancelled = true; return; }
   if (name === "api_request") {
     const path = String(args.path),
       body = args.body as {
@@ -433,6 +425,7 @@ export async function run(
         expected_revision: string;
         schedulable: boolean;
         detach_managed: boolean;
+        priority: number;
       } | null;
     if (path === "/config") return structuredClone(config);
     if (path.startsWith("/config/")) {
@@ -448,6 +441,9 @@ export async function run(
     }
     if (path === "/errors" || path.startsWith("/errors?"))
       return { items: state.snapshot?.errors, next_cursor: null };
+    if (path.startsWith("/recoveries")) return {items: state.snapshot?.recoveries, next_cursor: null};
+    if (path === "/quota-refresh") return args.method === "POST" ? {id:"preview",status:"completed",total:3,completed:3,items:[],started_at:now,completed_at:now} : {status:"idle",total:0,completed:0,items:[]};
+    if (path.endsWith("/models")) return ["gpt-6-sol", "gpt-image-1", "grok-4.5", "grok-imagine-image", "grok-imagine-video"].map((id) => ({id, display_name:id, type:"model"}));
     if (path.startsWith("/errors/")) {
       const e = state.snapshot?.errors.find(
         (e) => e.id === Number(path.split("/")[2]),
@@ -468,7 +464,8 @@ export async function run(
         (a) => a.id === Number(path.split("/")[2]),
       );
       if (a && body) {
-        a.schedulable = body.schedulable;
+        if (path.endsWith("/priority")) a.priority = body.priority;
+        else a.schedulable = body.schedulable;
         if (body.detach_managed) a.managed = false;
         emit();
       }
@@ -478,4 +475,15 @@ export async function run(
       return { message: "预览：测试请求已完成", pairing_code: "DEMO-NEW1" };
   }
   throw new Error("预览未提供此操作");
+}
+let testCancelled = false;
+export async function testStream(body: Record<string, unknown>, callback: (event: TestEvent) => void) {
+  testCancelled = false;
+  callback({type:"test_start", model: String(body.model_id || body.mode)});
+  for (const text of ["预览连接", "测试正常。"]){
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (testCancelled) return;
+    callback({type:"content", text});
+  }
+  callback({type:"test_complete", success:true, completed_at:new Date().toISOString(),duration_ms:1000});
 }
