@@ -52,6 +52,7 @@ const accounts: Account[] = [
     platform: "openai",
     type: "oauth",
     status: "error",
+    recoverable: true,
     schedulable: true,
     available: false,
     group_ids: [1],
@@ -290,6 +291,14 @@ let state: ViewState = {
         upstream_model: "grok-4.6",
         upstream_response_model: "grok-4.6",
         called_at: now,
+        recent_accounts: [2, 4, 5].map((index, rank) => ({
+          log_id: 90 - rank,
+          account_id: accounts[index].id,
+          account_name: accounts[index].name,
+          model: "grok-4.6",
+          upstream_model: "grok-4.6",
+          called_at: rank ? before : now,
+        })),
       },
       {
         id: 3,
@@ -373,6 +382,23 @@ const config: Config = {
   },
 };
 const listeners = new Set<(s: ViewState) => void>();
+const scenario = new URLSearchParams(location.search).get("scenario");
+if (state.snapshot && scenario === "empty") {
+  Object.assign(state.snapshot, {
+    accounts: [],
+    groups: [],
+    errors: [],
+    recoveries: [],
+  });
+} else if (state.snapshot && scenario === "dense") {
+  state.snapshot.groups = Array.from({ length: 6 }, (_, i) => ({
+    ...state.snapshot!.groups[i % 2],
+    id: i + 10,
+    name: `分组 ${i + 1}`,
+  }));
+} else if (state.snapshot && scenario === "two-groups") {
+  state.snapshot.groups = state.snapshot.groups.slice(0, 2);
+}
 function emit() {
   for (const cb of listeners) cb(structuredClone(state));
 }
@@ -408,9 +434,13 @@ export async function run(
     emit();
     return;
   }
-  if (name === "show_main") return;
+  if (["show_main", "resize_quick", "show_quick", "hide_quick"].includes(name))
+    return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
-  if (name === "cancel_test") { testCancelled = true; return; }
+  if (name === "cancel_test") {
+    testCancelled = true;
+    return;
+  }
   if (name === "api_request") {
     const path = String(args.path),
       body = args.body as {
@@ -420,6 +450,34 @@ export async function run(
         detach_managed: boolean;
         priority: number;
       } | null;
+    if (args.method === "DELETE" && /^\/accounts\/\d+$/.test(path)) {
+      const id = Number(path.split("/")[2]);
+      const account = state.snapshot?.accounts.find((a) => a.id === id);
+      if (!account || !state.snapshot) throw new Error("账号不存在");
+      state.snapshot.accounts = state.snapshot.accounts.filter(
+        (a) => a.id !== id,
+      );
+      for (const group of state.snapshot.groups)
+        group.recent_accounts = group.recent_accounts?.filter(
+          (a) => a.account_id !== id,
+        );
+      emit();
+      return { deleted: true, verified: true, detached: account.managed };
+    }
+    if (path.endsWith("/recover-state")) {
+      const account = state.snapshot?.accounts.find(
+        (a) => a.id === Number(path.split("/")[2]),
+      );
+      if (!account) throw new Error("账号不存在");
+      Object.assign(account, {
+        status: "active",
+        recoverable: false,
+        blockers: [],
+        available: account.schedulable,
+      });
+      emit();
+      return { verified: true };
+    }
     if (path === "/config") return structuredClone(config);
     if (path.startsWith("/config/")) {
       const section = path.split("/")[2];
@@ -434,9 +492,28 @@ export async function run(
     }
     if (path === "/errors" || path.startsWith("/errors?"))
       return { items: state.snapshot?.errors, next_cursor: null };
-    if (path.startsWith("/recoveries")) return {items: state.snapshot?.recoveries, next_cursor: null};
-    if (path === "/quota-refresh") return args.method === "POST" ? {id:"preview",status:"completed",total:3,completed:3,items:[],started_at:now,completed_at:now} : {status:"idle",total:0,completed:0,items:[]};
-    if (path.endsWith("/models")) return ["gpt-6-sol", "gpt-image-1", "grok-4.5", "grok-imagine-image", "grok-imagine-video"].map((id) => ({id, display_name:id, type:"model"}));
+    if (path.startsWith("/recoveries"))
+      return { items: state.snapshot?.recoveries, next_cursor: null };
+    if (path === "/quota-refresh")
+      return args.method === "POST"
+        ? {
+            id: "preview",
+            status: "completed",
+            total: 3,
+            completed: 3,
+            items: [],
+            started_at: now,
+            completed_at: now,
+          }
+        : { status: "idle", total: 0, completed: 0, items: [] };
+    if (path.endsWith("/models"))
+      return [
+        "gpt-6-sol",
+        "gpt-image-1",
+        "grok-4.5",
+        "grok-imagine-image",
+        "grok-imagine-video",
+      ].map((id) => ({ id, display_name: id, type: "model" }));
     if (path.startsWith("/errors/")) {
       const e = state.snapshot?.errors.find(
         (e) => e.id === Number(path.split("/")[2]),
@@ -470,13 +547,27 @@ export async function run(
   throw new Error("预览未提供此操作");
 }
 let testCancelled = false;
-export async function testStream(body: Record<string, unknown>, callback: (event: TestEvent) => void) {
+export async function testStream(
+  body: Record<string, unknown>,
+  callback: (event: TestEvent) => void,
+) {
   testCancelled = false;
-  callback({type:"test_start", model: String(body.model_id || body.mode)});
-  for (const text of ["Hello", " ", "world!\n", "  Preview output\n", "\t中文 👋\n"]){
+  callback({ type: "test_start", model: String(body.model_id || body.mode) });
+  for (const text of [
+    "Hello",
+    " ",
+    "world!\n",
+    "  Preview output\n",
+    "\t中文 👋\n",
+  ]) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (testCancelled) return;
-    callback({type:"content", text});
+    callback({ type: "content", text });
   }
-  callback({type:"test_complete", success:true, completed_at:new Date().toISOString(),duration_ms:1000});
+  callback({
+    type: "test_complete",
+    success: true,
+    completed_at: new Date().toISOString(),
+    duration_ms: 1000,
+  });
 }
