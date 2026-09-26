@@ -1,3 +1,172 @@
+.quality-cell {
+  min-width: 108px;
+}
+.quality-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+}
+.quality-badge b {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 20px;
+}
+.quality-badge.green,
+.quality-headline.green {
+  color: var(--good);
+}
+.quality-badge.yellow,
+.quality-headline.yellow {
+  color: var(--warn);
+}
+.quality-badge.red,
+.quality-headline.red {
+  color: var(--bad);
+}
+.quality-dialog {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: min(780px, calc(100vw - 40px));
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  padding: 20px;
+  box-shadow: 0 20px 70px #0003;
+}
+.quality-dialog header {
+  position: sticky;
+  top: -20px;
+  z-index: 1;
+  margin: -20px -20px 0;
+  padding: 20px;
+  background: var(--surface);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.quality-dialog header h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.quality-dialog header strong {
+  display: block;
+  max-width: 610px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quality-tools {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.quality-tools button {
+  padding: 6px;
+}
+.quality-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 20px 0 16px;
+}
+.quality-headline b {
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+}
+.quality-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.quality-metric {
+  padding: 12px;
+  min-width: 0;
+}
+.quality-metric + .quality-metric {
+  border-left: 1px solid var(--line);
+}
+.quality-metric h3 {
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 14px;
+}
+.quality-metric small {
+  font-weight: normal;
+  color: var(--muted);
+  font-size: 10px;
+}
+.quality-metric dl {
+  margin: 0;
+}
+.quality-metric dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.quality-metric dt,
+.quality-period {
+  color: var(--muted);
+}
+.quality-metric dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.quality-period {
+  font-size: 10px;
+}
+.quality-metric summary,
+.quality-rules summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.quality-cohort {
+  display: grid;
+  gap: 5px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.quality-metric h4 {
+  font-size: 11px;
+  margin: 12px 0 0;
+}
+.quality-rules {
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.quality-dialog footer {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  flex-wrap: wrap;
+}
+@media (max-width: 700px) {
+  .quality-metrics {
+    grid-template-columns: 1fr;
+  }
+  .quality-metric + .quality-metric {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .quality-dialog header strong {
+    max-width: 240px;
+  }
+}
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #202432;

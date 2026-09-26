@@ -156,6 +156,29 @@ const stats = {
   user_cost: 76.8,
 };
 for (const account of accounts) {
+  account.quality = {
+    score:
+      account.id === 101
+        ? 93
+        : account.id === 102
+          ? 39
+          : account.id === 201
+            ? 73
+            : null,
+    grade: account.id === 101 ? "green" : account.id === 102 ? "red" : "yellow",
+    reasons: [
+      account.id === 101
+        ? "表现良好"
+        : account.id === 102
+          ? "连续失败"
+          : account.id === 201
+            ? "首字偏慢"
+            : "样本不足",
+    ],
+    sample_status: account.type === "apikey" ? "insufficient" : "complete",
+    data_status: "fresh",
+    computed_at: now,
+  };
   account.usage = {
     branch:
       account.type === "apikey"
@@ -450,6 +473,75 @@ export async function run(
         detach_managed: boolean;
         priority: number;
       } | null;
+    if (path.endsWith("/quality")) {
+      const account = state.snapshot?.accounts.find(
+        (a) => a.id === Number(path.split("/")[2]),
+      );
+      if (!account) throw new Error("账号不存在");
+      const metric = (p50: number, tail: number, score: number) => {
+        const window = {
+          score,
+          samples: 180,
+          compared: 170,
+          coverage: 170 / 180,
+          p50,
+          tail,
+          cohorts: [
+            {
+              platform: account.platform,
+              model: account.platform === "grok" ? "grok-4.7" : "gpt-6-sol",
+              reasoning_effort: "max",
+              service_tier: "default",
+              transport: "sse",
+              input_bucket: "≤8K",
+              samples: 170,
+              p50,
+              tail,
+              baseline_p50: p50,
+              baseline_tail: tail,
+              baseline_accounts: 3,
+              baseline_samples: 900,
+              score,
+            },
+          ],
+        };
+        return {
+          ...window,
+          mode: "70/30",
+          recent: window,
+          history: window,
+          all: window,
+        };
+      };
+      return {
+        ...account.quality,
+        account_id: account.id,
+        period: {
+          start: "2026-09-19T08:00:00Z",
+          end: now,
+          recent_start: before,
+        },
+        cap: account.id === 102 ? 39 : 100,
+        coverage: 0.94,
+        consecutive_failures: account.id === 102 ? 3 : 0,
+        reliability: {
+          score: 98,
+          rate: 0.002,
+          effective_rate: 0.002,
+          successes: account.id === 102 ? 997 : 998,
+          failures: account.id === 102 ? 3 : 2,
+          total: 1000,
+          mode: "70/30",
+          causes: { upstream: 2 },
+        },
+        ttft: metric(
+          account.id === 201 ? 19.2 : 3.2,
+          10,
+          account.id === 201 ? 50 : 85,
+        ),
+        throughput: metric(42.5, 28.2, 85),
+      };
+    }
     if (args.method === "DELETE" && /^\/accounts\/\d+$/.test(path)) {
       const id = Number(path.split("/")[2]);
       const account = state.snapshot?.accounts.find((a) => a.id === id);
