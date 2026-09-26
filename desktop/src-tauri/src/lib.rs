@@ -37,6 +37,7 @@ struct Preferences {
 
 #[derive(Clone, Serialize, Default)]
 struct ViewState {
+    connection_revision: u64,
     connected: bool,
     online: bool,
     error: String,
@@ -59,11 +60,18 @@ struct Runtime {
     panel: StdMutex<PanelLifecycle>,
 }
 
-#[derive(Default)]
 struct PanelLifecycle {
     generation: u64,
     focused: bool,
     showing: bool,
+    height: f64,
+    anchor: Option<tauri::Rect>,
+}
+
+impl Default for PanelLifecycle {
+    fn default() -> Self {
+        Self { generation: 0, focused: false, showing: false, height: 520., anchor: None }
+    }
 }
 
 impl PanelLifecycle {
@@ -162,9 +170,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
                         s.strip_suffix("/schedulable")
                             .or_else(|| s.strip_suffix("/usage-action"))
                             .or_else(|| s.strip_suffix("/priority"))
+                            .or_else(|| s.strip_suffix("/recover-state"))
                     })
                     .is_some_and(|s| s.parse::<u64>().is_ok())
         }
+        "DELETE" => !path.contains('?') && account_path(path, ""),
         _ => false,
     }
 }
@@ -260,7 +270,7 @@ async fn connect(
         prefs.base_url = base;
         save_preferences(&state.path, &prefs)?;
         view.preferences = prefs;
-        state.generation.fetch_add(1, Ordering::SeqCst);
+        view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
         state.tests.lock().await.clear();
         view.connected = true;
         view.snapshot = None;
@@ -285,7 +295,7 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
         }
     }
     *state.key.lock().await = None;
-    state.generation.fetch_add(1, Ordering::SeqCst);
+    view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
     state.tests.lock().await.clear();
     view.connected = false;
     view.online = false;
@@ -535,9 +545,10 @@ fn panel_bounds(
     width: u32,
     height: u32,
     scale: f64,
+    content_height: f64,
 ) -> (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>) {
     let w = (420. * scale).min((width as f64 - 16.).max(1.));
-    let h = (560. * scale).min((height as f64 - 16.).max(1.));
+    let h = (content_height.clamp(128., 520.) * scale).min((height as f64 - 16.).max(1.));
     let px = (anchor.x - w + 20.).clamp(
         x as f64 + 8.,
         (x as f64 + width as f64 - w - 8.).max(x as f64 + 8.),
@@ -584,7 +595,7 @@ fn create_quick(app: &tauri::AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("index.html?panel=quick".into()),
     )
     .title("Sub2Ops 快捷面板")
-    .inner_size(420., 560.)
+    .inner_size(420., 520.)
     .decorations(false)
     .resizable(false)
     .always_on_top(true)
@@ -601,16 +612,38 @@ fn quick_panel(
     rect: tauri::Rect,
 ) -> Result<(), Box<dyn std::error::Error>> {
     panel_trace(app, "show_begin", "");
-    let position = rect.position.to_physical::<f64>(1.0);
-    let size = rect.size.to_physical::<f64>(1.0);
-    let anchor = tauri::PhysicalPosition::new(position.x + size.width, position.y + size.height);
     let window = app.get_webview_window("quick").ok_or("快捷窗口未创建")?;
-    {
+    let height = {
         let state = app.state::<Arc<Runtime>>();
         let mut panel = state.panel.lock().unwrap();
         panel.show(false);
         panel.showing = true;
+        panel.anchor = Some(rect);
+        panel.height
+    };
+    position_quick(app, &window, rect, height)?;
+    #[cfg(target_os = "macos")]
+    app.show()?;
+    window.show()?;
+    panel_trace(app, "shown", "");
+    window.set_focus()?;
+    let focused = window.is_focused()?;
+    {
+        let state = app.state::<Arc<Runtime>>();
+        let mut panel = state.panel.lock().unwrap();
+        panel.showing = false;
+        panel.focused = focused;
     }
+    panel_trace(app, "focus_requested", if focused { "focused" } else { "awaiting_event" });
+    app.state::<Arc<Runtime>>().wake.notify_one();
+    Ok(())
+}
+
+fn position_quick(app: &tauri::AppHandle, window: &tauri::WebviewWindow, rect: tauri::Rect, height: f64)
+    -> Result<(), Box<dyn std::error::Error>> {
+    let position = rect.position.to_physical::<f64>(1.0);
+    let size = rect.size.to_physical::<f64>(1.0);
+    let anchor = tauri::PhysicalPosition::new(position.x + size.width, position.y + size.height);
     let monitors = window.available_monitors()?;
     let monitor = monitors
         .iter()
@@ -633,6 +666,7 @@ fn quick_panel(
             area.size.width,
             area.size.height,
             m.scale_factor(),
+            height,
         );
         window.set_size(size)?;
         window.set_position(position)?;
@@ -645,25 +679,29 @@ fn quick_panel(
             ),
         );
     }
-    #[cfg(target_os = "macos")]
-    app.show()?;
-    window.show()?;
-    panel_trace(app, "shown", "");
-    window.set_focus()?;
-    let focused = window.is_focused()?;
-    {
-        let state = app.state::<Arc<Runtime>>();
-        let mut panel = state.panel.lock().unwrap();
-        panel.showing = false;
-        panel.focused = focused;
-    }
-    panel_trace(
-        app,
-        "focus_requested",
-        if focused { "focused" } else { "awaiting_event" },
-    );
-    app.state::<Arc<Runtime>>().wake.notify_one();
     Ok(())
+}
+
+#[tauri::command]
+fn resize_quick(app: tauri::AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+    if window.label() != "quick" || !height.is_finite() { return Err("快捷窗口尺寸无效".into()); }
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let state = handle.state::<Arc<Runtime>>();
+        let height = height.ceil().clamp(128., 520.);
+        let anchor = {
+            let mut panel = state.panel.lock().unwrap();
+            if panel.height == height { return; }
+            panel.height = height;
+            panel.anchor
+        };
+        let result = if let Some(rect) = anchor {
+            position_quick(&handle, &window, rect, height).map_err(|e| e.to_string())
+        } else {
+            window.set_size(tauri::LogicalSize::new(420., height)).map_err(|e| e.to_string())
+        };
+        if let Err(error) = result { panel_trace(&handle, "resize_failed", &error); }
+    }).map_err(|_| "无法调整快捷窗口尺寸".into())
 }
 
 #[tauri::command]
@@ -824,7 +862,7 @@ pub fn run() {
                 WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); }, _=>()
             }
         })
-        .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,check_updates])
+        .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,resize_quick,check_updates])
         .build(tauri::generate_context!()).expect("Sub2Ops failed to start")
         .run(|app,event| {
             if let tauri::RunEvent::Reopen {..}=event {let _=show_main(app.clone());}
@@ -869,7 +907,7 @@ mod tests {
             (0, 50, 2560, 1614, 2., 2540., 20.),
             (0, -900, 800, 850, 2., 200., -900.),
         ] {
-            let (p, s) = panel_bounds(tauri::PhysicalPosition::new(ax, ay), x, y, w, h, scale);
+            let (p, s) = panel_bounds(tauri::PhysicalPosition::new(ax, ay), x, y, w, h, scale, 520.);
             assert!(p.x >= x && p.y >= y);
             assert!(p.x + s.width as i32 <= x + w as i32);
             assert!(p.y + s.height as i32 <= y + h as i32);
@@ -895,8 +933,21 @@ mod tests {
     fn command_allowlist() {
         assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
+        assert!(allowed_request("DELETE", "/accounts/7"));
+        assert!(allowed_request("POST", "/accounts/7/recover-state"));
+        for p in ["/accounts/0", "/accounts/7/", "/accounts/7?all=true", "/accounts"] {
+            assert!(!allowed_request("DELETE", p));
+        }
         for p in ["/accounts/7/test", "https://evil.test", "/config/../token"] {
             assert!(!allowed_request("POST", p));
+        }
+    }
+    #[test]
+    fn compact_panel_height_is_content_bounded() {
+        for (height, expected) in [(100., 128), (386., 386), (800., 520)] {
+            let (_, size) = panel_bounds(tauri::PhysicalPosition::new(800., 24.), 0, 24, 1400, 900, 1., height);
+            assert_eq!(size.width, 420);
+            assert_eq!(size.height, expected);
         }
     }
     #[test]

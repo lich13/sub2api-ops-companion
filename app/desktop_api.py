@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -95,6 +96,7 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     value["group_ids"] = row.get("group_ids") or []
     value["usage_windows"] = usage_windows(row, now, quota_result)
     value["managed"] = row["id"] in managed
+    value["recoverable"] = recoverable_state(row, now)
     value["error_message"] = safe_error_text(row.get("last_error_message") or row.get("error_message"))
     reasons = []
     if row.get("status") != "active":
@@ -114,6 +116,16 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     value["success_after_error"] = bool(success and error and success > error)
     value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at", "priority")], default=str).encode()).hexdigest()
     return value
+
+
+def recoverable_state(row: dict[str, Any], now: datetime) -> bool:
+    if row.get("status") == "error" or any(deadline_is_future(row.get(field), now) for field in
+            ("rate_limit_reset_at", "overload_until", "temp_unschedulable_until")):
+        return True
+    extra = row.get("extra") or {}
+    limits = extra.get("model_rate_limits") if isinstance(extra, dict) else None
+    return isinstance(limits, dict) and any(isinstance(info, dict) and
+        deadline_is_future(info.get("rate_limit_reset_at"), now) for info in limits.values())
 
 
 ACCOUNT_SQL = f"""
@@ -138,9 +150,10 @@ SELECT g.id,g.name,g.platform,g.sort_order,u.id AS log_id,u.account_id,
  a.name AS account_name,u.model,u.upstream_model,u.created_at AS called_at
 FROM groups g LEFT JOIN LATERAL (
  SELECT latest.* FROM (
-   SELECT DISTINCT ON (account_id) id,account_id,model,upstream_model,created_at
-   FROM usage_logs WHERE group_id=g.id
-   ORDER BY account_id,created_at DESC,id DESC
+   SELECT DISTINCT ON (l.account_id) l.id,l.account_id,l.model,l.upstream_model,l.created_at
+   FROM usage_logs l JOIN accounts live ON live.id=l.account_id AND live.deleted_at IS NULL
+   WHERE l.group_id=g.id
+   ORDER BY l.account_id,l.created_at DESC,l.id DESC
  ) latest ORDER BY created_at DESC,id DESC LIMIT 3
 ) u ON true LEFT JOIN accounts a ON a.id=u.account_id
 WHERE g.deleted_at IS NULL ORDER BY g.sort_order,g.id,u.created_at DESC,u.id DESC
@@ -186,11 +199,121 @@ class DesktopService:
         with self._usage_locks_guard:
             return self._usage_locks.setdefault(account_id, threading.Lock())
 
+    @contextmanager
+    def recovery_guard(self, row: dict[str, Any]):
+        monitor = getattr(self.r, "oauth_monitor", None)
+        lock = monitor._run_lock if row["platform"] == "openai" and monitor else None
+        if lock and not lock.acquire(blocking=False):
+            raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
+        try:
+            yield
+        finally:
+            if lock:
+                lock.release()
+
+    @contextmanager
+    def account_operation(self, account_id: int, version: str, *, coordinate_monitor: bool = True):
+        if account_id < 1:
+            raise HTTPException(422, "账号编号无效")
+        lock = self.account_lock(account_id)
+        if not lock.acquire(blocking=False):
+            raise HTTPException(409, "此账号正在执行操作，请等待结果")
+        try:
+            row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+            if not row:
+                raise HTTPException(404, "账号不存在")
+            with self.recovery_guard(row) if coordinate_monitor else nullcontext():
+                row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                if not row or account_dto(row, datetime.now(timezone.utc), set())["version"] != version:
+                    raise HTTPException(409, "账号已变化，请刷新后重试")
+                yield row
+        finally:
+            lock.release()
+
+    def _account_write(self, account_id: int, action: str, key: str) -> str:
+        path = f"/api/v1/admin/accounts/{account_id}" + ("/recover-state" if action == "recover" else "")
+        request = urllib.request.Request(self.r.oauth_base_url().rstrip("/") + path,
+            method="POST" if action == "recover" else "DELETE", data=b"{}" if action == "recover" else None,
+            headers={"x-api-key": key, "Accept": "application/json", "Content-Type": "application/json"})
+        try:
+            with _urlopen_no_redirect(request, timeout=5) as response:
+                body = json.loads(response.read(2_000_000))
+                if 200 <= response.status < 300 and isinstance(body, dict) and body.get("code") == 0:
+                    return "ok"
+                return "upstream_rejected"
+        except urllib.error.HTTPError as exc:
+            return f"http_{exc.code}"
+        except Exception:
+            return "result_uncertain"
+
+    def delete_account(self, account_id: int, payload: "DeleteRequest", key: str) -> dict[str, Any]:
+        controller = self.r.key_fallback_controller
+        if controller is None:
+            raise HTTPException(503, "调度控制器未就绪")
+        detached = False
+        try:
+            with (self.account_operation(account_id, payload.expected_version, coordinate_monitor=False) as row,
+                  self.config.thread_lock, controller._lock, self.recovery_guard(row)):
+                # Recheck after obtaining the fallback lock; never delete from a stale selection.
+                live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                if not live or account_dto(live, datetime.now(timezone.utc), set())["version"] != payload.expected_version:
+                    raise HTTPException(409, "账号已变化，请刷新后重试")
+                config = controller.load_config()
+                if not config.valid:
+                    raise HTTPException(409, "托管配置无法读取，删除已中止")
+                if account_id in config.managed_account_ids:
+                    if not payload.detach_managed:
+                        raise HTTPException(409, "此账号由 Key 回退托管，请刷新并确认解除托管后删除")
+                    try:
+                        controller._write_config_unlocked(openai_enabled=config.openai_enabled, grok_enabled=config.grok_enabled,
+                            managed_account_ids=[i for i in config.managed_account_ids if i != account_id],
+                            config_version=config.config_version + 1, updated_by="desktop:admin")
+                    except Exception:
+                        raise HTTPException(503, "解除托管保存失败，未执行删除") from None
+                    detached = True
+                    write_audit(self.r.settings.audit_path, "desktop_detach_managed", {"account_id": account_id})
+                code = self._account_write(account_id, "delete", key)
+                try:
+                    live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                    verified = live is None
+                except Exception:
+                    verified = False
+                write_audit(self.r.settings.audit_path, "desktop_delete", {"account_id": account_id,
+                    "verified": verified, "detached": detached, "code": code})
+                if not verified:
+                    raise HTTPException(502, {"message": ("已解除托管；" if detached else "") + "删除未确认，请刷新核对实际状态",
+                        "detached": detached, "code": code if code != "ok" else "readback_mismatch"})
+                return {"account_id": account_id, "deleted": True, "verified": True, "detached": detached}
+        finally:
+            self.invalidate()
+
+    def recover_account(self, account_id: int, payload: "AccountVersionRequest", key: str) -> dict[str, Any]:
+        try:
+            with self.account_operation(account_id, payload.expected_version) as row:
+                if not recoverable_state(row, datetime.now(timezone.utc)):
+                    raise HTTPException(409, "账号已无可恢复状态，请刷新")
+                code = self._account_write(account_id, "recover", key)
+                try:
+                    live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                    verified = bool(live and (live["platform"], live["type"]) == (row["platform"], row["type"])
+                        and not recoverable_state(live, datetime.now(timezone.utc)))
+                except Exception:
+                    verified = False
+                write_audit(self.r.settings.audit_path, "desktop_recover_state", {"account_id": account_id,
+                    "verified": verified, "code": code})
+                if not verified:
+                    raise HTTPException(502, {"message": "恢复状态未确认，请刷新核对实际状态",
+                        "code": code if code != "ok" else "readback_mismatch"})
+                return {"account_id": account_id, "verified": True, "message": "状态已恢复"}
+        finally:
+            self.invalidate()
+
     def recoveries(self, before_id: int | None = None, limit: int = 50) -> dict[str, Any]:
         monitor = getattr(self.r, "oauth_monitor", None)
         records = list((monitor.store.cached_snapshot().get("recovery_history") or {}).values()) if monitor else []
         records = sorted((r for r in records if before_id is None or r["id"] < before_id), key=lambda r: r["id"], reverse=True)
         names = {r["id"]: r["name"] for r in self.r.db.fetch_all("SELECT id,name FROM accounts WHERE deleted_at IS NULL")} if records else {}
+        records = [r for r in records if r.get("account_id") in names]
         items = [{**{k: row.get(k) for k in ("id", "account_id", "test_completed_at", "recovered_at", "legacy")},
                   "account_name": clean(row.get("account_name") or names.get(row.get("account_id")), 160),
                   "model_id": clean(row.get("model_id"), 160)} for row in records[:limit]]
@@ -283,6 +406,10 @@ class DesktopService:
         return error_dto(row, detail=True)
 
     def set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
+        with self.account_operation(account_id, payload.expected_version):
+            return self._set_schedulable(account_id, payload, key)
+
+    def _set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
         r, controller = self.r, self.r.key_fallback_controller
         if controller is None:
             raise HTTPException(503, "调度控制器未就绪")
@@ -417,6 +544,15 @@ class ScheduleRequest(BaseModel):
     detach_managed: StrictBool = False
 
 
+class AccountVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: str = Field(min_length=64, max_length=64)
+
+
+class DeleteRequest(AccountVersionRequest):
+    detach_managed: StrictBool = False
+
+
 class ConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: str = Field(min_length=64, max_length=64)
@@ -474,6 +610,16 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         if not 1 <= limit <= 100 or (before_id is not None and before_id < 1):
             raise HTTPException(422, "分页参数无效")
         return await asyncio.to_thread(service.recoveries, before_id, limit)
+
+    @router.delete("/accounts/{account_id}")
+    async def delete_account(account_id: int, payload: DeleteRequest, request: Request) -> Any:
+        key = await auth(request)
+        return await asyncio.to_thread(service.delete_account, account_id, payload, key)
+
+    @router.post("/accounts/{account_id}/recover-state")
+    async def recover_account(account_id: int, payload: AccountVersionRequest, request: Request) -> Any:
+        key = await auth(request)
+        return await asyncio.to_thread(service.recover_account, account_id, payload, key)
 
     @router.post("/accounts/{account_id}/priority")
     async def priority(account_id: int, payload: PriorityRequest, request: Request) -> Any:

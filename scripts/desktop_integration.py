@@ -169,5 +169,54 @@ def gateway():
     print(json.dumps({'mock_gateway':'passed','success_error_success':True,'error_id':account['last_error_id'],'success_after_error':True}))
 
 
+def management():
+    _, snapshot = ops('/snapshot')
+    shared = next(a for a in snapshot['accounts'] if a['name'] == 'QA Shared')
+    other = next(a for a in snapshot['accounts'] if a['name'] == 'QA Secondary')
+    with psycopg.connect(DB) as db:
+        before = db.execute('SELECT schedulable,credentials FROM accounts WHERE id=%s', (shared['id'],)).fetchone()
+        logs = db.execute('SELECT count(*) FROM usage_logs').fetchone()[0]
+        db.execute("""UPDATE accounts SET status='error',error_message='QA recoverable',
+          rate_limit_reset_at=now()+interval '5 minutes',overload_until=now()+interval '5 minutes',
+          temp_unschedulable_until=now()+interval '5 minutes',extra=extra || %s,updated_at=now() WHERE id=%s""",
+          (Jsonb({'model_rate_limits':{'gpt-5.6-sol':{'rate_limit_reset_at':'2099-01-01T00:00:00Z'}}}), shared['id']))
+    # Refresh the shared snapshot cache before obtaining the new expected version.
+    time.sleep(1.6)
+    _, snapshot = ops('/snapshot')
+    live = next(a for a in snapshot['accounts'] if a['id'] == shared['id'])
+    assert live['recoverable']
+    status, result = ops(f"/accounts/{live['id']}/recover-state", 'POST', {'expected_version':live['version']})
+    assert status == 200 and result['verified'], (status, result)
+    with psycopg.connect(DB) as db:
+        after = db.execute('SELECT schedulable,credentials,status,rate_limit_reset_at,overload_until,temp_unschedulable_until,extra FROM accounts WHERE id=%s', (shared['id'],)).fetchone()
+        assert after[:2] == before
+        assert after[2] == 'active' and all(value is None for value in after[3:6])
+        assert not after[6].get('model_rate_limits')
+        assert db.execute('SELECT count(*) FROM usage_logs').fetchone()[0] == logs, 'Recover must not call a model'
+    _, snapshot = ops('/snapshot')
+    shared = next(a for a in snapshot['accounts'] if a['id'] == shared['id'])
+    assert not shared['recoverable']
+    assert ops(f"/accounts/{shared['id']}", 'DELETE', {'expected_version':'0'*64})[0] == 409
+    assert ops(f"/accounts/{other['id']}", 'DELETE', {'expected_version':other['version']})[0] == 409
+    status, result = ops(f"/accounts/{other['id']}", 'DELETE', {'expected_version':other['version'],'detach_managed':True})
+    assert status == 200 and result['deleted'] and result['detached'], (status,result)
+    # Delete the latest account in both groups; query must find the next live three.
+    status, result = ops(f"/accounts/{shared['id']}", 'DELETE', {'expected_version':shared['version']})
+    assert status == 200 and result['deleted'], (status,result)
+    _, snapshot = ops('/snapshot')
+    assert shared['id'] not in [a['id'] for a in snapshot['accounts']]
+    assert other['id'] not in [a['id'] for a in snapshot['accounts']]
+    recent = next(g for g in snapshot['groups'] if g['name'] == 'QA Alpha')['recent_accounts']
+    assert [a['account_name'] for a in recent] == ['QA Third','QA Fourth'], recent
+    assert next(g for g in snapshot['groups'] if g['name'] == 'QA Beta')['recent_accounts'] == []
+    _, config = ops('/config')
+    assert config['key_fallback']['managed_account_ids'] == []
+    with psycopg.connect(DB) as db:
+        assert db.execute('SELECT count(*) FROM usage_logs').fetchone()[0] == logs
+        assert db.execute('SELECT count(*) FROM ops_error_logs WHERE account_id=%s', (shared['id'],)).fetchone()[0] > 0
+    print(json.dumps({'management_integration':'passed','real_delete':True,'real_recover_state':True,
+        'deleted_group_filter':True,'managed_detach':True,'zero_model_requests':True,'error_history_preserved':True}))
+
+
 if __name__=='__main__':
-    {'seed':seed,'verify':verify,'gateway':gateway,'mock':lambda:ThreadingHTTPServer(('0.0.0.0',18082),MockUpstream).serve_forever()}[sys.argv[1]]()
+    {'seed':seed,'verify':verify,'gateway':gateway,'management':management,'mock':lambda:ThreadingHTTPServer(('0.0.0.0',18082),MockUpstream).serve_forever()}[sys.argv[1]]()

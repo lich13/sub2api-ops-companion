@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -41,8 +41,15 @@ import {
 } from "./types";
 import "./style.css";
 import UsageCell from "./UsageCell";
-import { MiniUsage, PriorityEditor, QuotaRefresh, RecoveryHistory } from "./AccountControls";
+import {
+  MiniUsage,
+  PriorityEditor,
+  QuotaRefresh,
+  RecoveryHistory,
+} from "./AccountControls";
 import TestDialog from "./TestDialog";
+import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
+import { useQuickHeight } from "./useQuickHeight";
 import { version as appVersion } from "../package.json";
 
 type Page = "accounts" | "events" | "automation" | "settings";
@@ -104,7 +111,26 @@ export default function App() {
     [type, setType] = useState(""),
     [config, setConfig] = useState<Config | null>(null),
     [history, setHistory] = useState<OpsError[] | null>(null),
-    [cursor, setCursor] = useState<number | null>(null);
+    [cursor, setCursor] = useState<number | null>(null),
+    [eventTab, setEventTab] = useState<"errors" | "recoveries">("errors"),
+    [selected, setSelected] = useState<Set<number>>(new Set()),
+    [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
+    [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null);
+  const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
+  const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
+  const filterKey = JSON.stringify([query, group, platform, filter, type]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [filterKey, connectionKey]);
+  useEffect(() => {
+    setRemovedIds(new Set());
+    setDeleteAccounts(null);
+    setHistory(null);
+    setCursor(null);
+    setDetail(null);
+    setTestAccount(null);
+    setConfirm(null);
+  }, [connectionKey]);
   const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
   useEffect(() => {
     let disposed = false;
@@ -169,9 +195,28 @@ export default function App() {
         .catch(report);
   }, [page, state.online]);
   const snap = state.snapshot,
-    accounts = snap?.accounts ?? [],
     groups = snap?.groups ?? [],
     errors = snap?.errors ?? [];
+  const accounts = useMemo(
+    () => (snap?.accounts ?? []).filter((a) => !removedIds.has(a.id)),
+    [snap?.accounts, removedIds],
+  );
+  const filteredAccounts = useMemo(
+    () =>
+      sortPriority(
+        filterAccounts(accounts, query, group, platform, filter, type),
+        ascending,
+      ),
+    [accounts, filterKey, ascending],
+  );
+  useEffect(() => {
+    const live = new Set(accounts.map((a) => a.id));
+    setSelected((old) =>
+      [...old].every((id) => live.has(id))
+        ? old
+        : new Set([...old].filter((id) => live.has(id))),
+    );
+  }, [accounts]);
   const eventRows = [
     ...new Map(
       [...(history ?? []), ...errors].map((item) => [item.id, item]),
@@ -234,7 +279,7 @@ export default function App() {
   }
   function groupRow(g: Group, compact = false) {
     const favorite = state.preferences.favorites.includes(g.id);
-    const recent =
+    const recent = (
       g.recent_accounts ??
       (g.account_id
         ? [
@@ -245,14 +290,15 @@ export default function App() {
               called_at: g.called_at,
             },
           ]
-        : []);
+        : [])
+    ).filter((call) => accounts.some((a) => a.id === call.account_id));
     return (
       <article className={`group-row ${compact ? "compact" : ""}`} key={g.id}>
         <div className="group-heading">
           <div className="group-symbol">
             <Layers3 size={16} />
           </div>
-          <strong>{g.name}</strong>
+          <strong title={g.name}>{g.name}</strong>
           <span className="platform">{g.platform}</span>
           <button
             className={`icon-button favorite ${favorite ? "selected" : ""}`}
@@ -273,44 +319,76 @@ export default function App() {
             const a = accounts.find((item) => item.id === call.account_id);
             return (
               <div className="recent-account" key={call.account_id}>
-                <div className="group-call">
-                  {!compact && (
-                    <span
-                      className={`status-dot ${a?.available ? "good" : "muted"}`}
-                    />
-                  )}
-                  <div className="call-info">
-                    <strong title={call.account_name}>
-                      {call.account_name || `账号 #${call.account_id}`}
-                    </strong>
-                    {!compact && (
-                      <span>
-                        #{call.account_id} · {call.model}
-                      </span>
-                    )}
-                  </div>
-                  {a ? schedule(a) : null}
-                </div>
-                <div className="call-time">
-                  {compact && <span>最近调用</span>}
-                  <Time at={call.called_at} />
-                </div>
-                {a?.last_error_id ? (
-                  <button
-                    className="error-link"
-                    onClick={() => void openError(a.last_error_id!)}
-                  >
-                    {!compact && <CircleAlert size={12} />}
-                    <span>{compact ? "上次错误" : "报错"}</span>
-                    <Time at={a.last_error_at} />
-                  </button>
-                ) : compact ? (
-                  <div className="call-time">
-                    <span>上次错误</span>
-                    <Time at={a?.last_error_at} />
-                  </div>
-                ) : null}
-                {compact && a && <MiniUsage account={a} />}
+                {compact ? (
+                  <>
+                    <div className="compact-identity">
+                      <strong title={call.account_name}>
+                        {call.account_name}
+                      </strong>
+                      {a && <MiniUsage account={a} />}
+                    </div>
+                    <div className="compact-times">
+                      <div>
+                        <span>最近调用</span>
+                        <Time at={call.called_at} />
+                      </div>
+                      {a?.last_error_id ? (
+                        <button
+                          onClick={() => void openError(a.last_error_id!)}
+                        >
+                          <span>上次错误</span>
+                          <Time at={a.last_error_at} />
+                        </button>
+                      ) : (
+                        <div>
+                          <span>上次错误</span>
+                          <Time at={a?.last_error_at} />
+                        </div>
+                      )}
+                    </div>
+                    {a && schedule(a)}
+                  </>
+                ) : (
+                  <>
+                    <div className="group-call">
+                      {!compact && (
+                        <span
+                          className={`status-dot ${a?.available ? "good" : "muted"}`}
+                        />
+                      )}
+                      <div className="call-info">
+                        <strong title={call.account_name}>
+                          {call.account_name || `账号 #${call.account_id}`}
+                        </strong>
+                        {!compact && (
+                          <span>
+                            #{call.account_id} · {call.model}
+                          </span>
+                        )}
+                      </div>
+                      {a ? schedule(a) : null}
+                    </div>
+                    <div className="call-time">
+                      {compact && <span>最近调用</span>}
+                      <Time at={call.called_at} />
+                    </div>
+                    {a?.last_error_id ? (
+                      <button
+                        className="error-link"
+                        onClick={() => void openError(a.last_error_id!)}
+                      >
+                        {!compact && <CircleAlert size={12} />}
+                        <span>{compact ? "上次错误" : "报错"}</span>
+                        <Time at={a.last_error_at} />
+                      </button>
+                    ) : compact ? (
+                      <div className="call-time">
+                        <span>上次错误</span>
+                        <Time at={a?.last_error_at} />
+                      </div>
+                    ) : null}
+                  </>
+                )}
               </div>
             );
           })}
@@ -383,17 +461,27 @@ export default function App() {
       <main className="main">
         <header className="topbar" data-tauri-drag-region>
           {quick ? (
-            <div className="quick-title">
-              <Activity size={19} />
-              <strong>Sub2Ops</strong>
-            </div>
+            <nav className="quick-tabs" aria-label="快捷面板">
+              <button
+                className={quickTab === "groups" ? "active" : ""}
+                onClick={() => setQuickTab("groups")}
+              >
+                分组
+              </button>
+              <button
+                className={quickTab === "errors" ? "active" : ""}
+                onClick={() => setQuickTab("errors")}
+              >
+                异常{eventRows.length > 0 && <span>{eventRows.length}</span>}
+              </button>
+            </nav>
           ) : (
             <div className="breadcrumb">
               <strong>{pages.find((p) => p.id === page)?.label}</strong>
             </div>
           )}
           <div className="top-actions">
-            {preview && <span className="preview-label">预览</span>}
+            {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
             {!quick && !preview && (
               <button
@@ -434,22 +522,6 @@ export default function App() {
             )}
           </div>
         </header>
-        {quick && state.connected && (
-          <nav className="quick-tabs" aria-label="快捷面板">
-            <button
-              className={quickTab === "groups" ? "active" : ""}
-              onClick={() => setQuickTab("groups")}
-            >
-              分组 <span>{groups.length}</span>
-            </button>
-            <button
-              className={quickTab === "errors" ? "active" : ""}
-              onClick={() => setQuickTab("errors")}
-            >
-              异常 <span>{eventRows.length}</span>
-            </button>
-          </nav>
-        )}
         {state.connected && !state.online && (
           <div className="offline">
             <Unplug size={15} />
@@ -464,289 +536,494 @@ export default function App() {
             </span>
           </div>
         )}
-        <div className="content">
-          {!ready ? (
-            <div className="empty">
-              <LoaderCircle className="spin" />
-              正在加载客户端
-            </div>
-          ) : !state.connected ? (
-            <Connection state={state} onError={report} />
-          ) : !snap ? (
-            <div className="empty">
-              <Plug size={28} />
-              <h2>等待云端数据</h2>
-              <p>{state.error || "正在连接运维服务"}</p>
-              <button onClick={() => setPage("settings")}>连接设置</button>
-              {page === "settings" && (
-                <Connection state={state} onError={report} />
-              )}
-            </div>
-          ) : quick ? (
-            <>
-              {quickTab === "groups" ? (
-                <div className="quick-groups">
-                  {visibleGroups.map((g) => groupRow(g, true))}
-                  {!groups.length && <Empty text="没有分组记录" />}
-                </div>
-              ) : (
-                <div className="error-list">
-                  {eventRows.map(errorRow)}
-                  {!eventRows.length && (
-                    <div className="quiet">
-                      <Check size={15} />
-                      暂无账号错误
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="page-heading">
-                <div>
-                  <h1>{pages.find((p) => p.id === page)?.label}</h1>
-                </div>
-                <span className="updated">
-                  <Clock3 size={13} />
-                  更新于 <Time at={snap.observed_at} />
-                </span>
+        <div
+          className={`content ${!quick && page === "events" ? "events-content" : ""}`}
+        >
+          <div ref={quickBody} className="content-inner">
+            {!ready ? (
+              <div className="empty">
+                <LoaderCircle className="spin" />
+                正在加载客户端
               </div>
-              {page === "accounts" && (
-                <>
-                  <QuotaRefresh online={state.online} report={report} />
-                  <div className="filters">
-                    <label className="search">
-                      <Search size={15} />
-                      <input
-                        placeholder="搜索名称或账号 ID"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                    </label>
-                    <select
-                      aria-label="分组筛选"
-                      value={group}
-                      onChange={(e) => setGroup(e.target.value)}
-                    >
-                      <option value="">全部分组</option>
-                      {groups.map((g) => (
-                        <option value={g.id} key={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="平台筛选"
-                      value={platform}
-                      onChange={(e) => setPlatform(e.target.value)}
-                    >
-                      <option value="">全部平台</option>
-                      {[...new Set(accounts.map((a) => a.platform))].map(
-                        (p) => (
-                          <option key={p}>{p}</option>
-                        ),
-                      )}
-                    </select>
-                    <select
-                      aria-label="类型筛选"
-                      value={type}
-                      onChange={(e) => setType(e.target.value)}
-                    >
-                      <option value="">全部类型</option>
-                      {[...new Set(accounts.map((a) => a.type))].map((p) => (
-                        <option key={p}>{p}</option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="状态筛选"
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value)}
-                    >
-                      <option value="">全部状态</option>
-                      <option value="ready">可调度</option>
-                      <option value="off">调度关闭</option>
-                      <option value="managed">回退托管</option>
-                      <option value="error">曾有错误</option>
-                    </select>
+            ) : !state.connected ? (
+              <Connection state={state} onError={report} />
+            ) : !snap ? (
+              <div className="empty">
+                <Plug size={28} />
+                <h2>等待云端数据</h2>
+                <p>{state.error || "正在连接运维服务"}</p>
+                <button onClick={() => setPage("settings")}>连接设置</button>
+                {page === "settings" && (
+                  <Connection state={state} onError={report} />
+                )}
+              </div>
+            ) : quick ? (
+              <>
+                {quickTab === "groups" ? (
+                  <div className="quick-groups">
+                    {visibleGroups.map((g) => groupRow(g, true))}
+                    {!groups.length && <Empty text="没有分组记录" />}
                   </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>账号</th>
-                          <th aria-sort={ascending ? "ascending" : "descending"}><button className="sort-button" onClick={() => setAscending(!ascending)}>优先级 {ascending ? "↑" : "↓"}</button></th>
-                          <th>当前状态</th>
-                          <th>用量窗口</th>
-                          <th>最近报错</th>
-                          <th>允许调度</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortPriority(filterAccounts(
-                          accounts,
-                          query,
-                          group,
-                          platform,
-                          filter,
-                          type,
-                        ), ascending).map((a) => (
-                          <tr key={a.id}>
-                            <td className="account-name">
-                              <strong title={a.name}>{a.name}</strong>
-                              <small className="account-identity">
-                                {a.platform === "openai" ? "OpenAI" : a.platform === "grok" ? "Grok" : a.platform} · {a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}
-                                {a.managed && (
-                                  <span className="managed-tag">回退托管</span>
-                                )}
-                              </small>
-                            </td>
-                            <td><PriorityEditor account={a} online={state.online} report={report} /></td>
-                            <td>
-                              <span
-                                className={`account-status ${a.available ? "good-text" : ""}`}
-                              >
-                                <i
-                                  className={`status-dot ${a.available ? "good" : "warning"}`}
-                                />
-                                {a.available
-                                  ? "可调度"
-                                  : a.blockers.map((b) => b.label).join(" / ")}
-                              </span>
-                              {a.blockers.filter((b) => b.code === "rate_limit_reset_at").map((b) => <small key={b.code} className="limit-until">预计解除 {b.until ? <Time at={b.until} /> : "时间未知"}</small>)}
-                            </td>
-                            <td>
-                              <UsageCell
-                                account={a}
-                                online={state.online}
-                                refresh={() => command("refresh")}
-                                report={report}
-                              />
-                            </td>
-                            <td>
-                              {a.last_error_id ? (
-                                <button
-                                  className="error-time"
-                                  onClick={() =>
-                                    void openError(a.last_error_id!)
-                                  }
-                                >
-                                  <span>
-                                    {a.last_error_code ||
-                                      a.last_error_status ||
-                                      "上游错误"}
-                                  </span>
-                                  <Time at={a.last_error_at} />
-                                  {a.success_after_error && (
-                                    <small className="good-text">
-                                      之后已有成功调用
-                                    </small>
-                                  )}
-                                </button>
-                              ) : a.error_message ? (
-                                <span title={a.error_message}>
-                                  错误时间未知
-                                </span>
-                              ) : (
-                                <span className="muted">暂无记录</span>
-                              )}
-                            </td>
-                            <td>{schedule(a)}</td>
-                            <td><button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!filterAccounts(
-                    accounts,
-                    query,
-                    group,
-                    platform,
-                    filter,
-                    type,
-                  ).length && <Empty text="没有符合条件的账号" />}
-                </>
-              )}
-              {page === "events" && (
-                <>
-                  <div className="section-heading">
-                    <h2>上游与认证错误</h2>
-                    <button
-                      className="text-button"
-                      disabled={!state.online}
-                      onClick={() =>
-                        void api<{
-                          items: OpsError[];
-                          next_cursor: number | null;
-                        }>("GET", "/errors")
-                          .then((r) => {
-                            setHistory(r.items);
-                            setCursor(r.next_cursor);
-                          })
-                          .catch(report)
-                      }
-                    >
-                      刷新记录
-                    </button>
-                  </div>
+                ) : (
                   <div className="error-list">
                     {eventRows.map(errorRow)}
-                    {!eventRows.length && <Empty text="暂无账号错误" />}
+                    {!eventRows.length && (
+                      <div className="quiet">
+                        <Check size={15} />
+                        暂无账号错误
+                      </div>
+                    )}
                   </div>
-                  {cursor && (
-                    <button
-                      className="load-more"
-                      onClick={() =>
-                        void api<{
-                          items: OpsError[];
-                          next_cursor: number | null;
-                        }>("GET", `/errors?before_id=${cursor}`)
-                          .then((r) => {
-                            setHistory([...(history ?? []), ...r.items]);
-                            setCursor(r.next_cursor);
-                          })
-                          .catch(report)
-                      }
+                )}
+              </>
+            ) : (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <h1>{pages.find((p) => p.id === page)?.label}</h1>
+                  </div>
+                  <span className="updated">
+                    <Clock3 size={13} />
+                    更新于 <Time at={snap.observed_at} />
+                  </span>
+                </div>
+                {page === "accounts" && (
+                  <>
+                    <QuotaRefresh online={state.online} report={report} />
+                    <div className="filters">
+                      <label className="search">
+                        <Search size={15} />
+                        <input
+                          placeholder="搜索名称或账号 ID"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                        />
+                      </label>
+                      <select
+                        aria-label="分组筛选"
+                        value={group}
+                        onChange={(e) => setGroup(e.target.value)}
+                      >
+                        <option value="">全部分组</option>
+                        {groups.map((g) => (
+                          <option value={g.id} key={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="平台筛选"
+                        value={platform}
+                        onChange={(e) => setPlatform(e.target.value)}
+                      >
+                        <option value="">全部平台</option>
+                        {[...new Set(accounts.map((a) => a.platform))].map(
+                          (p) => (
+                            <option key={p}>{p}</option>
+                          ),
+                        )}
+                      </select>
+                      <select
+                        aria-label="类型筛选"
+                        value={type}
+                        onChange={(e) => setType(e.target.value)}
+                      >
+                        <option value="">全部类型</option>
+                        {[...new Set(accounts.map((a) => a.type))].map((p) => (
+                          <option key={p}>{p}</option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="状态筛选"
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                      >
+                        <option value="">全部状态</option>
+                        <option value="ready">可调度</option>
+                        <option value="off">调度关闭</option>
+                        <option value="managed">回退托管</option>
+                        <option value="error">曾有错误</option>
+                      </select>
+                    </div>
+                    <div className="table-wrap">
+                      <div className="selection-bar">
+                        <span>已选 {selected.size} 个账号</span>
+                        <button
+                          className="danger-text"
+                          disabled={!state.online || selected.size === 0}
+                          onClick={() =>
+                            setDeleteAccounts(
+                              accounts.filter((a) => selected.has(a.id)),
+                            )
+                          }
+                        >
+                          删除所选
+                        </button>
+                      </div>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th className="select-cell">
+                              <input
+                                type="checkbox"
+                                aria-label="全选当前筛选账号"
+                                checked={
+                                  filteredAccounts.length > 0 &&
+                                  filteredAccounts.every((a) =>
+                                    selected.has(a.id),
+                                  )
+                                }
+                                ref={(element) => {
+                                  if (element)
+                                    element.indeterminate =
+                                      filteredAccounts.some((a) =>
+                                        selected.has(a.id),
+                                      ) &&
+                                      !filteredAccounts.every((a) =>
+                                        selected.has(a.id),
+                                      );
+                                }}
+                                disabled={
+                                  !state.online || !filteredAccounts.length
+                                }
+                                onChange={(e) =>
+                                  setSelected(
+                                    e.target.checked
+                                      ? new Set(
+                                          filteredAccounts.map((a) => a.id),
+                                        )
+                                      : new Set(),
+                                  )
+                                }
+                              />
+                            </th>
+                            <th>账号</th>
+                            <th
+                              aria-sort={ascending ? "ascending" : "descending"}
+                            >
+                              <button
+                                className="sort-button"
+                                onClick={() => setAscending(!ascending)}
+                              >
+                                优先级 {ascending ? "↑" : "↓"}
+                              </button>
+                            </th>
+                            <th>当前状态</th>
+                            <th>用量窗口</th>
+                            <th>最近报错</th>
+                            <th>允许调度</th>
+                            <th>操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAccounts.map((a) => (
+                            <tr key={a.id}>
+                              <td className="select-cell">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`选择 ${a.name}`}
+                                  checked={selected.has(a.id)}
+                                  disabled={!state.online}
+                                  onChange={(e) =>
+                                    setSelected((old) => {
+                                      const next = new Set(old);
+                                      if (e.target.checked) next.add(a.id);
+                                      else next.delete(a.id);
+                                      return next;
+                                    })
+                                  }
+                                />
+                              </td>
+                              <td className="account-name">
+                                <strong title={a.name}>{a.name}</strong>
+                                <small className="account-identity">
+                                  {a.platform === "openai"
+                                    ? "OpenAI"
+                                    : a.platform === "grok"
+                                      ? "Grok"
+                                      : a.platform}{" "}
+                                  ·{" "}
+                                  {a.type === "oauth"
+                                    ? "OAuth"
+                                    : a.type === "apikey"
+                                      ? "Key"
+                                      : a.type}
+                                  {a.managed && (
+                                    <span className="managed-tag">
+                                      回退托管
+                                    </span>
+                                  )}
+                                </small>
+                              </td>
+                              <td>
+                                <PriorityEditor
+                                  account={a}
+                                  online={state.online}
+                                  report={report}
+                                />
+                              </td>
+                              <td>
+                                <span
+                                  className={`account-status ${a.available ? "good-text" : ""}`}
+                                >
+                                  <i
+                                    className={`status-dot ${a.available ? "good" : "warning"}`}
+                                  />
+                                  {a.available
+                                    ? "可调度"
+                                    : a.blockers
+                                        .map((b) => b.label)
+                                        .join(" / ")}
+                                </span>
+                                {a.blockers
+                                  .filter(
+                                    (b) => b.code === "rate_limit_reset_at",
+                                  )
+                                  .map((b) => (
+                                    <small key={b.code} className="limit-until">
+                                      预计解除{" "}
+                                      {b.until ? (
+                                        <Time at={b.until} />
+                                      ) : (
+                                        "时间未知"
+                                      )}
+                                    </small>
+                                  ))}
+                              </td>
+                              <td>
+                                <UsageCell
+                                  account={a}
+                                  online={state.online}
+                                  refresh={() => command("refresh")}
+                                  report={report}
+                                />
+                              </td>
+                              <td>
+                                {a.last_error_id ? (
+                                  <button
+                                    className="error-time"
+                                    onClick={() =>
+                                      void openError(a.last_error_id!)
+                                    }
+                                  >
+                                    <span>
+                                      {a.last_error_code ||
+                                        a.last_error_status ||
+                                        "上游错误"}
+                                    </span>
+                                    <Time at={a.last_error_at} />
+                                    {a.success_after_error && (
+                                      <small className="good-text">
+                                        之后已有成功调用
+                                      </small>
+                                    )}
+                                  </button>
+                                ) : a.error_message ? (
+                                  <span title={a.error_message}>
+                                    错误时间未知
+                                  </span>
+                                ) : (
+                                  <span className="muted">暂无记录</span>
+                                )}
+                              </td>
+                              <td>{schedule(a)}</td>
+                              <td>
+                                <div className="account-actions">
+                                  <button
+                                    className="test-button"
+                                    disabled={
+                                      !state.online ||
+                                      !["openai", "grok"].includes(
+                                        a.platform,
+                                      ) ||
+                                      !["oauth", "apikey"].includes(a.type)
+                                    }
+                                    onClick={() => setTestAccount(a)}
+                                  >
+                                    测试连接
+                                  </button>
+                                  <RecoverStateButton
+                                    account={a}
+                                    online={state.online}
+                                    report={report}
+                                  />
+                                  <button
+                                    className="danger-text"
+                                    disabled={!state.online}
+                                    onClick={() => setDeleteAccounts([a])}
+                                  >
+                                    删除
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!filterAccounts(
+                      accounts,
+                      query,
+                      group,
+                      platform,
+                      filter,
+                      type,
+                    ).length && <Empty text="没有符合条件的账号" />}
+                  </>
+                )}
+                {page === "events" && (
+                  <div className="events-view">
+                    <nav
+                      className="event-tabs"
+                      role="tablist"
+                      aria-label="事件类型"
                     >
-                      加载更早记录
-                    </button>
-                  )}
-                  <RecoveryHistory latest={snap.recoveries ?? []} online={state.online} report={report} />
-                </>
-              )}
-              {(page === "automation" || page === "settings") &&
-                (config ? (
-                  <SettingsPage
-                    page={page}
-                    config={config}
-                    accounts={accounts}
-                    state={state}
-                    prefs={prefs}
-                    onChange={(key, value) =>
-                      setConfig({ ...config, [key]: value })
-                    }
-                    onMessage={setToast}
-                    onError={report}
-                  />
-                ) : (
-                  <Empty text="正在读取设置" />
-                ))}
-            </>
-          )}
+                      <button
+                        role="tab"
+                        id="errors-tab"
+                        aria-selected={eventTab === "errors"}
+                        aria-controls="errors-panel"
+                        onClick={() => setEventTab("errors")}
+                      >
+                        上游与认证错误
+                      </button>
+                      <button
+                        role="tab"
+                        id="recoveries-tab"
+                        aria-selected={eventTab === "recoveries"}
+                        aria-controls="recoveries-panel"
+                        onClick={() => setEventTab("recoveries")}
+                      >
+                        恢复成功
+                      </button>
+                    </nav>
+                    <div className="event-panels">
+                      <section
+                        id="errors-panel"
+                        className="event-panel"
+                        role="tabpanel"
+                        aria-labelledby="errors-tab"
+                        hidden={eventTab !== "errors"}
+                      >
+                        <div className="section-heading">
+                          <span>{eventRows.length} 条记录</span>
+                          <button
+                            className="text-button"
+                            disabled={!state.online}
+                            onClick={() =>
+                              void api<{
+                                items: OpsError[];
+                                next_cursor: number | null;
+                              }>("GET", "/errors")
+                                .then((r) => {
+                                  setHistory(r.items);
+                                  setCursor(r.next_cursor);
+                                })
+                                .catch(report)
+                            }
+                          >
+                            刷新记录
+                          </button>
+                        </div>
+                        <div className="error-list">
+                          {eventRows.map(errorRow)}
+                          {!eventRows.length && <Empty text="暂无账号错误" />}
+                        </div>
+                        {cursor && (
+                          <button
+                            className="load-more"
+                            onClick={() =>
+                              void api<{
+                                items: OpsError[];
+                                next_cursor: number | null;
+                              }>("GET", `/errors?before_id=${cursor}`)
+                                .then((r) => {
+                                  setHistory([...(history ?? []), ...r.items]);
+                                  setCursor(r.next_cursor);
+                                })
+                                .catch(report)
+                            }
+                          >
+                            加载更早记录
+                          </button>
+                        )}
+                      </section>
+                      <section
+                        id="recoveries-panel"
+                        className="event-panel"
+                        role="tabpanel"
+                        aria-labelledby="recoveries-tab"
+                        hidden={eventTab !== "recoveries"}
+                      >
+                        <RecoveryHistory
+                          key={connectionKey}
+                          latest={snap.recoveries ?? []}
+                          accounts={accounts}
+                          online={state.online}
+                          report={report}
+                        />
+                      </section>
+                    </div>
+                  </div>
+                )}
+                {(page === "automation" || page === "settings") &&
+                  (config ? (
+                    <SettingsPage
+                      page={page}
+                      config={config}
+                      accounts={accounts}
+                      state={state}
+                      prefs={prefs}
+                      onChange={(key, value) =>
+                        setConfig({ ...config, [key]: value })
+                      }
+                      onMessage={setToast}
+                      onError={report}
+                    />
+                  ) : (
+                    <Empty text="正在读取设置" />
+                  ))}
+              </>
+            )}
+          </div>
         </div>
         {quick && (
           <footer className="quick-bottom">
             <span>
               <Time at={snap?.observed_at} />
             </span>
-                  <button onClick={() => void command("show_main").catch(report)}>
-                    打开主窗口 <ArrowUpRight size={14} />
+            <button onClick={() => void command("show_main").catch(report)}>
+              打开主窗口 <ArrowUpRight size={14} />
             </button>
           </footer>
         )}
       </main>
+      {deleteAccounts && (
+        <DeleteAccountsDialog
+          accounts={deleteAccounts}
+          online={state.online}
+          removed={(id) => {
+            setRemovedIds((old) => new Set([...old, id]));
+            setSelected(
+              (old) => new Set([...old].filter((value) => value !== id)),
+            );
+          }}
+          finished={(results) =>
+            setSelected(
+              new Set(
+                results
+                  .filter(
+                    (r) =>
+                      r.status === "failed" &&
+                      accounts.some((a) => a.id === r.id),
+                  )
+                  .map((r) => r.id),
+              ),
+            )
+          }
+          close={() => setDeleteAccounts(null)}
+        />
+      )}
       {(detail || detailBusy) && (
         <div className="drawer-backdrop" onClick={() => setDetail(null)}>
           <aside className="drawer" onClick={(e) => e.stopPropagation()}>
@@ -869,7 +1146,13 @@ export default function App() {
           </section>
         </div>
       )}
-      {testAccount && <TestDialog account={accounts.find((a) => a.id === testAccount.id) ?? testAccount} online={state.online} close={() => setTestAccount(null)} />}
+      {testAccount && (
+        <TestDialog
+          account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
+          online={state.online}
+          close={() => setTestAccount(null)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>
