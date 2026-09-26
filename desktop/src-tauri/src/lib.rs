@@ -153,6 +153,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
                 || account_path(plain, "/models")
+                || account_path(plain, "/quality")
         }
         "PUT" => {
             ["oauth", "bark", "key_fallback"]
@@ -935,6 +936,10 @@ mod tests {
         assert!(allowed_request("GET", "/errors?account_id=7"));
         assert!(allowed_request("DELETE", "/accounts/7"));
         assert!(allowed_request("POST", "/accounts/7/recover-state"));
+        assert!(allowed_request("GET", "/accounts/7/quality"));
+        assert!(!allowed_request("POST", "/accounts/7/quality"));
+        assert!(!allowed_request("GET", "/accounts/0/quality"));
+        assert!(!allowed_request("GET", "/accounts/7/quality/../credentials"));
         for p in ["/accounts/0", "/accounts/7/", "/accounts/7?all=true", "/accounts"] {
             assert!(!allowed_request("DELETE", p));
         }
