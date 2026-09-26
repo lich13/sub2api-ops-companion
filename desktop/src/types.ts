@@ -10,6 +10,7 @@ export type Account = {
   group_ids: number[];
   blockers: { code: string; label: string; until?: string }[];
   managed: boolean;
+  recoverable?: boolean;
   version: string;
   last_success_at: string | null;
   last_error_at: string | null;
@@ -124,6 +125,7 @@ export type Preferences = {
   launch_at_login: boolean;
 };
 export type ViewState = {
+  connection_revision?: number;
   connected: boolean;
   online: boolean;
   error: string;
@@ -145,32 +147,54 @@ export const initialState: ViewState = {
   },
 };
 const timeFormatter = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  timeZone: "Asia/Shanghai",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
 });
 export function fullTime(value: string | null | undefined): string {
   if (!value) return "暂无记录";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "时间未知";
   const parts = Object.fromEntries(
-    timeFormatter
-      .formatToParts(date)
-      .map(({ type, value }) => [type, value]),
+    timeFormatter.formatToParts(date).map(({ type, value }) => [type, value]),
   );
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
 export function sortPriority(accounts: Account[], ascending = true): Account[] {
-  return [...accounts].sort((a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id);
+  return [...accounts].sort(
+    (a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id,
+  );
 }
 export type TestEvent = {
-  type: string; text?: string; model?: string; error?: string; success?: boolean;
-  image_url?: string; audio_url?: string; video_url?: string;
-  duration_ms?: number; completed_at?: string;
+  type: string;
+  text?: string;
+  model?: string;
+  error?: string;
+  success?: boolean;
+  image_url?: string;
+  audio_url?: string;
+  video_url?: string;
+  duration_ms?: number;
+  completed_at?: string;
 };
 export type QuotaBatch = {
-  id: string; status: string; total: number; completed: number;
-  started_at: string; completed_at: string | null;
-  items: {account_id: number; account_name: string; platform: string; status: string; error?: string}[];
+  id: string;
+  status: string;
+  total: number;
+  completed: number;
+  started_at: string;
+  completed_at: string | null;
+  items: {
+    account_id: number;
+    account_name: string;
+    platform: string;
+    status: string;
+    error?: string;
+  }[];
 };
 export function filterAccounts(
   accounts: Account[],
