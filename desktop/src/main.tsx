@@ -29,6 +29,7 @@ import { api, command, preview, subscribe, updates } from "./bridge";
 import {
   filterAccounts,
   sortPriority,
+  sortQuality,
   fullTime,
   initialState,
   type Account,
@@ -50,6 +51,7 @@ import {
 import TestDialog from "./TestDialog";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
+import QualityDialog, { QualityBadge } from "./AccountQuality";
 import { version as appVersion } from "../package.json";
 
 type Page = "accounts" | "events" | "automation" | "settings";
@@ -97,6 +99,9 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [ascending, setAscending] = useState(true),
+    [sortBy, setSortBy] = useState<"priority" | "quality">("priority"),
+    [qualityFilter, setQualityFilter] = useState(""),
+    [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
@@ -118,7 +123,14 @@ export default function App() {
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null);
   const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
-  const filterKey = JSON.stringify([query, group, platform, filter, type]);
+  const filterKey = JSON.stringify([
+    query,
+    group,
+    platform,
+    filter,
+    type,
+    qualityFilter,
+  ]);
   useEffect(() => {
     setSelected(new Set());
   }, [filterKey, connectionKey]);
@@ -129,6 +141,7 @@ export default function App() {
     setCursor(null);
     setDetail(null);
     setTestAccount(null);
+    setQualityAccount(null);
     setConfirm(null);
   }, [connectionKey]);
   const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
@@ -203,14 +216,17 @@ export default function App() {
   );
   const filteredAccounts = useMemo(
     () =>
-      sortPriority(
-        filterAccounts(accounts, query, group, platform, filter, type),
+      (sortBy === "quality" ? sortQuality : sortPriority)(
+        filterAccounts(accounts, query, group, platform, filter, type).filter(
+          (a) => !qualityFilter || a.quality?.grade === qualityFilter,
+        ),
         ascending,
       ),
-    [accounts, filterKey, ascending],
+    [accounts, filterKey, ascending, sortBy],
   );
   useEffect(() => {
     const live = new Set(accounts.map((a) => a.id));
+    setQualityAccount((old) => (old && !live.has(old.id) ? null : old));
     setSelected((old) =>
       [...old].every((id) => live.has(id))
         ? old
@@ -644,6 +660,16 @@ export default function App() {
                         <option value="managed">回退托管</option>
                         <option value="error">曾有错误</option>
                       </select>
+                      <select
+                        aria-label="质量筛选"
+                        value={qualityFilter}
+                        onChange={(e) => setQualityFilter(e.target.value)}
+                      >
+                        <option value="">全部质量</option>
+                        <option value="green">绿色 · 良好</option>
+                        <option value="yellow">黄色 · 关注</option>
+                        <option value="red">红色 · 异常</option>
+                      </select>
                     </div>
                     <div className="table-wrap">
                       <div className="selection-bar">
@@ -699,13 +725,55 @@ export default function App() {
                             </th>
                             <th>账号</th>
                             <th
-                              aria-sort={ascending ? "ascending" : "descending"}
+                              aria-sort={
+                                sortBy === "priority"
+                                  ? ascending
+                                    ? "ascending"
+                                    : "descending"
+                                  : "none"
+                              }
                             >
                               <button
                                 className="sort-button"
-                                onClick={() => setAscending(!ascending)}
+                                onClick={() => {
+                                  setSortBy("priority");
+                                  setAscending(
+                                    sortBy === "priority" ? !ascending : true,
+                                  );
+                                }}
                               >
-                                优先级 {ascending ? "↑" : "↓"}
+                                优先级{" "}
+                                {sortBy === "priority"
+                                  ? ascending
+                                    ? "↑"
+                                    : "↓"
+                                  : ""}
+                              </button>
+                            </th>
+                            <th
+                              aria-sort={
+                                sortBy === "quality"
+                                  ? ascending
+                                    ? "ascending"
+                                    : "descending"
+                                  : "none"
+                              }
+                            >
+                              <button
+                                className="sort-button"
+                                onClick={() => {
+                                  setSortBy("quality");
+                                  setAscending(
+                                    sortBy === "quality" ? !ascending : false,
+                                  );
+                                }}
+                              >
+                                质量{" "}
+                                {sortBy === "quality"
+                                  ? ascending
+                                    ? "↑"
+                                    : "↓"
+                                  : ""}
                               </button>
                             </th>
                             <th>当前状态</th>
@@ -761,6 +829,17 @@ export default function App() {
                                   online={state.online}
                                   report={report}
                                 />
+                              </td>
+                              <td className="quality-cell">
+                                {["openai", "grok"].includes(a.platform) &&
+                                ["oauth", "apikey"].includes(a.type) ? (
+                                  <QualityBadge
+                                    value={a.quality}
+                                    onClick={() => setQualityAccount(a)}
+                                  />
+                                ) : (
+                                  "—"
+                                )}
                               </td>
                               <td>
                                 <span
@@ -1151,6 +1230,13 @@ export default function App() {
           account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
           online={state.online}
           close={() => setTestAccount(null)}
+        />
+      )}
+      {qualityAccount && (
+        <QualityDialog
+          key={`${connectionKey}:${qualityAccount.id}`}
+          account={qualityAccount}
+          onClose={() => setQualityAccount(null)}
         />
       )}
       {toast && (

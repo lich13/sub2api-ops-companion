@@ -26,6 +26,7 @@ from .quota_snapshot import usage_windows
 from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
 from .desktop_actions import DesktopActions, PriorityRequest, TestRequest
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
+from .account_quality import QualityCache, SUPPORTED
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -191,8 +192,10 @@ class DesktopService:
         self._usage_locks_guard = threading.Lock()
         self._uncertain_resets: set[int] = set()
         self.actions = DesktopActions(self)
+        self.quality = QualityCache(getattr(runtime, "db", None))
 
     async def close(self) -> None:
+        self.quality.close()
         await self.actions.close()
 
     def account_lock(self, account_id: int) -> threading.Lock:
@@ -381,6 +384,10 @@ class DesktopService:
             for account in accounts:
                 attach_stats(account["id"], account["usage"], self._stats, free_token_limit=500_000)
                 account["usage_windows"] = account["usage"]["windows"]
+            qualities = self.quality.get([a["id"] for a in accounts if a["platform"] in ("openai", "grok") and a["type"] in ("oauth", "apikey")])
+            for account in accounts:
+                if account["id"] in qualities:
+                    account["quality"] = qualities[account["id"]]
             groups = group_dtos(r.db.fetch_all(GROUP_SQL))
             errors = self.errors(None, None, 20)
             self._cached = jsonable_encoder({"schema_version": 1, "observed_at": now, "accounts": accounts,
@@ -388,6 +395,12 @@ class DesktopService:
                                            "recoveries": self.recoveries(limit=20)["items"]})
             self._cached_at = time.monotonic()
             return self._cached
+
+    def quality_detail(self, account_id: int) -> dict[str, Any]:
+        row = self.r.db.fetch_one(f"SELECT id FROM accounts WHERE id=%(id)s AND {SUPPORTED}", {"id": account_id})
+        if not row:
+            raise HTTPException(404, "账号不存在或不支持质量评分")
+        return self.quality.get([account_id], detail=True)[account_id]
 
     def errors(self, account_id: int | None, before_id: int | None, limit: int = 50) -> dict[str, Any]:
         rows = self.r.db.fetch_all(f"""SELECT {ERROR_FIELDS} FROM ops_error_logs e
@@ -592,6 +605,13 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         if not 1 <= limit <= 100 or (account_id is not None and account_id < 1) or (before_id is not None and before_id < 1):
             raise HTTPException(422, "分页参数无效")
         return await asyncio.to_thread(service.errors, account_id, before_id, limit)
+
+    @router.get("/accounts/{account_id}/quality")
+    async def quality_detail(account_id: int, request: Request) -> Any:
+        await auth(request)
+        if account_id < 1:
+            raise HTTPException(422, "账号编号无效")
+        return await asyncio.to_thread(service.quality_detail, account_id)
 
     @router.get("/errors/{error_id}")
     async def error_detail(error_id: int, request: Request) -> Any:
