@@ -138,8 +138,10 @@ def composite_target(model: str, routes: list[dict], accounts: list[dict]) -> tu
 def targets(group: dict, model: str, accounts: list[dict], routes: list[dict]) -> list[tuple[dict, str]]:
     eligible = [a for a in accounts if a.get("status") == "active" and a.get("schedulable")]
     selected = group.get("codex_models_manifest_config") or {}
-    if selected.get("enabled") and selected.get("account_ids"):
-        eligible = [a for a in eligible if a["id"] in selected["account_ids"]]
+    if selected.get("enabled"):
+        by_id = {a["id"]: a for a in eligible}
+        pinned = [by_id[account_id] for account_id in selected.get("account_ids", []) if account_id in by_id]
+        eligible = pinned + ([a for a in eligible if a not in pinned] if selected.get("fallback_to_scheduler") else [])
     target = composite_target(model, routes, eligible) if group["platform"] == "composite" else (group["platform"], model)
     if not target:
         return []
@@ -155,5 +157,15 @@ def transform(body: dict, overrides: dict, allowlist: dict, aliases: dict | None
     for model, descriptor in (aliases or {}).items():
         if model not in present and admitted(allowlist, model):
             output["models"].append({**copy.deepcopy(descriptor), "slug": model})
-    output["models"] = [merge(m, overrides.get(m["slug"], {})) for m in output["models"] if admitted(allowlist, m["slug"])]
+    entries = []
+    for model in output["models"]:
+        if not admitted(allowlist, model["slug"]):
+            continue
+        patch = overrides.get(model["slug"], {})
+        if patch:
+            # A native catalog can change after a valid save. An incompatible
+            # old patch must take the fail-open path, not emit an invalid model.
+            validate_fields(patch, model)
+        entries.append(merge(model, patch))
+    output["models"] = entries
     return output

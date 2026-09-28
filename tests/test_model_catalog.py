@@ -62,6 +62,8 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(result["future"], {"x": True})
         self.assertEqual(body["models"][0]["display_name"], "Astra")
         self.assertFalse(admitted({"enabled": True, "models": ["gpt-?"]}, "gpt-6"))
+        with self.assertRaises(ValueError):
+            transform(body, {"gpt-6-astra": {"max_context_window": 10}}, {"enabled": False, "models": []})
 
     def test_modelsdev_missing_fields_and_explicit_reasoning(self):
         self.assertEqual(import_fields({"id": "m", "name": "Name", "reasoning": True}), {"display_name": "Name"})
@@ -83,6 +85,7 @@ class RuleTests(unittest.TestCase):
         group = {"platform": "composite"}
         self.assertEqual(targets(group, "alias", accounts, routes), [(accounts[0], "real")])
         self.assertEqual(targets({**group, "codex_models_manifest_config": {"enabled": True, "account_ids": [9]}}, "alias", accounts, routes), [])
+        self.assertEqual(targets({**group, "codex_models_manifest_config": {"enabled": True, "account_ids": [9], "fallback_to_scheduler": True}}, "alias", accounts, routes), [(accounts[0], "real")])
         self.assertIsNone(composite_target("alias", [{**routes[0], "endpoint": "images"}], accounts))
         ambiguous = [*accounts, {**accounts[0], "platform": "grok"}]
         self.assertIsNone(composite_target("public", [], ambiguous))
