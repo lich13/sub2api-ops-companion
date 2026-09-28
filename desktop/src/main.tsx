@@ -52,12 +52,14 @@ import TestDialog from "./TestDialog";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
+import ModelConfig from "./ModelConfig";
 import { version as appVersion } from "../package.json";
 
-type Page = "accounts" | "events" | "automation" | "settings";
+type Page = "accounts" | "models" | "events" | "automation" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
+  { id: "models", label: "模型", icon: Layers3 },
   { id: "events", label: "事件", icon: Bell },
   { id: "automation", label: "自动化", icon: SlidersHorizontal },
   { id: "settings", label: "设置", icon: Settings2 },
@@ -603,6 +605,7 @@ export default function App() {
                     更新于 <Time at={snap.observed_at} />
                   </span>
                 </div>
+                {page === "models" && <ModelConfig key={connectionKey} online={state.online} />}
                 {page === "accounts" && (
                   <>
                     <QuotaRefresh online={state.online} report={report} />

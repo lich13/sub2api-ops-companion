@@ -1,4 +1,4 @@
-"""Shared web/desktop configuration writes, including optimistic concurrency."""
+"""Desktop configuration writes, including optimistic concurrency."""
 from __future__ import annotations
 
 import asyncio

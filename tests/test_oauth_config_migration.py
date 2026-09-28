@@ -13,7 +13,7 @@ class OAuthConfigMigrationTests(unittest.TestCase):
     def fixture(self, root):
         env = {"TELEGRAM_CONFIG_PATH": str(root / "old.json"), "TELEGRAM_STATE_PATH": str(root / "pairing.json"),
                "OAUTH_CONFIG_PATH": str(root / "oauth.json"), "USAGE_QUERY_STATE_PATH": str(root / "state.json"),
-               "TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY": "7", "OPS_SESSION_SECRET": "test", "DATABASE_URL": "test"}
+               "TELEGRAM_OAUTH_USAGE_REFRESH_CONCURRENCY": "7", "DATABASE_URL": "test"}
         (root / "old.json").write_text(json.dumps({"bot_token": "discard-token", "oauth_daily_test_enabled": False,
             "oauth_daily_test_time": "05:15", "oauth_recovery_monitor_enabled": False, "oauth_recovery_test_model_id": "keep-model"}))
         (root / "pairing.json").write_text('{"paired_user_ids":[1]}')

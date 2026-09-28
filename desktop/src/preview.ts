@@ -465,6 +465,9 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (String(args.path).startsWith("/model-")) {
+      return (await import("./modelPreview")).modelPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>);
+    }
     const path = String(args.path),
       body = args.body as {
         changes: Record<string, unknown>;

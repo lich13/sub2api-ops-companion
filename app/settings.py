@@ -12,11 +12,8 @@ from .bark import DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
 @dataclass
 class Settings:
     database_url: str
-    session_secret: str
-    session_ttl_seconds: int
     base_path: str
     audit_path: str
-    session_store_path: str = "/data/sessions.json"
     app_name: str = "Sub2API Ops Companion"
     usage_query_state_path: str = "/data/usage-query-state.json"
     oauth_config_path: str = "/data/oauth-config.json"
@@ -34,16 +31,10 @@ class Settings:
     oauth_early_probe_batch_size: int = 8
     oauth_7d_probe_interval_seconds: int = 3600
     oauth_recovery_test_model_id: str = "gpt-5.6-luna"
-    update_enabled: bool = True
-    update_workdir: str = "/workspace"
-    update_branch: str = "main"
-    sso_config_path: str = "/data/sso-config.json"
+    sub2api_config_path: str = "/data/sub2api-config.json"
+    model_config_path: str = "/data/group-model-config.json"
     sub2api_base_url: str = ""
     sub2api_verify_base_url: str = ""
-    sub2api_sso_enabled: bool = False
-    sub2api_sso_required_role: str = "admin"
-    sub2api_sso_session_ttl_seconds: int = 86400
-    sub2api_sso_verify_timeout_seconds: int = 5
 
 
 def daily_test_time(value: object) -> str:
@@ -138,9 +129,6 @@ def bark_config_schema_valid(config: dict[str, object], parsed: bool) -> bool:
 
 def load_settings() -> Settings:
     base_path = os.getenv("BASE_PATH", "/sub2ops").rstrip("/")
-    session_secret = os.getenv("OPS_SESSION_SECRET", "")
-    if not session_secret:
-        raise RuntimeError("OPS_SESSION_SECRET must be set")
     oauth_config_path = os.getenv("OAUTH_CONFIG_PATH", "/data/oauth-config.json")
     oauth_config = read_json_config(oauth_config_path)
     bark_config_path = os.getenv("BARK_CONFIG_PATH", "/data/bark-config.json")
@@ -165,11 +153,8 @@ def load_settings() -> Settings:
 
     return Settings(
         database_url=os.environ["DATABASE_URL"],
-        session_secret=session_secret,
-        session_ttl_seconds=int_env("OPS_SESSION_TTL_SECONDS", 31536000, 300, 31536000),
         base_path=base_path,
         audit_path=os.getenv("AUDIT_PATH", "/data/audit.jsonl"),
-        session_store_path=os.getenv("OPS_SESSION_STORE_PATH", "/data/sessions.json"),
         usage_query_state_path=os.getenv("USAGE_QUERY_STATE_PATH", "/data/usage-query-state.json"),
         oauth_config_path=oauth_config_path,
         bark_config_path=bark_config_path,
@@ -233,18 +218,8 @@ def load_settings() -> Settings:
             or "gpt-5.6-luna"
         ).strip()
         or "gpt-5.6-luna",
-        update_enabled=bool_env("OPS_UPDATE_ENABLED", True),
-        update_workdir=os.getenv("OPS_UPDATE_WORKDIR", "/workspace"),
-        update_branch=os.getenv("OPS_UPDATE_BRANCH", "main"),
-        sso_config_path=os.getenv("OPS_SSO_CONFIG_PATH", "/data/sso-config.json"),
+        sub2api_config_path=os.getenv("SUB2API_CONFIG_PATH", "/data/sub2api-config.json"),
+        model_config_path=os.getenv("GROUP_MODEL_CONFIG_PATH", "/data/group-model-config.json"),
         sub2api_base_url=os.getenv("SUB2API_BASE_URL", "").rstrip("/"),
         sub2api_verify_base_url=os.getenv("SUB2API_VERIFY_BASE_URL", "").rstrip("/"),
-        sub2api_sso_enabled=bool_env("SUB2API_SSO_ENABLED", False),
-        sub2api_sso_required_role=os.getenv("SUB2API_SSO_REQUIRED_ROLE", "admin").strip() or "admin",
-        sub2api_sso_session_ttl_seconds=int_env(
-            "SUB2API_SSO_SESSION_TTL_SECONDS", 86400, 300, 604800
-        ),
-        sub2api_sso_verify_timeout_seconds=int_env(
-            "SUB2API_SSO_VERIFY_TIMEOUT_SECONDS", 5, 1, 20
-        ),
     )

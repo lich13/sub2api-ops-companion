@@ -46,10 +46,9 @@ jobs:
       - name: Package and checksum
         run: |
           mkdir -p artifacts
-          ditto -c -k --keepParent desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sub2Ops.app artifacts/Sub2Ops_aarch64.app.zip
           cp desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg artifacts/
           cd artifacts
-          shasum -a 256 *.zip *.dmg > SHA256SUMS
+          shasum -a 256 *.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: Sub2Ops-macos-aarch64

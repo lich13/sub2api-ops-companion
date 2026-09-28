@@ -63,6 +63,7 @@ pub(crate) async fn http(
     let mut req = client.request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key).header("Accept", "application/json");
     if path.ends_with("/usage-action") { req = req.timeout(Duration::from_secs(105)); }
+    if path.starts_with("/model-groups/") || path == "/model-catalog" { req = req.timeout(Duration::from_secs(65)); }
     if method == "DELETE" || path.ends_with("/recover-state") { req = req.timeout(Duration::from_secs(20)); }
     if let Some(body) = body { req = req.json(&body); }
     let mut response = req.send().await.map_err(|e| {
