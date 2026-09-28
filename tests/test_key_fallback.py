@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import unquote
 
-os.environ.setdefault("OPS_SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 from starlette.datastructures import FormData
@@ -620,7 +619,6 @@ class KeyFallbackConfigTests(unittest.TestCase):
                 os.environ,
                 {
                     "DATABASE_URL": "postgresql://user:pass@127.0.0.1:5432/db",
-                    "OPS_SESSION_SECRET": "secret",
                     "KEY_FALLBACK_CONFIG_PATH": str(path),
                 },
                 clear=True,
@@ -975,69 +973,6 @@ class KeyFallbackControllerTests(unittest.TestCase):
         self.assertEqual([item[0] for item in calls], [4, 5, 6, 7])
         self.assertEqual({item[1] for item in calls}, {3})
         self.assertNotIn(9, [item[0] for item in calls])
-
-
-class KeyFallbackRouteTests(unittest.IsolatedAsyncioTestCase):
-    async def test_route_requires_auth_and_rejects_stale_selection(self) -> None:
-        paths = {getattr(route, "path", "") for route in main_module.app.routes}
-        self.assertIn("/key-fallback/config", paths)
-        route = next(
-            item
-            for item in main_module.app.routes
-            if getattr(item, "path", "") == "/key-fallback/config"
-        )
-        names = [str(dep.call.__name__) for dep in route.dependant.dependencies]
-        self.assertIn("require_auth", names)
-
-        class FormRequest:
-            async def form(self) -> FormData:
-                return FormData([("enabled", "1"), ("managed_account_ids", "99")])
-
-        original = main_module.key_fallback_controller
-        original_settings = main_module.settings
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            controller, _monitor, _calls = make_controller(root, key_rows=[key_row(4)])
-            main_module.key_fallback_controller = controller
-            main_module.settings = SimpleNamespace(base_path="/sub2ops", audit_path=str(root / "audit.jsonl"))
-            try:
-                response = await main_module.key_fallback_config_save(FormRequest(), "admin")
-            finally:
-                main_module.key_fallback_controller = original
-                main_module.settings = original_settings
-        self.assertEqual(response.status_code, 303)
-        self.assertIn("不是有效的 OpenAI 或 Grok apikey", unquote(response.headers["location"]))
-        self.assertFalse(Path(fallback_settings(root).key_fallback_config_path).exists())
-
-    async def test_valid_save_persists_and_redirects(self) -> None:
-        class FormRequest:
-            async def form(self) -> FormData:
-                return FormData(
-                    [
-                        ("enabled", "1"),
-                        ("managed_account_ids", "4"),
-                        ("managed_account_ids", "4"),
-                    ]
-                )
-
-        original = main_module.key_fallback_controller
-        original_settings = main_module.settings
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            controller, _monitor, _calls = make_controller(root, key_rows=[key_row(4), key_row(7)])
-            main_module.key_fallback_controller = controller
-            main_module.settings = SimpleNamespace(base_path="/sub2ops")
-            try:
-                response = await main_module.key_fallback_config_save(FormRequest(), "admin")
-                persisted = json.loads((root / "key-fallback-config.json").read_text(encoding="utf-8"))
-            finally:
-                main_module.key_fallback_controller = original
-                main_module.settings = original_settings
-        self.assertEqual(response.status_code, 303)
-        self.assertIn("Key", response.headers["location"])
-        self.assertTrue(persisted["enabled"])
-        self.assertEqual(persisted["managed_account_ids"], [4])
-        self.assertNotIn("secret-key-material", json.dumps(persisted))
 
 
 class KeyFallbackTransportTests(unittest.TestCase):
@@ -1550,21 +1485,11 @@ class GrokFallbackTests(unittest.TestCase):
             self.assertEqual(capture.requests[0]["path"], "/api/v1/admin/accounts/8/schedulable")
             self.assertEqual(capture.requests[0]["payload"], {"schedulable": True})
 
-    def test_fallback_inventory_and_panel_include_only_supported_keys(self) -> None:
+    def test_fallback_inventory_includes_only_supported_keys(self) -> None:
         rows = [key_row(8, platform="grok"), key_row(4), key_row(9, platform="anthropic"),
                 key_row(10, type="oauth"), key_row(11, deleted_at=NOW.isoformat())]
         db = SimpleNamespace(fetch_all=lambda *_args: rows)
         self.assertEqual([row["id"] for row in account_ops.live_fallback_apikey_accounts(db)], [4, 8])
-        with patch.object(main_module, "db", db), patch.object(main_module, "key_fallback_controller", None):
-            panel = main_module.build_key_fallback_panel()
-        self.assertEqual([(row["id"], row["platform"]) for row in panel["accounts"]], [(4, "openai"), (8, "grok")])
-        self.assertNotIn("secret-key-material", json.dumps(panel))
-        html = main_module.templates.env.get_template("ops.html").render(
-            key_fallback=panel, oauth={}, bark={}, base_path="/sub2ops",
-        )
-        self.assertIn("<legend>OpenAI</legend>", html)
-        self.assertIn("<legend>Grok</legend>", html)
-        self.assertIn('name="managed_account_ids" value="8"', html)
 
 
 if __name__ == "__main__":

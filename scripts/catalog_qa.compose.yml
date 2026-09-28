@@ -1,0 +1,75 @@
+# Disposable integration environment. No production data or credentials mount.
+services:
+  pg:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: sub2api
+      POSTGRES_PASSWORD: qa-only-password
+      POSTGRES_DB: sub2api
+    tmpfs: [/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U sub2api"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:8-alpine
+    tmpfs: [/data]
+  sub2api:
+    image: ${QA_SUB2API_IMAGE:?exact native image required}
+    volumes:
+      - ${QA_NATIVE_BINARY:?exact 0.2.9 binary required}:/app/sub2api:ro
+    tmpfs: [/app/data]
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      DATABASE_HOST: pg
+      DATABASE_USER: sub2api
+      DATABASE_PASSWORD: qa-only-password
+      DATABASE_DBNAME: sub2api
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: redis
+      ADMIN_EMAIL: desktop-qa@example.invalid
+      ADMIN_PASSWORD: Desktop-QA-only-9264
+      JWT_SECRET: qa-only-jwt-secret-not-for-production-73651387
+      TOTP_ENCRYPTION_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+      TZ: Asia/Shanghai
+      SECURITY_URL_ALLOWLIST_ENABLED: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "true"
+    depends_on:
+      pg: { condition: service_healthy }
+      redis: { condition: service_started }
+  ops:
+    image: sub2ops-catalog-qa:0.1.7
+    build: ..
+    volumes:
+      - ..:/workspace:ro
+    tmpfs:
+      - /data:uid=10001,gid=10001,mode=0700
+    environment:
+      DATABASE_URL: postgresql://sub2api:qa-only-password@pg:5432/sub2api?sslmode=disable
+      SUB2API_VERIFY_BASE_URL: http://sub2api:8080
+      OAUTH_RECOVERY_MONITOR_ENABLED: "false"
+      OAUTH_DAILY_TEST_ENABLED: "false"
+      BARK_ENABLED: "false"
+      DESKTOP_QA_DISPOSABLE: sub2ops-desktop
+    depends_on:
+      pg: { condition: service_healthy }
+  mock:
+    image: sub2ops-catalog-qa:0.1.7
+    user: "10001:10001"
+    working_dir: /workspace
+    command: [python, scripts/model_catalog_integration.py, serve]
+    volumes: ["..:/workspace:ro"]
+    environment:
+      DESKTOP_QA_DISPOSABLE: sub2ops-desktop
+      DATABASE_URL: postgresql://sub2api:qa-only-password@pg:5432/sub2api?sslmode=disable
+  nginx:
+    image: nginx:alpine
+    network_mode: service:ops
+    volumes:
+      - ./catalog_qa.nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../deploy/nginx:/etc/nginx/snippets:ro
+    depends_on: [ops, sub2api]

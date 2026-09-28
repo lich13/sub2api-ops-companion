@@ -146,6 +146,14 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    let group_path = |suffix: &str| plain.strip_prefix("/model-groups/").and_then(|s| s.strip_suffix(suffix))
+        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0));
+    if !path.contains('?') && match method {
+        "GET" => matches!(plain, "/model-groups" | "/model-catalog") || group_path(""),
+        "PUT" => group_path("/allowlist") || group_path("/overrides"),
+        "POST" => group_path("/preview") || group_path("/upstream-import"),
+        _ => false,
+    } { return true; }
     match method {
         "GET" => {
             matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities")
@@ -787,11 +795,13 @@ fn defer_panel_blur(app: &tauri::AppHandle) {
     });
 }
 
+fn silent_launch(args: &[String]) -> bool { args.iter().any(|arg| arg == "--autostart") }
+
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| { let _ = show_main(app.clone()); }))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| { if !silent_launch(&args) { let _ = show_main(app.clone()); } }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).build())
+        .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).args(["--autostart"]).build())
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("preferences.json");
             let prefs: Preferences = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
@@ -803,7 +813,10 @@ pub fn run() {
                 generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
             create_quick(app.handle())?;
-            main_visibility(app.handle(), true)?;
+            // Re-register an existing LaunchAgent with the new arguments without
+            // changing the user's preference or enabling a disabled login item.
+            if app.autolaunch().is_enabled()? { app.autolaunch().enable()?; }
+            main_visibility(app.handle(), !silent_launch(&std::env::args().collect::<Vec<_>>()))?;
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "打开 Sub2Ops", true, None::<&str>)?,
                 &MenuItem::with_id(app, "updates", "检查更新", true, None::<&str>)?,
@@ -932,6 +945,17 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        assert!(allowed_request("GET", "/model-groups"));
+        assert!(allowed_request("GET", "/model-catalog"));
+        assert!(allowed_request("GET", "/model-groups/7"));
+        assert!(allowed_request("POST", "/model-groups/7/preview"));
+        assert!(allowed_request("POST", "/model-groups/7/upstream-import"));
+        assert!(allowed_request("PUT", "/model-groups/7/allowlist"));
+        assert!(allowed_request("PUT", "/model-groups/7/overrides"));
+        for path in ["/model-groups/0", "/model-groups/7/credentials", "/model-groups/7?key=secret", "/model-groups/7/../accounts"] {
+            assert!(!allowed_request("GET", path));
+        }
+        assert!(!allowed_request("DELETE", "/model-groups/7"));
         assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
         assert!(allowed_request("DELETE", "/accounts/7"));
@@ -946,6 +970,12 @@ mod tests {
         for p in ["/accounts/7/test", "https://evil.test", "/config/../token"] {
             assert!(!allowed_request("POST", p));
         }
+    }
+    #[test]
+    fn login_launch_is_silent_but_manual_and_second_instances_open() {
+        assert!(silent_launch(&["sub2ops".into(), "--autostart".into()]));
+        assert!(!silent_launch(&["sub2ops".into()]));
+        assert!(!silent_launch(&["sub2ops".into(), "--autostart=false".into()]));
     }
     #[test]
     fn compact_panel_height_is_content_bounded() {

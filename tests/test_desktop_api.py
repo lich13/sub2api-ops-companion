@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-os.environ.setdefault("OPS_SESSION_SECRET", "desktop-test-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
 
 from fastapi import HTTPException
@@ -185,7 +184,7 @@ class DesktopConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_partial_save_and_stale_revision(self):
         from app.config_service import ConfigService
         with tempfile.TemporaryDirectory() as directory:
-            s=Settings(database_url='unused',session_secret='test',session_ttl_seconds=3600,base_path='',audit_path=str(Path(directory)/'audit'),oauth_config_path=str(Path(directory)/'oauth.json'))
+            s=Settings(database_url='unused',base_path='',audit_path=str(Path(directory)/'audit'),oauth_config_path=str(Path(directory)/'oauth.json'))
             with patch.object(main_module,'settings',s),patch.object(main_module,'oauth_monitor',None):
                 main_module.save_oauth_runtime_config({'oauth_recovery_test_model_id':'preserve-model','oauth_daily_test_time':'05:00'})
                 service=ConfigService(main_module)

@@ -1,79 +1,35 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import json
 import os
-import secrets
 import sys
 import tempfile
 import threading
-import time
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any
-from urllib.parse import quote, urlsplit
-from zoneinfo import ZoneInfo
+from typing import Any
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
 
-from . import account_ops
 from .audit import write_audit
 from .bark import BarkNotifier, DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
+from .connection_config import connection_config
 from .db import Database
-from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackConfigError, KeyFallbackController
+from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackController
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
-from .secure_session import create_session_cookie, read_session_cookie
-from .settings import daily_test_time, load_settings
-from .sso_config import (
-    SSORuntimeConfig,
-    build_sso_panel_config,
-    load_sso_runtime_config,
-    save_sso_config,
-)
-from .sub2api_sso import Sub2APISSOError, normalize_base_url, validate_sub2api_token
-from .versioning import (
-    APP_VERSION,
-    UpdateError,
-    perform_update,
-    restart_process_soon,
-    version_info,
-)
+from .settings import load_settings
+from .versioning import APP_VERSION
 
 settings = load_settings()
 db = Database(settings.database_url)
-templates = Jinja2Templates(directory="app/templates")
-SESSION_COOKIE = "sub2ops_session"
-BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
 key_fallback_controller: KeyFallbackController | None = None
 key_fallback_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
 BARK_CONFIG_LOCK = threading.RLock()
-
-
-def beijing_time(value: Any) -> str:
-    if value in (None, ""):
-        return "-"
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return str(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M")
-
-
-templates.env.filters["bj_time"] = beijing_time
 
 
 def oauth_state_store() -> OAuthStateStore:
@@ -85,14 +41,8 @@ def legacy_recovery_state_path() -> str:
 
 
 def oauth_base_url() -> str:
-    config = current_sso_config()
-    return str(
-        config.verify_base_url
-        or config.base_url
-        or settings.sub2api_verify_base_url
-        or settings.sub2api_base_url
-        or ""
-    ).strip().rstrip("/")
+    config = connection_config(settings)
+    return config["verify_base_url"] or config["base_url"]
 
 
 async def deliver_oauth_monitor_events(events: list[dict[str, Any]]) -> None:
@@ -204,169 +154,11 @@ async def lifespan(_: FastAPI):
         oauth_monitor = None
         key_fallback_controller = None
         await desktop_service.close()
+        model_service.close()
         db.close()
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-
-def cookie_path() -> str:
-    return settings.base_path or "/"
-
-
-def sign_legacy_session(username: str, issued_at: int) -> str:
-    payload = f"{username}:{issued_at}"
-    signature = hmac.new(
-        settings.session_secret.encode("utf-8"),
-        payload.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{payload}:{signature}"
-
-
-def sign_session(
-    username: str,
-    issued_at: int,
-    *,
-    ttl_seconds: int | None = None,
-    source: str = "password",
-) -> str:
-    return create_session_cookie(
-        username,
-        settings.session_secret,
-        store_path=settings.session_store_path,
-        issued_at=issued_at,
-        ttl_seconds=ttl_seconds or settings.session_ttl_seconds,
-        source=source,
-    )
-
-
-def verify_session(value: str | None) -> str | None:
-    if not value:
-        return None
-    encrypted = read_session_cookie(
-        value,
-        settings.session_secret,
-        store_path=settings.session_store_path,
-        max_age_seconds=settings.session_ttl_seconds,
-    )
-    if encrypted:
-        return encrypted.username
-    parts = value.split(":")
-    if len(parts) != 3:
-        return None
-    username, issued_raw, signature = parts
-    try:
-        issued_at = int(issued_raw)
-    except ValueError:
-        return None
-    if time.time() - issued_at > settings.session_ttl_seconds:
-        return None
-    expected = sign_legacy_session(username, issued_at).rsplit(":", 1)[1]
-    return username if secrets.compare_digest(signature, expected) else None
-
-
-def safe_next(value: str | None) -> str:
-    if value in {"/", "/ops", "/sso"}:
-        return "/ops" if value == "/" else str(value)
-    return "/ops"
-
-
-def origin_from_url(value: str) -> str:
-    parsed = urlsplit(value.strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def frame_ancestors_value(sso_config: SSORuntimeConfig | None = None) -> str:
-    config = sso_config or current_sso_config()
-    ancestors = ["'self'"]
-    origin = origin_from_url(config.base_url)
-    if origin and origin not in ancestors:
-        ancestors.append(origin)
-    return "frame-ancestors " + " ".join(ancestors)
-
-
-def sso_security_headers(*, no_store: bool = False) -> dict[str, str]:
-    headers = {
-        "Referrer-Policy": "no-referrer",
-        "Content-Security-Policy": frame_ancestors_value(),
-    }
-    if no_store:
-        headers["Cache-Control"] = "no-store"
-    return headers
-
-
-def apply_sso_security_headers(response: Response, *, no_store: bool = False) -> Response:
-    for key, value in sso_security_headers(no_store=no_store).items():
-        response.headers[key] = value
-    return response
-
-
-def no_store_redirect(location: str, status_code: int = 303) -> RedirectResponse:
-    return apply_sso_security_headers(
-        RedirectResponse(location, status_code=status_code), no_store=True
-    )  # type: ignore[return-value]
-
-
-def sso_required_response() -> Response:
-    return apply_sso_security_headers(
-        Response("Sub2API SSO required", status_code=403, media_type="text/plain"),
-        no_store=True,
-    )
-
-
-def current_sso_config() -> SSORuntimeConfig:
-    return load_sso_runtime_config(
-        settings.sso_config_path,
-        env_enabled=settings.sub2api_sso_enabled,
-        env_base_url=settings.sub2api_base_url,
-        env_verify_base_url=settings.sub2api_verify_base_url,
-        env_required_role=settings.sub2api_sso_required_role,
-        env_session_ttl_seconds=settings.sub2api_sso_session_ttl_seconds,
-        env_verify_timeout_seconds=settings.sub2api_sso_verify_timeout_seconds,
-    )
-
-
-@app.middleware("http")
-async def add_sso_frame_headers(request: Request, call_next: Any) -> Response:
-    return apply_sso_security_headers(await call_next(request))
-
-
-def require_auth(request: Request) -> str:
-    username = verify_session(request.cookies.get(SESSION_COOKIE))
-    if username is None:
-        raise HTTPException(
-            status_code=403,
-            detail="Sub2API SSO required",
-            headers=sso_security_headers(no_store=True),
-        )
-    return username
-
-
-AuthUser = Annotated[str, Depends(require_auth)]
-
-
-def render(request: Request, template: str, context: dict[str, Any]) -> HTMLResponse:
-    context.setdefault("app_name", settings.app_name)
-    context.setdefault("base_path", settings.base_path)
-    context.setdefault("current_user", verify_session(request.cookies.get(SESSION_COOKIE)))
-    context.setdefault("version", {"current_version": APP_VERSION})
-    return templates.TemplateResponse(request, template, context)
-
-
-def int_param(value: object, default: int, minimum: int, maximum: int) -> int:
-    try:
-        parsed = int(str(value).strip())
-    except (TypeError, ValueError):
-        parsed = default
-    return max(minimum, min(maximum, parsed))
-
-
-def form_truthy(value: Any) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "checked"}
+app = FastAPI(title=settings.app_name, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def oauth_config_file() -> dict[str, Any]:
@@ -464,11 +256,6 @@ def apply_bark_runtime_config(payload: dict[str, Any]) -> None:
         bark_notifier.configure_from_settings(settings)
 
 
-def build_oauth_config() -> dict[str, Any]:
-    from .config_service import OAUTH_FIELDS
-    return {key: getattr(settings, key) for key in OAUTH_FIELDS}
-
-
 def build_bark_config() -> dict[str, Any]:
     existing = bark_config_file()
     runtime = bark_notifier.runtime_config()
@@ -494,317 +281,6 @@ def build_bark_config() -> dict[str, Any]:
     }
 
 
-def build_key_fallback_panel() -> dict[str, Any]:
-    controller = key_fallback_controller
-    if controller is not None:
-        panel = controller.panel_snapshot()
-    else:
-        panel = {
-            "enabled": False,
-            "openai_enabled": False,
-            "grok_enabled": False,
-            "managed_account_ids": [],
-            "config_valid": True,
-            "config_updated_at": None,
-        }
-    accounts: list[dict[str, Any]] = []
-    try:
-        for row in account_ops.live_fallback_apikey_accounts(db):
-            try:
-                account_id = int(row.get("id") or 0)
-            except (TypeError, ValueError):
-                continue
-            if account_id <= 0:
-                continue
-            accounts.append({
-                "id": account_id,
-                "name": str(row.get("name") or "-"),
-                "platform": str(row["platform"]).strip().lower(),
-            })
-    except Exception:
-        accounts = []
-    panel["accounts"] = accounts
-    return panel
-
-
-@app.get("/sso/start")
-def sub2api_sso_start(
-    request: Request,
-    token: str = "",
-    user_id: str = "",
-    next: str = "/ops",
-) -> Response:
-    next_path = safe_next(next)
-    client_host = request.client.host if request.client else ""
-    sso_config = current_sso_config()
-    if not sso_config.enabled:
-        write_audit(settings.audit_path, "sso_login_reject", {"reason": "disabled", "client": client_host})
-        return sso_required_response()
-    try:
-        principal = validate_sub2api_token(
-            sso_config.verify_base_url or sso_config.base_url,
-            token=token,
-            expected_user_id=user_id or None,
-            required_role=sso_config.required_role,
-            timeout_seconds=sso_config.verify_timeout_seconds,
-        )
-    except Sub2APISSOError as exc:
-        write_audit(
-            settings.audit_path,
-            "sso_login_reject",
-            {"reason": exc.reason, "message": exc.message, "user_id": user_id, "client": client_host},
-        )
-        return sso_required_response()
-    session_user = f"sub2api:{principal.id}:{principal.username}"
-    response = no_store_redirect(f"{settings.base_path}{next_path}")
-    response.set_cookie(
-        SESSION_COOKIE,
-        sign_session(
-            session_user,
-            int(time.time()),
-            ttl_seconds=sso_config.session_ttl_seconds,
-            source="sub2api_sso",
-        ),
-        max_age=sso_config.session_ttl_seconds,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path=cookie_path(),
-    )
-    write_audit(
-        settings.audit_path,
-        "sso_login",
-        {"user": session_user, "sub2api_user_id": principal.id, "sub2api_role": principal.role},
-    )
-    return response
-
-
-@app.post("/logout")
-def logout(user: AuthUser) -> Response:
-    response = no_store_redirect(f"{settings.base_path}/sso/start")
-    response.delete_cookie(SESSION_COOKIE, path=cookie_path())
-    write_audit(settings.audit_path, "logout", {"user": user})
-    return response
-
-
-@app.get("/")
-def index(request: Request, _: AuthUser, msg: str = "") -> Response:
-    destination = f"{settings.base_path}/ops"
-    if msg:
-        destination += f"?msg={quote(msg)}"
-    return RedirectResponse(destination, status_code=303)
-
-
-@app.get("/ops", response_class=HTMLResponse)
-def ops_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
-    with desktop_service.config.thread_lock:
-        oauth = build_oauth_config()
-        revisions = {key: value["revision"] for key, value in desktop_service.config.snapshot().items()}
-        return render(
-            request,
-            "ops.html",
-            {"active": "ops", "oauth": oauth, "bark": build_bark_config(),
-             "key_fallback": build_key_fallback_panel(),
-             "config_revisions": revisions, "msg": msg},
-        )
-
-
-@app.get("/sso", response_class=HTMLResponse)
-def sso_view(request: Request, _: AuthUser, msg: str = "") -> HTMLResponse:
-    panel = build_sso_panel_config(current_sso_config(), base_path=settings.base_path)
-    panel["sub2api_admin_token_saved"] = bool(oauth_state_store().admin_token())
-    return render(
-        request,
-        "sso.html",
-        {"active": "sso", "sso": panel, "sso_config_path": settings.sso_config_path, "msg": msg},
-    )
-
-
-@app.post("/oauth/settings")
-async def oauth_settings_save(request: Request, user: AuthUser) -> Response:
-    form = await request.form()
-    if {"oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"} & set(form):
-        return RedirectResponse(f"{settings.base_path}/ops?msg={quote('后台额度刷新已移除，请刷新页面后重试')}", status_code=303)
-    try:
-        test_time = daily_test_time(form.get("oauth_daily_test_time", "05:00"))
-    except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
-    payload = {
-        "oauth_recovery_monitor_enabled": bool(form.getlist("oauth_recovery_monitor_enabled")),
-        "oauth_daily_test_enabled": bool(form.getlist("oauth_daily_test_enabled")),
-        "oauth_daily_test_time": test_time,
-        "oauth_usage_refresh_concurrency": int_param(form.get("oauth_usage_refresh_concurrency"), 4, 1, 16),
-        "oauth_recovery_test_concurrency": int_param(form.get("oauth_recovery_test_concurrency"), 2, 1, 8),
-        "oauth_early_probe_batch_size": int_param(form.get("oauth_early_probe_batch_size"), 8, 1, 50),
-        "oauth_7d_probe_interval_seconds": int_param(
-            form.get("oauth_7d_probe_interval_seconds"), 3600, 60, 86400
-        ),
-        "oauth_recovery_test_model_id": str(
-            form.get("oauth_recovery_test_model_id") or "gpt-5.6-luna"
-        ).strip()
-        or "gpt-5.6-luna",
-    }
-    try:
-        await desktop_service.config.save("oauth", payload, user, form.get("config_revision"))
-    except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
-    return RedirectResponse(
-        f"{settings.base_path}/ops?msg={quote('OAuth 监控设置已保存')}", status_code=303
-    )
-
-
-@app.post("/key-fallback/config")
-async def key_fallback_config_save(request: Request, user: AuthUser) -> Response:
-    form = await request.form()
-    controller = key_fallback_controller
-    if controller is None:
-        return RedirectResponse(
-            f"{settings.base_path}/ops?msg={quote('Key 回退控制器未就绪')}",
-            status_code=303,
-        )
-    try:
-        legacy_enabled = bool(form.getlist("enabled"))
-        has_split_flags = "openai_enabled" in form or "grok_enabled" in form
-        await desktop_service.config.save("key_fallback", {
-            "openai_enabled": bool(form.getlist("openai_enabled")) if has_split_flags else legacy_enabled,
-            "grok_enabled": bool(form.getlist("grok_enabled")) if has_split_flags else legacy_enabled,
-            "managed_account_ids": list(form.getlist("managed_account_ids")),
-        }, user, form.get("config_revision"))
-    except (KeyFallbackConfigError, ValueError) as exc:
-        return RedirectResponse(
-            f"{settings.base_path}/ops?msg={quote(str(exc))}",
-            status_code=303,
-        )
-    except Exception:
-        return RedirectResponse(
-            f"{settings.base_path}/ops?msg={quote('Key 回退配置保存失败')}",
-            status_code=303,
-        )
-    return RedirectResponse(
-        f"{settings.base_path}/ops?msg={quote('Key 回退配置已保存')}",
-        status_code=303,
-    )
-
-
-@app.post("/bark/config")
-async def bark_config_save(
-    user: AuthUser,
-    enabled: str | None = Form(None),
-    bark_device_key: str = Form(""),
-    bark_server_url: str | None = Form(None),
-    config_revision: str = Form(""),
-) -> Response:
-    try:
-        await desktop_service.config.save("bark", {
-            "enabled": form_truthy(enabled), "device_key": bark_device_key,
-            "server_url": bark_server_url,
-        }, user, config_revision if isinstance(config_revision, str) and config_revision else None)
-    except ValueError as exc:
-        return RedirectResponse(f"{settings.base_path}/ops?msg={quote(str(exc))}", status_code=303)
-    return RedirectResponse(
-        f"{settings.base_path}/ops?msg={quote('Bark 配置已保存')}", status_code=303
-    )
-
-
-@app.post("/bark/push-test")
-async def bark_push_test(user: AuthUser) -> Response:
-    result = await asyncio.to_thread(bark_notifier.push_test)
-    result_code = result.error_code or "ok"
-    message = "Bark 测试推送已发送" if result.success else f"Bark 测试推送失败：{result_code}"
-    write_audit(
-        settings.audit_path,
-        "bark_push_test",
-        {"user": user, "success": result_code == "ok", "result": result_code},
-    )
-    return RedirectResponse(
-        f"{settings.base_path}/ops?msg={quote(message)}", status_code=303
-    )
-
-
-@app.post("/sso-config")
-def sso_config_save(
-    user: AuthUser,
-    enabled: str | None = Form(None),
-    base_url: str = Form(""),
-    verify_base_url: str = Form(""),
-    required_role: str = Form("admin"),
-    session_ttl_seconds: int = Form(86400),
-    verify_timeout_seconds: int = Form(5),
-    sub2api_admin_token: str = Form(""),
-) -> Response:
-    clean_base_url = base_url.strip().rstrip("/")
-    clean_verify_base_url = verify_base_url.strip().rstrip("/")
-    if form_truthy(enabled) and not clean_base_url:
-        return RedirectResponse(
-            f"{settings.base_path}/sso?msg={quote('启用前需要填写 Sub2API 地址')}", status_code=303
-        )
-    try:
-        if clean_base_url:
-            clean_base_url = normalize_base_url(clean_base_url)
-        if clean_verify_base_url:
-            clean_verify_base_url = normalize_base_url(clean_verify_base_url)
-    except Sub2APISSOError:
-        return RedirectResponse(
-            f"{settings.base_path}/sso?msg={quote('Sub2API 地址必须是完整的 http(s) 地址')}",
-            status_code=303,
-        )
-    save_sso_config(
-        settings.sso_config_path,
-        enabled=form_truthy(enabled),
-        base_url=clean_base_url,
-        verify_base_url=clean_verify_base_url,
-        required_role=required_role.strip() or "admin",
-        session_ttl_seconds=session_ttl_seconds,
-        verify_timeout_seconds=verify_timeout_seconds,
-        updated_by=user,
-    )
-    oauth_state_store().save_admin_token(sub2api_admin_token)
-    write_audit(
-        settings.audit_path,
-        "ops_sso_config_update",
-        {
-            "user": user,
-            "enabled": form_truthy(enabled),
-            "base_url_set": bool(clean_base_url),
-            "verify_base_url_set": bool(clean_verify_base_url),
-            "sub2api_admin_token_set": bool(str(sub2api_admin_token).strip()),
-        },
-    )
-    return RedirectResponse(
-        f"{settings.base_path}/sso?msg={quote('Sub2API 接入配置已保存')}", status_code=303
-    )
-
-
-@app.get("/system/version")
-def system_version(_: AuthUser) -> dict[str, Any]:
-    info = version_info(settings)
-    return {"version": info["current_version"], **info}
-
-
-@app.get("/system/check-updates")
-def system_check_updates(_: AuthUser, force: bool = False) -> dict[str, Any]:
-    return version_info(settings, force=force)
-
-
-@app.post("/system/update")
-def system_update(user: AuthUser) -> dict[str, Any]:
-    try:
-        result = perform_update(settings)
-    except UpdateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    write_audit(settings.audit_path, "system_update", {"user": user, **result})
-    if result.get("need_restart"):
-        restart_process_soon()
-    return result
-
-
-@app.post("/system/restart")
-def system_restart(user: AuthUser) -> dict[str, Any]:
-    write_audit(settings.audit_path, "system_restart", {"user": user})
-    restart_process_soon()
-    return {"message": "服务正在重启", "need_restart": True}
-
-
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     db.fetch_one("SELECT 1 AS ok")
@@ -814,3 +290,7 @@ def healthz() -> dict[str, str]:
 from .desktop_api import install_desktop_api
 
 desktop_service = install_desktop_api(app, sys.modules[__name__])
+
+from .model_api import install_model_api
+
+model_service = install_model_api(app, sys.modules[__name__], desktop_service)

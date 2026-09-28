@@ -1,8 +1,8 @@
 # Sub2API Ops Companion
 
-Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和 Sub2API SSO 接入。
+Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和分组模型目录配置。
 
-macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组最近成功调用、账号调度、错误详情及 Ops 设置。下载与使用见 [客户端说明](desktop/README.md)。现有网页和 SSO 入口继续保留。
+macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组最近成功调用、账号调度、错误详情及 Ops 设置。下载与使用见 [客户端说明](desktop/README.md)。仅通过桌面 App 管理；网页、SSO 和旧表单接口已下线。
 
 ## 功能
 
@@ -10,8 +10,6 @@ macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组�
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
-- Sub2API SSO：从 Sub2API 自定义菜单进入，验证管理员 JWT 后换取 Companion 本地会话。
-- 面板更新：显示当前版本，可检查 `origin/main` 并在源码无依赖变更时热更新。
 
 ## OAuth 监控机制
 
@@ -37,17 +35,17 @@ docker compose up -d --build
 
 ## 环境变量
 
+- `SUB2API_CONFIG_PATH`：独立连接配置文件，默认 `/data/sub2api-config.json`，JSON 的 `base_url` / `verify_base_url` 优先于对应环境变量。
+- `GROUP_MODEL_CONFIG_PATH`：分组元数据覆盖文件；权限 `0600`，按分组版本校验。
+
 - `DATABASE_URL`：Sub2API PostgreSQL 连接串。
-- `OPS_SESSION_SECRET`：Companion 会话密钥。
-- `OPS_SESSION_TTL_SECONDS`：会话最大有效期。
-- `OPS_SESSION_STORE_PATH`：会话状态文件。
 - `BASE_PATH`：反代路径前缀，默认 `/sub2ops`。
 - `USAGE_QUERY_STATE_PATH`：OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。
 - `OAUTH_CONFIG_PATH`：OAuth 自动化配置，默认 `/data/oauth-config.json`，权限 `0600`；JSON 优先于环境变量，环境变量优先于默认值。
-- `BARK_CONFIG_PATH`：Bark 面板配置文件，默认 `/data/bark-config.json`。
+- `BARK_CONFIG_PATH`：Bark 配置文件，默认 `/data/bark-config.json`。
 - `BARK_ENABLED`：是否启用 OAuth 事件的 Bark 推送，默认关闭。
-- `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过面板写入权限为 `0600` 的配置文件。
-- `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。面板不再展示或提交该字段，缺少表单值时保留当前运行时 URL。
+- `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。
+- `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
 - `OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
@@ -57,25 +55,18 @@ docker compose up -d --build
 - `OAUTH_EARLY_PROBE_BATCH_SIZE`：每轮最多处理的 OAuth 账号数，默认 `8`。
 - `OAUTH_7D_PROBE_INTERVAL_SECONDS`：7d 提前重置探测间隔，默认 `3600`。
 - `OAUTH_RECOVERY_TEST_MODEL_ID`：恢复测活模型，默认 `gpt-5.6-luna`。
-- `OPS_SSO_CONFIG_PATH`：Sub2API SSO 运行时配置文件。
 - `SUB2API_BASE_URL`：Sub2API 公网根地址。
 - `SUB2API_VERIFY_BASE_URL`：可选的服务端内网校验根地址。
-- `SUB2API_SSO_ENABLED`：是否允许 SSO 换取 Companion 会话。
-- `OPS_UPDATE_ENABLED`、`OPS_UPDATE_WORKDIR`、`OPS_UPDATE_BRANCH`：面板更新配置。
 
-## Sub2API SSO
+## 分组模型目录
 
-在 Sub2API 自定义菜单中配置：
+桌面“模型”页按分组编辑白名单与 Codex 元数据。白名单经原 Sub2API 管理 API 单独保存，元数据保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。初始覆盖为空，不修改账号映射、优先级或计费。覆盖对象递归合并、数组替换；支持只读上游导入与 models.dev 搜索。
 
-```text
-https://你的-sub2api-域名/sub2ops/sso/start
-```
-
-Companion 使用首跳参数中的 JWT 请求 `SUB2API_VERIFY_BASE_URL/api/v1/auth/me`，验证成功后写入本地会话 Cookie 并跳转到 `/sub2ops/ops`。生产环境必须使用 HTTPS，并避免记录首跳 query string。
+兼容入口仅处理带 `client_version` 的 GET `/v1/models`、`/models` 及 `/backend-api/codex/models`。每次请求先交给原 Sub2API 校验实际调用者，之后应用当前分组覆盖；异常返回原目录。nginx 配置见 `deploy/nginx/codex-models.location.conf`，只开放 API 的 IP 入口使用 `codex-models-raw-ip.location.conf` 保留普通 `/models` 的关闭状态。原模型调用和普通列表不经过兼容层。
 
 ## 升级迁移
 
-从 0.1.3 升级前停止旧服务，使用旧服务环境运行 `PYTHONPATH=/workspace python /workspace/scripts/migrate_oauth_config.py --env-file /workspace/.env`。脚本迁移有效 OAuth 设置并验证，之后删除退休的 Bot 配置、配对状态和环境变量，不复制 Bot 密钥。迁移失败不得启动新版；运行时不读取旧设置。网页入口为 `/ops`，OAuth 保存入口为 `/oauth/settings`。
+从 0.1.6 升级前，使用旧服务环境运行 `PYTHONPATH=/workspace python /workspace/scripts/migrate_desktop_only.py --env-file /workspace/.env`。脚本迁移有效 Sub2API 连接地址并验证权限，删除退休的浏览器配置、会话和环境变量，精确移除旧自定义菜单入口。先验证迁移成功，再启动新版；OAuth 和 Bark 配置保持原值。nginx 的模型目录接管配置需单独安装，回滚时先撤回目录接管。
 
 夜间恢复冷却已退役；即时恢复全天运行。旧夜间配置字段在升级时移除，遗留延后意图重新进入严格恢复检查。每日测活使用独立批次记录，按北京时间日期去重，中断批次不补测；人工暂停或冷却、额度不足和不可调度的账号跳过。
 
@@ -83,4 +74,4 @@ Companion 使用首跳参数中的 JWT 请求 `SUB2API_VERIFY_BASE_URL/api/v1/au
 
 ## 安全
 
-Companion 具有账号调度操作权限，不应独立暴露在公网。建议仅在 `127.0.0.1` 或 Docker 内网监听，并通过 Sub2API 同域 iframe 进入。管理员 API Key 只保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 只保存在 `BARK_CONFIG_PATH`；两个文件权限均为 `0600`，密钥不写入 URL、页面、日志或审计明文。
+Companion 具有账号调度操作权限，不应独立暴露在公网。仅在 `127.0.0.1` 或 Docker 内网监听，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 只保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 只保存在 `BARK_CONFIG_PATH`；两个文件权限均为 `0600`，密钥不写入 URL、页面、日志或审计明文。
