@@ -55,7 +55,7 @@ def migrate(env_file: Path, *, remove_menu: bool = True) -> dict:
     # Keep all non-retired lines byte-for-byte, including unrelated secrets.
     if env_file.exists():
         lines = env_file.read_text().splitlines(keepends=True)
-        kept = [line for line in lines if not line.lstrip().split("=", 1)[0].startswith(("OPS_SESSION_", "OPS_SSO_", "SUB2API_SSO_", "OPS_UPDATE_"))]
+        kept = [line for line in lines if not line.lstrip().split("=", 1)[0].startswith(("OPS_BASIC_", "OPS_SESSION_", "OPS_SSO_", "SUB2API_SSO_", "OPS_UPDATE_"))]
         fd, name = tempfile.mkstemp(prefix=".desktop-env.", dir=env_file.parent)
         temporary = Path(name)
         try:
