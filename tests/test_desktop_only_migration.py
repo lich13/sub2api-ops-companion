@@ -15,7 +15,7 @@ class MigrationTests(unittest.TestCase):
             old, new, session, env = (root / name for name in ("sso.json", "connection.json", "sessions.json", ".env"))
             old.write_text(json.dumps({"base_url": "https://public.example/", "verify_base_url": "http://sub2api:8080/", "enabled": False}))
             session.write_text('{"secret":"retire"}')
-            env.write_text("DATABASE_URL=keep-private\nOPS_SESSION_SECRET=retire\nSUB2API_SSO_ENABLED=true\nOAUTH_DAILY_TEST_TIME=05:15\nBARK_DEVICE_KEY=keep-bark\n")
+            env.write_text("DATABASE_URL=keep-private\nOPS_BASIC_USER=retire\nOPS_BASIC_PASSWORD=retire\nOPS_SESSION_SECRET=retire\nSUB2API_SSO_ENABLED=true\nOAUTH_DAILY_TEST_TIME=05:15\nBARK_DEVICE_KEY=keep-bark\n")
             with patch.dict(os.environ, {"OPS_SSO_CONFIG_PATH": str(old), "SUB2API_CONFIG_PATH": str(new), "OPS_SESSION_STORE_PATH": str(session), "SUB2API_BASE_URL": "https://ignored.example"}, clear=True):
                 result = migrate(env, remove_menu=False)
                 self.assertTrue(result["connection_migrated"])
