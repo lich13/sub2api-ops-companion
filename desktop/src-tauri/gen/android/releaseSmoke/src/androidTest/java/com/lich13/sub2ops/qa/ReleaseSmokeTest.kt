@@ -43,7 +43,7 @@ class ReleaseSmokeTest {
             inputs[1].text = "release-smoke-key"
             device.findObject(By.text("验证并连接")).click()
             connected()
-            for (page in listOf("模型", "事件", "自动化", "设置", "账号")) {
+            for (page in listOf("记录", "事件", "功能", "设置", "账号")) {
                 device.findObject(By.text(page)).click()
                 device.waitForIdle()
             }

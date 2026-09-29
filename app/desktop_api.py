@@ -641,7 +641,10 @@ class UsageActionRequest(BaseModel):
 
 
 def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
+    from .usage_records import UsageRecords
+
     service = DesktopService(runtime)
+    records = UsageRecords(runtime.db)
     router = APIRouter(prefix=PREFIX, route_class=DesktopRoute)
     app.add_middleware(DesktopErrorMiddleware)
 
@@ -666,6 +669,22 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         if not 1 <= limit <= 100 or (account_id is not None and account_id < 1) or (before_id is not None and before_id < 1):
             raise HTTPException(422, "分页参数无效")
         return await asyncio.to_thread(service.errors, account_id, before_id, limit)
+
+    @router.get("/usage-records")
+    async def usage_records(request: Request, from_at: str | None = None, to_at: str | None = None,
+                            account_id: int | None = None, api_key_id: int | None = None,
+                            model: str | None = None, request_type: str | None = None,
+                            mismatch_only: bool = False, cursor: str | None = None,
+                            after_id: int | None = None, limit: int = 50) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(records.list, from_at=from_at, to_at=to_at,
+            account_id=account_id, api_key_id=api_key_id, model=model, request_type=request_type,
+            mismatch_only=mismatch_only, cursor=cursor, after_id=after_id, limit=limit)
+
+    @router.get("/usage-records/{record_id}")
+    async def usage_record(record_id: int, request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(records.detail, record_id)
 
     @router.get("/accounts/{account_id}/quality")
     async def quality_detail(account_id: int, request: Request) -> Any:

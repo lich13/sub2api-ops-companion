@@ -443,6 +443,7 @@ export async function run(
   }
   if (name === "preferences") {
     state.preferences = { ...state.preferences, ...args };
+    if (args.recordColumns) state.preferences.record_columns = args.recordColumns as string[];
     emit();
     return;
   }
@@ -466,6 +467,9 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (String(args.path).startsWith("/usage-records")) {
+      return (await import("./recordPreview")).recordPreview(String(args.path));
+    }
     if (String(args.path).startsWith("/model-")) {
       return (await import("./modelPreview")).modelPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>);
     }

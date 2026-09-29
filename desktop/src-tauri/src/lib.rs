@@ -39,6 +39,7 @@ struct Preferences {
     favorites: Vec<i64>,
     launch_at_login: bool,
     pinned: bool,
+    record_columns: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -173,7 +174,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
     } { return true; }
     match method {
         "GET" => {
-            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities")
+            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities" | "/usage-records")
+                || plain.strip_prefix("/usage-records/")
+                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
                 || plain
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
@@ -475,6 +478,7 @@ async fn preferences(
     favorites: Vec<i64>,
     pinned: bool,
     launch_at_login: bool,
+    record_columns: Option<Vec<String>>,
 ) -> Result<(), String> {
     let mut view = state.view.lock().await;
     #[cfg(desktop)]
@@ -497,6 +501,10 @@ async fn preferences(
     prefs.favorites.dedup();
     prefs.pinned = cfg!(desktop) && pinned;
     prefs.launch_at_login = cfg!(desktop) && launch_at_login;
+    if let Some(columns) = record_columns {
+        let allowed = ["api_key", "account", "model", "reasoning", "type", "tokens", "cost", "latency", "user_agent", "ip", "endpoint", "group", "billing", "request_id", "upstream_id"];
+        prefs.record_columns = Some(allowed.iter().filter(|c| columns.iter().any(|v| v == **c)).map(|c| c.to_string()).collect());
+    }
     save_preferences(&state.path, &prefs)?;
     #[cfg(desktop)]
     state.pinned.store(pinned, Ordering::Relaxed);
@@ -1121,6 +1129,15 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        assert!(allowed_request("GET", "/usage-records?limit=50&after_id=12"));
+        assert!(allowed_request("GET", "/usage-records/12"));
+        for path in ["/usage-records/0", "/usage-records/12/credentials", "/usage-records/../config"] {
+            assert!(!allowed_request("GET", path));
+        }
+        for method in ["POST", "PUT", "DELETE"] {
+            assert!(!allowed_request(method, "/usage-records"));
+            assert!(!allowed_request(method, "/usage-records/12"));
+        }
         assert!(allowed_request("GET", "/model-groups"));
         assert!(allowed_request("GET", "/model-groups/7/reasoning"));
         assert!(allowed_request("POST", "/model-groups/7/reasoning/resolve"));
@@ -1181,5 +1198,22 @@ mod tests {
             std::fs::metadata(p).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[test]
+    fn old_preferences_migrate_without_losing_existing_choices() {
+        let old: Preferences = serde_json::from_str(r#"{"base_url":"https://example.com","favorites":[7],"pinned":true,"launch_at_login":true}"#).unwrap();
+        assert!(old.record_columns.is_none());
+        assert_eq!(old.favorites, vec![7]);
+        assert!(old.pinned && old.launch_at_login);
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("prefs.json");
+        let changed = Preferences { record_columns: Some(vec!["model".into(), "cost".into()]), ..old };
+        save_preferences(&p, &changed).unwrap();
+        let restored: Preferences = serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap();
+        assert_eq!(restored.record_columns, changed.record_columns);
+        assert_eq!(restored.base_url, "https://example.com");
+        assert_eq!(restored.favorites, vec![7]);
+        assert!(restored.pinned && restored.launch_at_login);
     }
 }
