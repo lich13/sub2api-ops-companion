@@ -182,6 +182,9 @@ export type Preferences = {
   launch_at_login: boolean;
 };
 export type ViewState = {
+  platform?: "macos" | "android";
+  foreground?: boolean;
+  initializing?: boolean;
   connection_revision?: number;
   connected: boolean;
   online: boolean;

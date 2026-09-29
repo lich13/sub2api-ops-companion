@@ -272,6 +272,8 @@ accounts.push({
   },
 });
 let state: ViewState = {
+  platform: new URLSearchParams(location.search).has("mobile") ? "android" : "macos",
+  foreground: true,
   connected: true,
   online: true,
   error: "",

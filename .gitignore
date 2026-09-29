@@ -7,5 +7,15 @@ __pycache__/
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
-desktop/src-tauri/gen/
+desktop/src-tauri/gen/*
+!desktop/src-tauri/gen/android/
+desktop/src-tauri/gen/android/**/build/
+desktop/src-tauri/gen/android/.gradle/
+desktop/src-tauri/gen/android/.kotlin/
+desktop/src-tauri/gen/android/local.properties
+desktop/src-tauri/gen/android/app/tauri.properties
+desktop/src-tauri/gen/android/app/tauri.build.gradle.kts
+desktop/src-tauri/gen/android/tauri.settings.gradle
+desktop/src-tauri/gen/android/app/src/main/jniLibs/
+desktop/src-tauri/gen/android/app/src/androidTest/assets/
 desktop/artifacts/

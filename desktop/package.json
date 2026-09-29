@@ -1,6 +1,6 @@
 {
   "name": "sub2ops-desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.27.0",
@@ -14,7 +14,9 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "tauri": "tauri",
-    "bundle": "tauri build --target aarch64-apple-darwin"
+    "bundle": "tauri build --target aarch64-apple-darwin",
+    "android": "tauri android dev --target aarch64",
+    "bundle:android": "tauri android build --apk --target aarch64"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

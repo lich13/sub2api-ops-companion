@@ -46,16 +46,14 @@ def seed():
         status, login = request(BASE+"/api/v1/auth/login", "POST", {
             "email": "desktop-qa@example.invalid", "password": "Desktop-QA-only-9264"})
         assert status == 200, (status, login)
-        token = login["data"]["access_token"]
-        status, generated = request(BASE+"/api/v1/admin/settings/admin-api-key/regenerate", "POST", {},
-                                    {"Authorization": "Bearer "+token})
-        assert status == 200, status
-        # Replace only the newly generated disposable credential, never log it.
-        actual = generated["data"].get("key") or generated["data"].get("api_key")
-        assert actual
-        assert db.execute("UPDATE settings SET value=%s WHERE value=%s", (KEY, actual)).rowcount == 1
+        # Seed only this empty disposable database. Native key creation now
+        # requires step-up authentication; runtime API checks remain unchanged.
+        assert db.execute("SELECT count(*) FROM settings WHERE key='admin_api_key'").fetchone()[0] == 0
+        db.execute("INSERT INTO settings(key,value) VALUES ('admin_api_key',%s)", (KEY,))
         user = db.execute("SELECT id FROM users WHERE email='desktop-qa@example.invalid'").fetchone()[0]
         db.execute("UPDATE users SET balance=100 WHERE id=%s", (user,))
+        db.execute("INSERT INTO settings(key,value) VALUES (%s,%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                   (f"admin_compliance_acknowledgement:{user}", json.dumps({"version":"v2026.06.10","fixture":True})))
         groups = [db.execute("INSERT INTO groups(name,platform) VALUES (%s,'openai') RETURNING id", (name,)).fetchone()[0]
                   for name in ("QA Alpha", "QA Beta")]
         accounts = [db.execute("INSERT INTO accounts(name,platform,type,credentials) VALUES (%s,'openai','apikey',%s) RETURNING id",

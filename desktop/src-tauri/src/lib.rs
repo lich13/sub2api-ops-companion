@@ -5,20 +5,26 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex as StdMutex,
+        Arc,
     },
     time::Duration,
 };
+use tauri::{Emitter, Manager, State, WindowEvent};
+#[cfg(desktop)]
+use std::sync::Mutex as StdMutex;
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    WebviewUrl, WebviewWindowBuilder,
 };
+#[cfg(desktop)]
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
-use tokio::sync::{oneshot, Mutex, Notify};
+use tokio::sync::{oneshot, watch, Mutex, Notify};
 
 mod api_http;
+mod credentials;
 use api_http::http;
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
@@ -37,6 +43,9 @@ struct Preferences {
 
 #[derive(Clone, Serialize, Default)]
 struct ViewState {
+    platform: &'static str,
+    foreground: bool,
+    initializing: bool,
     connection_revision: u64,
     connected: bool,
     online: bool,
@@ -55,11 +64,17 @@ struct Runtime {
     tests: Mutex<HashMap<String, oneshot::Sender<()>>>,
     wake: Notify,
     path: PathBuf,
+    foreground: AtomicBool,
+    read_epoch: watch::Sender<u64>,
+    #[cfg(desktop)]
     pinned: AtomicBool,
+    #[cfg(desktop)]
     quitting: AtomicBool,
+    #[cfg(desktop)]
     panel: StdMutex<PanelLifecycle>,
 }
 
+#[cfg(desktop)]
 struct PanelLifecycle {
     generation: u64,
     focused: bool,
@@ -68,12 +83,14 @@ struct PanelLifecycle {
     anchor: Option<tauri::Rect>,
 }
 
+#[cfg(desktop)]
 impl Default for PanelLifecycle {
     fn default() -> Self {
         Self { generation: 0, focused: false, showing: false, height: 520., anchor: None }
     }
 }
 
+#[cfg(desktop)]
 impl PanelLifecycle {
     fn show(&mut self, focused: bool) {
         self.generation += 1;
@@ -205,6 +222,7 @@ fn apply_refresh(view: &mut ViewState, result: Result<Value, String>) {
 }
 
 async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
+    if !state.foreground.load(Ordering::SeqCst) { return; }
     let Ok(_gate) = state.snapshot_gate.try_lock() else { return; };
     let (base, key, generation) = {
         let _connection = state.network.lock().await;
@@ -214,7 +232,7 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     if base.is_empty() || key.is_none() {
         return;
     }
-    let result = http(
+    let result = active_read(state, http(
         &state.client,
         &base,
         key.as_deref().unwrap_or(""),
@@ -222,12 +240,13 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         "/snapshot",
         None,
         &state.path.with_file_name("network-diagnostics.log"),
-    )
+    ))
     .await;
     let _connection = state.network.lock().await;
-    if generation != state.generation.load(Ordering::SeqCst) { return; }
+    if generation != state.generation.load(Ordering::SeqCst) || !state.foreground.load(Ordering::SeqCst) { return; }
     let mut view = state.view.lock().await;
     apply_refresh(&mut view, result);
+    #[cfg(desktop)]
     if let Some(tray) = app.tray_by_id("ops") {
         let text = if view.online {
             "Sub2Ops · 已连接"
@@ -237,6 +256,16 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         let _ = tray.set_tooltip(Some(text));
     }
     publish(app, &view);
+}
+
+async fn active_read<T>(state: &Runtime, request: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+    let mut changed = state.read_epoch.subscribe();
+    if !state.foreground.load(Ordering::SeqCst) { return Err("应用已转入后台".into()); }
+    tokio::select! {
+        biased;
+        _ = changed.changed() => Err("应用已转入后台，已停止读取".into()),
+        result = request => result,
+    }
 }
 
 #[tauri::command]
@@ -257,7 +286,7 @@ async fn connect(
     }
     {
         let _gate = state.network.lock().await;
-        let data = http(
+        let data = active_read(&state, http(
             &state.client,
             &base,
             api_key.trim(),
@@ -265,15 +294,12 @@ async fn connect(
             "/capabilities",
             None,
             &state.path.with_file_name("network-diagnostics.log"),
-        )
+        ))
         .await?;
         if data.get("api_version").and_then(Value::as_u64) != Some(1) {
             return Err("云端接口版本不兼容".into());
         }
-        keyring::Entry::new("com.lich13.sub2ops", &base)
-            .map_err(|_| "无法访问钥匙串")?
-            .set_password(api_key.trim())
-            .map_err(|_| "无法将 Key 保存到钥匙串；连接未保存")?;
+        credentials::write(app.clone(), base.clone(), api_key.trim().to_string()).await?;
         let mut view = state.view.lock().await;
         let mut prefs = view.preferences.clone();
         prefs.base_url = base;
@@ -296,12 +322,7 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
     let _gate = state.network.lock().await;
     let mut view = state.view.lock().await;
     if !view.preferences.base_url.is_empty() {
-        let entry = keyring::Entry::new("com.lich13.sub2ops", &view.preferences.base_url)
-            .map_err(|_| "无法访问钥匙串")?;
-        match entry.delete_credential() {
-            Ok(_) | Err(keyring::Error::NoEntry) => (),
-            Err(_) => return Err("无法删除钥匙串中的 Key".into()),
-        }
+        credentials::delete(app.clone(), view.preferences.base_url.clone()).await?;
     }
     *state.key.lock().await = None;
     view.connection_revision = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -336,22 +357,23 @@ async fn api_request(
     let (view, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await.clone();
-        if !view.online {
+        if !view.online || !state.foreground.load(Ordering::SeqCst) {
             return Err("当前离线，请恢复连接后操作".into());
         }
         let key = state.key.lock().await.clone().ok_or("尚未连接")?;
         (view, key, state.generation.load(Ordering::SeqCst))
     };
-    let result = http(
+    let log = state.path.with_file_name("network-diagnostics.log");
+    let request = http(
             &state.client,
             &view.preferences.base_url,
             &key,
             &method,
             &path,
             body,
-            &state.path.with_file_name("network-diagnostics.log"),
-        )
-        .await;
+            &log,
+        );
+    let result = if method == "GET" { active_read(&state, request).await } else { request.await };
     if generation != state.generation.load(Ordering::SeqCst) {
         return Err("连接已切换，旧操作结果已忽略".into());
     }
@@ -395,7 +417,7 @@ async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: St
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
-        if !view.online { return Err("当前离线".into()); }
+        if !view.online || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
         (view.preferences.base_url.clone(), state.key.lock().await.clone().ok_or("尚未连接")?, state.generation.load(Ordering::SeqCst))
     };
     let (tx, rx) = oneshot::channel();
@@ -435,7 +457,7 @@ async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: St
         }
         Ok(())
     };
-    let result = tokio::select! { result=work=>result, _=rx=>Err("测试已取消，未重放请求".into()) };
+    let result = tokio::select! { result=active_read(&state, work)=>result, _=rx=>Err("测试已取消，未重放请求".into()) };
     let mut tests = state.tests.lock().await;
     if tests.get(window.label()).is_some_and(|sender| sender.is_closed()) {
         tests.remove(window.label());
@@ -455,6 +477,7 @@ async fn preferences(
     launch_at_login: bool,
 ) -> Result<(), String> {
     let mut view = state.view.lock().await;
+    #[cfg(desktop)]
     if launch_at_login != view.preferences.launch_at_login {
         let launch = app.autolaunch();
         if launch_at_login {
@@ -472,9 +495,10 @@ async fn preferences(
         .collect();
     prefs.favorites.sort_unstable();
     prefs.favorites.dedup();
-    prefs.pinned = pinned;
-    prefs.launch_at_login = launch_at_login;
+    prefs.pinned = cfg!(desktop) && pinned;
+    prefs.launch_at_login = cfg!(desktop) && launch_at_login;
     save_preferences(&state.path, &prefs)?;
+    #[cfg(desktop)]
     state.pinned.store(pinned, Ordering::Relaxed);
     view.preferences = prefs;
     publish(&app, &view);
@@ -482,10 +506,12 @@ async fn preferences(
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 fn show_main(app: tauri::AppHandle) -> Result<(), String> {
     queue_main(app, true)
 }
 
+#[cfg(desktop)]
 fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     if !visible { window.hide().map_err(|_| "无法关闭主窗口")?; }
@@ -506,6 +532,7 @@ fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> 
     Ok(())
 }
 
+#[cfg(desktop)]
 fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -518,6 +545,7 @@ async fn check_updates(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
 ) -> Result<String, String> {
+    let releases = active_read(&state, async {
     let response = state
         .client
         .get("https://api.github.com/repos/lich13/sub2api-ops-companion/releases?per_page=20")
@@ -528,25 +556,39 @@ async fn check_updates(
     if !response.status().is_success() {
         return Err("版本服务暂不可用".into());
     }
-    let releases: Value = response.json().await.map_err(|_| "版本信息无效")?;
-    let tag = releases.as_array().and_then(|r| {
-        r.iter().find_map(|item| {
-            item.get("tag_name")
-                .and_then(Value::as_str)
-                .filter(|tag| tag.starts_with("desktop-v"))
-        })
-    });
-    if let Some(tag) = tag {
-        if tag.trim_start_matches("desktop-v") != env!("CARGO_PKG_VERSION") {
+    response.json::<Value>().await.map_err(|_| "版本信息无效".to_string())
+    }).await?;
+    if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION"), cfg!(mobile)) {
             app.opener()
-                .open_url(RELEASES, None::<&str>)
+                .open_url(url, None::<&str>)
                 .map_err(|_| "无法打开发布页")?;
-            return Ok(format!("发现 {tag}，已打开发布页"));
-        }
+            return Ok(format!("发现 {tag}，已打开安装包"));
     }
     Ok(format!("当前版本 {}，已是最新", env!("CARGO_PKG_VERSION")))
 }
 
+fn release_update<'a>(releases: &'a Value, current: &str, android: bool) -> Option<(&'a str, &'a str)> {
+    let version = |value: &str| -> Option<(u64, u64, u64)> {
+        let parts = value.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
+        if parts.len() != 3 { return None; }
+        Some((parts[0], parts[1], parts[2]))
+    };
+    let current = version(current)?;
+    releases.as_array()?.iter().filter_map(|release| {
+        if release["draft"].as_bool().unwrap_or(false) || release["prerelease"].as_bool().unwrap_or(false) { return None; }
+        let tag = release["tag_name"].as_str()?;
+        let newer = version(tag.strip_prefix("desktop-v")?)?;
+        if newer <= current { return None; }
+        let asset = release["assets"].as_array()?.iter().find(|asset| asset["name"].as_str().is_some_and(|name| {
+            if android { name.ends_with("_arm64-v8a.apk") } else { name.ends_with("_aarch64.dmg") }
+        }))?;
+        let url = asset["browser_download_url"].as_str()?;
+        if !url.starts_with(&format!("{RELEASES}/download/{tag}/")) { return None; }
+        Some((newer, tag, url))
+    }).max_by_key(|r| r.0).map(|(_, tag, url)| (tag, url))
+}
+
+#[cfg(desktop)]
 fn panel_bounds(
     anchor: tauri::PhysicalPosition<f64>,
     x: i32,
@@ -572,6 +614,7 @@ fn panel_bounds(
     )
 }
 
+#[cfg(desktop)]
 fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
@@ -597,6 +640,7 @@ fn panel_trace(app: &tauri::AppHandle, stage: &str, detail: &str) {
     }
 }
 
+#[cfg(desktop)]
 fn create_quick(app: &tauri::AppHandle) -> tauri::Result<()> {
     WebviewWindowBuilder::new(
         app,
@@ -616,6 +660,7 @@ fn create_quick(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
 fn quick_panel(
     app: &tauri::AppHandle,
     rect: tauri::Rect,
@@ -648,6 +693,7 @@ fn quick_panel(
     Ok(())
 }
 
+#[cfg(desktop)]
 fn position_quick(app: &tauri::AppHandle, window: &tauri::WebviewWindow, rect: tauri::Rect, height: f64)
     -> Result<(), Box<dyn std::error::Error>> {
     let position = rect.position.to_physical::<f64>(1.0);
@@ -692,6 +738,7 @@ fn position_quick(app: &tauri::AppHandle, window: &tauri::WebviewWindow, rect: t
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 fn resize_quick(app: tauri::AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
     if window.label() != "quick" || !height.is_finite() { return Err("快捷窗口尺寸无效".into()); }
     let handle = app.clone();
@@ -714,10 +761,12 @@ fn resize_quick(app: tauri::AppHandle, window: tauri::WebviewWindow, height: f64
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 fn show_quick(app: tauri::AppHandle) -> Result<(), String> {
     queue_quick(app, None)
 }
 
+#[cfg(desktop)]
 fn queue_quick(app: tauri::AppHandle, event_rect: Option<tauri::Rect>) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -740,6 +789,7 @@ fn queue_quick(app: tauri::AppHandle, event_rect: Option<tauri::Rect>) -> Result
 }
 
 #[tauri::command]
+#[cfg(desktop)]
 fn hide_quick(app: tauri::AppHandle) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -759,6 +809,7 @@ fn hide_quick(app: tauri::AppHandle) -> Result<(), String> {
     .map_err(|_| "无法关闭快捷面板".into())
 }
 
+#[cfg(desktop)]
 fn defer_panel_blur(app: &tauri::AppHandle) {
     panel_trace(app, "blur", "");
     let generation = app.state::<Arc<Runtime>>().panel.lock().unwrap().blur();
@@ -795,23 +846,61 @@ fn defer_panel_blur(app: &tauri::AppHandle) {
     });
 }
 
+#[cfg(desktop)]
 fn silent_launch(args: &[String]) -> bool { args.iter().any(|arg| arg == "--autostart") }
 
+#[cfg(desktop)]
+fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let window = app.get_webview_window("main").expect("main window");
+    if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
+        let area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        let width = (1440. * scale).min((area.size.width as f64 - 24. * scale).max(1.));
+        let height = (860. * scale).min((area.size.height as f64 - 24. * scale).max(1.));
+        window.set_min_size(Some(tauri::PhysicalSize::new((900. * scale).min(width) as u32, (620. * scale).min(height) as u32)))?;
+        window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
+        window.set_position(tauri::PhysicalPosition::new(
+            area.position.x + ((area.size.width as f64 - width) / 2.) as i32,
+            area.position.y + ((area.size.height as f64 - height) / 2.) as i32,
+        ))?;
+    }
+    Ok(())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn background(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<credentials::SecureStore>().0.run_mobile_plugin::<Value>("background", serde_json::json!({}))
+            .map(|_| ()).map_err(|_| "无法返回后台".to_string())
+    }).await.map_err(|_| "无法返回后台".to_string())?
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _| { if !silent_launch(&args) { let _ = show_main(app.clone()); } }))
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).args(["--autostart"]).build())
+        .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).args(["--autostart"]).build());
+    #[cfg(mobile)]
+    let builder = builder.plugin(credentials::plugin());
+    let builder = builder
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("preferences.json");
             let prefs: Preferences = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
-            let key = if prefs.base_url.is_empty() { None } else { keyring::Entry::new("com.lich13.sub2ops", &prefs.base_url).ok().and_then(|e| e.get_password().ok()) };
             let state = Arc::new(Runtime { client: reqwest::Client::builder().timeout(Duration::from_secs(10)).redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never()).build()?,
-                pinned: AtomicBool::new(prefs.pinned), quitting: AtomicBool::new(false), panel: StdMutex::new(PanelLifecycle::default()),
-                view: Mutex::new(ViewState { connected: key.is_some(), preferences: prefs, ..Default::default() }),
-                key: Mutex::new(key), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
+                #[cfg(desktop)] pinned: AtomicBool::new(prefs.pinned),
+                #[cfg(desktop)] quitting: AtomicBool::new(false),
+                #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
+                foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
+                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: true, initializing: true, preferences: prefs, ..Default::default() }),
+                key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
                 generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
+            #[cfg(desktop)]
+            {
+            fit_main_window(app.handle())?;
             create_quick(app.handle())?;
             // Re-register an existing LaunchAgent with the new arguments without
             // changing the user's preference or enabling a disabled login item.
@@ -849,9 +938,32 @@ pub fn run() {
                 }).build(app)?;
             #[cfg(target_os = "macos")]
             { tray_macos::install(&tray)?; panel_trace(app.handle(), "tray_ready", "transient_menu_macos27"); }
+            }
             let handle=app.handle().clone();
-            tauri::async_runtime::spawn(async move { loop {
+            tauri::async_runtime::spawn(async move {
+                let base = state.view.lock().await.preferences.base_url.clone();
+                let stored = credentials::read(handle.clone(), base).await;
+                {
+                    let _gate = state.network.lock().await;
+                    let mut view = state.view.lock().await;
+                    if state.generation.load(Ordering::SeqCst) == 0 {
+                        match stored {
+                            Ok(key) => { view.connected = key.is_some(); *state.key.lock().await = key; }
+                            Err(error) => view.error = error,
+                        }
+                    }
+                    view.initializing = false;
+                    publish(&handle, &view);
+                }
+                loop {
+                if !state.foreground.load(Ordering::SeqCst) {
+                    state.wake.notified().await;
+                    continue;
+                }
+                #[cfg(desktop)]
                 let visible=["main","quick"].iter().any(|label| handle.get_webview_window(label).is_some_and(|w|w.is_visible().unwrap_or(false)));
+                #[cfg(mobile)]
+                let visible = true;
                 // Wall time advances through macOS sleep. Check locally once a
                 // second so wake does not wait out a suspended 15-second timer.
                 let due=std::time::SystemTime::now()+Duration::from_secs(if visible {2} else {15});
@@ -866,26 +978,90 @@ pub fn run() {
         .on_window_event(|window,event| {
             let state=window.state::<Arc<Runtime>>();
             match event {
+                #[cfg(desktop)]
                 WindowEvent::CloseRequested {api,..} if !state.quitting.load(Ordering::Relaxed) => {
                     api.prevent_close();
                     if window.label() == "main" {
                         if let Err(error) = queue_main(window.app_handle().clone(), false) { panel_trace(window.app_handle(), "main_failed", &error); }
                     } else if let Err(error) = window.hide() { panel_trace(window.app_handle(), "hide_failed", &error.to_string()); }
                 },
+                #[cfg(desktop)]
                 WindowEvent::Focused(false) if window.label()=="quick" => defer_panel_blur(window.app_handle()),
-                WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); }, _=>()
+                #[cfg(desktop)]
+                WindowEvent::Focused(true) => { if window.label()=="quick" {state.panel.lock().unwrap().focus();panel_trace(window.app_handle(), "focused", "event");} state.wake.notify_one(); },
+                #[cfg(mobile)]
+                WindowEvent::Suspended | WindowEvent::Resumed => {
+                    let active = matches!(event, WindowEvent::Resumed);
+                    state.foreground.store(active, Ordering::SeqCst);
+                    if !active { state.read_epoch.send_modify(|epoch| *epoch += 1); }
+                    let handle = window.app_handle().clone();
+                    let state = state.inner().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let mut view = state.view.lock().await;
+                        view.foreground = state.foreground.load(Ordering::SeqCst);
+                        view.online = false;
+                        view.error.clear();
+                        publish(&handle, &view);
+                        state.wake.notify_one();
+                    });
+                }
+                _=>()
             }
-        })
-        .invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,resize_quick,check_updates])
-        .build(tauri::generate_context!()).expect("Sub2Ops failed to start")
-        .run(|app,event| {
-            if let tauri::RunEvent::Reopen {..}=event {let _=show_main(app.clone());}
+        });
+    #[cfg(desktop)]
+    let builder = builder.invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,resize_quick,check_updates]);
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,background,check_updates]);
+    builder.build(tauri::generate_context!()).expect("Sub2Ops failed to start")
+        .run(|_app,_event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::Reopen {..}=_event {let _=show_main(_app.clone());}
         });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn runtime() -> Runtime {
+        Runtime {
+            client: reqwest::Client::new(), view: Mutex::new(ViewState::default()),
+            key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
+            generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(),
+            path: PathBuf::new(), foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
+            #[cfg(desktop)] pinned: AtomicBool::new(false),
+            #[cfg(desktop)] quitting: AtomicBool::new(false),
+            #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
+        }
+    }
+    #[tokio::test]
+    async fn background_cancels_inflight_reads_and_does_not_start_new_reads() {
+        let state = runtime();
+        let started = AtomicBool::new(false);
+        let request = async { started.store(true, Ordering::SeqCst); std::future::pending::<Result<(), String>>().await };
+        let (result, ()) = tokio::join!(active_read(&state, request), async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            state.foreground.store(false, Ordering::SeqCst);
+            state.read_epoch.send_modify(|n| *n += 1);
+        });
+        assert!(started.load(Ordering::SeqCst));
+        assert!(result.unwrap_err().contains("后台"));
+        assert!(active_read(&state, async { panic!("background request must not be polled"); #[allow(unreachable_code)] Ok(()) }).await.is_err());
+        state.foreground.store(true, Ordering::SeqCst);
+        assert_eq!(active_read(&state, async { Ok(7) }).await.unwrap(), 7);
+    }
+    #[test]
+    fn updates_select_newer_signed_platform_package_only() {
+        let data = serde_json::json!([
+            {"tag_name":"desktop-v0.1.10","assets":[
+                {"name":"Sub2Ops_0.1.10_aarch64.dmg","browser_download_url":format!("{RELEASES}/download/desktop-v0.1.10/Sub2Ops_0.1.10_aarch64.dmg")},
+                {"name":"Sub2Ops_0.1.10_arm64-v8a.apk","browser_download_url":format!("{RELEASES}/download/desktop-v0.1.10/Sub2Ops_0.1.10_arm64-v8a.apk")}]},
+            {"tag_name":"desktop-v0.2.0","draft":true,"assets":[]},
+            {"tag_name":"desktop-v9.0.0","assets":[{"name":"unsafe_arm64-v8a.apk","browser_download_url":"https://other.example/file.apk"}]}
+        ]);
+        assert!(release_update(&data, "0.1.9", true).unwrap().1.ends_with("_arm64-v8a.apk"));
+        assert!(release_update(&data, "0.1.9", false).unwrap().1.ends_with("_aarch64.dmg"));
+        assert!(release_update(&data, "0.1.10", true).is_none());
+    }
     #[test]
     fn transient_failure_keeps_last_data_and_recovers() {
         let mut view = ViewState::default();

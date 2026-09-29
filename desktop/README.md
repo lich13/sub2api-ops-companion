@@ -1,18 +1,20 @@
-# Sub2Ops for macOS
+# Sub2Ops for macOS / Android
 
-Rust / Tauri 2 / React 运维工作台，首版支持 macOS 12 及以上的 Apple Silicon。
+Rust / Tauri 2 / React 运维客户端，支持 macOS 12+ 的 Apple Silicon 和 Android 12+ 的 ARM64。
 
 ## 安装与连接
 
-从本仓库 Releases 下载 `Sub2Ops_0.1.7_aarch64.dmg`，校验 `SHA256SUMS` 后将 Sub2Ops 拖入 Applications。客户端使用本机签名，未经 Apple 公证；检查更新只打开发布页，不自动安装。
+从本仓库 Releases 下载对应的 `.dmg` 或 `_arm64-v8a.apk`，校验 `SHA256SUMS`。Mac 将 Sub2Ops 拖入 Applications；Android 安装签名 APK。Mac 使用本机签名，未经 Apple 公证；Android 使用固定发布签名支持覆盖升级。检查更新打开对应平台的安装包，不自动安装。
 
-填写 Companion 地址（例如 `https://companion.example.com/sub2ops`）和已有的 **Sub2API 管理员 API Key**。Key 存储在 macOS Keychain，服务为 `com.lich13.sub2ops`；偏好设置不含 Key。断开连接会删除当前连接对应的钥匙串条目。
+填写 Companion 地址（例如 `https://companion.example.com/sub2ops`）和已有的 **Sub2API 管理员 API Key**。Mac Key 存储在 Keychain（服务 `com.lich13.sub2ops`）；Android 使用 Keystore 的不可导出 AES-GCM 密钥加密后保存在应用私有、禁止备份的目录。偏好设置及前端持久化不含 Key。断开连接删除对应凭据。
 
 - 账号：分组、平台、类型、状态筛选；用量栏对齐 Sub2API，包含窗口请求数、Token、A/U 费用。OpenAI OAuth 显示适用的 5h/7d；Grok 付费显示 7d/30d 和预付余额，免费显示 24h；API Key 显示今日统计及已配置的日/周/总配额。调度开关只改变允许调度，不清除限流、冷却或认证错误。
-- 模型：分组白名单、模型信息、完整 JSON 和最终预览；支持只读上游导入与 models.dev 目录搜索。白名单与元数据独立保存，冲突保留草稿。
+- 模型：按分组为新模型补全思考档位和默认值，读取真实上游信息；原生已支持时恢复继承，受限或未核实明确显示。仅在需要时确认追加精确白名单项，冲突保留草稿。
 - 事件：上游与认证错误、恢复成功为并列标签，独立分页和滚动；查看错误码、脱敏摘要、请求 ID，以及测活通过和恢复确认的准确时间。已删除账号的恢复记录不再展示，底层历史保留。
 - 自动化：复用云端 OAuth、每日测活、两平台 Key 回退配置。
-- 设置：Bark、连接、开机启动。
+- 设置：Bark、连接、版本检查；开机启动仅在 Mac 显示。
+
+Mac 主窗口默认 1440×860，按屏幕可用区居中收缩，九列账号表完整显示；再次打开不重置本次手动调整。Android 使用五项底部导航、紧凑账号块、筛选与操作弹层；账号页“分组动态”保留收藏与最近三个账号。详情、测试使用全屏面板，系统返回先关闭当前面板，再返回账号页或后台。
 
 左键菜单栏图标显示并聚焦快捷面板，星标分组排在前面；重复点击不会关闭。图钉控制失焦后是否关闭，Escape 或关闭按钮也可关闭。右键打开主窗口、检查更新或退出。主窗口打开或最小化时显示 Dock 图标，关闭后隐藏并继续驻留菜单栏；快捷面板不影响 Dock，开机启动默认关闭；启用后登录时静默驻留菜单栏，手动打开仍显示主窗口。
 
@@ -22,7 +24,7 @@ Rust / Tauri 2 / React 运维工作台，首版支持 macOS 12 及以上的 Appl
 
 账号页支持优先级编辑及升降序排列；数值越小优先级越高。连接测试支持 OpenAI 普通、Compact、图像及 Grok 文本、图像、视频、搜索、TTS、STT、Realtime；弹窗内点击开始直接执行，取消不重放。流式文本保留空格、换行和缩进。测试媒体和正文只保留在当前窗口。全部额度刷新覆盖暂停在内的 OpenAI/Grok OAuth，Grok 仅刷新账单，显示逐账号进度及失败结果，批次结束停止进度轮询。
 
-可见时每 2 秒读取状态，后台每 15 秒；恢复连接或重新打开窗口会刷新。离线保留最后快照并禁用写操作，不重放失败请求。刷新不调用额度查询或模型测活。
+Mac 可见时每 2 秒读取状态，驻留后台每 15 秒。Android 前台每 2 秒合并刷新，后台停止读取和进度轮询，取消未完成的只读请求与测试流，返回前台立即刷新；云端批次及自动化继续运行。离线保留最后快照并禁用写操作，已发出的写操作不重放。刷新不调用额度查询或模型测活。
 
 质量列支持红黄绿筛选、双向排序及评分明细，默认仍按优先级排序。评分只读近七天历史，错误、首字、输出速率权重为 50% / 25% / 25%，样本不足不显示数字。计算按需异步进行，最短间隔 30 秒，不阻塞快照；基准缓存五分钟，异常延迟明确显示，不影响账号优先级或调度。完整定义见 [QUALITY.md](QUALITY.md)。
 
@@ -43,7 +45,20 @@ pnpm bundle
 
 产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/`。`pnpm dev` 提供明确标记为“预览”的开发数据，只在开发构建中存在；生产客户端只使用 Rust HTTP 通道。
 
-视觉规范见 [DESIGN.md](DESIGN.md)。`desktop-v*` 标签触发桌面构建与发布流程，仅附带 `.dmg` 和 `SHA256SUMS`；历史发布资产保留。
+Android 固定工具链：JDK 21、SDK 36、Build Tools 36.0.0、NDK 28.2.13676358、Gradle 8.14.3、Rust 1.94.1 的 `aarch64-linux-android` 标准库。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
+
+```sh
+node ../scripts/android_signing.mjs
+# 设置上一步输出的 SUB2OPS_ANDROID_SIGNING_PROPERTIES 路径
+pnpm bundle:android
+python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+```
+
+签名材料只保存在仓库外的受保护目录；`android_signing.mjs --github` 将它经 stdin 配置为本仓库 CI secrets。不得替换已有签名。Android 仅构建 ARM64，发布前验证签名、最低 API、APK 及全部原生库的 16KB 对齐。
+
+原生仪器测试使用 `node ../scripts/android_fixtures.mjs` 生成仅测试包包含的模拟数据，再构建 `assembleUniversalDebugAndroidTest`。在 ARM64 模拟器中分别运行 `AndroidRuntimeTest#persistAndLifecycle`、覆盖安装同签名 APK 后运行 `#restartUpgradeAndDisconnect`，以及 `#keyboardAndMediaPicker`。带硬件键盘的模拟器需启用软键盘。发布构建可用 `-Psub2opsTestBuildType=release assembleUniversalReleaseAndroidTest` 复验。
+
+视觉规范见 [DESIGN.md](DESIGN.md)。`desktop-v*` 标签触发构建与发布流程，仅附带 Mac DMG、Android ARM64 APK 和统一 `SHA256SUMS`；不发布 ZIP，历史发布资产保留。
 
 ## 云端接口
 

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
 import { api } from "./bridge";
+import { useBackAction } from "./mobile";
 import {
   fullTime,
   type Account,
@@ -57,6 +58,7 @@ export default function UsageCell({
     action: UsageAction;
     version: string;
   } | null>(null);
+  useBackAction(!!confirm, () => setConfirm(null));
   const usage = account.usage;
   const windows = usage?.windows ?? account.usage_windows ?? [];
   async function run(

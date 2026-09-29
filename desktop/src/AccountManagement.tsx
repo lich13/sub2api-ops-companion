@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
 import { api, command } from "./bridge";
 import type { Account } from "./types";
+import { useBackAction } from "./mobile";
 
 export type DeleteResult = {
   id: number;
@@ -30,6 +31,7 @@ export function DeleteAccountsDialog({
     alive = useRef(true),
     connected = useRef(online);
   connected.current = online;
+  useBackAction(true, () => { if (!running.current) close(); });
   useEffect(() => {
     alive.current = true;
     return () => {

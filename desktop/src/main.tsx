@@ -41,6 +41,7 @@ import {
   type ViewState,
 } from "./types";
 import "./style.css";
+import "./responsive.css";
 import UsageCell from "./UsageCell";
 import {
   MiniUsage,
@@ -53,6 +54,8 @@ import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
+import MobileAccounts from "./MobileAccounts";
+import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
 
 type Page = "accounts" | "models" | "events" | "automation" | "settings";
@@ -122,7 +125,23 @@ export default function App() {
     [eventTab, setEventTab] = useState<"errors" | "recoveries">("errors"),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
-    [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null);
+    [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
+    [filtersOpen, setFiltersOpen] = useState(false),
+    [groupsOpen, setGroupsOpen] = useState(false);
+  const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
+  useBackAction(groupsOpen, () => setGroupsOpen(false));
+  useBackAction(filtersOpen, () => setFiltersOpen(false));
+  useBackAction(!!detail || detailBusy, () => { setDetail(null); setDetailBusy(false); });
+  useBackAction(!!confirm, () => setConfirm(null));
+  useEffect(() => {
+    if (!mobile) return;
+    let disposed = false, off = () => {};
+    void listenBack(() => {
+      if (page !== "accounts") setPage("accounts");
+      else void command("background").catch(() => {});
+    }).then((unsubscribe) => { if (disposed) unsubscribe(); else off = unsubscribe; });
+    return () => { disposed = true; off(); };
+  }, [mobile, page]);
   const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   const filterKey = JSON.stringify([
@@ -145,6 +164,8 @@ export default function App() {
     setTestAccount(null);
     setQualityAccount(null);
     setConfirm(null);
+    setGroupsOpen(false);
+    setFiltersOpen(false);
   }, [connectionKey]);
   const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
   useEffect(() => {
@@ -450,8 +471,8 @@ export default function App() {
       Number(state.preferences.favorites.includes(a.id)),
   );
   return (
-    <div className={quick ? "app quick" : "app"}>
-      {!quick && (
+    <div className={`app${quick ? " quick" : ""}${mobile ? " mobile" : ""}`}>
+      {!quick && !mobile && (
         <aside className="sidebar" data-tauri-drag-region>
           <div className="brand">
             <span className="brand-icon">
@@ -501,7 +522,7 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
-            {!quick && !preview && (
+            {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
                 title="打开快捷面板"
@@ -558,7 +579,7 @@ export default function App() {
           className={`content ${!quick && page === "events" ? "events-content" : ""}`}
         >
           <div ref={quickBody} className="content-inner">
-            {!ready ? (
+            {!ready || state.initializing ? (
               <div className="empty">
                 <LoaderCircle className="spin" />
                 正在加载客户端
@@ -608,7 +629,8 @@ export default function App() {
                 {page === "models" && <ModelConfig key={connectionKey} online={state.online} />}
                 {page === "accounts" && (
                   <>
-                    <QuotaRefresh online={state.online} report={report} />
+                    <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} />
+                    {mobile && <button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button>}</div>
                     <div className="filters">
                       <label className="search">
                         <Search size={15} />
@@ -618,6 +640,10 @@ export default function App() {
                           onChange={(e) => setQuery(e.target.value)}
                         />
                       </label>
+                      {mobile && <button aria-label="筛选账号" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={18}/>筛选</button>}
+                      {mobile && filtersOpen && <div className="filter-shade" onClick={() => setFiltersOpen(false)}/>}
+                      <div className={`filter-options${filtersOpen ? " open" : ""}`} role={mobile && filtersOpen ? "dialog" : undefined} aria-label={mobile ? "账号筛选" : undefined}>
+                      {mobile && <header><h2>筛选账号</h2><button className="icon-button" aria-label="关闭筛选" onClick={() => setFiltersOpen(false)}><X size={20}/></button></header>}
                       <select
                         aria-label="分组筛选"
                         value={group}
@@ -673,9 +699,13 @@ export default function App() {
                         <option value="yellow">黄色 · 关注</option>
                         <option value="red">红色 · 异常</option>
                       </select>
+                      {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
+                      </div>
                     </div>
+                    {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "priority" | "quality"); setAscending(order === "asc"); }}><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
                       <div className="selection-bar">
+                        {mobile && <label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label>}
                         <span>已选 {selected.size} 个账号</span>
                         <button
                           className="danger-text"
@@ -689,7 +719,8 @@ export default function App() {
                           删除所选
                         </button>
                       </div>
-                      <table>
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} report={report}/> : <table className="accounts-table">
+                        <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
                             <th className="select-cell">
@@ -941,7 +972,7 @@ export default function App() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table>}
                     </div>
                     {!filterAccounts(
                       accounts,
@@ -1080,6 +1111,8 @@ export default function App() {
           </footer>
         )}
       </main>
+      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.map((p) => <button key={p.id} className={page === p.id ? "active" : ""} aria-current={page === p.id ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>)}</nav>}
+      {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
       {deleteAccounts && (
         <DeleteAccountsDialog
           accounts={deleteAccounts}
@@ -1454,11 +1487,11 @@ function SettingsPage({
         <>
           <section className="settings-card">
             <h2>客户端</h2>
-            <Field
+            {state.platform !== "android" && <Field
               label="开机启动"
               value={state.preferences.launch_at_login}
               set={(v) => void prefs({ launch_at_login: Boolean(v) })}
-            />
+            />}
             <div className="field">
               <span>当前版本</span>
               <button

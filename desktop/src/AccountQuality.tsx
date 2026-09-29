@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { api } from "./bridge";
+import { useBackAction } from "./mobile";
 import {
   fullTime,
   type Account,
@@ -143,6 +144,7 @@ export default function QualityDialog({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  useBackAction(true, onClose);
   useEffect(() => {
     let cancelled = false;
     setBusy(true);

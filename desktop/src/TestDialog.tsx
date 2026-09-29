@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
 import { fullTime, type Account, type TestEvent } from "./types";
+import { useBackAction } from "./mobile";
 
 export type TestMode = "default" | "compact" | "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime";
 export type TestModel = {id: string; display_name: string; type: string};
@@ -22,6 +23,7 @@ export function preferredModel(models: TestModel[], platform: string, mode: Test
   return (platform === "grok" ? options.find((m) => m.id.includes("grok-4.5")) ?? options.find((m) => m.id === "grok") : options.find((m) => m.id.includes("sonnet")))?.id ?? options[0]?.id ?? "";
 }
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
+  useBackAction(true, close);
   const [models, setModels] = useState<TestModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<TestMode>(account.platform === "grok" ? "text" : "default");
