@@ -18,7 +18,7 @@ services:
   sub2api:
     image: ${QA_SUB2API_IMAGE:?exact native image required}
     volumes:
-      - ${QA_NATIVE_BINARY:?exact 0.2.9 binary required}:/app/sub2api:ro
+      - ${QA_NATIVE_BINARY:?exact production binary required}:/app/sub2api:ro
     tmpfs: [/app/data]
     environment:
       AUTO_SETUP: "true"
@@ -42,7 +42,7 @@ services:
       pg: { condition: service_healthy }
       redis: { condition: service_started }
   ops:
-    image: sub2ops-catalog-qa:0.1.7
+    image: sub2ops-catalog-qa:0.1.8
     build: ..
     volumes:
       - ..:/workspace:ro
@@ -58,7 +58,7 @@ services:
     depends_on:
       pg: { condition: service_healthy }
   mock:
-    image: sub2ops-catalog-qa:0.1.7
+    image: sub2ops-catalog-qa:0.1.8
     user: "10001:10001"
     working_dir: /workspace
     command: [python, scripts/model_catalog_integration.py, serve]

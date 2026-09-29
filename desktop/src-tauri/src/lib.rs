@@ -149,9 +149,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
     let group_path = |suffix: &str| plain.strip_prefix("/model-groups/").and_then(|s| s.strip_suffix(suffix))
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0));
     if !path.contains('?') && match method {
-        "GET" => matches!(plain, "/model-groups" | "/model-catalog") || group_path(""),
-        "PUT" => group_path("/allowlist") || group_path("/overrides"),
-        "POST" => group_path("/preview") || group_path("/upstream-import"),
+        "GET" => plain == "/model-groups" || group_path("/reasoning"),
+        "PUT" | "DELETE" => group_path("/reasoning"),
+        "POST" => group_path("/reasoning/resolve"),
         _ => false,
     } { return true; }
     match method {
@@ -946,12 +946,13 @@ mod tests {
     #[test]
     fn command_allowlist() {
         assert!(allowed_request("GET", "/model-groups"));
-        assert!(allowed_request("GET", "/model-catalog"));
-        assert!(allowed_request("GET", "/model-groups/7"));
-        assert!(allowed_request("POST", "/model-groups/7/preview"));
-        assert!(allowed_request("POST", "/model-groups/7/upstream-import"));
-        assert!(allowed_request("PUT", "/model-groups/7/allowlist"));
-        assert!(allowed_request("PUT", "/model-groups/7/overrides"));
+        assert!(allowed_request("GET", "/model-groups/7/reasoning"));
+        assert!(allowed_request("POST", "/model-groups/7/reasoning/resolve"));
+        assert!(allowed_request("PUT", "/model-groups/7/reasoning"));
+        assert!(allowed_request("DELETE", "/model-groups/7/reasoning"));
+        for (method, path) in [("GET", "/model-catalog"), ("GET", "/model-groups/7"), ("POST", "/model-groups/7/preview"), ("POST", "/model-groups/7/upstream-import"), ("PUT", "/model-groups/7/allowlist"), ("PUT", "/model-groups/7/overrides")] {
+            assert!(!allowed_request(method, path));
+        }
         for path in ["/model-groups/0", "/model-groups/7/credentials", "/model-groups/7?key=secret", "/model-groups/7/../accounts"] {
             assert!(!allowed_request("GET", path));
         }

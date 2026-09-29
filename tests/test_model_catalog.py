@@ -65,18 +65,14 @@ class RuleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             transform(body, {"gpt-6-astra": {"max_context_window": 10}}, {"enabled": False, "models": []})
 
-    def test_modelsdev_missing_fields_and_explicit_reasoning(self):
-        self.assertEqual(import_fields({"id": "m", "name": "Name", "reasoning": True}), {"display_name": "Name"})
+    def test_upstream_import_does_not_infer_capabilities_or_default(self):
+        self.assertEqual(import_fields({"id": "m", "name": "Name", "reasoning": True}), {})
         fields = import_fields({"limit": {"context": 1000}, "reasoning_options": [{"type": "effort", "values": [None, "high"]}]})
-        self.assertEqual(fields["default_reasoning_level"], "none")
-        self.assertEqual(fields["max_context_window"], 1000)
-        self.assertNotIn("input_modalities", fields)
-        self.assertEqual(import_fields({"reasoning": False})["supported_reasoning_levels"], [{"effort": "none", "description": ""}])
-        full = import_fields({**BASE, "future": 0})
-        self.assertNotIn("slug", full)
-        self.assertEqual(full["future"], 0)
-        self.assertEqual(import_fields({"supported_reasoning_levels": ["low", "high"]})["supported_reasoning_levels"],
-                         [{"effort": "low", "description": ""}, {"effort": "high", "description": ""}])
+        self.assertNotIn("default_reasoning_level", fields)
+        self.assertNotIn("context_window", fields)
+        self.assertEqual(fields["supported_reasoning_levels"], [{"effort": "high", "description": ""}])
+        self.assertEqual(import_fields({"reasoning": False})["default_reasoning_level"], "none")
+        self.assertEqual(set(import_fields({**BASE, "future": 0})), {"supported_reasoning_levels", "default_reasoning_level"})
 
     def test_composite_exact_endpoint_priority_mapping_and_fixed_accounts(self):
         accounts = [{"id": 1, "platform": "openai", "status": "active", "schedulable": True,
@@ -168,42 +164,17 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(json.loads(self.proxy()[2]), self.response)
         self.assertNotIn("PRIVATE_SECRET", json.dumps(self.service.status))
 
-    def test_composite_adds_existing_route_alias_without_mutation(self):
+    def test_composite_does_not_add_unsaved_supplements_or_mutate_accounts(self):
         self.group["platform"] = "composite"
         account = {"id": 1, "platform": "openai", "type": "apikey", "status": "active", "schedulable": True, "credentials": {"model_mapping": {"public": "gpt-6-astra"}}}
         route = {"id": 1, "enabled": True, "match_type": "exact", "endpoint": "responses", "public_model": "alias", "target_platform": "openai", "upstream_model": "public"}
         self.db.fetch_all.side_effect = lambda sql, _: [route] if "composite_model_routes" in sql else [account]
         result = json.loads(self.proxy()[2])
-        self.assertEqual([m["slug"] for m in result["models"]], ["gpt-6-astra", "alias", "public"])
-        self.assertEqual(result["models"][1]["model_messages"], BASE["model_messages"])
+        self.assertEqual([m["slug"] for m in result["models"]], ["gpt-6-astra"])
         account["schedulable"] = False
         self.assertEqual([m["slug"] for m in json.loads(self.proxy()[2])["models"]], ["gpt-6-astra"])
         self.assertTrue(all(r[0] == "GET" for r in self.requests))
         self.db.execute.assert_not_called()
-
-    def test_save_does_not_retarget_unavailable_override_or_overwrite_new_group_version(self):
-        self.service.baseline = lambda group: ({"models": [BASE]}, "native")
-        group = self.service.group(7)
-        old = self.service.store.save(7, {"gone": {"display_name": "keep"}}, revision({}))
-        payload = {"expected_version": group["version"], "expected_revision": old["revision"], "overrides": {"gone": {"display_name": "keep"}, "gpt-6-astra": {"display_name": "new"}}}
-        self.service.save_overrides(7, payload)
-        saved = self.service.store.group(7)
-        self.assertIn("gone", saved["overrides"])
-        payload.update(expected_revision=saved["revision"], overrides={"new-model": {"display_name": "bad"}})
-        with self.assertRaises(HTTPException): self.service.save_overrides(7, payload)
-        payload["expected_version"] = "x" * 64
-        with self.assertRaises(HTTPException): self.service.save_overrides(7, payload)
-
-    def test_allowlist_partial_update_and_readback(self):
-        group = self.service.group(7)
-        def admin(key, method, path, payload):
-            self.assertEqual((method, path), ("PUT", "/groups/7"))
-            self.assertEqual(set(payload), {"model_allowlist"})
-            self.group["model_allowlist"] = payload["model_allowlist"]
-        self.service.admin = admin
-        result = self.service.save_allowlist(7, "admin", {"expected_version": group["version"], "allowlist": {"enabled": True, "models": [BASE["slug"]]}})
-        self.assertTrue(result["model_allowlist"]["enabled"])
-        with self.assertRaises(HTTPException): self.service.save_allowlist(7, "admin", {"expected_version": group["version"], "allowlist": {"enabled": False, "models": []}})
 
     def test_routes_require_admin_and_old_surface_is_absent(self):
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -217,7 +188,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(client.get("/api/desktop/v1/model-groups", headers={"x-api-key": "admin"}).status_code, 200)
         self.assertEqual(client.get("/models").status_code, 404)
         self.assertEqual(client.get("/docs").status_code, 404)
-        self.assertEqual(client.post("/api/desktop/v1/model-groups/7/preview", headers={"x-api-key": "admin"}, json={"extra": 1}).status_code, 422)
+        self.assertEqual(client.post("/api/desktop/v1/model-groups/7/preview", headers={"x-api-key": "admin"}, json={"extra": 1}).status_code, 404)
 
     def test_loopback_uses_real_get_and_preserves_unknown_json(self):
         received = []

@@ -1,6 +1,6 @@
 # Sub2API Ops Companion
 
-Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和分组模型目录配置。
+Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和新模型思考档位补全。
 
 macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组最近成功调用、账号调度、错误详情及 Ops 设置。下载与使用见 [客户端说明](desktop/README.md)。仅通过桌面 App 管理；网页、SSO 和旧表单接口已下线。
 
@@ -36,7 +36,7 @@ docker compose up -d --build
 ## 环境变量
 
 - `SUB2API_CONFIG_PATH`：独立连接配置文件，默认 `/data/sub2api-config.json`，JSON 的 `base_url` / `verify_base_url` 优先于对应环境变量。
-- `GROUP_MODEL_CONFIG_PATH`：分组元数据覆盖文件；权限 `0600`，按分组版本校验。
+- `GROUP_MODEL_CONFIG_PATH`：分组思考档位补全文件；权限 `0600`，按分组版本校验。
 
 - `DATABASE_URL`：Sub2API PostgreSQL 连接串。
 - `BASE_PATH`：反代路径前缀，默认 `/sub2ops`。
@@ -58,9 +58,11 @@ docker compose up -d --build
 - `SUB2API_BASE_URL`：Sub2API 公网根地址。
 - `SUB2API_VERIFY_BASE_URL`：可选的服务端内网校验根地址。
 
-## 分组模型目录
+## 新模型思考档位
 
-桌面“模型”页按分组编辑白名单与 Codex 元数据。白名单经原 Sub2API 管理 API 单独保存，元数据保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。初始覆盖为空，不修改账号映射、优先级或计费。覆盖对象递归合并、数组替换；支持只读上游导入与 models.dev 搜索。
+桌面“模型”页只维护需要补全的新模型。输入精确 ID 后读取真实上游，填写支持的思考档位与默认值；缺失信息不猜测。只写入 `supported_reasoning_levels` 和 `default_reasoning_level`，保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。白名单阻挡时经明确确认只追加当前模型，保留其他条目和开关；冲突、失败保留草稿。
+
+补全绑定普通或 Composite 分组的真实路由与账号映射。路由变化后停止应用；目录缺少新条目时只使用其自身的真实描述。当前已核对原版 Sub2API 0.2.9 / 0.2.10 的 Responses 转发规则：未知 Grok 型号会丢弃思考强度，部分档位会被改写；分组强度策略也可能限制请求。这些情况显示“转发受限”，未知版本或证据缺失显示“转发未核实”，均只存草稿。上游原生支持后可“恢复原生”，仅移除 Companion 补全，不撤销白名单或账号配置。升级不自动添加补全项，不修改 Sub2API 源码、镜像或表结构。
 
 兼容入口仅处理带 `client_version` 的 GET `/v1/models`、`/models` 及 `/backend-api/codex/models`。每次请求先交给原 Sub2API 校验实际调用者，之后应用当前分组覆盖；异常返回原目录。nginx 配置见 `deploy/nginx/codex-models.location.conf`，只开放 API 的 IP 入口使用 `codex-models-raw-ip.location.conf` 保留普通 `/models` 的关闭状态。原模型调用和普通列表不经过兼容层。
 
