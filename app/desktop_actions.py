@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from .audit import write_audit
 from .bark import sanitize_error_text
-from .usage_query import execute_oauth_usage_query, parse_iso_datetime
+from .usage_query import parse_iso_datetime
 
 
 def billing_is_fresh(data: dict[str, Any], queried_at: str) -> bool:
@@ -240,6 +240,7 @@ class DesktopActions:
         return json.loads(json.dumps(self.batch)) if self.batch else {"status": "idle", "items": [], "total": 0, "completed": 0}
 
     async def start_batch(self, key: str) -> dict[str, Any]:
+        requested_at = time.monotonic()
         async with self.batch_lock:
             if self.batch_task and not self.batch_task.done():
                 return self.batch_view()
@@ -250,10 +251,10 @@ class DesktopActions:
                           "total": len(rows), "completed": 0, "items": [
                               {"account_id": row["id"], "account_name": row["name"], "platform": row["platform"], "status": "pending"}
                               for row in rows]}
-            self.batch_task = asyncio.create_task(self._batch(rows, key))
+            self.batch_task = asyncio.create_task(self._batch(rows, key, requested_at=requested_at))
             return self.batch_view()
 
-    async def _batch(self, rows: list[dict[str, Any]], key: str) -> None:
+    async def _batch(self, rows: list[dict[str, Any]], key: str, *, requested_at: float | None = None) -> None:
         batch = self.batch
         if batch is None:
             return
@@ -286,21 +287,31 @@ class DesktopActions:
                                 if (live["platform"], live["type"]) != (platform, "oauth"):
                                     raise HTTPException(409, "账号类型已变化")
                                 item["status"] = "running"
-                                async with asyncio.timeout(30):
-                                    data = await self.json_request(client, "GET", f"accounts/{row['id']}/usage?source=active&force=true")
+                                if platform == "openai":
+                                    if monitor is None:
+                                        raise HTTPException(503, "额度查询协调器不可用")
+                                    query_row = await asyncio.to_thread(monitor._read_account, row["id"])
+                                    if not query_row or (query_row.get("platform"), query_row.get("type")) != ("openai", "oauth"):
+                                        raise HTTPException(409, "账号类型已变化")
+                                    request_task = asyncio.create_task(asyncio.to_thread(monitor.queries.query, query_row, key,
+                                        source="manual", reason="batch_refresh", requested_at=requested_at,
+                                        timeout_seconds=30))
+                                    try:
+                                        result = await asyncio.shield(request_task)
+                                    except asyncio.CancelledError:
+                                        await request_task
+                                        raise
+                                    if not result.get("success"):
+                                        raise HTTPException(502, result.get("error") or "额度查询失败")
+                                    data = result.get("data") or {}
+                                else:
+                                    async with asyncio.timeout(30):
+                                        data = await self.json_request(client, "GET", f"accounts/{row['id']}/usage?source=active&force=true")
                                 live = await self.account(row["id"])
                                 if (live["platform"], live["type"]) != (platform, "oauth"):
                                     raise HTTPException(409, "账号已删除或类型变化，结果未采用")
                                 if not isinstance(data, dict):
                                     raise HTTPException(502, "额度响应格式无效")
-                                if platform == "openai" and monitor:
-                                    result = execute_oauth_usage_query(row["id"], self.s.r.oauth_base_url(), key,
-                                        account_row={**live, "credentials": {"plan_type": live.get("quota_plan_type")}},
-                                        opener=lambda *_: {"code": 0, "data": data}, now=parse_iso_datetime(queried_at))
-                                    if not result.get("success"):
-                                        raise HTTPException(502, "OpenAI 额度响应不完整")
-                                    await asyncio.to_thread(monitor.store.commit, results={row["id"]: result}, scheduler_updates={row["id"]: {
-                                        "last_success_at": queried_at, "last_error_code": ""}})
                                 if platform == "grok" and not billing_is_fresh(data, queried_at):
                                     item.update(status="partial", error="没有完整的新鲜账单窗口", error_code="partial_billing")
                                 else:
@@ -309,9 +320,6 @@ class DesktopActions:
                             except (HTTPException, TimeoutError, httpx.HTTPError) as exc:
                                 reason = str(exc.detail) if isinstance(exc, HTTPException) else "查询超时"
                                 item.update(status="failed", error=sanitize_error_text(reason, limit=200), error_code="quota_query_failed")
-                                if platform == "openai" and monitor:
-                                    await asyncio.to_thread(monitor.store.commit, scheduler_updates={row["id"]: {
-                                        "last_error_at": stamp(), "last_error_code": "quota_query_failed"}})
                             except asyncio.CancelledError:
                                 item.update(status="failed", error="整轮查询超时，未重复请求", error_code="batch_timeout")
                                 raise

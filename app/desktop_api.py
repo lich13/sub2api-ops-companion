@@ -7,6 +7,7 @@ import json
 import re
 import threading
 import time
+from concurrent.futures import Future
 import urllib.error
 import urllib.request
 from contextlib import contextmanager, nullcontext
@@ -190,6 +191,7 @@ class DesktopService:
         self._stats_signature: list = []
         self._usage_locks: dict[int, threading.Lock] = {}
         self._usage_locks_guard = threading.Lock()
+        self._usage_futures: dict[int, tuple[str, Future]] = {}
         self._uncertain_resets: set[int] = set()
         self.actions = DesktopActions(self)
         self.quality = QualityCache(getattr(runtime, "db", None))
@@ -461,8 +463,50 @@ class DesktopService:
         return {"verified": True, "detached": detached, "account_id": account_id, "schedulable": payload.schedulable}
 
     def usage_action(self, account_id: int, payload: UsageActionRequest, key: str) -> dict[str, Any]:
+        if payload.action != "query_usage":
+            return self._usage_action(account_id, payload, key)
+        requested_at = time.monotonic()
+        with self._usage_locks_guard:
+            pending = self._usage_futures.get(account_id)
+            if pending and pending[0] != payload.expected_version:
+                raise HTTPException(409, "账号已变化，请刷新后再操作")
+            owner = pending is None
+            future = pending[1] if pending else Future()
+            if owner:
+                self._usage_futures[account_id] = (payload.expected_version, future)
+        if not owner:
+            return future.result(timeout=65)
+        try:
+            result = self._usage_action(account_id, payload, key, requested_at=requested_at)
+            future.set_result(result)
+            return result
+        except BaseException as exc:
+            future.set_exception(exc)
+            raise
+        finally:
+            with self._usage_locks_guard:
+                self._usage_futures.pop(account_id, None)
+
+    def _usage_action(self, account_id: int, payload: UsageActionRequest, key: str,
+                      *, requested_at: float | None = None) -> dict[str, Any]:
         if account_id <= 0:
             raise HTTPException(422, "账号编号无效")
+        monitor = getattr(self.r, "oauth_monitor", None)
+        if payload.action == "query_usage" and monitor and requested_at is not None:
+            row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+            if row and row["platform"] == "openai" and row["type"] == "oauth":
+                if account_dto(row, datetime.now(timezone.utc), set())["version"] != payload.expected_version:
+                    raise HTTPException(409, "账号已变化，请刷新后再操作")
+                shared = monitor.queries.join_existing(account_id, requested_at)
+                if shared is not None:
+                    if not shared.get("success"):
+                        raise HTTPException(502, {"message": "额度查询失败，未重复请求", "code": shared.get("error_code")})
+                    live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                    if not live or (live["platform"], live["type"]) != ("openai", "oauth"):
+                        raise HTTPException(409, "账号已变化，请刷新确认结果")
+                    self.invalidate()
+                    account = next((a for a in self.snapshot()["accounts"] if a["id"] == account_id), None)
+                    return {"message": "用量查询完成", "account": account}
         lock = self.account_lock(account_id)
         if not lock.acquire(blocking=False):
             raise HTTPException(409, "此账号正在执行用量操作，请等待结果")
@@ -487,7 +531,9 @@ class DesktopService:
             monitor = getattr(self.r, "oauth_monitor", None)
             if row["platform"] == "openai" and monitor:
                 monitor_lock = monitor._run_lock
-                if not monitor_lock.acquire(blocking=False):
+                acquired = (monitor_lock.acquire(timeout=30) if payload.action == "query_usage"
+                            else monitor_lock.acquire(blocking=False))
+                if not acquired:
                     monitor_lock = None
                     raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
             action_paths = {
@@ -504,12 +550,27 @@ class DesktopService:
                 self._uncertain_resets.add(account_id)
             code = "unknown"
             try:
-                with _urlopen_no_redirect(request, timeout=timeout) as response:
-                    body = json.loads(response.read(2_000_000))
-                    if not 200 <= response.status < 300 or body.get("code") != 0:
-                        code = "upstream_rejected"
-                        raise ValueError("upstream rejected")
-                data = body.get("data") or {}
+                if payload.action == "query_usage" and row["platform"] == "openai":
+                    if monitor is None:
+                        code = "query_coordinator_unavailable"
+                        raise ValueError(code)
+                    live_row = monitor._read_account(account_id)
+                    if not live_row or (live_row.get("platform"), live_row.get("type")) != ("openai", "oauth"):
+                        code = "account_changed"
+                        raise ValueError(code)
+                    result = monitor.queries.query(live_row, key, source="manual", reason="single_refresh",
+                                                   requested_at=requested_at, timeout_seconds=30)
+                    if not result.get("success"):
+                        code = result.get("error_code") or "quota_query_failed"
+                        raise ValueError(code)
+                    data = result.get("data") or {}
+                else:
+                    with _urlopen_no_redirect(request, timeout=timeout) as response:
+                        body = json.loads(response.read(2_000_000))
+                        if not 200 <= response.status < 300 or body.get("code") != 0:
+                            code = "upstream_rejected"
+                            raise ValueError("upstream rejected")
+                    data = body.get("data") or {}
                 if not isinstance(data, dict):
                     raise ValueError("invalid result")
                 if payload.action == "reset_quota" and data.get("code") not in (None, "success", "ok", 0):

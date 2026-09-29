@@ -110,6 +110,9 @@ async def lifespan(_: FastAPI):
     global oauth_monitor, oauth_monitor_task
     global key_fallback_controller, key_fallback_task
     db.open()
+    old_oauth_config = oauth_config_file()
+    if "oauth_7d_probe_interval_seconds" in old_oauth_config:
+        await asyncio.to_thread(save_oauth_runtime_config, old_oauth_config)
     store = oauth_state_store()
     await asyncio.to_thread(store.commit)
     await asyncio.to_thread(

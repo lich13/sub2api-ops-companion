@@ -191,11 +191,11 @@ class DailyExecutionTests(unittest.TestCase):
 
     def test_recovery_test_in_same_cycle_is_reused(self):
         row = healthy()
-        row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=DUE.isoformat())
+        row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=(DUE-timedelta(seconds=60)).isoformat())
         with tempfile.TemporaryDirectory() as directory:
             monitor, calls = self.make_monitor(Path(directory), rows=[row])
             monitor.settings.oauth_recovery_monitor_enabled = True
-            monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE), BEFORE)})
+            monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE-timedelta(seconds=60)), DUE-timedelta(hours=2))})
             def recover(*_a, **_kw):
                 row.update(rate_limited_at=None, rate_limit_reset_at=None)
                 return {"success": True}
@@ -206,11 +206,11 @@ class DailyExecutionTests(unittest.TestCase):
 
     def test_recovery_test_is_not_reused_after_account_becomes_unschedulable(self):
         row = healthy()
-        row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=DUE.isoformat())
+        row.update(rate_limited_at=BEFORE.isoformat(), rate_limit_reset_at=(DUE-timedelta(seconds=60)).isoformat())
         with tempfile.TemporaryDirectory() as directory:
             monitor, calls = self.make_monitor(Path(directory), rows=[row])
             monitor.settings.oauth_recovery_monitor_enabled = True
-            monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE), BEFORE)})
+            monitor.store.commit(results={1: result(summary(five_used=100, five_reset=DUE-timedelta(seconds=60)), DUE-timedelta(hours=2))})
 
             def recover(*_args, **_kwargs):
                 row.update(rate_limited_at=None, rate_limit_reset_at=None, schedulable=False)

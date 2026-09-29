@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from fastapi import HTTPException
 from app.desktop_api import DesktopService, UsageActionRequest, account_dto
 from app.desktop_usage import attach_stats, project_usage, reset_credits, stats_specs
+from app.oauth_monitor import OAuthMonitor
 
 NOW = datetime(2026, 9, 25, 16, 5, tzinfo=timezone.utc)
 
@@ -110,6 +111,7 @@ class UsageActionTests(unittest.TestCase):
                     owner.live["extra"]["codex_reset_credit_snapshot"]["available_count"]=0
                 self.send_response(200);self.send_header("Content-Type","application/json");self.end_headers()
                 self.wfile.write(json.dumps({"code":0,"data":{"code":"ok","windows_reset":1,"cache_refreshed":True,"cache_persisted":True,
+                    "five_hour":{"utilization":10},"seven_day":{"utilization":20},
                     "credentials":{"api_key":"secret-marker"},"points":99,"referral":"private-invite",**owner.result}}).encode())
             def log_message(self,*_): pass
         self.server=ThreadingHTTPServer(("127.0.0.1",0),Handler)
@@ -118,6 +120,10 @@ class UsageActionTests(unittest.TestCase):
         self.service=DesktopService(SimpleNamespace(db=db,oauth_base_url=lambda:f"http://127.0.0.1:{self.server.server_port}",
             settings=SimpleNamespace(audit_path=str(Path(self.tmp.name)/"audit.jsonl"))))
         self.service.snapshot=Mock(side_effect=lambda:{"accounts":[{"id":1,"usage":project_usage(self.live,NOW)}]})
+        self.service.r.settings.usage_query_state_path = str(Path(self.tmp.name)/"oauth.json")
+        self.service.r.settings.oauth_daily_test_enabled = False
+        self.service.r.oauth_monitor = OAuthMonitor(self.service.r.settings, db,
+            base_url_provider=self.service.r.oauth_base_url, account_reader=lambda *_:self.live)
 
     def tearDown(self):
         self.server.shutdown();self.server.server_close();self.thread.join();self.tmp.cleanup()
@@ -152,13 +158,14 @@ class UsageActionTests(unittest.TestCase):
         with self.assertRaises(HTTPException):self.service.usage_action(1,payload,"key")
         self.assertEqual(self.calls,[])
 
-    def test_serial_execution_rejects_double_click(self):
+    def test_concurrent_queries_share_one_http_request(self):
         self.block=threading.Event(); payload=self.payload("query_usage")
-        worker=threading.Thread(target=lambda:self.service.usage_action(1,payload,"key"));worker.start()
+        results=[]
+        worker=threading.Thread(target=lambda:results.append(self.service.usage_action(1,payload,"key")));worker.start()
         self.assertTrue(self.entered.wait(1))
-        with self.assertRaises(HTTPException) as raised:self.service.usage_action(1,payload,"key")
-        self.assertEqual(raised.exception.status_code,409)
-        self.block.set();worker.join();self.assertEqual(len(self.calls),1)
+        second=threading.Thread(target=lambda:results.append(self.service.usage_action(1,payload,"key")));second.start()
+        self.block.set();worker.join();second.join();self.assertEqual(len(self.calls),1)
+        self.assertEqual(len(results),2)
 
     def test_uncertain_reset_never_replays_until_count_query(self):
         payload=self.payload("reset_quota",confirmed=True)
@@ -172,7 +179,7 @@ class UsageActionTests(unittest.TestCase):
 
     def test_monitor_busy_rejects_openai_but_not_grok(self):
         lock=threading.Lock();lock.acquire();self.service.r.oauth_monitor=SimpleNamespace(_run_lock=lock)
-        with self.assertRaises(HTTPException):self.service.usage_action(1,self.payload("query_usage"),"key")
+        with self.assertRaises(HTTPException):self.service.usage_action(1,self.payload("query_reset_credits"),"key")
         self.live=row("grok")
         self.service.usage_action(1,self.payload("probe_quota",confirmed=True),"key")
         self.assertEqual(len(self.calls),1);self.assertTrue(lock.locked());lock.release()

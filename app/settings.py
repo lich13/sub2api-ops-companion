@@ -29,7 +29,6 @@ class Settings:
     oauth_usage_refresh_concurrency: int = 4
     oauth_recovery_test_concurrency: int = 2
     oauth_early_probe_batch_size: int = 8
-    oauth_7d_probe_interval_seconds: int = 3600
     oauth_recovery_test_model_id: str = "gpt-5.6-luna"
     sub2api_config_path: str = "/data/sub2api-config.json"
     model_config_path: str = "/data/group-model-config.json"
@@ -200,15 +199,6 @@ def load_settings() -> Settings:
             8,
             1,
             50,
-        ),
-        oauth_7d_probe_interval_seconds=int_value(
-            oauth_config.get(
-                "oauth_7d_probe_interval_seconds",
-                os.getenv("OAUTH_7D_PROBE_INTERVAL_SECONDS"),
-            ),
-            3600,
-            60,
-            86400,
         ),
         oauth_recovery_test_model_id=str(
             oauth_config.get(
