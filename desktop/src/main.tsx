@@ -633,7 +633,7 @@ export default function App() {
                     更新于 <Time at={snap.observed_at} />
                   </span>}
                 </div>
-                {page === "records" && <UsageRecords key={connectionKey} online={state.online} foreground={state.foreground !== false} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
+                {page === "records" && <UsageRecords key={connectionKey} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
                 {page === "accounts" && (
