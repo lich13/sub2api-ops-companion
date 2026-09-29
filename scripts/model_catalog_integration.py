@@ -31,7 +31,12 @@ def request(url, method="GET", body=None, headers=None):
                   data=json.dumps(body).encode() if body is not None else None)
     try:
         with urlopen(req, timeout=60) as response:
-            return response.status, dict(response.headers), json.loads(response.read() or b"{}")
+            raw = response.read()
+            try:
+                body = json.loads(raw or b"{}")
+            except ValueError:
+                body = {"non_json": True}
+            return response.status, dict(response.headers), body
     except HTTPError as error:
         raw = error.read()
         try:
@@ -183,8 +188,9 @@ def verify():
         code, headers, response = request(edge + path + "?client_version=0.146.0", headers={"Authorization": "Bearer sk-catalog-a"})
         assert code == 200 and "x-sub2ops-catalog" in headers, (path, code, response)
         assert request(edge + path + "?client_version=0.146.0", headers={"Authorization": "Bearer invalid"})[0] == 401
-    for path in ("/sub2ops", "/sub2ops/ops", "/sub2ops/sso/start", "/sub2ops/static/style.css", "/docs"):
+    for path in ("/sub2ops", "/sub2ops/ops", "/sub2ops/sso/start", "/sub2ops/static/style.css", "/sub2ops/docs"):
         assert request(edge + path)[0] == 404, path
+    assert request(OPS + "/docs")[0] == 404
     assert request(edge + "/sub2ops/healthz")[0] == 200
     print(json.dumps({"catalog_integration": "passed", "native_version": version, "native_auth": True, "cross_group_isolation": True,
                       "ordinary_new_model": True, "composite": True, "etag": True, "catalog_model_calls": 0,
