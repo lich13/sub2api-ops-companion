@@ -56,7 +56,7 @@ python ../scripts/verify_android.py src-tauri/gen/android/app/build/outputs/apk/
 
 签名材料只保存在仓库外的受保护目录；`android_signing.mjs --github` 将它经 stdin 配置为本仓库 CI secrets。不得替换已有签名。Android 仅构建 ARM64，发布前验证签名、最低 API、APK 及全部原生库的 16KB 对齐。
 
-原生仪器测试使用 `node ../scripts/android_fixtures.mjs` 生成仅测试包包含的模拟数据，再构建 `assembleUniversalDebugAndroidTest`。在 ARM64 模拟器中分别运行 `AndroidRuntimeTest#persistAndLifecycle`、覆盖安装同签名 APK 后运行 `#restartUpgradeAndDisconnect`，以及 `#keyboardAndMediaPicker`。带硬件键盘的模拟器需启用软键盘。发布构建可用 `-Psub2opsTestBuildType=release assembleUniversalReleaseAndroidTest` 复验。
+原生仪器测试使用 `node ../scripts/android_fixtures.mjs` 生成仅测试包包含的模拟数据，再构建 `assembleUniversalDebugAndroidTest`。在 ARM64 模拟器中分别运行 `AndroidRuntimeTest#persistAndLifecycle`、覆盖安装同签名 APK 后运行 `#restartUpgradeAndDisconnect`，以及 `#keyboardAndMediaPicker`。带硬件键盘的模拟器需启用软键盘。正式 APK 使用独立的 `releaseSmoke` 测试包，通过系统 UI 验证连接、五页、前后台、重启、覆盖升级和断开，不向正式应用注入测试运行器。
 
 视觉规范见 [DESIGN.md](DESIGN.md)。`desktop-v*` 标签触发构建与发布流程，仅附带 Mac DMG、Android ARM64 APK 和统一 `SHA256SUMS`；不发布 ZIP，历史发布资产保留。
 

@@ -18,7 +18,6 @@ android {
     buildToolsVersion = "36.0.0"
     ndkVersion = "28.2.13676358"
     namespace = "com.lich13.sub2ops"
-    testBuildType = providers.gradleProperty("sub2opsTestBuildType").orElse("debug").get()
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.lich13.sub2ops"
