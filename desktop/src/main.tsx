@@ -1364,7 +1364,6 @@ const oauthLabels: Record<string, string> = {
   oauth_usage_refresh_concurrency: "额度查询并发",
   oauth_recovery_test_concurrency: "测活并发",
   oauth_early_probe_batch_size: "单轮账号上限",
-  oauth_7d_probe_interval_seconds: "7d 探测间隔（秒）",
   oauth_recovery_test_model_id: "测活模型",
 };
 function SettingsPage({

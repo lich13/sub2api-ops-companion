@@ -6,7 +6,7 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 
 ## 功能
 
-- OAuth 额度监控：统一调度 active usage，支持准确恢复时间到点查询、7d 提前重置探测和恢复后测活。
+- OAuth 额度监控：等待恢复时间后确认额度，统一限制自动查询并执行恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
@@ -14,12 +14,14 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 ## OAuth 监控机制
 
 - 普通后台额度刷新已移除；客户端自动更新只读已有快照与使用日志。
-- 7d 已耗尽且恢复时间未到时，默认每 3600 秒探测一次提前重置。
-- 当前已耗尽的必要窗口有准确 `reset_at` 时，以最晚恢复时间为准，到点立即查询。
+- 不提前探测。已耗尽的必要窗口以最晚恢复时间为准，在 `reset_at + 60秒` 后确认。
+- 每账号自动查询至少间隔 1 小时，滚动 24 小时最多 6 次；失败、超时和到点仍未释放按 1、3、6、12 小时退避，之后保持 12 小时。
+- 预算在请求前持久化，重启保留；401/402 暂停自动查询，凭据变化或手动成功后解除。正常账号不轮询，新账号无额度数据时才初始化查询。
+- 手动单查和全部刷新可强制查询，不消耗或清空自动预算；结果共享并刷新自动冷却，同账号并发查询合并。
 - `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
-- 即时恢复全天运行；额外每日测活默认北京时间 `05:00`，仅异常推送 Bark，错过不补跑。
+- 恢复监控全天运行；每日测活默认北京时间 `05:00`，先复用一小时内的完整额度，补查仍受限频约束；等待恢复或受限账号跳过，错过不补跑。
 - 额度确认恢复后调用 Sub2API account test，默认模型为 `gpt-5.6-luna`。
-- active usage 同一账号不会并发重复请求；一轮结果集中写入状态文件。
+- active usage 同一账号不会并发重复请求；请求前登记预算，结果原子写入状态文件。
 - 测活结果先持久化为待推送事件。Bark 完整发送失败只重试发送，不重复测活；Bark 关闭时事件按 suppressed 语义确认。
 
 客户端自动刷新只读取已有快照；用户点击额度查询才主动刷新。未知额度不会显示为 0%。
@@ -47,13 +49,12 @@ docker compose up -d --build
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
-- `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控恢复和 7d 提前重置。
+- `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控到期恢复。
 - `OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
 - `OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。
 - `OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。
 - `OAUTH_RECOVERY_TEST_CONCURRENCY`：account test 并发，默认 `2`。
 - `OAUTH_EARLY_PROBE_BATCH_SIZE`：每轮最多处理的 OAuth 账号数，默认 `8`。
-- `OAUTH_7D_PROBE_INTERVAL_SECONDS`：7d 提前重置探测间隔，默认 `3600`。
 - `OAUTH_RECOVERY_TEST_MODEL_ID`：恢复测活模型，默认 `gpt-5.6-luna`。
 - `SUB2API_BASE_URL`：Sub2API 公网根地址。
 - `SUB2API_VERIFY_BASE_URL`：可选的服务端内网校验根地址。

@@ -20,6 +20,10 @@ from .audit import write_audit
 from .bark import sanitize_error_text
 from .daily_test import DailyTestSchedule, daily_account_eligible
 from .quota_snapshot import latest_openai_result
+from .oauth_queries import (
+    OAuthQueryCoordinator, automatic_gate, credential_fingerprint, fresh_quota,
+    query_metadata, reset_not_before, AUTH_ERRORS,
+)
 from .sql import LEGACY_RECOVERY_PLAN_CLEANUP_SQL
 from .usage_query import (
     execute_oauth_usage_query,
@@ -32,10 +36,9 @@ from .usage_query import (
     required_oauth_window_keys,
 )
 
-STATE_VERSION = 3
+STATE_VERSION = 4
 INVENTORY_REFRESH_SECONDS = 60
-EXACT_RESET_RETRY_SECONDS = 60
-DEFAULT_SEVEN_DAY_PROBE_SECONDS = 3600
+EXACT_RESET_RETRY_SECONDS = 3600
 DEFAULT_TEST_MODEL_ID = "gpt-5.6-luna"
 RECOVERY_RETRY_SECONDS = (60, 300, 900, 1800)
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -96,9 +99,22 @@ class OAuthStateStore:
     def _read_raw(self) -> dict[str, Any]:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except FileNotFoundError:
+            if getattr(self, "_has_state", False):
+                raise OSError("OAuth 状态文件已丢失") from None
             return {}
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            raise ValueError("OAuth 状态文件无效")
+        for section in ("settings", "scheduler", "oauth_results", "pending_events", "daily_test", "recovery_history"):
+            if section in data and not isinstance(data[section], dict):
+                raise ValueError("OAuth 状态分区无效")
+        for metadata in data.get("scheduler", {}).values():
+            if not isinstance(metadata, dict):
+                raise ValueError("OAuth 调度状态无效")
+            if "quota_query" in metadata:
+                query_metadata(metadata, None)
+        self._has_state = True
+        return data
 
     def _normalize(self, raw: dict[str, Any]) -> dict[str, Any]:
         raw_settings = raw.get("settings") if isinstance(raw.get("settings"), dict) else {}
@@ -137,7 +153,8 @@ class OAuthStateStore:
                 if account_id > 0 and isinstance(value, dict):
                     normalized_row = dict(value)
                     normalized_row.pop("last_regular_at", None)
-                    if normalized_row.get("last_reason") == "regular_refresh":
+                    normalized_row.pop("last_7d_probe_at", None)
+                    if normalized_row.get("last_reason") in {"regular_refresh", "seven_day_probe"}:
                         normalized_row.pop("last_reason", None)
                     if "recovery_intent" in normalized_row:
                         normalized_row["recovery_intent"] = _normal_recovery_intent(
@@ -182,12 +199,14 @@ class OAuthStateStore:
         fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=f".{self.path.name}.", suffix=".tmp")
         temporary = Path(name)
         try:
+            os.fchmod(fd, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             temporary.replace(self.path)
+            self._has_state = True
             directory_fd = os.open(self.path.parent, os.O_RDONLY)
             try:
                 os.fsync(directory_fd)
@@ -199,6 +218,16 @@ class OAuthStateStore:
     def reload(self) -> None:
         with _STORE_LOCK:
             self._data = self._normalize(self._read_raw())
+
+    def transaction(self, update: Callable[[dict[str, Any]], Any]) -> Any:
+        with _STORE_LOCK:
+            data = self._normalize(self._read_raw())
+            before = _json_copy(data)
+            result = update(data)
+            if data != before:
+                self._write(data)
+            self._data = data
+            return result
 
     def migrate(self) -> bool:
         with _STORE_LOCK:
@@ -623,101 +652,47 @@ def build_monitor_candidates(
     scheduler: dict[int, dict[str, Any]] | dict[str, dict[str, Any]],
     now: datetime,
     *,
-    seven_day_probe_interval_seconds: int = DEFAULT_SEVEN_DAY_PROBE_SECONDS,
     recovery_monitor_enabled: bool = True,
 ) -> list[dict[str, Any]]:
     current = _utc(now)
-    probe_interval = _positive_int(seven_day_probe_interval_seconds, 3600, 60, 86400)
+    if not recovery_monitor_enabled:
+        return []
     candidates: list[dict[str, Any]] = []
     for row in accounts:
-        account_id = int(row.get("id") or row.get("account_id") or 0)
+        account_id = int(row.get("id") or 0)
         if account_id <= 0:
             continue
         result = latest_openai_result(row, results.get(account_id), current) or {}
         metadata = _scheduler_row(scheduler, account_id)
+        blocked, _deadline = automatic_gate(row, result, metadata, current)
+        if blocked:
+            continue
         summary = oauth_quota_summary_from_result(row, result)
-        windows = oauth_windows_by_key(summary.get("ui_windows"))
-        required_keys = required_oauth_window_keys(summary.get("plan_type"))
-        full_windows: list[dict[str, Any]] = []
-        for key in required_keys:
-            item = windows.get(key)
-            used = percent_or_none((item or {}).get("used_percent"))
-            if item and used is not None and used >= 100:
-                full_windows.append(item)
-
-        reason = ""
-        priority = 99
-        fingerprint = ""
         intent = _normal_recovery_intent(metadata.get("recovery_intent"))
-        intent_status = str(intent.get("status") or "")
-        intent_due_value = (
-            intent.get("next_retry_at")
-            if intent_status in {"retry", "waiting_quota", "testing"}
-            else intent.get("due_at")
-        )
-        intent_due = parse_iso_datetime(intent_due_value)
-        if (
-            recovery_monitor_enabled
-            and intent_status in {"pending", "ready", "retry", "waiting_quota", "testing"}
-            and (intent_due is None or current >= intent_due)
-        ):
+        status = str(intent.get("status") or "")
+        due = parse_iso_datetime(intent.get("next_retry_at") if status in {"retry", "waiting_quota", "testing"}
+                                 else intent.get("due_at"))
+        descriptor = _quota_recovery_descriptor(summary, current) or _threshold_recovery_descriptor(row, summary)
+        reason, priority = "", 99
+        if status in {"pending", "ready", "retry", "waiting_quota", "testing"} and (due is None or current >= due):
             reason, priority = "recovery_intent", 0
-            fingerprint = str(intent.get("fingerprint") or "")
-        if recovery_monitor_enabled and full_windows:
-            reset_times = [parse_iso_datetime(item.get("reset_at")) for item in full_windows]
-            if not reason and all(reset_times):
-                latest = max(item for item in reset_times if item is not None)
-                fingerprint = "|".join(
-                    f"{item.get('key')}@{parse_iso_datetime(item.get('reset_at')).isoformat()}"
-                    for item in full_windows
-                    if parse_iso_datetime(item.get("reset_at")) is not None
-                )
-                same_exact = metadata.get("last_exact_fingerprint") == fingerprint
-                retry_due = _due(metadata.get("last_exact_at"), EXACT_RESET_RETRY_SECONDS, current)
-                if current >= latest and (not same_exact or retry_due):
-                    reason, priority = "exact_reset", 0
-
-        threshold_descriptor = _threshold_recovery_descriptor(row, summary)
-        if not reason and recovery_monitor_enabled and threshold_descriptor:
-            threshold_due = parse_iso_datetime(threshold_descriptor.get("due_at"))
-            threshold_fingerprint = str(threshold_descriptor.get("fingerprint") or "")
-            same_exact = metadata.get("last_exact_fingerprint") == threshold_fingerprint
-            retry_due = _due(metadata.get("last_exact_at"), EXACT_RESET_RETRY_SECONDS, current)
-            if threshold_due is not None and current >= threshold_due and (not same_exact or retry_due):
+        elif descriptor:
+            deadline = reset_not_before(row, result)
+            if deadline is None or current >= deadline:
                 reason, priority = "exact_reset", 0
-                fingerprint = threshold_fingerprint
-
-        if (
-            not reason
-            and not result.get("success")
-            and recovery_monitor_enabled
-            and _due(metadata.get("last_attempt_at"), EXACT_RESET_RETRY_SECONDS, current)
-        ):
+        elif not result.get("success"):
             reason, priority = "bootstrap", 1
-
-        seven_day = windows.get("codex_7d")
-        seven_used = percent_or_none((seven_day or {}).get("used_percent"))
-        seven_reset = parse_iso_datetime((seven_day or {}).get("reset_at"))
-        seven_full_before_reset = bool(
-            seven_day and seven_used is not None and seven_used >= 100 and (seven_reset is None or current < seven_reset)
-        )
-        if not reason and recovery_monitor_enabled and seven_full_before_reset:
-            last_probe = metadata.get("last_7d_probe_at") or result.get("queried_at")
-            if _due(last_probe, probe_interval, current):
-                reason, priority = "seven_day_probe", 2
-
+        elif (metadata.get("quota_query") or {}).get("auth_fingerprint") not in (None, "", credential_fingerprint(row)):
+            reason, priority = "credential_changed", 1
         if reason:
-            candidates.append(
-                {
-                    "account_id": account_id,
-                    "row": row,
-                    "reason": reason,
-                    "priority": priority,
-                    "exact_fingerprint": fingerprint,
-                    "previous_summary": summary,
-                }
-            )
-    candidates.sort(key=lambda item: (int(item["priority"]), int(item["account_id"])))
+            candidates.append({
+                "account_id": account_id, "row": row, "reason": reason, "priority": priority,
+                "exact_fingerprint": str((descriptor or intent).get("fingerprint") or ""),
+                "previous_summary": summary,
+            })
+    candidates.sort(key=lambda item: (int(item["priority"]),
+        str(query_metadata(_scheduler_row(scheduler, item["account_id"]), results.get(item["account_id"])).get("last_query_at") or ""),
+        int(item["account_id"])))
     return candidates
 
 
@@ -964,6 +939,9 @@ class OAuthMonitor:
         self._force_running = False
         self._last_force_report: dict[str, Any] = {}
         self.clock = clock
+        self.queries = OAuthQueryCoordinator(self.store, lambda *a, **kw: self.usage_runner(*a, **kw),
+                                             base_url_provider, clock, settings.audit_path,
+                                             account_reader=self._read_account)
         self.daily_schedule = DailyTestSchedule(settings, self.store, _utc(clock()))
         self._cycle_usage: dict[int, dict[str, Any]] = {}
         self._cycle_tests: dict[int, dict[str, Any]] = {}
@@ -978,6 +956,18 @@ class OAuthMonitor:
         self._accounts = list(self.inventory_loader(self.db))
         self._inventory_loaded_at = now
         self.store.reload()
+        def migrate_queries(data: dict[str, Any]) -> None:
+            for row in self._accounts:
+                key = str(row["id"])
+                metadata = data["scheduler"].setdefault(key, {})
+                if "quota_query" not in metadata:
+                    query = query_metadata(metadata, data["oauth_results"].get(key))
+                    previous = parse_iso_datetime(query.get("last_query_at"))
+                    query["automatic_attempts"] = [previous.isoformat()] if previous else []
+                    if metadata.get("last_error_code") in AUTH_ERRORS:
+                        query["auth_fingerprint"] = credential_fingerprint(row)
+                    metadata["quota_query"] = query
+        self.store.transaction(migrate_queries)
 
     def _read_account(self, account_id: int) -> dict[str, Any] | None:
         row = self.account_reader(self.db, int(account_id))
@@ -1011,12 +1001,13 @@ class OAuthMonitor:
         try:
             batch = self.daily_schedule.claim(current) if self.daily_schedule.enabled else None
             if batch is None:
-                events, _report = self._run_cycle(current, force=False)
+                events, _report = self._run_cycle(current, force=False, live_clock=now is None)
                 return events
             try:
-                _events, _report = self._run_cycle(current, force=False)
+                _events, _report = self._run_cycle(current, force=False, live_clock=now is None)
                 _events, report = self._run_cycle(
-                    current, force=True, recovery_enabled=False, reuse_cycle_results=True
+                    current, force=False, recovery_enabled=False, reuse_cycle_results=True, daily=True,
+                    live_clock=now is None,
                 )
                 self._run_daily_batch(current, batch, report)
             except Exception as exc:
@@ -1050,6 +1041,14 @@ class OAuthMonitor:
                 return
             key = f"daily:{batch['date']}:{account_id}"
             code = _auth_error_code(record["error_code"])
+            if code:
+                def pause_queries(data: dict[str, Any]) -> None:
+                    metadata = data["scheduler"].setdefault(str(account_id), {})
+                    query = query_metadata(metadata, data["oauth_results"].get(str(account_id)))
+                    query["auth_fingerprint"] = credential_fingerprint(row)
+                    metadata.update(quota_query=query, last_error_code=code,
+                                    last_error_at=record["checked_at"])
+                self.store.transaction(pause_queries)
             pending[key] = {
                 "account_id": account_id, "account_name": row.get("name") or "-",
                 "plan_type": oauth_plan_type(row), "window_labels": ["每日测活"],
@@ -1164,7 +1163,7 @@ class OAuthMonitor:
                 }
             else:
                 try:
-                    _events, report = self._run_cycle(_utc(now), force=True)
+                    _events, report = self._run_cycle(_utc(now), force=True, live_clock=now is None)
                 finally:
                     self._run_lock.release()
         except Exception as exc:
@@ -1184,14 +1183,14 @@ class OAuthMonitor:
 
     def _run_cycle(
         self, current: datetime, *, force: bool, recovery_enabled: bool | None = None,
-        reuse_cycle_results: bool = False,
+        reuse_cycle_results: bool = False, daily: bool = False, live_clock: bool = False,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         started = time.monotonic()
         prior_usage = dict(self._cycle_usage) if reuse_cycle_results else {}
         prior_tests = dict(self._cycle_tests) if reuse_cycle_results else {}
         self._cycle_usage = {}
         self._cycle_tests = {}
-        mode = "force" if force else "scheduled"
+        mode = "manual" if force else "daily" if daily else "scheduled"
         if recovery_enabled is None:
             recovery_enabled = bool(getattr(self.settings, "oauth_recovery_monitor_enabled", True))
         try:
@@ -1215,12 +1214,12 @@ class OAuthMonitor:
         state = self.store.cached_snapshot()
         results = {int(key): value for key, value in (state.get("oauth_results") or {}).items()}
         scheduler = {int(key): value for key, value in (state.get("scheduler") or {}).items()}
-        if force:
+        if force or daily:
             candidates = [
                 {
                     "account_id": int(row.get("id") or 0),
                     "row": row,
-                    "reason": "force_refresh",
+                    "reason": "daily_test" if daily else "force_refresh",
                     "priority": -1,
                     "exact_fingerprint": str(
                         (_scheduler_row(scheduler, int(row.get("id") or 0)).get("recovery_intent") or {}).get(
@@ -1233,24 +1232,35 @@ class OAuthMonitor:
                 }
                 for row in self._accounts
                 if int(row.get("id") or 0) > 0
+                and (not daily or daily_account_eligible(row, current))
             ]
         else:
+            self.queries.observe_gates(self._accounts, results, scheduler, current)
             candidates = build_monitor_candidates(
                 self._accounts,
                 results,
                 scheduler,
                 current,
-                seven_day_probe_interval_seconds=getattr(
-                    self.settings,
-                    "oauth_7d_probe_interval_seconds",
-                    DEFAULT_SEVEN_DAY_PROBE_SECONDS,
-                ),
                 recovery_monitor_enabled=recovery_enabled,
             )
         batch_size = _positive_int(
             getattr(self.settings, "oauth_early_probe_batch_size", 8), 8, 1, 50
         )
-        selected = candidates if force else candidates[:batch_size]
+        selected = candidates if force or daily else candidates[:batch_size]
+        prior_usage = {key: value for key, value in prior_usage.items()
+                       if key in {int(item["account_id"]) for item in selected}}
+        if daily:
+            for item in selected:
+                account_id = item["account_id"]
+                saved = latest_openai_result(item["row"], results.get(account_id), current)
+                metadata = _scheduler_row(scheduler, account_id)
+                error = parse_iso_datetime(metadata.get("last_error_at"))
+                observed = parse_iso_datetime((saved or {}).get("queried_at"))
+                blocked, _ = automatic_gate(item["row"], saved, metadata, current)
+                if (account_id not in prior_usage and fresh_quota(item["row"], saved, current)
+                        and blocked not in {"auth_paused", "account_ineligible"}
+                        and not (error and observed and error >= observed and metadata.get("last_error_code"))):
+                    prior_usage[account_id] = saved
         empty_report = {
             "success": True,
             "refresh_at": current.isoformat(),
@@ -1287,13 +1297,12 @@ class OAuthMonitor:
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {
                 executor.submit(
-                    self.usage_runner,
-                    int(item["account_id"]),
-                    base_url,
-                    token,
-                    account_row=item["row"],
+                    self.queries.query,
+                    item["row"], token,
+                    source="manual" if force else "automatic",
+                    reason=item["reason"],
                     timeout_seconds=10,
-                    now=current,
+                    now=None if live_clock else current,
                 ): item
                 for item in selected
                 if int(item["account_id"]) not in prior_usage
@@ -1323,12 +1332,12 @@ class OAuthMonitor:
         depleted_count = 0
 
         for account_id, refreshed_result in usage_results.items():
+            if refreshed_result.get("skipped") or account_id in prior_usage:
+                continue
             selected_item = selected_by_id[account_id]
             reason = str(selected_item["reason"])
             metadata = _scheduler_row(scheduler, account_id)
             update: dict[str, Any] = {"last_attempt_at": current.isoformat(), "last_reason": reason}
-            if reason == "seven_day_probe":
-                update["last_7d_probe_at"] = current.isoformat()
             if reason == "exact_reset":
                 update["last_exact_at"] = current.isoformat()
                 update["last_exact_fingerprint"] = selected_item.get("exact_fingerprint") or ""
@@ -1703,6 +1712,11 @@ class OAuthMonitor:
                     event_status = "test_failed" if not test_result.get("success") else "recovery_failed"
                 suffix = f"failure:{final_intent.get('last_error_code') or 'unknown'}"
             final_updates[account_id] = {"recovery_intent": final_intent}
+            if final_intent.get("status") == "auth_failed":
+                metadata = self.store.cached_snapshot()["scheduler"].get(str(account_id), {})
+                query = dict(metadata.get("quota_query") or {})
+                query["auth_fingerprint"] = credential_fingerprint(frozen_row)
+                final_updates[account_id]["quota_query"] = query
             key = f"recovery:{account_id}:{intent.get('fingerprint')}:{suffix}"
             if success:
                 history_updates[key] = {"account_id": account_id, "account_name": item["row"].get("name") or "",
@@ -1743,11 +1757,15 @@ class OAuthMonitor:
 
         duration_ms = int((time.monotonic() - started) * 1000)
         success_count = sum(1 for value in usage_results.values() if value.get("success"))
+        queried_count = sum(1 for key, value in usage_results.items()
+                            if key not in prior_usage and not value.get("skipped") and not value.get("coalesced"))
         report = {
             "success": success_count == len(selected),
             "refresh_at": current.isoformat(),
             "total_count": len(self._accounts),
-            "queried_count": len(selected),
+            "queried_count": queried_count,
+            "skipped_count": sum(bool(value.get("skipped")) for value in usage_results.values()),
+            "reused_count": len(prior_usage),
             "success_count": success_count,
             "failure_count": len(selected) - success_count,
             "depleted_count": depleted_count,

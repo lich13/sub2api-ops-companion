@@ -26,6 +26,7 @@ from app.oauth_monitor import (
 )
 
 NOW = datetime(2026, 1, 10, 8, 0, tzinfo=timezone.utc)
+RUN = NOW + timedelta(seconds=60)
 
 
 def window(key: str, used: float, reset_at: datetime) -> dict[str, object]:
@@ -132,7 +133,7 @@ class OAuthStateStoreTests(unittest.TestCase):
             self.assertEqual(saved["scheduler"]["1"]["recovery_intent"]["status"], "ready")
             self.assertIn("keep", saved["pending_events"])
 
-    def test_v2_testing_intent_migrates_to_retry_in_v3(self) -> None:
+    def test_v2_testing_intent_migrates_to_retry_in_v4(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "usage-query-state.json"
             path.write_text(
@@ -158,7 +159,7 @@ class OAuthStateStoreTests(unittest.TestCase):
 
             persisted = json.loads(path.read_text(encoding="utf-8"))
             intent = persisted["scheduler"]["1"]["recovery_intent"]
-            self.assertEqual(persisted["version"], 3)
+            self.assertEqual(persisted["version"], 4)
             self.assertEqual(intent["status"], "retry")
             self.assertEqual(intent["next_retry_at"], NOW.isoformat())
 
@@ -245,7 +246,7 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
         self.assertEqual(due, [])
         self.assertEqual(build_monitor_candidates(rows, results, scheduler, NOW + timedelta(days=3)), [])
 
-    def test_seven_day_probe_waits_one_hour(self) -> None:
+    def test_seven_day_probe_is_retired(self) -> None:
         quota = summary(seven_used=100, seven_reset=NOW + timedelta(days=1))
         rows = [account()]
         results = {1: result(quota)}
@@ -255,7 +256,7 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
         due = build_monitor_candidates(rows, results, scheduler, NOW + timedelta(seconds=3600))
 
         self.assertEqual(before, [])
-        self.assertEqual([item["reason"] for item in due], ["seven_day_probe"])
+        self.assertEqual(due, [])
 
     def test_exact_reset_uses_latest_full_required_window(self) -> None:
         quota = summary(
@@ -265,10 +266,10 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
             seven_reset=NOW + timedelta(seconds=20),
         )
         rows = [account()]
-        results = {1: result(quota)}
+        results = {1: result(quota, NOW - timedelta(hours=2))}
 
         early = build_monitor_candidates(rows, results, {}, NOW + timedelta(seconds=15))
-        due = build_monitor_candidates(rows, results, {}, NOW + timedelta(seconds=20))
+        due = build_monitor_candidates(rows, results, {}, NOW + timedelta(seconds=80))
 
         self.assertEqual(early, [])
         self.assertEqual(len(due), 1)
@@ -280,7 +281,7 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
             [account()],
             {1: result(quota, NOW - timedelta(hours=2))},
             {1: {"last_7d_probe_at": (NOW - timedelta(hours=2)).isoformat()}},
-            NOW,
+            RUN,
         )
 
         self.assertEqual(len(candidates), 1)
@@ -302,12 +303,12 @@ class OAuthMonitorSchedulingTests(unittest.TestCase):
                 2: {"last_7d_probe_at": (NOW - timedelta(hours=2)).isoformat()},
                 3: {"last_regular_at": (NOW - timedelta(hours=2)).isoformat()},
             },
-            NOW,
+            RUN,
         )
 
         self.assertEqual(
             [(item["account_id"], item["reason"]) for item in candidates],
-            [(1, "exact_reset"), (2, "seven_day_probe")],
+            [(1, "exact_reset")],
         )
 
 
@@ -639,7 +640,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             refreshed = summary(five_used=0, seven_used=100, seven_reset=NOW + timedelta(days=7))
             monitor, calls = self.make_monitor(root, old, refreshed)
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["usage"], 1)
             self.assertEqual(calls["test"], 0)
@@ -670,14 +671,14 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
 
             monitor.store._read_raw = counted_read  # type: ignore[method-assign]
 
-            monitor.run_once(NOW)
+            monitor.run_once(RUN)
             reads_after_first = read_calls
-            monitor.run_once(NOW + timedelta(seconds=2))
+            monitor.run_once(RUN + timedelta(seconds=2))
 
             self.assertEqual(calls["usage"], 0)
             self.assertEqual(inventory_calls, 1)
             self.assertEqual(read_calls, reads_after_first)
-            monitor.run_once(NOW + timedelta(hours=2))
+            monitor.run_once(RUN + timedelta(hours=2))
             self.assertEqual(calls["usage"], 0)
 
     def test_bootstrap_queue_is_bounded_and_advances_between_ticks(self) -> None:
@@ -721,8 +722,8 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 ),
             )
 
-            monitor.run_once(NOW)
-            monitor.run_once(NOW + timedelta(seconds=2))
+            monitor.run_once(RUN)
+            monitor.run_once(RUN + timedelta(seconds=2))
 
             self.assertEqual(called, [1, 2, 3, 4])
 
@@ -733,7 +734,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             refreshed = summary(five_used=0, seven_used=20)
             monitor, calls = self.make_monitor(root, old, refreshed)
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["models"], ["gpt-5.6-luna"])
             self.assertEqual(events[0]["status"], "recovered")
@@ -745,8 +746,8 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             refreshed = summary(five_used=0, seven_used=20)
             monitor, calls = self.make_monitor(root, old, refreshed, test_success=False)
 
-            first = monitor.run_once(NOW)
-            second = monitor.run_once(NOW + timedelta(seconds=2))
+            first = monitor.run_once(RUN)
+            second = monitor.run_once(RUN + timedelta(seconds=2))
 
             self.assertEqual(calls["test"], 1)
             self.assertEqual(first[0]["status"], "test_failed")
@@ -764,12 +765,12 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                     usage_error=(code, "access rejected"),
                 )
 
-                events = monitor.run_once(NOW)
+                events = monitor.run_once(RUN)
 
                 self.assertEqual(events[0]["status"], "auth_failed")
                 self.assertEqual(events[0]["error_code"], code)
 
-    def test_early_seven_day_reset_is_detected_before_reset_time(self) -> None:
+    def test_no_automatic_probe_before_seven_day_reset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             old_reset = NOW + timedelta(days=4)
@@ -780,11 +781,11 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 {1: {"last_7d_probe_at": (NOW - timedelta(hours=1)).isoformat()}}
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
-            self.assertEqual(calls["test"], 1)
-            self.assertTrue(events[0]["early_reset_detected"])
-            self.assertEqual(events[0]["old_reset_at"], old_reset.isoformat())
+            self.assertEqual(calls["usage"], 0)
+            self.assertEqual(calls["test"], 0)
+            self.assertEqual(events, [])
 
     def test_successful_test_self_heals_without_recover_state_call(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -792,7 +793,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             refreshed = summary(five_used=0)
             monitor, calls = self.make_monitor(Path(directory), old, refreshed)
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["test"], 1)
             self.assertEqual(calls["recovery"], 0)
@@ -806,7 +807,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 Path(directory), old, refreshed, test_clears_block=False
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["test"], 1)
             self.assertEqual(calls["recovery"], 1)
@@ -836,7 +837,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 }
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["usage"], 1)
             self.assertEqual(calls["test"], 1)
@@ -864,13 +865,13 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 }
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["test"], 1)
             self.assertEqual(calls["recovery"], 1)
             self.assertEqual(events[0]["status"], "recovered")
 
-    def test_threshold_block_still_above_threshold_rechecks_after_60_seconds(self) -> None:
+    def test_threshold_block_still_above_threshold_waits_one_hour(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             blocked = summary(five_used=95, five_reset=NOW + timedelta(hours=5))
             monitor, calls = self.make_monitor(Path(directory), blocked, blocked)
@@ -892,15 +893,15 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 }
             )
 
-            monitor.run_once(NOW)
-            monitor.run_once(NOW + timedelta(seconds=59))
-            monitor.run_once(NOW + timedelta(seconds=60))
+            monitor.run_once(RUN)
+            monitor.run_once(RUN + timedelta(seconds=3599))
+            monitor.run_once(RUN + timedelta(seconds=3600))
 
             self.assertEqual(calls["usage"], 2)
             self.assertEqual(calls["test"], 0)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
             self.assertEqual(intent["status"], "waiting_quota")
-            self.assertEqual(intent["next_retry_at"], (NOW + timedelta(seconds=120)).isoformat())
+            self.assertEqual(intent["next_retry_at"], (RUN + timedelta(seconds=7200)).isoformat())
 
     def test_recovery_failure_keeps_intent_for_backoff_retry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -914,17 +915,17 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 recovery_success=False,
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
 
             self.assertEqual(calls["recovery"], 1)
             self.assertEqual(events[0]["status"], "recovery_failed")
             self.assertEqual(intent["status"], "retry")
             self.assertEqual(
-                intent["next_retry_at"], (NOW + timedelta(seconds=60)).isoformat()
+                intent["next_retry_at"], (RUN + timedelta(seconds=60)).isoformat()
             )
 
-    def test_test_failure_retries_after_60_seconds_not_before(self) -> None:
+    def test_test_failure_cannot_bypass_query_cooldown(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old = summary(five_used=100, five_reset=NOW)
             refreshed = summary(five_used=0)
@@ -932,15 +933,15 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 Path(directory), old, refreshed, test_success=False
             )
 
-            monitor.run_once(NOW)
-            monitor.run_once(NOW + timedelta(seconds=59))
-            monitor.run_once(NOW + timedelta(seconds=60))
+            monitor.run_once(RUN)
+            monitor.run_once(RUN + timedelta(seconds=3599))
+            monitor.run_once(RUN + timedelta(seconds=3600))
 
             self.assertEqual(calls["test"], 2)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
             self.assertEqual(intent["attempt_count"], 2)
             self.assertEqual(
-                intent["next_retry_at"], (NOW + timedelta(seconds=360)).isoformat()
+                intent["next_retry_at"], (RUN + timedelta(seconds=3900)).isoformat()
             )
 
     def test_concurrency_signature_change_stops_recovery_mutation(self) -> None:
@@ -959,7 +960,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 mutate_after_test=mutate,
             )
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
 
             self.assertEqual(calls["recovery"], 0)
             self.assertEqual(events[0]["status"], "recovery_failed")
@@ -1133,19 +1134,19 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             self.assertFalse(report["success"])
             self.assertTrue(report["timed_out"])
 
-    def test_due_quota_still_depleted_is_rechecked_after_60_seconds(self) -> None:
+    def test_due_quota_still_depleted_waits_one_hour(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             depleted = summary(five_used=100, five_reset=NOW)
             monitor, calls = self.make_monitor(Path(directory), depleted, depleted)
 
-            monitor.run_once(NOW)
+            monitor.run_once(RUN)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
-            monitor.run_once(NOW + timedelta(seconds=59))
-            monitor.run_once(NOW + timedelta(seconds=60))
+            monitor.run_once(RUN + timedelta(seconds=3599))
+            monitor.run_once(RUN + timedelta(seconds=3600))
 
             self.assertEqual(intent["status"], "waiting_quota")
             self.assertEqual(
-                intent["next_retry_at"], (NOW + timedelta(seconds=60)).isoformat()
+                intent["next_retry_at"], (RUN + timedelta(seconds=3600)).isoformat()
             )
             self.assertEqual(calls["usage"], 2)
             self.assertEqual(calls["test"], 0)
@@ -1163,7 +1164,7 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
                 return {"success": False, "error_code": "http_401", "error": "expired"}
 
             monitor.test_runner = auth_failure
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
 
             self.assertEqual(calls["recovery"], 0)
@@ -1178,21 +1179,26 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             refreshed = summary(five_used=0)
             monitor, calls = self.make_monitor(Path(directory), old, refreshed)
             original_reader = monitor.account_reader
-            monitor.account_reader = lambda *_args: (_ for _ in ()).throw(
-                RuntimeError("database unavailable")
-            )
+            reads = 0
+            def reader(*args):
+                nonlocal reads
+                reads += 1
+                if reads > 1:
+                    raise RuntimeError("database unavailable")
+                return original_reader(*args)
+            monitor.account_reader = reader
 
-            events = monitor.run_once(NOW)
+            events = monitor.run_once(RUN)
             intent = monitor.store.scheduler()[1]["recovery_intent"]
 
             self.assertEqual(events, [])
             self.assertEqual(calls["test"], 0)
             self.assertEqual(intent["status"], "retry")
             self.assertEqual(intent["last_error_code"], "account_read_failed")
-            self.assertEqual(intent["next_retry_at"], (NOW + timedelta(seconds=60)).isoformat())
+            self.assertEqual(intent["next_retry_at"], (RUN + timedelta(seconds=60)).isoformat())
 
             monitor.account_reader = original_reader
-            monitor.run_once(NOW + timedelta(seconds=60))
+            monitor.run_once(RUN + timedelta(seconds=3600))
             self.assertEqual(calls["test"], 1)
 
     def test_force_refresh_missing_admin_key_is_explicit_and_does_not_query(self) -> None:

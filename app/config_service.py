@@ -21,7 +21,7 @@ OAUTH_FIELDS = {
     "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled",
     "oauth_daily_test_time", "oauth_usage_refresh_concurrency", "oauth_recovery_test_concurrency",
     "oauth_early_probe_batch_size",
-    "oauth_7d_probe_interval_seconds", "oauth_recovery_test_model_id",
+    "oauth_recovery_test_model_id",
 }
 
 
@@ -70,6 +70,7 @@ class ConfigService:
             r, s = self.r, self.r.settings
             stamp = {"updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user}
             if section == "oauth":
+                changes = {key: value for key, value in changes.items() if key != "oauth_7d_probe_interval_seconds"}
                 if set(changes) - OAUTH_FIELDS:
                     raise ValueError("未知 OAuth 设置")
                 values = {key: current[section][key] for key in OAUTH_FIELDS}
@@ -79,8 +80,7 @@ class ConfigService:
                         raise ValueError("开关必须为布尔值")
                 values["oauth_daily_test_time"] = daily_test_time(values["oauth_daily_test_time"])
                 limits = {"oauth_usage_refresh_concurrency": (1, 16), "oauth_recovery_test_concurrency": (1, 8),
-                          "oauth_early_probe_batch_size": (1, 50),
-                          "oauth_7d_probe_interval_seconds": (60, 86400)}
+                          "oauth_early_probe_batch_size": (1, 50)}
                 for key, (low, high) in limits.items():
                     if isinstance(values[key], bool) or not isinstance(values[key], int) or not low <= values[key] <= high:
                         raise ValueError(f"{key} 必须在 {low}–{high} 之间")

@@ -67,7 +67,7 @@ def migrate(env: dict[str, str], env_path: Path) -> dict:
         if path.exists() and not path.is_file():
             raise ValueError("retired path is not a file")
     limits = {"oauth_usage_refresh_concurrency": (1, 16), "oauth_recovery_test_concurrency": (1, 8),
-              "oauth_early_probe_batch_size": (1, 50), "oauth_7d_probe_interval_seconds": (60, 86400)}
+              "oauth_early_probe_batch_size": (1, 50)}
     result = {}
     for key in sorted(OAUTH_FIELDS):
         default = getattr(Settings, key)

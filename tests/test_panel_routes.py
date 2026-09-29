@@ -44,7 +44,7 @@ class DesktopOnlyTests(unittest.TestCase):
                 loaded = load_settings()
 
         self.assertFalse(hasattr(loaded, "oauth_regular_refresh_interval_seconds"))
-        self.assertEqual(loaded.oauth_7d_probe_interval_seconds, 3600)
+        self.assertFalse(hasattr(loaded, "oauth_7d_probe_interval_seconds"))
         self.assertEqual(loaded.oauth_recovery_test_model_id, "gpt-5.6-luna")
         self.assertTrue(loaded.oauth_daily_test_enabled)
         self.assertFalse(hasattr(loaded, "oauth_early_probe_interval_seconds"))

@@ -395,7 +395,6 @@ const config: Config = {
     oauth_usage_refresh_concurrency: 4,
     oauth_recovery_test_concurrency: 2,
     oauth_early_probe_batch_size: 8,
-    oauth_7d_probe_interval_seconds: 3600,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
