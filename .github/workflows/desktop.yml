@@ -47,15 +47,69 @@ jobs:
         run: |
           mkdir -p artifacts
           cp desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg artifacts/
-          cd artifacts
-          shasum -a 256 *.dmg > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: Sub2Ops-macos-aarch64
           path: artifacts/
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '15859902'
+          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
+      - run: rustup toolchain install 1.94.1 --profile minimal --target aarch64-linux-android
+      - run: rustup override set 1.94.1
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - name: Configure release signing
+        if: github.event_name != 'pull_request'
+        env:
+          SIGNING_KEY: ${{ secrets.SUB2OPS_ANDROID_KEYSTORE }}
+          SIGNING_PROPERTIES: ${{ secrets.SUB2OPS_ANDROID_SIGNING }}
+        run: |
+          test -n "$SIGNING_KEY" && test -n "$SIGNING_PROPERTIES"
+          umask 077
+          printf '%s' "$SIGNING_KEY" | base64 --decode > /tmp/sub2ops-android-release.p12
+          printf '%s' "$SIGNING_PROPERTIES" > /tmp/sub2ops-android-release.properties
+          echo 'SUB2OPS_ANDROID_SIGNING_PROPERTIES=/tmp/sub2ops-android-release.properties' >> "$GITHUB_ENV"
+      - name: Build ARM64 APK
+        working-directory: desktop
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          pnpm tauri android build --apk --target aarch64 ${{ github.event_name == 'pull_request' && '--debug' || '' }}
+      - name: Verify and package
+        run: |
+          mkdir -p artifacts
+          APK=$(find desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' ! -name '*unsigned*' ! -name '*androidTest*' -print -quit)
+          test -n "$APK"
+          python scripts/verify_android.py "$APK"
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          cp "$APK" "artifacts/Sub2Ops_${VERSION}_arm64-v8a.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sub2Ops-android-arm64
+          path: artifacts/
+      - name: Remove signing material
+        if: always()
+        run: rm -f -- /tmp/sub2ops-android-release.p12 /tmp/sub2ops-android-release.properties
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: [backend, macos]
+    needs: [backend, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,8 +117,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Sub2Ops-macos-aarch64
+          pattern: Sub2Ops-*
+          merge-multiple: true
           path: artifacts
+      - name: Unified checksums
+        working-directory: artifacts
+        run: sha256sum *.dmg *.apk > SHA256SUMS
       - name: Publish desktop release
         env:
           GH_TOKEN: ${{ github.token }}

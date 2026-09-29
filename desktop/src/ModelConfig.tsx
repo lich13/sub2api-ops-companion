@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, X } from "lucide-react";
 import { api } from "./bridge";
 import { fullTime } from "./types";
+import { useBackAction } from "./mobile";
 
 type Group = { id: number; name: string; platform: string; version: string };
 type Item = {
@@ -226,6 +227,7 @@ export default function ModelConfig({ online }: { online: boolean }) {
       setFormError("");
     }
   }
+  useBackAction(!!draft, close);
   function changeEffort(effort: string) {
     if (!draft) return;
     const next = draft.efforts.includes(effort)

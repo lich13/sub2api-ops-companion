@@ -2,7 +2,7 @@
 
 Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和新模型思考档位补全。
 
-macOS Apple Silicon 客户端 **Sub2Ops** 提供菜单栏快捷面板、分组最近成功调用、账号调度、错误详情及 Ops 设置。下载与使用见 [客户端说明](desktop/README.md)。仅通过桌面 App 管理；网页、SSO 和旧表单接口已下线。
+**Sub2Ops** 支持 macOS Apple Silicon 和 Android ARM64，提供分组动态、账号管理、错误详情及 Ops 设置；Mac 另有菜单栏快捷面板。下载与使用见 [客户端说明](desktop/README.md)。仅通过 App 管理；网页、SSO 和旧表单接口已下线。
 
 ## 功能
 

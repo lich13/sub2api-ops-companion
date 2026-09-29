@@ -41,6 +41,21 @@ describe("test interaction", () => {
 });
 
 describe("quota batch polling", () => {
+  it("pauses a running mobile batch in background and reads actual status on return", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api).mockResolvedValue({id:"batch",status:"running",items:[],total:2,completed:0});
+    const report = vi.fn();
+    await act(async () => root.render(<QuotaRefresh online active report={report}/>));
+    await act(async () => root.render(<QuotaRefresh online active={false} report={report}/>));
+    const paused = vi.mocked(api).mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(api).toHaveBeenCalledTimes(paused);
+    vi.mocked(api).mockResolvedValue({id:"batch",status:"completed",items:[],total:2,completed:2});
+    await act(async () => root.render(<QuotaRefresh online active report={report}/>));
+    expect(vi.mocked(api).mock.calls.length).toBeGreaterThan(paused);
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+    expect(command).toHaveBeenCalledWith("refresh");
+  });
   it("reads once when idle, polls only a running batch, and stops on completion", async () => {
     vi.useFakeTimers();
     const idle = {status:"idle",items:[],total:0,completed:0};

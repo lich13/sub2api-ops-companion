@@ -1,0 +1,141 @@
+/* Desktop columns keep the scheduling and action controls inside the viewport. */
+.filter-options { display: contents; }
+.account-toolbar { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.accounts-table { table-layout: fixed; min-width: 1014px; }
+.accounts-table .col-select { width: 30px; }
+.accounts-table .col-priority { width: 64px; }
+.accounts-table .col-quality { width: 130px; }
+.accounts-table .col-status { width: 128px; }
+.accounts-table .col-usage { width: 262px; }
+.accounts-table .col-error { width: 122px; }
+.accounts-table .col-schedule { width: 72px; }
+.accounts-table .col-actions { width: 76px; }
+.accounts-table th, .accounts-table td { padding: 9px 7px; }
+.accounts-table .account-name { min-width: 0; max-width: none; }
+.accounts-table .account-name strong { display: block; }
+.accounts-table .account-identity { white-space: normal; }
+.accounts-table .quality-cell { min-width: 0; }
+.accounts-table .quality-badge { min-width: 0; max-width: 100%; white-space: normal; text-align: left; align-items: flex-start; }
+.accounts-table .quality-badge span { white-space: normal; }
+.accounts-table .quality-badge b { flex-shrink: 0; }
+.accounts-table .usage-cell { min-width: 0; width: 100%; }
+.accounts-table .usage-stats { gap: 4px; }
+.accounts-table .limit-until { white-space: normal; }
+.accounts-table .limit-until time, .accounts-table .error-time time { white-space: nowrap; }
+.accounts-table .error-time small { white-space: nowrap; font-size: 10px; }
+.accounts-table .account-actions { align-items: stretch; }
+.accounts-table .account-actions button { white-space: nowrap; justify-content: center; }
+.sidebar { width: 176px; }
+.content { padding: 20px; }
+@media (max-width: 1360px) {
+  .sidebar { width: 144px; padding-left: 10px; padding-right: 10px; }
+  .brand { gap: 8px; }
+  .brand strong { font-size: 16px; }
+  .content { padding: 18px 12px; }
+  .topbar { padding-left: 16px; padding-right: 16px; }
+}
+
+/* Android uses the same controls in a touch-sized, single-column surface. */
+.app.mobile { height: 100dvh; flex-direction: column; padding-top: env(safe-area-inset-top); }
+.mobile .main { min-height: 0; }
+.mobile .topbar { flex-shrink: 0; height: 54px; padding: 0 16px; }
+.mobile .top-actions { gap: 8px; }
+.mobile .breadcrumb { font-size: 17px; }
+.mobile .content { padding: 12px; overscroll-behavior-y: contain; }
+.mobile .content-inner { min-width: 0; }
+.mobile .page-heading { margin-bottom: 10px; justify-content: end; }
+.mobile .page-heading h1 { display: none; }
+.mobile .updated { display: inline-flex; font-size: 11px; }
+.mobile button, .mobile select, .mobile input:not([type="checkbox"]), .mobile .icon-button { min-height: 48px; min-width: 48px; }
+.mobile summary { min-height: 48px; align-content: center; }
+.mobile .icon-button { min-width: 48px; padding: 10px; flex-shrink: 0; }
+.mobile input:not([type="checkbox"]), .mobile select, .mobile textarea { font-size: 16px; max-width: 100%; }
+.mobile input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
+.mobile .switch { position: relative; width: 48px; height: 48px; min-width: 48px; min-height: 48px; background: transparent !important; padding: 0; }
+.mobile .switch::before { content: ""; position: absolute; left: 2px; right: 2px; top: 12px; height: 24px; border-radius: 16px; background: #afb3bd; }
+.mobile .switch.on::before { background: var(--accent); }
+.mobile .switch > span { position: absolute; top: 15px; left: 5px; width: 18px; height: 18px; }
+.mobile .switch.on > span { transform: translateX(20px); }
+.mobile .switch-cell { align-self: center; }
+.mobile .account-toolbar { align-items: start; }
+.mobile .quota-batch { gap: 6px; margin-bottom: 10px; flex: 1; min-width: 0; }
+.mobile .quota-batch > button { font-size: 12px; padding: 0 8px; white-space: nowrap; }
+.mobile .account-toolbar > button { font-size: 12px; padding: 0 10px; }
+.mobile .filters { flex-wrap: nowrap; gap: 8px; margin-bottom: 6px; }
+.mobile .filters .search { min-width: 0; flex: 1; }
+.mobile .filter-options { display: none; }
+.mobile .filter-options.open { display: flex; flex-direction: column; position: fixed; z-index: 41; inset: auto 0 0; max-height: 90dvh; overflow: auto; background: var(--surface); padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; gap: 10px; }
+.mobile .filter-options header, .mobile-action-sheet header, .mobile-groups-surface > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mobile .filter-options h2, .mobile-action-sheet h2, .mobile-groups-surface h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
+.filter-shade { position: fixed; inset: 0; z-index: 40; background: #0007; }
+.mobile-sort { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.mobile-sort select { background: transparent; border-color: transparent; font-size: 12px; }
+.mobile .table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+.mobile .selection-bar { padding: 0; gap: 8px; border-bottom: 0; }
+.mobile-select-all { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+.mobile-accounts { display: grid; gap: 10px; }
+.mobile-account { min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.mobile-account > header { display: flex; align-items: center; gap: 3px; margin: -2px -8px 3px; }
+.account-check { width: 48px; min-height: 48px; display: grid; place-items: center; flex-shrink: 0; }
+.mobile-identity { flex: 1; min-width: 0; }
+.mobile-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.mobile-identity > span { display: block; font-size: 11px; margin-top: 3px; color: var(--muted); }
+.mobile-account-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.mobile-account-status .quality-badge { min-width: 0; font-size: 11px; text-align: right; padding: 4px 0 4px 8px; }
+.mobile-account-status .quality-badge span { white-space: normal; }
+.mobile-limit { color: var(--muted); font-size: 11px; padding-bottom: 8px; }
+.mobile-account .usage-cell { min-width: 0; width: 100%; padding: 8px 0 2px; }
+.mobile .usage-window { width: 100%; }
+.mobile .usage-stats { gap: 5px; }
+.mobile .usage-stats > span { font-size: 10px; }
+.mobile .usage-actions { gap: 6px; }
+.mobile .usage-actions button { padding: 4px 10px; }
+.mobile-account > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; margin-top: 4px; border-top: 1px solid var(--line); font-size: 11px; }
+.mobile-error { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 5px 0; border: 0; background: none; font-size: 11px; text-align: left; }
+.mobile-error time { color: var(--muted); white-space: nowrap; }
+.mobile-account > footer > .text-button { font-size: 11px; }
+.bottom-nav { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); flex-shrink: 0; }
+.bottom-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; padding: 4px 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; }
+.bottom-nav button.active { color: var(--accent); background: var(--accent-bg); }
+.mobile .modal-backdrop, .mobile .drawer-backdrop { z-index: 60; padding: 0; align-items: end; }
+.mobile .modal, .mobile-action-sheet { width: 100%; max-width: none; max-height: 90dvh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); background: var(--surface); border: 1px solid var(--line); }
+.mobile-action-sheet { display: grid; gap: 12px; }
+.mobile-action-sheet .priority-edit input { width: 110px; }
+.mobile-action-sheet .field { margin: 0; }
+.mobile .drawer, .mobile .test-dialog, .mobile .quality-dialog, .mobile .reasoning-modal, .mobile .delete-dialog { position: relative; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); overflow: auto; }
+.mobile .quality-dialog header { top: -12px; margin: -12px -16px 0; padding: 12px 16px; gap: 8px; }
+.mobile .quality-dialog header > div:first-child, .mobile .test-dialog header > div { min-width: 0; flex: 1; }
+.mobile .quality-dialog header strong, .mobile .test-dialog header strong { max-width: 100%; }
+.mobile .quality-tools { flex-shrink: 0; gap: 4px; }
+.mobile .quality-metrics { grid-template-columns: 1fr; }
+.mobile .test-controls { grid-template-columns: minmax(0, 1fr); padding: 12px 0; }
+.mobile .test-dialog > header, .mobile .test-result { padding-left: 0; padding-right: 0; }
+.mobile .test-dialog pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mobile .test-dialog img, .mobile .test-dialog video, .mobile .test-dialog audio { max-width: 100%; }
+.mobile .event-tabs { overflow-x: auto; flex-shrink: 0; }
+.mobile .event-tabs button { white-space: nowrap; }
+.mobile .error-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 16px; padding: 12px 10px; gap: 5px 8px; }
+.mobile .error-row > time { grid-column: 2; grid-row: 2; font-size: 11px; }
+.mobile .error-row > svg { grid-column: 3; grid-row: 1 / span 2; }
+.mobile .settings-card { padding: 14px; margin-bottom: 12px; }
+.mobile .field { gap: 10px; }
+.mobile .field > input:not([type="checkbox"]), .mobile .field > select { min-width: 0; width: min(54%, 220px); }
+.mobile .check-account { min-height: 48px; }
+.mobile .reasoning-toolbar { flex-wrap: wrap; gap: 8px; }
+.mobile .reasoning-toolbar select { min-width: 0; flex: 1; width: 100%; }
+.mobile .reasoning-head { display: none; }
+.mobile .reasoning-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px; }
+.mobile .reasoning-id, .mobile .reasoning-levels { grid-column: 1 / -1; }
+.mobile .reasoning-id { max-width: none; overflow-wrap: anywhere; }
+.mobile .reasoning-row > span { white-space: normal; }
+.mobile .reasoning-actions { flex-wrap: wrap; }
+.mobile .reasoning-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mobile-groups-surface { position: fixed; inset: 0; z-index: 45; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); background: var(--canvas); display: flex; flex-direction: column; }
+.mobile-groups-surface > header { padding: 6px 0; flex-shrink: 0; }
+.mobile-groups-surface .quick-groups { overflow: auto; min-height: 0; padding-bottom: 12px; }
+.mobile-groups-surface .compact .recent-account { grid-template-columns: minmax(0, 1fr) 145px 48px; min-height: 68px; }
+.mobile-groups-surface .compact-times { font-size: 10px; }
+.mobile-groups-surface .compact-times button { min-height: 48px; }
+.mobile-groups-surface .compact .mini-usage { flex-wrap: wrap; }
+.mobile .toast { left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); max-width: none; width: auto; transform: none; }
+.mobile .connect-card { width: 100%; padding: 20px 12px; margin: 0; }

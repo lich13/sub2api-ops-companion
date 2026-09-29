@@ -125,15 +125,17 @@ export function PriorityEditor({
 export function QuotaRefresh({
   online,
   report,
+  active = true,
 }: {
   online: boolean;
   report: (e: unknown) => void;
+  active?: boolean;
 }) {
   const [batch, setBatch] = useState<QuotaBatch | null>(null);
   const [starting, setStarting] = useState(false);
   const running = useRef(false);
   useEffect(() => {
-    if (!online) return;
+    if (!online || !active) return;
     let gone = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function poll() {
@@ -155,7 +157,7 @@ export function QuotaRefresh({
       gone = true;
       clearTimeout(timer);
     };
-  }, [online, batch?.id, batch?.status === "running"]);
+  }, [online, active, batch?.id, batch?.status === "running"]);
   async function start() {
     if (running.current || !online) return;
     running.current = true;
@@ -169,7 +171,7 @@ export function QuotaRefresh({
       setStarting(false);
     }
   }
-  const active = batch?.status === "running";
+  const inProgress = batch?.status === "running";
   const failures =
     batch?.items.filter(
       (i) => i.status === "failed" || i.status === "partial",
@@ -177,16 +179,16 @@ export function QuotaRefresh({
   return (
     <div className="quota-batch">
       <button
-        disabled={!online || starting || active}
+        disabled={!online || starting || inProgress}
         onClick={() => void start()}
       >
-        <RefreshCw size={14} className={starting || active ? "spin" : ""} />
+        <RefreshCw size={14} className={starting || inProgress ? "spin" : ""} />
         刷新全部 OAuth 额度
       </button>
       {batch && batch.status !== "idle" && (
         <span>
           {batch.completed}/{batch.total}
-          {active ? " 查询中" : " 已完成"}
+          {inProgress ? " 查询中" : " 已完成"}
         </span>
       )}
       {!!failures.length && (
