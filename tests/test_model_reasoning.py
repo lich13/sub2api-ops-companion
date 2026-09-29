@@ -109,6 +109,20 @@ class ReasoningTests(unittest.TestCase):
             for method, path in [("GET", "/model-catalog"), ("GET", "/model-groups/7"), ("PUT", "/model-groups/7/overrides"), ("PUT", "/model-groups/7/allowlist"), ("POST", "/model-groups/7/preview"), ("POST", "/model-groups/7/upstream-import")]:
                 self.assertEqual(client.request(method, "/api/desktop/v1" + path).status_code, 404)
 
+    def test_rechecking_prefilled_choices_keeps_their_actual_source(self):
+        for source in ("upstream", "native"):
+            with self.subTest(source=source):
+                self.service.source_catalog.return_value = {"models": [DESCRIPTOR] if source == "upstream" else []}
+                self.service.baseline.return_value = ({"models": [DESCRIPTOR]}, "native")
+                initial = self.service.resolve_reasoning(7, "admin", {"model": MODEL})
+                self.assertEqual(initial["source"], source)
+                choices = {"model": MODEL, "efforts": initial["efforts"], "default_effort": initial["default_effort"]}
+                rechecked = self.service.resolve_reasoning(7, "admin", choices)
+                self.assertEqual(rechecked["source"], source)
+                changed = self.service.resolve_reasoning(7, "admin", {**choices, "default_effort": "low"})
+                self.assertEqual(changed["source"], "manual")
+                self.assertFalse(self.path.exists())
+
     def test_whitelist_explicit_append_preserves_switch_and_partial_truth(self):
         self.group["model_allowlist"] = {"enabled": True, "models": ["old", "other-*"]}
         payload = self.payload()

@@ -310,9 +310,11 @@ class ModelCatalogService:
                 efforts, default = reasoning_values(native)
                 source = "native"
         if payload.get("efforts") is not None:
+            suggested = {"supported_reasoning_levels": [{"effort": value} for value in efforts],
+                         "default_reasoning_level": default}
             fields = reasoning_fields(payload["efforts"], payload.get("default_effort", ""))
             efforts, default = reasoning_values(fields)
-            if not same_reasoning(imported, fields):
+            if not same_reasoning(suggested, fields):
                 source = "manual"
         checked = forwarding(group, model, efforts, available, self.native_version(key))
         public = {"group": self.group_summary(group), "revision": saved["revision"], "model": model,
