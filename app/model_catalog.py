@@ -13,11 +13,13 @@ import httpx
 from fastapi import HTTPException
 
 from .model_config_store import ModelConfigStore
-from .model_rules import admitted, encoded, merge, revision, targets, transform, validate_overrides
+from .model_rules import admitted, encoded, revision, transform, validate_overrides
+from .model_reasoning import (FIELDS, complete_descriptor, forwarding, model_id, patch_descriptor,
+                              reasoning_fields, reasoning_values, routing_binding, same_reasoning)
 
 CLIENT_VERSION = "0.146.0"
 MAX_BODY = 8 * 1024 * 1024
-GROUP_FIELDS = "id,name,platform,model_allowlist,codex_models_manifest_config,updated_at"
+GROUP_FIELDS = "id,name,platform,model_allowlist,codex_models_manifest_config,max_reasoning_effort,max_reasoning_effort_over_limit,reasoning_effort_mappings,updated_at"
 
 
 def caller_key(headers: dict) -> str:
@@ -27,55 +29,22 @@ def caller_key(headers: dict) -> str:
     return headers.get("x-api-key") or headers.get("x-goog-api-key") or ""
 
 
-def allowlist(value: object) -> dict:
-    if not isinstance(value, dict) or type(value.get("enabled")) is not bool or not isinstance(value.get("models"), list):
-        raise ValueError("白名单格式无效")
-    models = value["models"]
-    if len(models) > 1000 or any(not isinstance(m, str) or not m.strip() or len(m) > 256 or any(ord(c) < 32 for c in m) for m in models):
-        raise ValueError("白名单模型 ID 无效")
-    return {"enabled": value["enabled"], "models": list(dict.fromkeys(m.strip() for m in models))}
-
-
 def import_fields(entry: dict) -> dict:
-    if "slug" in entry:
-        return {k: copy.deepcopy(v) for k, v in entry.items() if k not in {"id", "slug"}}
-    output = {}
-    for source, dest in (("name", "display_name"), ("display_name", "display_name"), ("description", "description"),
-                         ("context_window", "context_window"), ("max_context_window", "max_context_window"),
-                         ("supported_reasoning_levels", "supported_reasoning_levels"), ("default_reasoning_level", "default_reasoning_level"),
-                         ("input_modalities", "input_modalities")):
-        if source in entry:
-            output[dest] = entry[source]
+    """Read only explicitly supplied reasoning information."""
+    output = {k: copy.deepcopy(entry[k]) for k in FIELDS if k in entry}
     levels = output.get("supported_reasoning_levels")
     if isinstance(levels, list):
         output["supported_reasoning_levels"] = [{"effort": value, "description": ""} if isinstance(value, str) else value for value in levels]
-    context = (entry.get("limit") or {}).get("context")
-    if type(context) is int and context > 0:
-        output["context_window"] = context
-        output["max_context_window"] = context
-    modalities = (entry.get("modalities") or {}).get("input")
-    if isinstance(modalities, list):
-        supported = [m for m in modalities if m in ("text", "image")]
-        if supported:
-            output["input_modalities"] = supported
-    if "context_window" in output and "max_context_window" not in output:
-        output["max_context_window"] = output["context_window"]
-    if entry.get("reasoning") is False:
+    if entry.get("reasoning") is False and "supported_reasoning_levels" not in output:
         output["supported_reasoning_levels"] = [{"effort": "none", "description": ""}]
         output["default_reasoning_level"] = "none"
-    elif isinstance(entry.get("reasoning_options"), list):
-        levels = []
+    elif "supported_reasoning_levels" not in output and isinstance(entry.get("reasoning_options"), list):
+        values = []
         for option in entry["reasoning_options"]:
             if isinstance(option, dict) and option.get("type", "").lower() == "effort":
-                levels.extend("none" if value is None else value for value in option.get("values", []) if value is None or isinstance(value, str))
-        levels = list(dict.fromkeys(levels))
-        if levels:
-            output["supported_reasoning_levels"] = [{"effort": value, "description": ""} for value in levels]
-            output["default_reasoning_level"] = levels[0]
-    # Unspecified capability values do not become false on import.
-    for key in ("supports_parallel_tool_calls", "supports_reasoning_summary_parameter", "support_verbosity", "supports_search_tool"):
-        if key in entry:
-            output[key] = entry[key]
+                values.extend(value for value in option.get("values", []) if isinstance(value, str))
+        if values:
+            output["supported_reasoning_levels"] = [{"effort": v, "description": ""} for v in dict.fromkeys(values)]
     return output
 
 
@@ -88,7 +57,7 @@ class ModelCatalogService:
         self.group_locks: dict[int, threading.Lock] = {}
         self.baselines: dict[tuple[int, str, str], tuple[float, dict]] = {}
         self.cache: dict[tuple, tuple[float, bytes, str]] = {}
-        self.catalog_cache: tuple[float, list] = (0, [])
+        self.version_cache: tuple[float, str] = (0, "")
         self.sources: dict[str, tuple[float, dict]] = {}
         self.status = {"state": "ready", "message": "", "updated_at": None}
 
@@ -143,49 +112,6 @@ class ModelCatalogService:
             return []
         return self.r.db.fetch_all("SELECT id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled FROM composite_model_routes WHERE group_id=%(id)s AND enabled=true", {"id": group["id"]})
 
-    def aliases(self, body: dict, group: dict, accounts: list, routes: list, whitelist: dict, *, draft: bool = False) -> dict:
-        if group["platform"] != "composite" and not draft:
-            return {}
-        descriptors = {m["slug"]: m for m in body.get("models", []) if isinstance(m, dict) and isinstance(m.get("slug"), str)}
-        candidates = set(whitelist.get("models", []))
-        if group["platform"] == "composite":
-            candidates.update(r["public_model"] for r in routes if r.get("match_type") == "exact")
-            for a in accounts:
-                candidates.update(((a.get("credentials") or {}).get("model_mapping") or {}).keys())
-        output = {}
-        fetched = {}
-        deadline = time.monotonic() + 8
-        for model in sorted(candidates):
-            if "*" in model or model in descriptors or not admitted(whitelist, model):
-                continue
-            available = targets(group, model, accounts, routes)
-            # The descriptor must come from the real source model. Never clone
-            # an unrelated template to advertise an unverified capability.
-            for account, upstream in available:
-                if upstream in descriptors:
-                    output[model] = {**descriptors[upstream], "slug": model}
-                    break
-                try:
-                    identity = account["id"]
-                    if identity not in fetched:
-                        if time.monotonic() >= deadline:
-                            break
-                        fetched[identity] = None
-                        fetched[identity] = self.source_catalog(account, timeout=min(3, deadline - time.monotonic()))
-                    catalog = fetched[identity]
-                    if not isinstance(catalog, dict):
-                        continue
-                    # Supplement only a complete, real Codex descriptor. An
-                    # ordinary id-only list cannot prove client capabilities.
-                    descriptor = next((entry for entry in catalog.get("models", []) if isinstance(entry, dict) and entry.get("slug") == upstream), None)
-                    if descriptor:
-                        validate_overrides({model: import_fields(descriptor)})
-                        output[model] = {**descriptor, "slug": model}
-                        break
-                except Exception:
-                    continue
-        return output
-
     def proxy(self, path: str, query: str, headers: dict) -> tuple[int, dict, bytes]:
         forwarded = {k: v for k, v in headers.items() if k.lower() in {
             "authorization", "x-api-key", "x-goog-api-key", "user-agent", "originator", "version", "x-client-version",
@@ -211,16 +137,17 @@ class ModelCatalogService:
                 self.baselines[(group["id"], group["version"], version)] = (time.monotonic(), copy.deepcopy(original))
                 if len(self.baselines) > 128:
                     self.baselines.pop(next(iter(self.baselines)))
-            accounts = self.accounts(group["id"]) if group["platform"] == "composite" else []
+            accounts = self.accounts(group["id"]) if group["platform"] == "composite" or saved.get("reasoning") else []
             routes = self.routes(group)
-            cache_key = (group["id"], group["version"], saved["revision"], version, revision(original), revision([accounts, routes]))
+            native_version = self.native_version() if saved.get("reasoning") else ""
+            cache_key = (group["id"], group["version"], saved["revision"], version, native_version, revision(original), revision([accounts, routes]))
             with self.lock:
                 cached = self.cache.get(cache_key)
             if cached and cached[0] > time.monotonic():
                 body, etag = cached[1:]
             else:
-                aliases = self.aliases(original, group, accounts, routes, group["model_allowlist"])
-                final = transform(original, saved["overrides"], group["model_allowlist"], aliases)
+                overrides, supplements = self.active_reasoning(original, group, saved, accounts, routes, native_version)
+                final = transform(original, overrides, group["model_allowlist"], supplements)
                 body = encoded(final)
                 etag = '"' + revision(final) + '"'
                 with self.lock:
@@ -262,74 +189,202 @@ class ModelCatalogService:
         rows = self.r.db.fetch_all("SELECT id,name,platform FROM groups WHERE deleted_at IS NULL ORDER BY id")
         return {"groups": rows, "status": self.status}
 
-    def read_group(self, group_id: int, key: str) -> dict:
-        group = self.group(group_id)
-        saved = self.store.group(group_id)
-        body, source = self.baseline(group)
-        candidates = self.admin(key, "GET", f"/groups/{group_id}/model-allowlist-candidates") or []
-        if isinstance(candidates, dict):
-            candidates = candidates.get("models", [])
-        candidates = [v if isinstance(v, str) else v.get("id") for v in candidates]
-        candidates = sorted({v for v in candidates if isinstance(v, str)})
-        accounts, routes = self.accounts(group_id), self.routes(group)
-        aliases = self.aliases(body, group, accounts, routes, group["model_allowlist"])
-        baseline = transform(body, {}, group["model_allowlist"], aliases)
-        final = transform(body, saved["overrides"], group["model_allowlist"], aliases)
-        return {"group": {k: group[k] for k in ("id", "name", "platform", "version", "model_allowlist")},
-                **saved, "candidates": candidates, "baseline": baseline, "effective": final,
-                "baseline_status": source, "status": self.status}
-
-    def preview(self, group_id: int, payload: dict) -> dict:
-        group = self.group(group_id)
-        body, source = self.baseline(group)
-        draft = allowlist(payload["allowlist"])
-        overrides = payload["overrides"]
-        accounts, routes = self.accounts(group_id), self.routes(group)
-        aliases = self.aliases(body, group, accounts, routes, draft, draft=True)
-        bases = {m["slug"]: m for m in body.get("models", [])} | aliases
-        validate_overrides(overrides, bases)
-        final = transform(body, overrides, draft, aliases)
-        missing = [m for m in draft["models"] if "*" not in m and m not in {v["slug"] for v in final["models"]}]
-        return {"effective": final, "baseline_status": source, "pending_models": missing}
-
-    def save_overrides(self, group_id: int, payload: dict) -> dict:
+    def native_version(self, key: str = "") -> str:
         with self.lock:
-            lock = self.group_locks.setdefault(group_id, threading.Lock())
-        with lock:
-            group = self.group(group_id)
-            if group["version"] != payload["expected_version"]:
-                raise HTTPException(409, "分组已变更，请刷新后重试")
-            saved = self.store.group(group_id)
-            body, source = self.baseline(group)
-            accounts, routes = self.accounts(group_id), self.routes(group)
-            aliases = self.aliases(body, group, accounts, routes, group["model_allowlist"])
-            bases = {m["slug"]: m for m in transform(body, {}, group["model_allowlist"], aliases)["models"]}
-            validate_overrides(payload["overrides"], bases)
-            for model, fields in payload["overrides"].items():
-                if fields == saved["overrides"].get(model):
+            if self.version_cache[0] > time.monotonic():
+                return self.version_cache[1]
+        try:
+            if not key:
+                row = self.r.db.fetch_one("SELECT value FROM settings WHERE key='admin_api_key'") or {}
+                key = row.get("value", "")
+            value = self.admin(key, "GET", "/system/version") if key else {}
+            version = str(value.get("version", "")).removeprefix("v")
+            if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                version = ""
+        except Exception:
+            version = ""
+        with self.lock:
+            self.version_cache = (time.monotonic() + (30 if version else 5), version)
+        return version
+
+    def active_reasoning(self, body: dict, group: dict, saved: dict, accounts: list, routes: list, version: str) -> tuple[dict, dict]:
+        overrides = {model: {k: copy.deepcopy(v) for k, v in fields.items() if k not in FIELDS}
+                     for model, fields in saved["overrides"].items()}
+        supplements = {}
+        native = {m["slug"]: m for m in body["models"]}
+        for model, entry in saved.get("reasoning", {}).items():
+            if entry.get("mode") != "active" or not admitted(group["model_allowlist"], model):
+                continue
+            binding, available = routing_binding(group, model, accounts, routes)
+            if binding != entry.get("binding") or forwarding(group, model, entry["efforts"], available, version)["state"] != "verified":
+                continue
+            fields = reasoning_fields(entry["efforts"], entry["default_effort"])
+            if same_reasoning(native.get(model), fields):
+                continue
+            base = native.get(model) or entry.get("descriptor")
+            if not complete_descriptor(base, model):
+                continue
+            if model not in native:
+                supplements[model] = base
+            overrides[model] = {**overrides.get(model, {}), **patch_descriptor(base, fields)}
+        return overrides, supplements
+
+    @staticmethod
+    def group_summary(group: dict) -> dict:
+        return {key: group[key] for key in ("id", "name", "platform", "version")}
+
+    def reasoning_item(self, model: str, entry: dict, group: dict, native: dict, accounts: list, routes: list, version: str) -> dict:
+        binding, available = routing_binding(group, model, accounts, routes)
+        checked = forwarding(group, model, entry["efforts"], available, version)
+        fields = reasoning_fields(entry["efforts"], entry["default_effort"])
+        state, reason = checked["state"], checked["reason"]
+        if not admitted(group["model_allowlist"], model):
+            state, reason = "unverified", "分组白名单尚未允许该模型"
+        elif entry.get("binding") != binding:
+            state, reason = "unverified", "路由或分组策略已变化，请重新核对并保存"
+        elif state == "verified" and same_reasoning(native.get(model), fields):
+            state, reason = "native", "原生目录已提供相同档位，可恢复原生"
+        elif state == "verified" and not complete_descriptor(native.get(model) or entry.get("descriptor"), model):
+            state, reason = "unverified", "缺少该模型自身的完整目录描述"
+        elif state == "verified" and entry.get("mode") == "active":
+            state = "active"
+        elif state == "verified":
+            state, reason = "draft", "草稿已具备生效条件，请核对后保存"
+        return {"model": model, "efforts": entry["efforts"], "default_effort": entry["default_effort"],
+                "state": state, "reason": reason, "source": entry.get("source", "manual"),
+                "updated_at": entry.get("updated_at"), "version": version}
+
+    def read_reasoning(self, group_id: int, key: str) -> dict:
+        group, saved = self.group(group_id), self.store.group(group_id)
+        entries = copy.deepcopy(saved.get("reasoning", {}))
+        for model, fields in saved["overrides"].items():
+            efforts, default = reasoning_values(fields)
+            if model not in entries and efforts and default:
+                entries[model] = {"efforts": efforts, "default_effort": default, "mode": "draft", "source": "legacy"}
+        items = []
+        if entries:
+            body, _ = self.baseline(group)
+            native = {m["slug"]: m for m in body["models"]}
+            accounts, routes, version = self.accounts(group_id), self.routes(group), self.native_version(key)
+            items = [self.reasoning_item(model, entry, group, native, accounts, routes, version) for model, entry in sorted(entries.items())]
+        return {"group": self.group_summary(group), "revision": saved["revision"], "items": items, "status": self.status}
+
+    def resolve_reasoning(self, group_id: int, key: str, payload: dict) -> dict:
+        model = model_id(payload["model"])
+        group, saved = self.group(group_id), self.store.group(group_id)
+        body, _ = self.baseline(group)
+        native = next((m for m in body["models"] if m["slug"] == model), None)
+        accounts, routes = self.accounts(group_id), self.routes(group)
+        binding, available = routing_binding(group, model, accounts, routes)
+        descriptor, imported, source = native, {}, "manual"
+        destinations = {(a["platform"], target) for a, target in available}
+        if len(destinations) == 1:
+            deadline = time.monotonic() + 8
+            for account, target in available[:3]:
+                try:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    data = self.source_catalog(account, timeout=min(3, remaining))
+                    entries = data if isinstance(data, list) else data.get("models", data.get("data", []))
+                    found = next((m for m in entries if isinstance(m, dict) and m.get("slug", m.get("id", m.get("modelId"))) == target), None)
+                    if not found:
+                        continue
+                    imported = {k: v for k, v in import_fields(found).items() if k in FIELDS}
+                    if complete_descriptor(found, target):
+                        # Rename only the public identity of this actual target.
+                        actual = {**found, "slug": model}
+                        validate_overrides({model: {k: v for k, v in actual.items() if k not in {"id", "slug"}}})
+                        descriptor = native or actual
+                    if reasoning_values(imported)[0]:
+                        source = "upstream"
+                        break
+                except Exception:
                     continue
-                if not admitted(group["model_allowlist"], model) or model not in bases:
-                    raise HTTPException(409, "模型尚未进入当前目录，请先保存白名单并刷新目录")
-            if self.group(group_id)["version"] != group["version"]:
-                raise HTTPException(409, "分组已变更，请刷新后重试")
-            return self.store.save(group_id, payload["overrides"], payload["expected_revision"])
+        existing = saved.get("reasoning", {}).get(model)
+        efforts, default = reasoning_values(imported)
+        if not efforts:
+            if existing:
+                efforts, default, source = existing["efforts"], existing["default_effort"], existing.get("source", "manual")
+            elif native:
+                efforts, default = reasoning_values(native)
+                source = "native"
+        if payload.get("efforts") is not None:
+            fields = reasoning_fields(payload["efforts"], payload.get("default_effort", ""))
+            efforts, default = reasoning_values(fields)
+            if not same_reasoning(imported, fields):
+                source = "manual"
+        checked = forwarding(group, model, efforts, available, self.native_version(key))
+        public = {"group": self.group_summary(group), "revision": saved["revision"], "model": model,
+                  "binding": binding, "efforts": efforts, "default_effort": default, "source": source,
+                  "needs_allowlist": not admitted(group["model_allowlist"], model),
+                  "native_efforts": reasoning_values(native)[0], "native_default": reasoning_values(native)[1],
+                  "descriptor_available": complete_descriptor(descriptor, model), "forwarding": checked}
+        # Private working material never crosses the desktop DTO boundary.
+        return {**public, "_descriptor": descriptor}
 
-    def save_allowlist(self, group_id: int, key: str, payload: dict) -> dict:
-        draft = allowlist(payload["allowlist"])
+    def save_reasoning(self, group_id: int, key: str, payload: dict) -> dict:
+        model = model_id(payload["model"])
+        fields = reasoning_fields(payload["efforts"], payload["default_effort"])
         with self.lock:
             lock = self.group_locks.setdefault(group_id, threading.Lock())
         with lock:
-            group = self.group(group_id)
-            if group["version"] != payload["expected_version"]:
-                raise HTTPException(409, "分组已变更，请刷新后重试")
-            self.admin(key, "PUT", f"/groups/{group_id}", {"model_allowlist": draft})
-            actual = self.group(group_id)
+            group, saved = self.group(group_id), self.store.group(group_id)
+            if group["version"] != payload["expected_version"] or saved["revision"] != payload["expected_revision"]:
+                raise HTTPException(409, "配置已变更，请刷新后重新核对，草稿已保留")
+            resolved = self.resolve_reasoning(group_id, key, payload)
+            if resolved["binding"] != payload["expected_binding"]:
+                raise HTTPException(409, "账号路由已变化，请重新核对，草稿已保留")
+            native_fields = reasoning_fields(resolved["native_efforts"], resolved["native_default"]) if resolved["native_default"] else {}
+            if same_reasoning(native_fields, fields) and not resolved["needs_allowlist"] and resolved["forwarding"]["state"] == "verified":
+                if model in saved.get("reasoning", {}) or FIELDS.intersection(saved["overrides"].get(model, {})):
+                    self.store.save_reasoning(group_id, model, None, saved["revision"])
+                return {"outcome": "native", "message": "原生已支持，无需补全", "state": self.read_reasoning(group_id, key)}
+            active = resolved["forwarding"]["state"] == "verified" and resolved["descriptor_available"]
+            if active and resolved["needs_allowlist"] and not payload.get("confirm_allowlist"):
+                raise HTTPException(409, "请确认仅将该模型追加到分组白名单")
+            if self.group(group_id)["version"] != group["version"]:
+                raise HTTPException(409, "分组已变更，请刷新后重新核对")
+            appended = False
+            if active and resolved["needs_allowlist"]:
+                whitelist = {**group["model_allowlist"], "models": [*group["model_allowlist"]["models"], model]}
+                self.admin(key, "PUT", f"/groups/{group_id}", {"model_allowlist": whitelist})
+                group = self.group(group_id)
+                if group["model_allowlist"] != whitelist:
+                    raise HTTPException(409, "白名单结果未确认；补全未保存，请刷新核对，不要自动重试")
+                appended = True
+            try:
+                # Recheck after the native write and before the local commit.
+                binding, _ = routing_binding(group, model, self.accounts(group_id), self.routes(group))
+                if binding != resolved["binding"] or self.group(group_id)["version"] != group["version"]:
+                    raise HTTPException(409, "路由或分组已变更")
+                entry = {"efforts": resolved["efforts"], "default_effort": resolved["default_effort"],
+                         "binding": binding, "source": resolved["source"], "mode": "active" if active else "draft",
+                         "descriptor": resolved["_descriptor"], "updated_at": datetime.now(timezone.utc).isoformat()}
+                self.store.save_reasoning(group_id, model, entry, saved["revision"])
+            except Exception:
+                if not appended:
+                    raise
+                return {"outcome": "partial", "message": "白名单已添加，补全未保存；请重新核对后保存，未自动重试",
+                        "state": self.read_reasoning(group_id, key)}
             with self.lock:
-                self.baselines = {k: v for k, v in self.baselines.items() if k[0] != group_id}
                 self.cache.clear()
-            if actual["model_allowlist"] != draft:
-                raise HTTPException(409, "白名单保存结果与草稿不同，请刷新核对")
-            return {"version": actual["version"], "model_allowlist": actual["model_allowlist"]}
+                self.baselines = {k: v for k, v in self.baselines.items() if k[0] != group_id}
+            return {"outcome": "saved" if active else "draft", "message": "目录已补全" if active else "已保存草稿，未对外发布",
+                    "state": self.read_reasoning(group_id, key)}
+
+    def remove_reasoning(self, group_id: int, key: str, payload: dict) -> dict:
+        model = model_id(payload["model"])
+        with self.lock:
+            lock = self.group_locks.setdefault(group_id, threading.Lock())
+        with lock:
+            if self.group(group_id)["version"] != payload["expected_version"]:
+                raise HTTPException(409, "分组已变更，请刷新后重试")
+            self.store.save_reasoning(group_id, model, None, payload["expected_revision"])
+            with self.lock:
+                self.cache.clear()
+            return self.read_reasoning(group_id, key)
+
 
     def source_catalog(self, account: dict, *, timeout: float = 20) -> dict:
         identity = revision(account)
@@ -423,51 +478,3 @@ class ModelCatalogService:
                 self.sources.clear()
             self.sources[identity] = (time.monotonic() + 60, data)
         return copy.deepcopy(data)
-
-    def upstream_import(self, group_id: int, model: str) -> dict:
-        group = self.group(group_id)
-        if not admitted(group["model_allowlist"], model):
-            raise HTTPException(409, "请先保存该模型的白名单")
-        accounts, routes = self.accounts(group_id), self.routes(group)
-        deadline = time.monotonic() + 45
-        for account, upstream in targets(group, model, accounts, routes):
-            try:
-                if time.monotonic() >= deadline:
-                    break
-                body = self.source_catalog(account, timeout=min(20, deadline - time.monotonic()))
-                entries = body if isinstance(body, list) else body.get("models", body.get("data", []))
-                for entry in entries:
-                    if isinstance(entry, dict) and entry.get("slug", entry.get("id", entry.get("modelId"))) == upstream:
-                        fields = import_fields(entry)
-                        validate_overrides({model: fields})
-                        if fields:
-                            return {"model": model, "fields": fields, "source": "upstream", "account_id": account["id"], "upstream_model": upstream}
-            except Exception:
-                continue
-        raise HTTPException(502, "可路由上游没有返回该模型的有效元数据，配置未修改")
-
-    def catalog(self) -> dict:
-        with self.lock:
-            if self.catalog_cache[0] > time.monotonic():
-                return {"items": self.catalog_cache[1]}
-        try:
-            status, _, raw = self.read_http("GET", "https://models.dev/api.json")
-            data = json.loads(raw)
-            if status != 200 or not isinstance(data, dict):
-                raise ValueError()
-            items = []
-            for provider, record in data.items():
-                for model, entry in record.get("models", {}).items():
-                    fields = import_fields(entry)
-                    try:
-                        validate_overrides({model: fields})
-                    except ValueError:
-                        continue
-                    items.append({"provider": provider, "provider_name": record.get("name", provider), "id": model,
-                                  "name": entry.get("name", model), "fields": fields})
-            items.sort(key=lambda i: (i["provider"], i["id"]))
-            with self.lock:
-                self.catalog_cache = (time.monotonic() + 21600, items)
-            return {"items": items}
-        except Exception:
-            raise HTTPException(502, "models.dev 目录暂不可用，现有草稿已保留") from None
