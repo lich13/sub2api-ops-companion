@@ -11,6 +11,7 @@ import {
   Command,
   ExternalLink,
   Layers3,
+  ListOrdered,
   LayoutDashboard,
   LoaderCircle,
   Pin,
@@ -54,17 +55,18 @@ import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
+import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
 
-type Page = "accounts" | "models" | "events" | "automation" | "settings";
+type Page = "accounts" | "records" | "events" | "features" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
-  { id: "models", label: "模型", icon: Layers3 },
+  { id: "records", label: "记录", icon: ListOrdered },
   { id: "events", label: "事件", icon: Bell },
-  { id: "automation", label: "自动化", icon: SlidersHorizontal },
+  { id: "features", label: "功能", icon: SlidersHorizontal },
   { id: "settings", label: "设置", icon: Settings2 },
 ];
 function Switch({
@@ -166,6 +168,7 @@ export default function App() {
     setConfirm(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
+    setConfig(null);
   }, [connectionKey]);
   const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
   useEffect(() => {
@@ -215,9 +218,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", escape);
   }, [confirm, detail, detailBusy, testAccount]);
   useEffect(() => {
-    if (state.online && (page === "settings" || page === "automation"))
-      void api<Config>("GET", "/config").then(setConfig).catch(report);
-  }, [page, state.online]);
+    let disposed = false;
+    if (state.online && (page === "settings" || page === "features"))
+      void api<Config>("GET", "/config").then((value) => { if (!disposed) setConfig(value); }).catch((error) => { if (!disposed) report(error); });
+    return () => { disposed = true; };
+  }, [page, state.online, connectionKey]);
   useEffect(() => {
     if (page === "events" && state.online)
       void api<{ items: OpsError[]; next_cursor: number | null }>(
@@ -268,6 +273,7 @@ export default function App() {
         ...patch,
         launchAtLogin:
           patch.launch_at_login ?? state.preferences.launch_at_login,
+        recordColumns: patch.record_columns ?? state.preferences.record_columns,
       });
     } catch (e) {
       report(e);
@@ -577,7 +583,7 @@ export default function App() {
         )}
         <div
           key={mobile ? connectionKey : "content"}
-          className={`content ${!quick && page === "events" ? "events-content" : ""}`}
+          className={`content ${!quick && page === "events" ? "events-content" : ""} ${!quick && page === "records" ? "records-content" : ""}`}
         >
           <div ref={quickBody} className="content-inner">
             {!ready || state.initializing ? (
@@ -622,12 +628,14 @@ export default function App() {
                   <div>
                     <h1>{pages.find((p) => p.id === page)?.label}</h1>
                   </div>
-                  <span className="updated">
+                  {page !== "records" && <span className="updated">
                     <Clock3 size={13} />
                     更新于 <Time at={snap.observed_at} />
-                  </span>
+                  </span>}
                 </div>
-                {page === "models" && <ModelConfig key={connectionKey} online={state.online} />}
+                {page === "records" && <UsageRecords key={connectionKey} online={state.online} foreground={state.foreground !== false} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
+                  await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
+                }}/>}
                 {page === "accounts" && (
                   <>
                     <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} />
@@ -1080,7 +1088,7 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                {(page === "automation" || page === "settings") &&
+                {(page === "features" || page === "settings") &&
                   (config ? (
                     <SettingsPage
                       page={page}
@@ -1397,8 +1405,8 @@ function SettingsPage({
     }
   }
   return (
-    <div className="settings-stack">
-      {page === "automation" ? (
+    <div className={`settings-stack ${page === "features" ? "features-stack" : ""}`}>
+      {page === "features" ? (
         <>
           <ConfigForm
             section="oauth"
@@ -1482,6 +1490,10 @@ function SettingsPage({
               </>
             )}
           </ConfigForm>
+          <section className="feature-models">
+            <h2>模型配置</h2>
+            <ModelConfig key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>
+          </section>
         </>
       ) : (
         <>

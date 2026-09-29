@@ -180,6 +180,7 @@ export type Preferences = {
   favorites: number[];
   pinned: boolean;
   launch_at_login: boolean;
+  record_columns?: string[] | null;
 };
 export type ViewState = {
   platform?: "macos" | "android";
