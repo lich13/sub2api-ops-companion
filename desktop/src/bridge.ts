@@ -1,8 +1,40 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { TestEvent, ViewState } from "./types";
 const native = "__TAURI_INTERNALS__" in window;
 export const preview = !native && import.meta.env.DEV;
+export async function watchWindowFocus(
+  callback: (focused: boolean) => void,
+): Promise<() => void> {
+  if (!native) {
+    const focus = () => callback(true);
+    const blur = () => callback(false);
+    window.addEventListener("focus", focus);
+    window.addEventListener("blur", blur);
+    callback(document.hasFocus());
+    return () => {
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("blur", blur);
+    };
+  }
+  const current = getCurrentWindow();
+  let revision = 0;
+  const unlisten = await current.onFocusChanged(({ payload }) => {
+    ++revision;
+    callback(payload);
+  });
+  try {
+    const observed = revision;
+    const focused = await current.isFocused();
+    // A focus event during the initial read is newer than that snapshot.
+    if (revision === observed) callback(focused);
+    return unlisten;
+  } catch (error) {
+    unlisten();
+    throw error;
+  }
+}
 export async function command<T>(
   name: string,
   args: Record<string, unknown> = {},

@@ -2,7 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "./bridge";
+import { api, watchWindowFocus } from "./bridge";
 import UsageRecords from "./UsageRecords";
 import {
   defaultRecordColumns,
@@ -11,11 +11,12 @@ import {
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
 
-vi.mock("./bridge", () => ({ api: vi.fn() }));
+vi.mock("./bridge", () => ({ api: vi.fn(), watchWindowFocus: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let container: HTMLDivElement, root: Root, unmounted: boolean;
 let visibility: DocumentVisibilityState;
+const focusListeners = new Set<(focused: boolean) => void>();
 let feed: ReturnType<typeof useRecordFeed>;
 const saveColumns = vi.fn<(columns: string[]) => Promise<void>>();
 const now = "2026-09-30T04:00:00.000Z";
@@ -178,6 +179,20 @@ async function setVisibility(value: DocumentVisibilityState) {
   visibility = value;
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
 }
+function mockFocus(initial: boolean | undefined) {
+  vi.mocked(watchWindowFocus).mockImplementation(async (callback) => {
+    focusListeners.add(callback);
+    if (initial !== undefined) callback(initial);
+    return () => {
+      focusListeners.delete(callback);
+    };
+  });
+}
+async function setFocus(value: boolean) {
+  await act(async () => {
+    for (const callback of focusListeners) callback(value);
+  });
+}
 async function scrollTo(top: number) {
   await act(async () => {
     const node = container.querySelector<HTMLDivElement>(".records-scroll")!;
@@ -211,6 +226,8 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
     () => visibility,
   );
+  focusListeners.clear();
+  mockFocus(true);
   saveColumns.mockResolvedValue();
   unmounted = false;
   container = document.createElement("div");
@@ -394,6 +411,150 @@ describe("record feed lifecycle", () => {
 });
 
 describe("record view", () => {
+  it.each([
+    { state: "unconfirmed", initial: undefined },
+    { state: "unfocused", initial: false },
+  ])(
+    "waits for confirmed window focus when initially $state",
+    async ({ initial }) => {
+      mockFocus(initial);
+      await renderView();
+      await advance(30000);
+      expect(document.visibilityState).toBe("visible");
+      expect(api).not.toHaveBeenCalled();
+      expect(button("刷新记录").disabled).toBe(true);
+      expect(button("用户筛选").disabled).toBe(true);
+      expect(focusListeners.size).toBe(1);
+
+      await setFocus(true);
+      expect(api).toHaveBeenCalledTimes(1);
+      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      expect(button("刷新记录").disabled).toBe(false);
+    },
+  );
+
+  it("pauses for native focus loss and checks immediately on return while preserving history and detail", async () => {
+    serve((path) => {
+      if (path === "/usage-records/99") return record(99);
+      return params(path).has("after_id")
+        ? { new_count: 2 }
+        : page([record(100), record(99)]);
+    });
+    await renderView();
+    await scrollTo(240);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[title="查看记录 #99"]')!
+        .click(),
+    );
+    expect(api).toHaveBeenCalledTimes(2);
+
+    await setFocus(false);
+    expect(document.visibilityState).toBe("visible");
+    expect(button("刷新记录").disabled).toBe(true);
+    await advance(30000);
+    expect(api).toHaveBeenCalledTimes(2);
+
+    await setFocus(true);
+    expect(api).toHaveBeenCalledTimes(3);
+    expect(params(paths()[2]).get("after_id")).toBe("100");
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);
+    expect(container.querySelector("[role=dialog]")?.textContent).toContain(
+      "#99",
+    );
+    expect(button("2 条新记录")).toBeDefined();
+    await advance(10000);
+    expect(api).toHaveBeenCalledTimes(4);
+    expect(params(paths()[3]).get("after_id")).toBe("100");
+  });
+
+  it("discards an in-flight refresh after focus loss without replacing cached rows", async () => {
+    await renderView();
+    const stale = deferred<RecordPage>();
+    serve((path) =>
+      params(path).has("after_id") ? { new_count: 0 } : stale.promise,
+    );
+    await click("刷新记录");
+    expect(api).toHaveBeenCalledTimes(2);
+    await setFocus(false);
+    await act(async () => stale.resolve(page([record(200)])));
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    await advance(30000);
+    expect(api).toHaveBeenCalledTimes(2);
+
+    await setFocus(true);
+    expect(api).toHaveBeenCalledTimes(3);
+    expect(params(paths()[2]).get("after_id")).toBe("100");
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+  });
+
+  it("disposes delayed focus subscriptions from StrictMode and unmount and ignores their callbacks", async () => {
+    const first = deferred<() => void>(),
+      second = deferred<() => void>();
+    const firstStop = vi.fn(),
+      secondStop = vi.fn();
+    const callbacks: ((focused: boolean) => void)[] = [];
+    vi.mocked(watchWindowFocus).mockImplementation((callback) => {
+      callbacks.push(callback);
+      return callbacks.length === 1 ? first.promise : second.promise;
+    });
+    await renderView();
+    expect(watchWindowFocus).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      callbacks[0](true);
+      first.resolve(firstStop);
+    });
+    expect(firstStop).toHaveBeenCalledTimes(1);
+    expect(api).not.toHaveBeenCalled();
+
+    await act(async () => callbacks[1](true));
+    expect(api).toHaveBeenCalledTimes(1);
+    await stop();
+    await act(async () => {
+      callbacks[0](false);
+      callbacks[1](false);
+      callbacks[1](true);
+      second.resolve(secondStop);
+    });
+    await advance(30000);
+    expect(secondStop).toHaveBeenCalledTimes(1);
+    expect(firstStop).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toBe("");
+  });
+
+  it("reports a failed initial focus read and leaves record reads paused", async () => {
+    vi.mocked(watchWindowFocus).mockRejectedValue(
+      new Error("focus unavailable"),
+    );
+    await renderView();
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "窗口状态读取失败",
+    );
+    await advance(30000);
+    expect(api).not.toHaveBeenCalled();
+    expect(button("刷新记录").disabled).toBe(true);
+  });
+
+  it("uses foreground state without a window focus subscription on non-desktop clients", async () => {
+    await renderView({ desktop: false, foreground: false });
+    await advance(30000);
+    expect(api).not.toHaveBeenCalled();
+    expect(watchWindowFocus).not.toHaveBeenCalled();
+
+    await renderView({ desktop: false });
+    expect(api).toHaveBeenCalledTimes(1);
+    await renderView({ desktop: false, foreground: false });
+    await advance(30000);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    await renderView({ desktop: false });
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(params(paths()[1]).get("after_id")).toBe("100");
+    expect(watchWindowFocus).not.toHaveBeenCalled();
+  });
+
   it("uses the complete directory with no recent records and clears the key whenever the user changes", async () => {
     const users = [
       {
@@ -475,7 +636,7 @@ describe("record view", () => {
     ).toBe(true);
   });
 
-  it.each(["hidden", "offline", "background"])(
+  it.each(["hidden", "offline", "background", "unfocused"])(
     "stops directory interaction when the record view becomes %s",
     async (state) => {
       const stale = deferred<unknown>();
@@ -486,6 +647,7 @@ describe("record view", () => {
       await click("用户筛选");
       await advance(0);
       if (state === "hidden") await setVisibility("hidden");
+      else if (state === "unfocused") await setFocus(false);
       else
         await renderView(
           state === "offline" ? { online: false } : { foreground: false },
@@ -505,6 +667,7 @@ describe("record view", () => {
       ).toHaveLength(1);
       expect(container.textContent).not.toContain("stale-user");
       if (state === "hidden") await setVisibility("visible");
+      else if (state === "unfocused") await setFocus(true);
       else await renderView();
       expect(button("用户筛选").disabled).toBe(false);
       expect(container.querySelector('[role="listbox"]')).toBeNull();

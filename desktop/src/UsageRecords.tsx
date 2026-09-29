@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { fullTime, type Account, type Preferences } from "./types";
+import { watchWindowFocus } from "./bridge";
 import {
   cacheTokenCount,
   latency,
@@ -449,12 +450,14 @@ function RecordDetail({
 export default function UsageRecords({
   online,
   foreground,
+  desktop = true,
   accounts,
   columns,
   saveColumns,
 }: {
   online: boolean;
   foreground: boolean;
+  desktop?: boolean;
   accounts: Account[];
   columns: Preferences["record_columns"];
   saveColumns: (columns: string[]) => Promise<void>;
@@ -463,6 +466,7 @@ export default function UsageRecords({
     [filters, setFilters] = useState(defaultFilters);
   const [anchor, setAnchor] = useState(Date.now),
     [visible, setVisible] = useState(document.visibilityState !== "hidden");
+  const [focused, setFocused] = useState(!desktop);
   const [scrolled, setScrolled] = useState(false),
     [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<UsageRecord | null>(null),
@@ -476,6 +480,24 @@ export default function UsageRecords({
   const [knownAccounts, setKnownAccounts] = useState<Map<number, string>>(
     new Map(),
   );
+  useEffect(() => {
+    setFocused(!desktop);
+    if (!desktop) return;
+    let live = true;
+    let unlisten: (() => void) | undefined;
+    void watchWindowFocus((value) => {
+      if (live) setFocused(value);
+    }).then((stop) => {
+      if (live) unlisten = stop;
+      else stop();
+    }).catch(() => {
+      if (live) setFilterError("窗口状态读取失败，请重新打开记录页");
+    });
+    return () => {
+      live = false;
+      unlisten?.();
+    };
+  }, [desktop]);
   useEffect(() => {
     const visibility = () => setVisible(document.visibilityState !== "hidden");
     document.addEventListener("visibilitychange", visibility);
@@ -506,7 +528,7 @@ export default function UsageRecords({
     if (filters.mismatch) p.set("mismatch_only", "true");
     return p.toString();
   }, [filters, anchor]);
-  const active = online && foreground && visible;
+  const active = online && foreground && visible && focused;
   const feed = useRecordFeed(query, active, scrolled || selected !== null);
   const chosen = normalizeRecordColumns(columns);
   const shown = recordColumns.filter(([key]) => chosen.includes(key));
