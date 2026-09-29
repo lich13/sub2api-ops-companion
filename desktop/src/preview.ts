@@ -467,7 +467,7 @@ export async function run(
     return;
   }
   if (name === "api_request") {
-    if (String(args.path).startsWith("/usage-records")) {
+    if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
       return (await import("./recordPreview")).recordPreview(String(args.path));
     }
     if (String(args.path).startsWith("/model-")) {

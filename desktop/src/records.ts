@@ -61,12 +61,25 @@ export type RecordPage = {
   latest_id: number;
   observed_at: string;
 };
+export type RecordOption = {
+  id: number;
+  name: string | null;
+  email?: string | null;
+  user_id?: number | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  status?: string | null;
+  deleted: boolean;
+};
+export type RecordOptionPage = {
+  items: RecordOption[];
+  next_cursor: string | null;
+};
 export const recordColumns = [
   ["api_key", "API 密钥"],
   ["account", "账户"],
   ["model", "模型"],
   ["reasoning", "推理强度"],
-  ["type", "类型"],
   ["tokens", "Token"],
   ["cost", "费用"],
   ["latency", "延迟"],
@@ -79,9 +92,22 @@ export const recordColumns = [
   ["upstream_id", "上游 ID"],
 ] as const;
 export type RecordColumn = (typeof recordColumns)[number][0];
-export const defaultRecordColumns: string[] = recordColumns
-  .slice(0, 10)
-  .map(([key]) => key);
+export const defaultRecordColumns: string[] = [
+  "api_key",
+  "account",
+  "model",
+  "reasoning",
+  "tokens",
+  "cost",
+  "latency",
+  "user_agent",
+  "ip",
+];
+export function normalizeRecordColumns(columns: string[] | null | undefined) {
+  return columns == null
+    ? [...defaultRecordColumns]
+    : columns.filter((column) => recordColumns.some(([key]) => key === column));
+}
 export const requestTypes = {
   sync: "非流式",
   stream: "流式",
@@ -124,8 +150,60 @@ export function money(value: string | null | undefined) {
   return `$${match[1]}${rounded / 1000000n}.${(rounded % 1000000n).toString().padStart(6, "0")}`;
 }
 export function tokenCount(value: number | null | undefined) {
-  return value == null ? "—" : value.toLocaleString("en-US");
+  return value == null || !Number.isFinite(value) || value < 0
+    ? "—"
+    : value.toLocaleString("en-US");
+}
+export function cacheTokenCount(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value) || value < 0) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return tokenCount(value);
 }
 export function latency(value: number | null | undefined) {
-  return value == null ? "—" : `${(value / 1000).toFixed(2)}s`;
+  return value == null || !Number.isFinite(value) || value < 0
+    ? "—"
+    : `${(value / 1000).toFixed(2)}s`;
+}
+export function latencyTone(
+  value: number | null | undefined,
+  metric: "first" | "total",
+) {
+  if (value == null || !Number.isFinite(value) || value < 0) return "unknown";
+  const [warn, slow, critical] =
+    metric === "first" ? [10_000, 30_000, 60_000] : [60_000, 180_000, 300_000];
+  return value >= critical
+    ? "critical"
+    : value >= slow
+      ? "slow"
+      : value >= warn
+        ? "warn"
+        : "good";
+}
+export function tokensPerSecond(
+  row: Pick<
+    UsageRecord,
+    "output_tokens" | "duration_ms" | "first_token_ms" | "request_type"
+  >,
+) {
+  const {
+    output_tokens: output,
+    duration_ms: total,
+    first_token_ms: first,
+  } = row;
+  if (
+    output == null ||
+    !Number.isFinite(output) ||
+    output < 0 ||
+    total == null ||
+    !Number.isFinite(total) ||
+    total <= 0
+  )
+    return null;
+  if (first != null && (!Number.isFinite(first) || first < 0)) return null;
+  if (first == null && row.request_type !== "sync") return null;
+  const elapsed = total - (first ?? 0);
+  if (elapsed <= 0) return null;
+  const speed = (output * 1000) / elapsed;
+  return Number.isFinite(speed) ? speed : null;
 }

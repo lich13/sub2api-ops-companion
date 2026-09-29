@@ -6,24 +6,30 @@ import {
   ChevronDown,
   Copy,
   CornerDownRight,
-  Database,
+  Archive,
+  SquarePen,
   ListFilter,
   RefreshCw,
   X,
 } from "lucide-react";
 import { fullTime, type Account, type Preferences } from "./types";
 import {
-  defaultRecordColumns,
+  cacheTokenCount,
   latency,
+  latencyTone,
   modelRoute,
   money,
+  normalizeRecordColumns,
   recordColumns,
   requestTypes,
   tokenCount,
+  tokensPerSecond,
+  type RecordOption,
   type RecordColumn,
   type UsageRecord,
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
+import RecordFilter from "./RecordFilter";
 import { useBackAction } from "./mobile";
 import "./records.css";
 
@@ -70,16 +76,56 @@ function Reasoning({ row }: { row: UsageRecord }) {
     </div>
   );
 }
+function Latency({ row }: { row: UsageRecord }) {
+  const first = latencyTone(row.first_token_ms, "first");
+  const total = latencyTone(row.duration_ms, "total");
+  const speed = tokensPerSecond(row);
+  return (
+    <div
+      className="record-latency"
+      style={
+        {
+          "--latency-first": `var(--record-${first})`,
+          "--latency-total": `var(--record-${total})`,
+        } as React.CSSProperties
+      }
+    >
+      <i aria-hidden="true" />
+      <div>
+        <small>首字</small>
+        <span className={`latency-${first}`}>
+          {latency(row.first_token_ms)}
+        </span>
+        <small>总耗时</small>
+        <span className={`latency-${total}`}>{latency(row.duration_ms)}</span>
+        <small>TPS</small>
+        <span className="record-tps">
+          {speed == null ? (
+            "—"
+          ) : (
+            <>
+              {speed.toFixed(2)}
+              <small> tok/s</small>
+            </>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
 function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
   switch (column) {
     case "api_key":
       return (
-        <span
-          className="record-ellipsis"
+        <div
+          className="record-stack record-key"
           title={`${row.api_key_name || "API 密钥"} #${row.api_key_id}`}
         >
-          {row.api_key_name || `#${row.api_key_id}`}
-        </span>
+          <span className="record-ellipsis">
+            {row.api_key_name || "API 密钥"}
+          </span>
+          <small>#{row.api_key_id}</small>
+        </div>
       );
     case "account":
       return (
@@ -94,12 +140,6 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
       return <Route row={row} />;
     case "reasoning":
       return <Reasoning row={row} />;
-    case "type":
-      return (
-        <span className={`record-type ${row.request_type}`}>
-          {requestTypes[row.request_type] || "—"}
-        </span>
-      );
     case "tokens":
       return (
         <div className="record-tokens">
@@ -111,11 +151,19 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
             <ArrowUp size={12} />
             {tokenCount(row.output_tokens)}
           </span>
-          <span className="record-cache" title="缓存读取 / 缓存写入">
-            <Database size={12} />
-            {tokenCount(row.cache_read_tokens)}
-            <small>/</small>
-            {tokenCount(row.cache_creation_tokens)}
+          <span
+            className="record-cache-read"
+            title={`缓存读取：${tokenCount(row.cache_read_tokens)}`}
+          >
+            <Archive size={13} />
+            {cacheTokenCount(row.cache_read_tokens)}
+          </span>
+          <span
+            className="record-cache-write"
+            title={`缓存写入：${tokenCount(row.cache_creation_tokens)}`}
+          >
+            <SquarePen size={13} />
+            {cacheTokenCount(row.cache_creation_tokens)}
           </span>
         </div>
       );
@@ -127,18 +175,7 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
         </div>
       );
     case "latency":
-      return (
-        <div className="record-latency">
-          <span>
-            <small>首字</small>
-            {latency(row.first_token_ms)}
-          </span>
-          <span>
-            <small>总计</small>
-            {latency(row.duration_ms)}
-          </span>
-        </div>
-      );
+      return <Latency row={row} />;
     case "user_agent":
       return (
         <span className="record-ellipsis" title={row.user_agent || undefined}>
@@ -190,9 +227,9 @@ const defaultFilters = {
   from: "",
   to: "",
   account: "",
-  key: "",
+  user: null as RecordOption | null,
+  key: null as RecordOption | null,
   model: "",
-  type: "",
   mismatch: false,
 };
 function CopyValue({ value }: { value: string | null | undefined }) {
@@ -357,6 +394,12 @@ function RecordDetail({
                 {pair("IP", <CopyValue value={row.ip_address} />)}
                 {pair("首字延迟", latency(row.first_token_ms))}
                 {pair("总耗时", latency(row.duration_ms))}
+                {pair(
+                  "TPS",
+                  tokensPerSecond(row) == null
+                    ? "—"
+                    : `${tokensPerSecond(row)!.toFixed(2)} tok/s`,
+                )}
               </dl>
             </section>
             <section className="record-detail-section">
@@ -430,7 +473,6 @@ export default function UsageRecords({
   const scroll = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
     detailEpoch = useRef(0);
-  const [knownKeys, setKnownKeys] = useState<Map<number, string>>(new Map());
   const [knownAccounts, setKnownAccounts] = useState<Map<number, string>>(
     new Map(),
   );
@@ -458,27 +500,17 @@ export default function UsageRecords({
     if (filters.period === "custom" && filters.to)
       p.set("to_at", new Date(`${filters.to}+08:00`).toISOString());
     if (filters.account) p.set("account_id", filters.account);
-    if (filters.key) p.set("api_key_id", filters.key);
+    if (filters.user) p.set("user_id", String(filters.user.id));
+    if (filters.key) p.set("api_key_id", String(filters.key.id));
     if (filters.model.trim()) p.set("model", filters.model.trim());
-    if (filters.type) p.set("request_type", filters.type);
     if (filters.mismatch) p.set("mismatch_only", "true");
     return p.toString();
   }, [filters, anchor]);
   const active = online && foreground && visible;
   const feed = useRecordFeed(query, active, scrolled || selected !== null);
-  const chosen = columns ?? defaultRecordColumns;
+  const chosen = normalizeRecordColumns(columns);
   const shown = recordColumns.filter(([key]) => chosen.includes(key));
   useEffect(() => {
-    setKnownKeys(
-      (old) =>
-        new Map([
-          ...old,
-          ...feed.items.map(
-            (r) =>
-              [r.api_key_id, r.api_key_name || `#${r.api_key_id}`] as const,
-          ),
-        ]),
-    );
     setKnownAccounts(
       (old) =>
         new Map([
@@ -557,6 +589,12 @@ export default function UsageRecords({
           <option value="168">最近 7 天</option>
           <option value="custom">自定时间</option>
         </select>
+        <RecordFilter
+          kind="users"
+          active={active}
+          value={draft.user}
+          onChange={(user) => setDraft({ ...draft, user, key: null })}
+        />
         <select
           aria-label="账户筛选"
           value={draft.account}
@@ -574,23 +612,13 @@ export default function UsageRecords({
             </option>
           ))}
         </select>
-        <input
-          className="records-key-filter"
-          aria-label="API 密钥 ID"
-          placeholder="API 密钥 ID"
-          type="number"
-          min="1"
-          list="record-keys"
+        <RecordFilter
+          kind="api_keys"
+          active={active}
           value={draft.key}
-          onChange={(e) => setDraft({ ...draft, key: e.target.value })}
+          userId={draft.user?.id}
+          onChange={(key) => setDraft({ ...draft, key })}
         />
-        <datalist id="record-keys">
-          {[...knownKeys].map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </datalist>
         <input
           className="records-model-filter"
           aria-label="模型筛选"
@@ -599,18 +627,6 @@ export default function UsageRecords({
           value={draft.model}
           onChange={(e) => setDraft({ ...draft, model: e.target.value })}
         />
-        <select
-          aria-label="请求类型"
-          value={draft.type}
-          onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-        >
-          <option value="">全部类型</option>
-          {Object.entries(requestTypes).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
         <label className="records-mismatch-filter">
           <input
             type="checkbox"
