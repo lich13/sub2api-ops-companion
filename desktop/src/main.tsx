@@ -576,6 +576,7 @@ export default function App() {
           </div>
         )}
         <div
+          key={mobile ? connectionKey : "content"}
           className={`content ${!quick && page === "events" ? "events-content" : ""}`}
         >
           <div ref={quickBody} className="content-inner">
