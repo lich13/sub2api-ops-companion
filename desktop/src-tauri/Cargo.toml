@@ -28,7 +28,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSStatusItem", "NSStatusBarButton", "NSMenu"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSStatusItem", "NSStatusBarButton", "NSMenu", "NSApplication", "NSResponder"] }
 anyhow = "1"
 
 [dev-dependencies]

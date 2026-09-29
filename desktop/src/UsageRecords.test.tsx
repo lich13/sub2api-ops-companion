@@ -166,6 +166,7 @@ async function renderView(props: ViewProps = {}) {
         <UsageRecords
           online
           foreground
+          desktop
           accounts={[]}
           columns={undefined}
           saveColumns={saveColumns}
@@ -469,25 +470,37 @@ describe("record view", () => {
     expect(params(paths()[3]).get("after_id")).toBe("100");
   });
 
-  it("discards an in-flight refresh after focus loss without replacing cached rows", async () => {
-    await renderView();
-    const stale = deferred<RecordPage>();
-    serve((path) =>
-      params(path).has("after_id") ? { new_count: 0 } : stale.promise,
-    );
-    await click("刷新记录");
-    expect(api).toHaveBeenCalledTimes(2);
-    await setFocus(false);
-    await act(async () => stale.resolve(page([record(200)])));
-    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-    await advance(30000);
-    expect(api).toHaveBeenCalledTimes(2);
+  it.each(["unfocused", "background"])(
+    "discards an in-flight refresh when %s without replacing cached rows",
+    async (state) => {
+      await renderView();
+      const stale = deferred<RecordPage>();
+      serve((path) =>
+        params(path).has("after_id") ? { new_count: 0 } : stale.promise,
+      );
+      await click("刷新记录");
+      expect(api).toHaveBeenCalledTimes(2);
+      if (state === "unfocused") await setFocus(false);
+      else {
+        await renderView({ foreground: false });
+        await setFocus(true);
+      }
+      expect(document.visibilityState).toBe("visible");
+      expect(button("刷新记录").disabled).toBe(true);
+      await act(async () => stale.resolve(page([record(200)])));
+      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      await advance(30000);
+      expect(api).toHaveBeenCalledTimes(2);
 
-    await setFocus(true);
-    expect(api).toHaveBeenCalledTimes(3);
-    expect(params(paths()[2]).get("after_id")).toBe("100");
-    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-  });
+      if (state === "unfocused") await setFocus(true);
+      else await renderView();
+      expect(api).toHaveBeenCalledTimes(3);
+      expect(params(paths()[2]).get("after_id")).toBe("100");
+      expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      await advance(10000);
+      expect(api).toHaveBeenCalledTimes(4);
+    },
+  );
 
   it("disposes delayed focus subscriptions from StrictMode and unmount and ignores their callbacks", async () => {
     const first = deferred<() => void>(),
@@ -652,6 +665,7 @@ describe("record view", () => {
         await renderView(
           state === "offline" ? { online: false } : { foreground: false },
         );
+      if (state === "background") await setFocus(true);
       expect(button("用户筛选").disabled).toBe(true);
       expect(button("API 密钥筛选").disabled).toBe(true);
       expect(container.querySelector('[role="listbox"]')).toBeNull();
@@ -662,6 +676,7 @@ describe("record view", () => {
         }),
       );
       await advance(30000);
+      expect(api).toHaveBeenCalledTimes(2);
       expect(
         paths().filter((path) => path.startsWith("/usage-record-options?")),
       ).toHaveLength(1);

@@ -31,6 +31,8 @@ const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases
 
 #[cfg(target_os = "macos")]
 mod tray_macos;
+#[cfg(target_os = "macos")]
+mod record_activity;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -73,6 +75,8 @@ struct Runtime {
     path: PathBuf,
     foreground: AtomicBool,
     read_epoch: watch::Sender<u64>,
+    #[cfg(target_os = "macos")]
+    record_activity: record_activity::RecordActivity,
     #[cfg(desktop)]
     pinned: AtomicBool,
     #[cfg(desktop)]
@@ -277,6 +281,37 @@ async fn active_read<T>(state: &Runtime, request: impl std::future::Future<Outpu
     }
 }
 
+#[cfg(target_os = "macos")]
+fn sync_record_activity(app: &tauri::AppHandle) -> bool {
+    // A key window can outlive application activation on macOS. Use AppKit's
+    // application state, while preserving background snapshots for the tray.
+    let active = record_activity::application_active();
+    let state = app.state::<Arc<Runtime>>();
+    if state.record_activity.set_active(active) {
+        let state = state.inner().clone();
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut view = state.view.lock().await;
+            view.foreground = state.record_activity.active();
+            publish(&app, &view);
+        });
+    }
+    active
+}
+
+#[cfg(target_os = "macos")]
+async fn check_record_activity(app: &tauri::AppHandle) -> Result<(), String> {
+    let (send, receive) = oneshot::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || { let _ = send.send(sync_record_activity(&handle)); })
+        .map_err(|_| "无法读取应用状态".to_string())?;
+    match receive.await {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("应用已转入后台，已停止读取".into()),
+        Err(_) => Err("无法读取应用状态".into()),
+    }
+}
+
 #[tauri::command]
 async fn get_state(state: State<'_, Arc<Runtime>>) -> Result<ViewState, String> {
     Ok(state.view.lock().await.clone())
@@ -363,6 +398,10 @@ async fn api_request(
     if !allowed_request(&method, &path) {
         return Err("客户端不允许此操作".into());
     }
+    #[cfg(target_os = "macos")]
+    let record_read = method == "GET" && record_activity::record_path(&path);
+    #[cfg(target_os = "macos")]
+    if record_read { check_record_activity(&_app).await?; }
     let (view, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await.clone();
@@ -382,7 +421,11 @@ async fn api_request(
             body,
             &log,
         );
-    let result = if method == "GET" { active_read(&state, request).await } else { request.await };
+    let request = async { if method == "GET" { active_read(&state, request).await } else { request.await } };
+    #[cfg(target_os = "macos")]
+    let result = if record_read { state.record_activity.read(request).await } else { request.await };
+    #[cfg(not(target_os = "macos"))]
+    let result = request.await;
     if generation != state.generation.load(Ordering::SeqCst) {
         return Err("连接已切换，旧操作结果已忽略".into());
     }
@@ -908,7 +951,8 @@ pub fn run() {
                 #[cfg(desktop)] quitting: AtomicBool::new(false),
                 #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
                 foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
-                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: true, initializing: true, preferences: prefs, ..Default::default() }),
+                #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::default(),
+                view: Mutex::new(ViewState { platform: if cfg!(mobile) { "android" } else { "macos" }, foreground: !cfg!(target_os = "macos"), initializing: true, preferences: prefs, ..Default::default() }),
                 key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
                 generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(), path });
             app.manage(state.clone());
@@ -1028,6 +1072,10 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,background,check_updates]);
     builder.build(tauri::generate_context!()).expect("Sub2Ops failed to start")
         .run(|_app,_event| {
+            #[cfg(target_os = "macos")]
+            if matches!(&_event, tauri::RunEvent::Ready | tauri::RunEvent::MainEventsCleared) {
+                sync_record_activity(_app);
+            }
             #[cfg(desktop)]
             if let tauri::RunEvent::Reopen {..}=_event {let _=show_main(_app.clone());}
         });
@@ -1042,6 +1090,7 @@ mod tests {
             key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
             generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(),
             path: PathBuf::new(), foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
+            #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::default(),
             #[cfg(desktop)] pinned: AtomicBool::new(false),
             #[cfg(desktop)] quitting: AtomicBool::new(false),
             #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
