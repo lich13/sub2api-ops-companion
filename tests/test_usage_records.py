@@ -22,6 +22,7 @@ from app.usage_records import UsageRecords, project, timestamp
 
 NOW = datetime(2026, 9, 30, 12, tzinfo=timezone.utc)
 PATH = "/api/desktop/v1/usage-records"
+OPTIONS_PATH = "/api/desktop/v1/usage-record-options"
 
 
 class FixedDateTime(datetime):
@@ -56,12 +57,16 @@ class ReadOnlyFixtureDB:
         columns = [f"{name} INTEGER" for name in integers] + [f"{name} TEXT" for name in texts]
         self.raw.execute("CREATE TABLE usage_logs (" + ",".join(columns) + ")")
         self.raw.executescript("""
-            CREATE TABLE users (id INTEGER, username TEXT, email TEXT, password TEXT);
-            CREATE TABLE api_keys (id INTEGER, name TEXT, key TEXT);
+            CREATE TABLE users (id INTEGER, username TEXT, email TEXT, status TEXT,
+                                deleted_at TEXT, password TEXT, credentials TEXT);
+            CREATE TABLE api_keys (id INTEGER, name TEXT, user_id INTEGER, status TEXT,
+                                   deleted_at TEXT, key TEXT, token TEXT);
             CREATE TABLE accounts (id INTEGER, name TEXT, credentials TEXT, deleted_at TEXT);
             CREATE TABLE groups (id INTEGER, name TEXT);
-            INSERT INTO users VALUES (3, '测试用户', 'test@example.invalid', 'PRIVATE_PASSWORD');
-            INSERT INTO api_keys VALUES (4, '测试 Key', 'PRIVATE_API_KEY');
+            INSERT INTO users VALUES (3, '测试用户', 'test@example.invalid', 'active',
+                                      NULL, 'PRIVATE_PASSWORD', 'PRIVATE_USER_CREDENTIALS');
+            INSERT INTO api_keys VALUES (4, '测试 Key', 3, 'active',
+                                         NULL, 'PRIVATE_API_KEY', 'PRIVATE_KEY_TOKEN');
             INSERT INTO accounts VALUES (7, '历史账号', 'PRIVATE_CREDENTIALS', '2026-09-01');
             INSERT INTO groups VALUES (8, '测试分组');
         """)
@@ -82,6 +87,19 @@ class ReadOnlyFixtureDB:
         values = {key: value.isoformat() if isinstance(value, datetime) else str(value)
                   if isinstance(value, Decimal) else value for key, value in values.items()}
         self.raw.execute("INSERT INTO usage_logs (" + ",".join(values) + ") VALUES (" +
+                         ",".join("?" for _ in values) + ")", list(values.values()))
+
+    def insert_user(self, user_id, **changes):
+        values = {"id": user_id, "username": f"User {user_id}", "email": f"user{user_id}@example.invalid",
+                  "status": "active", "deleted_at": None, "password": "PRIVATE_PASSWORD",
+                  "credentials": "PRIVATE_USER_CREDENTIALS", **changes}
+        self.raw.execute("INSERT INTO users (" + ",".join(values) + ") VALUES (" +
+                         ",".join("?" for _ in values) + ")", list(values.values()))
+
+    def insert_key(self, key_id, **changes):
+        values = {"id": key_id, "name": f"Key {key_id}", "user_id": 3, "status": "active",
+                  "deleted_at": None, "key": "PRIVATE_API_KEY", "token": "PRIVATE_KEY_TOKEN", **changes}
+        self.raw.execute("INSERT INTO api_keys (" + ",".join(values) + ") VALUES (" +
                          ",".join("?" for _ in values) + ")", list(values.values()))
 
     @contextmanager
@@ -364,7 +382,7 @@ class UsageRecordsTests(RecordsFixture):
     def test_cursor_rejects_each_changed_filter_before_querying(self):
         cursor = self.valid_cursor()
         for changed in ({"from_at": (NOW - timedelta(hours=1)).isoformat()}, {"to_at": NOW.isoformat()},
-                        {"account_id": 7}, {"api_key_id": 4}, {"model": "gpt"},
+                        {"account_id": 7}, {"api_key_id": 4}, {"user_id": 3}, {"model": "gpt"},
                         {"request_type": "sync"}, {"mismatch_only": True}):
             with self.subTest(changed=changed):
                 before = len(self.db.statements)
@@ -393,7 +411,8 @@ class UsageRecordsTests(RecordsFixture):
                 self.assertEqual(len(self.db.statements), before)
 
     def test_invalid_filters_fail_before_database_access(self):
-        bad = [{"limit": 0}, {"limit": 101}, {"account_id": 0}, {"api_key_id": -1}, {"after_id": -1},
+        bad = [{"limit": 0}, {"limit": 101}, {"account_id": 0}, {"api_key_id": -1},
+               {"user_id": 0}, {"user_id": -1}, {"after_id": -1},
                {"model": "x" * 201}, {"request_type": "unknown"}, {"from_at": "yesterday"},
                {"to_at": "2026-09-30T12:00:00"}, {"from_at": NOW.isoformat(), "to_at": NOW.isoformat()},
                {"from_at": (NOW + timedelta(seconds=1)).isoformat(), "to_at": NOW.isoformat()}]
@@ -415,6 +434,34 @@ class UsageRecordsTests(RecordsFixture):
                                    mismatch_only=True, limit=1)
         self.assertEqual(result, {"new_count": 3, "latest_id": 10})
         self.assertEqual(self.service.list(after_id=10), {"new_count": 0, "latest_id": 10})
+
+    def test_user_filter_is_shared_by_pages_and_new_record_count(self):
+        for record_id, owner, key in ((1, 3, 4), (2, 99, 4), (3, 3, 4), (4, 99, 4), (5, 3, 99)):
+            self.db.insert(record_id, user_id=owner, api_key_id=key)
+        self.db.insert(6, user_id=3, created_at=NOW - timedelta(days=2))
+        first = self.service.list(user_id=3, api_key_id=4, account_id=7, limit=1)
+        self.assertEqual([item["id"] for item in first["items"]], [3])
+        self.db.insert(7, user_id=99)
+        self.db.insert(8, user_id=3)
+        second = self.service.list(user_id=3, api_key_id=4, account_id=7, limit=1,
+                                   cursor=first["next_cursor"])
+        self.assertEqual([item["id"] for item in second["items"]], [1])
+        self.assertIsNone(second["next_cursor"])
+        self.assertEqual(self.service.list(user_id=3, api_key_id=4, after_id=first["latest_id"]),
+                         {"new_count": 1, "latest_id": 8})
+        self.assertEqual(self.service.list(user_id=99, api_key_id=4, after_id=first["latest_id"]),
+                         {"new_count": 1, "latest_id": 8})
+        self.assertEqual(self.ids(user_id=3, api_key_id=99), [5])
+
+    def test_user_filter_uses_record_ids_after_directory_rows_are_physically_deleted(self):
+        self.db.insert(1, user_id=700, api_key_id=800)
+        self.db.insert(2, user_id=701, api_key_id=800)
+        result = self.service.list(user_id=700, api_key_id=800)
+        self.assertEqual([item["id"] for item in result["items"]], [1])
+        self.assertIsNone(result["items"][0]["user_name"])
+        self.assertIsNone(result["items"][0]["api_key_name"])
+        self.assertEqual(self.service.list(user_id=700, api_key_id=800, after_id=0),
+                         {"new_count": 1, "latest_id": 2})
 
     def test_detail_preserves_history_when_related_rows_are_missing(self):
         self.db.insert(1, user_id=999, api_key_id=999, account_id=999, group_id=999,
@@ -464,13 +511,165 @@ class UsageRecordsTests(RecordsFixture):
         self.assertIn("LIMIT %(limit)s", self.db.transactions[0][-1])
 
 
+class UsageRecordOptionsTests(RecordsFixture):
+    USER_FIELDS = {"id", "name", "email", "status", "deleted"}
+    KEY_FIELDS = {"id", "name", "user_id", "user_name", "user_email", "status", "deleted"}
+
+    def setUp(self):
+        super().setUp()
+        self.db.raw.execute("DELETE FROM api_keys")
+        self.db.raw.execute("DELETE FROM users")
+
+    def seed_options(self):
+        self.db.insert_user(10, username="同名", email="first@example.invalid")
+        self.db.insert_user(20, username="同名", email="second@example.invalid", status="disabled",
+                            deleted_at="2026-01-01T00:00:00+00:00")
+        self.db.insert_key(10, name="同名 Key", user_id=10)
+        self.db.insert_key(20, name="同名 Key", user_id=20, status="disabled",
+                           deleted_at="2026-01-01T00:00:00+00:00")
+
+    def test_more_than_100_users_and_keys_are_complete_in_ascending_id_pages(self):
+        for record_id in reversed(range(1, 126)):
+            self.db.insert_user(record_id, username="同名候选")
+            self.db.insert_key(record_id, name="同名候选", user_id=record_id)
+        self.assertEqual(self.db.raw.execute("SELECT count(*) FROM usage_logs").fetchone()[0], 0)
+        for kind in ("users", "api_keys"):
+            with self.subTest(kind=kind):
+                seen, cursor = [], None
+                for expected_count in (50, 50, 25):
+                    page = self.service.options(kind=kind, cursor=cursor)
+                    self.assertEqual(len(page["items"]), expected_count)
+                    seen.extend(item["id"] for item in page["items"])
+                    cursor = page["next_cursor"]
+                    self.assertEqual(bool(cursor), expected_count == 50)
+                self.assertEqual(seen, list(range(1, 126)))
+                self.assertEqual(len(self.service.options(kind=kind, limit=100)["items"]), 100)
+
+    def test_users_directory_retains_duplicate_names_disabled_and_deleted_entries(self):
+        self.seed_options()
+        result = self.service.options(kind="users")
+        self.assertEqual(result, {"items": [
+            {"id": 10, "name": "同名", "email": "first@example.invalid", "status": "active", "deleted": False},
+            {"id": 20, "name": "同名", "email": "second@example.invalid", "status": "disabled", "deleted": True}],
+            "next_cursor": None})
+        self.assertTrue(all(type(item["deleted"]) is bool for item in result["items"]))
+
+    def test_key_directory_retains_owner_identity_status_and_deleted_flag(self):
+        self.seed_options()
+        self.db.insert_key(30, name="已删除用户的 Key", user_id=999)
+        result = self.service.options(kind="api_keys")
+        self.assertEqual([item["id"] for item in result["items"]], [10, 20, 30])
+        self.assertEqual(result["items"][1], {"id": 20, "name": "同名 Key", "user_id": 20,
+                         "user_name": "同名", "user_email": "second@example.invalid", "status": "disabled", "deleted": True})
+        self.assertIsNone(result["items"][2]["user_name"])
+        self.assertIsNone(result["items"][2]["user_email"])
+        self.assertTrue(all(type(item["deleted"]) is bool for item in result["items"]))
+
+    def test_user_search_matches_name_email_or_id(self):
+        self.db.insert_user(101, username="ALIce", email="first@example.invalid")
+        self.db.insert_user(802, username="另一用户", email="unique-address@example.invalid")
+        self.db.insert_user(1802, username="编号不同", email="unrelated@example.invalid")
+        for query, expected in (("alice", [101]), ("unique-address", [802]), ("802", [802]),
+                                ("#802", [802]), ("missing", [])):
+            with self.subTest(query=query):
+                self.assertEqual([item["id"] for item in self.service.options(kind="users", q=query)["items"]], expected)
+
+    def test_key_search_by_name_or_id_is_combined_with_user_scope(self):
+        self.db.insert_user(10)
+        self.db.insert_user(20)
+        self.db.insert_key(101, name="Shared Key", user_id=10)
+        self.db.insert_key(504, name="Shared Key", user_id=20)
+        self.db.insert_key(605, name="Other Key", user_id=20)
+        self.db.insert_key(1504, name="Unrelated", user_id=10)
+        for query, owner, expected in (("shared", None, [101, 504]), ("shared", 20, [504]),
+                                        ("504", None, [504]), ("#504", None, [504]),
+                                        ("504", 10, []), (None, 20, [504, 605])):
+            with self.subTest(query=query, owner=owner):
+                rows = self.service.options(kind="api_keys", q=query, user_id=owner)["items"]
+                self.assertEqual([item["id"] for item in rows], expected)
+
+    def test_directory_search_escapes_wildcards_and_parameterizes_sql(self):
+        for record_id, name in enumerate(("prefix%_\\suffix", "prefixXXsuffix", "' OR 1=1 --"), 1):
+            self.db.insert_user(record_id, username=name)
+            self.db.insert_key(record_id, name=name)
+        for kind in ("users", "api_keys"):
+            for query, expected in (("%_\\", [1]), ("' OR 1=1 --", [3])):
+                with self.subTest(kind=kind, query=query):
+                    result = self.service.options(kind=kind, q=query)
+                    self.assertEqual([item["id"] for item in result["items"]], expected)
+                    self.assertNotIn(query, self.db.statements[-1][0])
+
+    def test_directory_output_is_an_exact_whitelist_and_never_returns_secrets(self):
+        self.seed_options()
+        for kind, fields in (("users", self.USER_FIELDS), ("api_keys", self.KEY_FIELDS)):
+            with self.subTest(kind=kind):
+                result = self.service.options(kind=kind)
+                self.assertEqual(set(result), {"items", "next_cursor"})
+                for item in result["items"]:
+                    self.assertEqual(set(item), fields)
+                self.assertNotIn("PRIVATE_", json.dumps(result))
+
+    def test_empty_directory_or_unknown_owner_returns_no_cursor(self):
+        for kind in ("users", "api_keys"):
+            self.assertEqual(self.service.options(kind=kind), {"items": [], "next_cursor": None})
+        self.seed_options()
+        self.assertEqual(self.service.options(kind="api_keys", user_id=999), {"items": [], "next_cursor": None})
+
+    def test_option_cursor_is_bound_to_kind_query_and_user_scope(self):
+        self.seed_options()
+        user_cursor = self.service.options(kind="users", q="同名", limit=1)["next_cursor"]
+        self.db.insert_key(30, name="同名 Key", user_id=10)
+        key_cursor = self.service.options(kind="api_keys", q="同名", user_id=10, limit=1)["next_cursor"]
+        changes = [(user_cursor, {"kind": "api_keys", "q": "同名"}),
+                   (user_cursor, {"kind": "users", "q": "another"}),
+                   (key_cursor, {"kind": "api_keys", "q": "同名", "user_id": 20}),
+                   (key_cursor, {"kind": "api_keys", "q": "同名"})]
+        for cursor, params in changes:
+            with self.subTest(params=params):
+                before = len(self.db.statements)
+                with self.assertRaises(HTTPException) as raised:
+                    self.service.options(cursor=cursor, **params)
+                self.assertEqual(raised.exception.status_code, 422)
+                self.assertEqual(len(self.db.statements), before)
+
+    def test_invalid_option_parameters_and_cursors_do_not_reach_database(self):
+        bad = [{"kind": "accounts"}, {"limit": 0}, {"limit": 101},
+               {"kind": "api_keys", "user_id": 0}, {"kind": "api_keys", "user_id": -1}]
+        bad.extend({"cursor": cursor} for cursor in ("!", "not-base64", "x" * 4097,
+                    base64.urlsafe_b64encode(b"null").decode(),
+                    base64.urlsafe_b64encode(b'{"id":Infinity}').decode()))
+        for params in bad:
+            with self.subTest(params=params), self.assertRaises(HTTPException) as raised:
+                    self.service.options(**{"kind": "users", **params})
+            self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(self.db.statements, [])
+
+    def test_options_use_bounded_read_only_directory_queries_without_usage_history(self):
+        self.seed_options()
+        before = self.db.raw.total_changes
+        for kind in ("users", "api_keys"):
+            self.service.options(kind=kind, q="同名")
+        self.assertEqual(self.db.raw.total_changes, before)
+        for statements in self.db.transactions:
+            self.assertIn("READ ONLY", statements[0])
+            self.assertEqual(statements[1], "SET LOCAL statement_timeout = '5s'")
+            for sql in statements[2:]:
+                self.assertTrue(sql.lstrip().upper().startswith("SELECT "))
+                self.assertNotIn("usage_logs", sql)
+                self.assertNotRegex(sql, r"(?i)\b(?:INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE)\b")
+                self.assertNotRegex(sql, r"(?i)SELECT\s+(?:\w+\.)?\*")
+                self.assertNotRegex(sql, r"(?i)\b(?:credentials|password|key|token)\b")
+            self.assertIn("LIMIT %(limit)s", statements[-1])
+
+
 class UsageRecordsRouteTests(RecordsFixture):
     def setUp(self):
         super().setUp()
         self.db.insert(1, requested_model="alias", upstream_model="upstream", upstream_response_model="returned",
                        request_type=2, total_cost=Decimal("0.0000000001"))
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-        service = install_desktop_api(app, SimpleNamespace(db=self.db))
+        self.runtime = SimpleNamespace(db=self.db, oauth_monitor=Mock(), bark_notifier=Mock(), oauth_base_url=Mock())
+        service = install_desktop_api(app, self.runtime)
         self.addCleanup(lambda: asyncio.run(service.close()))
         def authenticate(key, *, fresh=False):
             if key != "fixture-admin-key":
@@ -482,11 +681,13 @@ class UsageRecordsRouteTests(RecordsFixture):
         self.headers = {"x-api-key": "fixture-admin-key"}
 
     def test_list_and_detail_require_admin_header_before_any_database_read(self):
-        for path in (PATH, PATH + "/1"):
+        for path in (PATH, PATH + "/1", OPTIONS_PATH):
             for kwargs in ({}, {"headers": {"x-api-key": "bad"}},
                            {"headers": {"Authorization": "Bearer fixture-admin-key"}},
                            {"params": {"x-api-key": "fixture-admin-key"}}):
                 with self.subTest(path=path, kwargs=kwargs):
+                    if path == OPTIONS_PATH:
+                        kwargs = {**kwargs, "params": {"kind": "users", **kwargs.get("params", {})}}
                     self.assertEqual(self.client.get(path, **kwargs).status_code, 401)
         self.assertEqual(self.db.statements, [])
 
@@ -517,9 +718,62 @@ class UsageRecordsRouteTests(RecordsFixture):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(), {"new_count": 1, "latest_id": 2})
 
+    def test_records_route_passes_user_id_to_list_and_new_count(self):
+        self.db.insert(2, user_id=900, api_key_id=901)
+        response = self.client.get(PATH, headers=self.headers, params={"user_id": 900, "api_key_id": 901})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["id"] for item in response.json()["items"]], [2])
+        self.assertIsNone(response.json()["items"][0]["user_name"])
+        for owner, expected in ((3, 0), (900, 1)):
+            response = self.client.get(PATH, headers=self.headers, params={"user_id": owner, "after_id": 1})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["new_count"], expected)
+
+    def test_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http(self):
+        self.db.insert_user(9, username="测试用户", email="other@example.invalid")
+        self.db.insert_key(5, name="测试 Key", user_id=9)
+        with patch("urllib.request.OpenerDirector.open") as urllib_send, \
+             patch("httpx.HTTPTransport.handle_request") as http_send, \
+             patch("httpx.AsyncHTTPTransport.handle_async_request") as async_http_send:
+            users = self.client.get(OPTIONS_PATH, headers=self.headers, params={"kind": "users", "q": "test@"})
+            keys = self.client.get(OPTIONS_PATH, headers=self.headers,
+                                   params={"kind": "api_keys", "q": "测试 Key", "user_id": 3})
+        for response in (users, keys):
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertTrue(response.headers["x-request-id"])
+            self.assertNotIn("PRIVATE_", response.text)
+        self.assertEqual([item["id"] for item in users.json()["items"]], [3])
+        self.assertEqual([item["id"] for item in keys.json()["items"]], [4])
+        self.assertEqual(set(users.json()["items"][0]), UsageRecordOptionsTests.USER_FIELDS)
+        self.assertEqual(set(keys.json()["items"][0]), UsageRecordOptionsTests.KEY_FIELDS)
+        self.assertFalse(any("usage_logs" in sql for sql, _ in self.db.statements))
+        self.assertEqual(self.runtime.oauth_monitor.mock_calls, [])
+        self.assertEqual(self.runtime.bark_notifier.mock_calls, [])
+        self.runtime.oauth_base_url.assert_not_called()
+        urllib_send.assert_not_called()
+        http_send.assert_not_called()
+        async_http_send.assert_not_called()
+        self.auth.assert_called_with("fixture-admin-key", fresh=False)
+
+    def test_options_route_rejects_invalid_parameters_and_cross_condition_cursor(self):
+        for params in ({"kind": "accounts"}, {"limit": 101}, {"limit": "bad"},
+                       {"kind": "api_keys", "user_id": 0}, {"user_id": "not-an-id"}, {"cursor": "!"}):
+            with self.subTest(params=params):
+                response = self.client.get(OPTIONS_PATH, headers=self.headers, params={"kind": "users", **params})
+                self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.db.statements, [])
+        self.db.insert_user(9, username="测试用户")
+        first = self.client.get(OPTIONS_PATH, headers=self.headers, params={"kind": "users", "q": "测试", "limit": 1})
+        self.assertEqual(first.status_code, 200, first.text)
+        response = self.client.get(OPTIONS_PATH, headers=self.headers,
+                                   params={"kind": "api_keys", "q": "测试", "cursor": first.json()["next_cursor"]})
+        self.assertEqual(response.status_code, 422, response.text)
+
     def test_invalid_route_parameters_are_422_and_absent_detail_is_404(self):
         for suffix, params in (("", {"limit": 0}), ("", {"limit": "not-an-integer"}),
-                               ("", {"account_id": -1}), ("", {"mismatch_only": "maybe"}),
+                               ("", {"account_id": -1}), ("", {"user_id": 0}), ("", {"user_id": "bad"}),
+                               ("", {"mismatch_only": "maybe"}),
                                ("", {"cursor": "!"}), ("/0", {}), ("/bad", {})):
             with self.subTest(suffix=suffix, params=params):
                 response = self.client.get(PATH + suffix, params=params, headers=self.headers)
@@ -541,7 +795,7 @@ class UsageRecordsRouteTests(RecordsFixture):
 
     def test_usage_records_expose_no_write_method(self):
         for method in ("POST", "PUT", "PATCH", "DELETE"):
-            for path in (PATH, PATH + "/1"):
+            for path in (PATH, PATH + "/1", OPTIONS_PATH):
                 with self.subTest(method=method, path=path):
                     self.assertEqual(self.client.request(method, path, headers=self.headers).status_code, 405)
         self.assertEqual(self.db.statements, [])

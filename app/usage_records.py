@@ -80,16 +80,19 @@ class UsageRecords:
         self.db = db
 
     def list(self, *, from_at: str | None = None, to_at: str | None = None,
-             account_id: int | None = None, api_key_id: int | None = None,
+             account_id: int | None = None, api_key_id: int | None = None, user_id: int | None = None,
              model: str | None = None, request_type: str | None = None,
              mismatch_only: bool = False, cursor: str | None = None,
              after_id: int | None = None, limit: int = 50) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
-        if not 1 <= limit <= 100 or any(v is not None and v < 1 for v in (account_id, api_key_id)) or (after_id is not None and after_id < 0):
+        if not 1 <= limit <= 100 or any(v is not None and not 1 <= v <= 9223372036854775807 for v in (account_id, api_key_id, user_id)) or (after_id is not None and after_id < 0):
             raise HTTPException(422, "分页或筛选参数无效")
         if cursor and after_id is not None:
             raise HTTPException(422, "分页和新增检查不能同时使用")
-        signature = hashlib.sha256(json.dumps([from_at, to_at, account_id, api_key_id, model, request_type, mismatch_only]).encode()).hexdigest()
+        criteria = [from_at, to_at, account_id, api_key_id, model, request_type, mismatch_only]
+        if user_id is not None:
+            criteria.append(user_id)
+        signature = hashlib.sha256(json.dumps(criteria).encode()).hexdigest()
         saved = None
         if cursor:
             try:
@@ -109,7 +112,7 @@ class UsageRecords:
             raise HTTPException(422, "开始时间必须早于结束时间")
         clauses = ["u.created_at >= %(from_at)s", "u.created_at <= %(to_at)s"]
         params: dict[str, Any] = {"from_at": start, "to_at": end, "limit": limit + 1}
-        for key, value in (("account_id", account_id), ("api_key_id", api_key_id)):
+        for key, value in (("account_id", account_id), ("api_key_id", api_key_id), ("user_id", user_id)):
             if value is not None:
                 clauses.append(f"u.{key} = %({key})s")
                 params[key] = value
@@ -146,6 +149,60 @@ class UsageRecords:
             last = items[-1]
             next_cursor = base64.urlsafe_b64encode(json.dumps({"at": last["created_at"], "id": last["id"], "watermark": params["watermark"], "from_at": start.isoformat(), "to_at": end.isoformat(), "signature": signature}).encode()).decode()
         return {"items": items, "next_cursor": next_cursor, "latest_id": params["watermark"], "observed_at": now.isoformat()}
+
+    def options(self, *, kind: str, q: str | None = None, user_id: int | None = None,
+                cursor: str | None = None, limit: int = 50) -> dict[str, Any]:
+        if kind not in ("users", "api_keys") or not 1 <= limit <= 100:
+            raise HTTPException(422, "目录或分页参数无效")
+        if user_id is not None and (kind != "api_keys" or not 1 <= user_id <= 9223372036854775807):
+            raise HTTPException(422, "用户筛选无效")
+        query = (q or "").strip()
+        if len(query) > 200:
+            raise HTTPException(422, "搜索内容过长")
+        signature = hashlib.sha256(json.dumps([kind, query, user_id]).encode()).hexdigest()
+        after = 0
+        if cursor:
+            try:
+                if len(cursor) > 2048:
+                    raise ValueError()
+                saved = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+                after = int(saved["id"])
+                if saved["signature"] != signature or not 1 <= after <= 9223372036854775807:
+                    raise ValueError()
+            except (ValueError, KeyError, TypeError, UnicodeError, OverflowError):
+                raise HTTPException(422, "目录分页已失效，请重新搜索") from None
+        params: dict[str, Any] = {"after": after, "limit": limit + 1}
+        clauses = ["e.id > %(after)s"]
+        if kind == "users":
+            selection = "e.id,e.username AS name,e.email,e.status,(e.deleted_at IS NOT NULL) AS deleted"
+            source = "users e"
+            text_fields = ("e.username", "e.email")
+            fields = ("id", "name", "email", "status", "deleted")
+        else:
+            selection = "e.id,e.name,e.user_id,p.username AS user_name,p.email AS user_email,e.status,(e.deleted_at IS NOT NULL) AS deleted"
+            source = "api_keys e LEFT JOIN users p ON p.id=e.user_id"
+            text_fields = ("e.name",)
+            fields = ("id", "name", "user_id", "user_name", "user_email", "status", "deleted")
+            if user_id is not None:
+                clauses.append("e.user_id = %(user_id)s")
+                params["user_id"] = user_id
+        if query:
+            params["q"] = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            matches = [f"{field} ILIKE %(q)s" for field in text_fields]
+            digits = query.removeprefix("#")
+            if digits.isascii() and digits.isdecimal() and 1 <= int(digits) <= 9223372036854775807:
+                params["id"] = int(digits)
+                matches.append("e.id = %(id)s")
+            clauses.append("(" + " OR ".join(matches) + ")")
+        with self.db.connection() as conn, conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute("SET LOCAL statement_timeout = '5s'")
+            rows = conn.execute(f"SELECT {selection} FROM {source} WHERE " + " AND ".join(clauses) + " ORDER BY e.id ASC LIMIT %(limit)s", params).fetchall()
+        items = [{**{field: row.get(field) for field in fields}, "deleted": bool(row.get("deleted"))} for row in rows[:limit]]
+        next_cursor = None
+        if len(rows) > limit:
+            next_cursor = base64.urlsafe_b64encode(json.dumps({"id": items[-1]["id"], "signature": signature}).encode()).decode()
+        return {"items": items, "next_cursor": next_cursor}
 
     def detail(self, record_id: int) -> dict[str, Any]:
         if record_id < 1:

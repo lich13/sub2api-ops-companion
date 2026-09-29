@@ -672,14 +672,22 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
 
     @router.get("/usage-records")
     async def usage_records(request: Request, from_at: str | None = None, to_at: str | None = None,
-                            account_id: int | None = None, api_key_id: int | None = None,
+                            account_id: int | None = None, api_key_id: int | None = None, user_id: int | None = None,
                             model: str | None = None, request_type: str | None = None,
                             mismatch_only: bool = False, cursor: str | None = None,
                             after_id: int | None = None, limit: int = 50) -> Any:
         await auth(request)
         return await asyncio.to_thread(records.list, from_at=from_at, to_at=to_at,
-            account_id=account_id, api_key_id=api_key_id, model=model, request_type=request_type,
+            account_id=account_id, api_key_id=api_key_id, user_id=user_id, model=model, request_type=request_type,
             mismatch_only=mismatch_only, cursor=cursor, after_id=after_id, limit=limit)
+
+    @router.get("/usage-record-options")
+    async def usage_record_options(request: Request, kind: str, q: str | None = None,
+                                   user_id: int | None = None, cursor: str | None = None,
+                                   limit: int = 50) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(records.options, kind=kind, q=q, user_id=user_id,
+                                       cursor=cursor, limit=limit)
 
     @router.get("/usage-records/{record_id}")
     async def usage_record(record_id: int, request: Request) -> Any:

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  cacheTokenCount,
+  defaultRecordColumns,
   latency,
+  latencyTone,
   modelRoute,
   money,
   tokenCount,
+  tokensPerSecond,
   type UsageRecord,
 } from "./records";
 
@@ -59,6 +63,141 @@ describe("record model route", () => {
     expect(route({})).toEqual([]);
     expect(route({ upstream_response_model: "actual-only" })).toEqual([
       { model: "actual-only", labels: ["返回"] },
+    ]);
+  });
+});
+
+describe("record performance metrics", () => {
+  it.each([
+    [0, "0"],
+    [1, "1"],
+    [999, "999"],
+    [1000, "1.0K"],
+    [1250, "1.3K"],
+    [127100, "127.1K"],
+    [999999, "1000.0K"],
+    [1000000, "1.0M"],
+    [1250000, "1.3M"],
+    [127100000, "127.1M"],
+    [null, "—"],
+    [undefined, "—"],
+    [Number.NaN, "—"],
+    [Number.POSITIVE_INFINITY, "—"],
+  ] as const)("formats cache count %s as %s", (value, expected) => {
+    expect(cacheTokenCount(value)).toBe(expected);
+  });
+
+  it.each([
+    ["first", 0, "good"],
+    ["first", 9999, "good"],
+    ["first", 10000, "warn"],
+    ["first", 29999, "warn"],
+    ["first", 30000, "slow"],
+    ["first", 59999, "slow"],
+    ["first", 60000, "critical"],
+    ["total", 0, "good"],
+    ["total", 59999, "good"],
+    ["total", 60000, "warn"],
+    ["total", 179999, "warn"],
+    ["total", 180000, "slow"],
+    ["total", 299999, "slow"],
+    ["total", 300000, "critical"],
+  ] as const)(
+    "classifies %s latency %s at its boundary",
+    (metric, value, expected) => {
+      expect(latencyTone(value, metric)).toBe(expected);
+    },
+  );
+
+  it.each([
+    null,
+    undefined,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ])("keeps invalid latency %s unknown for both metrics", (value) => {
+    expect(latencyTone(value, "first")).toBe("unknown");
+    expect(latencyTone(value, "total")).toBe("unknown");
+  });
+
+  const speed = (fields: Partial<UsageRecord>) =>
+    tokensPerSecond({
+      request_type: "stream",
+      output_tokens: 1000,
+      duration_ms: 60000,
+      first_token_ms: 10000,
+      ...fields,
+    } as UsageRecord);
+
+  it("measures output generation after the first token for stream, WebSocket, and sync", () => {
+    expect(speed({})).toBe(20);
+    expect(
+      speed({
+        request_type: "ws_v2",
+        output_tokens: 450,
+        duration_ms: 30000,
+        first_token_ms: 0,
+      }),
+    ).toBe(15);
+    expect(
+      speed({
+        request_type: "sync",
+        output_tokens: 120,
+        duration_ms: 70000,
+        first_token_ms: 10000,
+      }),
+    ).toBe(2);
+  });
+
+  it("uses total duration without first-token timing only for a synchronous request", () => {
+    expect(
+      speed({ request_type: "sync", first_token_ms: null, output_tokens: 120 }),
+    ).toBe(2);
+    expect(speed({ request_type: "stream", first_token_ms: null })).toBeNull();
+    expect(speed({ request_type: "ws_v2", first_token_ms: null })).toBeNull();
+  });
+
+  it.each([
+    { output_tokens: null },
+    { output_tokens: -1 },
+    { output_tokens: Number.NaN },
+    { output_tokens: Number.POSITIVE_INFINITY },
+    { duration_ms: null },
+    { duration_ms: 0 },
+    { duration_ms: -1 },
+    { duration_ms: Number.NaN },
+    { duration_ms: Number.POSITIVE_INFINITY },
+    { first_token_ms: -1 },
+    { first_token_ms: Number.NaN },
+    { first_token_ms: Number.POSITIVE_INFINITY },
+    { first_token_ms: 60000 },
+    { first_token_ms: 60001 },
+    { request_type: "sync" as const, first_token_ms: -1 },
+  ])("does not fabricate TPS from invalid timing or output: %o", (fields) => {
+    expect(speed(fields)).toBeNull();
+  });
+
+  it("preserves a legitimate zero output rate without hiding invalid denominators", () => {
+    expect(speed({ output_tokens: 0 })).toBe(0);
+    expect(speed({ output_tokens: 0, first_token_ms: 0 })).toBe(0);
+    expect(
+      speed({ request_type: "sync", output_tokens: 0, first_token_ms: null }),
+    ).toBe(0);
+    expect(speed({ output_tokens: 0, first_token_ms: 60000 })).toBeNull();
+  });
+
+  it("uses the nine explicit default columns without the removed type column", () => {
+    expect(defaultRecordColumns).toEqual([
+      "api_key",
+      "account",
+      "model",
+      "reasoning",
+      "tokens",
+      "cost",
+      "latency",
+      "user_agent",
+      "ip",
     ]);
   });
 });

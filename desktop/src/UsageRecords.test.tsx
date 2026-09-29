@@ -394,6 +394,160 @@ describe("record feed lifecycle", () => {
 });
 
 describe("record view", () => {
+  it("uses the complete directory with no recent records and clears the key whenever the user changes", async () => {
+    const users = [
+      {
+        id: 71,
+        name: "user-one",
+        email: "one@example.invalid",
+        deleted: false,
+      },
+      {
+        id: 72,
+        name: "user-two",
+        email: "two@example.invalid",
+        deleted: false,
+      },
+    ];
+    serve((path) => {
+      if (!path.startsWith("/usage-record-options?")) return page([]);
+      if (params(path).get("kind") === "users")
+        return { items: users, next_cursor: null };
+      const owner = Number(params(path).get("user_id"));
+      return {
+        items: [
+          {
+            id: owner + 100,
+            name: "unused-key",
+            user_id: owner,
+            user_name: `owner-${owner}`,
+            deleted: false,
+          },
+        ],
+        next_cursor: null,
+      };
+    });
+    const choose = async (text: string) => {
+      const option = [
+        ...container.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+      ].find((node) => node.textContent?.startsWith(text));
+      if (!option) throw new Error(`Missing option: ${text}`);
+      await act(async () => option.click());
+    };
+    await renderView();
+    expect(tableIds()).toEqual([]);
+    await click("用户筛选");
+    await advance(0);
+    await choose("user-one#71");
+    await click("API 密钥筛选");
+    await advance(0);
+    expect(params(paths().at(-1)!).get("user_id")).toBe("71");
+    expect(container.querySelector('[role="listbox"]')?.textContent).toContain(
+      "owner-71 #71",
+    );
+    await choose("unused-key#171");
+    await click("筛选");
+    expect(params(paths().at(-1)!).get("user_id")).toBe("71");
+    expect(params(paths().at(-1)!).get("api_key_id")).toBe("171");
+
+    await click("用户筛选");
+    await advance(0);
+    await choose("user-two#72");
+    expect(button("API 密钥筛选").textContent).toBe("全部API 密钥");
+    await click("筛选");
+    expect(params(paths().at(-1)!).get("user_id")).toBe("72");
+    expect(params(paths().at(-1)!).has("api_key_id")).toBe(false);
+    await click("API 密钥筛选");
+    await advance(0);
+    expect(params(paths().at(-1)!).get("user_id")).toBe("72");
+    await choose("unused-key#172");
+    await click("用户筛选");
+    await advance(0);
+    await choose("全部用户");
+    expect(button("API 密钥筛选").textContent).toBe("全部API 密钥");
+    await click("筛选");
+    expect(params(paths().at(-1)!).has("user_id")).toBe(false);
+    expect(params(paths().at(-1)!).has("api_key_id")).toBe(false);
+    expect(
+      paths()
+        .filter((path) => path.startsWith("/usage-record-options?"))
+        .every((path) => !params(path).has("from_at")),
+    ).toBe(true);
+  });
+
+  it.each(["hidden", "offline", "background"])(
+    "stops directory interaction when the record view becomes %s",
+    async (state) => {
+      const stale = deferred<unknown>();
+      serve((path) =>
+        path.startsWith("/usage-record-options?") ? stale.promise : page([]),
+      );
+      await renderView();
+      await click("用户筛选");
+      await advance(0);
+      if (state === "hidden") await setVisibility("hidden");
+      else
+        await renderView(
+          state === "offline" ? { online: false } : { foreground: false },
+        );
+      expect(button("用户筛选").disabled).toBe(true);
+      expect(button("API 密钥筛选").disabled).toBe(true);
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      await act(async () =>
+        stale.resolve({
+          items: [{ id: 71, name: "stale-user", deleted: false }],
+          next_cursor: null,
+        }),
+      );
+      await advance(30000);
+      expect(
+        paths().filter((path) => path.startsWith("/usage-record-options?")),
+      ).toHaveLength(1);
+      expect(container.textContent).not.toContain("stale-user");
+      if (state === "hidden") await setVisibility("visible");
+      else await renderView();
+      expect(button("用户筛选").disabled).toBe(false);
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+    },
+  );
+
+  it("shows compact caches and latency bands while retaining exact cache counts and TPS in details", async () => {
+    const row = record(100, {
+      cache_read_tokens: 127100,
+      cache_creation_tokens: 1250000,
+      output_tokens: 120,
+      first_token_ms: 10000,
+      duration_ms: 70000,
+    });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView();
+    const body = container.querySelector("tbody")!;
+    expect(body.querySelector(".record-cache-read")?.textContent).toBe(
+      "127.1K",
+    );
+    expect(
+      body.querySelector(".record-cache-read")?.getAttribute("title"),
+    ).toBe("缓存读取：127,100");
+    expect(body.querySelector(".record-cache-write")?.textContent).toBe("1.3M");
+    expect(
+      body.querySelector(".record-cache-write")?.getAttribute("title"),
+    ).toBe("缓存写入：1,250,000");
+    expect(
+      [...body.querySelectorAll(".latency-warn")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["10.00s", "70.00s"]);
+    expect(body.querySelector(".record-tps")?.textContent).toBe("2.00 tok/s");
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
+        .click(),
+    );
+    expect(detailValue("缓存读取")).toBe("127,100");
+    expect(detailValue("缓存写入")).toBe("1,250,000");
+    expect(detailValue("TPS")).toBe("2.00 tok/s");
+  });
+
   it("stops for hidden, offline, and background states and resumes immediately without losing rows", async () => {
     await renderView();
     await setVisibility("hidden");
@@ -542,7 +696,6 @@ describe("record view", () => {
       "账户",
       "模型",
       "推理强度",
-      "类型",
       "Token",
       "费用",
       "延迟",
@@ -571,6 +724,68 @@ describe("record view", () => {
     expect(toggle("User-Agent").checked).toBe(false);
     expect(toggle("端点").checked).toBe(true);
     expect(saveColumns).toHaveBeenCalledTimes(2);
+  });
+
+  it("migrates saved type-column preferences without losing the user's remaining columns", async () => {
+    await renderView({ columns: ["type", "model", "cost", "user_agent"] });
+    expect(
+      [...container.querySelectorAll("th")].map((node) => node.textContent),
+    ).toEqual(["用户", "模型", "费用", "User-Agent", "时间"]);
+    expect(container.querySelector('[aria-label="请求类型"]')).toBeNull();
+    const options = [
+      ...container.querySelectorAll<HTMLLabelElement>(
+        ".records-column-options label",
+      ),
+    ];
+    expect(
+      options.some(
+        (label) => label.querySelector("span")?.textContent === "类型",
+      ),
+    ).toBe(false);
+    expect(
+      options.some((label) =>
+        ["用户", "时间"].includes(
+          label.querySelector("span")?.textContent || "",
+        ),
+      ),
+    ).toBe(false);
+    await act(async () =>
+      options
+        .find((label) => label.querySelector("span")?.textContent === "端点")!
+        .querySelector<HTMLInputElement>("input")!
+        .click(),
+    );
+    expect(saveColumns).toHaveBeenLastCalledWith([
+      "model",
+      "cost",
+      "user_agent",
+      "endpoint",
+    ]);
+  });
+
+  it.each([{ columns: [] }, { columns: ["type"] }])(
+    "preserves a saved selection with no remaining optional columns: $columns",
+    async ({ columns }) => {
+      await renderView({ columns });
+      expect(
+        [...container.querySelectorAll("th")].map((node) => node.textContent),
+      ).toEqual(["用户", "时间"]);
+      expect(saveColumns).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the legacy request type in details after removing the table column and type filter", async () => {
+    const row = record(100, { request_type: "ws_v2" });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView();
+    expect(container.querySelector(".record-col-type")).toBeNull();
+    expect(container.querySelector('[aria-label="请求类型"]')).toBeNull();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
+        .click(),
+    );
+    expect(detailValue("类型")).toBe("WebSocket");
   });
 
   it("blocks overlapping column writes until the pending preference save settles", async () => {
