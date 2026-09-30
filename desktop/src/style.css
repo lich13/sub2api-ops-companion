@@ -611,6 +611,17 @@ strong {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.error-state {
+  display: inline-flex;
+  margin-right: 7px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+}
+.error-state.active {
+  color: var(--warn);
+}
 .error-row > time {
   font-size: 10px;
 }
@@ -1721,6 +1732,13 @@ td:last-child {
 }
 .events-content .page-heading {
   flex-shrink: 0;
+}
+.events-content .page-surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 .event-tabs {
   display: flex;

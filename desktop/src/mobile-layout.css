@@ -576,6 +576,9 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.app.mobile .error-state {
+  white-space: nowrap;
+}
 .app.mobile .recovery-table {
   border: 0;
   background: transparent;
