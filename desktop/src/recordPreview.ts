@@ -1,5 +1,7 @@
 import type { RecordOption, UsageRecord } from "./records";
 const now = Date.now();
+const scenario = new URLSearchParams(location.search).get("scenario");
+let directoryErrorPending = scenario === "record-filter-error";
 const users: RecordOption[] = [
   {
     id: 1,
@@ -23,16 +25,22 @@ const users: RecordOption[] = [
     deleted: true,
   },
 ];
-const keys: RecordOption[] = Array.from({ length: 125 }, (_, index) => {
+if (scenario === "record-filters") {
+  users[0].name = "研发团队管理员 · 跨区域项目与模型验证专用 · 长名称换行验收";
+  users[1].status = "disabled";
+}
+const keys: RecordOption[] = Array.from({ length: 185 }, (_, index) => {
   const user = users[index % 3];
   return {
     id: index + 1,
-    name: index === 0 ? "codex-workspace" : `workspace-${index + 1}`,
+    name: index === 0
+      ? (scenario === "record-filters" ? "团队共享密钥 · 跨区域项目与模型验证专用 · 长名称换行验收" : "codex-workspace")
+      : `workspace-${index + 1}`,
     user_id: user.id,
     user_name: user.name,
     user_email: user.email,
     status: index % 7 ? "active" : "disabled",
-    deleted: index > 119,
+    deleted: index > 179,
   };
 });
 const rows = Array.from(
@@ -104,10 +112,16 @@ export function recordPreview(path: string) {
   const url = new URL(path, "https://preview.invalid");
   const p = url.searchParams;
   if (url.pathname === "/usage-record-options") {
+    if (directoryErrorPending) {
+      directoryErrorPending = false;
+      throw new Error("目录读取失败，请重试");
+    }
     const q = (p.get("q") || "").toLowerCase();
     const directory = p.get("kind") === "users" ? users : keys;
     const filtered = directory.filter(
       (item) =>
+        !item.deleted &&
+        (!item.user_id || users.some((user) => user.id === item.user_id && !user.deleted)) &&
         (!p.has("user_id") || item.user_id === Number(p.get("user_id"))) &&
         (!q ||
           item.name?.toLowerCase().includes(q) ||

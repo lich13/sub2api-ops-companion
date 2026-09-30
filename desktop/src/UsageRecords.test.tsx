@@ -11,6 +11,7 @@ import {
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
 import { handleBack } from "./mobile";
+import type { Account } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), watchWindowFocus: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -23,6 +24,28 @@ const saveColumns = vi.fn<(columns: string[]) => Promise<void>>();
 const now = "2026-09-30T04:00:00.000Z";
 const query = "limit=50&start_date=2026-09-30&end_date=2026-09-30";
 const totalCost = "12.3456789012";
+const account = (id: number, name: string, status = "active"): Account => ({
+  id,
+  name,
+  status,
+  priority: 0,
+  platform: "openai",
+  type: "oauth",
+  schedulable: true,
+  available: true,
+  group_ids: [],
+  blockers: [],
+  managed: false,
+  version: "fixture",
+  last_success_at: null,
+  last_error_at: null,
+  last_error_id: null,
+  last_error_code: null,
+  last_error_status: null,
+  error_message: "",
+  success_after_error: false,
+  usage_windows: [],
+});
 const record = (
   id: number,
   overrides: Partial<UsageRecord> = {},
@@ -495,6 +518,20 @@ describe("record feed lifecycle", () => {
 });
 
 describe("record view", () => {
+  it.each([false, true])(
+    "only displays the six-decimal total without a precise tooltip or copy control, mobile=%s",
+    async (mobile) => {
+      const exact = "9007199254740993.1234567890";
+      serve(() => page([], { summary: { actual_cost: exact } }));
+      await renderView({ mobile, desktop: !mobile });
+      expect(summary()?.textContent).toBe("$9007199254740993.123457");
+      const area = container.querySelector(".records-summary")!;
+      expect(area.innerHTML).not.toContain(exact);
+      expect(area.querySelector("[title], button, details")).toBeNull();
+      expect(container.querySelector(".records-total-detail")).toBeNull();
+    },
+  );
+
   it("defaults to today in Beijing and only changes date queries after Apply", async () => {
     await renderView();
     expect(params(paths()[0]).get("start_date")).toBe("2026-09-30");
@@ -504,10 +541,6 @@ describe("record view", () => {
     expect(params(paths()[0]).has("to_at")).toBe(false);
     expect(button("时间范围").textContent).toBe("今天");
     expect(summary()?.textContent).toBe("$12.345679");
-    expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
-    expect(
-      container.querySelector(".records-total-detail")?.textContent,
-    ).toContain(`$${totalCost}`);
 
     await click("时间范围");
     await click("近24小时");
@@ -541,7 +574,7 @@ describe("record view", () => {
     await click("重试");
     expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
     expect(summary()?.textContent).toBe("$0.000000");
-    expect(summary()?.getAttribute("title")).toBe("$0.0000000000");
+    expect(summary()?.getAttribute("title")).toBeNull();
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -569,7 +602,7 @@ describe("record view", () => {
     await click("重试");
     expect(params(paths().at(-1)!).get("start_date")).toBe("2026-09-29");
     expect(tableIds()).toEqual(["查看记录 #90"]);
-    expect(summary()?.getAttribute("title")).toBe("$9.1234567890");
+    expect(summary()?.textContent).toBe("$9.123457");
   });
 
   it("replaces today and its total at Beijing midnight while reading the live head", async () => {
@@ -585,7 +618,7 @@ describe("record view", () => {
     expect(params(paths()[1]).get("start_date")).toBe("2026-10-01");
     expect(params(paths()[1]).get("end_date")).toBe("2026-10-01");
     expect(tableIds()).toEqual(["查看记录 #200"]);
-    expect(summary()?.getAttribute("title")).toBe("$0.125");
+    expect(summary()?.textContent).toBe("$0.125000");
     expect(container.querySelector(".new-records")).toBeNull();
   });
 
@@ -627,7 +660,7 @@ describe("record view", () => {
       await advance(1000);
       expect(api).toHaveBeenCalledTimes(before);
       expect(button("日期已更新 · 刷新")).toBeDefined();
-      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+      expect(summary()?.textContent).toBe("$12.345679");
       expect(container.textContent).toContain("user-100");
       if (holding === "scroll") {
         expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);
@@ -643,7 +676,7 @@ describe("record view", () => {
       expect(api).toHaveBeenCalledTimes(before + 1);
       expect(params(paths().at(-1)!).get("start_date")).toBe("2026-10-01");
       expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
-      expect(summary()?.getAttribute("title")).toBe("$0.125");
+      expect(summary()?.textContent).toBe("$0.125000");
       expect(container.textContent).toContain("user-200");
       expect(container.textContent).not.toContain("user-100");
       expect(container.querySelector(".records-scroll")?.scrollTop).toBe(0);
@@ -662,10 +695,10 @@ describe("record view", () => {
     await renderView({ mobile: true, desktop: false, foreground: false });
     await advance(30000);
     expect(api).toHaveBeenCalledTimes(1);
-    expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+    expect(summary()?.textContent).toBe("$12.345679");
     await renderView({ mobile: true, desktop: false });
     expect(params(paths().at(-1)!).get("start_date")).toBe("2026-10-01");
-    expect(summary()?.getAttribute("title")).toBe("$0.125");
+    expect(summary()?.textContent).toBe("$0.125000");
     expect(container.textContent).toContain("user-200");
   });
 
@@ -700,7 +733,7 @@ describe("record view", () => {
       old.resolve(page([record(999)], { summary: { actual_cost: "999" } })),
     );
     expect(tableIds()).toEqual(["查看记录 #200"]);
-    expect(summary()?.getAttribute("title")).toBe("$20.2");
+    expect(summary()?.textContent).toBe("$20.200000");
     expect(focusListeners.size).toBe(1);
     expect(api).toHaveBeenCalledTimes(3);
   });
@@ -981,7 +1014,7 @@ describe("record view", () => {
         stale.resolve(page([record(200)], { summary: { actual_cost: "999" } })),
       );
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+      expect(summary()?.textContent).toBe("$12.345679");
       await advance(30000);
       expect(api).toHaveBeenCalledTimes(2);
 
@@ -990,7 +1023,7 @@ describe("record view", () => {
       expect(api).toHaveBeenCalledTimes(3);
       expect(params(paths()[2]).get("after_id")).toBe("100");
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+      expect(summary()?.textContent).toBe("$12.345679");
       await advance(10000);
       expect(api).toHaveBeenCalledTimes(4);
     },
@@ -1060,6 +1093,91 @@ describe("record view", () => {
     expect(api).toHaveBeenCalledTimes(2);
     expect(params(paths()[1]).get("after_id")).toBe("100");
     expect(watchWindowFocus).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "only offers snapshot accounts and applies local name or ID search, mobile=%s",
+    async (mobile) => {
+      const accounts = [
+        account(22, "Current East"),
+        account(33, "Current West", "disabled"),
+      ];
+      serve((path) =>
+        page([
+          params(path).get("account_id") === "22"
+            ? record(200, { account_id: 22, account_name: "Current East" })
+            : record(100),
+        ]),
+      );
+      await renderView({ accounts, mobile, desktop: !mobile });
+      expect(container.textContent).toContain("test-account");
+      if (mobile) await click("筛选记录");
+      await click("账户筛选");
+      const list = () => container.querySelector('[role="listbox"]')!;
+      expect(list().textContent).toContain("Current East#22");
+      expect(list().textContent).toContain("Current West#33停用");
+      expect(list().textContent).not.toContain("test-account");
+      await setInput("搜索账户", " west ");
+      expect(list().textContent).toContain("Current West#33");
+      expect(list().textContent).not.toContain("Current East");
+      await setInput("搜索账户", "#9");
+      expect(list().querySelectorAll('[role="option"]')).toHaveLength(1);
+      await setInput("搜索账户", "#22");
+      expect(list().querySelectorAll('[role="option"]')).toHaveLength(2);
+      await click("Current East#22");
+      expect(api).toHaveBeenCalledTimes(1);
+      await applyFilters();
+      expect(api).toHaveBeenCalledTimes(2);
+      expect(params(paths().at(-1)!).get("account_id")).toBe("22");
+      expect(paths().every((path) => path.startsWith("/usage-records?"))).toBe(
+        true,
+      );
+      expect(container.textContent).not.toContain("test-account");
+      expect(container.textContent).toContain("Current East");
+    },
+  );
+
+  it.each(["draft", "applied"])(
+    "clears a removed account from the %s selection when the online snapshot changes",
+    async (stage) => {
+      const accounts = [account(22, "Current East")];
+      await renderView({ accounts });
+      await click("账户筛选");
+      await click("Current East#22");
+      if (stage === "applied") {
+        await applyFilters();
+        expect(params(paths().at(-1)!).get("account_id")).toBe("22");
+      }
+      await renderView({ accounts: [account(33, "Current West")] });
+      expect(button("账户筛选").textContent).toBe("全部账户");
+      await applyFilters();
+      await click("刷新记录");
+      expect(params(paths().at(-1)!).has("account_id")).toBe(false);
+      await click("账户筛选");
+      expect(
+        container.querySelector('[role="listbox"]')?.textContent,
+      ).toContain("Current West#33");
+      expect(
+        container.querySelector('[role="listbox"]')?.textContent,
+      ).not.toContain("Current East");
+    },
+  );
+
+  it("preserves an applied account while offline and clears it when a fresh online snapshot removes it", async () => {
+    await renderView({ accounts: [account(22, "Current East")] });
+    await click("账户筛选");
+    await click("Current East#22");
+    await applyFilters();
+    const before = paths().length;
+    await renderView({ online: false, accounts: [] });
+    await advance(30000);
+    expect(api).toHaveBeenCalledTimes(before);
+    await renderView({ accounts: [account(22, "Current East")] });
+    expect(button("账户筛选").textContent).toBe("Current East #22");
+    expect(params(paths().at(-1)!).get("account_id")).toBe("22");
+    await renderView({ accounts: [] });
+    expect(button("账户筛选").textContent).toBe("全部账户");
+    expect(params(paths().at(-1)!).has("account_id")).toBe(false);
   });
 
   it("uses the complete directory with no recent records and clears the key whenever the user changes", async () => {
@@ -1354,7 +1472,7 @@ describe("record view", () => {
         ),
       );
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
-      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+      expect(summary()?.textContent).toBe("$12.345679");
       expect(button("2 条新记录")).toBeDefined();
       if (action === "scroll")
         expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);

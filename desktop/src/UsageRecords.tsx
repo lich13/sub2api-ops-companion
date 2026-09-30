@@ -483,9 +483,22 @@ export default function UsageRecords({
   const scroll = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
     detailEpoch = useRef(0);
-  const [knownAccounts, setKnownAccounts] = useState<Map<number, string>>(
-    new Map(),
+  const accountOptions = useMemo<RecordOption[]>(
+    () => accounts.map((account) => ({
+      id: account.id, name: account.name, status: account.status, deleted: false,
+    })),
+    [accounts],
   );
+  useEffect(() => {
+    if (!online) return;
+    const current = new Set(accountOptions.map((account) => String(account.id)));
+    const clearRemoved = (value: typeof defaultFilters) =>
+      value.account && !current.has(value.account)
+        ? { ...value, account: "" }
+        : value;
+    setDraft(clearRemoved);
+    setFilters(clearRemoved);
+  }, [accountOptions, online]);
   const closeFilters = () => {
     setFiltersOpen(false);
     setDraft(filters);
@@ -575,18 +588,6 @@ export default function UsageRecords({
   ]);
   const chosen = normalizeRecordColumns(columns);
   const shown = recordColumns.filter(([key]) => chosen.includes(key));
-  useEffect(() => {
-    setKnownAccounts(
-      (old) =>
-        new Map([
-          ...old,
-          ...feed.items.map(
-            (r) =>
-              [r.account_id, r.account_name || `#${r.account_id}`] as const,
-          ),
-        ]),
-    );
-  }, [feed.items]);
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
     setScrolled(false);
@@ -707,25 +708,15 @@ export default function UsageRecords({
                 value={draft.user}
                 onChange={(user) => setDraft({ ...draft, user, key: null })}
               />
-              <select
-                aria-label="账户筛选"
-                value={draft.account}
-                onChange={(e) =>
-                  setDraft({ ...draft, account: e.target.value })
+              <RecordFilter
+                kind="accounts"
+                active={active}
+                value={accountOptions.find((account) => String(account.id) === draft.account) ?? null}
+                options={accountOptions}
+                onChange={(account) =>
+                  setDraft({ ...draft, account: account ? String(account.id) : "" })
                 }
-              >
-                <option value="">全部账户</option>
-                {[
-                  ...new Map([
-                    ...knownAccounts,
-                    ...accounts.map((a) => [a.id, a.name] as const),
-                  ]),
-                ].map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name} #{id}
-                  </option>
-                ))}
-              </select>
+              />
               <RecordFilter
                 kind="api_keys"
                 active={active}
@@ -760,17 +751,7 @@ export default function UsageRecords({
       </div>
       <div className="records-summary" aria-label="消费统计">
         <span>总消费</span>
-        <strong
-          title={feed.totalCost == null ? undefined : `$${feed.totalCost}`}
-        >
-          {money(feed.totalCost)}
-        </strong>
-        {feed.totalCost !== null && (
-          <details className="records-total-detail">
-            <summary aria-label="查看精确消费金额">精确值</summary>
-            <CopyValue value={`$${feed.totalCost}`} />
-          </details>
-        )}
+        <strong>{money(feed.totalCost)}</strong>
       </div>
       <div className="records-actions">
         <span className="records-status">

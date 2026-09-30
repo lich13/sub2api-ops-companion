@@ -408,7 +408,9 @@ const config: Config = {
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
-if (state.snapshot && scenario === "auto-reset") {
+if (state.snapshot && scenario === "record-filters") {
+  accounts[0].name = "研发团队共享账户 · 跨区域项目与模型验证专用 · 长名称换行验收";
+} else if (state.snapshot && scenario === "auto-reset") {
   accounts[0].schedulable = false;
   accounts[0].available = false;
   accounts[0].auto_reset_credit = {

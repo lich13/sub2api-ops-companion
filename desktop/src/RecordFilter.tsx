@@ -15,15 +15,17 @@ export default function RecordFilter({
   active,
   value,
   userId,
+  options,
   onChange,
 }: {
-  kind: "users" | "api_keys";
+  kind: "users" | "api_keys" | "accounts";
   active: boolean;
   value: RecordOption | null;
   userId?: number;
+  options?: RecordOption[];
   onChange: (value: RecordOption | null) => void;
 }) {
-  const label = kind === "users" ? "用户" : "API 密钥";
+  const label = { users: "用户", api_keys: "API 密钥", accounts: "账户" }[kind];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<RecordOption[]>([]);
@@ -50,6 +52,7 @@ export default function RecordFilter({
   useBackAction(open, close);
 
   function read(page: string | null, generation = epoch.current) {
+    if (kind === "accounts") return;
     const identity = `${generation}:${page ?? ""}`;
     const valid = () =>
       epoch.current === generation &&
@@ -76,13 +79,10 @@ export default function RecordFilter({
           );
           if (!valid()) return;
           setItems((old) =>
-            page
-              ? [
-                  ...new Map(
-                    [...old, ...result.items].map((item) => [item.id, item]),
-                  ).values(),
-                ]
-              : result.items,
+            (page
+              ? [...new Map([...old, ...result.items].map((item) => [item.id, item])).values()]
+              : result.items
+            ).filter((item) => !item.deleted),
           );
           setCursor(result.next_cursor);
         } catch (cause) {
@@ -103,7 +103,7 @@ export default function RecordFilter({
     setError("");
     setFocused(-1);
     if (list.current) list.current.scrollTop = 0;
-    if (!open || !active) {
+    if (!open || !active || kind === "accounts") {
       setLoading(false);
       return;
     }
@@ -165,20 +165,15 @@ export default function RecordFilter({
 
   const digits = query.trim().replace(/^#/, "");
   const id = /^[1-9]\d*$/.test(digits) ? Number(digits) : 0;
-  const direct =
-    Number.isSafeInteger(id) && id > 0 && !items.some((item) => item.id === id)
-      ? {
-          id,
-          name: null,
-          deleted: false,
-          ...(kind === "api_keys" && userId ? { user_id: userId } : {}),
-        }
-      : null;
-  const choices: (RecordOption | null)[] = [
-    null,
-    ...items,
-    ...(direct ? [direct] : []),
-  ];
+  const needle = query.trim().toLowerCase();
+  const visibleItems =
+    kind === "accounts"
+      ? (options ?? []).filter((item) =>
+          !item.deleted && (!needle || item.name?.toLowerCase().includes(needle) ||
+            (Number.isSafeInteger(id) && item.id === id)),
+        )
+      : items;
+  const choices: (RecordOption | null)[] = [null, ...visibleItems];
   function choose(item: RecordOption | null) {
     onChange(item);
     close();
@@ -209,7 +204,7 @@ export default function RecordFilter({
         }}
       >
         <span>{selection}</span>
-        <ChevronDown size={13} />
+        <ChevronDown size={16} />
       </button>
       {open && (
         <div
@@ -264,9 +259,10 @@ export default function RecordFilter({
                   event.preventDefault();
                   if (focused >= 0 && focused < choices.length)
                     choose(choices[focused]);
-                  else if (id > 0 && Number.isSafeInteger(id))
-                    choose(items.find((item) => item.id === id) || direct);
-                  else if (items.length === 1) choose(items[0]);
+                  else if (id > 0 && Number.isSafeInteger(id)) {
+                    const match = visibleItems.find((item) => item.id === id);
+                    if (match) choose(match);
+                  } else if (visibleItems.length === 1) choose(visibleItems[0]);
                 }
               }}
             />
@@ -292,7 +288,6 @@ export default function RecordFilter({
           >
             {choices.map((item, index) => {
               const selected = (item?.id ?? null) === (value?.id ?? null);
-              const isDirect = item !== null && item === direct;
               const owner =
                 item?.user_id != null
                   ? `${item.user_name || item.user_email || "用户"} #${item.user_id}`
@@ -312,9 +307,7 @@ export default function RecordFilter({
                 >
                   <span className="record-filter-option-text">
                     <span>
-                      {isDirect ? (
-                        `按 ID #${item.id} 筛选`
-                      ) : item ? (
+                      {item ? (
                         <>
                           <span>{item.name || item.email || label}</span>
                           <small>#{item.id}</small>
@@ -325,10 +318,10 @@ export default function RecordFilter({
                     </span>
                     {owner && <small title={owner}>{owner}</small>}
                   </span>
-                  {item?.deleted ? (
-                    <small className="record-option-state">已删除</small>
-                  ) : item?.status && item.status !== "active" ? (
-                    <small className="record-option-state">停用</small>
+                  {item?.status && item.status !== "active" ? (
+                    <small className="record-option-state">
+                      {item.status === "error" ? "异常" : "停用"}
+                    </small>
                   ) : null}
                   {selected && <Check size={13} />}
                 </button>
@@ -339,7 +332,7 @@ export default function RecordFilter({
                 正在读取…
               </div>
             )}
-            {!loading && !items.length && !direct && !error && (
+            {!loading && !visibleItems.length && !error && (
               <div className="record-filter-message">无匹配项</div>
             )}
             {error && (
