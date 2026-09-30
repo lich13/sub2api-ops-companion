@@ -31,13 +31,53 @@ def row(**changes):
 
 class DesktopEvidenceTests(unittest.TestCase):
     def test_recent_accounts_are_distinct_and_group_scoped(self):
-        def call(group, account, log):
-            return {"id":group,"name":str(group),"platform":"openai","log_id":log,
-                    "account_id":account,"account_name":str(account),"model":"gpt-6-sol","called_at":NOW}
-        result = group_dtos([call(1, 3, 10), call(1, 2, 9), call(1, 2, 8), call(1, 1, 7), call(2, 1, 11)])
-        self.assertEqual([a["account_id"] for a in result[0]["recent_accounts"]], [3, 2, 1])
-        self.assertEqual(result[0]["account_id"], 3)
-        self.assertEqual(result[1]["recent_accounts"][0]["log_id"], 11)
+        timestamps = [NOW + timedelta(minutes=offset) for offset in range(7)]
+
+        def call(group, account, log, called_at):
+            return {"id": group, "name": str(group), "platform": "openai", "log_id": log,
+                    "account_id": account, "account_name": str(account), "model": "gpt-6-sol", "called_at": called_at}
+
+        rows = [
+            call(1, 1, 900, timestamps[6]),  # Lost membership: the newest history must not survive.
+            call(1, 4, 901, timestamps[5]),  # Current member of group 2 only.
+            call(1, 2, 201, timestamps[4]),
+            call(1, 2, 202, timestamps[4]),  # Same timestamp: larger log ID wins.
+            call(1, 2, 999, timestamps[0]),  # Input order and log ID do not outrank call time.
+            call(1, 3, 300, timestamps[3]),  # Account 3 is a current member of both groups.
+            call(1, 6, 600, timestamps[2]),
+            call(1, 7, 700, timestamps[1]),
+            call(2, 3, 301, timestamps[3]),
+            call(2, 4, 401, timestamps[5]),
+            call(2, 5, 501, timestamps[6]),  # Deleted/missing from the live-account map.
+            {"id": 3, "name": "空组", "platform": "openai", "log_id": None,
+             "account_id": None, "account_name": None, "model": None, "called_at": None},
+        ]
+        result = group_dtos(rows, {2: {1}, 3: {1, 2}, 4: {2}, 6: {1}, 7: {1}})
+        by_id = {group["id"]: group for group in result}
+
+        self.assertEqual([call["account_id"] for call in by_id[1]["recent_accounts"]], [2, 3, 6])
+        self.assertEqual(by_id[1]["account_id"], 2)
+        self.assertEqual(by_id[1]["log_id"], 202)
+        self.assertEqual([call["log_id"] for call in by_id[1]["recent_accounts"]], [202, 300, 600])
+        self.assertEqual([call["account_id"] for call in by_id[2]["recent_accounts"]], [4, 3])
+        self.assertEqual(by_id[2]["log_id"], 401)
+        self.assertEqual(by_id[3]["recent_accounts"], [])
+
+    def test_group_with_only_removed_or_deleted_candidates_clears_legacy_summary(self):
+        rows = [
+            {"id": 5, "name": "历史分组", "platform": "openai", "log_id": 100,
+             "account_id": 10, "account_name": "已移出", "model": "old", "called_at": NOW},
+            {"id": 5, "name": "历史分组", "platform": "openai", "log_id": 101,
+             "account_id": 11, "account_name": "已删除", "model": "old", "called_at": NOW + timedelta(minutes=1)},
+        ]
+
+        result = group_dtos(rows, {10: {8}})
+
+        self.assertEqual(result[0]["recent_accounts"], [])
+        for field in ("account_id", "log_id", "called_at"):
+            self.assertIsNone(result[0][field], field)
+        for field in ("account_name", "model", "upstream_model", "upstream_response_model"):
+            self.assertEqual(result[0][field], "", field)
 
     def test_account_dto_never_returns_credentials(self):
         result = account_dto(row(), NOW, {12})

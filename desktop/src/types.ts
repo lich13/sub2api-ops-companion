@@ -135,7 +135,7 @@ export type RecentAccount = {
   account_name: string;
   model: string;
   upstream_model: string;
-  called_at: string;
+  called_at: string | null;
 };
 export type Group = {
   id: number;
@@ -149,6 +149,34 @@ export type Group = {
   called_at: string | null;
   recent_accounts?: RecentAccount[];
 };
+function callTime(value: string | null): number {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
+  const members = new Map(accounts.map((account) => [account.id, account]));
+  return groups.map((group) => {
+    const calls = group.recent_accounts ?? (group.account_id ? [{
+      log_id: 0,
+      account_id: group.account_id,
+      account_name: group.account_name,
+      model: group.model,
+      upstream_model: group.upstream_model,
+      called_at: group.called_at,
+    }] : []);
+    const ordered = calls.filter((call) =>
+      members.get(call.account_id)?.group_ids.includes(group.id),
+    ).sort((a, b) => callTime(b.called_at) - callTime(a.called_at) || b.log_id - a.log_id);
+    const distinct = new Map<number, RecentAccount>();
+    for (const call of ordered) {
+      if (!distinct.has(call.account_id)) distinct.set(call.account_id, call);
+    }
+    const recent = [...distinct.values()].slice(0, 3);
+    return { ...group, recent_accounts: recent, called_at: recent[0]?.called_at ?? null };
+  }).sort((a, b) => callTime(b.called_at) - callTime(a.called_at) || a.id - b.id);
+}
+
 export type OpsError = {
   id: number;
   account_id: number;

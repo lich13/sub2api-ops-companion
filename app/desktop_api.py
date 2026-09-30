@@ -24,6 +24,7 @@ from .bark import _urlopen_no_redirect, sanitize_error_text
 from .config_service import ConfigConflict, ConfigService
 from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, latest_completed_oauth_result
 from .quota_snapshot import usage_windows
+from .usage_query import parse_iso_datetime
 from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
 from .desktop_actions import DesktopActions, PriorityRequest, TestRequest
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
@@ -155,6 +156,11 @@ FROM groups g LEFT JOIN LATERAL (
    SELECT DISTINCT ON (l.account_id) l.id,l.account_id,l.model,l.upstream_model,l.created_at
    FROM usage_logs l JOIN accounts live ON live.id=l.account_id AND live.deleted_at IS NULL
    WHERE l.group_id=g.id
+     AND EXISTS (
+       SELECT 1 FROM account_groups current_membership
+       WHERE current_membership.group_id=g.id
+         AND current_membership.account_id=l.account_id
+     )
    ORDER BY l.account_id,l.created_at DESC,l.id DESC
  ) latest ORDER BY created_at DESC,id DESC LIMIT 3
 ) u ON true LEFT JOIN accounts a ON a.id=u.account_id
@@ -162,16 +168,34 @@ WHERE g.deleted_at IS NULL ORDER BY g.sort_order,g.id,u.created_at DESC,u.id DES
 """
 
 
-def group_dtos(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def group_dtos(rows: list[dict[str, Any]], account_groups: dict[int, set[int]]) -> list[dict[str, Any]]:
     groups: dict[int, dict[str, Any]] = {}
+    call_fields = ("log_id", "account_id", "account_name", "model", "upstream_model", "called_at")
+    empty_call = dict.fromkeys(call_fields)
     for row in rows:
-        group = groups.setdefault(row["id"], {**row, "recent_accounts": []})
-        if row.get("account_id") and not any(item["account_id"] == row["account_id"] for item in group["recent_accounts"]):
-            item = {key: row.get(key) for key in ("log_id", "account_id", "account_name", "model", "upstream_model", "called_at")}
-            for key in ("account_name", "model", "upstream_model"):
-                item[key] = clean(item.get(key), 160)
-            group["recent_accounts"].append(item)
+        group_id, account_id = row["id"], row.get("account_id")
+        group = groups.setdefault(group_id, {
+            **{key: row.get(key) for key in ("id", "name", "platform", "sort_order")},
+            **empty_call, "recent_accounts": [],
+        })
+        if account_id and group_id in account_groups.get(account_id, set()):
+            group["recent_accounts"].append({key: row.get(key) for key in call_fields})
     for group in groups.values():
+        # Rebuild the legacy summary only from surviving current members. Filtering
+        # a row must also remove its timestamp from the group's sorting evidence.
+        ordered = sorted(group["recent_accounts"], key=lambda call: (
+            parse_iso_datetime(call["called_at"]) or datetime.min.replace(tzinfo=timezone.utc),
+            call["log_id"] or 0,
+        ), reverse=True)
+        distinct: dict[int, dict[str, Any]] = {}
+        for call in ordered:
+            distinct.setdefault(call["account_id"], call)
+        group["recent_accounts"] = list(distinct.values())[:3]
+        for call in group["recent_accounts"]:
+            for field in ("account_name", "model", "upstream_model"):
+                call[field] = clean(call.get(field), 160)
+        if group["recent_accounts"]:
+            group.update(group["recent_accounts"][0])
         for field in ("name", "account_name", "model", "upstream_model", "upstream_response_model"):
             group[field] = clean(group.get(field), 160)
     return list(groups.values())
@@ -399,7 +423,10 @@ class DesktopService:
             for account in accounts:
                 if account["id"] in qualities:
                     account["quality"] = qualities[account["id"]]
-            groups = group_dtos(r.db.fetch_all(GROUP_SQL))
+            groups = group_dtos(
+                r.db.fetch_all(GROUP_SQL),
+                {account["id"]: set(account.get("group_ids") or []) for account in accounts},
+            )
             errors = self.errors(None, None, 20)
             self._cached = jsonable_encoder({"schema_version": 1, "observed_at": now, "accounts": accounts,
                                            "groups": groups, "errors": errors["items"],
