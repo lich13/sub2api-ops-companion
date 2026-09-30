@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -136,7 +136,19 @@ export default function App() {
     [filtersOpen, setFiltersOpen] = useState(false),
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
-    [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null);
+    [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
+    eventGeneration = useRef(0),
+    eventAbort = useRef<AbortController | null>(null),
+    eventQueue = useRef<Promise<unknown>>(Promise.resolve()),
+    detailGeneration = useRef(0),
+    detailAbort = useRef<AbortController | null>(null);
+  function closeDetail() {
+    detailAbort.current?.abort();
+    detailAbort.current = null;
+    ++detailGeneration.current;
+    setDetail(null);
+    setDetailBusy(false);
+  }
   async function beforeConnectionChange() {
     if (groupChanges.busy) { setToast("分组正在保存，请等待结果"); return false; }
     if (!groupChanges.count) return true;
@@ -146,7 +158,7 @@ export default function App() {
   useBackAction(groupsOpen, () => setGroupsOpen(false));
   useBackAction(!!leaveGroups, () => { leaveGroups?.(false); setLeaveGroups(null); });
   useBackAction(filtersOpen, () => setFiltersOpen(false));
-  useBackAction(!!detail || detailBusy, () => { setDetail(null); setDetailBusy(false); });
+  useBackAction(!!detail || detailBusy, closeDetail);
   useBackAction(!!confirm, () => setConfirm(null));
   useEffect(() => {
     if (!mobile) return;
@@ -171,11 +183,14 @@ export default function App() {
     setSelected(new Set());
   }, [filterKey, connectionKey]);
   useEffect(() => {
+    closeDetail();
+  }, [page, connectionKey]);
+  useEffect(() => {
     setRemovedIds(new Set());
     setDeleteAccounts(null);
     setHistory(null);
     setCursor(null);
-    setDetail(null);
+    closeDetail();
     setTestAccount(null);
     setQualityAccount(null);
     setConfirm(null);
@@ -224,8 +239,7 @@ export default function App() {
       if (testAccount) setTestAccount(null);
       else if (confirm) setConfirm(null);
       else if (detail || detailBusy) {
-        setDetail(null);
-        setDetailBusy(false);
+        closeDetail();
       } else if (quick) void command("hide_quick").catch(report);
     };
     window.addEventListener("keydown", escape);
@@ -237,18 +251,74 @@ export default function App() {
       void api<Config>("GET", "/config").then((value) => { if (!disposed) setConfig(value); }).catch((error) => { if (!disposed) report(error); });
     return () => { disposed = true; };
   }, [page, state.online, connectionKey]);
+  function queueEventRequest<T>(task: () => Promise<T>) {
+    const next = eventQueue.current.then(task, task);
+    eventQueue.current = next.catch(() => {});
+    return next;
+  }
+  function loadEvents(mode: "replace" | "more" = "replace") {
+    if (page !== "events" || !state.online) return Promise.resolve(false);
+    const generation = ++eventGeneration.current;
+    eventAbort.current?.abort();
+    const controller = new AbortController();
+    eventAbort.current = controller;
+    const before = mode === "more" ? cursor : null;
+    if (mode === "replace") {
+      setHistory(null);
+      setCursor(null);
+    }
+    return queueEventRequest(async () => {
+      const valid = () =>
+        page === "events" &&
+        state.online &&
+        eventGeneration.current === generation &&
+        !controller.signal.aborted;
+      if (!valid() || (mode === "more" && !before)) return false;
+      try {
+        const response = await api<{
+          items: OpsError[];
+          next_cursor: number | null;
+        }>(
+          "GET",
+          mode === "more" ? `/errors?before_id=${before}` : "/errors",
+        );
+        if (!valid()) return false;
+        setHistory((old) =>
+          mode === "more"
+            ? [
+                ...new Map(
+                  [...(old ?? []), ...response.items].map((item) => [
+                    item.id,
+                    item,
+                  ]),
+                ).values(),
+              ]
+            : response.items,
+        );
+        setCursor(response.next_cursor);
+        return true;
+      } catch (error) {
+        if (valid()) report(error);
+        return false;
+      } finally {
+        if (eventAbort.current === controller) eventAbort.current = null;
+      }
+    });
+  }
   useEffect(() => {
-    if (page === "events" && state.online)
-      void api<{ items: OpsError[]; next_cursor: number | null }>(
-        "GET",
-        "/errors",
-      )
-        .then((r) => {
-          setHistory(r.items);
-          setCursor(r.next_cursor);
-        })
-        .catch(report);
-  }, [page, state.online]);
+    if (page !== "events" || !state.online) {
+      eventAbort.current?.abort();
+      eventAbort.current = null;
+      ++eventGeneration.current;
+      return;
+    }
+    void loadEvents();
+    return () => {
+      eventAbort.current?.abort();
+      eventAbort.current = null;
+      ++eventGeneration.current;
+    };
+  }, [page, state.online, connectionKey]);
   const snap = state.snapshot,
     groups = snap?.groups ?? [],
     errors = snap?.errors ?? [];
@@ -275,11 +345,7 @@ export default function App() {
         : new Set([...old].filter((id) => live.has(id))),
     );
   }, [accounts]);
-  const eventRows = [
-    ...new Map(
-      [...(history ?? []), ...errors].map((item) => [item.id, item]),
-    ).values(),
-  ].sort((a, b) => b.id - a.id);
+  const eventRows = (history ?? errors).slice().sort((a, b) => b.id - a.id);
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
@@ -314,14 +380,29 @@ export default function App() {
     }
   }
   async function openError(id: number) {
+    const generation = ++detailGeneration.current;
+    detailAbort.current?.abort();
+    const controller = new AbortController();
+    detailAbort.current = controller;
     setDetailBusy(true);
     try {
-      setDetail(await api<OpsError>("GET", `/errors/${id}`));
+      const value = await api<OpsError>("GET", `/errors/${id}`);
+      if (generation === detailGeneration.current && !controller.signal.aborted)
+        setDetail(value);
     } catch (e) {
-      report(e);
+      if (generation === detailGeneration.current && !controller.signal.aborted)
+        report(e);
     } finally {
-      setDetailBusy(false);
+      if (generation === detailGeneration.current) {
+        detailAbort.current = null;
+        setDetailBusy(false);
+      }
     }
+  }
+  function errorState(error: OpsError) {
+    const account = accounts.find((item) => item.id === error.account_id);
+    if (account?.last_error_id === error.id && !error.resolved) return "当前";
+    return error.resolved ? "已解决" : "历史";
   }
   function schedule(a: Account) {
     return (
@@ -431,6 +512,7 @@ export default function App() {
     );
   }
   function errorRow(e: OpsError) {
+    const stateLabel = errorState(e);
     return (
       <button
         key={e.id}
@@ -444,7 +526,12 @@ export default function App() {
         </span>
         <div>
           <strong>{e.account_name || `账号 #${e.account_id}`}</strong>
-          <span>{e.provider_error_code || e.message || "查看错误详情"}</span>
+          <span>
+            <em className={`error-state ${stateLabel === "当前" ? "active" : ""}`}>
+              {stateLabel}
+            </em>
+            {e.provider_error_code || e.message || "查看错误详情"}
+          </span>
         </div>
         <Time at={e.created_at} />
         <ChevronRight size={15} />
@@ -608,19 +695,20 @@ export default function App() {
               </>
             ) : (
               <>
-                <div className="page-heading">
-                  <div>
-                    <h1>{pages.find((p) => p.id === page)?.label}</h1>
+                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
+                <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page}>
+                  <div className="page-heading">
+                    <div>
+                      <h1>{pages.find((p) => p.id === page)?.label}</h1>
+                    </div>
+                    {page !== "records" && <span className="updated">
+                      <Clock3 size={13} />
+                      更新于 <Time at={snap.observed_at} />
+                    </span>}
                   </div>
-                  {page !== "records" && <span className="updated">
-                    <Clock3 size={13} />
-                    更新于 <Time at={snap.observed_at} />
-                  </span>}
-                </div>
                 {page === "records" && <UsageRecords key={connectionKey} mobile={mobile} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
-                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
                 {page === "accounts" && (
                   <>
                     {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /></div>}
@@ -1020,17 +1108,7 @@ export default function App() {
                           <button
                             className="text-button"
                             disabled={!state.online}
-                            onClick={() =>
-                              void api<{
-                                items: OpsError[];
-                                next_cursor: number | null;
-                              }>("GET", "/errors")
-                                .then((r) => {
-                                  setHistory(r.items);
-                                  setCursor(r.next_cursor);
-                                })
-                                .catch(report)
-                            }
+                            onClick={() => void loadEvents()}
                           >
                             刷新记录
                           </button>
@@ -1042,17 +1120,8 @@ export default function App() {
                         {cursor && (
                           <button
                             className="load-more"
-                            onClick={() =>
-                              void api<{
-                                items: OpsError[];
-                                next_cursor: number | null;
-                              }>("GET", `/errors?before_id=${cursor}`)
-                                .then((r) => {
-                                  setHistory([...(history ?? []), ...r.items]);
-                                  setCursor(r.next_cursor);
-                                })
-                                .catch(report)
-                            }
+                            disabled={!state.online}
+                            onClick={() => void loadEvents("more")}
                           >
                             加载更早记录
                           </button>
@@ -1094,6 +1163,7 @@ export default function App() {
                   ) : (
                     <Empty text="正在读取设置" />
                   ))}
+                </div>
               </>
             )}
           </div>
@@ -1139,7 +1209,7 @@ export default function App() {
         />
       )}
       {(detail || detailBusy) && (
-        <div className="drawer-backdrop" onClick={() => setDetail(null)}>
+        <div className="drawer-backdrop" onClick={closeDetail}>
           <aside className="drawer" onClick={(e) => e.stopPropagation()}>
             <header>
               <div>
@@ -1150,8 +1220,7 @@ export default function App() {
                 className="icon-button"
                 aria-label="关闭错误详情"
                 onClick={() => {
-                  setDetail(null);
-                  setDetailBusy(false);
+                  closeDetail();
                 }}
               >
                 {quick ? (
@@ -1210,21 +1279,13 @@ export default function App() {
                   )}
                   <div className="section-heading">
                     <h3>账号近期错误</h3>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        void api<{ items: OpsError[] }>(
-                          "GET",
-                          `/errors?account_id=${detail.account_id}&limit=10`,
-                        )
-                          .then((r) => {
-                            setHistory(r.items);
-                            setPage("events");
-                            setQuickTab("errors");
-                            setDetail(null);
-                          })
-                          .catch(report)
-                      }
+                      <button
+                        className="text-button"
+                      onClick={() => {
+                        setPage("events");
+                        setQuickTab("errors");
+                        closeDetail();
+                      }}
                     >
                       查看记录 <ChevronRight size={13} />
                     </button>

@@ -121,7 +121,7 @@ export default function GroupManager(props: Props) {
   const region = (name: Zone) => candidates.filter((a) => membershipZone(members(a), pair) === name);
   const unassigned = region("none").filter((a) => !members(a).some((id) => groups.some((g) => g.id === id)));
   const others = region("none").filter((a) => !unassigned.includes(a));
-  return <section className="group-manager" hidden={!active}>
+  return <section className="group-manager" hidden={!active} aria-hidden={!active}>
     <div className="group-manager-toolbar">
       {mobile && <button className="icon-button" aria-label="返回账号" onClick={props.back}><ArrowLeft size={20}/></button>}
       <div className="group-platforms" role="tablist" aria-label="分组平台">{[["openai", "Codex"], ["grok", "Grok"]].map(([id, label]) => <button key={id} role="tab" aria-selected={platform === id} className={platform === id ? "active" : ""} disabled={busy || !!drag} onClick={() => { setPlatform(id); setSelected(null); setQuery(""); }}>{label}</button>)}</div>
