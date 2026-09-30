@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.auto_reset import quota_result
-from app.oauth_monitor import OAuthMonitor
+from app.oauth_monitor import OAuthMonitor, recovery_quota_ready
 from tests.test_auto_reset import AutoResetFixture
 
 
@@ -91,6 +91,20 @@ def recovery_intent(*, status: str = "ready", now: datetime = NOW) -> dict[str, 
 
 
 class Recovery019MonitorFixture(unittest.TestCase):
+    def test_passive_quota_crossing_reset_point_is_reusable(self) -> None:
+        row = passive_account()
+        result = {
+            "success": True,
+            "queried_at": (NOW - timedelta(seconds=30)).isoformat(),
+            "source": "passive",
+            "oauth_quota": {"plan_type": "plus", "ui_windows": [
+                {"key": "codex_5h", "used_percent": 10, "reset_at": (NOW - timedelta(minutes=2)).isoformat()},
+                {"key": "codex_7d", "used_percent": 20, "reset_at": (NOW - timedelta(minutes=2)).isoformat()},
+            ]},
+        }
+        metadata = {"recovery_intent": {"due_at": (NOW - timedelta(minutes=1)).isoformat()}}
+        self.assertTrue(recovery_quota_ready(row, result, metadata, NOW))
+
     def make_monitor(
         self,
         root: Path,
