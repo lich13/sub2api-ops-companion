@@ -4,9 +4,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, localcontext
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
@@ -33,6 +35,20 @@ REQUEST_TYPE = "CASE WHEN u.request_type IN (1,2,3) THEN u.request_type WHEN u.o
 MISMATCH = """(u.upstream_model_mismatch IS TRUE OR
  (nullif(u.upstream_response_model,'') IS NOT NULL AND u.upstream_response_model <>
  coalesce(nullif(u.upstream_model,''),nullif(u.requested_model,''),nullif(u.model,''))))"""
+BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def date_window(start_date: str, end_date: str) -> tuple[datetime, datetime]:
+    try:
+        if not all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) for v in (start_date, end_date)):
+            raise ValueError()
+        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+        if start > end:
+            raise ValueError()
+        return (datetime.combine(start, time.min, BEIJING).astimezone(timezone.utc),
+                datetime.combine(end + timedelta(days=1), time.min, BEIJING).astimezone(timezone.utc))
+    except (ValueError, TypeError, OverflowError):
+        raise HTTPException(422, "请选择有效的北京时间日期范围") from None
 
 
 def timestamp(value: str | datetime) -> datetime:
@@ -80,6 +96,7 @@ class UsageRecords:
         self.db = db
 
     def list(self, *, from_at: str | None = None, to_at: str | None = None,
+             start_date: str | None = None, end_date: str | None = None, include_summary: bool = False,
              account_id: int | None = None, api_key_id: int | None = None, user_id: int | None = None,
              model: str | None = None, request_type: str | None = None,
              mismatch_only: bool = False, cursor: str | None = None,
@@ -89,9 +106,17 @@ class UsageRecords:
             raise HTTPException(422, "分页或筛选参数无效")
         if cursor and after_id is not None:
             raise HTTPException(422, "分页和新增检查不能同时使用")
+        dates = start_date is not None or end_date is not None
+        window = None
+        if dates:
+            if not start_date or not end_date or from_at is not None or to_at is not None:
+                raise HTTPException(422, "日期必须成对提供，不能与时间参数混用")
+            window = date_window(start_date, end_date)
         criteria = [from_at, to_at, account_id, api_key_id, model, request_type, mismatch_only]
         if user_id is not None:
             criteria.append(user_id)
+        if dates:
+            criteria.extend([start_date, end_date])
         signature = hashlib.sha256(json.dumps(criteria).encode()).hexdigest()
         saved = None
         if cursor:
@@ -106,11 +131,16 @@ class UsageRecords:
                 timestamp(saved["to_at"])
             except (ValueError, KeyError, TypeError, UnicodeError, OverflowError):
                 raise HTTPException(422, "分页已失效，请刷新记录") from None
-        start = timestamp(saved["from_at"]) if saved else timestamp(from_at) if from_at else now - timedelta(hours=24)
-        end = timestamp(saved["to_at"]) if saved else timestamp(to_at) if to_at else now
+        if saved:
+            start, end = timestamp(saved["from_at"]), timestamp(saved["to_at"])
+        elif window:
+            start, end = window
+        else:
+            start = timestamp(from_at) if from_at else now - timedelta(hours=24)
+            end = timestamp(to_at) if to_at else now
         if start >= end:
             raise HTTPException(422, "开始时间必须早于结束时间")
-        clauses = ["u.created_at >= %(from_at)s", "u.created_at <= %(to_at)s"]
+        clauses = ["u.created_at >= %(from_at)s", f"u.created_at {'<' if dates else '<='} %(to_at)s"]
         params: dict[str, Any] = {"from_at": start, "to_at": end, "limit": limit + 1}
         for key, value in (("account_id", account_id), ("api_key_id", api_key_id), ("user_id", user_id)):
             if value is not None:
@@ -128,6 +158,7 @@ class UsageRecords:
             clauses.append(f"({REQUEST_TYPE}) = %(request_type)s")
         if mismatch_only:
             clauses.append(MISMATCH)
+        summary = None
         with self.db.connection() as conn, conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             conn.execute("SET LOCAL statement_timeout = '5s'")
@@ -139,6 +170,9 @@ class UsageRecords:
                 clauses.append("u.id > %(after_id)s")
                 count = conn.execute("SELECT count(*) AS count FROM usage_logs u WHERE " + " AND ".join(clauses), params).fetchone()["count"]
                 return {"new_count": count, "latest_id": watermark}
+            if include_summary and not saved:
+                total = conn.execute("SELECT coalesce(sum(u.actual_cost),0) AS actual_cost FROM usage_logs u WHERE " + " AND ".join(clauses), params).fetchone()["actual_cost"]
+                summary = {"actual_cost": format(Decimal(str(total)), "f")}
             if saved:
                 clauses.append("(u.created_at,u.id) < (%(before_at)s,%(before_id)s)")
                 params.update(before_at=timestamp(saved["at"]), before_id=int(saved["id"]))
@@ -148,7 +182,10 @@ class UsageRecords:
         if len(rows) > limit:
             last = items[-1]
             next_cursor = base64.urlsafe_b64encode(json.dumps({"at": last["created_at"], "id": last["id"], "watermark": params["watermark"], "from_at": start.isoformat(), "to_at": end.isoformat(), "signature": signature}).encode()).decode()
-        return {"items": items, "next_cursor": next_cursor, "latest_id": params["watermark"], "observed_at": now.isoformat()}
+        page = {"items": items, "next_cursor": next_cursor, "latest_id": params["watermark"], "observed_at": now.isoformat()}
+        if summary is not None:
+            page["summary"] = summary
+        return page
 
     def options(self, *, kind: str, q: str | None = None, user_id: int | None = None,
                 cursor: str | None = None, limit: int = 50) -> dict[str, Any]:

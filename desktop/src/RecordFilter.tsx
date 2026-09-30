@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Search, X } from "lucide-react";
 import { api } from "./bridge";
 import type { RecordOption, RecordOptionPage } from "./records";
 import { useBackAction } from "./mobile";
@@ -227,6 +227,7 @@ export default function RecordFilter({
             }
           }}
         >
+          <header className="mobile-sheet-heading"><strong>选择{label}</strong><button type="button" className="icon-button" aria-label={`关闭${label}选择`} onClick={close}><X size={20}/></button></header>
           <div className="record-filter-search">
             <Search size={14} />
             <input

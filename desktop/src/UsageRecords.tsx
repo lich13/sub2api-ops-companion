@@ -31,6 +31,8 @@ import {
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
 import RecordFilter from "./RecordFilter";
+import RecordDatePicker from "./RecordDatePicker";
+import { presetRange, type RecordDateRange } from "./recordDates";
 import { useBackAction } from "./mobile";
 import "./records.css";
 
@@ -224,9 +226,6 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
   }
 }
 const defaultFilters = {
-  period: "24",
-  from: "",
-  to: "",
   account: "",
   user: null as RecordOption | null,
   key: null as RecordOption | null,
@@ -451,6 +450,7 @@ export default function UsageRecords({
   online,
   foreground,
   desktop = true,
+  mobile = false,
   accounts,
   columns,
   saveColumns,
@@ -458,14 +458,20 @@ export default function UsageRecords({
   online: boolean;
   foreground: boolean;
   desktop?: boolean;
+  mobile?: boolean;
   accounts: Account[];
   columns: Preferences["record_columns"];
   saveColumns: (columns: string[]) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(defaultFilters),
     [filters, setFilters] = useState(defaultFilters);
-  const [anchor, setAnchor] = useState(Date.now),
-    [visible, setVisible] = useState(document.visibilityState !== "hidden");
+  const [range, setRange] = useState<RecordDateRange>(() =>
+    presetRange("today"),
+  );
+  const [datePending, setDatePending] = useState(false),
+    [filtersOpen, setFiltersOpen] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   const [focused, setFocused] = useState(!desktop);
   const [scrolled, setScrolled] = useState(false),
     [selected, setSelected] = useState<number | null>(null);
@@ -480,6 +486,14 @@ export default function UsageRecords({
   const [knownAccounts, setKnownAccounts] = useState<Map<number, string>>(
     new Map(),
   );
+  const closeFilters = () => {
+    setFiltersOpen(false);
+    setDraft(filters);
+  };
+  useBackAction(filtersOpen, closeFilters);
+  useBackAction(columnsOpen, () => {
+    if (menu.current) menu.current.open = false;
+  });
   useEffect(() => {
     setFocused(!desktop);
     if (!desktop) return;
@@ -487,12 +501,14 @@ export default function UsageRecords({
     let unlisten: (() => void) | undefined;
     void watchWindowFocus((value) => {
       if (live) setFocused(value);
-    }).then((stop) => {
-      if (live) unlisten = stop;
-      else stop();
-    }).catch(() => {
-      if (live) setFilterError("窗口状态读取失败，请重新打开记录页");
-    });
+    })
+      .then((stop) => {
+        if (live) unlisten = stop;
+        else stop();
+      })
+      .catch(() => {
+        if (live) setFilterError("窗口状态读取失败，请重新打开记录页");
+      });
     return () => {
       live = false;
       unlisten?.();
@@ -514,22 +530,49 @@ export default function UsageRecords({
   const query = useMemo(() => {
     const p = new URLSearchParams({
       limit: "50",
-      from_at:
-        filters.period === "custom"
-          ? new Date(`${filters.from}+08:00`).toISOString()
-          : new Date(anchor - Number(filters.period) * 3600000).toISOString(),
+      start_date: range.start,
+      end_date: range.end,
     });
-    if (filters.period === "custom" && filters.to)
-      p.set("to_at", new Date(`${filters.to}+08:00`).toISOString());
     if (filters.account) p.set("account_id", filters.account);
     if (filters.user) p.set("user_id", String(filters.user.id));
     if (filters.key) p.set("api_key_id", String(filters.key.id));
     if (filters.model.trim()) p.set("model", filters.model.trim());
     if (filters.mismatch) p.set("mismatch_only", "true");
     return p.toString();
-  }, [filters, anchor]);
+  }, [filters, range]);
   const active = online && foreground && visible && focused;
-  const feed = useRecordFeed(query, active, scrolled || selected !== null);
+  const feed = useRecordFeed(
+    query,
+    active,
+    scrolled || selected !== null || filtersOpen || datePending,
+  );
+  useEffect(() => {
+    if (!active || !range.preset) return;
+    const checkDate = () => {
+      const next = presetRange(range.preset!);
+      if (next.start === range.start && next.end === range.end) return;
+      if (
+        datePending ||
+        scrolled ||
+        selected !== null ||
+        filtersOpen ||
+        feed.items.length > 50
+      )
+        setDatePending(true);
+      else setRange(next);
+    };
+    checkDate();
+    const timer = setInterval(checkDate, 1000);
+    return () => clearInterval(timer);
+  }, [
+    active,
+    range,
+    scrolled,
+    selected,
+    filtersOpen,
+    feed.items.length,
+    datePending,
+  ]);
   const chosen = normalizeRecordColumns(columns);
   const shown = recordColumns.filter(([key]) => chosen.includes(key));
   useEffect(() => {
@@ -576,6 +619,14 @@ export default function UsageRecords({
     }
   }
   async function refresh() {
+    if (range.preset) {
+      const next = presetRange(range.preset);
+      if (next.start !== range.start || next.end !== range.end) {
+        setDatePending(false);
+        setRange(next);
+        return;
+      }
+    }
     if (await feed.refresh()) {
       if (scroll.current) scroll.current.scrollTop = 0;
       setScrolled(false);
@@ -583,115 +634,156 @@ export default function UsageRecords({
   }
   return (
     <section className="records-view" aria-label="调用记录">
-      <form
-        className="records-toolbar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (
-            draft.period === "custom" &&
-            (!draft.from ||
-              !draft.to ||
-              new Date(`${draft.from}+08:00`).getTime() >=
-                new Date(`${draft.to}+08:00`).getTime())
-          ) {
-            setFilterError("请选择有效的北京时间范围");
-            return;
-          }
-          setFilterError("");
-          setAnchor(Date.now());
-          setFilters({ ...draft });
-        }}
-      >
-        <select
-          aria-label="时间范围"
-          value={draft.period}
-          onChange={(e) => setDraft({ ...draft, period: e.target.value })}
-        >
-          <option value="24">最近 24 小时</option>
-          <option value="168">最近 7 天</option>
-          <option value="custom">自定时间</option>
-        </select>
-        <RecordFilter
-          kind="users"
-          active={active}
-          value={draft.user}
-          onChange={(user) => setDraft({ ...draft, user, key: null })}
+      <div className="records-filter-bar">
+        <RecordDatePicker
+          value={range}
+          disabled={!active || feed.loading}
+          onChange={(next) => {
+            setDatePending(false);
+            if (next.start === range.start && next.end === range.end)
+              void feed.refresh();
+            setRange(next);
+          }}
         />
-        <select
-          aria-label="账户筛选"
-          value={draft.account}
-          onChange={(e) => setDraft({ ...draft, account: e.target.value })}
-        >
-          <option value="">全部账户</option>
-          {[
-            ...new Map([
-              ...knownAccounts,
-              ...accounts.map((a) => [a.id, a.name] as const),
-            ]),
-          ].map(([id, name]) => (
-            <option key={id} value={id}>
-              {name} #{id}
-            </option>
-          ))}
-        </select>
-        <RecordFilter
-          kind="api_keys"
-          active={active}
-          value={draft.key}
-          userId={draft.user?.id}
-          onChange={(key) => setDraft({ ...draft, key })}
-        />
-        <input
-          className="records-model-filter"
-          aria-label="模型筛选"
-          placeholder="搜索模型"
-          maxLength={200}
-          value={draft.model}
-          onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-        />
-        <label className="records-mismatch-filter">
-          <input
-            type="checkbox"
-            checked={draft.mismatch}
-            onChange={(e) => setDraft({ ...draft, mismatch: e.target.checked })}
-          />
-          返回差异
-        </label>
-        <button type="submit" disabled={!active || feed.loading}>
-          筛选
-        </button>
-        {draft.period === "custom" && (
-          <div className="records-date-range">
-            <input
-              aria-label="开始时间（北京时间）"
-              type="datetime-local"
-              step="1"
-              value={draft.from}
-              onChange={(e) => setDraft({ ...draft, from: e.target.value })}
-            />
-            <span>至</span>
-            <input
-              aria-label="结束时间（北京时间）"
-              type="datetime-local"
-              step="1"
-              value={draft.to}
-              onChange={(e) => setDraft({ ...draft, to: e.target.value })}
-            />
+        {mobile && (
+          <button
+            className="records-filter-toggle"
+            type="button"
+            aria-label="筛选记录"
+            aria-expanded={filtersOpen}
+            onClick={() => {
+              setDraft(filters);
+              setFiltersOpen(true);
+            }}
+          >
+            <ListFilter size={16} />
+            筛选
+          </button>
+        )}
+        {(!mobile || filtersOpen) && (
+          <div
+            className={
+              mobile ? "records-filter-backdrop" : "records-filter-inline"
+            }
+            onClick={(event) => {
+              if (event.target === event.currentTarget && mobile)
+                closeFilters();
+            }}
+          >
+            <form
+              className={`records-toolbar${mobile ? " records-filter-sheet" : ""}`}
+              role={mobile ? "dialog" : undefined}
+              aria-label={mobile ? "筛选记录" : undefined}
+              aria-modal={mobile || undefined}
+              onKeyDown={(event) => {
+                if (mobile && event.key === "Escape") {
+                  event.stopPropagation();
+                  closeFilters();
+                }
+              }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                setFilterError("");
+                setFilters({ ...draft });
+                setFiltersOpen(false);
+              }}
+            >
+              {mobile && (
+                <header className="mobile-sheet-heading">
+                  <strong>筛选记录</strong>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="关闭记录筛选"
+                    onClick={closeFilters}
+                  >
+                    <X size={20} />
+                  </button>
+                </header>
+              )}
+              <RecordFilter
+                kind="users"
+                active={active}
+                value={draft.user}
+                onChange={(user) => setDraft({ ...draft, user, key: null })}
+              />
+              <select
+                aria-label="账户筛选"
+                value={draft.account}
+                onChange={(e) =>
+                  setDraft({ ...draft, account: e.target.value })
+                }
+              >
+                <option value="">全部账户</option>
+                {[
+                  ...new Map([
+                    ...knownAccounts,
+                    ...accounts.map((a) => [a.id, a.name] as const),
+                  ]),
+                ].map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name} #{id}
+                  </option>
+                ))}
+              </select>
+              <RecordFilter
+                kind="api_keys"
+                active={active}
+                value={draft.key}
+                userId={draft.user?.id}
+                onChange={(key) => setDraft({ ...draft, key })}
+              />
+              <input
+                className="records-model-filter"
+                aria-label="模型筛选"
+                placeholder="搜索模型"
+                maxLength={200}
+                value={draft.model}
+                onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+              />
+              <label className="records-mismatch-filter">
+                <input
+                  type="checkbox"
+                  checked={draft.mismatch}
+                  onChange={(e) =>
+                    setDraft({ ...draft, mismatch: e.target.checked })
+                  }
+                />
+                返回差异
+              </label>
+              <button type="submit" disabled={!active || feed.loading}>
+                筛选
+              </button>
+            </form>
           </div>
         )}
-      </form>
+      </div>
+      <div className="records-summary" aria-label="消费统计">
+        <span>总消费</span>
+        <strong
+          title={feed.totalCost == null ? undefined : `$${feed.totalCost}`}
+        >
+          {money(feed.totalCost)}
+        </strong>
+        {feed.totalCost !== null && (
+          <details className="records-total-detail">
+            <summary aria-label="查看精确消费金额">精确值</summary>
+            <CopyValue value={`$${feed.totalCost}`} />
+          </details>
+        )}
+      </div>
       <div className="records-actions">
         <span className="records-status">
           {feed.items.length ? `${feed.items.length} 条` : ""}
           {feed.observed && <time>更新于 {fullTime(feed.observed)}</time>}
         </span>
-        {feed.newCount > 0 && (
+        {(feed.newCount > 0 || datePending) && (
           <button
             className="new-records"
             disabled={!active || feed.loading}
             onClick={() => void refresh()}
           >
-            {feed.newCount} 条新记录
+            {datePending ? "日期已更新 · 刷新" : `${feed.newCount} 条新记录`}
           </button>
         )}
         <button
@@ -706,6 +798,7 @@ export default function UsageRecords({
         <details
           className="records-column-menu"
           ref={menu}
+          onToggle={(event) => setColumnsOpen(event.currentTarget.open)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.currentTarget.open = false;
@@ -714,9 +807,26 @@ export default function UsageRecords({
           }}
         >
           <summary>
-            <ListFilter size={14} />列<ChevronDown size={12} />
+            <ListFilter size={14} />
+            {mobile ? "显示字段" : "列"}
+            <ChevronDown size={12} />
           </summary>
           <div className="records-column-options">
+            {mobile && (
+              <header className="mobile-sheet-heading">
+                <strong>显示字段</strong>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="关闭显示字段"
+                  onClick={() => {
+                    if (menu.current) menu.current.open = false;
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </header>
+            )}
             {recordColumns.map(([key, label]) => (
               <label key={key}>
                 <span>{label}</span>
@@ -744,6 +854,14 @@ export default function UsageRecords({
       {(feed.error || filterError || columnError) && (
         <div className="records-error" role="alert">
           {filterError || columnError || feed.error}
+          {feed.error && (
+            <button
+              disabled={!active || feed.loading}
+              onClick={() => void refresh()}
+            >
+              重试
+            </button>
+          )}
         </div>
       )}
       {!online && (
@@ -756,53 +874,102 @@ export default function UsageRecords({
         ref={scroll}
         onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 8)}
       >
-        <table className="records-table">
-          <thead>
-            <tr>
-              <th className="record-user">用户</th>
-              {shown.map(([key, label]) => (
-                <th key={key} className={`record-col-${key}`}>
-                  {label}
-                </th>
-              ))}
-              <th className="record-time">时间</th>
-            </tr>
-          </thead>
-          <tbody>
+        {mobile ? (
+          <div className="mobile-records">
             {feed.items.map((row) => (
-              <tr
+              <article
+                className="mobile-record"
                 key={row.id}
                 onClick={() => {
                   if (active) void openDetail(row.id);
                 }}
               >
-                <td className="record-user">
+                <header>
                   <button
+                    className="mobile-record-open"
                     disabled={!active}
-                    title={`查看记录 #${row.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    aria-label={`查看记录 #${row.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
                       void openDetail(row.id);
                     }}
                   >
-                    <span>
-                      {row.user_name || row.user_email || `#${row.user_id}`}
-                    </span>
-                    <small>#{row.user_id}</small>
+                    <time>{fullTime(row.created_at)}</time>
                   </button>
-                </td>
-                {shown.map(([key]) => (
-                  <td key={key} className={`record-col-${key}`}>
-                    <Cell column={key} row={row} />
-                  </td>
-                ))}
-                <td className="record-time">
-                  <time>{fullTime(row.created_at)}</time>
-                </td>
-              </tr>
+                  {chosen.includes("cost") && <Cell column="cost" row={row} />}
+                </header>
+                <div className="mobile-record-user">
+                  <span>用户</span>
+                  <strong>
+                    {row.user_name || row.user_email || "—"}{" "}
+                    <small>#{row.user_id}</small>
+                  </strong>
+                </div>
+                <div className="mobile-record-fields">
+                  {shown
+                    .filter(([key]) => key !== "cost")
+                    .map(([key, label]) => (
+                      <div
+                        key={key}
+                        className={`mobile-record-field mobile-record-${key}`}
+                      >
+                        <span className="mobile-record-label">{label}</span>
+                        <Cell column={key} row={row} />
+                      </div>
+                    ))}
+                </div>
+              </article>
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : (
+          <table className="records-table">
+            <thead>
+              <tr>
+                <th className="record-user">用户</th>
+                {shown.map(([key, label]) => (
+                  <th key={key} className={`record-col-${key}`}>
+                    {label}
+                  </th>
+                ))}
+                <th className="record-time">时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {feed.items.map((row) => (
+                <tr
+                  key={row.id}
+                  onClick={() => {
+                    if (active) void openDetail(row.id);
+                  }}
+                >
+                  <td className="record-user">
+                    <button
+                      disabled={!active}
+                      title={`查看记录 #${row.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openDetail(row.id);
+                      }}
+                    >
+                      <span>
+                        {row.user_name || row.user_email || `#${row.user_id}`}
+                      </span>
+                      <small>#{row.user_id}</small>
+                    </button>
+                  </td>
+                  {shown.map(([key]) => (
+                    <td key={key} className={`record-col-${key}`}>
+                      <Cell column={key} row={row} />
+                    </td>
+                  ))}
+                  <td className="record-time">
+                    <time>{fullTime(row.created_at)}</time>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
         {!feed.items.length && (
           <div className="records-empty" role="status">
             {feed.loading

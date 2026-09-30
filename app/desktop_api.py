@@ -672,12 +672,14 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
 
     @router.get("/usage-records")
     async def usage_records(request: Request, from_at: str | None = None, to_at: str | None = None,
+                            start_date: str | None = None, end_date: str | None = None, include_summary: bool = False,
                             account_id: int | None = None, api_key_id: int | None = None, user_id: int | None = None,
                             model: str | None = None, request_type: str | None = None,
                             mismatch_only: bool = False, cursor: str | None = None,
                             after_id: int | None = None, limit: int = 50) -> Any:
         await auth(request)
         return await asyncio.to_thread(records.list, from_at=from_at, to_at=to_at,
+            start_date=start_date, end_date=end_date, include_summary=include_summary,
             account_id=account_id, api_key_id=api_key_id, user_id=user_id, model=model, request_type=request_type,
             mismatch_only=mismatch_only, cursor=cursor, after_id=after_id, limit=limit)
 
