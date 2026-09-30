@@ -25,7 +25,7 @@ from .daily_test import DailyTestSchedule, daily_account_eligible
 from .quota_snapshot import latest_openai_result
 from .oauth_queries import (
     OAuthQueryCoordinator, automatic_gate, credential_fingerprint, fresh_quota,
-    query_metadata, reset_not_before, AUTH_ERRORS,
+    quota_complete, query_metadata, reset_not_before, AUTH_ERRORS, MIN_QUERY_SECONDS,
 )
 from .sql import LEGACY_RECOVERY_PLAN_CLEANUP_SQL
 from .usage_query import (
@@ -665,12 +665,18 @@ def _retry_at(now: datetime, attempt_count: int) -> str:
 
 def recovery_quota_ready(row: dict, result: dict | None, metadata: dict, now: datetime) -> bool:
     """Quota evidence can authorize a test without authorizing another quota request."""
-    if not fresh_quota(row, result, now):
+    observed = parse_iso_datetime((result or {}).get("queried_at"))
+    # Recovery evidence is allowed to cross the reset boundary. The ordinary
+    # admission helper intentionally rejects an expired window because it is
+    # used for normal scheduling; using it here would re-query exactly when a
+    # passive snapshot has already proved recovery.
+    if not result or not result.get("success") or not observed or not 0 <= (now - observed).total_seconds() <= MIN_QUERY_SECONDS:
+        return False
+    if not quota_complete(row, result):
         return False
     summary = oauth_quota_summary_from_result(row, result)
     if not _quota_all_required_available(summary):
         return False
-    observed = parse_iso_datetime((result or {}).get("queried_at"))
     intent = metadata.get("recovery_intent") or {}
     boundaries = [parse_iso_datetime(row.get("rate_limit_reset_at")),
                   parse_iso_datetime(row.get("temp_unschedulable_until")),
