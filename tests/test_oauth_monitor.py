@@ -651,6 +651,8 @@ class OAuthMonitorExecutionTests(unittest.TestCase):
             root = Path(directory)
             current = summary()
             monitor, calls = self.make_monitor(root, current, current)
+            # An expired 429 is now a recovery candidate; an idle account has no block.
+            monitor.db.rows[0].update(rate_limited_at=None, rate_limit_reset_at=None)
             monitor.store.update_scheduler({1: {"last_regular_at": NOW.isoformat()}})
             inventory_calls = 0
             original_loader = monitor.inventory_loader

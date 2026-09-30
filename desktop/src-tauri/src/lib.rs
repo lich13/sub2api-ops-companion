@@ -192,6 +192,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .is_some_and(|s| s.parse::<u64>().is_ok())
                 || account_path(plain, "/models")
                 || account_path(plain, "/quality")
+                || plain.strip_prefix("/accounts/")
+                    .and_then(|s| s.strip_suffix("/model-tests/latest"))
+                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+                || plain.strip_prefix("/model-tests/")
+                    .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "PUT" => {
             (["oauth", "bark", "key_fallback"]
@@ -211,8 +216,12 @@ fn allowed_request(method: &str, path: &str) -> bool {
                             .or_else(|| s.strip_suffix("/usage-action"))
                             .or_else(|| s.strip_suffix("/priority"))
                             .or_else(|| s.strip_suffix("/recover-state"))
+                            .or_else(|| s.strip_suffix("/model-tests"))
                     })
-                    .is_some_and(|s| s.parse::<u64>().is_ok())
+                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+                || plain.strip_prefix("/model-tests/")
+                    .and_then(|s| s.strip_suffix("/cancel"))
+                    .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "DELETE" => !path.contains('?') && account_path(path, ""),
         _ => false,
@@ -1222,6 +1231,12 @@ mod tests {
         assert!(allowed_request("DELETE", "/accounts/7"));
         assert!(allowed_request("POST", "/accounts/7/recover-state"));
         assert!(allowed_request("GET", "/accounts/7/quality"));
+        assert!(allowed_request("POST", "/accounts/7/model-tests"));
+        assert!(allowed_request("GET", "/accounts/7/model-tests/latest"));
+        assert!(allowed_request("GET", "/model-tests/0123456789abcdef0123456789abcdef"));
+        assert!(allowed_request("POST", "/model-tests/0123456789abcdef0123456789abcdef/cancel"));
+        assert!(!allowed_request("POST", "/model-tests/invalid/cancel"));
+        assert!(!allowed_request("GET", "/model-tests/0"));
         assert!(!allowed_request("POST", "/accounts/7/quality"));
         assert!(!allowed_request("GET", "/accounts/0/quality"));
         assert!(!allowed_request("GET", "/accounts/7/quality/../credentials"));

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import tempfile
 import threading
 import time
@@ -842,7 +843,8 @@ class OAuthQueryLinkageTests(OAuthQueryFixture, unittest.IsolatedAsyncioTestCase
         await self.assert_daily_auth_failure_pauses_queries("http_402")
 
     async def test_old_client_retired_probe_interval_is_accepted_but_not_saved_or_exposed(self):
-        from app import main as runtime
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://fixture:fixture@127.0.0.1:1/fixture"}):
+            from app import main as runtime
 
         path = Path(self.settings.oauth_config_path)
         path.write_text(json.dumps({"oauth_7d_probe_interval_seconds": 60}))

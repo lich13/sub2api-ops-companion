@@ -16,6 +16,7 @@ from typing import Any, Callable
 from .audit import write_audit
 from .desktop_usage import reset_credits
 from .key_fallback import execute_sub2api_set_schedulable
+from .account_locks import AccountLease
 from .oauth_queries import AUTH_ERRORS, automatic_eligible, credential_fingerprint, fresh_quota, quota_complete
 from .quota_snapshot import latest_openai_result
 from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_result,
@@ -23,12 +24,12 @@ from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_
                           required_oauth_window_keys)
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
-          "releasing", "recovered", "manual", "blocked"}
+          "releasing", "recovered", "manual", "blocked", "closed"}
 RETRY_SECONDS = (60, 300, 900, 1800)
 STATE_LABELS = {"waiting": "等待用卡", "pausing": "暂停调度中", "resetting": "重置中",
                 "uncertain": "重置待确认", "testing": "测活中", "retry": "等待重试测活",
                 "confirming": "等待额度确认", "releasing": "恢复调度中",
-                "recovered": "用卡恢复完成", "manual": "已转人工处理", "blocked": "自动用卡已暂停"}
+                "recovered": "用卡恢复完成", "manual": "已转人工处理", "blocked": "自动用卡已暂停", "closed": "等待已结束"}
 ERRORS = {"no_credit": "没有可用重置卡", "conflict": "Sub2API 自动用卡已开启，存在冲突",
           "ownership_changed": "账号已被其他操作修改，请人工确认调度状态",
           "pause_uncertain": "暂停结果待确认，未发送用卡请求", "auth_paused": "认证异常，等待凭据更新",
@@ -50,7 +51,7 @@ def validate_state(value: Any) -> None:
 
 
 def project_state(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not value:
+    if not value or value.get("stage") == "closed":
         return None
     code = str(value.get("error_code") or "")
     return {"stage": value["stage"], "label": {"conflict": "自动用卡冲突", "auth_paused": "等待凭据更新", "no_credit": "等待重置卡"}.get(code, STATE_LABELS[value["stage"]]),
@@ -95,10 +96,12 @@ def quota_result(data: dict[str, Any], row: dict[str, Any], now: datetime) -> di
         if not isinstance(value, dict):
             continue
         duration = value.get("limit_window_seconds")
-        key = "five_hour" if duration == 18000 else "seven_day" if duration == 604800 else None
+        # Free plans can expose a longer primary quota window (for example 30d).
+        # Preserve the actual boundary instead of guessing a seven-day reset.
+        key = "five_hour" if duration == 18000 else "seven_day" if isinstance(duration, (int, float)) and duration > 18000 else None
         if key:
             normal[key] = {"utilization": value.get("used_percent"), "resets_at": value.get("reset_at"),
-                           "remaining_seconds": value.get("reset_after_seconds")}
+                           "remaining_seconds": value.get("reset_after_seconds"), "window_minutes": duration / 60}
     # Older compatible servers may already use the admin usage representation.
     if not windows:
         normal = {k: payload[k] for k in ("five_hour", "seven_day") if isinstance(payload.get(k), dict)}
@@ -203,7 +206,9 @@ class AutoResetController:
         stamp = parse_iso_datetime((evidence or {}).get("created_at"))
         if not stamp or stamp > now:
             return None
-        return {"reset_at": reset.isoformat(), "evidence_at": stamp.isoformat(), "evidence_id": str(evidence["id"])}
+        duration = seven.get("window_minutes") or 7 * 24 * 60
+        return {"reset_at": reset.isoformat(), "window_minutes": duration,
+                "evidence_at": stamp.isoformat(), "evidence_id": str(evidence["id"])}
 
     def _available(self, row, now, task):
         result = self._saved_quota(row, now)
@@ -315,12 +320,17 @@ class AutoResetController:
             with self.store.disk_lock("credit-operation", blocking=False):
                 for item in rows:
                     aid = int(item["id"])
+                    lease = AccountLease(self.m.db, item)
+                    if not lease.acquire():
+                        continue
                     try:
                         self._step(aid, now, enabled)
                     except (OSError, ValueError, TypeError):
                         self._audit(aid, "paused", error_code="query_state_unavailable")
                     except Exception:
                         self._audit(aid, "paused", error_code="state_check_failed")
+                    finally:
+                        lease.release()
         except BlockingIOError:
             return
 
@@ -400,8 +410,11 @@ class AutoResetController:
             return
         evidence = self._depletion(row, now)
         if not evidence:
+            if task.get("stage") == "waiting" and not task.get("attempt_at") and (
+                    self._available(row, now, task) or not row.get("rate_limited_at")):
+                self._save(aid, task, stage="closed", recovered_at=now.isoformat(), error_code="", next_at=None)
             return
-        if task.get("stage") == "recovered":
+        if task.get("stage") in {"recovered", "closed"}:
             recovered = parse_iso_datetime(task.get("recovered_at"))
             if not recovered or parse_iso_datetime(evidence["evidence_at"]) <= recovered:
                 return
@@ -425,13 +438,15 @@ class AutoResetController:
         if not connection["base_url"] or not connection["admin_token"]:
             return
         credits = reset_credits(row.get("extra") or {}, now)
+        if task.get("error_code") == "no_credit" and (credits["available"] or 0) <= 0:
+            return
         observed = credits["observed_at"]
         quota = self._saved_quota(row, now)
         quota_at = parse_iso_datetime((quota or {}).get("queried_at"))
         # Card evidence must describe this depletion window. A positive card
         # snapshot may be reused after the mandatory one-hour query cooldown.
         known = bool(observed and quota_at and observed <= now
-                     and observed >= parse_iso_datetime(evidence["reset_at"]) - timedelta(days=7)
+                     and observed >= parse_iso_datetime(evidence["reset_at"]) - timedelta(minutes=evidence["window_minutes"])
                      and observed < parse_iso_datetime(evidence["reset_at"]))
         meta = self.store.snapshot()["scheduler"].get(str(aid), {})
         failed = parse_iso_datetime(meta.get("last_error_at"))
@@ -461,8 +476,7 @@ class AutoResetController:
             row = self.m._read_account(aid)
             changes.update(auth_fingerprint=credential_fingerprint(row or {}), error_code="auth_paused", next_at=None)
         if code == "no_credit":
-            attempts = int(task.get("empty_checks") or 0) + 1
-            changes.update(empty_checks=attempts, next_at=(now + timedelta(hours=(1, 3, 6, 12)[min(attempts - 1, 3)])).isoformat())
+            changes.update(next_at=None)
         self._save(aid, task, **changes)
 
     def _test(self, row, task, now):

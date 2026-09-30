@@ -7,7 +7,7 @@ import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts
 import { useBackAction } from "./mobile";
 import "./group-manager.css";
 
-type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; changed: (count: number, busy: boolean) => void };
+type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; modelTest?: (account: Account) => void; changed: (count: number, busy: boolean) => void };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
 export default function GroupManager(props: Props) {
   const { accounts, groups, online, mobile, active } = props;
@@ -107,7 +107,7 @@ export default function GroupManager(props: Props) {
       <button className="group-account-select" disabled={!online || busy} aria-pressed={selected === a.id} onClick={(e) => { e.stopPropagation(); setSelected(selected === a.id ? null : a.id); }}>
         <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/>{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
       </button>
-      {a.platform === "openai" && a.type === "oauth" && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><DegradationAction account={a} online={online && !busy} report={props.report}/></div></details>}
+      {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><button className="degradation-action" disabled={!online || busy} onClick={() => props.modelTest?.(a)}>模型测试</button>{a.type === "oauth" && <DegradationAction account={a} online={online && !busy} report={props.report}/>}</div></details>}
     </article>;
   }
   function zone(zone: Zone, label: string, values: Account[], extra = "") {

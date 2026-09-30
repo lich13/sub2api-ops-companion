@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from .audit import write_audit
+from .account_locks import AccountLease
 from .bark import sanitize_error_text
 from .usage_query import parse_iso_datetime
 
@@ -225,12 +226,10 @@ class DesktopActions:
                 raise HTTPException(422, "当前模式不接受图片素材")
             if payload.audio_data_url and (platform != "grok" or payload.mode != "stt"):
                 raise HTTPException(422, "当前模式不接受音频素材")
-            monitor = getattr(self.s.r, "oauth_monitor", None)
-            if platform == "openai" and monitor:
-                monitor_lock = monitor._run_lock
-                if not monitor_lock.acquire(blocking=False):
-                    monitor_lock = None
-                    raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后测试")
+            monitor_lock = AccountLease(self.s.r.db, row, include_account=False) if row.get("parent_account_id") else None
+            if monitor_lock and not monitor_lock.acquire():
+                monitor_lock = None
+                raise HTTPException(409, "母账号正在执行操作，请稍后测试")
             return lock, monitor_lock
         except BaseException:
             lock.release()

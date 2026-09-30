@@ -15,7 +15,7 @@ type Props = {
   schedule: (account: Account) => ReactNode;
   quality: (account: Account) => void; test: (account: Account) => void;
   remove: (account: Account) => void; error: (id: number) => void;
-  report: (error: unknown) => void;
+  report: (error: unknown) => void; modelTest: (account: Account) => void;
 };
 
 export default function MobileAccounts(props: Props) {
@@ -48,6 +48,7 @@ export default function MobileAccounts(props: Props) {
       <header><h2>{active.name}</h2><button className="icon-button" aria-label="关闭账号操作" onClick={() => setActiveId(null)}><X size={20}/></button></header>
       <div className="field"><span>优先级</span><PriorityEditor account={active} online={props.online} report={props.report}/></div>
       <button disabled={!props.online || !["openai", "grok"].includes(active.platform) || !["oauth", "apikey"].includes(active.type)} onClick={() => { props.test(active); setActiveId(null); }}>测试连接</button>
+      {active.platform === "openai" && ["oauth", "apikey"].includes(active.type) && <button disabled={!props.online} onClick={() => { props.modelTest(active); setActiveId(null); }}>模型测试</button>}
       <RecoverStateButton account={active} online={props.online} report={props.report}/>
       <DegradationAction account={active} online={props.online} report={props.report}/>
       <button className="danger-text" disabled={!props.online} onClick={() => { props.remove(active); setActiveId(null); }}>删除账号</button>
