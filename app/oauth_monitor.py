@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,7 +38,7 @@ from .usage_query import (
     required_oauth_window_keys,
 )
 
-STATE_VERSION = 4
+STATE_VERSION = 5
 INVENTORY_REFRESH_SECONDS = 60
 EXACT_RESET_RETRY_SECONDS = 3600
 DEFAULT_TEST_MODEL_ID = "gpt-5.6-luna"
@@ -113,6 +115,9 @@ class OAuthStateStore:
                 raise ValueError("OAuth 调度状态无效")
             if "quota_query" in metadata:
                 query_metadata(metadata, None)
+            if "auto_reset_credit" in metadata:
+                from .auto_reset import validate_state
+                validate_state(metadata["auto_reset_credit"])
         self._has_state = True
         return data
 
@@ -219,8 +224,18 @@ class OAuthStateStore:
         with _STORE_LOCK:
             self._data = self._normalize(self._read_raw())
 
+    @contextmanager
+    def disk_lock(self, suffix: str = "lock", *, blocking: bool = True):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(self.path) + "." + suffix, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            yield
+        finally:
+            os.close(fd)
+
     def transaction(self, update: Callable[[dict[str, Any]], Any]) -> Any:
-        with _STORE_LOCK:
+        with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
             before = _json_copy(data)
             result = update(data)
@@ -230,7 +245,7 @@ class OAuthStateStore:
             return result
 
     def migrate(self) -> bool:
-        with _STORE_LOCK:
+        with _STORE_LOCK, self.disk_lock():
             current = self._read_raw()
             normalized = self._normalize(current)
             changed = current != normalized
@@ -257,7 +272,7 @@ class OAuthStateStore:
         token = str(value or "").strip()
         if not token:
             return
-        with _STORE_LOCK:
+        with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
             data["settings"]["sub2api_admin_token"] = token
             self._write(data)
@@ -295,7 +310,7 @@ class OAuthStateStore:
         daily_test: dict[str, Any] | None = None,
         recovery_history: dict[str, dict[str, Any]] | None = None,
     ) -> None:
-        with _STORE_LOCK:
+        with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
             for account_id, value in (results or {}).items():
                 data["oauth_results"][str(int(account_id))] = dict(value)
@@ -347,7 +362,7 @@ class OAuthStateStore:
         return bool(self.snapshot()["settings"].get("legacy_recovery_cleanup_completed"))
 
     def mark_legacy_recovery_cleanup_completed(self) -> None:
-        with _STORE_LOCK:
+        with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
             data["settings"]["legacy_recovery_cleanup_completed"] = True
             data["settings"]["legacy_recovery_cleanup_completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -942,6 +957,8 @@ class OAuthMonitor:
         self.queries = OAuthQueryCoordinator(self.store, lambda *a, **kw: self.usage_runner(*a, **kw),
                                              base_url_provider, clock, settings.audit_path,
                                              account_reader=self._read_account)
+        from .auto_reset import AutoResetController
+        self.auto_reset = AutoResetController(self)
         self.daily_schedule = DailyTestSchedule(settings, self.store, _utc(clock()))
         self._cycle_usage: dict[int, dict[str, Any]] = {}
         self._cycle_tests: dict[int, dict[str, Any]] = {}
@@ -1211,6 +1228,14 @@ class OAuthMonitor:
             write_audit(self.settings.audit_path, "oauth_monitor_inventory_failed", report)
             return self.store.cached_pending_events(), report
 
+        if not force and not daily:
+            self.auto_reset.run(self._accounts, current)
+            # The controller may have paused/recovered an account during this
+            # cycle. Never feed the old inventory into ordinary recovery.
+            held = {int(key) for key, value in self.store.cached_snapshot()["scheduler"].items()
+                    if value.get("auto_reset_credit")}
+            self._accounts = [self._read_account(int(row["id"])) or row if int(row["id"]) in held else row
+                              for row in self._accounts]
         state = self.store.cached_snapshot()
         results = {int(key): value for key, value in (state.get("oauth_results") or {}).items()}
         scheduler = {int(key): value for key, value in (state.get("scheduler") or {}).items()}

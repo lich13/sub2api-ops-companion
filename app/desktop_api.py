@@ -231,6 +231,10 @@ class DesktopService:
                 row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
                 if not row or account_dto(row, datetime.now(timezone.utc), set())["version"] != version:
                     raise HTTPException(409, "账号已变化，请刷新后重试")
+                if coordinate_monitor and row["platform"] == "openai":
+                    monitor = getattr(self.r, "oauth_monitor", None)
+                    if monitor and hasattr(monitor, "auto_reset"):
+                        monitor.auto_reset.cancel(account_id)
                 yield row
         finally:
             lock.release()
@@ -277,6 +281,9 @@ class DesktopService:
                         raise HTTPException(503, "解除托管保存失败，未执行删除") from None
                     detached = True
                     write_audit(self.r.settings.audit_path, "desktop_detach_managed", {"account_id": account_id})
+                monitor = getattr(self.r, "oauth_monitor", None)
+                if row["platform"] == "openai" and monitor and hasattr(monitor, "auto_reset"):
+                    monitor.auto_reset.cancel(account_id)
                 code = self._account_write(account_id, "delete", key)
                 try:
                     live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
@@ -371,6 +378,8 @@ class DesktopService:
                 result = latest_completed_oauth_result(saved.get(str(row["id"])), scheduler.get(str(row["id"])))
                 account = account_dto(row, now, managed, result)
                 account["usage"] = project_usage(row, now, result)
+                from .auto_reset import project_state
+                account["auto_reset_credit"] = project_state((scheduler.get(str(row["id"])) or {}).get("auto_reset_credit"))
                 specs.extend(stats_specs(row["id"], account["usage"]))
                 accounts.append(account)
             # Rolling windows move continuously; cache the batch for 15 seconds.
@@ -562,6 +571,19 @@ class DesktopService:
                                                    requested_at=requested_at, timeout_seconds=30)
                     if not result.get("success"):
                         code = result.get("error_code") or "quota_query_failed"
+                        raise ValueError(code)
+                    data = result.get("data") or {}
+                elif row["platform"] == "openai" and payload.action in {"query_reset_credits", "reset_quota"} and monitor and hasattr(monitor, "auto_reset"):
+                    live_row = monitor._read_account(account_id)
+                    if not live_row or account_dto(live_row, now, set())["version"] != payload.expected_version:
+                        code = "account_changed"
+                        raise ValueError(code)
+                    from .auto_reset import execute_credit_request
+                    result = monitor.auto_reset.manual(live_row, "reset" if payload.action == "reset_quota" else "query", key,
+                        request_runner=lambda action, aid, **kw: execute_credit_request(action, aid,
+                            timeout_seconds=timeout, urlopen=_urlopen_no_redirect, **kw))
+                    if not result.get("success"):
+                        code = result.get("error_code") or "result_uncertain"
                         raise ValueError(code)
                     data = result.get("data") or {}
                 else:

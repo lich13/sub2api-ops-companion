@@ -110,8 +110,12 @@ class DesktopActions:
             raise HTTPException(409, "此账号正在执行操作")
         try:
             row = await self.account(account_id, payload.expected_version)
-            async with self.client(key, 10) as client:
-                await self.json_request(client, "PUT", f"accounts/{account_id}", json={"priority": payload.priority})
+            with self.s.recovery_guard(row):
+                monitor = getattr(self.s.r, "oauth_monitor", None)
+                if row["platform"] == "openai" and monitor and hasattr(monitor, "auto_reset"):
+                    await asyncio.to_thread(monitor.auto_reset.cancel, account_id)
+                async with self.client(key, 10) as client:
+                    await self.json_request(client, "PUT", f"accounts/{account_id}", json={"priority": payload.priority})
             live = await self.account(account_id)
             if live.get("priority") != payload.priority or (live["platform"], live["type"]) != (row["platform"], row["type"]):
                 raise HTTPException(502, "优先级写入未确认，请刷新查看实际值")

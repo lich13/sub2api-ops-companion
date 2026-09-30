@@ -22,6 +22,15 @@ export type Account = {
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
   quality?: Quality;
+  auto_reset_credit?: {
+    stage: string;
+    label: string;
+    error: string;
+    next_at?: string | null;
+    attempt_at?: string | null;
+    test_completed_at?: string | null;
+    recovered_at?: string | null;
+  } | null;
 };
 export type Quality = {
   score: number | null;

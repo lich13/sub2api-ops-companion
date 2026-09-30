@@ -1238,7 +1238,7 @@ class OAuthMonitorSnapshotTests(unittest.TestCase):
             )
             snapshot = monitor.committed_snapshot()
             self.assertIsInstance(snapshot, dict)
-            self.assertEqual(snapshot.get("version"), 4)
+            self.assertEqual(snapshot.get("version"), 5)
             monitor._run_lock.acquire()
             try:
                 self.assertIsNone(monitor.committed_snapshot())

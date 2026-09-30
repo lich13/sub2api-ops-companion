@@ -390,6 +390,7 @@ const config: Config = {
   oauth: {
     revision: "1".repeat(64),
     oauth_recovery_monitor_enabled: true,
+    oauth_auto_reset_credit_enabled: false,
     oauth_daily_test_enabled: true,
     oauth_daily_test_time: "05:00",
     oauth_usage_refresh_concurrency: 4,
@@ -407,7 +408,15 @@ const config: Config = {
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
-if (state.snapshot && scenario === "empty") {
+if (state.snapshot && scenario === "auto-reset") {
+  accounts[0].schedulable = false;
+  accounts[0].available = false;
+  accounts[0].auto_reset_credit = {
+    stage: "retry", label: "等待重试测活", error: "测活失败",
+    attempt_at: before, test_completed_at: now,
+    next_at: new Date(Date.now() + 60e3).toISOString(),
+  };
+} else if (state.snapshot && scenario === "empty") {
   Object.assign(state.snapshot, {
     accounts: [],
     groups: [],

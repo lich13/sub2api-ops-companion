@@ -216,6 +216,16 @@ export default function UsageCell({
           ))}
         </div>
       )}
+      {account.auto_reset_credit && (
+        <details className="auto-reset-status">
+          <summary>{account.auto_reset_credit.label}</summary>
+          {account.auto_reset_credit.error && <span role="status">{account.auto_reset_credit.error}</span>}
+          {account.auto_reset_credit.next_at && <time>下次 {fullTime(account.auto_reset_credit.next_at)}</time>}
+          {account.auto_reset_credit.attempt_at && <time>用卡 {fullTime(account.auto_reset_credit.attempt_at)}</time>}
+          {account.auto_reset_credit.test_completed_at && <time>测活 {fullTime(account.auto_reset_credit.test_completed_at)}</time>}
+          {account.auto_reset_credit.recovered_at && <time>恢复 {fullTime(account.auto_reset_credit.recovered_at)}</time>}
+        </details>
+      )}
       {confirm && (
         <div
           className="modal-backdrop"
