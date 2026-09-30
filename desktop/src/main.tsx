@@ -1368,6 +1368,7 @@ function Connection({
 }
 const oauthLabels: Record<string, string> = {
   oauth_recovery_monitor_enabled: "额度恢复监控",
+  oauth_auto_reset_credit_enabled: "7d 100% 且 429 时自动用卡",
   oauth_daily_test_enabled: "每日定时测活",
   oauth_daily_test_time: "测活时间（北京时间）",
   oauth_usage_refresh_concurrency: "额度查询并发",

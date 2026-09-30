@@ -23,6 +23,7 @@ class Settings:
     bark_device_key: str = ""
     bark_server_url: str = "https://api.day.app"
     bark_config_valid: bool = True
+    oauth_auto_reset_credit_enabled: bool = False
     oauth_recovery_monitor_enabled: bool = True
     oauth_daily_test_enabled: bool = True
     oauth_daily_test_time: str = "05:00"
@@ -164,6 +165,9 @@ def load_settings() -> Settings:
         bark_device_key=bark_device_key,
         bark_server_url=bark_server_url,
         bark_config_valid=bark_config_valid,
+        oauth_auto_reset_credit_enabled=bool_value(
+            oauth_config.get("oauth_auto_reset_credit_enabled", os.getenv("OAUTH_AUTO_RESET_CREDIT_ENABLED")), False
+        ),
         oauth_recovery_monitor_enabled=bool_value(
             oauth_config.get(
                 "oauth_recovery_monitor_enabled", os.getenv("OAUTH_RECOVERY_MONITOR_ENABLED")

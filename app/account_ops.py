@@ -13,6 +13,7 @@ def _account_select(where: str) -> str:
       platform,
       type,
       credentials,
+      nullif(to_jsonb(accounts)->>'parent_account_id', '')::bigint AS parent_account_id,
       extra,
       status,
       schedulable,

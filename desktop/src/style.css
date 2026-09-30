@@ -2100,3 +2100,9 @@ td:last-child {
     padding-right: 10px;
   }
 }
+
+.auto-reset-status { margin-top: 6px; max-width: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.auto-reset-status summary { cursor: pointer; color: var(--muted); }
+.auto-reset-status[open] { display: grid; gap: 4px; }
+.auto-reset-status time, .auto-reset-status span { display: block; }
+@media (max-width: 700px) { .auto-reset-status summary { min-height: 48px; align-content: center; } }

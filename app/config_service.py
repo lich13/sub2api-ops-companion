@@ -18,7 +18,7 @@ class ConfigConflict(ValueError):
 
 
 OAUTH_FIELDS = {
-    "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled",
+    "oauth_recovery_monitor_enabled", "oauth_daily_test_enabled", "oauth_auto_reset_credit_enabled",
     "oauth_daily_test_time", "oauth_usage_refresh_concurrency", "oauth_recovery_test_concurrency",
     "oauth_early_probe_batch_size",
     "oauth_recovery_test_model_id",
@@ -75,7 +75,7 @@ class ConfigService:
                     raise ValueError("未知 OAuth 设置")
                 values = {key: current[section][key] for key in OAUTH_FIELDS}
                 values.update(changes)
-                for key in ("oauth_recovery_monitor_enabled", "oauth_daily_test_enabled"):
+                for key in ("oauth_recovery_monitor_enabled", "oauth_daily_test_enabled", "oauth_auto_reset_credit_enabled"):
                     if not isinstance(values[key], bool):
                         raise ValueError("开关必须为布尔值")
                 values["oauth_daily_test_time"] = daily_test_time(values["oauth_daily_test_time"])

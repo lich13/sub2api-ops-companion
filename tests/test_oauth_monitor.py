@@ -133,7 +133,7 @@ class OAuthStateStoreTests(unittest.TestCase):
             self.assertEqual(saved["scheduler"]["1"]["recovery_intent"]["status"], "ready")
             self.assertIn("keep", saved["pending_events"])
 
-    def test_v2_testing_intent_migrates_to_retry_in_v4(self) -> None:
+    def test_v2_testing_intent_migrates_to_retry_in_v5(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "usage-query-state.json"
             path.write_text(
@@ -159,7 +159,7 @@ class OAuthStateStoreTests(unittest.TestCase):
 
             persisted = json.loads(path.read_text(encoding="utf-8"))
             intent = persisted["scheduler"]["1"]["recovery_intent"]
-            self.assertEqual(persisted["version"], 4)
+            self.assertEqual(persisted["version"], 5)
             self.assertEqual(intent["status"], "retry")
             self.assertEqual(intent["next_retry_at"], NOW.isoformat())
 

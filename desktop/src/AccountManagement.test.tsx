@@ -6,7 +6,13 @@ import { api, command, subscribe } from "./bridge";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { RecoveryHistory } from "./AccountControls";
 import App from "./main";
-import type { Account, Recovery, ViewState } from "./types";
+import type {
+  Account,
+  Config,
+  ConfigSection,
+  Recovery,
+  ViewState,
+} from "./types";
 
 vi.mock("./bridge", () => ({
   api: vi.fn(),
@@ -52,6 +58,180 @@ const account = (id: number): Account => ({
   error_message: "",
   success_after_error: false,
   usage_windows: [],
+});
+async function openAutoResetSettings(
+  save: (body: unknown) => Promise<ConfigSection>,
+) {
+  const state: ViewState = {
+    connected: true,
+    online: true,
+    platform: "macos",
+    foreground: true,
+    error: "",
+    preferences: {
+      base_url: "https://settings.invalid",
+      favorites: [],
+      pinned: false,
+      launch_at_login: false,
+    },
+    snapshot: {
+      observed_at: "2026-09-30T04:00:00Z",
+      accounts: [],
+      groups: [],
+      errors: [],
+      recoveries: [],
+    },
+  };
+  const config: Config = {
+    oauth: {
+      revision: "oauth-r1",
+      oauth_recovery_monitor_enabled: true,
+      oauth_auto_reset_credit_enabled: false,
+      oauth_daily_test_enabled: false,
+      oauth_daily_test_time: "09:00",
+      oauth_usage_refresh_concurrency: 3,
+      oauth_recovery_test_concurrency: 2,
+      oauth_early_probe_batch_size: 5,
+      oauth_recovery_test_model_id: "fixture-model",
+    },
+    key_fallback: {
+      revision: "key-r1",
+      openai_enabled: false,
+      grok_enabled: false,
+      managed_account_ids: [],
+    },
+    bark: { revision: "bark-r1", enabled: false },
+  };
+  let receive = (_state: ViewState) => {};
+  vi.mocked(subscribe).mockImplementation(async (callback) => {
+    receive = callback;
+    return () => {};
+  });
+  vi.mocked(command).mockImplementation(async (name) => {
+    if (name !== "get_state") throw new Error(`Unexpected command: ${name}`);
+    return state as never;
+  });
+  vi.mocked(api).mockImplementation(async (method, path, body) => {
+    if (method === "GET" && path === "/quota-refresh")
+      return { status: "idle", items: [], total: 0, completed: 0 } as never;
+    if (method === "GET" && path === "/config") return config as never;
+    if (method === "GET" && path === "/model-groups")
+      return { groups: [] } as never;
+    if (method === "PUT" && path === "/config/oauth") {
+      const saved = await save(body);
+      config.oauth = saved;
+      return saved as never;
+    }
+    throw new Error(`Unexpected API: ${method} ${path}`);
+  });
+  await act(async () => root.render(<App />));
+  await act(async () => button("功能").click());
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="7d 100% 且 429 时自动用卡"]',
+    )!;
+  const form = () => toggle().closest("form")!;
+  const saveButton = () =>
+    [...form().querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "保存",
+    )!;
+  return { config, state, receive, toggle, saveButton, form };
+}
+
+it("keeps automatic card use as a draft and saves only that toggle with the current revision", async () => {
+  const save = vi.fn<(body: unknown) => Promise<ConfigSection>>();
+  let resolve!: (value: ConfigSection) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const settings = await openAutoResetSettings(save);
+  const original = { ...settings.config.oauth };
+  expect(settings.toggle().getAttribute("aria-checked")).toBe("false");
+  expect(settings.saveButton().disabled).toBe(true);
+  await act(async () => settings.toggle().click());
+  expect(settings.toggle().getAttribute("aria-checked")).toBe("true");
+  expect(settings.config.oauth.oauth_auto_reset_credit_enabled).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  await act(async () =>
+    settings.receive({
+      ...settings.state,
+      snapshot: {
+        ...settings.state.snapshot!,
+        observed_at: "2026-09-30T04:00:10Z",
+      },
+    }),
+  );
+  expect(settings.toggle().getAttribute("aria-checked")).toBe("true");
+  await act(async () => settings.saveButton().click());
+  expect(save).toHaveBeenCalledExactlyOnceWith({
+    expected_revision: "oauth-r1",
+    changes: { oauth_auto_reset_credit_enabled: true },
+  });
+  expect(settings.saveButton().disabled).toBe(true);
+  expect(settings.form().querySelector("fieldset")?.disabled).toBe(true);
+  await act(async () =>
+    resolve({
+      ...original,
+      revision: "oauth-r2",
+      oauth_auto_reset_credit_enabled: true,
+    }),
+  );
+  expect(settings.saveButton().disabled).toBe(true);
+  expect(container.textContent).toContain("设置已保存");
+
+  save.mockResolvedValueOnce({
+    ...original,
+    revision: "oauth-r3",
+    oauth_auto_reset_credit_enabled: false,
+  });
+  await act(async () => settings.toggle().click());
+  await act(async () => settings.saveButton().click());
+  expect(save).toHaveBeenLastCalledWith({
+    expected_revision: "oauth-r2",
+    changes: { oauth_auto_reset_credit_enabled: false },
+  });
+  expect(settings.toggle().getAttribute("aria-checked")).toBe("false");
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.filter(([method]) => method !== "GET")
+      .map(([method, path]) => [method, path]),
+  ).toEqual([
+    ["PUT", "/config/oauth"],
+    ["PUT", "/config/oauth"],
+  ]);
+});
+
+it("preserves the automatic card-use draft after a failed save and retries without account actions", async () => {
+  const save = vi
+    .fn<(body: unknown) => Promise<ConfigSection>>()
+    .mockRejectedValueOnce(new Error("配置保存失败"));
+  const settings = await openAutoResetSettings(save);
+  await act(async () => settings.toggle().click());
+  await act(async () => settings.saveButton().click());
+  expect(settings.toggle().getAttribute("aria-checked")).toBe("true");
+  expect(settings.config.oauth.oauth_auto_reset_credit_enabled).toBe(false);
+  expect(settings.saveButton().disabled).toBe(false);
+  expect(container.textContent).toContain("配置保存失败");
+  save.mockResolvedValueOnce({
+    ...settings.config.oauth,
+    revision: "oauth-r2",
+    oauth_auto_reset_credit_enabled: true,
+  });
+  await act(async () => settings.saveButton().click());
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[0]).toEqual(save.mock.calls[1]);
+  expect(settings.saveButton().disabled).toBe(true);
+  expect(settings.config.oauth.oauth_auto_reset_credit_enabled).toBe(true);
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.filter(([method]) => method !== "GET")
+      .map(([, path]) => path),
+  ).toEqual(["/config/oauth", "/config/oauth"]);
 });
 
 it("confirms names and IDs, bounds deletion to three, and keeps individual failures without retry", async () => {

@@ -50,6 +50,7 @@ docker compose up -d --build
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控到期恢复。
+- `OAUTH_AUTO_RESET_CREDIT_ENABLED`：7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。
 - `OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
 - `OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。
 - `OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。

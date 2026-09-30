@@ -110,7 +110,8 @@ def reset_not_before(row: dict[str, Any], result: dict[str, Any] | None) -> date
 
 
 def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
-                   metadata: dict[str, Any], now: datetime) -> tuple[str, datetime | None]:
+                   metadata: dict[str, Any], now: datetime, *,
+                   wait_for_reset: bool = True) -> tuple[str, datetime | None]:
     if not automatic_eligible(row, now):
         return "account_ineligible", None
     query = query_metadata(metadata, saved)
@@ -124,7 +125,7 @@ def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
     if last:
         bounds.append((last + timedelta(seconds=MIN_QUERY_SECONDS), "query_cooldown"))
     for value, reason in ((query.get("retry_at"), "query_backoff"),
-                          (reset_not_before(row, saved), "waiting_reset")):
+                          (reset_not_before(row, saved) if wait_for_reset else None, "waiting_reset")):
         deadline = parse_iso_datetime(value)
         if deadline:
             bounds.append((deadline, reason))
@@ -148,6 +149,104 @@ class OAuthQueryCoordinator:
         self._inflight: dict[int, Future] = {}
         self._completed: dict[int, tuple[float, str, dict[str, Any]]] = {}
         self._deferred: dict[int, tuple[str, str | None]] = {}
+
+    def external_read(self, row: dict[str, Any], *, source: str, reason: str,
+                      operation: Callable[[], dict[str, Any]],
+                      validate: Callable[[dict[str, Any]], bool],
+                      now: datetime | None = None) -> dict[str, Any]:
+        """Account for quota reads bundled into credit refresh/consumption.
+
+        The caller holds the monitor operation lock. Unlike a pure read, a
+        consumption operation must never join/replay another operation's result.
+        A future reservation survives an interrupted/uncertain HTTP operation.
+        """
+        if source not in {"automatic", "manual"}:
+            raise ValueError("Invalid quota query source")
+        account_id = int(row["id"])
+        current = now or self.clock()
+        reservation = current + timedelta(seconds=180)
+        with self._lock:
+            if account_id in self._inflight:
+                return {"success": False, "skipped": True, "error_code": "query_busy"}
+            future: Future = Future()
+            self._inflight[account_id] = future
+        admitted = False
+        result: dict[str, Any] = {}
+        try:
+            def reserve(data: dict[str, Any]) -> dict[str, Any]:
+                if not validate(data):
+                    return {"success": False, "skipped": True, "error_code": "reset_state_changed"}
+                meta = data["scheduler"].setdefault(str(account_id), {})
+                saved = data["oauth_results"].get(str(account_id))
+                query = query_metadata(meta, saved)
+                if source == "automatic":
+                    # Only the validated credit workflow may operate before the
+                    # natural reset, or while it owns a temporary scheduling hold.
+                    gate_row = {**row, "schedulable": True}
+                    blocked, deadline = automatic_gate(gate_row, saved, meta, current, wait_for_reset=False)
+                    if blocked:
+                        return {"success": False, "skipped": True, "error_code": blocked,
+                                "next_query_at": deadline.isoformat() if deadline else None}
+                    query["automatic_attempts"] = [value for value in query.get("automatic_attempts", [])
+                        if (t := parse_iso_datetime(value)) and t > current - timedelta(seconds=AUTO_WINDOW_SECONDS)] + [reservation.isoformat()]
+                query.update(last_query_at=reservation.isoformat(), last_source=source, last_reason=reason)
+                meta["quota_query"] = query
+                meta["last_attempt_at"] = current.isoformat()
+                return {"admitted": True}
+            decision = self.store.transaction(reserve)
+            if not decision.get("admitted"):
+                result = decision
+            else:
+                admitted = True
+                try:
+                    result = dict(operation())
+                except Exception:
+                    result = {"success": False, "error_code": "result_uncertain"}
+                completed = max(current, self.clock())
+                # A server may continue post-processing after a client timeout.
+                recorded = max(completed, reservation) if result.get("uncertain") or result.get("error_code") in {"timeout", "result_uncertain"} else completed
+                def finish(data: dict[str, Any]) -> None:
+                    meta = data["scheduler"].setdefault(str(account_id), {})
+                    query = query_metadata(meta, data["oauth_results"].get(str(account_id)))
+                    if source == "automatic":
+                        query["automatic_attempts"] = [recorded.isoformat() if t == reservation.isoformat() else t
+                                                       for t in query.get("automatic_attempts", [])]
+                    query["last_query_at"] = max(recorded, parse_iso_datetime(query.get("last_query_at"))
+                                                 or recorded if query.get("last_query_at") != reservation.isoformat() else recorded).isoformat()
+                    quota = result.get("quota_result")
+                    if isinstance(quota, dict) and quota_complete(row, quota):
+                        data["oauth_results"][str(account_id)] = dict(quota)
+                        meta.update(last_success_at=completed.isoformat(), last_error_code="")
+                        query.pop("auth_fingerprint", None)
+                        if result.get("success"):
+                            query.update(failure_count=0, retry_at=None)
+                    code = str(result.get("error_code") or "")
+                    if code in AUTH_ERRORS:
+                        query["auth_fingerprint"] = credential_fingerprint(row)
+                        meta.update(last_error_at=completed.isoformat(), last_error_code=code)
+                    if not result.get("success"):
+                        if not result.get("skipped"):
+                            meta.update(last_error_at=completed.isoformat(), last_error_code=code)
+                        failures = int(query.get("failure_count") or 0) + 1
+                        query.update(failure_count=failures, retry_at=(recorded + timedelta(
+                            seconds=QUERY_BACKOFF_SECONDS[min(failures - 1, 3)])).isoformat())
+                    meta["quota_query"] = query
+                self.store.transaction(finish)
+        except (OSError, ValueError, TypeError):
+            result = {**result, "success": False, "skipped": not admitted,
+                      "error_code": "query_state_unavailable", "uncertain": admitted}
+        finally:
+            with self._lock:
+                quota = result.get("quota_result")
+                shared = quota if isinstance(quota, dict) else {"success": False, "error_code": "incomplete_quota"}
+                if admitted:
+                    self._completed[account_id] = (time.monotonic(), credential_fingerprint(row), shared)
+                future.set_result(shared)
+                self._inflight.pop(account_id, None)
+            write_audit(self.audit_path, "oauth_usage_query", {"account_id": account_id, "source": source,
+                "reason": reason, "requested": admitted, "success": bool(result.get("success")),
+                "error_code": result.get("error_code", ""), "next_query_at": result.get("next_query_at")})
+        return result
 
     def observe_gates(self, rows: list[dict[str, Any]], results: dict[int, dict[str, Any]],
                       scheduler: dict[int, dict[str, Any]], now: datetime) -> None:
