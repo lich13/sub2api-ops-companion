@@ -53,7 +53,7 @@ def project_state(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if not value:
         return None
     code = str(value.get("error_code") or "")
-    return {"stage": value["stage"], "label": STATE_LABELS[value["stage"]],
+    return {"stage": value["stage"], "label": {"conflict": "自动用卡冲突", "auth_paused": "等待凭据更新", "no_credit": "等待重置卡"}.get(code, STATE_LABELS[value["stage"]]),
             "error": ERRORS.get(code, "操作未确认" if code else ""),
             "next_at": value.get("next_at"), "attempt_at": value.get("attempt_at"),
             "test_completed_at": value.get("test_completed_at"), "recovered_at": value.get("recovered_at")}
@@ -124,7 +124,9 @@ def execute_credit_request(action: str, account_id: int, *, base_url: str, admin
         data = body.get("data")
         if body.get("code") != 0 or not isinstance(data, dict):
             return {"success": False, "uncertain": action == "reset", "error_code": "result_uncertain"}
-        consumed = action == "reset" and data.get("code") in {"success", "ok", 0} and (data.get("windows_reset") or 0) > 0
+        windows_reset = data.get("windows_reset")
+        consumed = (action == "reset" and data.get("code") in {"success", "ok", 0}
+                    and isinstance(windows_reset, int) and not isinstance(windows_reset, bool) and windows_reset > 0)
         return {"success": bool(consumed) if action == "reset" else True, "consumed": consumed,
                 "uncertain": action == "reset" and not consumed,
                 "error_code": "" if action != "reset" or consumed else "result_uncertain", "data": data}

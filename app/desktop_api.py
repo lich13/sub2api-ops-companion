@@ -484,7 +484,7 @@ class DesktopService:
             if owner:
                 self._usage_futures[account_id] = (payload.expected_version, future)
         if not owner:
-            return future.result(timeout=65)
+            return future.result(timeout=102)
         try:
             result = self._usage_action(account_id, payload, key, requested_at=requested_at)
             future.set_result(result)

@@ -268,7 +268,7 @@ class OAuthQueryCoordinator:
             pending = self._inflight.get(account_id)
             previous = self._completed.get(account_id)
         if pending:
-            result = pending.result(timeout=40)
+            result = pending.result(timeout=100)
         elif previous and previous[0] >= requested_at:
             result = previous[2]
         else:
