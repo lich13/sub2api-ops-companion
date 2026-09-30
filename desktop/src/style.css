@@ -482,9 +482,6 @@ strong {
   color: var(--muted);
   margin-left: 2px;
 }
-.favorite {
-  margin-left: auto;
-}
 .group-call {
   display: flex;
   align-items: center;
@@ -1135,11 +1132,6 @@ td:last-child {
 }
 .compact .group-heading strong {
   font-size: 11px;
-}
-.compact .group-heading .icon-button {
-  height: 22px;
-  width: 24px;
-  padding: 3px;
 }
 .compact .recent-accounts {
   margin-top: 0;

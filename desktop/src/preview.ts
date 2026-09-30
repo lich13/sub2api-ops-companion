@@ -224,6 +224,7 @@ accounts.push({
   ...accounts[3],
   id: 390,
   name: "Grok · 按量 Key",
+  group_ids: [2],
   platform: "grok",
   managed: false,
   usage: {
@@ -408,7 +409,22 @@ const config: Config = {
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
-if (state.snapshot && scenario === "record-filters") {
+if (state.snapshot && scenario === "group-membership") {
+  const [codex, grok, empty] = state.snapshot.groups;
+  accounts[0].group_ids = [1, 4];
+  accounts[1].group_ids = [1, 2];
+  const outside = { ...grok.recent_accounts![0], log_id: 999 };
+  codex.called_at = now;
+  codex.recent_accounts = [outside, ...codex.recent_accounts!.map((call) => ({ ...call, called_at: before }))];
+  grok.recent_accounts!.push({ ...codex.recent_accounts[2], log_id: 80 });
+  state.snapshot.groups = [
+    { ...empty, id: 5, name: "从未调用" },
+    { ...codex, id: 4, name: "同时调用", recent_accounts: [codex.recent_accounts[1]] },
+    { ...empty, account_id: outside.account_id, account_name: outside.account_name, called_at: now, recent_accounts: [outside] },
+    codex,
+    grok,
+  ];
+} else if (state.snapshot && scenario === "record-filters") {
   accounts[0].name = "研发团队共享账户 · 跨区域项目与模型验证专用 · 长名称换行验收";
 } else if (state.snapshot && scenario === "auto-reset") {
   accounts[0].schedulable = false;
@@ -431,6 +447,11 @@ if (state.snapshot && scenario === "record-filters") {
     id: i + 10,
     name: `分组 ${i + 1}`,
   }));
+  for (const account of accounts) {
+    account.group_ids = state.snapshot.groups.filter((group) =>
+      group.recent_accounts?.some((call) => call.account_id === account.id),
+    ).map((group) => group.id);
+  }
 } else if (state.snapshot && scenario === "two-groups") {
   state.snapshot.groups = state.snapshot.groups.slice(0, 2);
 }

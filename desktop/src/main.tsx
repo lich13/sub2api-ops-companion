@@ -21,7 +21,6 @@ import {
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
-  Star,
   Unplug,
   Users,
   X,
@@ -29,6 +28,7 @@ import {
 import { api, command, preview, subscribe, updates } from "./bridge";
 import {
   filterAccounts,
+  currentGroups,
   sortPriority,
   sortQuality,
   fullTime,
@@ -324,20 +324,7 @@ export default function App() {
     );
   }
   function groupRow(g: Group, compact = false) {
-    const favorite = state.preferences.favorites.includes(g.id);
-    const recent = (
-      g.recent_accounts ??
-      (g.account_id
-        ? [
-            {
-              account_id: g.account_id,
-              account_name: g.account_name,
-              model: g.model,
-              called_at: g.called_at,
-            },
-          ]
-        : [])
-    ).filter((call) => accounts.some((a) => a.id === call.account_id));
+    const recent = g.recent_accounts ?? [];
     return (
       <article className={`group-row ${compact ? "compact" : ""}`} key={g.id}>
         <div className="group-heading">
@@ -346,19 +333,6 @@ export default function App() {
           </div>
           <strong title={g.name}>{g.name}</strong>
           <span className="platform">{g.platform}</span>
-          <button
-            className={`icon-button favorite ${favorite ? "selected" : ""}`}
-            title={favorite ? "取消收藏" : "收藏分组"}
-            onClick={() =>
-              void prefs({
-                favorites: favorite
-                  ? state.preferences.favorites.filter((id) => id !== g.id)
-                  : [...state.preferences.favorites, g.id],
-              })
-            }
-          >
-            <Star size={15} fill={favorite ? "currentColor" : "none"} />
-          </button>
         </div>
         <div className="recent-accounts">
           {recent.map((call) => {
@@ -472,11 +446,7 @@ export default function App() {
       </span>
     );
   }
-  const visibleGroups = [...groups].sort(
-    (a, b) =>
-      Number(state.preferences.favorites.includes(b.id)) -
-      Number(state.preferences.favorites.includes(a.id)),
-  );
+  const visibleGroups = currentGroups(groups, accounts);
   return (
     <div className={`app${quick ? " quick" : ""}${mobile ? " mobile" : ""}`}>
       {!quick && !mobile && (
