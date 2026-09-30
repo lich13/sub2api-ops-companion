@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import re
 import sqlite3
+import tempfile
 import threading
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -33,16 +36,37 @@ class FixedDateTime(datetime):
         return cls.fromisoformat(cls.current.astimezone(tz or timezone.utc).isoformat())
 
 
+class DecimalSum:
+    """Preserve NUMERIC addition when SQLite fixtures store money as TEXT."""
+
+    def __init__(self):
+        self.values = []
+
+    def step(self, value):
+        if value is not None:
+            self.values.append(Decimal(str(value)))
+
+    def finalize(self):
+        if not self.values:
+            return None
+        with localcontext() as context:
+            highest = max(value.adjusted() for value in self.values)
+            lowest = min(value.as_tuple().exponent for value in self.values)
+            context.prec = max(28, highest - lowest + len(str(len(self.values))) + 2)
+            return str(sum(self.values, Decimal(0)))
+
+
 class ReadOnlyFixtureDB:
     """Execute SELECT semantics in SQLite; check the PostgreSQL transaction contract.
 
-    Only named parameters and ILIKE need translation. This is deliberately not a
-    Python reimplementation of filtering or pagination, nor PostgreSQL acceptance.
+    Translate named parameters and ILIKE; register exact NUMERIC-like SUM.
+    Filtering and pagination execute as SQL. This is not PostgreSQL acceptance.
     """
 
-    def __init__(self):
-        self.raw = sqlite3.connect(":memory:", check_same_thread=False, isolation_level=None)
+    def __init__(self, database=":memory:"):
+        self.raw = sqlite3.connect(database, check_same_thread=False, isolation_level=None)
         self.raw.row_factory = sqlite3.Row
+        self.raw.create_aggregate("sum", 1, DecimalSum)
         integers = """id user_id api_key_id account_id group_id upstream_model_mismatch
             request_type stream openai_ws_mode input_tokens output_tokens cache_creation_tokens
             cache_read_tokens cache_creation_5m_tokens cache_creation_1h_tokens first_token_ms
@@ -511,6 +535,251 @@ class UsageRecordsTests(RecordsFixture):
         self.assertIn("LIMIT %(limit)s", self.db.transactions[0][-1])
 
 
+class UsageRecordDateTests(RecordsFixture):
+    def test_single_shanghai_day_includes_both_day_edges_and_excludes_next_midnight(self):
+        start = datetime(2026, 9, 29, 16, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 30, 16, tzinfo=timezone.utc)
+        for record_id, at in enumerate((start - timedelta(microseconds=1), start,
+                                       start + timedelta(microseconds=1), end - timedelta(microseconds=1),
+                                       end, end + timedelta(microseconds=1)), 1):
+            self.db.insert(record_id, created_at=at, actual_cost=Decimal("0.25"))
+        result = self.service.list(start_date="2026-09-30", end_date="2026-09-30", include_summary=True)
+        self.assertEqual([item["id"] for item in result["items"]], [4, 3, 2])
+        self.assertEqual(result["summary"], {"actual_cost": "0.75"})
+        self.assertEqual(self.db.statements[-1][1]["from_at"], start)
+        self.assertEqual(self.db.statements[-1][1]["to_at"], end)
+
+    def test_leap_day_and_multi_day_range_use_inclusive_calendar_end_date(self):
+        start = datetime(2024, 2, 27, 16, tzinfo=timezone.utc)
+        leap_start = datetime(2024, 2, 28, 16, tzinfo=timezone.utc)
+        march_start = datetime(2024, 2, 29, 16, tzinfo=timezone.utc)
+        end = datetime(2024, 3, 1, 16, tzinfo=timezone.utc)
+        for record_id, at in enumerate((start - timedelta(microseconds=1), start, leap_start,
+                                       march_start - timedelta(microseconds=1), march_start,
+                                       end - timedelta(microseconds=1), end), 1):
+            self.db.insert(record_id, created_at=at)
+        self.assertEqual(self.ids(start_date="2024-02-29", end_date="2024-02-29"), [4, 3])
+        self.assertEqual(self.ids(start_date="2024-02-28", end_date="2024-03-01"), [6, 5, 4, 3, 2])
+
+    def test_year_boundary_uses_next_calendar_day_for_end(self):
+        self.db.insert(1, created_at=datetime(2025, 12, 30, 16, tzinfo=timezone.utc))
+        self.db.insert(2, created_at=datetime(2026, 1, 1, 15, 59, 59, 999999, tzinfo=timezone.utc))
+        self.db.insert(3, created_at=datetime(2026, 1, 1, 16, tzinfo=timezone.utc))
+        self.assertEqual(self.ids(start_date="2025-12-31", end_date="2026-01-01"), [2, 1])
+
+    def test_invalid_or_mixed_date_filters_fail_before_database_access(self):
+        bad = [{"start_date": "2026-09-30"}, {"end_date": "2026-09-30"},
+               {"start_date": "", "end_date": ""},
+               {"start_date": "2026-10-01", "end_date": "2026-09-30"}]
+        for value in ("2026-02-29", "1900-02-29", "2024-02-30", "2026-13-01", "0000-01-01",
+                      "2026-9-30", "20260930", "2026/09/30", "2026-W40-3", " 2026-09-30",
+                      "2026-09-30 ", "2026-09-30T00:00:00+08:00", "9999-12-31"):
+            bad.append({"start_date": value, "end_date": value})
+        for field in ("from_at", "to_at"):
+            for value in (NOW.isoformat(), ""):
+                bad.append({"start_date": "2026-09-30", "end_date": "2026-09-30", field: value})
+        for params in bad:
+            with self.subTest(params=params), self.assertRaises(HTTPException) as raised:
+                self.service.list(**params, include_summary=True)
+            self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(self.db.statements, [])
+
+    def test_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates(self):
+        for record_id in range(1, 4):
+            self.db.insert(record_id)
+        filters = {"start_date": "2026-09-30", "end_date": "2026-09-30"}
+        first = self.service.list(**filters, limit=1)
+        FixedDateTime.current = NOW + timedelta(days=10)
+        next_page = self.service.list(**filters, cursor=first["next_cursor"], limit=1, include_summary=True)
+        self.assertEqual([item["id"] for item in next_page["items"]], [2])
+        self.assertNotIn("summary", next_page)
+        for changed in ({}, {**filters, "start_date": "2026-09-29"},
+                        {**filters, "end_date": "2026-10-01"}):
+            with self.subTest(changed=changed):
+                before = len(self.db.statements)
+                with self.assertRaises(HTTPException) as raised:
+                    self.service.list(**changed, cursor=first["next_cursor"])
+                self.assertEqual(raised.exception.status_code, 422)
+                self.assertEqual(len(self.db.statements), before)
+
+    def test_pre_date_api_cursor_payload_still_works_and_freezes_default_window(self):
+        for record_id in range(1, 4):
+            self.db.insert(record_id)
+        for user_id in (None, 3):
+            with self.subTest(user_id=user_id):
+                criteria = [None, None, None, None, None, None, False]
+                if user_id is not None:
+                    criteria.append(user_id)
+                cursor = base64.urlsafe_b64encode(json.dumps({
+                    "at": (NOW - timedelta(minutes=5)).isoformat(), "id": 2, "watermark": 3,
+                    "from_at": (NOW - timedelta(hours=24)).isoformat(), "to_at": NOW.isoformat(),
+                    "signature": hashlib.sha256(json.dumps(criteria).encode()).hexdigest(),
+                }).encode()).decode()
+                FixedDateTime.current = NOW + timedelta(days=10)
+                result = self.service.list(cursor=cursor, user_id=user_id, include_summary=True)
+                self.assertEqual([item["id"] for item in result["items"]], [1])
+                self.assertEqual(result["latest_id"], 3)
+                self.assertNotIn("summary", result)
+                self.assertEqual(self.db.statements[-1][1]["from_at"], NOW - timedelta(hours=24))
+                self.assertEqual(self.db.statements[-1][1]["to_at"], NOW)
+
+
+class UsageRecordSummaryTests(RecordsFixture):
+    def aggregate_statements(self):
+        return [(sql, params) for sql, params in self.db.statements if re.search(r"\bsum\s*\(", sql, re.I)]
+
+    def test_summary_is_opt_in_and_uses_actual_cost_without_other_cost_bases(self):
+        self.db.insert(1, actual_cost=Decimal("0.125"), total_cost=Decimal("99"),
+                       account_stats_cost=Decimal("33"), account_rate_multiplier=Decimal("4"))
+        self.assertNotIn("summary", self.service.list())
+        self.assertNotIn("summary", self.service.list(include_summary=False))
+        self.assertEqual(self.aggregate_statements(), [])
+        result = self.service.list(include_summary=True)
+        self.assertEqual(result["summary"], {"actual_cost": "0.125"})
+        self.assertEqual(len(self.aggregate_statements()), 1)
+
+    def test_summary_covers_all_pages_and_is_independent_of_page_limit(self):
+        for record_id in range(1, 106):
+            self.db.insert(record_id, actual_cost=Decimal("0.1"))
+        self.db.insert(106, actual_cost=Decimal("999"), created_at=NOW - timedelta(days=2))
+        first = self.service.list(limit=50, include_summary=True)
+        self.assertEqual(first["summary"], {"actual_cost": "10.5"})
+        self.assertEqual(len(first["items"]), 50)
+        seen = [item["id"] for item in first["items"]]
+        cursor = first["next_cursor"]
+        page_sizes = []
+        while cursor:
+            page = self.service.list(limit=50, cursor=cursor, include_summary=True)
+            page_sizes.append(len(page["items"]))
+            self.assertNotIn("summary", page)
+            seen.extend(item["id"] for item in page["items"])
+            cursor = page["next_cursor"]
+        self.assertEqual(page_sizes, [50, 5])
+        self.assertEqual(seen, list(reversed(range(1, 106))))
+        self.assertEqual(len(self.aggregate_statements()), 1)
+        self.assertEqual(self.service.list(limit=1, include_summary=True)["summary"], first["summary"])
+
+    def test_joint_date_user_key_account_model_type_and_mismatch_filters_apply_to_summary(self):
+        common = {"model": "billing", "requested_model": "requested", "upstream_model": "forwarded",
+                  "upstream_response_model": "returned", "request_type": 2}
+        fields = ("model", "requested_model", "upstream_model", "upstream_response_model", "model_mapping_chain")
+        for record_id, field in enumerate(fields, 1):
+            self.db.insert(record_id, **{**common, field: "Contains-NeEdLe-Here"},
+                           actual_cost=Decimal(f"0.{record_id}"))
+        noise = ({"user_id": 99}, {"api_key_id": 99}, {"account_id": 99}, {"request_type": 1},
+                 {"upstream_model": "same", "upstream_response_model": "same"},
+                 {"created_at": datetime(2026, 9, 29, 15, 59, 59, tzinfo=timezone.utc)},
+                 {"created_at": datetime(2026, 9, 30, 16, tzinfo=timezone.utc)})
+        for record_id, change in enumerate(noise, 6):
+            self.db.insert(record_id, **{**common, "model_mapping_chain": "needle", **change},
+                           actual_cost=Decimal("100"))
+        self.db.insert(13, **common, actual_cost=Decimal("100"))
+        filters = {"start_date": "2026-09-30", "end_date": "2026-09-30", "user_id": 3,
+                   "api_key_id": 4, "account_id": 7, "model": "needle", "request_type": "stream",
+                   "mismatch_only": True}
+        result = self.service.list(**filters, include_summary=True, limit=2)
+        self.assertEqual(result["summary"], {"actual_cost": "1.5"})
+        self.assertEqual([item["id"] for item in result["items"]], [5, 4])
+        self.assertEqual(self.service.list(**filters, after_id=0, include_summary=True, limit=1),
+                         {"new_count": 5, "latest_id": 13})
+        self.assertEqual(len(self.aggregate_statements()), 1)
+
+    def test_summary_retains_history_after_related_entities_are_soft_or_hard_deleted(self):
+        self.db.insert_user(10, deleted_at="2026-09-01")
+        self.db.insert_key(11, user_id=10, deleted_at="2026-09-01")
+        self.db.insert(1, user_id=10, api_key_id=11, actual_cost=Decimal("0.75"))
+        filters = {"user_id": 10, "api_key_id": 11, "account_id": 7, "include_summary": True}
+        before = self.service.list(**filters)
+        self.assertEqual(before["summary"], {"actual_cost": "0.75"})
+        self.assertEqual(before["items"][0]["user_name"], "User 10")
+        for table in ("users", "api_keys", "accounts", "groups"):
+            self.db.raw.execute(f"DELETE FROM {table}")
+        after = self.service.list(**filters)
+        self.assertEqual(after["summary"], before["summary"])
+        self.assertEqual([item["id"] for item in after["items"]], [1])
+        for field in ("user_name", "user_email", "api_key_name", "account_name", "group_name"):
+            self.assertIsNone(after["items"][0][field])
+
+    def test_empty_null_and_zero_cost_totals_are_decimal_strings(self):
+        empty = self.service.list(include_summary=True)
+        self.assertEqual(empty["summary"], {"actual_cost": "0"})
+        self.db.insert(1, actual_cost=None, total_cost=Decimal("50"))
+        self.assertEqual(self.service.list(include_summary=True)["summary"], {"actual_cost": "0"})
+        self.db.insert(2, actual_cost=Decimal("0.0000"), total_cost=Decimal("50"))
+        total = self.service.list(include_summary=True)["summary"]["actual_cost"]
+        self.assertIsInstance(total, str)
+        self.assertEqual(Decimal(total), Decimal(0))
+
+    def test_summary_preserves_decimal_precision_without_float_or_context_rounding(self):
+        cases = [(("0.1", "0.2"), "0.3"),
+                 (("123456789012345678901234567890.12345678901234567890123456789",
+                   "0.87654321098765432109876543211", "0.00000000000000000000000000001"),
+                  "123456789012345678901234567891.00000000000000000000000000001"),
+                 (("1E-30", "2E-30"), "0.000000000000000000000000000003")]
+        record_id = 0
+        for owner, (values, expected) in enumerate(cases, 1):
+            for value in values:
+                record_id += 1
+                self.db.insert(record_id, user_id=owner, actual_cost=Decimal(value))
+            with self.subTest(values=values):
+                result = self.service.list(user_id=owner, include_summary=True)
+                self.assertEqual(result["summary"], {"actual_cost": expected})
+                self.assertEqual(json.loads(json.dumps(result))["summary"]["actual_cost"], expected)
+
+    def test_new_count_never_aggregates_even_when_summary_is_requested(self):
+        self.db.insert(1, actual_cost=Decimal("1.25"))
+        result = self.service.list(after_id=0, include_summary=True)
+        self.assertEqual(result, {"new_count": 1, "latest_id": 1})
+        self.assertEqual(self.aggregate_statements(), [])
+
+    def test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write(self):
+        directory = tempfile.TemporaryDirectory(prefix="usage-records-")
+        self.addCleanup(directory.cleanup)
+        database = Path(directory.name) / "snapshot.sqlite3"
+        self.db = ReadOnlyFixtureDB(database)
+        self.addCleanup(self.db.close)
+        self.db.raw.execute("PRAGMA journal_mode = WAL")
+        self.service = UsageRecords(self.db)
+        self.db.insert(1, actual_cost=Decimal("0.1"))
+        self.db.insert(2, actual_cost=Decimal("0.2"))
+        writer = sqlite3.connect(database, isolation_level=None)
+        self.addCleanup(writer.close)
+        execute = self.db.execute
+        committed = []
+
+        def execute_with_concurrent_write(sql, params=None):
+            result = execute(sql, params)
+            if "max(id)" in sql.lower() and not committed:
+                writer.execute("INSERT INTO usage_logs (id,created_at,actual_cost) VALUES (?,?,?)",
+                               (3, (NOW - timedelta(hours=1)).isoformat(), "4.0"))
+                writer.execute("UPDATE usage_logs SET actual_cost='99.0' WHERE id=2")
+                committed.append(True)
+            return result
+
+        with patch.object(self.db, "execute", side_effect=execute_with_concurrent_write):
+            first = self.service.list(limit=1, include_summary=True)
+        self.assertEqual(committed, [True])
+        self.assertEqual(first["latest_id"], 2)
+        self.assertEqual(first["summary"], {"actual_cost": "0.3"})
+        self.assertEqual([(item["id"], item["actual_cost"]) for item in first["items"]], [(2, "0.2")])
+        self.assertEqual(len(self.db.transactions), 1)
+        statements = self.db.transactions[0]
+        self.assertIn("REPEATABLE READ", statements[0])
+        self.assertIn("READ ONLY", statements[0])
+        self.assertEqual(statements[1], "SET LOCAL statement_timeout = '5s'")
+        self.assertTrue(all(sql.lstrip().upper().startswith("SELECT ") for sql in statements[2:]))
+        next_page = self.service.list(cursor=first["next_cursor"], limit=1, include_summary=True)
+        self.assertEqual([item["id"] for item in next_page["items"]], [1])
+        self.assertEqual(next_page["latest_id"], 2)
+        self.assertIsNone(next_page["next_cursor"])
+        self.assertNotIn("summary", next_page)
+        self.assertEqual(self.service.list(after_id=2, include_summary=True), {"new_count": 1, "latest_id": 3})
+        self.assertEqual(len(self.aggregate_statements()), 1)
+        refreshed = self.service.list(include_summary=True)
+        self.assertEqual(refreshed["latest_id"], 3)
+        self.assertEqual(refreshed["summary"], {"actual_cost": "103.1"})
+
+
 class UsageRecordOptionsTests(RecordsFixture):
     USER_FIELDS = {"id", "name", "email", "status", "deleted"}
     KEY_FIELDS = {"id", "name", "user_id", "user_name", "user_email", "status", "deleted"}
@@ -670,6 +939,7 @@ class UsageRecordsRouteTests(RecordsFixture):
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
         self.runtime = SimpleNamespace(db=self.db, oauth_monitor=Mock(), bark_notifier=Mock(), oauth_base_url=Mock())
         service = install_desktop_api(app, self.runtime)
+        self.desktop_service = service
         self.addCleanup(lambda: asyncio.run(service.close()))
         def authenticate(key, *, fresh=False):
             if key != "fixture-admin-key":
@@ -728,6 +998,77 @@ class UsageRecordsRouteTests(RecordsFixture):
             response = self.client.get(PATH, headers=self.headers, params={"user_id": owner, "after_id": 1})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["new_count"], expected)
+
+    def test_route_passes_date_window_and_summary_with_exact_decimal_json(self):
+        self.db.insert(2, created_at=datetime(2026, 9, 29, 16, tzinfo=timezone.utc), actual_cost=Decimal("0.1"))
+        self.db.insert(3, created_at=datetime(2026, 9, 30, 15, 59, 59, 999999, tzinfo=timezone.utc),
+                       actual_cost=Decimal("0.2"))
+        self.db.insert(4, created_at=datetime(2026, 9, 30, 16, tzinfo=timezone.utc), actual_cost=Decimal("999"))
+        params = {"start_date": "2026-09-30", "end_date": "2026-09-30", "include_summary": "true", "limit": 1}
+        response = self.client.get(PATH, headers=self.headers, params=params)
+        self.assertEqual(response.status_code, 200, response.text)
+        first = response.json()
+        self.assertEqual([item["id"] for item in first["items"]], [3])
+        self.assertEqual(first["summary"], {"actual_cost": "0.3"})
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertTrue(response.headers["x-request-id"])
+        response = self.client.get(PATH, headers=self.headers, params={**params, "cursor": first["next_cursor"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["id"] for item in response.json()["items"]], [1])
+        self.assertNotIn("summary", response.json())
+        response = self.client.get(PATH, headers=self.headers, params={**params, "after_id": 1})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"new_count": 2, "latest_id": 4})
+        self.assertEqual(sum(bool(re.search(r"\bsum\s*\(", sql, re.I)) for sql, _ in self.db.statements), 1)
+
+    def test_route_summary_default_and_explicit_false_do_not_aggregate(self):
+        for params in ({}, {"include_summary": "false"}):
+            with self.subTest(params=params):
+                response = self.client.get(PATH, headers=self.headers, params=params)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn("summary", response.json())
+        self.assertFalse(any(re.search(r"\bsum\s*\(", sql, re.I) for sql, _ in self.db.statements))
+
+    def test_route_rejects_invalid_dates_mixed_time_modes_and_summary_boolean(self):
+        bad = [{"include_summary": "maybe"}, {"start_date": "2026-09-30"}, {"end_date": "2026-09-30"},
+               {"start_date": "2026-02-29", "end_date": "2026-02-29"},
+               {"start_date": "2026-9-30", "end_date": "2026-09-30"},
+               {"start_date": "2026-10-01", "end_date": "2026-09-30"},
+               {"start_date": "9999-12-31", "end_date": "9999-12-31"},
+               {"start_date": "2026-09-30", "end_date": "2026-09-30", "from_at": NOW.isoformat()},
+               {"start_date": "2026-09-30", "end_date": "2026-09-30", "to_at": ""}]
+        for params in bad:
+            with self.subTest(params=params):
+                response = self.client.get(PATH, headers=self.headers, params=params)
+                self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.db.statements, [])
+
+    def test_summary_reads_never_trigger_quota_models_oauth_or_http(self):
+        self.db.insert(2, actual_cost=Decimal("1.25"))
+        before = self.db.raw.total_changes
+        params = {"start_date": "2026-09-30", "end_date": "2026-09-30", "include_summary": True, "limit": 1}
+        with patch.object(self.desktop_service, "usage_action") as usage_action, \
+             patch.object(self.desktop_service.actions, "models") as models, \
+             patch.object(self.desktop_service.actions, "start_batch") as quota_refresh, \
+             patch.object(self.desktop_service.actions, "prepare_test") as prepare_test, \
+             patch("app.model_catalog.ModelCatalogService.source_catalog") as source_catalog, \
+             patch("urllib.request.OpenerDirector.open") as urllib_send, \
+             patch("httpx.HTTPTransport.handle_request") as http_send, \
+             patch("httpx.AsyncHTTPTransport.handle_async_request") as async_http_send:
+            first = self.client.get(PATH, headers=self.headers, params=params)
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["summary"], {"actual_cost": "1.25"})
+            for extra in ({"cursor": first.json()["next_cursor"]}, {"after_id": 1}, {}):
+                response = self.client.get(PATH, headers=self.headers, params={**params, **extra})
+                self.assertEqual(response.status_code, 200, response.text)
+            for action in (usage_action, models, quota_refresh, prepare_test, source_catalog,
+                           urllib_send, http_send, async_http_send):
+                action.assert_not_called()
+        self.assertEqual(self.db.raw.total_changes, before)
+        self.assertEqual(self.runtime.oauth_monitor.mock_calls, [])
+        self.assertEqual(self.runtime.bark_notifier.mock_calls, [])
+        self.runtime.oauth_base_url.assert_not_called()
+        self.auth.assert_called_with("fixture-admin-key", fresh=False)
 
     def test_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http(self):
         self.db.insert_user(9, username="测试用户", email="other@example.invalid")

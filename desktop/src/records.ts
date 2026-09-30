@@ -60,6 +60,7 @@ export type RecordPage = {
   next_cursor: string | null;
   latest_id: number;
   observed_at: string;
+  summary?: { actual_cost: string };
 };
 export type RecordOption = {
   id: number;

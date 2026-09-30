@@ -59,6 +59,7 @@ import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
+import "./mobile-layout.css";
 
 type Page = "accounts" | "records" | "events" | "features" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
@@ -633,13 +634,12 @@ export default function App() {
                     更新于 <Time at={snap.observed_at} />
                   </span>}
                 </div>
-                {page === "records" && <UsageRecords key={connectionKey} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
+                {page === "records" && <UsageRecords key={connectionKey} mobile={mobile} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} />
-                    {mobile && <button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button>}</div>
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /></div>}
                     <div className="filters">
                       <label className="search">
                         <Search size={15} />
@@ -711,6 +711,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
+                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "priority" | "quality"); setAscending(order === "asc"); }}><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
                       <div className="selection-bar">

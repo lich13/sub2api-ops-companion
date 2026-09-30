@@ -10,6 +10,7 @@ import {
   type UsageRecord,
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
+import { handleBack } from "./mobile";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), watchWindowFocus: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -20,7 +21,8 @@ const focusListeners = new Set<(focused: boolean) => void>();
 let feed: ReturnType<typeof useRecordFeed>;
 const saveColumns = vi.fn<(columns: string[]) => Promise<void>>();
 const now = "2026-09-30T04:00:00.000Z";
-const query = "limit=50&from_at=2026-09-29T04%3A00%3A00.000Z";
+const query = "limit=50&start_date=2026-09-30&end_date=2026-09-30";
+const totalCost = "12.3456789012";
 const record = (
   id: number,
   overrides: Partial<UsageRecord> = {},
@@ -90,6 +92,7 @@ const page = (
   next_cursor: null,
   latest_id: items[0]?.id ?? 0,
   observed_at: now,
+  summary: { actual_cost: totalCost },
   ...overrides,
 });
 function deferred<T>() {
@@ -112,6 +115,7 @@ const tableIds = () =>
   [...container.querySelectorAll<HTMLButtonElement>(".record-user button")].map(
     (b) => b.title,
   );
+const summary = () => container.querySelector(".records-summary strong");
 function button(label: string) {
   const found = [
     ...container.querySelectorAll<HTMLButtonElement>("button"),
@@ -159,11 +163,12 @@ async function renderFeed({
   );
 }
 type ViewProps = Partial<React.ComponentProps<typeof UsageRecords>>;
-async function renderView(props: ViewProps = {}) {
+async function renderView(props: ViewProps = {}, connectionKey = "fixture") {
   await act(async () =>
     root.render(
       <React.StrictMode>
         <UsageRecords
+          key={connectionKey}
           online
           foreground
           desktop
@@ -213,6 +218,24 @@ async function setInput(label: string, value: string) {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+async function applyFilters() {
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '.records-toolbar button[type="submit"]',
+      )!
+      .click(),
+  );
+}
+async function escape(selector: string) {
+  await act(async () =>
+    container
+      .querySelector(selector)!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+  );
+}
 function detailValue(label: string) {
   return [...container.querySelectorAll("[role=dialog] dt")].find(
     (node) => node.textContent === label,
@@ -252,11 +275,16 @@ describe("record feed lifecycle", () => {
     await renderFeed();
     expect(api).toHaveBeenCalledTimes(1);
     expect(feed.items.map((r) => r.id)).toEqual([100, 99]);
+    expect(params(paths()[0]).get("include_summary")).toBe("true");
+    expect(feed.totalCost).toBe(totalCost);
     await advance(9999);
     expect(api).toHaveBeenCalledTimes(1);
     await advance(1);
     expect(api).toHaveBeenCalledTimes(2);
     expect(params(paths()[1]).get("after_id")).toBe("100");
+    expect(params(paths()[1]).has("include_summary")).toBe(false);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
     await advance(10000);
     expect(api).toHaveBeenCalledTimes(3);
     expect(
@@ -314,6 +342,7 @@ describe("record feed lifecycle", () => {
     expect(api).toHaveBeenCalledTimes(2);
     expect(feed.items).toEqual([]);
     expect(feed.observed).toBe("");
+    expect(feed.totalCost).toBeNull();
     await act(async () => fresh.resolve(page([record(200)])));
     expect(feed.items.map((r) => r.id)).toEqual([200]);
     expect(params(paths()[1]).get("model")).toBe("new-model");
@@ -348,7 +377,11 @@ describe("record feed lifecycle", () => {
       const search = params(path);
       if (search.has("after_id")) return { new_count: 3 };
       return search.has("cursor")
-        ? page(second, { latest_id: 100 })
+        ? page(second, {
+            latest_id: 100,
+            observed_at: "2026-09-30T05:00:00.000Z",
+            summary: { actual_cost: "999" },
+          })
         : page(first, { next_cursor: cursor });
     });
     await renderFeed();
@@ -356,6 +389,9 @@ describe("record feed lifecycle", () => {
       await feed.more();
     });
     expect(params(paths()[1]).get("cursor")).toBe(cursor);
+    expect(params(paths()[1]).has("include_summary")).toBe(false);
+    expect(feed.observed).toBe(now);
+    expect(feed.totalCost).toBe(totalCost);
     expect(feed.items).toHaveLength(100);
     expect(feed.items.map((r) => r.id)).toEqual(
       Array.from({ length: 100 }, (_, i) => 100 - i),
@@ -373,6 +409,9 @@ describe("record feed lifecycle", () => {
     expect(params(paths()[2]).get("after_id")).toBe("100");
     expect(feed.newCount).toBe(3);
     expect(feed.items).toHaveLength(100);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
+    expect(params(paths()[2]).has("include_summary")).toBe(false);
   });
 
   it("refreshes the head for new arrivals when no history or detail is held", async () => {
@@ -380,7 +419,10 @@ describe("record feed lifecycle", () => {
     serve((path) =>
       params(path).has("after_id")
         ? { new_count: 2 }
-        : page([record(++heads === 1 ? 100 : 102)]),
+        : page([record(++heads === 1 ? 100 : 102)], {
+            summary: { actual_cost: heads === 1 ? totalCost : "18.9999999999" },
+            observed_at: heads === 1 ? now : "2026-09-30T04:00:10.000Z",
+          }),
     );
     await renderFeed();
     await advance(10000);
@@ -388,6 +430,9 @@ describe("record feed lifecycle", () => {
     expect(feed.items.map((r) => r.id)).toEqual([102]);
     expect(feed.newCount).toBe(0);
     expect(feed.latest).toBe(102);
+    expect(feed.totalCost).toBe("18.9999999999");
+    expect(feed.observed).toBe("2026-09-30T04:00:10.000Z");
+    expect(params(paths()[2]).get("include_summary")).toBe("true");
   });
 
   it("preserves cached rows after errors and backs off before resuming normal polling", async () => {
@@ -401,6 +446,8 @@ describe("record feed lifecycle", () => {
     await advance(10000);
     expect(feed.error).toBe("temporary fixture failure");
     expect(feed.items.map((r) => r.id)).toEqual([100]);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
     await advance(19999);
     expect(api).toHaveBeenCalledTimes(2);
     await advance(1);
@@ -409,9 +456,452 @@ describe("record feed lifecycle", () => {
     await advance(10000);
     expect(api).toHaveBeenCalledTimes(4);
   });
+
+  it("keeps list, total, and observation together while a refresh is pending or fails", async () => {
+    await renderFeed();
+    const pending = deferred<RecordPage>();
+    serve(() => pending.promise);
+    let refresh!: Promise<boolean>;
+    await act(async () => {
+      refresh = feed.refresh();
+    });
+    expect(feed.items.map((row) => row.id)).toEqual([100, 99]);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
+    await act(async () => pending.reject(new Error("summary unavailable")));
+    expect(await refresh).toBe(false);
+    expect(feed.error).toBe("summary unavailable");
+    expect(feed.items.map((row) => row.id)).toEqual([100, 99]);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
+
+    serve(() =>
+      page([record(101)], {
+        summary: { actual_cost: "9007199254740993.1234567890" },
+        observed_at: "2026-09-30T05:00:00.000Z",
+      }),
+    );
+    await act(async () => {
+      await feed.refresh();
+    });
+    expect(feed.items.map((row) => row.id)).toEqual([101]);
+    expect(feed.totalCost).toBe("9007199254740993.1234567890");
+    expect(feed.observed).toBe("2026-09-30T05:00:00.000Z");
+    expect(feed.error).toBe("");
+    expect(
+      paths().every((path) => params(path).get("include_summary") === "true"),
+    ).toBe(true);
+  });
 });
 
 describe("record view", () => {
+  it("defaults to today in Beijing and only changes date queries after Apply", async () => {
+    await renderView();
+    expect(params(paths()[0]).get("start_date")).toBe("2026-09-30");
+    expect(params(paths()[0]).get("end_date")).toBe("2026-09-30");
+    expect(params(paths()[0]).get("include_summary")).toBe("true");
+    expect(params(paths()[0]).has("from_at")).toBe(false);
+    expect(params(paths()[0]).has("to_at")).toBe(false);
+    expect(button("时间范围").textContent).toBe("今天");
+    expect(summary()?.textContent).toBe("$12.345679");
+    expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+    expect(
+      container.querySelector(".records-total-detail")?.textContent,
+    ).toContain(`$${totalCost}`);
+
+    await click("时间范围");
+    await click("近24小时");
+    expect(api).toHaveBeenCalledTimes(1);
+    await click("应用");
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(params(paths()[1]).get("start_date")).toBe("2026-09-29");
+    expect(params(paths()[1]).get("end_date")).toBe("2026-09-30");
+    expect(button("时间范围").textContent).toBe("近24小时");
+
+    await click("时间范围");
+    await setInput("开始日期", "2026-09-12");
+    await setInput("结束日期", "2026-09-15");
+    await click("应用");
+    expect(params(paths()[2]).get("start_date")).toBe("2026-09-12");
+    expect(params(paths()[2]).get("end_date")).toBe("2026-09-15");
+    expect(button("时间范围").textContent).toBe("2026-09-12 — 2026-09-15");
+  });
+
+  it("shows an unknown total on initial failure and retries the complete list with a genuine zero total", async () => {
+    serve(() => {
+      throw new Error("records and summary unavailable");
+    });
+    await renderView();
+    expect(summary()?.textContent).toBe("—");
+    expect(container.querySelector(".records-total-detail")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "records and summary unavailable",
+    );
+    serve(() => page([], { summary: { actual_cost: "0.0000000000" } }));
+    await click("重试");
+    expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
+    expect(summary()?.textContent).toBe("$0.000000");
+    expect(summary()?.getAttribute("title")).toBe("$0.0000000000");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("does not show the old total under a newly applied date range when its read fails", async () => {
+    await renderView();
+    const pending = deferred<RecordPage>();
+    serve(() => pending.promise);
+    await click("时间范围");
+    await click("昨天");
+    await click("应用");
+    expect(button("时间范围").textContent).toBe("昨天");
+    expect(params(paths().at(-1)!).get("start_date")).toBe("2026-09-29");
+    expect(params(paths().at(-1)!).get("end_date")).toBe("2026-09-29");
+    expect(tableIds()).toEqual([]);
+    expect(summary()?.textContent).toBe("—");
+    await act(async () => pending.reject(new Error("yesterday unavailable")));
+    expect(tableIds()).toEqual([]);
+    expect(summary()?.textContent).toBe("—");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "yesterday unavailable",
+    );
+    serve(() =>
+      page([record(90)], { summary: { actual_cost: "9.1234567890" } }),
+    );
+    await click("重试");
+    expect(params(paths().at(-1)!).get("start_date")).toBe("2026-09-29");
+    expect(tableIds()).toEqual(["查看记录 #90"]);
+    expect(summary()?.getAttribute("title")).toBe("$9.1234567890");
+  });
+
+  it("replaces today and its total at Beijing midnight while reading the live head", async () => {
+    vi.setSystemTime(new Date("2026-09-30T15:59:59Z"));
+    serve((path) =>
+      params(path).get("start_date") === "2026-10-01"
+        ? page([record(200)], { summary: { actual_cost: "0.125" } })
+        : page([record(100)]),
+    );
+    await renderView();
+    await advance(1000);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(params(paths()[1]).get("start_date")).toBe("2026-10-01");
+    expect(params(paths()[1]).get("end_date")).toBe("2026-10-01");
+    expect(tableIds()).toEqual(["查看记录 #200"]);
+    expect(summary()?.getAttribute("title")).toBe("$0.125");
+    expect(container.querySelector(".new-records")).toBeNull();
+  });
+
+  it.each(["scroll", "detail", "history", "filters"])(
+    "defers a midnight date change while holding %s until an explicit refresh",
+    async (holding) => {
+      vi.setSystemTime(new Date("2026-09-30T15:59:59Z"));
+      const props =
+        holding === "filters" ? { mobile: true, desktop: false } : {};
+      serve((path) => {
+        if (path === "/usage-records/100") return record(100);
+        const search = params(path);
+        if (search.get("start_date") === "2026-10-01")
+          return page([record(200)], { summary: { actual_cost: "0.125" } });
+        if (search.has("after_id")) return { new_count: 3 };
+        if (search.has("cursor"))
+          return page(
+            Array.from({ length: 50 }, (_, i) => record(50 - i)),
+            { summary: { actual_cost: "999" } },
+          );
+        return holding === "history"
+          ? page(
+              Array.from({ length: 50 }, (_, i) => record(100 - i)),
+              { next_cursor: "history-page" },
+            )
+          : page([record(100)]);
+      });
+      await renderView(props);
+      if (holding === "scroll") await scrollTo(240);
+      if (holding === "detail")
+        await act(async () =>
+          container
+            .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
+            .click(),
+        );
+      if (holding === "history") await click("加载更多");
+      if (holding === "filters") await click("筛选记录");
+      const before = paths().length;
+      await advance(1000);
+      expect(api).toHaveBeenCalledTimes(before);
+      expect(button("日期已更新 · 刷新")).toBeDefined();
+      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+      expect(container.textContent).toContain("user-100");
+      if (holding === "scroll") {
+        expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);
+        await scrollTo(0);
+      }
+      if (holding === "detail") await click("关闭详情");
+      if (holding === "filters") await click("关闭记录筛选");
+      await advance(1000);
+      expect(api).toHaveBeenCalledTimes(before);
+      expect(button("日期已更新 · 刷新")).toBeDefined();
+
+      await click("日期已更新 · 刷新");
+      expect(api).toHaveBeenCalledTimes(before + 1);
+      expect(params(paths().at(-1)!).get("start_date")).toBe("2026-10-01");
+      expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
+      expect(summary()?.getAttribute("title")).toBe("$0.125");
+      expect(container.textContent).toContain("user-200");
+      expect(container.textContent).not.toContain("user-100");
+      expect(container.querySelector(".records-scroll")?.scrollTop).toBe(0);
+      expect(container.querySelector(".new-records")).toBeNull();
+    },
+  );
+
+  it("does not query across midnight in the background and resumes using the new Beijing day", async () => {
+    vi.setSystemTime(new Date("2026-09-30T15:59:59Z"));
+    serve((path) =>
+      params(path).get("start_date") === "2026-10-01"
+        ? page([record(200)], { summary: { actual_cost: "0.125" } })
+        : page([record(100)]),
+    );
+    await renderView({ mobile: true, desktop: false });
+    await renderView({ mobile: true, desktop: false, foreground: false });
+    await advance(30000);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
+    await renderView({ mobile: true, desktop: false });
+    expect(params(paths().at(-1)!).get("start_date")).toBe("2026-10-01");
+    expect(summary()?.getAttribute("title")).toBe("$0.125");
+    expect(container.textContent).toContain("user-200");
+  });
+
+  it("keeps an applied custom date range unchanged when Beijing midnight passes", async () => {
+    vi.setSystemTime(new Date("2026-09-30T15:59:59Z"));
+    await renderView();
+    await click("时间范围");
+    await setInput("开始日期", "2026-09-12");
+    await setInput("结束日期", "2026-09-15");
+    await click("应用");
+    await advance(1000);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(params(paths().at(-1)!).get("start_date")).toBe("2026-09-12");
+    expect(params(paths().at(-1)!).get("end_date")).toBe("2026-09-15");
+    expect(container.querySelector(".new-records")).toBeNull();
+  });
+
+  it("clears the old connection's list and total and ignores its late refresh response", async () => {
+    await renderView({}, "connection-a");
+    const old = deferred<RecordPage>(),
+      fresh = deferred<RecordPage>();
+    serve(() => old.promise);
+    await click("刷新记录");
+    serve(() => fresh.promise);
+    await renderView({}, "connection-b");
+    expect(tableIds()).toEqual([]);
+    expect(summary()?.textContent).toBe("—");
+    await act(async () =>
+      fresh.resolve(page([record(200)], { summary: { actual_cost: "20.2" } })),
+    );
+    await act(async () =>
+      old.resolve(page([record(999)], { summary: { actual_cost: "999" } })),
+    );
+    expect(tableIds()).toEqual(["查看记录 #200"]);
+    expect(summary()?.getAttribute("title")).toBe("$20.2");
+    expect(focusListeners.size).toBe(1);
+    expect(api).toHaveBeenCalledTimes(3);
+  });
+
+  it("renders every selected record field in mobile cards and retains request type only in details", async () => {
+    const row = record(100, {
+      request_type: "ws_v2",
+      output_tokens: 120,
+      cache_read_tokens: 127100,
+      cache_creation_tokens: 1250000,
+      first_token_ms: 10000,
+      duration_ms: 70000,
+    });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView({
+      mobile: true,
+      desktop: false,
+      columns: [
+        "api_key",
+        "account",
+        "model",
+        "reasoning",
+        "tokens",
+        "cost",
+        "latency",
+        "user_agent",
+        "ip",
+        "endpoint",
+        "group",
+        "billing",
+        "request_id",
+        "upstream_id",
+        "type",
+      ],
+    });
+    expect(container.querySelector(".records-table")).toBeNull();
+    const card = container.querySelector(".mobile-record")!;
+    expect(
+      [...card.querySelectorAll(".mobile-record-label")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      "API 密钥",
+      "账户",
+      "模型",
+      "推理强度",
+      "Token",
+      "延迟",
+      "User-Agent",
+      "IP",
+      "端点",
+      "分组",
+      "计费模式",
+      "请求 ID",
+      "上游 ID",
+    ]);
+    expect(card.querySelector(".mobile-record-user")?.textContent).toContain(
+      "user-100 #7",
+    );
+    expect(card.querySelector("time")?.textContent).toMatch(/\d/);
+    for (const text of [
+      "workspace",
+      "#8",
+      "test-account",
+      "request-model",
+      "forward-model",
+      "returned-model",
+      "max",
+      "high",
+      "fixture-agent",
+      "2001:db8::1",
+      "/v1/responses",
+      "/backend-api/codex/responses",
+      "test-group",
+      "req-100",
+      "upstream-100",
+    ])
+      expect(card.textContent).toContain(text);
+    expect(card.querySelector('[title="输入 Token"]')?.textContent).toBe(
+      "1,234",
+    );
+    expect(card.querySelector('[title="输出 Token"]')?.textContent).toBe("120");
+    expect(card.querySelector(".record-cache-read")?.textContent).toBe(
+      "127.1K",
+    );
+    expect(
+      card.querySelector(".record-cache-read")?.getAttribute("title"),
+    ).toBe("缓存读取：127,100");
+    expect(card.querySelector(".record-cache-write")?.textContent).toBe("1.3M");
+    expect(card.querySelector('[title="用户实扣"]')?.textContent).toBe(
+      "$9007199254740993.123457",
+    );
+    expect(card.querySelector('[title="账户费用"]')?.textContent).toBe(
+      "A $0.000000",
+    );
+    expect(card.querySelector(".record-tps")?.textContent).toBe("2.00 tok/s");
+    expect(card.querySelector(".mobile-record-latency")?.textContent).toContain(
+      "10.00s",
+    );
+    expect(card.querySelector(".mobile-record-latency")?.textContent).toContain(
+      "70.00s",
+    );
+    expect(card.querySelector(".mobile-record-billing")?.textContent).toBe(
+      "计费模式Token",
+    );
+    expect(card.querySelector(".mobile-record-type")).toBeNull();
+    expect(card.textContent).not.toContain("WebSocket");
+    expect(saveColumns).not.toHaveBeenCalled();
+    await click("查看记录 #100");
+    expect(detailValue("类型")).toBe("WebSocket");
+    expect(detailValue("用户实扣")).toBe("$9007199254740993.1234567890");
+    const fallback = vi.fn();
+    await act(async () => handleBack(fallback));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("applies saved field preferences to mobile cards and preserves mandatory user and time", async () => {
+    const props = {
+      mobile: true,
+      desktop: false,
+      columns: ["model", "cost", "user_agent", "type"],
+    };
+    await renderView(props);
+    const labels = () =>
+      [
+        ...container.querySelectorAll(
+          ".mobile-record:first-child .mobile-record-label",
+        ),
+      ].map((node) => node.textContent);
+    expect(labels()).toEqual(["模型", "User-Agent"]);
+    expect(
+      container.querySelector(".mobile-record .record-money"),
+    ).not.toBeNull();
+    const menu = container.querySelector<HTMLDetailsElement>(
+      ".records-column-menu",
+    )!;
+    await act(async () => menu.querySelector("summary")!.click());
+    await advance(0);
+    const costToggle = [...menu.querySelectorAll("label")]
+      .find((label) => label.querySelector("span")?.textContent === "费用")!
+      .querySelector<HTMLInputElement>("input")!;
+    await act(async () => costToggle.click());
+    expect(saveColumns).toHaveBeenCalledExactlyOnceWith([
+      "model",
+      "user_agent",
+    ]);
+    await renderView({ ...props, columns: ["model", "user_agent"] });
+    expect(container.querySelector(".mobile-record .record-money")).toBeNull();
+    expect(labels()).toEqual(["模型", "User-Agent"]);
+    expect(
+      container.querySelector(".mobile-record-user")?.textContent,
+    ).toContain("user-100");
+    expect(container.querySelector(".mobile-record time")).not.toBeNull();
+    const fallback = vi.fn();
+    await act(async () => handleBack(fallback));
+    await advance(0);
+    expect(menu.open).toBe(false);
+    expect(fallback).not.toHaveBeenCalled();
+    await act(async () => handleBack(fallback));
+    expect(fallback).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["close", "Escape", "Back", "backdrop"])(
+    "discards mobile filter drafts when closed with %s and applies them only on submit",
+    async (action) => {
+      await renderView({ mobile: true, desktop: false });
+      await click("筛选记录");
+      await setInput("模型筛选", "discarded-model");
+      const fallback = vi.fn();
+      if (action === "close") await click("关闭记录筛选");
+      else if (action === "Escape")
+        await escape('.records-toolbar[role="dialog"]');
+      else if (action === "Back") await act(async () => handleBack(fallback));
+      else
+        await act(async () =>
+          container
+            .querySelector<HTMLElement>(".records-filter-backdrop")!
+            .click(),
+        );
+      expect(
+        container.querySelector('.records-toolbar[role="dialog"]'),
+      ).toBeNull();
+      expect(api).toHaveBeenCalledTimes(1);
+      expect(fallback).not.toHaveBeenCalled();
+      await click("筛选记录");
+      expect(
+        container.querySelector<HTMLInputElement>('[aria-label="模型筛选"]')
+          ?.value,
+      ).toBe("");
+      await setInput("模型筛选", "committed-model");
+      await applyFilters();
+      expect(params(paths().at(-1)!).get("model")).toBe("committed-model");
+      expect(params(paths().at(-1)!).get("include_summary")).toBe("true");
+      expect(
+        container.querySelector('.records-toolbar[role="dialog"]'),
+      ).toBeNull();
+      expect(api).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it.each([
     { state: "unconfirmed", initial: undefined },
     { state: "unfocused", initial: false },
@@ -487,8 +977,11 @@ describe("record view", () => {
       }
       expect(document.visibilityState).toBe("visible");
       expect(button("刷新记录").disabled).toBe(true);
-      await act(async () => stale.resolve(page([record(200)])));
+      await act(async () =>
+        stale.resolve(page([record(200)], { summary: { actual_cost: "999" } })),
+      );
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
       await advance(30000);
       expect(api).toHaveBeenCalledTimes(2);
 
@@ -497,6 +990,7 @@ describe("record view", () => {
       expect(api).toHaveBeenCalledTimes(3);
       expect(params(paths()[2]).get("after_id")).toBe("100");
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
       await advance(10000);
       expect(api).toHaveBeenCalledTimes(4);
     },
@@ -645,7 +1139,11 @@ describe("record view", () => {
     expect(
       paths()
         .filter((path) => path.startsWith("/usage-record-options?"))
-        .every((path) => !params(path).has("from_at")),
+        .every((path) =>
+          ["from_at", "to_at", "start_date", "end_date"].every(
+            (key) => !params(path).has(key),
+          ),
+        ),
     ).toBe(true);
   });
 
@@ -851,9 +1349,12 @@ describe("record view", () => {
             .click(),
         );
       await act(async () =>
-        replacement.resolve(page([record(102), record(101)])),
+        replacement.resolve(
+          page([record(102), record(101)], { summary: { actual_cost: "999" } }),
+        ),
       );
       expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+      expect(summary()?.getAttribute("title")).toBe(`$${totalCost}`);
       expect(button("2 条新记录")).toBeDefined();
       if (action === "scroll")
         expect(container.querySelector(".records-scroll")?.scrollTop).toBe(240);

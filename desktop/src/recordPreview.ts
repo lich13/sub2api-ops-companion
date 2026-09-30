@@ -131,6 +131,12 @@ export function recordPreview(path: string) {
   }
   const filtered = rows.filter(
     (r) =>
+      (!p.has("start_date") ||
+        Date.parse(r.created_at) >=
+          Date.parse(`${p.get("start_date")}T00:00:00+08:00`)) &&
+      (!p.has("end_date") ||
+        Date.parse(r.created_at) <
+          Date.parse(`${p.get("end_date")}T00:00:00+08:00`) + 86400000) &&
       (!p.has("from_at") || r.created_at >= p.get("from_at")!) &&
       (!p.has("to_at") || r.created_at <= p.get("to_at")!) &&
       (!p.has("account_id") || r.account_id === Number(p.get("account_id"))) &&
@@ -148,10 +154,21 @@ export function recordPreview(path: string) {
     (r) => !p.has("cursor") || r.id < Number(p.get("cursor")),
   );
   const items = remaining.slice(0, 50);
+  const cost = filtered.reduce(
+    (total, row) => total + BigInt((row.actual_cost || "0").replace(".", "")),
+    0n,
+  );
   return {
     items: structuredClone(items),
     next_cursor: remaining.length > 50 ? String(items.at(-1)!.id) : null,
     latest_id: rows[0].id,
     observed_at: new Date().toISOString(),
+    ...(p.get("include_summary") === "true" && !p.has("cursor")
+      ? {
+          summary: {
+            actual_cost: `${cost / 10000000000n}.${(cost % 10000000000n).toString().padStart(10, "0")}`,
+          },
+        }
+      : {}),
   };
 }

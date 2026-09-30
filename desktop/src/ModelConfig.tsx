@@ -385,7 +385,7 @@ export default function ModelConfig({ online }: { online: boolean }) {
                 <span key={e}>{e}</span>
               ))}
             </div>
-            <span>{item.default_effort}</span>
+            <span className="reasoning-default"><span className="mobile-field-label">默认</span>{item.default_effort}</span>
             <span
               className={`reasoning-state ${item.state}`}
               title={`${item.reason}${item.updated_at ? "\n" + fullTime(item.updated_at) : ""}`}

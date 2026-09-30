@@ -306,19 +306,19 @@ export function RecoveryHistory({
           <tbody>
             {items.map((r) => (
               <tr key={r.id}>
-                <td>
+                <td data-label="账号">
                   {r.account_name ||
                     accounts.find((a) => a.id === r.account_id)?.name}
                 </td>
-                <td>{r.model_id || "未知"}</td>
-                <td>
+                <td data-label="测试模型">{r.model_id || "未知"}</td>
+                <td data-label="测活通过时间">
                   <time>
                     {r.test_completed_at
                       ? fullTime(r.test_completed_at)
                       : "时间未知"}
                   </time>
                 </td>
-                <td>
+                <td data-label="恢复确认时间">
                   <time>
                     {r.recovered_at ? fullTime(r.recovered_at) : "时间未知"}
                   </time>

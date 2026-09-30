@@ -8,6 +8,7 @@ type Feed = {
   latest: number | null;
   newCount: number;
   observed: string;
+  totalCost: string | null;
   loading: boolean;
   error: string;
 };
@@ -17,6 +18,7 @@ const empty = (): Feed => ({
   latest: null,
   newCount: 0,
   observed: "",
+  totalCost: null,
   loading: false,
   error: "",
 });
@@ -67,7 +69,7 @@ export function useRecordFeed(
         if (mode === "more" && !cursor) return true;
         const page = await api<RecordPage>(
           "GET",
-          `/usage-records?${query}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+          `/usage-records?${query}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : "&include_summary=true"}`,
         );
         if (!valid()) return false;
         // A user can start reading while the automatic refresh is in flight.
@@ -90,7 +92,12 @@ export function useRecordFeed(
               : page.items,
           cursor: page.next_cursor,
           latest: page.latest_id,
-          observed: page.observed_at,
+          observed:
+            mode === "more" ? current.current.observed : page.observed_at,
+          totalCost:
+            mode === "more"
+              ? current.current.totalCost
+              : (page.summary?.actual_cost ?? null),
           newCount: mode === "more" ? current.current.newCount : 0,
           error: "",
         });
