@@ -18,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import account_ops
+from .account_locks import AccountLease
 from .audit import write_audit
 from .bark import sanitize_error_text
 from .daily_test import DailyTestSchedule, daily_account_eligible
@@ -646,10 +647,11 @@ def _rate_limit_recovery_descriptor(
     )
     if block_time is None:
         return None
-    normalized = block_time.isoformat()
+    deadline = parse_iso_datetime(row.get("rate_limit_reset_at")) or block_time
+    normalized = f"{block_time.isoformat()}:{deadline.isoformat()}"
     return {
         "fingerprint": "|".join(f"{key}@{normalized}" for key in window_keys),
-        "due_at": _utc(now).isoformat(),
+        "due_at": deadline.isoformat(),
         "source": "server_exact",
         "window_keys": window_keys,
         "kind": "rate_limit_block",
@@ -659,6 +661,27 @@ def _rate_limit_recovery_descriptor(
 def _retry_at(now: datetime, attempt_count: int) -> str:
     index = min(max(0, int(attempt_count) - 1), len(RECOVERY_RETRY_SECONDS) - 1)
     return (_utc(now) + timedelta(seconds=RECOVERY_RETRY_SECONDS[index])).isoformat()
+
+
+def recovery_quota_ready(row: dict, result: dict | None, metadata: dict, now: datetime) -> bool:
+    """Quota evidence can authorize a test without authorizing another quota request."""
+    if not fresh_quota(row, result, now):
+        return False
+    summary = oauth_quota_summary_from_result(row, result)
+    if not _quota_all_required_available(summary):
+        return False
+    observed = parse_iso_datetime((result or {}).get("queried_at"))
+    intent = metadata.get("recovery_intent") or {}
+    boundaries = [parse_iso_datetime(row.get("rate_limit_reset_at")),
+                  parse_iso_datetime(row.get("temp_unschedulable_until")),
+                  parse_iso_datetime(intent.get("due_at"))]
+    if any(boundary and observed < boundary for boundary in boundaries):
+        return False
+    failed = parse_iso_datetime(metadata.get("last_error_at"))
+    if failed and observed <= failed and metadata.get("last_error_code"):
+        return False
+    threshold = _threshold_recovery_descriptor(row, summary)
+    return not threshold or _threshold_quota_available(summary, threshold)
 
 
 def build_monitor_candidates(
@@ -680,7 +703,7 @@ def build_monitor_candidates(
         result = latest_openai_result(row, results.get(account_id), current) or {}
         metadata = _scheduler_row(scheduler, account_id)
         blocked, _deadline = automatic_gate(row, result, metadata, current)
-        if blocked:
+        if blocked in {"account_ineligible", "auth_paused"}:
             continue
         summary = oauth_quota_summary_from_result(row, result)
         intent = _normal_recovery_intent(metadata.get("recovery_intent"))
@@ -688,6 +711,10 @@ def build_monitor_candidates(
         due = parse_iso_datetime(intent.get("next_retry_at") if status in {"retry", "waiting_quota", "testing"}
                                  else intent.get("due_at"))
         descriptor = _quota_recovery_descriptor(summary, current) or _threshold_recovery_descriptor(row, summary)
+        reset_due = reset_not_before(row, result)
+        if reset_due and current < reset_due:
+            continue
+        reusable = recovery_quota_ready(row, result, metadata, current)
         reason, priority = "", 99
         if status in {"pending", "ready", "retry", "waiting_quota", "testing"} and (due is None or current >= due):
             reason, priority = "recovery_intent", 0
@@ -699,11 +726,14 @@ def build_monitor_candidates(
             reason, priority = "bootstrap", 1
         elif (metadata.get("quota_query") or {}).get("auth_fingerprint") not in (None, "", credential_fingerprint(row)):
             reason, priority = "credential_changed", 1
+        if blocked and not (reason == "recovery_intent" and reusable):
+            continue
         if reason:
             candidates.append({
                 "account_id": account_id, "row": row, "reason": reason, "priority": priority,
                 "exact_fingerprint": str((descriptor or intent).get("fingerprint") or ""),
                 "previous_summary": summary,
+                "reuse_quota": result if reason == "recovery_intent" and reusable else None,
             })
     candidates.sort(key=lambda item: (int(item["priority"]),
         str(query_metadata(_scheduler_row(scheduler, item["account_id"]), results.get(item["account_id"])).get("last_query_at") or ""),
@@ -990,6 +1020,47 @@ class OAuthMonitor:
         row = self.account_reader(self.db, int(account_id))
         return dict(row) if isinstance(row, dict) else None
 
+    def _discover_recoveries(self, rows: list[dict], now: datetime) -> None:
+        def discover(data: dict) -> None:
+            for row in rows:
+                aid = str(row["id"])
+                metadata = data["scheduler"].setdefault(aid, {})
+                saved = latest_openai_result(row, data["oauth_results"].get(aid), now)
+                blocked, _ = automatic_gate(row, saved, metadata, now)
+                if blocked in {"account_ineligible", "auth_paused"}:
+                    continue
+                summary = oauth_quota_summary_from_result(row, saved)
+                if not automatic_recovery_eligible(row, exhausted_window_keys=list(
+                        required_oauth_window_keys(summary.get("plan_type"))), now=now):
+                    continue
+                old = _normal_recovery_intent(metadata.get("recovery_intent"))
+                descriptor = (_quota_recovery_descriptor(summary, now)
+                              or _threshold_recovery_descriptor(row, summary))
+                if not descriptor and old.get("status") in {"pending", "ready", "retry", "waiting_quota", "testing"}:
+                    # Preserve the exhausted window boundary after passive quota recovery.
+                    continue
+                descriptor = descriptor or _rate_limit_recovery_descriptor(row, summary, now)
+                if not descriptor or descriptor["fingerprint"] == old.get("fingerprint"):
+                    continue
+                recovered = parse_iso_datetime(old.get("recovered_at"))
+                block = parse_iso_datetime(row.get("rate_limited_at"))
+                if recovered and block and block <= recovered and descriptor["kind"] == "rate_limit_block":
+                    continue
+                metadata["recovery_intent"] = {**descriptor, "status": "pending", "attempt_count": 0,
+                    "next_retry_at": "", "last_error": "", "last_error_code": ""}
+        previous = self.store.cached_snapshot()
+        candidate = _json_copy(previous)
+        discover(candidate)
+        changes = {aid: meta["recovery_intent"] for aid, meta in candidate["scheduler"].items()
+                   if meta.get("recovery_intent") != previous["scheduler"].get(aid, {}).get("recovery_intent")}
+        if changes:
+            def commit(data: dict) -> None:
+                for aid, intent in changes.items():
+                    meta = data["scheduler"].setdefault(aid, {})
+                    if meta.get("recovery_intent") == previous["scheduler"].get(aid, {}).get("recovery_intent"):
+                        meta["recovery_intent"] = intent
+            self.store.transaction(commit)
+
     def _known_event(self, key: str, account_id: int, state: dict[str, Any]) -> bool:
         if key in (state.get("recovery_history") or {}) and not state["recovery_history"][key].get("legacy"):
             return True
@@ -1111,6 +1182,9 @@ class OAuthMonitor:
         self.daily_schedule.save_batch(batch)
 
         def test(row: dict[str, Any]) -> dict[str, Any]:
+            lease = AccountLease(self.db, row)
+            if not lease.acquire():
+                return {"skipped": True, "error_code": "account_busy"}
             try:
                 latest = self._read_account(int(row["id"]))
                 if not daily_account_eligible(latest, current):
@@ -1119,6 +1193,8 @@ class OAuthMonitor:
                                         admin_token=token, timeout_seconds=30)
             except Exception as exc:
                 return {"success": False, "error_code": "daily_test_error", "error": str(exc)}
+            finally:
+                lease.release()
 
         workers = _positive_int(getattr(self.settings, "oauth_recovery_test_concurrency", 2), 2, 1, 8)
         if jobs:
@@ -1198,9 +1274,18 @@ class OAuthMonitor:
                 self._force_condition.notify_all()
         return report
 
-    def _run_cycle(
+    def _run_cycle(self, current: datetime, **kwargs: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        leases: list[AccountLease] = []
+        try:
+            return self._run_cycle_with_leases(current, leases=leases, **kwargs)
+        finally:
+            for lease in reversed(leases):
+                lease.release()
+
+    def _run_cycle_with_leases(
         self, current: datetime, *, force: bool, recovery_enabled: bool | None = None,
         reuse_cycle_results: bool = False, daily: bool = False, live_clock: bool = False,
+        leases: list[AccountLease],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         started = time.monotonic()
         prior_usage = dict(self._cycle_usage) if reuse_cycle_results else {}
@@ -1236,6 +1321,8 @@ class OAuthMonitor:
                     if value.get("auto_reset_credit")}
             self._accounts = [self._read_account(int(row["id"])) or row if int(row["id"]) in held else row
                               for row in self._accounts]
+        if recovery_enabled and not force and not daily:
+            self._discover_recoveries(self._accounts, current)
         state = self.store.cached_snapshot()
         results = {int(key): value for key, value in (state.get("oauth_results") or {}).items()}
         scheduler = {int(key): value for key, value in (state.get("scheduler") or {}).items()}
@@ -1272,6 +1359,14 @@ class OAuthMonitor:
             getattr(self.settings, "oauth_early_probe_batch_size", 8), 8, 1, 50
         )
         selected = candidates if force or daily else candidates[:batch_size]
+        admitted = []
+        for item in selected:
+            lease = AccountLease(self.db, item["row"])
+            if lease.acquire():
+                leases.append(lease)
+                admitted.append(item)
+        selected = admitted
+        reused_quota = {item["account_id"]: item["reuse_quota"] for item in selected if item.get("reuse_quota")}
         prior_usage = {key: value for key, value in prior_usage.items()
                        if key in {int(item["account_id"]) for item in selected}}
         if daily:
@@ -1319,6 +1414,7 @@ class OAuthMonitor:
         )
         usage_results: dict[int, dict[str, Any]] = {}
         usage_results.update(prior_usage)
+        usage_results.update(reused_quota)
         with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
             futures = {
                 executor.submit(
@@ -1330,7 +1426,7 @@ class OAuthMonitor:
                     now=None if live_clock else current,
                 ): item
                 for item in selected
-                if int(item["account_id"]) not in prior_usage
+                if int(item["account_id"]) not in usage_results
             }
             for future in as_completed(futures):
                 item = futures[future]
@@ -1363,6 +1459,8 @@ class OAuthMonitor:
             reason = str(selected_item["reason"])
             metadata = _scheduler_row(scheduler, account_id)
             update: dict[str, Any] = {"last_attempt_at": current.isoformat(), "last_reason": reason}
+            if account_id in reused_quota:
+                update.pop("last_attempt_at")
             if reason == "exact_reset":
                 update["last_exact_at"] = current.isoformat()
                 update["last_exact_fingerprint"] = selected_item.get("exact_fingerprint") or ""
@@ -1669,20 +1767,23 @@ class OAuthMonitor:
                         "last_error_code": auth_code or error_code or "account_test_error",
                     }
                 )
-            elif account_recovery_confirmed(post_test):
-                success = True
             else:
                 window_keys = [str(value) for value in intent.get("window_keys") or []]
-                if not automatic_recovery_eligible(
+                if not recovery_block_change_is_safe(frozen_row, post_test):
+                    success = False
+                    error_code = "recovery_state_changed"
+                    recovery_result = {"error": "账号阻断签名已变化，已停止自动恢复"}
+                elif account_recovery_confirmed(post_test):
+                    # A passive test can already clear the block. Still run
+                    # the same safety gates above so a manual close or a new
+                    # blocking reason cannot be mistaken for recovery.
+                    success = True
+                elif not automatic_recovery_eligible(
                     post_test, exhausted_window_keys=window_keys, now=current
                 ):
                     success = False
                     error_code = "recovery_state_changed"
                     recovery_result = {"error": "账号在测活后发生并发状态变化，已停止自动恢复"}
-                elif not recovery_block_change_is_safe(frozen_row, post_test):
-                    success = False
-                    error_code = "recovery_state_changed"
-                    recovery_result = {"error": "账号阻断签名已变化，已停止自动恢复"}
                 else:
                     recovery_result = self.recovery_runner(
                         account_id,
@@ -1783,14 +1884,15 @@ class OAuthMonitor:
         duration_ms = int((time.monotonic() - started) * 1000)
         success_count = sum(1 for value in usage_results.values() if value.get("success"))
         queried_count = sum(1 for key, value in usage_results.items()
-                            if key not in prior_usage and not value.get("skipped") and not value.get("coalesced"))
+                            if key not in prior_usage and key not in reused_quota
+                            and not value.get("skipped") and not value.get("coalesced"))
         report = {
             "success": success_count == len(selected),
             "refresh_at": current.isoformat(),
             "total_count": len(self._accounts),
             "queried_count": queried_count,
             "skipped_count": sum(bool(value.get("skipped")) for value in usage_results.values()),
-            "reused_count": len(prior_usage),
+            "reused_count": len(prior_usage) + len(reused_quota),
             "success_count": success_count,
             "failure_count": len(selected) - success_count,
             "depleted_count": depleted_count,

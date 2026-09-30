@@ -52,6 +52,7 @@ import {
   RecoveryHistory,
 } from "./AccountControls";
 import TestDialog from "./TestDialog";
+import ModelTestDialog from "./ModelTestDialog";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
@@ -115,6 +116,7 @@ export default function App() {
     [qualityFilter, setQualityFilter] = useState(""),
     [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
+    [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
@@ -695,7 +697,7 @@ export default function App() {
               </>
             ) : (
               <>
-                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
+                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} modelTest={(account) => setModelTestAccount(account)} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
                 <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page}>
                   <div className="page-heading">
                     <div>
@@ -802,7 +804,7 @@ export default function App() {
                           删除所选
                         </button>
                       </div>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} report={report}/> : <table className="accounts-table">
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} report={report}/> : <table className="accounts-table">
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -1026,7 +1028,7 @@ export default function App() {
                               <td>{schedule(a)}</td>
                               <td>
                                 <div className="account-actions">
-                                  {a.platform === "openai" && a.type === "oauth" && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><DegradationAction account={a} online={state.online} report={report}/></div></details>}
+                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>{a.type === "oauth" && <DegradationAction account={a} online={state.online} report={report}/>}</div></details>}
                                   <button
                                     className="test-button"
                                     disabled={
@@ -1327,6 +1329,14 @@ export default function App() {
           account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
           online={state.online}
           close={() => setTestAccount(null)}
+        />
+      )}
+      {modelTestAccount && (
+        <ModelTestDialog
+          account={accounts.find((a) => a.id === modelTestAccount.id) ?? modelTestAccount}
+          online={state.online}
+          report={report}
+          close={() => setModelTestAccount(null)}
         />
       )}
       {qualityAccount && (

@@ -99,6 +99,7 @@
 .bottom-nav button.active { color: var(--accent); background: var(--accent-bg); }
 .mobile .modal-backdrop, .mobile .drawer-backdrop { z-index: 60; padding: 0; align-items: end; }
 .mobile .modal, .mobile-action-sheet { width: 100%; max-width: none; max-height: 90dvh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); background: var(--surface); border: 1px solid var(--line); }
+.mobile .model-test-dialog { width: 100%; max-width: none; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
 .mobile-action-sheet { display: grid; gap: 12px; }
 .mobile-action-sheet .priority-edit input { width: 110px; }
 .mobile-action-sheet .field { margin: 0; }

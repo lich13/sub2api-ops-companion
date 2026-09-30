@@ -29,6 +29,7 @@ from .desktop_usage import attach_stats, project_usage, read_stats, reset_credit
 from .desktop_actions import DesktopActions, PriorityRequest, TestRequest, GroupsRequest, DegradationMarkRequest
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
 from .account_quality import QualityCache, SUPPORTED
+from .model_tests import ModelTests, ModelTestRequest
 
 PREFIX = "/api/desktop/v1"
 ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
@@ -219,26 +220,41 @@ class DesktopService:
         self._uncertain_resets: set[int] = set()
         self.actions = DesktopActions(self)
         self.quality = QualityCache(getattr(runtime, "db", None))
+        self._model_tests: ModelTests | None = None
+
+    @property
+    def model_tests(self) -> ModelTests:
+        if self._model_tests is None:
+            self._model_tests = ModelTests(self)
+        return self._model_tests
 
     async def close(self) -> None:
+        if self._model_tests is not None:
+            await self._model_tests.close()
         self.quality.close()
         await self.actions.close()
 
     def account_lock(self, account_id: int) -> threading.Lock:
-        with self._usage_locks_guard:
-            return self._usage_locks.setdefault(account_id, threading.Lock())
+        from .account_locks import account_lock
+        return account_lock(self.r.db, account_id)
 
     @contextmanager
     def recovery_guard(self, row: dict[str, Any]):
+        from .account_locks import AccountLease
+        parent = AccountLease(self.r.db, row, include_account=False)
+        if not parent.acquire():
+            raise HTTPException(409, "母账号正在执行操作，请稍后重试")
         monitor = getattr(self.r, "oauth_monitor", None)
         lock = monitor._run_lock if row["platform"] == "openai" and monitor else None
         if lock and not lock.acquire(blocking=False):
+            parent.release()
             raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
         try:
             yield
         finally:
             if lock:
                 lock.release()
+            parent.release()
 
     @contextmanager
     def account_operation(self, account_id: int, version: str, *, coordinate_monitor: bool = True):
@@ -824,6 +840,26 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
                 yield "data: " + json.dumps({"type": "error", "error": safe_error_text(exc.detail, 240)}) + "\n\n"
         return StreamingResponse(stream(),
             media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @router.post("/accounts/{account_id}/model-tests")
+    async def model_test_start(account_id: int, payload: ModelTestRequest, request: Request) -> Any:
+        await auth(request)
+        return await service.model_tests.start(account_id, payload)
+
+    @router.get("/accounts/{account_id}/model-tests/latest")
+    async def model_test_latest(account_id: int, request: Request) -> Any:
+        await auth(request)
+        return service.model_tests.latest(account_id)
+
+    @router.get("/model-tests/{job_id}")
+    async def model_test_result(job_id: str, request: Request) -> Any:
+        await auth(request)
+        return service.model_tests.get(job_id)
+
+    @router.post("/model-tests/{job_id}/cancel")
+    async def model_test_cancel(job_id: str, request: Request) -> Any:
+        await auth(request)
+        return await service.model_tests.cancel(job_id)
 
     @router.post("/quota-refresh")
     async def quota_refresh(request: Request) -> Any:
