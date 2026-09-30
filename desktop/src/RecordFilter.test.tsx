@@ -393,28 +393,26 @@ describe("record filter directory", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it.each(["12345", " #12345 "])(
-    "accepts historical ID %s absent from the current directory",
-    async (query) => {
+  it.each(["users", "api_keys"] as const)(
+    "never invents a numeric ID absent from the %s directory",
+    async (kind) => {
       serve(() => page([]));
-      await renderFilter({ kind: "api_keys", userId: 7 });
-      await open("API 密钥筛选");
-      await search(query);
-      await advance(250);
-      expect(options()[1].textContent).toContain("按 ID #12345 筛选");
-      await press("Enter");
-      expect(onChange).toHaveBeenLastCalledWith({
-        id: 12345,
-        name: null,
-        deleted: false,
-        user_id: 7,
-      });
-      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      await renderFilter({ kind, userId: 7 });
+      await open(kind === "users" ? "用户筛选" : "API 密钥筛选");
+      for (const query of ["12345", " #12345 "]) {
+        await search(query);
+        await advance(250);
+        expect(options()).toHaveLength(1);
+        expect(container.textContent).not.toContain("按 ID");
+        await press("Enter");
+        expect(onChange).not.toHaveBeenCalled();
+        expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+      }
     },
   );
 
   it.each(["0", "-1", "1.5", "1e3", "9007199254740992", "##12", "abc"])(
-    "rejects invalid historical ID %s",
+    "does not create a candidate from an unmatched query %s",
     async (query) => {
       serve(() => page([]));
       await renderFilter();
@@ -427,8 +425,8 @@ describe("record filter directory", () => {
     },
   );
 
-  it("uses the actual option rather than duplicating a found numeric ID", async () => {
-    const option = user(123, { deleted: true, status: "disabled" });
+  it("allows a disabled existing option found by numeric ID", async () => {
+    const option = user(123, { status: "disabled" });
     serve(() => page([option]));
     await renderFilter();
     await open();
@@ -436,9 +434,100 @@ describe("record filter directory", () => {
     await advance(250);
     expect(options()).toHaveLength(2);
     expect(container.textContent).not.toContain("按 ID");
-    expect(options()[1].textContent).toContain("已删除");
+    expect(options()[1].textContent).toContain("停用");
     await press("Enter");
     expect(onChange).toHaveBeenLastCalledWith(option);
+  });
+
+  it.each(["users", "api_keys"] as const)(
+    "filters deleted %s from initial pages, later pages, and numeric searches",
+    async (kind) => {
+      serve((path) => {
+        if (params(path).has("q")) return page([user(2, { deleted: true })]);
+        if (params(path).has("cursor"))
+          return page([
+            user(1, { deleted: true }),
+            user(4),
+            user(5, { deleted: true }),
+          ]);
+        return page(
+          [
+            user(1),
+            user(2, { deleted: true }),
+            user(3, { status: "disabled" }),
+          ],
+          "next-page",
+        );
+      });
+      await renderFilter({ kind });
+      await open(kind === "users" ? "用户筛选" : "API 密钥筛选");
+      expect(options()).toHaveLength(3);
+      expect(options()[1].textContent).toContain("user-1#1");
+      expect(options()[2].textContent).toContain("停用");
+      await bottom();
+      expect(options()).toHaveLength(3);
+      expect(options()[1].textContent).toContain("user-3#3");
+      expect(options()[2].textContent).toContain("user-4#4");
+      expect(container.textContent).not.toContain("user-1");
+      await search("#2");
+      await advance(250);
+      expect(options()).toHaveLength(1);
+      await press("Enter");
+      expect(onChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it("searches the full local account snapshot by name and ID without HTTP", async () => {
+    const accounts = [
+      user(1, { name: "Production East" }),
+      user(2, { name: "Sandbox", status: "disabled" }),
+      ...Array.from({ length: 123 }, (_, i) =>
+        user(i + 3, { name: `账户-${i + 3}` }),
+      ),
+      user(999, { name: "Deleted account", deleted: true }),
+    ];
+    await renderFilter({ kind: "accounts", options: accounts });
+    await open("账户筛选");
+    expect(options()).toHaveLength(126);
+    expect(container.textContent).not.toContain("Deleted account");
+    await search(" production ");
+    expect(options()).toHaveLength(2);
+    expect(options()[1].textContent).toContain("Production East#1");
+    await search("#125");
+    expect(options()).toHaveLength(2);
+    expect(options()[1].textContent).toContain("账户-125#125");
+    await search("sandbox");
+    expect(options()[1].textContent).toContain("停用");
+    await press("Enter");
+    expect(onChange).toHaveBeenLastCalledWith(accounts[1]);
+    await open("账户筛选");
+    for (const query of ["999", "#12345"]) {
+      await search(query);
+      expect(options()).toHaveLength(1);
+      await press("Enter");
+      expect(onChange).toHaveBeenCalledTimes(1);
+    }
+    await advance(60000);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("uses an updated local snapshot and ignores an outstanding remote directory response", async () => {
+    const stale = deferred<RecordOptionPage>();
+    serve(() => stale.promise);
+    await renderFilter();
+    await open();
+    const current = user(80, { name: "Current account" });
+    await renderFilter({ kind: "accounts", options: [current] });
+    expect(options()[1].textContent).toContain("Current account#80");
+    await act(async () => stale.resolve(page([user(1)], "old-cursor")));
+    expect(options()).toHaveLength(2);
+    expect(container.textContent).not.toContain("user-1");
+    expect(container.querySelector(".record-filter-more")).toBeNull();
+    await renderFilter({ kind: "accounts", options: [] });
+    expect(options()).toHaveLength(1);
+    await advance(10000);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("shows owner and disabled status, preserves the selected value, and clears to all", async () => {

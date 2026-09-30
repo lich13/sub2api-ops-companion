@@ -692,6 +692,9 @@ class UsageRecordSummaryTests(RecordsFixture):
         before = self.service.list(**filters)
         self.assertEqual(before["summary"], {"actual_cost": "0.75"})
         self.assertEqual(before["items"][0]["user_name"], "User 10")
+        self.assertEqual(self.service.detail(1)["actual_cost"], "0.75")
+        for kind, query in (("users", "#10"), ("api_keys", "#11")):
+            self.assertEqual(self.service.options(kind=kind, q=query), {"items": [], "next_cursor": None})
         for table in ("users", "api_keys", "accounts", "groups"):
             self.db.raw.execute(f"DELETE FROM {table}")
         after = self.service.list(**filters)
@@ -699,6 +702,9 @@ class UsageRecordSummaryTests(RecordsFixture):
         self.assertEqual([item["id"] for item in after["items"]], [1])
         for field in ("user_name", "user_email", "api_key_name", "account_name", "group_name"):
             self.assertIsNone(after["items"][0][field])
+        self.assertEqual(self.service.detail(1)["actual_cost"], "0.75")
+        for kind in ("users", "api_keys"):
+            self.assertEqual(self.service.options(kind=kind), {"items": [], "next_cursor": None})
 
     def test_empty_null_and_zero_cost_totals_are_decimal_strings(self):
         empty = self.service.list(include_summary=True)
@@ -791,48 +797,67 @@ class UsageRecordOptionsTests(RecordsFixture):
 
     def seed_options(self):
         self.db.insert_user(10, username="同名", email="first@example.invalid")
-        self.db.insert_user(20, username="同名", email="second@example.invalid", status="disabled",
-                            deleted_at="2026-01-01T00:00:00+00:00")
+        self.db.insert_user(20, username="同名", email="second@example.invalid", status="disabled")
+        self.db.insert_user(30, username="已删除用户", deleted_at="2026-01-01T00:00:00+00:00")
+        self.db.insert_user(40)
         self.db.insert_key(10, name="同名 Key", user_id=10)
-        self.db.insert_key(20, name="同名 Key", user_id=20, status="disabled",
+        self.db.insert_key(20, name="同名 Key", user_id=20, status="disabled")
+        self.db.insert_key(40, name="已删除 Key", user_id=10,
                            deleted_at="2026-01-01T00:00:00+00:00")
+        self.db.insert_key(50, name="软删除用户的 Key", user_id=30)
+        self.db.insert_key(60, name="物理删除用户的 Key", user_id=40)
+        self.db.insert_key(70, name="不存在用户的 Key", user_id=999)
+        self.db.raw.execute("DELETE FROM users WHERE id = 40")
 
     def test_more_than_100_users_and_keys_are_complete_in_ascending_id_pages(self):
-        for record_id in reversed(range(1, 126)):
-            self.db.insert_user(record_id, username="同名候选")
-            self.db.insert_key(record_id, name="同名候选", user_id=record_id)
+        for record_id in reversed(range(1, 181)):
+            self.db.insert_user(record_id, username="同名候选",
+                                deleted_at="2026-01-01" if record_id % 6 == 0 else None)
+            self.db.insert_key(record_id, name="同名候选", user_id=record_id,
+                               deleted_at="2026-01-01" if record_id % 7 == 0 else None)
         self.assertEqual(self.db.raw.execute("SELECT count(*) FROM usage_logs").fetchone()[0], 0)
         for kind in ("users", "api_keys"):
             with self.subTest(kind=kind):
+                expected = [record_id for record_id in range(1, 181)
+                            if record_id % 6 and (kind == "users" or record_id % 7)]
                 seen, cursor = [], None
-                for expected_count in (50, 50, 25):
+                for offset in range(0, len(expected), 50):
                     page = self.service.options(kind=kind, cursor=cursor)
-                    self.assertEqual(len(page["items"]), expected_count)
+                    self.assertEqual([item["id"] for item in page["items"]], expected[offset:offset + 50])
                     seen.extend(item["id"] for item in page["items"])
                     cursor = page["next_cursor"]
-                    self.assertEqual(bool(cursor), expected_count == 50)
-                self.assertEqual(seen, list(range(1, 126)))
+                    self.assertEqual(bool(cursor), offset + 50 < len(expected))
+                self.assertEqual(seen, expected)
                 self.assertEqual(len(self.service.options(kind=kind, limit=100)["items"]), 100)
 
-    def test_users_directory_retains_duplicate_names_disabled_and_deleted_entries(self):
+    def test_users_directory_excludes_deleted_but_retains_duplicate_names_and_disabled_entries(self):
         self.seed_options()
         result = self.service.options(kind="users")
         self.assertEqual(result, {"items": [
             {"id": 10, "name": "同名", "email": "first@example.invalid", "status": "active", "deleted": False},
-            {"id": 20, "name": "同名", "email": "second@example.invalid", "status": "disabled", "deleted": True}],
+            {"id": 20, "name": "同名", "email": "second@example.invalid", "status": "disabled", "deleted": False}],
             "next_cursor": None})
         self.assertTrue(all(type(item["deleted"]) is bool for item in result["items"]))
 
-    def test_key_directory_retains_owner_identity_status_and_deleted_flag(self):
+    def test_key_directory_excludes_deleted_and_orphaned_keys_but_retains_disabled_owner_identity(self):
         self.seed_options()
-        self.db.insert_key(30, name="已删除用户的 Key", user_id=999)
         result = self.service.options(kind="api_keys")
-        self.assertEqual([item["id"] for item in result["items"]], [10, 20, 30])
+        self.assertEqual([item["id"] for item in result["items"]], [10, 20])
         self.assertEqual(result["items"][1], {"id": 20, "name": "同名 Key", "user_id": 20,
-                         "user_name": "同名", "user_email": "second@example.invalid", "status": "disabled", "deleted": True})
-        self.assertIsNone(result["items"][2]["user_name"])
-        self.assertIsNone(result["items"][2]["user_email"])
+                         "user_name": "同名", "user_email": "second@example.invalid", "status": "disabled", "deleted": False})
         self.assertTrue(all(type(item["deleted"]) is bool for item in result["items"]))
+
+    def test_deleted_entities_cannot_bypass_directory_filter_by_id_name_or_owner(self):
+        self.seed_options()
+        cases = (("users", 30, "已删除用户", None), ("users", 40, "User 40", None),
+                 ("api_keys", 40, "已删除 Key", 10), ("api_keys", 50, "软删除用户的 Key", 30),
+                 ("api_keys", 60, "物理删除用户的 Key", 40), ("api_keys", 70, "不存在用户的 Key", 999))
+        for kind, record_id, name, owner in cases:
+            for query in (str(record_id), f"#{record_id}", name):
+                for user_id in {None, owner}:
+                    with self.subTest(kind=kind, query=query, owner=user_id):
+                        self.assertEqual(self.service.options(kind=kind, q=query, user_id=user_id),
+                                         {"items": [], "next_cursor": None})
 
     def test_user_search_matches_name_email_or_id(self):
         self.db.insert_user(101, username="ALIce", email="first@example.invalid")

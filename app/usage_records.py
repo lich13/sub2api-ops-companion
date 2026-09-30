@@ -209,7 +209,7 @@ class UsageRecords:
             except (ValueError, KeyError, TypeError, UnicodeError, OverflowError):
                 raise HTTPException(422, "目录分页已失效，请重新搜索") from None
         params: dict[str, Any] = {"after": after, "limit": limit + 1}
-        clauses = ["e.id > %(after)s"]
+        clauses = ["e.id > %(after)s", "e.deleted_at IS NULL"]
         if kind == "users":
             selection = "e.id,e.username AS name,e.email,e.status,(e.deleted_at IS NOT NULL) AS deleted"
             source = "users e"
@@ -217,7 +217,7 @@ class UsageRecords:
             fields = ("id", "name", "email", "status", "deleted")
         else:
             selection = "e.id,e.name,e.user_id,p.username AS user_name,p.email AS user_email,e.status,(e.deleted_at IS NOT NULL) AS deleted"
-            source = "api_keys e LEFT JOIN users p ON p.id=e.user_id"
+            source = "api_keys e JOIN users p ON p.id=e.user_id AND p.deleted_at IS NULL"
             text_fields = ("e.name",)
             fields = ("id", "name", "user_id", "user_name", "user_email", "status", "deleted")
             if user_id is not None:
