@@ -7,6 +7,7 @@ import { PriorityEditor } from "./AccountControls";
 import { RecoverStateButton } from "./AccountManagement";
 import UsageCell from "./UsageCell";
 import { useBackAction } from "./mobile";
+import DegradationAction, { DegradationBadge } from "./DegradationMark";
 
 type Props = {
   accounts: Account[]; online: boolean; selected: Set<number>;
@@ -31,6 +32,7 @@ export default function MobileAccounts(props: Props) {
           <button className="icon-button" aria-label={`${a.name}操作`} onClick={() => setActiveId(a.id)}><MoreHorizontal size={21}/></button>
         </header>
         <div className="mobile-account-status">
+          <DegradationBadge account={a}/>
           <span className={a.available ? "good-text" : ""}>{a.available ? "可调度" : a.blockers.map((b) => b.label).join(" / ")}</span>
           {["openai", "grok"].includes(a.platform) && ["oauth", "apikey"].includes(a.type) && <QualityBadge value={a.quality} onClick={() => props.quality(a)}/>}
         </div>
@@ -47,6 +49,7 @@ export default function MobileAccounts(props: Props) {
       <div className="field"><span>优先级</span><PriorityEditor account={active} online={props.online} report={props.report}/></div>
       <button disabled={!props.online || !["openai", "grok"].includes(active.platform) || !["oauth", "apikey"].includes(active.type)} onClick={() => { props.test(active); setActiveId(null); }}>测试连接</button>
       <RecoverStateButton account={active} online={props.online} report={props.report}/>
+      <DegradationAction account={active} online={props.online} report={props.report}/>
       <button className="danger-text" disabled={!props.online} onClick={() => { props.remove(active); setActiveId(null); }}>删除账号</button>
     </section></div>}
   </>;

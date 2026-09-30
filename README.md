@@ -48,6 +48,8 @@ docker compose up -d --build
 - `BARK_ENABLED`：是否启用 OAuth 事件的 Bark 推送，默认关闭。
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
+
+Codex OAuth 指定容量错误由独立采集任务读取 `ops_error_logs`，每两秒增量采集并回看五分钟处理延迟落库；每条新错误单独发送 Bark `critical` 重要警告。游标、去重、重试和手动降智标记持久保存在 `USAGE_QUERY_STATE_PATH` 同目录的 `capacity-alert-state.json`，权限 `0600`；不新增数据库表，不发起额度或模型请求。失败按 5/30/120/600 秒重试，首次启动不推送历史记录，手动标记立即取消该账号待发报警。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控到期恢复。
 - `OAUTH_AUTO_RESET_CREDIT_ENABLED`：7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。

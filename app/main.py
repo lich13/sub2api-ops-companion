@@ -21,6 +21,7 @@ from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackController
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
 from .settings import load_settings
 from .versioning import APP_VERSION
+from .capacity_alerts import CapacityAlerts
 
 settings = load_settings()
 db = Database(settings.database_url)
@@ -30,6 +31,7 @@ key_fallback_controller: KeyFallbackController | None = None
 key_fallback_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
 BARK_CONFIG_LOCK = threading.RLock()
+capacity_alerts: CapacityAlerts | None = None
 
 
 def oauth_state_store() -> OAuthStateStore:
@@ -109,6 +111,7 @@ async def key_fallback_loop() -> None:
 async def lifespan(_: FastAPI):
     global oauth_monitor, oauth_monitor_task
     global key_fallback_controller, key_fallback_task
+    global capacity_alerts
     db.open()
     old_oauth_config = oauth_config_file()
     if "oauth_7d_probe_interval_seconds" in old_oauth_config:
@@ -138,9 +141,17 @@ async def lifespan(_: FastAPI):
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
+    capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
+    capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
     try:
         yield
     finally:
+        for task in capacity_tasks:
+            task.cancel()
+        for task in capacity_tasks:
+            with suppress(asyncio.CancelledError):
+                await task
+        capacity_alerts = None
         daily_schedule_task.cancel()
         with suppress(asyncio.CancelledError):
             await daily_schedule_task

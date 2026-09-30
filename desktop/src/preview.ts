@@ -409,7 +409,20 @@ const config: Config = {
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
-if (state.snapshot && scenario === "group-membership") {
+if (state.snapshot && scenario === "group-manager") {
+  const empty = state.snapshot.groups[2];
+  state.snapshot.groups = [
+    { ...empty, id: 1, name: "codex羊毛", sort_order: 0 },
+    { ...empty, id: 3, name: "codex爽用", sort_order: 1 },
+    { ...empty, id: 2, name: "grok爽用", platform: "grok", sort_order: 0 },
+    { ...empty, id: 4, name: "grok羊毛", platform: "grok", sort_order: 1 },
+  ];
+  accounts[0].group_ids = [1]; accounts[1].group_ids = [1, 3];
+  accounts.push({ ...accounts[0], id: 104, name: "研发共享账号 · 長名称-跨区域验证-long-name@example.com", group_ids: [3], version: "d".repeat(64) });
+  accounts.push({ ...accounts[0], id: 105, name: "Codex 待分组", group_ids: [], version: "e".repeat(64) });
+  accounts[2].group_ids = [2, 4];
+  for (const account of accounts) if (account.platform === "openai" && account.type === "oauth") account.degradation_mark = { marked: account.id === 102, marked_at: account.id === 102 ? before : null, version: "f".repeat(64) };
+} else if (state.snapshot && scenario === "group-membership") {
   const [codex, grok, empty] = state.snapshot.groups;
   accounts[0].group_ids = [1, 4];
   accounts[1].group_ids = [1, 2];
@@ -499,6 +512,21 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {
+      const path = String(args.path), body = args.body as Record<string, unknown>;
+      const account = state.snapshot?.accounts.find((a) => a.id === Number(path.split("/")[2]));
+      if (!account) throw new Error("账号不存在");
+      if (path.endsWith("/groups")) {
+        if (body.expected_version !== account.version) throw new Error("账号已变化，请刷新");
+        const scope = body.scope_group_ids as number[], selected = body.group_ids as number[];
+        account.group_ids = [...new Set([...account.group_ids.filter((id) => !scope.includes(id)), ...selected])].sort((a, b) => a - b);
+        account.version = Date.now().toString(16).padEnd(64, "0"); emit();
+        return { verified: true, group_ids: account.group_ids, version: account.version };
+      }
+      if (body.expected_mark_version !== account.degradation_mark?.version) throw new Error("降智标记已变化，请刷新");
+      account.degradation_mark = { marked: !!body.marked, marked_at: body.marked ? new Date().toISOString() : null, version: Date.now().toString(16).padEnd(64, "0") }; emit();
+      return { verified: true, degradation_mark: account.degradation_mark };
+    }
     if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
       return (await import("./recordPreview")).recordPreview(String(args.path));
     }

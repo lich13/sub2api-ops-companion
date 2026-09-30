@@ -194,9 +194,10 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 || account_path(plain, "/quality")
         }
         "PUT" => {
-            ["oauth", "bark", "key_fallback"]
+            (["oauth", "bark", "key_fallback"]
                 .iter()
                 .any(|s| plain == format!("/config/{s}"))
+                || account_path(plain, "/groups") || account_path(plain, "/degradation-mark"))
                 && !path.contains('?')
         }
         "POST" => {
@@ -1184,6 +1185,15 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        for suffix in ["groups", "degradation-mark"] {
+            assert!(allowed_request("PUT", &format!("/accounts/7/{suffix}")));
+            for method in ["GET", "POST", "DELETE"] {
+                assert!(!allowed_request(method, &format!("/accounts/7/{suffix}")));
+            }
+            for path in [format!("/accounts/0/{suffix}"), format!("/accounts/7/{suffix}?all=true"), format!("/accounts/7/{suffix}/credentials")] {
+                assert!(!allowed_request("PUT", &path));
+            }
+        }
         assert!(allowed_request("GET", "/usage-records?limit=50&after_id=12"));
         assert!(allowed_request("GET", "/usage-records/12"));
         assert!(allowed_request("GET", "/usage-record-options?kind=api_keys&user_id=7"));

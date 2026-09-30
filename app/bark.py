@@ -262,8 +262,8 @@ class BarkNotifier:
             timeout=8,
         )
 
-    def push(self, title: str, body: str, *, timeout: float = 3) -> BarkPushResult:
-        return self._push_with_config(title, body, self.runtime_config(), timeout=timeout)
+    def push(self, title: str, body: str, *, timeout: float = 3, options: dict[str, str] | None = None) -> BarkPushResult:
+        return self._push_with_config(title, body, self.runtime_config(), timeout=timeout, options=options)
 
     def _push_with_config(
         self,
@@ -272,6 +272,7 @@ class BarkNotifier:
         config: BarkRuntimeConfig,
         *,
         timeout: float,
+        options: dict[str, str] | None = None,
     ) -> BarkPushResult:
         if not config.config_valid:
             return BarkPushResult(False, "invalid_config")
@@ -304,6 +305,7 @@ class BarkNotifier:
                 timeout=timeout,
                 sent_parts=index - 1,
                 total_parts=total,
+                **({"options": options} if options else {}),
             )
             if not result.success:
                 return result
@@ -319,10 +321,12 @@ class BarkNotifier:
         timeout: float,
         sent_parts: int,
         total_parts: int,
+        options: dict[str, str] | None = None,
     ) -> BarkPushResult:
         try:
             data = json.dumps(
-                {"device_key": key, "title": title, "body": body},
+                {"device_key": key, "title": title, "body": body,
+                 **{k: v for k, v in (options or {}).items() if k in {"level", "sound", "group"}}},
                 ensure_ascii=False,
             ).encode("utf-8")
         except UnicodeEncodeError:

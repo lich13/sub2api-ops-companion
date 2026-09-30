@@ -26,7 +26,7 @@ from .key_fallback import deadline_is_future, execute_sub2api_set_schedulable, l
 from .quota_snapshot import usage_windows
 from .usage_query import parse_iso_datetime
 from .desktop_usage import attach_stats, project_usage, read_stats, reset_credits, stats_specs
-from .desktop_actions import DesktopActions, PriorityRequest, TestRequest
+from .desktop_actions import DesktopActions, PriorityRequest, TestRequest, GroupsRequest, DegradationMarkRequest
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
 from .account_quality import QualityCache, SUPPORTED
 
@@ -117,7 +117,7 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     value["available"] = not reasons
     success, error = row.get("last_success_at"), row.get("last_error_at")
     value["success_after_error"] = bool(success and error and success > error)
-    value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at", "priority")], default=str).encode()).hexdigest()
+    value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at", "priority")] + [sorted(row.get("group_ids") or [])], default=str).encode()).hexdigest()
     return value
 
 
@@ -423,6 +423,18 @@ class DesktopService:
             for account in accounts:
                 if account["id"] in qualities:
                     account["quality"] = qualities[account["id"]]
+            alerts = getattr(r, "capacity_alerts", None)
+            if alerts is not None:
+                from .capacity_alerts import mark_view
+                try:
+                    marks = alerts.store.snapshot()["marks"]
+                    for account in accounts:
+                        if (account["platform"], account["type"]) == ("openai", "oauth"):
+                            account["degradation_mark"] = mark_view(account["id"], marks.get(str(account["id"])))
+                except (ValueError, OSError):
+                    for account in accounts:
+                        if (account["platform"], account["type"]) == ("openai", "oauth"):
+                            account["degradation_mark"] = {"error": "降智标记暂不可读取"}
             groups = group_dtos(
                 r.db.fetch_all(GROUP_SQL),
                 {account["id"]: set(account.get("group_ids") or []) for account in accounts},
@@ -784,6 +796,16 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def priority(account_id: int, payload: PriorityRequest, request: Request) -> Any:
         key = await auth(request)
         return await service.actions.set_priority(account_id, payload, key)
+
+    @router.put("/accounts/{account_id}/groups")
+    async def groups_update(account_id: int, payload: GroupsRequest, request: Request) -> Any:
+        key = await auth(request)
+        return await service.actions.set_groups(account_id, payload, key)
+
+    @router.put("/accounts/{account_id}/degradation-mark")
+    async def degradation_mark(account_id: int, payload: DegradationMarkRequest, request: Request) -> Any:
+        await auth(request)
+        return await service.actions.set_degradation_mark(account_id, payload)
 
     @router.get("/accounts/{account_id}/models")
     async def models(account_id: int, request: Request) -> Any:

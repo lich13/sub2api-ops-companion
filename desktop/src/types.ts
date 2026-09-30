@@ -1,4 +1,6 @@
+export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
 export type Account = {
+  degradation_mark?: DegradationMark;
   id: number;
   name: string;
   priority: number;
@@ -139,6 +141,7 @@ export type RecentAccount = {
 };
 export type Group = {
   id: number;
+  sort_order?: number;
   name: string;
   platform: string;
   account_id: number | null;

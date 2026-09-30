@@ -56,6 +56,19 @@ class PriorityRequest(BaseModel):
     expected_version: str = Field(min_length=64, max_length=64)
 
 
+class GroupsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: str = Field(min_length=64, max_length=64)
+    scope_group_ids: list[StrictInt] = Field(min_length=1, max_length=100)
+    group_ids: list[StrictInt] = Field(max_length=100)
+
+
+class DegradationMarkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    marked: StrictBool
+    expected_mark_version: str = Field(min_length=64, max_length=64)
+
+
 class TestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: str = Field(min_length=64, max_length=64)
@@ -134,6 +147,59 @@ class DesktopActions:
         return [{field: sanitize_error_text(str(item.get(field) or ""), limit=200)
                  for field in ("id", "display_name", "type")}
                 for item in data[:1000] if isinstance(item, dict) and isinstance(item.get("id"), str)]
+
+    async def set_groups(self, account_id: int, payload: GroupsRequest, key: str) -> dict[str, Any]:
+        from .desktop_api import account_dto
+        scope, target = set(payload.scope_group_ids), set(payload.group_ids)
+        if account_id < 1 or any(i < 1 for i in scope | target) or not target <= scope:
+            raise HTTPException(422, "分组范围无效")
+        lock = self.s.account_lock(account_id)
+        if not lock.acquire(blocking=False):
+            raise HTTPException(409, "此账号正在执行操作")
+        try:
+            row = await self.account(account_id, payload.expected_version)
+            with self.s.recovery_guard(row):
+                # Membership edits share the guard without cancelling auto-reset ownership.
+                row = await self.account(account_id, payload.expected_version)
+                if row["platform"] not in {"openai", "grok"}:
+                    raise HTTPException(422, "仅支持 OpenAI 与 Grok 分组")
+                groups = await asyncio.to_thread(self.s.r.db.fetch_all,
+                    "SELECT id,platform FROM groups WHERE deleted_at IS NULL AND id=ANY(%(ids)s)", {"ids": sorted(scope)})
+                if {g["id"] for g in groups} != scope or any(g["platform"] != row["platform"] for g in groups):
+                    raise HTTPException(409, "分组已变化或平台不匹配，请刷新")
+                original = set(row.get("group_ids") or [])
+                desired = sorted((original - scope) | target)
+                failure = None
+                try:
+                    async with self.client(key, 10) as client:
+                        await self.json_request(client, "PUT", f"accounts/{account_id}", json={"group_ids": desired})
+                except HTTPException as exc:
+                    failure = exc
+                live = await self.account(account_id)
+                if sorted(live.get("group_ids") or []) != desired:
+                    write_audit(self.s.r.settings.audit_path, "desktop_groups_unconfirmed", {"account_id": account_id, "before": sorted(original), "requested": desired})
+                    raise failure or HTTPException(502, "分组写入未确认，请刷新查看实际归属")
+                write_audit(self.s.r.settings.audit_path, "desktop_groups", {"account_id": account_id, "before": sorted(original), "after": desired})
+                return {"verified": True, "account_id": account_id, "group_ids": desired,
+                        "version": account_dto(live, datetime.now(timezone.utc), set())["version"]}
+        finally:
+            lock.release()
+            await asyncio.to_thread(self.s.invalidate)
+
+    async def set_degradation_mark(self, account_id: int, payload: DegradationMarkRequest) -> dict[str, Any]:
+        row = await self.account(account_id)
+        if (row["platform"], row["type"]) != ("openai", "oauth"):
+            raise HTTPException(422, "仅支持 OpenAI OAuth 账号")
+        alerts = getattr(self.s.r, "capacity_alerts", None)
+        if alerts is None:
+            raise HTTPException(503, "告警服务尚未就绪")
+        try:
+            mark = await asyncio.to_thread(alerts.store.set_mark, account_id, payload.marked, payload.expected_mark_version, datetime.now(timezone.utc))
+        except (OSError, ValueError):
+            raise HTTPException(503, "降智标记保存失败，请重试") from None
+        write_audit(self.s.r.settings.audit_path, "desktop_degradation_mark", {"account_id": account_id, "marked": payload.marked})
+        await asyncio.to_thread(self.s.invalidate)
+        return {"verified": True, "account_id": account_id, "degradation_mark": mark}
 
     async def prepare_test(self, account_id: int, payload: TestRequest) -> tuple[Any, Any]:
         lock = self.s.account_lock(account_id)

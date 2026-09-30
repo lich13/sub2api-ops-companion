@@ -14,6 +14,7 @@ import {
   ListOrdered,
   LayoutDashboard,
   LoaderCircle,
+  MoreHorizontal,
   Pin,
   Plug,
   RefreshCw,
@@ -57,14 +58,17 @@ import QualityDialog, { QualityBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
+import GroupManager from "./GroupManager";
+import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
 import "./mobile-layout.css";
 
-type Page = "accounts" | "records" | "events" | "features" | "settings";
+type Page = "accounts" | "groups" | "records" | "events" | "features" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
+  { id: "groups", label: "分组", icon: Layers3 },
   { id: "records", label: "记录", icon: ListOrdered },
   { id: "events", label: "事件", icon: Bell },
   { id: "features", label: "功能", icon: SlidersHorizontal },
@@ -130,9 +134,17 @@ export default function App() {
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
-    [groupsOpen, setGroupsOpen] = useState(false);
+    [groupsOpen, setGroupsOpen] = useState(false),
+    [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
+    [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null);
+  async function beforeConnectionChange() {
+    if (groupChanges.busy) { setToast("分组正在保存，请等待结果"); return false; }
+    if (!groupChanges.count) return true;
+    return new Promise<boolean>((resolve) => setLeaveGroups(() => resolve));
+  }
   const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
   useBackAction(groupsOpen, () => setGroupsOpen(false));
+  useBackAction(!!leaveGroups, () => { leaveGroups?.(false); setLeaveGroups(null); });
   useBackAction(filtersOpen, () => setFiltersOpen(false));
   useBackAction(!!detail || detailBusy, () => { setDetail(null); setDetailBusy(false); });
   useBackAction(!!confirm, () => setConfirm(null));
@@ -170,6 +182,7 @@ export default function App() {
     setGroupsOpen(false);
     setFiltersOpen(false);
     setConfig(null);
+    setGroupChanges({ count: 0, busy: false });
   }, [connectionKey]);
   const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
   useEffect(() => {
@@ -607,9 +620,11 @@ export default function App() {
                 {page === "records" && <UsageRecords key={connectionKey} mobile={mobile} online={state.online} foreground={state.foreground !== false} desktop={state.platform === "macos"} accounts={accounts} columns={state.preferences.record_columns} saveColumns={async (columns) => {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
+                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
                 {page === "accounts" && (
                   <>
                     {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /></div>}
+                    {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
                         <Search size={15} />
@@ -799,7 +814,7 @@ export default function App() {
                         </thead>
                         <tbody>
                           {filteredAccounts.map((a) => (
-                            <tr key={a.id}>
+                            <tr key={`${connectionKey}:${a.id}`}>
                               <td className="select-cell">
                                 <input
                                   type="checkbox"
@@ -836,6 +851,7 @@ export default function App() {
                                     </span>
                                   )}
                                 </small>
+                                <DegradationBadge account={a}/>
                               </td>
                               <td>
                                 <PriorityEditor
@@ -922,6 +938,7 @@ export default function App() {
                               <td>{schedule(a)}</td>
                               <td>
                                 <div className="account-actions">
+                                  {a.platform === "openai" && a.type === "oauth" && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><DegradationAction account={a} online={state.online} report={report}/></div></details>}
                                   <button
                                     className="test-button"
                                     disabled={
@@ -1072,6 +1089,7 @@ export default function App() {
                       }
                       onMessage={setToast}
                       onError={report}
+                      beforeConnectionChange={beforeConnectionChange}
                     />
                   ) : (
                     <Empty text="正在读取设置" />
@@ -1091,7 +1109,8 @@ export default function App() {
           </footer>
         )}
       </main>
-      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.map((p) => <button key={p.id} className={page === p.id ? "active" : ""} aria-current={page === p.id ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>)}</nav>}
+      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups").map((p) => <button key={p.id} className={page === p.id || page === "groups" && p.id === "accounts" ? "active" : ""} aria-current={page === p.id ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>)}</nav>}
+      {leaveGroups && <div className="modal-backdrop"><section className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label="未应用的分组修改"><h2>放弃分组草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
       {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
       {deleteAccounts && (
         <DeleteAccountsDialog
@@ -1182,6 +1201,7 @@ export default function App() {
                     <dd>{detail.request_id || "未知"}</dd>
                   </dl>
                   <h3>错误内容</h3>
+                  {accounts.find((a) => a.id === detail.account_id) && <DegradationAction account={accounts.find((a) => a.id === detail.account_id)!} online={state.online} report={report}/>}
                   <pre>
                     {detail.content || detail.message || "没有额外错误内容"}
                   </pre>
@@ -1277,9 +1297,11 @@ function Empty({ text }: { text: string }) {
 function Connection({
   state,
   onError,
+  beforeChange = async () => true,
 }: {
   state: ViewState;
   onError: (e: unknown) => void;
+  beforeChange?: () => Promise<boolean>;
 }) {
   const [url, setUrl] = useState(
       state.preferences.base_url || "https://companion.example.com/sub2ops",
@@ -1289,8 +1311,9 @@ function Connection({
   return (
     <form
       className="connection-form"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
+        if (!await beforeChange()) return;
         setBusy(true);
         void command("connect", { baseUrl: url, apiKey: key })
           .then(() => setKey(""))
@@ -1355,6 +1378,7 @@ function SettingsPage({
   onChange,
   onMessage,
   onError,
+  beforeConnectionChange,
 }: {
   page: Page;
   config: Config;
@@ -1364,6 +1388,7 @@ function SettingsPage({
   onChange: (k: string, c: ConfigSection) => void;
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
+  beforeConnectionChange: () => Promise<boolean>;
 }) {
   async function action(name: string) {
     try {
@@ -1522,10 +1547,10 @@ function SettingsPage({
             )}
           </ConfigForm>
           <section className="settings-card">
-            <Connection state={state} onError={onError} />
+            <Connection state={state} onError={onError} beforeChange={beforeConnectionChange} />
             <button
               className="danger-text"
-              onClick={() => void command("disconnect").catch(onError)}
+              onClick={() => void beforeConnectionChange().then((allowed) => { if (allowed) return command("disconnect"); }).catch(onError)}
             >
               <Unplug size={14} />
               断开连接并删除本机 Key
