@@ -1,5 +1,5 @@
 import type { Account } from "./types";
-type Job = { id: string; request_id: string; account_id: number; account_name: string; requested_model: string; forwarded_model: string; returned_models: string[]; status: string; completed_groups: number; valid_groups: number; attempts: number; duration_ms: number; concurrency: number; started: number; error: string; groups: { index: number; status: string; attempts: number; ttft_ms: number | null; duration_ms: number | null }[]; report?: { prediction_name: string; probability: number; used_outputs: number } };
+type Job = { id: string; request_id: string; account_id: number; account_name: string; requested_model: string; forwarded_model: string; returned_models: string[]; status: string; completed_groups: number; valid_groups: number; attempts: number; duration_ms: number; concurrency: number; started: number; error: string; groups: { index: number; status: string; attempts: number; ttft_ms: number | null; duration_ms: number | null; diagnostics?: Record<string, string | number> }[]; report?: { prediction_name: string; probability: number; used_outputs: number } };
 const jobs = new Map<number, Job>();
 export function modelTestPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[]) {
   const aid = Number(path.split("/")[2]);
@@ -23,6 +23,9 @@ export function modelTestPreview(method: string, path: string, body: Record<stri
       const elapsed = job.duration_ms - Math.floor((group.index - 1) / job.concurrency) * 7000;
       group.status = elapsed >= 7000 ? "completed" : elapsed >= 0 ? "running" : "queued";
       group.attempts = elapsed >= 0 ? 1 : 0; group.ttft_ms = elapsed >= 1500 ? 1500 : null; group.duration_ms = elapsed >= 7000 ? 7000 : null;
+      if (elapsed >= 7000) group.diagnostics = { protocol: 'responses', http_status: 200, content_type: 'text/event-stream',
+        first_event_type: 'response.created', last_event_type: 'response.completed', first_event_ms: 300,
+        output_tokens: 1500, reasoning_tokens: 100, max_output_tokens: 4096, bytes: 8500, end_reason: 'completed' };
     }
     job.attempts = job.groups.reduce((sum, g) => sum + g.attempts, 0);
     job.completed_groups = job.groups.filter((g) => g.status === "completed").length;
