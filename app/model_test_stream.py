@@ -10,6 +10,7 @@ import httpx
 
 MAX_TEXT = 32 * 1024
 MAX_FRAME = 256 * 1024
+MAX_OUTPUT_TOKENS = 4096
 
 
 class TestFailure(Exception):
@@ -60,6 +61,33 @@ class Collector:
         self.recognized = False
         self.protocol: str | None = None
         self.end_reason = ""
+        self.metadata: dict = {}
+
+    def response_metadata(self, response):
+        status = response.get('status')
+        if isinstance(status, str) and status in {'completed', 'incomplete', 'failed', 'in_progress', 'queued', 'cancelled'}:
+            self.metadata['provider_status'] = status
+        usage = response.get('usage') or {}
+        if isinstance(usage, dict):
+            details = usage.get('output_tokens_details') or usage.get('completion_tokens_details') or {}
+            for key, value in {'input_tokens': usage.get('input_tokens', usage.get('prompt_tokens')),
+                               'output_tokens': usage.get('output_tokens', usage.get('completion_tokens')),
+                               'reasoning_tokens': details.get('reasoning_tokens') if isinstance(details, dict) else None}.items():
+                if type(value) is int and 0 <= value <= 10**12:
+                    self.metadata[key] = value
+
+    def incomplete(self, response):
+        details = response.get('incomplete_details') or {}
+        reason = details.get('reason') if isinstance(details, dict) else None
+        # A provider-declared budget/filter terminal is not a broken connection.
+        # Keep any answer for scoring; an empty/short answer never causes a paid retry.
+        if isinstance(reason, str) and reason in {'max_output_tokens', 'max_tokens', 'content_filter'}:
+            self.response_output(response)
+            self.completed, self.end_reason = True, reason
+            self.metadata['incomplete_reason'] = reason
+            return
+        self.metadata['incomplete_reason'] = 'unknown'
+        raise TestFailure('incomplete_response')
 
     @property
     def text(self):
@@ -101,10 +129,13 @@ class Collector:
         response = event.get('response') or {}
         if not isinstance(kind, str) or not isinstance(response, dict):
             raise TestFailure('protocol_mismatch')
+        self.response_metadata(response if response else event)
         if event.get('error') or response.get('error') or kind in {'error', 'response.failed'}:
             raise failure(0, response or event)
         if kind == 'response.incomplete':
-            raise TestFailure('incomplete_stream', True)
+            self.recognized, self.protocol = True, 'responses'
+            self.incomplete(response)
+            return
         if 'choices' in event:
             self.recognized, self.protocol = True, 'chat_completions'
             if isinstance(event.get('model'), str):
@@ -123,6 +154,9 @@ class Collector:
             self.recognized, self.protocol = True, 'responses'
             if event.get('status') == 'failed':
                 raise failure(0, event)
+            if event.get('status') == 'incomplete':
+                self.incomplete(event)
+                return
             if event.get('status') != 'completed':
                 raise TestFailure('incomplete_stream', True)
             self.response_output(event)
@@ -149,6 +183,9 @@ class Collector:
             self.update((index, 1000+event.get('summary_index', 0)), event.get('delta', event.get('text', '')),
                         snapshot=kind.endswith('done'), channel='reasoning', guard=False)
         if kind == 'response.completed':
+            if response.get('status') == 'incomplete':
+                self.incomplete(response)
+                return
             if response.get('status') not in (None, 'completed'):
                 raise TestFailure('incomplete_stream', True)
             self.response_output(response)
@@ -169,23 +206,33 @@ async def execute(url: str, headers: dict, proxy: str | None, model: str, prompt
                   *, oauth: bool, protocol='responses', client_factory=httpx.AsyncClient, client=None,
                   on_first_text=None, on_stage=None, diagnostics=None) -> tuple[str, str | None]:
     payload = ({'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'stream': True,
-                'max_completion_tokens': min(4096, max(1024, expected*4))} if protocol == 'chat_completions' else
+                'max_completion_tokens': MAX_OUTPUT_TOKENS} if protocol == 'chat_completions' else
                {'model': model, 'input': [{'role': 'user', 'content': [{'type': 'input_text', 'text': prompt}]}],
                 'instructions': 'You are a helpful assistant.', 'stream': True, 'store': False})
     if not oauth and protocol == 'responses':
-        payload['max_output_tokens'] = min(4096, max(1024, expected*4))
+        payload['max_output_tokens'] = MAX_OUTPUT_TOKENS
     collector = Collector(expected)
     started, first_text = time.monotonic(), False
     diag = diagnostics if diagnostics is not None else {}
     diag.update(protocol=protocol, bytes=0, events=0)
+    if not oauth:
+        diag['max_output_tokens'] = MAX_OUTPUT_TOKENS
 
     async def received(event, name='', whole=False):
         nonlocal first_text
         diag['events'] += 1
+        event_type = event.get('type') or name or ('chat.completion' if 'choices' in event else 'response' if whole else 'unknown')
+        if not isinstance(event_type, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,80}', event_type):
+            event_type = 'unknown'
+        diag.setdefault('first_event_type', event_type)
+        diag['last_event_type'] = event_type
         if 'first_event_ms' not in diag:
             diag['first_event_ms'] = round((time.monotonic()-started)*1000)
-        collector.accept(event, name, whole=whole)
-        diag['response_protocol'] = collector.protocol
+        try:
+            collector.accept(event, name, whole=whole)
+        finally:
+            diag.update(collector.metadata)
+            diag['response_protocol'] = collector.protocol
         if isolated_answer(collector.text) and not first_text:
             first_text = True
             diag['ttft_ms'] = round((time.monotonic()-started)*1000)
