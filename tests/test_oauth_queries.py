@@ -672,6 +672,23 @@ class OAuthQueryLinkageTests(OAuthQueryFixture, unittest.IsolatedAsyncioTestCase
         await self.finish_batch()
         self.assertEqual(len(self.server.requests), 1)
 
+    async def test_batch_waits_for_busy_account_without_spending_budget(self):
+        lock = self.service.account_lock(7)
+        lock.acquire()
+        try:
+            await self.service.actions.start_batch("fixture-admin-key")
+            for _ in range(30):
+                if self.service.actions.batch_view()["items"][0]["status"] == "queued":
+                    break
+                await asyncio.sleep(0.01)
+            self.assertEqual(self.service.actions.batch_view()["items"][0]["status"], "queued")
+            self.assertEqual(len(self.server.requests), 0)
+            self.assertEqual(self.store.scheduler().get(7, {}).get("quota_query", {}).get("automatic_attempts", []), [])
+        finally:
+            lock.release()
+        await self.finish_batch()
+        self.assertEqual(len(self.server.requests), 1)
+
     async def test_single_joins_background_monitor_http_without_duplicate_request(self):
         self.server.release.clear()
         background = asyncio.create_task(asyncio.to_thread(self.monitor.run_once, self.now))

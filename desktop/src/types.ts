@@ -15,6 +15,7 @@ export type Account = {
   managed: boolean;
   recoverable?: boolean;
   version: string;
+  operation_versions?: Record<string, string>;
   last_success_at: string | null;
   last_error_at: string | null;
   last_error_id: number | null;

@@ -156,6 +156,8 @@ const stats = {
   user_cost: 76.8,
 };
 for (const account of accounts) {
+  account.operation_versions = Object.fromEntries(['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'model_test'].map((key) => [key, account.version]));
+  if (account.platform === 'openai' && ['oauth', 'apikey'].includes(account.type)) account.degradation_mark = { marked: account.id === 102, version: 'f'.repeat(64) };
   account.quality = {
     score:
       account.id === 101
@@ -513,6 +515,7 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) return (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.path).startsWith("/account-model-profiles")) return (await import("./profilePreview")).profilePreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {

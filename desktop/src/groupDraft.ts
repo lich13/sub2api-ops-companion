@@ -1,6 +1,6 @@
 import type { Account, Group } from "./types";
 
-export type GroupDraft = { id: number; name: string; version: string; original: number[]; target: number[]; scope: number[] };
+export type GroupDraft = { id: number; name: string; version: string; operationVersion?: string; original: number[]; target: number[]; scope: number[] };
 export type Drafts = Record<number, GroupDraft>;
 export type Zone = "left" | "both" | "right" | "none";
 export const ids = (values: number[]) => [...new Set(values)].sort((a, b) => a - b);
@@ -16,7 +16,7 @@ export function moveAccount(drafts: Drafts, account: Account, pair: number[], zo
   const original = existing?.original ?? ids(account.group_ids);
   const next = { ...drafts };
   if (sameIds(original, target)) delete next[account.id];
-  else next[account.id] = { id: account.id, name: account.name, version: existing?.version ?? account.version, original, target, scope: ids([...(existing?.scope ?? []), ...pair]) };
+  else next[account.id] = { id: account.id, name: account.name, version: existing?.version ?? account.version, operationVersion: existing?.operationVersion ?? account.operation_versions?.groups, original, target, scope: ids([...(existing?.scope ?? []), ...pair]) };
   return next;
 }
 export function membershipZone(memberships: number[], pair: number[]): Zone {
@@ -25,5 +25,5 @@ export function membershipZone(memberships: number[], pair: number[]): Zone {
 }
 export function draftConflict(draft: GroupDraft, accounts: Account[], groups: Group[]) {
   const account = accounts.find((a) => a.id === draft.id);
-  return !account || account.version !== draft.version || draft.scope.some((id) => !groups.some((g) => g.id === id && g.platform === account.platform));
+  return !account || (draft.operationVersion ? account.operation_versions?.groups !== draft.operationVersion : account.version !== draft.version) || draft.scope.some((id) => !groups.some((g) => g.id === id && g.platform === account.platform));
 }
