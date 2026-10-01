@@ -190,7 +190,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 || plain
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
-                || account_path(plain, "/models")
+                || model_options_path(path)
                 || account_path(plain, "/quality")
                 || plain.strip_prefix("/accounts/")
                     .and_then(|s| s.strip_suffix("/model-tests/latest"))
@@ -231,6 +231,15 @@ fn allowed_request(method: &str, path: &str) -> bool {
 fn account_path(path: &str, suffix: &str) -> bool {
     path.strip_prefix("/accounts/").and_then(|s| s.strip_suffix(suffix))
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+}
+
+fn model_options_path(path: &str) -> bool {
+    if path.contains('?') {
+        path.strip_suffix("?purpose=model_test")
+            .is_some_and(|plain| account_path(plain, "/models"))
+    } else {
+        account_path(path, "/models")
+    }
 }
 
 fn publish(app: &tauri::AppHandle, value: &ViewState) {
@@ -1228,6 +1237,17 @@ mod tests {
         assert!(!allowed_request("DELETE", "/model-groups/7"));
         assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
+        assert!(allowed_request("GET", "/accounts/7/models"));
+        assert!(allowed_request("GET", "/accounts/7/models?purpose=model_test"));
+        for path in [
+            "/accounts/7/models?purpose=legacy",
+            "/accounts/7/models?purpose=model_test&x=1",
+            "/accounts/7/models?purpose=model_test&purpose=model_test",
+            "/accounts/7/models?purpose=other",
+            "/accounts/0/models?purpose=model_test",
+        ] {
+            assert!(!allowed_request("GET", path));
+        }
         assert!(allowed_request("DELETE", "/accounts/7"));
         assert!(allowed_request("POST", "/accounts/7/recover-state"));
         assert!(allowed_request("GET", "/accounts/7/quality"));

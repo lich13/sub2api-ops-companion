@@ -666,7 +666,19 @@ export async function run(
             completed_at: now,
           }
         : { status: "idle", total: 0, completed: 0, items: [] };
-    if (path.endsWith("/models"))
+    if (path.split("?", 1)[0].endsWith("/models")) {
+      if (path.split("?")[1] === "purpose=model_test") {
+        return [
+          "gpt-5.6-sol",
+          "gpt-5.6-terra",
+          "gpt-5.6-luna",
+          "gpt-6.1-sol",
+          "gpt-6-sol",
+          "gpt-6-luna",
+          "gpt-6-astra",
+          "codex-auto-review",
+        ].map((id) => ({ id, display_name: id, type: "model" }));
+      }
       return [
         "gpt-6-sol",
         "gpt-image-1",
@@ -674,6 +686,7 @@ export async function run(
         "grok-imagine-image",
         "grok-imagine-video",
       ].map((id) => ({ id, display_name: id, type: "model" }));
+    }
     if (path.startsWith("/errors/")) {
       const e = state.snapshot?.errors.find(
         (e) => e.id === Number(path.split("/")[2]),
