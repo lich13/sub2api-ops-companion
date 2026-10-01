@@ -1,6 +1,7 @@
 export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
 export type Account = {
   degradation_mark?: DegradationMark;
+  model_profile?: { status: string; error?: string } | null;
   id: number;
   name: string;
   priority: number;
@@ -198,6 +199,7 @@ export type OpsError = {
   resolved: boolean;
   content?: string;
   content_limited?: boolean;
+  notification?: { status: string; reason?: string; at?: string; attempts?: number; next_at?: string | null };
 };
 export type Recovery = {
   id: number;
@@ -221,6 +223,7 @@ export type Preferences = {
   pinned: boolean;
   launch_at_login: boolean;
   record_columns?: string[] | null;
+  model_test_concurrency?: number | null;
 };
 export type ViewState = {
   platform?: "macos" | "android";

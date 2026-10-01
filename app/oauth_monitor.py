@@ -18,7 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import account_ops
-from .account_locks import AccountLease
+from .account_locks import AccountLease, control_lock
 from .audit import write_audit
 from .bark import sanitize_error_text
 from .daily_test import DailyTestSchedule, daily_account_eligible
@@ -119,6 +119,11 @@ class OAuthStateStore:
             if "auto_reset_credit" in metadata:
                 from .auto_reset import validate_state
                 validate_state(metadata["auto_reset_credit"])
+            if "manual_control" in metadata:
+                control = metadata["manual_control"]
+                if (not isinstance(control, dict) or type(control.get("generation")) is not int or control["generation"] < 1
+                        or type(control.get("enabled")) is not bool or not parse_iso_datetime(control.get("at"))):
+                    raise ValueError("人工调度控制状态无效")
         self._has_state = True
         return data
 
@@ -301,6 +306,29 @@ class OAuthStateStore:
     def update_scheduler(self, updates: dict[int, dict[str, Any]]) -> None:
         self.commit(scheduler_updates=updates)
 
+    def manual_control(self, row: dict[str, Any], enabled: bool, now: datetime) -> int:
+        """Durably revoke automatic authority before sending a manual mutation."""
+        aid = str(row["id"])
+        def change(data: dict) -> int:
+            meta = data["scheduler"].setdefault(aid, {})
+            generation = int((meta.get("manual_control") or {}).get("generation") or 0) + 1
+            evidence = latest_openai_result(row, data["oauth_results"].get(aid), now) or {}
+            meta["manual_control"] = {"generation": generation, "at": now.isoformat(), "enabled": enabled,
+                "event_fingerprint": recovery_block_signature(row), "evidence_at": evidence.get("queried_at")}
+            if meta.get("recovery_intent"):
+                meta["recovery_intent"] = {**meta["recovery_intent"], "status": "cancelled", "next_retry_at": ""}
+            card = meta.get("auto_reset_credit")
+            if card and card.get("stage") not in {"recovered", "closed"}:
+                meta["auto_reset_credit"] = {**card, "stage": "manual", "owns_pause": False, "next_at": None,
+                    "revision": int(card.get("revision") or 0) + 1}
+            data["pending_events"] = {key: event for key, event in data["pending_events"].items()
+                                      if int(event.get("account_id") or 0) != int(aid) or event.get("stage") == "active_usage"}
+            return generation
+        return self.transaction(change)
+
+    def control_generation(self, account_id: int) -> int:
+        return int((self.snapshot()["scheduler"].get(str(account_id), {}).get("manual_control") or {}).get("generation") or 0)
+
     def commit(
         self,
         *,
@@ -310,21 +338,33 @@ class OAuthStateStore:
         remove_pending_keys: set[str] | None = None,
         daily_test: dict[str, Any] | None = None,
         recovery_history: dict[str, dict[str, Any]] | None = None,
+        expected_generations: dict[int, int] | None = None,
     ) -> None:
         with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
+            def current_generation(account_id: int) -> bool:
+                return expected_generations is None or expected_generations.get(account_id, 0) == int(
+                    (data["scheduler"].get(str(account_id), {}).get("manual_control") or {}).get("generation") or 0)
             for account_id, value in (results or {}).items():
+                if not current_generation(account_id):
+                    continue
                 data["oauth_results"][str(int(account_id))] = dict(value)
             for account_id, update in (scheduler_updates or {}).items():
+                if not current_generation(account_id):
+                    continue
                 key = str(int(account_id))
                 current = data["scheduler"].get(key)
                 merged = dict(current) if isinstance(current, dict) else {}
                 merged.update(dict(update))
                 data["scheduler"][key] = merged
             for key, event in (pending_events or {}).items():
+                if not current_generation(int(event.get("account_id") or 0)):
+                    continue
                 data["pending_events"][str(key)] = dict(event)
             sequence = max([int(v.get("id") or 0) for v in data["recovery_history"].values()] + [0])
             for key, event in (recovery_history or {}).items():
+                if not current_generation(int(event.get("account_id") or 0)):
+                    continue
                 if key not in data["recovery_history"]:
                     sequence += 1
                     data["recovery_history"][key] = {**event, "id": sequence, "dedupe_key": key}
@@ -690,6 +730,22 @@ def recovery_quota_ready(row: dict, result: dict | None, metadata: dict, now: da
     return not threshold or _threshold_quota_available(summary, threshold)
 
 
+def control_allows_recovery(row: dict, result: dict | None, metadata: dict, now: datetime) -> bool:
+    control = metadata.get("manual_control") or {}
+    changed = parse_iso_datetime(control.get("at"))
+    if not changed:
+        return True
+    if row.get("schedulable") is not True:
+        return False
+    blocked = parse_iso_datetime(row.get("rate_limited_at"))
+    if blocked and blocked > changed:
+        return True
+    observed = parse_iso_datetime((result or {}).get("queried_at"))
+    baseline = parse_iso_datetime(control.get("evidence_at"))
+    return bool(observed and observed > changed and (not baseline or observed > baseline)
+                and recovery_quota_ready(row, result, metadata, now))
+
+
 def build_monitor_candidates(
     accounts: list[dict[str, Any]],
     results: dict[int, dict[str, Any]],
@@ -708,6 +764,8 @@ def build_monitor_candidates(
             continue
         result = latest_openai_result(row, results.get(account_id), current) or {}
         metadata = _scheduler_row(scheduler, account_id)
+        if not control_allows_recovery(row, result, metadata, current):
+            continue
         blocked, _deadline = automatic_gate(row, result, metadata, current)
         if blocked in {"account_ineligible", "auth_paused"}:
             continue
@@ -1032,6 +1090,8 @@ class OAuthMonitor:
                 aid = str(row["id"])
                 metadata = data["scheduler"].setdefault(aid, {})
                 saved = latest_openai_result(row, data["oauth_results"].get(aid), now)
+                if not control_allows_recovery(row, saved, metadata, now):
+                    continue
                 blocked, _ = automatic_gate(row, saved, metadata, now)
                 if blocked in {"account_ineligible", "auth_paused"}:
                     continue
@@ -1046,7 +1106,7 @@ class OAuthMonitor:
                     # Preserve the exhausted window boundary after passive quota recovery.
                     continue
                 descriptor = descriptor or _rate_limit_recovery_descriptor(row, summary, now)
-                if not descriptor or descriptor["fingerprint"] == old.get("fingerprint"):
+                if not descriptor or (descriptor["fingerprint"] == old.get("fingerprint") and old.get("status") != "cancelled"):
                     continue
                 recovered = parse_iso_datetime(old.get("recovered_at"))
                 block = parse_iso_datetime(row.get("rate_limited_at"))
@@ -1063,7 +1123,8 @@ class OAuthMonitor:
             def commit(data: dict) -> None:
                 for aid, intent in changes.items():
                     meta = data["scheduler"].setdefault(aid, {})
-                    if meta.get("recovery_intent") == previous["scheduler"].get(aid, {}).get("recovery_intent"):
+                    if (meta.get("recovery_intent") == previous["scheduler"].get(aid, {}).get("recovery_intent")
+                            and meta.get("manual_control") == previous["scheduler"].get(aid, {}).get("manual_control")):
                         meta["recovery_intent"] = intent
             self.store.transaction(commit)
 
@@ -1121,9 +1182,12 @@ class OAuthMonitor:
         accounts = batch.setdefault("accounts", {})
         jobs: list[dict[str, Any]] = []
         pending: dict[str, dict[str, Any]] = {}
+        generations = getattr(self, "_cycle_generations", {})
 
         def finish(row: dict[str, Any], result: dict[str, Any], *, reused: bool = False) -> None:
             account_id = int(row["id"])
+            if self.store.control_generation(account_id) != generations.get(account_id, 0):
+                result = {"skipped": True, "error_code": "manual_intervention"}
             record = {
                 "status": "skipped" if result.get("skipped") else "success" if result.get("success") else "failed",
                 "checked_at": result.get("completed_at") or _utc(self.clock()).isoformat(), "model_id": model, "reused_recovery_test": reused,
@@ -1196,7 +1260,8 @@ class OAuthMonitor:
                 if not daily_account_eligible(latest, current):
                     return {"skipped": True, "error_code": "daily_state_changed"}
                 return self._timed_test(int(row["id"]), model, base_url=base_url,
-                                        admin_token=token, timeout_seconds=30)
+                                        admin_token=token, timeout_seconds=30,
+                                        control_generation=generations.get(int(row["id"]), 0))
             except Exception as exc:
                 return {"success": False, "error_code": "daily_test_error", "error": str(exc)}
             finally:
@@ -1219,6 +1284,9 @@ class OAuthMonitor:
         })
 
     def _timed_test(self, account_id: int, model: str, **kwargs: Any) -> dict[str, Any]:
+        generation = kwargs.pop("control_generation", None)
+        if generation is not None and self.store.control_generation(account_id) != generation:
+            return {"success": False, "skipped": True, "error_code": "manual_intervention"}
         try:
             result = dict(self.test_runner(account_id, model, **kwargs))
         except Exception as exc:
@@ -1332,6 +1400,8 @@ class OAuthMonitor:
         state = self.store.cached_snapshot()
         results = {int(key): value for key, value in (state.get("oauth_results") or {}).items()}
         scheduler = {int(key): value for key, value in (state.get("scheduler") or {}).items()}
+        generations = {aid: int((meta.get("manual_control") or {}).get("generation") or 0) for aid, meta in scheduler.items()}
+        self._cycle_generations = generations
         if force or daily:
             candidates = [
                 {
@@ -1430,6 +1500,7 @@ class OAuthMonitor:
                     reason=item["reason"],
                     timeout_seconds=10,
                     now=None if live_clock else current,
+                    expected_generation=generations.get(int(item["account_id"]), 0),
                 ): item
                 for item in selected
                 if int(item["account_id"]) not in usage_results
@@ -1459,11 +1530,15 @@ class OAuthMonitor:
         depleted_count = 0
 
         for account_id, refreshed_result in usage_results.items():
+            if self.store.control_generation(account_id) != generations.get(account_id, 0):
+                continue
             if refreshed_result.get("skipped") or account_id in prior_usage:
                 continue
             selected_item = selected_by_id[account_id]
             reason = str(selected_item["reason"])
             metadata = _scheduler_row(scheduler, account_id)
+            if not control_allows_recovery(selected_item["row"], refreshed_result, metadata, current):
+                continue
             update: dict[str, Any] = {"last_attempt_at": current.isoformat(), "last_reason": reason}
             if account_id in reused_quota:
                 update.pop("last_attempt_at")
@@ -1657,12 +1732,15 @@ class OAuthMonitor:
             scheduler_updates=scheduler_updates,
             pending_events=pending_updates,
             remove_pending_keys=remove_pending,
+            expected_generations=generations,
         )
 
         runnable_jobs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         pretest_updates: dict[int, dict[str, Any]] = {}
         for item, intent in test_jobs:
             account_id = int(item["account_id"])
+            if self.store.control_generation(account_id) != generations.get(account_id, 0):
+                continue
             try:
                 row = self._read_account(account_id)
             except Exception as exc:
@@ -1708,7 +1786,7 @@ class OAuthMonitor:
             pretest_updates[account_id] = {"recovery_intent": testing}
             runnable_jobs.append((item, testing, row or {}))
         if pretest_updates:
-            self.store.commit(scheduler_updates=pretest_updates)
+            self.store.commit(scheduler_updates=pretest_updates, expected_generations=generations)
 
         test_workers = min(
             len(runnable_jobs),
@@ -1729,6 +1807,7 @@ class OAuthMonitor:
                         base_url=base_url,
                         admin_token=token,
                         timeout_seconds=30,
+                        control_generation=generations.get(int(item["account_id"]), 0),
                     ): (item, intent, frozen_row)
                     for item, intent, frozen_row in runnable_jobs
                 }
@@ -1751,6 +1830,8 @@ class OAuthMonitor:
         recovered_count = 0
         for item, intent, frozen_row in runnable_jobs:
             account_id = int(item["account_id"])
+            if self.store.control_generation(account_id) != generations.get(account_id, 0):
+                continue
             test_result = test_results[account_id]
             final_intent = dict(intent)
             error_code = str(test_result.get("error_code") or "")
@@ -1791,12 +1872,13 @@ class OAuthMonitor:
                     error_code = "recovery_state_changed"
                     recovery_result = {"error": "账号在测活后发生并发状态变化，已停止自动恢复"}
                 else:
-                    recovery_result = self.recovery_runner(
-                        account_id,
-                        base_url=base_url,
-                        admin_token=token,
-                        timeout_seconds=30,
-                    )
+                    with control_lock(self.db, account_id):
+                        if self.store.control_generation(account_id) != generations.get(account_id, 0):
+                            continue
+                        live = self._read_account(account_id)
+                        if not recovery_block_change_is_safe(frozen_row, live):
+                            continue
+                        recovery_result = self.recovery_runner(account_id, base_url=base_url, admin_token=token, timeout_seconds=3)
                     try:
                         recovered_row = self._read_account(account_id)
                     except Exception as exc:
@@ -1885,7 +1967,8 @@ class OAuthMonitor:
                     "dedupe_key": key,
                 }
         if final_updates or pending_updates:
-            self.store.commit(scheduler_updates=final_updates, pending_events=pending_updates, recovery_history=history_updates)
+            self.store.commit(scheduler_updates=final_updates, pending_events=pending_updates, recovery_history=history_updates,
+                              expected_generations=generations)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         success_count = sum(1 for value in usage_results.values() if value.get("success"))

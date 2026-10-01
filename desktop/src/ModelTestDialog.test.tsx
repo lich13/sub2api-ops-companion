@@ -61,7 +61,7 @@ describe("ModelTestDialog candidates", () => {
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
     expect(vi.mocked(api).mock.calls[0]).toEqual(["GET", "/accounts/101/models?purpose=model_test"]);
-    expect(container.querySelectorAll("select option")).toHaveLength(8);
+    expect(container.querySelectorAll('select[aria-label="测试模型"] option')).toHaveLength(8);
     expect(container.querySelector("button")?.hasAttribute("disabled")).toBe(false);
   });
 
@@ -77,5 +77,18 @@ describe("ModelTestDialog candidates", () => {
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
     expect(vi.mocked(api).mock.calls.some((call) => call[1] === "/accounts/101/models?purpose=model_test")).toBe(true);
+  });
+
+  it("submits the selected concurrency and preserves the exact requested model", async () => {
+    const save = vi.fn();
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} concurrency={2} saveConcurrency={save}/>));
+    const slots = container.querySelector<HTMLSelectElement>('select[aria-label="测试并发"]')!;
+    expect(slots.value).toBe("2");
+    await act(async () => { slots.value = "3"; slots.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(save).toHaveBeenCalledWith(3);
+    vi.mocked(api).mockResolvedValueOnce({ id: "f".repeat(32), status: "completed", requested_model: "gpt-5.6-sol", forwarded_model: "gpt-5.6-sol", returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 12 } as never);
+    const start = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("开始测试"))!;
+    await act(async () => start.click());
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toMatchObject({ model_id: "gpt-5.6-sol", concurrency: 3 });
   });
 });

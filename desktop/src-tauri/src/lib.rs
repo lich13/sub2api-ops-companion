@@ -43,6 +43,7 @@ struct Preferences {
     pinned: bool,
     #[serde(deserialize_with = "read_record_columns")]
     record_columns: Option<Vec<String>>,
+    model_test_concurrency: Option<u8>,
 }
 
 fn read_record_columns<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Vec<String>>, D::Error> {
@@ -174,6 +175,16 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain.starts_with("/account-model-profiles") {
+        if path.contains('?') { return false; }
+        return match method {
+            "GET" => matches!(path, "/account-model-profiles" | "/account-model-profiles/preview")
+                || path.strip_prefix("/account-model-profiles/jobs/").is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit())),
+            "PUT" => path == "/account-model-profiles",
+            "POST" => path == "/account-model-profiles/apply",
+            _ => false,
+        };
+    }
     let group_path = |suffix: &str| plain.strip_prefix("/model-groups/").and_then(|s| s.strip_suffix(suffix))
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0));
     if !path.contains('?') && match method {
@@ -547,6 +558,7 @@ async fn preferences(
     pinned: bool,
     launch_at_login: bool,
     record_columns: Option<Vec<String>>,
+    model_test_concurrency: Option<u8>,
 ) -> Result<(), String> {
     let mut view = state.view.lock().await;
     #[cfg(desktop)]
@@ -560,6 +572,10 @@ async fn preferences(
         .map_err(|_| "无法更改开机启动")?;
     }
     let mut prefs = view.preferences.clone();
+    if let Some(concurrency) = model_test_concurrency {
+        if !(1..=3).contains(&concurrency) { return Err("测试并发必须为 1、2 或 3".into()); }
+        prefs.model_test_concurrency = Some(concurrency);
+    }
     prefs.favorites = favorites
         .into_iter()
         .filter(|id| *id > 0)
@@ -1300,6 +1316,25 @@ mod tests {
             std::fs::metadata(p).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[test]
+    fn account_profiles_have_explicit_method_and_path_allowlist() {
+        for (method, path) in [("GET", "/account-model-profiles"), ("PUT", "/account-model-profiles"),
+            ("GET", "/account-model-profiles/preview"), ("POST", "/account-model-profiles/apply"),
+            ("GET", "/account-model-profiles/jobs/0123456789abcdef0123456789abcdef")] {
+            assert!(allowed_request(method, path));
+            assert!(!allowed_request(method, &format!("{path}?unknown=1")));
+            assert!(!allowed_request("DELETE", path));
+        }
+        for path in ["/account-model-profiles/jobs/invalid", "/account-model-profiles/jobs/1", "/account-model-profiles/preview/", "/account-model-profiles/apply/../credentials"] {
+            assert!(!allowed_request("GET", path));
+        }
+        let old: Preferences = serde_json::from_str("{}").unwrap();
+        assert!(old.model_test_concurrency.is_none());
+        let changed = Preferences { model_test_concurrency: Some(3), ..old };
+        let restored: Preferences = serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
+        assert_eq!(restored.model_test_concurrency, Some(3));
     }
 
     #[test]
