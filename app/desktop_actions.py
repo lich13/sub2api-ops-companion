@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -76,6 +77,36 @@ def filter_model_options(items: list[Any], allowlists: list[dict[str, Any]]) -> 
                                                     if isinstance(pattern, str) and pattern.strip()]}
                        for value in normalized_allowlists]
     return [item for item in normalized if any(admitted(value, item["id"]) for value in safe_allowlists)]
+
+
+_MEDIA_MODEL = ("image", "audio", "video", "tts", "whisper", "realtime", "search", "embedding")
+
+
+def is_text_model_id(model_id: str) -> bool:
+    """Keep model-test candidates limited to safe, text-capable identifiers."""
+    return bool(model_id and re.fullmatch(r"[A-Za-z0-9._:/-]{1,200}", model_id)
+                and not any(marker in model_id.lower() for marker in _MEDIA_MODEL))
+
+
+def exact_model_options(allowlists: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Build the ordered union of exact entries from enabled group allowlists.
+
+    Wildcards are deliberately ignored for ModelTrace.  The caller only uses
+    this helper after confirming that every current group has an enabled
+    allowlist, so an empty result is a real empty candidate set.
+    """
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for allowlist in allowlists:
+        for value in allowlist.get("models", []):
+            if not isinstance(value, str):
+                continue
+            model_id = value.strip()
+            if not model_id or "*" in model_id or model_id in seen or not is_text_model_id(model_id):
+                continue
+            seen.add(model_id)
+            result.append({"id": model_id, "display_name": model_id, "type": "model"})
+    return result
 
 
 class PriorityRequest(BaseModel):
@@ -166,12 +197,22 @@ class DesktopActions:
             lock.release()
             await asyncio.to_thread(self.s.invalidate)
 
-    async def models(self, account_id: int, key: str) -> list[dict[str, str]]:
+    async def models(self, account_id: int, key: str, purpose: Literal["legacy", "model_test"] = "legacy") -> list[dict[str, str]]:
         row = await self.account(account_id)
+        if purpose == "model_test" and row.get("platform") != "openai":
+            raise HTTPException(422, "仅支持 Codex 模型测试")
+        if purpose == "model_test":
+            strict, allowlists = await self.model_test_allowlist(row)
+            if strict:
+                return exact_model_options(allowlists)
         async with self.client(key) as client:
             data = await self.json_request(client, "GET", f"accounts/{account_id}/models")
         if not isinstance(data, list):
             raise HTTPException(502, "模型列表格式无效")
+        if purpose == "model_test":
+            # An unrestricted group keeps the provider catalogue semantics, but
+            # ModelTrace itself only accepts text model identifiers.
+            return [item for item in filter_model_options(data[:1000], []) if is_text_model_id(item["id"])]
         allowlists = await self.group_allowlists(row)
         return filter_model_options(data[:1000], allowlists)
 
@@ -188,8 +229,40 @@ class DesktopActions:
         return [value.get("model_allowlist") or {"enabled": False, "models": []}
                 for value in groups if isinstance(value, dict)]
 
+    async def model_test_allowlist(self, row: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
+        """Return (strict, allowlists) for the current, non-deleted groups.
+
+        A missing group or a group with a disabled allowlist means that Sub2API
+        treats the group as unrestricted, so ModelTrace falls back to the
+        account's provider catalogue.  With at least one current group and all
+        of them enabled, the exact union (including an empty union) is the
+        complete candidate set.
+        """
+        group_ids = sorted({int(value) for value in (row.get("group_ids") or [])
+                            if isinstance(value, int) or str(value).isdigit()})
+        if not group_ids:
+            return False, []
+        groups = await asyncio.to_thread(
+            self.s.r.db.fetch_all,
+            "SELECT id, model_allowlist FROM groups WHERE deleted_at IS NULL AND platform=%(platform)s "
+            "AND id=ANY(%(ids)s) ORDER BY sort_order,id",
+            {"ids": group_ids, "platform": row.get("platform")},
+        )
+        if not groups:
+            return False, []
+        allowlists = [value.get("model_allowlist") or {"enabled": False, "models": []}
+                      for value in groups if isinstance(value, dict)]
+        if len(allowlists) != len(groups) or any(not value.get("enabled") for value in allowlists):
+            return False, allowlists
+        return True, allowlists
+
     async def model_allowed(self, row: dict[str, Any], model: str) -> bool:
-        return bool(filter_model_options([{"id": model}], await self.group_allowlists(row)))
+        if not is_text_model_id(model):
+            return False
+        strict, allowlists = await self.model_test_allowlist(row)
+        if not strict:
+            return True
+        return model in {item["id"] for item in exact_model_options(allowlists)}
 
     async def set_groups(self, account_id: int, payload: GroupsRequest, key: str) -> dict[str, Any]:
         from .desktop_api import account_dto

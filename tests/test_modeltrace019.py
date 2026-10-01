@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from app.model_test_stream import Collector, TestFailure, failure
 from app.modeltrace import analyze, bank, validate
+from app.model_tests import ModelTests
 
 
 class ModelTrace019Tests(unittest.TestCase):
@@ -49,6 +52,44 @@ class ModelTrace019Tests(unittest.TestCase):
         self.assertFalse(failure(401).retryable)
         self.assertFalse(failure(429).retryable)
         self.assertTrue(failure(503).retryable)
+
+    def test_target_bypasses_account_model_mapping(self):
+        service = SimpleNamespace(actions=SimpleNamespace(model_allowed=AsyncMock(return_value=True)),
+                                  r=SimpleNamespace(db=SimpleNamespace(fetch_one=AsyncMock())))
+        tests = ModelTests.__new__(ModelTests)
+        tests.s = service
+        row = {
+            "id": 387, "name": "yx", "platform": "openai", "type": "apikey",
+            "parent_account_id": None, "credentials": {
+                "api_key": "secret", "base_url": "https://api.example.test/v1",
+                "model_mapping": {"gpt-6-luna": "gpt-6-astra"},
+            }, "extra": {}, "proxy_id": None,
+        }
+        import asyncio
+        target, _ = asyncio.run(tests.target(row, "gpt-6-luna"))
+        self.assertEqual(target["model"], "gpt-6-luna")
+
+    def test_oauth_target_uses_shared_codex_user_agent_and_version(self):
+        class Db:
+            def fetch_all(self, sql, params):
+                return [
+                    {"key": "openai_codex_user_agent", "value": "codex-tui/0.146.1 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.146.1)"},
+                    {"key": "openai_codex_client_version", "value": "0.160.0"},
+                ]
+
+        service = SimpleNamespace(actions=SimpleNamespace(model_allowed=AsyncMock(return_value=True)),
+                                  r=SimpleNamespace(db=Db()))
+        tests = ModelTests.__new__(ModelTests)
+        tests.s = service
+        row = {
+            "id": 387, "name": "yx", "platform": "openai", "type": "oauth",
+            "parent_account_id": None, "credentials": {"access_token": "secret"},
+            "extra": {}, "proxy_id": None,
+        }
+        import asyncio
+        target, _ = asyncio.run(tests.target(row, "gpt-6-luna"))
+        self.assertEqual(target["headers"]["Version"], "0.160.0")
+        self.assertEqual(target["headers"]["User-Agent"], "codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)")
 
 
 if __name__ == "__main__":

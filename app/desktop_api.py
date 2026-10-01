@@ -824,9 +824,9 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         return await service.actions.set_degradation_mark(account_id, payload)
 
     @router.get("/accounts/{account_id}/models")
-    async def models(account_id: int, request: Request) -> Any:
+    async def models(account_id: int, request: Request, purpose: Literal["model_test"] | None = None) -> Any:
         key = await auth(request)
-        return await service.actions.models(account_id, key)
+        return await service.actions.models(account_id, key, purpose or "legacy")
 
     @router.post("/accounts/{account_id}/test")
     async def test(account_id: int, payload: TestRequest, request: Request) -> Any:
