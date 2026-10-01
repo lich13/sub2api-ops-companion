@@ -3,8 +3,18 @@ import { BellOff, LoaderCircle } from "lucide-react";
 import { api, command } from "./bridge";
 import type { Account, DegradationMark } from "./types";
 
-export function DegradationBadge({ account }: { account: Account }) {
-  return account.degradation_mark?.marked ? <span className="degradation-badge"><BellOff size={12}/>降智</span> : null;
+export function DegradationBadge({ account, compact = false }: { account: Account; compact?: boolean }) {
+  if (!account.degradation_mark?.marked) return null;
+  return (
+    <span
+      className={`degradation-badge${compact ? " compact" : ""}`}
+      aria-label="降智"
+      role={compact ? "img" : undefined}
+    >
+      <BellOff size={compact ? 11 : 12} aria-hidden="true" />
+      {!compact && "降智"}
+    </span>
+  );
 }
 
 export default function DegradationAction({ account, online, report }: { account: Account; online: boolean; report: (error: unknown) => void }) {

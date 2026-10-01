@@ -440,6 +440,7 @@ export default function App() {
                     <div className="compact-identity">
                       <strong title={call.account_name}>
                         {call.account_name}
+                        {a && <DegradationBadge account={a} compact />}
                       </strong>
                       {a && <MiniUsage account={a} />}
                     </div>
@@ -513,8 +514,9 @@ export default function App() {
       </article>
     );
   }
-  function errorRow(e: OpsError) {
+  function errorRow(e: OpsError, compact = false) {
     const stateLabel = errorState(e);
+    const account = accounts.find((item) => item.id === e.account_id);
     return (
       <button
         key={e.id}
@@ -527,7 +529,10 @@ export default function App() {
           {e.upstream_status_code || e.status_code || "ERR"}
         </span>
         <div>
-          <strong>{e.account_name || `账号 #${e.account_id}`}</strong>
+          <strong>
+            {e.account_name || `账号 #${e.account_id}`}
+            {compact && account && <DegradationBadge account={account} compact />}
+          </strong>
           <span>
             <em className={`error-state ${stateLabel === "当前" ? "active" : ""}`}>
               {stateLabel}
@@ -685,7 +690,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="error-list">
-                    {eventRows.map(errorRow)}
+                    {eventRows.map((error) => errorRow(error, true))}
                     {!eventRows.length && (
                       <div className="quiet">
                         <Check size={15} />
@@ -1116,7 +1121,7 @@ export default function App() {
                           </button>
                         </div>
                         <div className="error-list">
-                          {eventRows.map(errorRow)}
+                          {eventRows.map((error) => errorRow(error))}
                           {!eventRows.length && <Empty text="暂无账号错误" />}
                         </div>
                         {cursor && (

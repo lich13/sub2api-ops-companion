@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from .audit import write_audit
 from .account_locks import AccountLease
 from .bark import sanitize_error_text
+from .model_rules import admitted
 from .usage_query import parse_iso_datetime
 
 
@@ -49,6 +50,32 @@ def validate_media_data_url(value: str, kind: str) -> None:
 
 def stamp() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def filter_model_options(items: list[Any], allowlists: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Normalize a provider model directory and apply current group allowlists.
+
+    A model remains selectable when any current group admits it.  An unconfigured
+    group is intentionally unrestricted, matching Sub2API's allowlist semantics.
+    """
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            continue
+        model_id = sanitize_error_text(item["id"], limit=200).strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        normalized.append({field: sanitize_error_text(str(item.get(field) or ""), limit=200)
+                           for field in ("id", "display_name", "type")})
+    normalized_allowlists = [value for value in allowlists if isinstance(value, dict)]
+    if not normalized_allowlists or any(not value.get("enabled") for value in normalized_allowlists):
+        return normalized
+    safe_allowlists = [{"enabled": True, "models": [pattern for pattern in value.get("models", [])
+                                                    if isinstance(pattern, str) and pattern.strip()]}
+                       for value in normalized_allowlists]
+    return [item for item in normalized if any(admitted(value, item["id"]) for value in safe_allowlists)]
 
 
 class PriorityRequest(BaseModel):
@@ -140,14 +167,29 @@ class DesktopActions:
             await asyncio.to_thread(self.s.invalidate)
 
     async def models(self, account_id: int, key: str) -> list[dict[str, str]]:
-        await self.account(account_id)
+        row = await self.account(account_id)
         async with self.client(key) as client:
             data = await self.json_request(client, "GET", f"accounts/{account_id}/models")
         if not isinstance(data, list):
             raise HTTPException(502, "模型列表格式无效")
-        return [{field: sanitize_error_text(str(item.get(field) or ""), limit=200)
-                 for field in ("id", "display_name", "type")}
-                for item in data[:1000] if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        allowlists = await self.group_allowlists(row)
+        return filter_model_options(data[:1000], allowlists)
+
+    async def group_allowlists(self, row: dict[str, Any]) -> list[dict[str, Any]]:
+        group_ids = sorted({int(value) for value in (row.get("group_ids") or [])
+                            if isinstance(value, int) or str(value).isdigit()})
+        if not group_ids:
+            return []
+        groups = await asyncio.to_thread(
+            self.s.r.db.fetch_all,
+            "SELECT model_allowlist FROM groups WHERE deleted_at IS NULL AND id=ANY(%(ids)s) ORDER BY id",
+            {"ids": group_ids},
+        )
+        return [value.get("model_allowlist") or {"enabled": False, "models": []}
+                for value in groups if isinstance(value, dict)]
+
+    async def model_allowed(self, row: dict[str, Any], model: str) -> bool:
+        return bool(filter_model_options([{"id": model}], await self.group_allowlists(row)))
 
     async def set_groups(self, account_id: int, payload: GroupsRequest, key: str) -> dict[str, Any]:
         from .desktop_api import account_dto

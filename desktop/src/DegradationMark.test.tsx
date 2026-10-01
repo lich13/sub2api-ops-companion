@@ -58,6 +58,24 @@ afterEach(async () => {
 });
 
 describe("degradation mark", () => {
+  it("keeps the main badge text while compact badges expose only the icon", async () => {
+    await act(async () =>
+      root.render(
+        <>
+          <DegradationBadge account={account({ degradation_mark: { marked: true, version: "mark-version" } })} />
+          <DegradationBadge compact account={account({ degradation_mark: { marked: true, version: "mark-version" } })} />
+        </>,
+      ),
+    );
+    const badges = [...container.querySelectorAll<HTMLElement>(".degradation-badge")];
+    expect(badges).toHaveLength(2);
+    expect(badges[0].textContent).toContain("降智");
+    expect(badges[1].textContent).toBe("");
+    expect(badges[1].getAttribute("aria-label")).toBe("降智");
+    expect(badges[1].getAttribute("role")).toBe("img");
+    expect(badges[1].querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("renders only when marked and sends an independent verified PUT", async () => {
     const onError = vi.fn();
     vi.mocked(api).mockResolvedValue({

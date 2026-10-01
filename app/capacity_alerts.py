@@ -22,6 +22,7 @@ from .usage_query import parse_iso_datetime
 MESSAGES = (
     "Our servers are currently overloaded. Please try again later.",
     "Selected model is at capacity. Please try a different model.",
+    "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
 )
 RETRY_SECONDS = (5, 30, 120, 600)
 TITLE = "⚠️ Codex OAuth 疑似降智"
@@ -40,6 +41,9 @@ def match_message(row: dict[str, Any]) -> str | None:
     if row.get("account_deleted_at") or row.get("error_owner") != "provider" or row.get("error_phase") != "upstream":
         return None
 
+    def normalize(value: str) -> str:
+        return " ".join(value.casefold().split()).rstrip(".!?。！？,，;；:： ")
+
     def extract(value: Any, *, allow_plain: bool = True) -> str | None:
         if isinstance(value, str):
             try:
@@ -47,9 +51,9 @@ def match_message(row: dict[str, Any]) -> str | None:
             except ValueError:
                 if not allow_plain:
                     return None
-                normalized = " ".join(value.casefold().split()).rstrip(".!?。！？,，;；:： ")
+                normalized = normalize(value)
                 for message in MESSAGES:
-                    if normalized == message.casefold().rstrip("."):
+                    if normalized == normalize(message):
                         return message
                 return None
         if isinstance(value, dict):

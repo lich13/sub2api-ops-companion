@@ -8,18 +8,34 @@ import re
 import secrets
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 DATA = Path(__file__).with_name("modeltrace_data")
+_bank_provider: Any = None
 
 
 @lru_cache(maxsize=1)
-def bank():
+def bundled_bank():
     manifest = json.loads((DATA / "manifest.json").read_text())
     raw = (DATA / "unified_bank.json").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     if digest != manifest["files"]["bank"]["sha256"]:
         raise ValueError("模型指纹库校验失败")
-    return json.loads(raw), {"revision": manifest["revision"], "sha256": digest}
+    data = json.loads(raw)
+    return data, {"revision": manifest["revision"], "sha256": digest,
+                  "built_at": data.get("built_at", ""), "analyzer_version": manifest.get("analyzerVersion", 1)}
+
+
+def configure_bank_provider(provider: Any) -> None:
+    """Install the process-local active-bank provider used by model tests."""
+    global _bank_provider
+    _bank_provider = provider
+
+
+def bank():
+    if _bank_provider is not None:
+        return _bank_provider.snapshot()
+    return bundled_bank()
 
 
 def challenges():
@@ -141,10 +157,10 @@ def scores(numbers, data):
     return [(1 - weight) * x + weight * y for x, y in zip(marginal, ordered)]
 
 
-def analyze(outputs: list[str]) -> dict | None:
+def analyze(outputs: list[str], snapshot: tuple[dict[str, Any], dict[str, Any]] | None = None) -> dict | None:
     if len(outputs) > 3:
         raise ValueError('最多分析三组样本')
-    data, version = bank()
+    data, version = snapshot or bank()
     valid = [nums for text in outputs if len(nums := validate(text)) >= 80]
     if not valid:
         return None
