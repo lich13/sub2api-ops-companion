@@ -489,6 +489,7 @@ export async function run(
   if (name === "preferences") {
     state.preferences = { ...state.preferences, ...args };
     if (args.recordColumns) state.preferences.record_columns = args.recordColumns as string[];
+    if (args.modelTestConcurrency) state.preferences.model_test_concurrency = Number(args.modelTestConcurrency);
     emit();
     return;
   }
@@ -512,6 +513,8 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) return (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
+    if (String(args.path).startsWith("/account-model-profiles")) return (await import("./profilePreview")).profilePreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {
       const path = String(args.path), body = args.body as Record<string, unknown>;
       const account = state.snapshot?.accounts.find((a) => a.id === Number(path.split("/")[2]));

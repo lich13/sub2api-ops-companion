@@ -9,13 +9,16 @@ type Result = {
   id: string; account_id: number; account_name: string; requested_model: string;
   forwarded_model: string; returned_models: string[]; status: string;
   completed_groups: number; valid_groups: number; attempts: number;
+  concurrency?: number; groups?: { index: number; status: string; attempts: number; ttft_ms: number | null; duration_ms: number | null; error?: string }[];
   duration_ms: number; error?: string; report?: { prediction_name?: string; prediction?: string; probability?: number; used_outputs?: number } | null;
 };
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
 
-export default function ModelTestDialog({ account, online, close, report }: {
+export default function ModelTestDialog({ account, online, close, report, concurrency = 1, saveConcurrency }: {
   account: Account; online: boolean; close: () => void; report: (error: unknown) => void;
+  concurrency?: number; saveConcurrency?: (value: number) => void;
 }) {
+  const [slots, setSlots] = useState([1, 2, 3].includes(concurrency) ? concurrency : 1);
   const [models, setModels] = useState<Model[]>([]), [model, setModel] = useState("");
   const [job, setJob] = useState<Result | null>(null), [loading, setLoading] = useState(true);
   const [modelError, setModelError] = useState(""), [modelReload, setModelReload] = useState(0);
@@ -55,6 +58,7 @@ export default function ModelTestDialog({ account, online, close, report }: {
     try {
       const next = await api<Result>("POST", `/accounts/${account.id}/model-tests`, {
         model_id: model, expected_version: account.version,
+        concurrency: slots,
         request_id: `${crypto.randomUUID().replaceAll("-", "").slice(0, 32)}`,
       });
       setJob(next);
@@ -68,11 +72,13 @@ export default function ModelTestDialog({ account, online, close, report }: {
   const reportResult = job?.report;
   return <div className="modal-backdrop" onClick={close}><section className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" onClick={(e) => e.stopPropagation()}>
     <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={close}><X size={18}/></button></header>
-    <label className="model-test-model">模型<select value={model} disabled={loading || !!modelError || !models.length || running || busy} onChange={(e) => setModel(e.target.value)}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
+    <label className="model-test-model">模型<select aria-label="测试模型" value={model} disabled={loading || !!modelError || !models.length || running || busy} onChange={(e) => setModel(e.target.value)}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
       {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
     </label>
+    <label className="model-test-model">并发<select aria-label="测试并发" value={slots} disabled={running || busy} onChange={(e) => { const value = Number(e.target.value); setSlots(value); saveConcurrency?.(value); }}>{[1, 2, 3].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
     {job && <div className="model-test-result" aria-live="polite">
       <div className="model-test-status">{job.status === "running" || job.status === "retrying" ? <LoaderCircle size={16} className="spin"/> : null}<span>{job.status === "completed" ? "已完成" : job.status === "cancelled" ? "已停止" : job.status === "interrupted" ? "服务重启后中断" : job.status === "failed" ? "测试失败" : `${job.completed_groups}/3 组`}</span><span>{job.attempts} 次请求</span></div>
+      {job.groups && <div className="model-test-groups">{job.groups.map((group) => <div key={group.index}><strong>第 {group.index} 组</strong><span>{({ queued: "等待", running: "测试中", retrying: "等待重试", completed: "完成", failed: "失败", cancelled: "已停止" } as Record<string, string>)[group.status] ?? group.status}</span><span>{group.attempts} 次</span><span>首字 {group.ttft_ms == null ? "—" : `${(group.ttft_ms / 1000).toFixed(1)}s`}</span><span>耗时 {group.duration_ms == null ? "—" : `${(group.duration_ms / 1000).toFixed(1)}s`}</span>{group.error && <span className="bad-text">{group.error}</span>}</div>)}</div>}
       <dl><div><dt>请求模型</dt><dd>{job.requested_model}</dd></div><div><dt>转发模型</dt><dd>{job.forwarded_model}</dd></div><div><dt>返回模型</dt><dd>{job.returned_models.length ? job.returned_models.join("、") : "—"}</dd></div><div><dt>指纹推测</dt><dd>{reportResult?.prediction_name || "—"}</dd></div><div><dt>匹配度</dt><dd>{reportResult?.probability == null ? "—" : `${(reportResult.probability * 100).toFixed(1)}%`}</dd></div><div><dt>有效组数</dt><dd>{reportResult?.used_outputs ?? job.valid_groups}/3</dd></div><div><dt>耗时</dt><dd>{job.duration_ms ? `${(job.duration_ms / 1000).toFixed(1)}s` : "—"}</dd></div></dl>
       {job.error && <p className="bad-text">{job.error}</p>}
     </div>}

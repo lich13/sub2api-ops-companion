@@ -57,6 +57,7 @@ import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
+import AccountModelProfiles from "./AccountModelProfiles";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
@@ -194,6 +195,7 @@ export default function App() {
     setCursor(null);
     closeDetail();
     setTestAccount(null);
+    setModelTestAccount(null);
     setQualityAccount(null);
     setConfirm(null);
     setGroupsOpen(false);
@@ -347,7 +349,7 @@ export default function App() {
         : new Set([...old].filter((id) => live.has(id))),
     );
   }, [accounts]);
-  const eventRows = (history ?? errors).slice().sort((a, b) => b.id - a.id);
+  const eventRows = (quick ? errors : history ?? []).slice().sort((a, b) => b.id - a.id);
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
@@ -356,6 +358,7 @@ export default function App() {
         launchAtLogin:
           patch.launch_at_login ?? state.preferences.launch_at_login,
         recordColumns: patch.record_columns ?? state.preferences.record_columns,
+        modelTestConcurrency: patch.model_test_concurrency ?? state.preferences.model_test_concurrency,
       });
     } catch (e) {
       report(e);
@@ -403,7 +406,7 @@ export default function App() {
   }
   function errorState(error: OpsError) {
     const account = accounts.find((item) => item.id === error.account_id);
-    if (account?.last_error_id === error.id && !error.resolved) return "当前";
+    if (account?.last_error_id === error.id && !error.resolved && !account.success_after_error) return "当前";
     return error.resolved ? "已解决" : "历史";
   }
   function schedule(a: Account) {
@@ -573,8 +576,8 @@ export default function App() {
               >
                 <p.icon size={17} />
                 {p.label}
-                {p.id === "events" && errors.length > 0 ? (
-                  <span className="nav-count">{errors.length}</span>
+                {p.id === "events" && eventRows.length > 0 ? (
+                  <span className="nav-count">{eventRows.length}</span>
                 ) : null}
               </button>
             ))}
@@ -1275,6 +1278,7 @@ export default function App() {
                     </dd>
                     <dt>请求 ID</dt>
                     <dd>{detail.request_id || "未知"}</dd>
+                    {detail.notification && <><dt>降智报警</dt><dd>{detail.notification.status === "suppressed" ? detail.notification.reason === "degradation_mark" ? "降智标记静默" : "已抑制" : ({ delivered: "已推送", queued: "待推送", retry: "待重试", unavailable: "投递状态暂不可读取" } as Record<string, string>)[detail.notification.status] ?? "—"}</dd></>}
                   </dl>
                   <h3>错误内容</h3>
                   {accounts.find((a) => a.id === detail.account_id) && <DegradationAction account={accounts.find((a) => a.id === detail.account_id)!} online={state.online} report={report}/>}
@@ -1338,10 +1342,13 @@ export default function App() {
       )}
       {modelTestAccount && (
         <ModelTestDialog
+          key={`${connectionKey}:${modelTestAccount.id}`}
           account={accounts.find((a) => a.id === modelTestAccount.id) ?? modelTestAccount}
           online={state.online}
           report={report}
           close={() => setModelTestAccount(null)}
+          concurrency={state.preferences.model_test_concurrency ?? 1}
+          saveConcurrency={(value) => void prefs({ model_test_concurrency: value })}
         />
       )}
       {qualityAccount && (
@@ -1563,6 +1570,7 @@ function SettingsPage({
               </>
             )}
           </ConfigForm>
+          <AccountModelProfiles key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>
           <section className="feature-models">
             <h2>模型配置</h2>
             <ModelConfig key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>

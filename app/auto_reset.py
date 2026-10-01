@@ -16,7 +16,7 @@ from typing import Any, Callable
 from .audit import write_audit
 from .desktop_usage import reset_credits
 from .key_fallback import execute_sub2api_set_schedulable
-from .account_locks import AccountLease
+from .account_locks import AccountLease, control_lock
 from .oauth_queries import AUTH_ERRORS, automatic_eligible, credential_fingerprint, fresh_quota, quota_complete
 from .quota_snapshot import latest_openai_result
 from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_result,
@@ -245,7 +245,8 @@ class AutoResetController:
             connection["admin_token"] = token
         def valid(data):
             current = data["scheduler"].get(str(aid), {}).get("auto_reset_credit") or {}
-            return current.get("episode") == task["episode"] and current.get("stage") == task["stage"]
+            return (current.get("episode") == task["episode"] and current.get("stage") == task["stage"]
+                    and current.get("revision") == task.get("revision"))
         def operation():
             live = self.m._read_account(aid)
             if not live:
@@ -262,15 +263,16 @@ class AutoResetController:
                     if (not depletion or depletion["reset_at"] != task.get("reset_at")
                             or (credits["available"] or 0) <= 0):
                         return {"success": False, "error_code": "reset_state_changed"}
-                    active_task = self._save(aid, task, stage="pausing", signature=_signature(live), next_at=None)
-                    paused = self.schedule_runner(aid, False, **connection)
-                    after = self.m._read_account(aid)
-                    if (not paused.get("success") or not after or after.get("schedulable") is not False
-                            or _signature(after) != active_task["signature"]):
-                        self._save(aid, active_task, stage="blocked", error_code="pause_uncertain")
-                        return {"success": False, "error_code": "pause_uncertain"}
-                    active_task = self._save(aid, active_task, stage="resetting", owns_pause=True,
-                                            owned_version=str(after.get("updated_at")), attempt_at=self.m.clock().isoformat())
+                    with control_lock(self.m.db, aid):
+                        active_task = self._save(aid, task, stage="pausing", signature=_signature(live), next_at=None)
+                        paused = self.schedule_runner(aid, False, **connection)
+                        after = self.m._read_account(aid)
+                        if (not paused.get("success") or not after or after.get("schedulable") is not False
+                                or _signature(after) != active_task["signature"]):
+                            self._save(aid, active_task, stage="blocked", error_code="pause_uncertain")
+                            return {"success": False, "error_code": "pause_uncertain"}
+                        active_task = self._save(aid, active_task, stage="resetting", owns_pause=True,
+                                                owned_version=str(after.get("updated_at")), attempt_at=self.m.clock().isoformat())
                     # A second live read protects changes made during the pause.
                     final = self.m._read_account(aid)
                     final_depletion = self._depletion(final, self.m.clock(), held=True) if final else None
@@ -285,6 +287,8 @@ class AutoResetController:
                     return {"success": False, "error_code": "reset_state_changed"}
             elif action == "reset":
                 active_task = self._save(aid, task, stage="uncertain", attempt_at=self.m.clock().isoformat())
+            if self.state(aid).get("revision") != active_task.get("revision"):
+                return {"success": False, "error_code": "manual_intervention"}
             result = (request_runner or self.request_runner)(action, aid, **connection)
             completed = self.m.clock()
             if isinstance(result.get("data"), dict):
@@ -294,6 +298,14 @@ class AutoResetController:
             # Persist confirmed consumption before the coordinator's quota write;
             # a failed latter write cannot turn success into a repeatable request.
             if action == "reset":
+                latest = self.state(aid)
+                if latest.get("episode") == active_task.get("episode") and latest.get("stage") == "manual":
+                    # A scheduling intervention revokes recovery authority, not
+                    # the irreversible consumption receipt from an in-flight call.
+                    self._save(aid, latest, consumed=bool(result.get("consumed")),
+                               reset_completed_at=completed.isoformat() if result.get("consumed") else None,
+                               error_code="" if result.get("consumed") else "result_uncertain")
+                    return result
                 active_task = self._save(aid, active_task, stage="testing" if result.get("consumed") and source == "automatic" else "uncertain",
                     consumed=bool(result.get("consumed")), reset_completed_at=completed.isoformat() if result.get("consumed") else None,
                     error_code="" if result.get("consumed") else "result_uncertain")
@@ -409,6 +421,10 @@ class AutoResetController:
                 self._save(aid, task, stage="recovered", recovered_at=now.isoformat(), error_code="", next_at=None)
             return
         evidence = self._depletion(row, now)
+        control = self.store.snapshot()["scheduler"].get(str(aid), {}).get("manual_control") or {}
+        changed = parse_iso_datetime(control.get("at"))
+        if evidence and changed and (parse_iso_datetime(evidence.get("evidence_at")) or changed) <= changed:
+            return
         if not evidence:
             if task.get("stage") == "waiting" and not task.get("attempt_at") and (
                     self._available(row, now, task) or not row.get("rate_limited_at")):
@@ -488,10 +504,13 @@ class AutoResetController:
         attempts = int(task.get("test_attempts") or 0) + 1
         task = self._save(aid, task, stage="testing", test_attempts=attempts,
                           next_at=(now + timedelta(seconds=RETRY_SECONDS[min(attempts - 1, 3)])).isoformat())
-        test = self.m._timed_test(aid, model, **self._connection())
+        generation = self.store.control_generation(aid)
+        test = self.m._timed_test(aid, model, control_generation=generation, **self._connection())
         self.m._cycle_tests[aid] = test
         completed = self.m.clock()
         self._audit(aid, "test", success=bool(test.get("success")), error_code=str(test.get("error_code") or ""))
+        if self.store.control_generation(aid) != generation:
+            return
         live = self.m._read_account(aid)
         code = str(test.get("error_code") or "test_failed")
         auth_error = code in AUTH_ERRORS and not test.get("success")
@@ -514,6 +533,13 @@ class AutoResetController:
         self._release(live, task, completed)
 
     def _release(self, row, task, now):
+        with control_lock(self.m.db, int(row["id"])):
+            current = self.state(int(row["id"]))
+            if current.get("episode") != task.get("episode") or current.get("revision") != task.get("revision"):
+                return
+            self._release_locked(row, task, now)
+
+    def _release_locked(self, row, task, now):
         from .oauth_monitor import account_recovery_confirmed
         aid = int(row["id"])
         fresh = self.m._read_account(aid)

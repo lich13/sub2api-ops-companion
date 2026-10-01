@@ -7,6 +7,7 @@ import stat
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -700,6 +701,21 @@ class BarkQueueTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.store.pending_events(), [self.pending])
         self.assertEqual(self.store.scheduler(), {})
+
+    async def test_manual_control_revokes_already_copied_recovery_notification(self) -> None:
+        class Notifier:
+            def runtime_config(self):
+                return BarkRuntimeConfig(True, True, "key", "https://api.day.app")
+
+            def notify_oauth_monitor_events(self, *_args, **_kwargs):
+                raise AssertionError("Revoked recovery must never reach Bark")
+
+        main_module.bark_notifier = Notifier()
+        self.pending['stage'] = 'recovery'
+        self.store.commit(pending_events={self.pending['dedupe_key']: self.pending})
+        self.store.manual_control({'id': 7}, False, datetime.now(timezone.utc))
+        await main_module.deliver_oauth_monitor_events([self.pending])
+        self.assertEqual(self.store.pending_events(), [])
 
     async def test_explicitly_disabled_marks_pending_as_suppressed(self) -> None:
         main_module.settings = SimpleNamespace(bark_config_valid=True, bark_enabled=False)

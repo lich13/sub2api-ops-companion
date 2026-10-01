@@ -30,9 +30,11 @@ from .desktop_actions import DesktopActions, PriorityRequest, TestRequest, Group
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
 from .account_quality import QualityCache, SUPPORTED
 from .model_tests import ModelTests, ModelTestRequest
+from .error_evidence import ERROR_WHERE
+from .account_locks import control_lock
+from .account_model_profiles import AccountModelProfiles, ProfilesRequest, ApplyRequest
 
 PREFIX = "/api/desktop/v1"
-ERROR_WHERE = "e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner = 'provider'"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
  e.requested_model, e.upstream_model, e.status_code, e.upstream_status_code,
  e.provider_error_code, e.error_type, e.error_message, e.upstream_error_message,
@@ -145,7 +147,7 @@ SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, 
  coalesce(nullif(e.upstream_error_message,''),e.error_message) AS last_error_message
 FROM accounts a
 LEFT JOIN LATERAL (SELECT created_at FROM usage_logs WHERE account_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) u ON true
-LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND {ERROR_WHERE} ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e ON true
+LEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND {ERROR_WHERE.replace('{', '{{').replace('}', '}}')} ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e ON true
 WHERE a.deleted_at IS NULL {{filter}} ORDER BY a.id
 """
 
@@ -221,6 +223,13 @@ class DesktopService:
         self.actions = DesktopActions(self)
         self.quality = QualityCache(getattr(runtime, "db", None))
         self._model_tests: ModelTests | None = None
+        self._account_model_profiles: AccountModelProfiles | None = None
+
+    @property
+    def account_model_profiles(self) -> AccountModelProfiles:
+        if self._account_model_profiles is None:
+            self._account_model_profiles = AccountModelProfiles(self)
+        return self._account_model_profiles
 
     @property
     def model_tests(self) -> ModelTests:
@@ -443,10 +452,14 @@ class DesktopService:
             if alerts is not None:
                 from .capacity_alerts import mark_view
                 try:
-                    marks = alerts.store.snapshot()["marks"]
+                    alert_state = alerts.store.snapshot()
+                    marks = alert_state["marks"]
                     for account in accounts:
                         if (account["platform"], account["type"]) == ("openai", "oauth"):
                             account["degradation_mark"] = mark_view(account["id"], marks.get(str(account["id"])))
+                            intent = alert_state.get("profile_intents", {}).get(str(account["id"]))
+                            if intent:
+                                account["model_profile"] = {k: intent.get(k) for k in ("status", "error")}
                 except (ValueError, OSError):
                     for account in accounts:
                         if (account["platform"], account["type"]) == ("openai", "oauth"):
@@ -482,18 +495,31 @@ class DesktopService:
           WHERE {ERROR_WHERE} AND e.id=%(id)s""", {"id": error_id})
         if not row:
             raise HTTPException(404, "错误记录不存在或已过保留期")
-        return error_dto(row, detail=True)
+        result = error_dto(row, detail=True)
+        alerts = getattr(self.r, "capacity_alerts", None)
+        if alerts:
+            try:
+                notification = alerts.store.snapshot().get("notifications", {}).get(str(error_id))
+                if notification:
+                    result["notification"] = notification
+            except (OSError, ValueError):
+                result["notification"] = {"status": "unavailable"}
+        return result
 
     def set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
-        with self.account_operation(account_id, payload.expected_version):
+        with control_lock(self.r.db, account_id):
             return self._set_schedulable(account_id, payload, key)
 
     def _set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
         r, controller = self.r, self.r.key_fallback_controller
         if controller is None:
             raise HTTPException(503, "调度控制器未就绪")
-        # The automatic controller takes this same lock for evaluation + dispatch.
-        with self.config.thread_lock, controller._lock:
+        initial = r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+        if not initial:
+            raise HTTPException(404, "账号不存在")
+        # Only Key-managed accounts need the Key controller's mutation lock.
+        oauth = initial.get("platform") == "openai" and initial.get("type") == "oauth"
+        with (nullcontext() if oauth else self.config.thread_lock), (nullcontext() if oauth else controller._lock):
             row = r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
             if not row:
                 raise HTTPException(404, "账号不存在")
@@ -513,6 +539,16 @@ class DesktopService:
                     config_version=config.config_version + 1, updated_by="desktop:admin")
                 detached = True
                 write_audit(r.settings.audit_path, "desktop_detach_managed", {"account_id": account_id})
+            monitor = getattr(r, "oauth_monitor", None)
+            if oauth and monitor:
+                try:
+                    live_row = monitor._read_account(account_id)
+                    if not live_row:
+                        raise HTTPException(404, "账号不存在")
+                    monitor.store.manual_control(live_row, payload.schedulable, datetime.now(timezone.utc))
+                    monitor._inventory_loaded_at = None
+                except (OSError, ValueError):
+                    raise HTTPException(503, "人工调度状态无法安全保存") from None
             result = execute_sub2api_set_schedulable(account_id, payload.schedulable, base_url=r.oauth_base_url(),
                 admin_token=key, timeout_seconds=3, urlopen=_urlopen_no_redirect)
             live = r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
@@ -827,6 +863,31 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def models(account_id: int, request: Request, purpose: Literal["model_test"] | None = None) -> Any:
         key = await auth(request)
         return await service.actions.models(account_id, key, purpose or "legacy")
+
+    @router.get("/account-model-profiles")
+    async def profiles_read(request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(service.account_model_profiles.view)
+
+    @router.put("/account-model-profiles")
+    async def profiles_save(payload: ProfilesRequest, request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(service.account_model_profiles.save, payload)
+
+    @router.get("/account-model-profiles/preview")
+    async def profiles_preview(request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(service.account_model_profiles.preview)
+
+    @router.post("/account-model-profiles/apply")
+    async def profiles_apply(payload: ApplyRequest, request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(service.account_model_profiles.apply, payload)
+
+    @router.get("/account-model-profiles/jobs/{job_id}")
+    async def profiles_job(job_id: str, request: Request) -> Any:
+        await auth(request)
+        return await asyncio.to_thread(service.account_model_profiles.job, job_id)
 
     @router.post("/accounts/{account_id}/test")
     async def test(account_id: int, payload: TestRequest, request: Request) -> Any:

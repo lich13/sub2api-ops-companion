@@ -18,12 +18,8 @@ from .atomic_config import write_json
 from .audit import write_audit
 from .bark import _beijing_time, sanitize_error_text
 from .usage_query import parse_iso_datetime
+from .error_evidence import MESSAGES, match_message as match_evidence
 
-MESSAGES = (
-    "Our servers are currently overloaded. Please try again later.",
-    "Selected model is at capacity. Please try a different model.",
-    "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
-)
 RETRY_SECONDS = (5, 30, 120, 600)
 TITLE = "⚠️ Codex OAuth 疑似降智"
 PUSH_OPTIONS = {"level": "critical", "sound": "alarm", "group": "Sub2Ops 疑似降智"}
@@ -36,41 +32,7 @@ def utcnow() -> datetime:
 
 
 def match_message(row: dict[str, Any]) -> str | None:
-    if (row.get("account_platform"), row.get("account_type")) != ("openai", "oauth"):
-        return None
-    if row.get("account_deleted_at") or row.get("error_owner") != "provider" or row.get("error_phase") != "upstream":
-        return None
-
-    def normalize(value: str) -> str:
-        return " ".join(value.casefold().split()).rstrip(".!?。！？,，;；:： ")
-
-    def extract(value: Any, *, allow_plain: bool = True) -> str | None:
-        if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except ValueError:
-                if not allow_plain:
-                    return None
-                normalized = normalize(value)
-                for message in MESSAGES:
-                    if normalized == normalize(message):
-                        return message
-                return None
-        if isinstance(value, dict):
-            error = value.get("error")
-            if isinstance(error, dict):
-                return extract(error.get("message"), allow_plain=True)
-        return None
-
-    for field in ("upstream_error_message", "error_message"):
-        found = extract(row.get(field), allow_plain=True)
-        if found:
-            return found
-    for field in ("error_body", "upstream_error_detail"):
-        found = extract(row.get(field), allow_plain=False)
-        if found:
-            return found
-    return None
+    return None if row.get("account_deleted_at") else match_evidence(row)
 
 
 def mark_view(account_id: int, mark: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -96,6 +58,10 @@ class CapacityAlertStore:
             raise ValueError("告警状态版本无效")
         if any(not isinstance(data.get(k), dict) for k in ("seen", "marks", "pending")):
             raise ValueError("告警状态无效")
+        if any(key in data and not isinstance(data[key], dict) for key in ("notifications", "profile_intents")):
+            raise ValueError("告警扩展状态无效")
+        if data.get("gateway_since") and not parse_iso_datetime(data["gateway_since"]):
+            raise ValueError("告警证据水位无效")
         if data.get("cursor") is not None and (type(data["cursor"]) is not int or data["cursor"] < 0 or not parse_iso_datetime(data.get("initialized_at"))):
             raise ValueError("告警水位无效")
         for mark in data["marks"].values():
@@ -148,18 +114,28 @@ class CapacityAlertStore:
                 finally:
                     fcntl.flock(handle, fcntl.LOCK_UN)
 
-    def set_mark(self, account_id: int, marked: bool, expected: str, now: datetime) -> dict[str, Any]:
+    def set_mark(self, account_id: int, marked: bool, expected: str, now: datetime,
+                 *, intent_factory: Callable | None = None) -> dict[str, Any]:
         with self.account_guard(account_id), self.transaction() as data:
             key = str(account_id)
             if mark_view(account_id, data["marks"].get(key))["version"] != expected:
                 raise HTTPException(409, "降智标记已变化，请刷新后重试")
             mark = {"marked": marked, "marked_at": now.isoformat() if marked else None, "changed_at": now.isoformat()}
             data["marks"][key] = mark
+            for error_id, event in data["pending"].items():
+                if event["account_id"] == account_id:
+                    data.setdefault("notifications", {})[error_id] = {"status": "suppressed", "reason": "degradation_mark" if marked else "mark_changed", "at": now.isoformat()}
             data["pending"] = {k: e for k, e in data["pending"].items() if e["account_id"] != account_id}
+            if intent_factory is not None:
+                intent = intent_factory(mark_view(account_id, mark))
+                if intent is not None:
+                    data.setdefault("profile_intents", {})[key] = intent
+                else:
+                    data.setdefault("profile_intents", {}).pop(key, None)
         return mark_view(account_id, mark)
 
 
-FIELDS = """e.id,e.account_id,e.created_at,e.error_owner,e.error_phase,e.requested_model,e.model,e.upstream_model,
+FIELDS = """e.id,e.account_id,e.created_at,e.error_owner,e.error_phase,e.error_source,e.stream,e.requested_model,e.model,e.upstream_model,
  e.upstream_error_message,e.error_message,to_jsonb(e)->'error_body' AS error_body,
  to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,
  a.name AS account_name,a.platform AS account_platform,a.type AS account_type,a.deleted_at AS account_deleted_at"""
@@ -175,6 +151,11 @@ class CapacityAlerts:
 
     def poll(self) -> None:
         state = self.store.snapshot()
+        if not state.get("gateway_since"):
+            # New evidence rules must not turn the lookback window into a
+            # notification replay of errors predating this upgrade.
+            with self.store.transaction() as data:
+                data.setdefault("gateway_since", self.clock().isoformat())
         if state["cursor"] is None:
             initialized_at = self.clock().isoformat()
             row = self.db.fetch_one("SELECT coalesce(max(id),0) AS id FROM ops_error_logs")
@@ -219,6 +200,8 @@ class CapacityAlerts:
                 at = parse_iso_datetime(row.get("created_at"))
                 if not at or at < parse_iso_datetime(data["initialized_at"]):
                     continue
+                if row.get("error_owner") == "platform" and at < (parse_iso_datetime(data.get("gateway_since")) or now):
+                    continue
                 mark = data["marks"].get(str(row["account_id"]), {})
                 changed = parse_iso_datetime(mark.get("changed_at"))
                 suppressed = mark.get("marked") or (changed and at <= changed) or (runtime.config_valid and not runtime.enabled)
@@ -228,11 +211,14 @@ class CapacityAlerts:
                          "created_at": at.isoformat(), "next_at": now.isoformat(), "attempts": 0}
                 if not suppressed:
                     data["pending"][key] = event
-                emitted.append(("suppressed" if suppressed else "queued", event["id"], event["account_id"]))
+                reason = "degradation_mark" if mark.get("marked") else "mark_changed" if changed and at <= changed else "disabled" if suppressed else None
+                data.setdefault("notifications", {})[key] = {"status": "suppressed" if suppressed else "queued", "reason": reason, "at": now.isoformat()}
+                emitted.append(("suppressed" if suppressed else "queued", event["id"], event["account_id"], reason))
             if advance:
                 data["cursor"] = max(data["cursor"], max(int(r["id"]) for r in rows))
-        for result, record_id, account_id in emitted:
-            self.audit(result, error_id=record_id, account_id=account_id)
+        for result, record_id, account_id, reason in emitted:
+            self.audit("matched", error_id=record_id, account_id=account_id)
+            self.audit(result, error_id=record_id, account_id=account_id, reason=reason)
 
     def deliver_one(self, key: str) -> None:
         pending = self.store.snapshot()["pending"].get(key)
@@ -252,6 +238,7 @@ class CapacityAlerts:
             if suppressed:
                 with self.store.transaction() as data:
                     data["pending"].pop(key, None)
+                    data.setdefault("notifications", {})[key] = {"status": "suppressed", "reason": "degradation_mark" if state["marks"].get(str(event["account_id"]), {}).get("marked") else "disabled", "at": self.clock().isoformat()}
                 self.audit("suppressed", error_id=event["id"], account_id=event["account_id"])
                 return
             # Persist an attempt before the network boundary; crashes resume conservatively.
@@ -266,6 +253,7 @@ class CapacityAlerts:
             with self.store.transaction() as data:
                 if result.success:
                     data["pending"].pop(key, None)
+                data.setdefault("notifications", {})[key] = {"status": "delivered" if result.success else "retry", "at": self.clock().isoformat(), "attempts": queued["attempts"], "next_at": None if result.success else queued["next_at"]}
             self.audit("delivered" if result.success else "retry", error_id=event["id"], account_id=event["account_id"], error_code=result.error_code)
 
     def deliver_due(self) -> None:

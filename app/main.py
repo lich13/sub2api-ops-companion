@@ -70,13 +70,17 @@ async def deliver_oauth_monitor_events(events: list[dict[str, Any]]) -> None:
             suppressed=True,
         )
         return
-    delivered = await asyncio.to_thread(
-        bark_notifier.notify_oauth_monitor_events,
-        events,
-        config=runtime,
-    )
-    if delivered:
-        await asyncio.to_thread(oauth_monitor.store.mark_events_delivered, delivered)
+    for event in events:
+        # A manual scheduling change can revoke events after the monitor returns,
+        # or while another notification is in flight. Recheck at each dispatch.
+        pending = await asyncio.to_thread(oauth_monitor.store.snapshot)
+        if pending["pending_events"].get(str(event.get("dedupe_key"))) != event:
+            continue
+        delivered = await asyncio.to_thread(
+            bark_notifier.notify_oauth_monitor_events, [event], config=runtime,
+        )
+        if delivered:
+            await asyncio.to_thread(oauth_monitor.store.mark_events_delivered, delivered)
 
 
 async def oauth_monitor_loop() -> None:
@@ -165,10 +169,14 @@ async def lifespan(_: FastAPI):
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
     capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
+    profile_task = asyncio.create_task(desktop_service.account_model_profiles.loop())
     fingerprint_bank_task = asyncio.create_task(fingerprint_bank_loop())
     try:
         yield
     finally:
+        profile_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await profile_task
         for task in capacity_tasks:
             task.cancel()
         for task in capacity_tasks:

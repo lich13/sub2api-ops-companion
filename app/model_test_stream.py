@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from contextlib import asynccontextmanager
 
 import httpx
 
@@ -18,7 +20,7 @@ def failure(status: int, payload: dict | None = None) -> TestFailure:
     text = str(error).lower()
     if status in {401, 402, 403} or any(x in text for x in ("unauthorized", "insufficient_quota", "billing", "token_expired")):
         return TestFailure("auth_or_quota")
-    if status == 429 or any(x in text for x in ("rate_limit", "usage_limit", "quota_exceeded")):
+    if status == 429 or any(x in text for x in ("rate_limit", "usage_limit", "quota_exceeded", "concurrency limit exceeded", "concurrency_limit_exceeded")):
         return TestFailure("rate_limited")
     if status in {400, 404, 422} or any(x in text for x in ("model_not_found", "invalid_request", "invalid_parameter")):
         return TestFailure("invalid_model_or_request")
@@ -86,8 +88,18 @@ class Collector:
             self.completed = True
 
 
+@asynccontextmanager
+async def client_scope(client, factory, proxy):
+    if client is not None:
+        yield client
+    else:
+        async with factory(timeout=httpx.Timeout(None, connect=10, write=10, pool=10),
+                           follow_redirects=False, trust_env=False, proxy=proxy) as created:
+            yield created
+
+
 async def execute(url: str, headers: dict, proxy: str | None, model: str, prompt: str, expected: int,
-                  *, oauth: bool, client_factory=httpx.AsyncClient) -> tuple[str, str | None]:
+                  *, oauth: bool, client_factory=httpx.AsyncClient, client=None, on_first_text=None) -> tuple[str, str | None]:
     payload = {"model": model, "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
                "instructions": "You are a helpful assistant.", "stream": True, "store": False}
     # Codex's consumer endpoint rejects max_output_tokens. Its stream uses the
@@ -95,14 +107,14 @@ async def execute(url: str, headers: dict, proxy: str | None, model: str, prompt
     if not oauth:
         payload["max_output_tokens"] = min(4096, max(1024, expected * 4))
     collector = Collector(expected)
-    timeout = httpx.Timeout(None, connect=10, write=10, pool=10)
-    async with client_factory(timeout=timeout, follow_redirects=False, trust_env=False, proxy=proxy) as client:
-        async with client.stream("POST", url, headers=headers, json=payload) as response:
+    started, first_text = time.monotonic(), False
+    async with client_scope(client, client_factory, proxy) as active_client:
+        async with active_client.stream("POST", url, headers=headers, json=payload) as response:
             if response.status_code != 200:
                 raise failure(response.status_code)
             buffer = b''
             # Bound each SSE frame before parsing it, including a single huge chunk.
-            async for chunk in response.aiter_bytes(chunk_size=4096):
+            async for chunk in response.aiter_bytes():
                 buffer += chunk
                 while b'\n' in buffer:
                     line, buffer = buffer.split(b'\n', 1)
@@ -116,6 +128,10 @@ async def execute(url: str, headers: dict, proxy: str | None, model: str, prompt
                         raise TestFailure("invalid_stream", True) from None
                     if isinstance(event, dict):
                         collector.accept(event)
+                    if collector.text and not first_text:
+                        first_text = True
+                        if on_first_text is not None:
+                            await on_first_text(round((time.monotonic() - started) * 1000))
                     if collector.completed:
                         return collector.text, collector.returned_model
                 if len(buffer) > 131072:

@@ -43,6 +43,7 @@ class ModelTestRequest(BaseModel):
     model_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._:/-]+$")
     expected_version: str = Field(min_length=64, max_length=64)
     request_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9-]+$")
+    concurrency: int = Field(default=1, ge=1, le=3, strict=True)
 
 
 class ResultStore:
@@ -86,7 +87,7 @@ class ResultStore:
 
 def target_signature(row):
     return hashlib.sha256(json.dumps({k: row.get(k) for k in
-        ("id", "parent_account_id", "platform", "type", "credentials", "proxy_id", "extra")}, sort_keys=True, default=str).encode()).hexdigest()
+        ("id", "parent_account_id", "platform", "type", "credentials", "proxy_id")}, sort_keys=True, default=str).encode()).hexdigest()
 
 
 class ModelTests:
@@ -106,11 +107,18 @@ class ModelTests:
             raise HTTPException(404, '测试结果不存在')
         for value in self.store.read()['accounts'].values():
             if value['id'] == job_id:
-                return value
+                return self.progress(value)
         raise HTTPException(404, '测试结果不存在')
 
     def latest(self, account_id):
-        return self.store.read()['accounts'].get(str(account_id))
+        value = self.store.read()['accounts'].get(str(account_id))
+        return self.progress(value) if value else None
+
+    @staticmethod
+    def progress(value):
+        if value['status'] in ACTIVE:
+            return {**value, 'duration_ms': max(0, round((datetime.now(timezone.utc) - datetime.fromisoformat(value['started_at'])).total_seconds() * 1000))}
+        return value
 
     def update(self, job_id, **changes):
         with self.store.transaction() as data:
@@ -193,7 +201,7 @@ class ModelTests:
         async with self.start_lock:
             old = self.latest(aid)
             if old and old['request_id'] == payload.request_id:
-                if old['requested_model'] != payload.model_id:
+                if old['requested_model'] != payload.model_id or old.get('concurrency', 1) != payload.concurrency:
                     raise HTTPException(409, '请求 ID 已用于其他模型')
                 return old
             if old and old['status'] in ACTIVE:
@@ -217,6 +225,9 @@ class ModelTests:
                        'status': 'running', 'completed_groups': 0, 'valid_groups': 0, 'attempts': 0,
                        'started_at': stamp(), 'completed_at': None, 'duration_ms': 0, 'error': '',
                        'report': None, 'bank_version': version}
+                job['concurrency'] = payload.concurrency
+                job['groups'] = [{'index': i + 1, 'status': 'queued', 'attempts': 0, 'ttft_ms': None,
+                                  'duration_ms': None, 'error': ''} for i in range(3)]
                 with self.store.transaction() as data:
                     data['accounts'][str(aid)] = job
                     data['requests'][payload.request_id] = job_id
@@ -230,39 +241,99 @@ class ModelTests:
 
     async def run(self, job, row, owner, target, lease, bank_snapshot):
         started = time.monotonic()
-        samples, returned, completed, attempts = [], set(), 0, 0
+        samples, returned, attempts = {}, set(), 0
         job_id = job['id']
-        try:
-            for expected, prompt in challenges():
-                for attempt in range(3):
-                    if target_signature(await self.account(row['id'])) != target_signature(row):
-                        raise TestFailure('account_changed')
-                    if owner['id'] != row['id'] and target_signature(await self.account(owner['id'])) != target_signature(owner):
-                        raise TestFailure('account_changed')
-                    attempts += 1
-                    self.update(job_id, status='running', attempts=attempts, error='')
-                    write_audit(self.s.r.settings.audit_path, 'model_test_attempt', {'account_id': row['id'], 'job_id': job_id, 'attempt': attempts})
+        groups = job['groups']
+        slots = asyncio.Semaphore(job.get('concurrency', 1))
+        analysis_lock = asyncio.Lock()
+        progress_lock = asyncio.Lock()
+        children = []
+
+        async def persist(**changes):
+            async with progress_lock:
+                writing = asyncio.create_task(asyncio.to_thread(self.update, job_id, **changes))
+                cancelled = False
+                while not writing.done():
                     try:
-                        text, model = await self.execute(**target, prompt=prompt, expected=expected)
-                        if model and re.fullmatch(r'[A-Za-z0-9._:/-]{1,200}', model):
-                            # Never expose a reflected credential as a model identifier.
-                            secrets_in_headers = [v for k, v in target['headers'].items() if k.lower() in {'authorization', 'chatgpt-account-id'}]
-                            if model not in secrets_in_headers and not any(v.removeprefix('Bearer ') in model for v in secrets_in_headers):
-                                returned.add(model)
-                        samples.append(text)
-                        break
-                    except (TestFailure, httpx.HTTPError, TimeoutError) as exc:
-                        failed = exc if isinstance(exc, TestFailure) else TestFailure('network_error', True)
+                        await asyncio.shield(writing)
+                    except asyncio.CancelledError:
+                        # Parent and peer cancellation may both arrive. Drain
+                        # the atomic write before publishing terminal state.
+                        cancelled = True
+                result = writing.result()
+                if cancelled:
+                    raise asyncio.CancelledError
+                return result
+
+        async def progress():
+            await persist(groups=[dict(g) for g in groups], attempts=attempts,
+                          duration_ms=round((time.monotonic() - started) * 1000))
+
+        async def sample(index, expected, prompt, client):
+            nonlocal attempts
+            group = groups[index]
+            group_started = time.monotonic()
+            try:
+                for attempt in range(3):
+                    failed = None
+                    # A retry's backoff is outside the request slot.
+                    async with slots:
+                        if target_signature(await self.account(row['id'])) != target_signature(row):
+                            raise TestFailure('account_changed')
+                        if owner['id'] != row['id'] and target_signature(await self.account(owner['id'])) != target_signature(owner):
+                            raise TestFailure('account_changed')
+                        attempts += 1
+                        group.update(status='running', attempts=attempt + 1, error='', ttft_ms=None)
+                        await progress()
+                        write_audit(self.s.r.settings.audit_path, 'model_test_attempt',
+                                    {'account_id': row['id'], 'job_id': job_id, 'group': index + 1, 'attempt': attempt + 1})
+                        async def first_text(elapsed):
+                            group['ttft_ms'] = elapsed
+                            await progress()
+                        try:
+                            options = {'client': client, 'on_first_text': first_text} if self.execute is execute else {}
+                            text, model = await self.execute(**target, prompt=prompt, expected=expected, **options)
+                            if model and re.fullmatch(r'[A-Za-z0-9._:/-]{1,200}', model):
+                                secrets = [v for k, v in target['headers'].items() if k.lower() in {'authorization', 'chatgpt-account-id'}]
+                                if model not in secrets and not any(v.removeprefix('Bearer ') in model for v in secrets):
+                                    returned.add(model)
+                            samples[index] = text
+                            group.update(status='completed', duration_ms=round((time.monotonic() - group_started) * 1000))
+                        except (TestFailure, httpx.HTTPError, TimeoutError) as exc:
+                            failed = exc if isinstance(exc, TestFailure) else TestFailure('network_error', True)
+                    if failed:
                         if not failed.retryable or attempt == 2:
                             raise failed
-                        self.update(job_id, status='retrying', error=ERRORS[failed.code])
+                        group.update(status='retrying', error=ERRORS[failed.code])
+                        await progress()
                         await asyncio.sleep((1, 3)[attempt])
-                completed += 1
-                report = analyze(samples, snapshot=bank_snapshot)
-                self.update(job_id, completed_groups=completed, valid_groups=(report or {}).get('used_outputs', 0),
-                            returned_models=sorted(returned), report=report,
-                            duration_ms=round((time.monotonic() - started) * 1000))
-            self.update(job_id, status='completed', error='' if report else '有效样本不足，无法识别')
+                        continue
+                    async with analysis_lock:
+                        report = await asyncio.to_thread(analyze, [samples[i] for i in sorted(samples)], snapshot=bank_snapshot)
+                        await persist(completed_groups=len(samples),
+                            valid_groups=(report or {}).get('used_outputs', 0), returned_models=sorted(returned), report=report)
+                        await progress()
+                    return
+            except asyncio.CancelledError:
+                group.update(status='cancelled', duration_ms=round((time.monotonic() - group_started) * 1000))
+                raise
+            except Exception as exc:
+                group.update(status='failed', error=ERRORS.get(getattr(exc, 'code', ''), ERRORS['internal_error']),
+                             duration_ms=round((time.monotonic() - group_started) * 1000))
+                raise
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10, write=10, pool=10),
+                    follow_redirects=False, trust_env=False, proxy=target['proxy']) as client:
+                children = [asyncio.create_task(sample(i, expected, prompt, client))
+                            for i, (expected, prompt) in enumerate(challenges())]
+                try:
+                    await asyncio.gather(*children)
+                finally:
+                    for child in children:
+                        if not child.done():
+                            child.cancel()
+                    await asyncio.gather(*children, return_exceptions=True)
+            self.update(job_id, status='completed', error='' if self.get(job_id).get('report') else '有效样本不足，无法识别')
         except asyncio.CancelledError:
             self.update(job_id, status='cancelled', error='测试已停止')
         except Exception as exc:
@@ -274,7 +345,7 @@ class ModelTests:
         finally:
             samples.clear()
             try:
-                final = self.update(job_id, completed_at=stamp(), duration_ms=round((time.monotonic() - started) * 1000))
+                final = self.update(job_id, groups=groups, completed_at=stamp(), duration_ms=round((time.monotonic() - started) * 1000))
                 write_audit(self.s.r.settings.audit_path, 'model_test_result', {'account_id': row['id'], 'job_id': job_id,
                             'status': final['status'], 'attempts': attempts, 'valid_groups': final['valid_groups']})
             finally:
