@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, MoreHorizontal, RefreshCw, Search, Undo2, X } from "lucide-react";
+import { accountOperation } from "./accountOperations";
 import type { Account, Group } from "./types";
-import { api, command } from "./bridge";
+import { command } from "./bridge";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts, type Zone } from "./groupDraft";
 import { useBackAction } from "./mobile";
@@ -88,7 +89,7 @@ export default function GroupManager(props: Props) {
       for (const draft of pending) {
         if (!mounted.current || !latest.current.online) throw new Error("连接已变化，剩余修改未提交");
         if (draftConflict(draft, latest.current.accounts, latest.current.groups)) throw new Error(`${draft.name} 已变化，请刷新后处理冲突`);
-        const result = await api<{ verified: boolean; group_ids: number[]; version: string }>("PUT", `/accounts/${draft.id}/groups`, { expected_version: draft.version, scope_group_ids: draft.scope, group_ids: draft.target.filter((id) => draft.scope.includes(id)) });
+        const result = await accountOperation<{ verified: boolean; group_ids: number[]; version: string }>(latest.current.accounts.find((a) => a.id === draft.id)!, "groups", { scope_group_ids: draft.scope, group_ids: draft.target.filter((id) => draft.scope.includes(id)) }, draft.operationVersion ?? draft.version);
         if (!mounted.current) return;
         if (!result.verified) throw new Error(`${draft.name} 写入未确认`);
         saved++; setDrafts((all) => { const next = { ...all }; delete next[draft.id]; return next; }); setHistory([]);
@@ -107,7 +108,7 @@ export default function GroupManager(props: Props) {
       <button className="group-account-select" disabled={!online || busy} aria-pressed={selected === a.id} onClick={(e) => { e.stopPropagation(); setSelected(selected === a.id ? null : a.id); }}>
         <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/>{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
       </button>
-      {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><button className="degradation-action" disabled={!online || busy} onClick={() => props.modelTest?.(a)}>模型测试</button>{a.type === "oauth" && <DegradationAction account={a} online={online && !busy} report={props.report}/>}</div></details>}
+      {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><button className="degradation-action" disabled={!online || busy} onClick={() => props.modelTest?.(a)}>模型测试</button>{["oauth", "apikey"].includes(a.type) && <DegradationAction account={a} online={online && !busy} report={props.report}/>}</div></details>}
     </article>;
   }
   function zone(zone: Zone, label: string, values: Account[], extra = "") {

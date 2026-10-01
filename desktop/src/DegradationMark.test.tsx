@@ -119,7 +119,7 @@ describe("degradation mark", () => {
     expect(container.querySelector<HTMLButtonElement>(".degradation-action")?.textContent).toContain("标记降智");
   });
 
-  it("disables unreadable marks and ignores unsupported account types", async () => {
+  it("disables unreadable marks and supports Key while excluding Grok", async () => {
     const onError = vi.fn();
     await act(async () =>
       root.render(
@@ -131,7 +131,8 @@ describe("degradation mark", () => {
       ),
     );
     const buttons = [...container.querySelectorAll<HTMLButtonElement>(".degradation-action")];
-    expect(buttons).toHaveLength(1);
+    expect(buttons).toHaveLength(2);
+    expect(buttons[1].textContent).toContain("标记降智");
     expect(buttons[0].disabled).toBe(true);
     expect(buttons[0].textContent).toContain("标记读取失败");
     await act(async () => buttons[0].click());

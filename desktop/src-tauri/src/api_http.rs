@@ -19,12 +19,24 @@ fn snapshot_valid(data: &Value) -> bool {
         && ["errors", "recoveries"].iter().all(|k| data[*k].is_array())
 }
 
+fn operation_valid(data: &Value) -> bool {
+    data["id"].as_str().is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit()))
+        && data["account_id"].as_u64().is_some_and(|id| id > 0)
+        && data["action"].is_string()
+        && data["status"].as_str().is_some_and(|s| matches!(s, "queued" | "running" | "checking" | "completed" | "needs_confirmation" | "failed" | "cancelled" | "superseded"))
+        && data["requested"].is_object()
+}
+
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
         "/config" => ["oauth", "bark", "key_fallback"].iter().all(|k| data[*k]["revision"].is_string()),
         "/capabilities" => data["api_version"].as_u64() == Some(1),
         "/errors" | "/recoveries" => data["items"].is_array(),
+        "/account-operations" => data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid)),
+        p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
+        p if p.ends_with("/model-tests/latest") && data.is_null() => true,
+        p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
         "/quota-refresh" => data["status"].is_string() && data["items"].is_array(),
         p if p.ends_with("/models") => data.as_array().is_some_and(|m| m.iter().all(|v| v["id"].is_string())),
         _ => data.is_object(),
@@ -80,12 +92,13 @@ pub(crate) async fn http(
         message.to_string()
     };
     if matches!(status, 401 | 403) { return Err(fail("auth", "管理员 API Key 已失效，请重新连接")); }
+    let limit = if path.starts_with("/account-operations/") { 134_217_728 } else { MAX_JSON_BYTES };
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|e| fail(
         if e.is_timeout() { "body_timeout" } else { "body_interrupted" },
         if e.is_timeout() { "响应读取超时，未重放操作" } else { "响应读取中断" },
     ))? {
-        if bytes.len() + chunk.len() > MAX_JSON_BYTES { return Err(fail("size", "服务响应超过大小限制")); }
+        if bytes.len() + chunk.len() > limit { return Err(fail("size", "服务响应超过大小限制")); }
         bytes.extend_from_slice(&chunk);
     }
     let parsed = serde_json::from_slice::<Value>(&bytes);
@@ -150,5 +163,18 @@ mod tests {
         let (result, log) = serve("200 OK", "Content-Type: application/json", body, false).await;
         assert!(result.is_ok()); assert!(log.is_empty());
         assert!(!snapshot_valid(&serde_json::json!({"accounts":null})));
+    }
+
+    #[test]
+    fn operation_response_requires_identity_and_known_state() {
+        let job = serde_json::json!({"id":"0123456789abcdef0123456789abcdef", "account_id":421,
+            "action":"priority", "status":"queued", "requested":{"priority":2}});
+        assert!(shape_valid("/accounts/421/operations", &job));
+        assert!(shape_valid("/account-operations", &serde_json::json!({"pending":1,"items":[job.clone()]})));
+        let mut wrong = job.clone(); wrong["status"] = serde_json::json!("unknown");
+        assert!(!shape_valid("/accounts/421/operations", &wrong));
+        wrong = job.clone(); wrong["account_id"] = serde_json::json!("421");
+        assert!(!shape_valid("/accounts/421/operations", &wrong));
+        assert!(!shape_valid("/account-operations", &serde_json::json!({"items":[job]})));
     }
 }

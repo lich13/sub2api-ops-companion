@@ -1,3 +1,4 @@
+import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
 import { Check, LoaderCircle, RefreshCw } from "lucide-react";
 import { api, command } from "./bridge";
@@ -56,10 +57,10 @@ export function PriorityEditor({
   const [value, setValue] = useState(String(account.priority));
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
-  const version = useRef(account.version);
+  const version = useRef(account.operation_versions?.priority ?? account.version);
   useEffect(() => {
     setValue(String(account.priority));
-    version.current = account.version;
+    version.current = account.operation_versions?.priority ?? account.version;
   }, [account.priority, account.id]);
   async function save() {
     if (running.current || !online || value === String(account.priority))
@@ -75,10 +76,7 @@ export function PriorityEditor({
     running.current = true;
     setBusy(true);
     try {
-      await api("POST", `/accounts/${account.id}/priority`, {
-        priority,
-        expected_version: version.current,
-      });
+      await accountOperation(account, "priority", { priority }, version.current);
       await command("refresh");
     } catch (e) {
       report(e);
@@ -97,7 +95,7 @@ export function PriorityEditor({
         aria-label={`${account.name}优先级`}
         disabled={!online || busy}
         onFocus={() => {
-          version.current = account.version;
+          version.current = account.operation_versions?.priority ?? account.version;
         }}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

@@ -31,7 +31,7 @@ def recorded_message(value: Any, *, plain: bool = False) -> str | None:
 
 
 def match_message(row: dict[str, Any]) -> str | None:
-    if (row.get("account_platform"), row.get("account_type")) != ("openai", "oauth"):
+    if row.get("account_platform") != "openai" or row.get("account_type") not in {"oauth", "apikey"}:
         return None
     provider = row.get("error_owner") == "provider" and row.get("error_phase") == "upstream"
     wrapped = (row.get("error_owner") == "platform" and row.get("error_phase") == "internal"
@@ -60,7 +60,7 @@ def gateway_capacity_sql(alias: str = "e") -> str:
     return (f"({alias}.account_id IS NOT NULL "
             f"AND {alias}.error_owner='platform' AND {alias}.error_phase='internal' AND {alias}.error_source='gateway' "
             f"AND EXISTS (SELECT 1 FROM accounts evidence_account WHERE evidence_account.id={alias}.account_id "
-            "AND evidence_account.platform='openai' AND evidence_account.type='oauth') AND (" + " OR ".join(matches) + "))")
+            "AND evidence_account.platform='openai' AND evidence_account.type IN ('oauth','apikey')) AND (" + " OR ".join(matches) + "))")
 
 
 ERROR_WHERE = "(e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner='provider') OR " + gateway_capacity_sql()

@@ -44,7 +44,7 @@ class ModelTrace019Tests(unittest.TestCase):
     def test_integer_and_bytes_guards(self):
         collector = Collector(2)
         with self.assertRaises(TestFailure) as ctx:
-            collector.accept({"type": "response.output_text.delta", "delta": "1 2 3 4 5"})
+            collector.accept({"type": "response.output_text.delta", "delta": "1 2 3 4 5 "})
         self.assertEqual(ctx.exception.code, "output_limit")
         self.assertEqual(len(Collector(80).text), 0)
 

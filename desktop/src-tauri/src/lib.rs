@@ -175,6 +175,26 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
+    if plain.starts_with("/account-operations") {
+        let query_ok = path.split_once('?').is_none_or(|(_, q)| q.strip_prefix("after_event=")
+            .is_some_and(|v| !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u64>().is_ok()));
+        return match method {
+            "GET" => path == "/account-operations" || query_ok && plain.strip_prefix("/account-operations/").is_some_and(job_id),
+            "POST" => !path.contains('?') && plain.strip_prefix("/account-operations/").and_then(|s| s.strip_suffix("/cancel")).is_some_and(job_id),
+            _ => false,
+        };
+    }
+    if account_path(plain, "/operations") { return method == "POST" && !path.contains('?'); }
+    if plain.starts_with("/model-tests/") {
+        if path.contains('?') { return false; }
+        let suffix = plain.strip_prefix("/model-tests/").unwrap_or("");
+        return match method {
+            "GET" => job_id(suffix),
+            "POST" => suffix.strip_suffix("/cancel").or_else(|| suffix.strip_suffix("/retry")).is_some_and(job_id),
+            _ => false,
+        };
+    }
     if plain.starts_with("/account-model-profiles") {
         if path.contains('?') { return false; }
         return match method {
@@ -1281,6 +1301,23 @@ mod tests {
         }
         for p in ["/accounts/7/test", "https://evil.test", "/config/../token"] {
             assert!(!allowed_request("POST", p));
+        }
+    }
+    #[test]
+    fn queued_operations_and_retry_have_explicit_paths() {
+        let id = "0123456789abcdef0123456789abcdef";
+        for (method, path) in [("POST", "/accounts/421/operations".to_owned()),
+            ("GET", "/account-operations".to_owned()), ("GET", format!("/account-operations/{id}")),
+            ("GET", format!("/account-operations/{id}?after_event=100")),
+            ("POST", format!("/account-operations/{id}/cancel")), ("POST", format!("/model-tests/{id}/retry"))] {
+            assert!(allowed_request(method, &path), "{method} {path}");
+        }
+        for (method, path) in [("POST", format!("/model-tests/{id}/retry?force=true")),
+            ("GET", format!("/account-operations/{id}?after_event=1&after_event=2")),
+            ("GET", format!("/account-operations/{id}?other=1")),
+            ("POST", "/accounts/421/operations?force=true".to_owned()),
+            ("DELETE", format!("/account-operations/{id}")), ("GET", "/account-operations/invalid".to_owned())] {
+            assert!(!allowed_request(method, &path), "{method} {path}");
         }
     }
     #[test]

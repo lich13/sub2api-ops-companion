@@ -1,3 +1,4 @@
+import { AccountOperationStatus } from "./OperationPanel";
 import { useState, type ReactNode } from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { command } from "./bridge";
@@ -32,7 +33,7 @@ export default function MobileAccounts(props: Props) {
           <button className="icon-button" aria-label={`${a.name}操作`} onClick={() => setActiveId(a.id)}><MoreHorizontal size={21}/></button>
         </header>
         <div className="mobile-account-status">
-          <DegradationBadge account={a}/>
+          <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
           <span className={a.available ? "good-text" : ""}>{a.available ? "可调度" : a.blockers.map((b) => b.label).join(" / ")}</span>
           {["openai", "grok"].includes(a.platform) && ["oauth", "apikey"].includes(a.type) && <QualityBadge value={a.quality} onClick={() => props.quality(a)}/>}
         </div>

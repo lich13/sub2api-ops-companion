@@ -32,6 +32,8 @@ from .account_quality import QualityCache, SUPPORTED
 from .model_tests import ModelTests, ModelTestRequest
 from .error_evidence import ERROR_WHERE
 from .account_locks import control_lock
+from .operation_versions import versions as operation_versions, operation_context
+from .account_operations import AccountOperations, OperationRequest, busy
 from .account_model_profiles import AccountModelProfiles, ProfilesRequest, ApplyRequest
 
 PREFIX = "/api/desktop/v1"
@@ -121,7 +123,15 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     success, error = row.get("last_success_at"), row.get("last_error_at")
     value["success_after_error"] = bool(success and error and success > error)
     value["version"] = hashlib.sha256(json.dumps([row.get(k) for k in ("id", "platform", "type", "schedulable", "updated_at", "priority")] + [sorted(row.get("group_ids") or [])], default=str).encode()).hexdigest()
+    value["operation_versions"] = operation_versions(row, row["id"] in managed)
     return value
+
+
+def account_version_matches(row, expected, managed=None):
+    context = operation_context.get()
+    if context is not None:
+        return operation_versions(row, row['id'] in (managed or set()))[context['action']] == context['expected_version']
+    return account_dto(row, datetime.now(timezone.utc), managed or set())['version'] == expected
 
 
 def recoverable_state(row: dict[str, Any], now: datetime) -> bool:
@@ -138,6 +148,9 @@ ACCOUNT_SQL = f"""
 SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
+ a.proxy_id, md5(a.credentials::text) AS credential_version,
+ (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
+  FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
  a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,
  a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
  coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,
@@ -223,7 +236,14 @@ class DesktopService:
         self.actions = DesktopActions(self)
         self.quality = QualityCache(getattr(runtime, "db", None))
         self._model_tests: ModelTests | None = None
+        self._operations = None
         self._account_model_profiles: AccountModelProfiles | None = None
+
+    @property
+    def operations(self):
+        if self._operations is None:
+            self._operations = AccountOperations(self)
+        return self._operations
 
     @property
     def account_model_profiles(self) -> AccountModelProfiles:
@@ -238,6 +258,8 @@ class DesktopService:
         return self._model_tests
 
     async def close(self) -> None:
+        if self._operations is not None:
+            await self._operations.close()
         if self._model_tests is not None:
             await self._model_tests.close()
         self.quality.close()
@@ -252,17 +274,21 @@ class DesktopService:
         from .account_locks import AccountLease
         parent = AccountLease(self.r.db, row, include_account=False)
         if not parent.acquire():
-            raise HTTPException(409, "母账号正在执行操作，请稍后重试")
-        monitor = getattr(self.r, "oauth_monitor", None)
-        lock = monitor._run_lock if row["platform"] == "openai" and monitor else None
-        if lock and not lock.acquire(blocking=False):
-            parent.release()
-            raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
+            raise busy()
+        monitor_lock = None
+        monitor_acquired = False
         try:
+            monitor = getattr(self.r, "oauth_monitor", None)
+            if row.get("platform") == "openai" and monitor is not None:
+                monitor_lock = getattr(monitor, "_run_lock", None)
+                if monitor_lock is not None:
+                    monitor_acquired = monitor_lock.acquire(blocking=False)
+                    if not monitor_acquired:
+                        raise busy()
             yield
         finally:
-            if lock:
-                lock.release()
+            if monitor_lock is not None and monitor_acquired:
+                monitor_lock.release()
             parent.release()
 
     @contextmanager
@@ -271,14 +297,14 @@ class DesktopService:
             raise HTTPException(422, "账号编号无效")
         lock = self.account_lock(account_id)
         if not lock.acquire(blocking=False):
-            raise HTTPException(409, "此账号正在执行操作，请等待结果")
+            raise busy()
         try:
             row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
             if not row:
                 raise HTTPException(404, "账号不存在")
             with self.recovery_guard(row) if coordinate_monitor else nullcontext():
                 row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
-                if not row or account_dto(row, datetime.now(timezone.utc), set())["version"] != version:
+                if not row or not account_version_matches(row, version):
                     raise HTTPException(409, "账号已变化，请刷新后重试")
                 if coordinate_monitor and row["platform"] == "openai":
                     monitor = getattr(self.r, "oauth_monitor", None)
@@ -314,7 +340,7 @@ class DesktopService:
                   self.config.thread_lock, controller._lock, self.recovery_guard(row)):
                 # Recheck after obtaining the fallback lock; never delete from a stale selection.
                 live = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
-                if not live or account_dto(live, datetime.now(timezone.utc), set())["version"] != payload.expected_version:
+                if not live or not account_version_matches(live, payload.expected_version):
                     raise HTTPException(409, "账号已变化，请刷新后重试")
                 config = controller.load_config()
                 if not config.valid:
@@ -455,14 +481,14 @@ class DesktopService:
                     alert_state = alerts.store.snapshot()
                     marks = alert_state["marks"]
                     for account in accounts:
-                        if (account["platform"], account["type"]) == ("openai", "oauth"):
+                        if account["platform"] == "openai" and account["type"] in {"oauth", "apikey"}:
                             account["degradation_mark"] = mark_view(account["id"], marks.get(str(account["id"])))
                             intent = alert_state.get("profile_intents", {}).get(str(account["id"]))
                             if intent:
                                 account["model_profile"] = {k: intent.get(k) for k in ("status", "error")}
                 except (ValueError, OSError):
                     for account in accounts:
-                        if (account["platform"], account["type"]) == ("openai", "oauth"):
+                        if account["platform"] == "openai" and account["type"] in {"oauth", "apikey"}:
                             account["degradation_mark"] = {"error": "降智标记暂不可读取"}
             groups = group_dtos(
                 r.db.fetch_all(GROUP_SQL),
@@ -527,7 +553,7 @@ class DesktopService:
             if not config.valid:
                 raise HTTPException(409, "托管配置无法读取，操作已中止")
             account = account_dto(row, datetime.now(timezone.utc), set(config.managed_account_ids))
-            if payload.expected_version != account["version"]:
+            if not account_version_matches(row, payload.expected_version, set(config.managed_account_ids)):
                 raise HTTPException(409, "账号已变化，请刷新后重试")
             detached = False
             if account["managed"]:
@@ -595,7 +621,7 @@ class DesktopService:
         if payload.action == "query_usage" and monitor and requested_at is not None:
             row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
             if row and row["platform"] == "openai" and row["type"] == "oauth":
-                if account_dto(row, datetime.now(timezone.utc), set())["version"] != payload.expected_version:
+                if not account_version_matches(row, payload.expected_version):
                     raise HTTPException(409, "账号已变化，请刷新后再操作")
                 shared = monitor.queries.join_existing(account_id, requested_at)
                 if shared is not None:
@@ -609,14 +635,15 @@ class DesktopService:
                     return {"message": "用量查询完成", "account": account}
         lock = self.account_lock(account_id)
         if not lock.acquire(blocking=False):
-            raise HTTPException(409, "此账号正在执行用量操作，请等待结果")
+            raise busy()
         monitor_lock = None
+        parent_lease = None
         try:
             row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
             if not row:
                 raise HTTPException(404, "账号已删除")
             now = datetime.now(timezone.utc)
-            if account_dto(row, now, set())["version"] != payload.expected_version:
+            if not account_version_matches(row, payload.expected_version):
                 raise HTTPException(409, "账号已变化，请刷新后再操作")
             usage = project_usage(row, now)
             if payload.action not in usage["actions"]:
@@ -629,13 +656,18 @@ class DesktopService:
                 if not (reset_credits(row.get("extra") or {}, now)["available"] or 0):
                     raise HTTPException(409, "没有已确认可用的重置次数，请先查询次数")
             monitor = getattr(self.r, "oauth_monitor", None)
+            from .account_locks import AccountLease
+            parent_lease = AccountLease(self.r.db, row, include_account=False)
+            if not parent_lease.acquire():
+                parent_lease = None
+                raise busy()
+            monitor_lock = None
             if row["platform"] == "openai" and monitor:
                 monitor_lock = monitor._run_lock
-                acquired = (monitor_lock.acquire(timeout=30) if payload.action == "query_usage"
-                            else monitor_lock.acquire(blocking=False))
-                if not acquired:
+                if not monitor_lock.acquire(blocking=False):
+                    parent_lease.release()
                     monitor_lock = None
-                    raise HTTPException(409, "OAuth 查询或恢复正在进行，请稍后操作")
+                    raise busy()
             action_paths = {
                 "query_usage": ("GET", f"/accounts/{account_id}/usage?source=active&force=true", 30),
                 "query_reset_credits": ("POST", f"/openai/accounts/{account_id}/quota/refresh", 30),
@@ -666,7 +698,8 @@ class DesktopService:
                     data = result.get("data") or {}
                 elif row["platform"] == "openai" and payload.action in {"query_reset_credits", "reset_quota"} and monitor and hasattr(monitor, "auto_reset"):
                     live_row = monitor._read_account(account_id)
-                    if not live_row or account_dto(live_row, now, set())["version"] != payload.expected_version:
+                    current = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+                    if not live_row or not current or not account_version_matches(current, payload.expected_version):
                         code = "account_changed"
                         raise ValueError(code)
                     from .auto_reset import execute_credit_request
@@ -721,6 +754,8 @@ class DesktopService:
         finally:
             if monitor_lock:
                 monitor_lock.release()
+            if parent_lease:
+                parent_lease.release()
             lock.release()
 
 
@@ -729,6 +764,11 @@ class ScheduleRequest(BaseModel):
     schedulable: StrictBool
     expected_version: str = Field(min_length=64, max_length=64)
     detach_managed: StrictBool = False
+
+
+class RetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
 
 
 class AccountVersionRequest(BaseModel):
@@ -820,6 +860,28 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def error_detail(error_id: int, request: Request) -> Any:
         await auth(request)
         return await asyncio.to_thread(service.error_detail, error_id)
+
+    @router.post("/accounts/{account_id}/operations", status_code=202)
+    async def operation_submit(account_id: int, payload: OperationRequest, request: Request):
+        key = await auth(request)
+        return await service.operations.submit(account_id, payload, key)
+
+    @router.get("/account-operations")
+    async def operation_list(request: Request):
+        await auth(request)
+        return service.operations.listing()
+
+    @router.get("/account-operations/{job_id}")
+    async def operation_detail(job_id: str, request: Request, after_event: int = 0):
+        await auth(request)
+        if after_event < 0:
+            raise HTTPException(422, '事件游标无效')
+        return service.operations.get(job_id, after_event)
+
+    @router.post("/account-operations/{job_id}/cancel")
+    async def operation_cancel(job_id: str, request: Request):
+        await auth(request)
+        return await service.operations.cancel(job_id)
 
     @router.post("/accounts/{account_id}/schedulable")
     async def schedule(account_id: int, payload: ScheduleRequest, request: Request) -> Any:
@@ -921,6 +983,11 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def model_test_cancel(job_id: str, request: Request) -> Any:
         await auth(request)
         return await service.model_tests.cancel(job_id)
+
+    @router.post("/model-tests/{job_id}/retry")
+    async def model_test_retry(job_id: str, payload: RetryRequest, request: Request):
+        await auth(request)
+        return await service.model_tests.retry_failed(job_id, payload.request_id)
 
     @router.post("/quota-refresh")
     async def quota_refresh(request: Request) -> Any:
