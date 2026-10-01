@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .account_locks import AccountLease
 from .atomic_config import write_json
 from .audit import write_audit
-from .model_rules import mapped
+from .codex_identity import codex_identity
 from .model_test_stream import TestFailure, execute
 from .modeltrace import analyze, bank, challenges
 
@@ -131,6 +131,19 @@ class ModelTests:
             raise HTTPException(422, '仅支持 Codex OAuth 和 Key 账号')
         return row
 
+    async def codex_identity(self) -> tuple[str, str]:
+        try:
+            rows = await asyncio.to_thread(
+                self.s.r.db.fetch_all,
+                "SELECT key,value FROM settings WHERE key IN "
+                "('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced')",
+                {},
+            )
+        except Exception:
+            rows = []
+        values = {str(row.get("key")): row.get("value") for row in rows if isinstance(row, dict)}
+        return codex_identity(values)
+
     async def target(self, row, model):
         owner = await self.account(row['parent_account_id']) if row.get('parent_account_id') else row
         if owner.get('parent_account_id'):
@@ -140,8 +153,12 @@ class ModelTests:
         credentials = owner.get('credentials') or {}
         if not await self.s.actions.model_allowed(row, model):
             raise HTTPException(422, '所选模型不在当前分组白名单中')
-        forwarded = mapped(row, model)
-        if not forwarded or not re.fullmatch(r'[A-Za-z0-9._:/-]{1,200}', forwarded) or any(x in forwarded for x in ('image', 'dall-e', 'tts-', 'whisper-', 'realtime', 'audio')):
+        # ModelTrace is an account-pinned diagnostic.  The selected group
+        # allowlist is the source of truth and the request must reach the
+        # selected account with the exact model the user chose; model_mapping
+        # is intentionally not a routing step here.
+        forwarded = model
+        if not re.fullmatch(r'[A-Za-z0-9._:/-]{1,200}', forwarded) or any(x in forwarded.lower() for x in ('image', 'dall-e', 'tts-', 'whisper-', 'realtime', 'audio')):
             raise HTTPException(422, '请选择该账号支持的文本模型')
         oauth = owner['type'] == 'oauth'
         token = credentials.get('access_token' if oauth else 'api_key')
@@ -156,8 +173,9 @@ class ModelTests:
             raise HTTPException(422, '上游地址无效')
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'text/event-stream'}
         if oauth:
+            client_version, user_agent = await self.codex_identity()
             headers.update({'OpenAI-Beta': 'responses=experimental', 'Originator': 'codex_cli_rs',
-                            'User-Agent': str(credentials.get('user_agent') or 'codex_cli_rs/0.116.0')})
+                            'Version': client_version, 'User-Agent': user_agent})
             if credentials.get('chatgpt_account_id'):
                 headers['ChatGPT-Account-ID'] = str(credentials['chatgpt_account_id'])
         proxy = None
