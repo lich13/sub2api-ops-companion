@@ -7,6 +7,13 @@ from typing import Any
 _guard = threading.Lock()
 
 
+def control_lock(db: Any, account_id: int) -> Any:
+    """Short scheduling mutations never wait on a model/quota operation lease."""
+    with _guard:
+        locks = vars(db).setdefault("_companion_control_locks", {})
+        return locks.setdefault(int(account_id), threading.RLock())
+
+
 def account_lock(db: Any, account_id: int) -> Any:
     with _guard:
         locks = vars(db).get("_companion_account_locks")

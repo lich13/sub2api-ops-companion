@@ -277,7 +277,7 @@ class OAuthQueryCoordinator:
 
     def query(self, row: dict[str, Any], token: str, *, source: str, reason: str,
               now: datetime | None = None, requested_at: float | None = None,
-              timeout_seconds: int = 10) -> dict[str, Any]:
+              timeout_seconds: int = 10, expected_generation: int | None = None) -> dict[str, Any]:
         if source not in {"automatic", "manual"}:
             raise ValueError("Invalid quota query source")
         account_id = int(row["id"])
@@ -307,6 +307,8 @@ class OAuthQueryCoordinator:
         try:
             def reserve(data: dict[str, Any]) -> dict[str, Any]:
                 metadata = data["scheduler"].setdefault(str(account_id), {})
+                if expected_generation is not None and int((metadata.get("manual_control") or {}).get("generation") or 0) != expected_generation:
+                    return {"success": False, "skipped": True, "error_code": "manual_intervention"}
                 saved = data["oauth_results"].get(str(account_id))
                 from .quota_snapshot import latest_openai_result
                 evidence = latest_openai_result(row, saved, current)

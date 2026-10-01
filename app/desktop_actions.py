@@ -310,12 +310,19 @@ class DesktopActions:
         if alerts is None:
             raise HTTPException(503, "告警服务尚未就绪")
         try:
-            mark = await asyncio.to_thread(alerts.store.set_mark, account_id, payload.marked, payload.expected_mark_version, datetime.now(timezone.utc))
+            factory = await asyncio.to_thread(self.s.account_model_profiles.mark_intent_factory, account_id)
+            mark = await asyncio.to_thread(alerts.store.set_mark, account_id, payload.marked, payload.expected_mark_version,
+                                         datetime.now(timezone.utc), intent_factory=factory)
         except (OSError, ValueError):
             raise HTTPException(503, "降智标记保存失败，请重试") from None
         write_audit(self.s.r.settings.audit_path, "desktop_degradation_mark", {"account_id": account_id, "marked": payload.marked})
         await asyncio.to_thread(self.s.invalidate)
-        return {"verified": True, "account_id": account_id, "degradation_mark": mark}
+        try:
+            profile = await asyncio.to_thread(self.s.account_model_profiles.mark_status, account_id)
+        except (OSError, ValueError):
+            profile = {"status": "failed", "error": "配置应用状态无法读取"}
+        return {"verified": True, "account_id": account_id, "degradation_mark": mark,
+                "model_profile": profile}
 
     async def prepare_test(self, account_id: int, payload: TestRequest) -> tuple[Any, Any]:
         lock = self.s.account_lock(account_id)
