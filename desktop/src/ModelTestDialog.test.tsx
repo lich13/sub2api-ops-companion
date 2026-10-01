@@ -107,4 +107,30 @@ describe("ModelTestDialog candidates", () => {
     expect(container.textContent).toContain("已停止");
     expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(1);
   });
+
+  it("restores the previous model and shows provider terminal diagnostics without launching a request", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = { id: "f".repeat(32), status: "completed", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna", returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200,
+      groups: [{ index: 1, status: "completed", attempts: 1, ttft_ms: null, duration_ms: 200, diagnostics: { first_event_type: "response.created", last_event_type: "response.incomplete", output_tokens: 4096, reasoning_tokens: 3890, max_output_tokens: 4096, end_reason: "max_output_tokens" } }] };
+    vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/latest") ? job as never : original(method, path, body));
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}}/>));
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!.value).toBe("gpt-6-luna");
+    expect(container.textContent).toContain("response.incomplete");
+    expect(container.textContent).toContain("4096 / 4096");
+    expect(container.textContent).toContain("3890");
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+  });
+
+  it("does not replace a user selection with a delayed previous result", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    let resolveLatest!: (value: unknown) => void;
+    const delayed = new Promise((resolve) => { resolveLatest = resolve; });
+    vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/latest") ? await delayed as never : original(method, path, body));
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}}/>));
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    await act(async () => { model.value = "gpt-6-astra"; model.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => resolveLatest({ id: "f".repeat(32), status: "completed", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna", returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200 }));
+    expect(model.value).toBe("gpt-6-astra");
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+  });
 });

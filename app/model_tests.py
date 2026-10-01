@@ -30,6 +30,7 @@ ERRORS = {"auth_or_quota": "认证失败或额度不足", "rate_limited": "账�
           "invalid_model_or_request": "模型不可用或请求不兼容", "upstream_error": "上游请求失败",
           "output_limit": "输出超过保护上限", "inconsistent_stream": "响应内容不一致",
           "incomplete_stream": "响应未完整结束", "invalid_stream": "响应格式无效",
+          "incomplete_response": "上游明确结束但响应不完整",
           "protocol_mismatch": "上游响应不是受支持的模型协议", "network_error": "连接中断", "account_changed": "账号配置已变化", "internal_error": "测试无法完成"}
 _LOCK = threading.RLock()
 
@@ -390,6 +391,11 @@ class ModelTests:
                                     returned.add(model)
                             samples[index] = text
                             group.update(status='analyzing', duration_ms=round((time.monotonic()-group_started)*1000))
+                            end = group.get('diagnostics', {}).get('end_reason')
+                            if end in {'max_output_tokens', 'max_tokens', 'length'}:
+                                group['error'] = '达到输出预算，已保留收到的样本'
+                            elif end == 'content_filter':
+                                group['error'] = '上游内容过滤，已保留收到的样本'
                         except (TestFailure, httpx.HTTPError, TimeoutError) as exc:
                             failed = exc if isinstance(exc, TestFailure) else TestFailure('network_error', True)
                         finally:
