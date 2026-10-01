@@ -86,6 +86,7 @@ const account: Account = {
   error_message: "上游异常",
   success_after_error: false,
   usage_windows: [],
+  degradation_mark: { marked: true, version: "mark-version" },
 };
 
 const errorDetail: OpsError = {
@@ -140,7 +141,7 @@ describe("quick group activity", () => {
             activity(3000, "not-a-time"),
           ]),
         ],
-        errors: [],
+        errors: [errorDetail],
         recoveries: [],
       },
     };
@@ -172,6 +173,11 @@ describe("quick group activity", () => {
       "空活动",
       "无效时间",
     ]);
+    const groupBadge = container.querySelector<HTMLElement>(
+      ".quick-groups .compact-identity .degradation-badge.compact",
+    );
+    expect(groupBadge?.textContent).toBe("");
+    expect(groupBadge?.getAttribute("aria-label")).toBe("降智");
     const movedGroup = [...container.querySelectorAll(".group-row")].find(
       (row) =>
         row.querySelector(".group-heading strong")?.textContent ===
@@ -183,6 +189,22 @@ describe("quick group activity", () => {
       [node.textContent, node.getAttribute("aria-label"), node.title].join(" "),
     );
     expect(buttonNames.join(" ")).not.toMatch(/收藏/);
+
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>(".quick-tabs button")]
+        .find((button) => button.textContent?.startsWith("异常"))!
+        .click(),
+    );
+    const errorBadge = container.querySelector<HTMLElement>(
+      ".error-list .error-row .degradation-badge.compact",
+    );
+    expect(errorBadge?.textContent).toBe("");
+    expect(errorBadge?.getAttribute("aria-label")).toBe("降智");
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>(".quick-tabs button")]
+        .find((button) => button.textContent === "分组")!
+        .click(),
+    );
 
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[title="固定面板"]')!.click(),

@@ -214,6 +214,17 @@ class CapacityAlertTests(unittest.TestCase):
         )
         self.assertEqual(match_message(encoded), MESSAGES[1])
 
+        stream_error = error_row(
+            11,
+            message=None,
+            upstream_error_detail={"error": {"message": MESSAGES[2]}},
+        )
+        self.assertEqual(match_message(stream_error), MESSAGES[2])
+        self.assertEqual(match_message(error_row(
+            12,
+            message="  STREAM   DISCONNECTED BEFORE COMPLETION: concurrency limit exceeded for account, please retry later!!! ",
+        )), MESSAGES[2])
+
         rejected = [
             error_row(3, platform="grok"),
             error_row(4, account_type="client_key"),
@@ -223,6 +234,7 @@ class CapacityAlertTests(unittest.TestCase):
             error_row(10, message=None, error_body=MESSAGES[0]),
             error_row(8, message=None, error_body={"request": {"error": {"message": MESSAGES[0]}}}),
             error_row(9, message=None, error_body=json.dumps({"request": {"error": {"message": MESSAGES[1]}}})),
+            error_row(13, message=None, error_body={"error": {"message": "stream disconnected before completion: concurrency limit exceeded for account"}}),
         ]
         for row in rejected:
             with self.subTest(row=row["id"]):

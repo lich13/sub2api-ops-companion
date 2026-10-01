@@ -22,6 +22,8 @@ from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recover
 from .settings import load_settings
 from .versioning import APP_VERSION
 from .capacity_alerts import CapacityAlerts
+from .fingerprint_bank import FINGERPRINT_SYNC_INTERVAL_SECONDS, FingerprintBankService
+from .modeltrace import configure_bank_provider
 
 settings = load_settings()
 db = Database(settings.database_url)
@@ -32,6 +34,14 @@ key_fallback_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
 BARK_CONFIG_LOCK = threading.RLock()
 capacity_alerts: CapacityAlerts | None = None
+fingerprint_bank_service = FingerprintBankService(
+    Path(settings.usage_query_state_path).with_name("modeltrace-bank-state.json"),
+    settings.audit_path,
+)
+# Runtime services expose a short, stable attribute for background consumers.
+fingerprint_bank = fingerprint_bank_service
+configure_bank_provider(fingerprint_bank_service)
+fingerprint_bank_task: asyncio.Task[None] | None = None
 
 
 def oauth_state_store() -> OAuthStateStore:
@@ -107,11 +117,23 @@ async def key_fallback_loop() -> None:
         await asyncio.sleep(EVAL_INTERVAL_SECONDS)
 
 
+async def fingerprint_bank_loop() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(fingerprint_bank_service.sync)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            write_audit(settings.audit_path, "fingerprint_bank_loop_error", {"error": type(exc).__name__})
+        await asyncio.sleep(FINGERPRINT_SYNC_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global oauth_monitor, oauth_monitor_task
     global key_fallback_controller, key_fallback_task
     global capacity_alerts
+    global fingerprint_bank_task
     db.open()
     old_oauth_config = oauth_config_file()
     if "oauth_7d_probe_interval_seconds" in old_oauth_config:
@@ -143,6 +165,7 @@ async def lifespan(_: FastAPI):
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
     capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
+    fingerprint_bank_task = asyncio.create_task(fingerprint_bank_loop())
     try:
         yield
     finally:
@@ -152,6 +175,11 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await task
         capacity_alerts = None
+        if fingerprint_bank_task:
+            fingerprint_bank_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await fingerprint_bank_task
+            fingerprint_bank_task = None
         daily_schedule_task.cancel()
         with suppress(asyncio.CancelledError):
             await daily_schedule_task

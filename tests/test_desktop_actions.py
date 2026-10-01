@@ -11,10 +11,26 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import ValidationError
 
-from app.desktop_actions import DesktopActions, PriorityRequest, TestRequest, billing_is_fresh
+from app.desktop_actions import DesktopActions, PriorityRequest, TestRequest, billing_is_fresh, filter_model_options
 
 
 class DesktopActionContractTests(unittest.TestCase):
+    def test_model_options_use_union_of_current_group_allowlists(self) -> None:
+        items = [
+            {"id": "gpt-6-luna", "display_name": "Luna", "type": "text"},
+            {"id": "gpt-6-astra", "display_name": "Astra", "type": "text"},
+            {"id": "gpt-5.6-terra", "display_name": "Terra", "type": "text"},
+            {"id": "gpt-6-luna", "display_name": "duplicate", "type": "text"},
+        ]
+        allowlists = [
+            {"enabled": True, "models": ["gpt-6-luna"]},
+            {"enabled": True, "models": ["gpt-5.*"]},
+        ]
+        self.assertEqual([item["id"] for item in filter_model_options(items, allowlists)],
+                         ["gpt-6-luna", "gpt-5.6-terra"])
+        self.assertEqual(len(filter_model_options(items, [{"enabled": False, "models": []}])), 3)
+        self.assertEqual(len(filter_model_options(items, [])), 3)
+
     def test_priority_is_strict_and_bounded(self) -> None:
         base = {"expected_version": "a" * 64}
         self.assertEqual(PriorityRequest(priority=0, **base).priority, 0)
@@ -39,6 +55,35 @@ class DesktopActionContractTests(unittest.TestCase):
 
 
 class DesktopStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_models_filters_using_live_group_allowlist_union(self):
+        class Db:
+            def fetch_all(self, sql, params):
+                self.params = params
+                return [
+                    {"model_allowlist": {"enabled": True, "models": ["gpt-6-luna"]}},
+                    {"model_allowlist": {"enabled": True, "models": ["gpt-5.*"]}},
+                ]
+
+        class Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+        service = SimpleNamespace(r=SimpleNamespace(db=Db()))
+        actions = DesktopActions(service)
+        actions.account = AsyncMock(return_value={"group_ids": [7, 8]})
+        actions.client = lambda key: Client()
+        actions.json_request = AsyncMock(return_value=[
+            {"id": "gpt-6-luna", "display_name": "Luna", "type": "text"},
+            {"id": "gpt-5.6-terra", "display_name": "Terra", "type": "text"},
+            {"id": "gpt-6-astra", "display_name": "Astra", "type": "text"},
+        ])
+        result = await actions.models(7, "admin-key")
+        self.assertEqual([item["id"] for item in result], ["gpt-6-luna", "gpt-5.6-terra"])
+        self.assertEqual(service.r.db.params, {"ids": [7, 8]})
+
     async def test_real_sse_keeps_whitespace_and_releases_lock_without_confirmation(self):
         chunks = ["Hello", " ", "world", "!\n", "\t", "  code = 1\n\n", "中文 👋", " "]
         requests = []

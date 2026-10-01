@@ -123,7 +123,9 @@ class ModelTests:
     async def account(self, aid):
         row = await asyncio.to_thread(self.s.r.db.fetch_one,
             "SELECT id,name,platform,type,status,schedulable,credentials,extra,proxy_id,"
-            "nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id "
+            "nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,"
+            "ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id "
+            "AND g.deleted_at IS NULL WHERE ag.account_id=accounts.id ORDER BY ag.group_id) AS group_ids "
             "FROM accounts WHERE id=%(id)s AND deleted_at IS NULL", {'id': aid})
         if not row or row['platform'] != 'openai' or row['type'] not in {'oauth', 'apikey'}:
             raise HTTPException(422, '仅支持 Codex OAuth 和 Key 账号')
@@ -136,6 +138,8 @@ class ModelTests:
         if owner['type'] != row['type']:
             raise HTTPException(422, '母账号凭据类型不一致')
         credentials = owner.get('credentials') or {}
+        if not await self.s.actions.model_allowed(row, model):
+            raise HTTPException(422, '所选模型不在当前分组白名单中')
         forwarded = mapped(row, model)
         if not forwarded or not re.fullmatch(r'[A-Za-z0-9._:/-]{1,200}', forwarded) or any(x in forwarded for x in ('image', 'dall-e', 'tts-', 'whisper-', 'realtime', 'audio')):
             raise HTTPException(422, '请选择该账号支持的文本模型')
@@ -185,7 +189,9 @@ class ModelTests:
             try:
                 await self.s.actions.account(aid, payload.expected_version)
                 target, owner = await self.target(row, payload.model_id)
-                _, version = bank()
+                bank_snapshot = (self.s.r.fingerprint_bank.capture()
+                                 if getattr(self.s.r, "fingerprint_bank", None) is not None else bank())
+                _, version = bank_snapshot
                 job_id = uuid.uuid4().hex
                 job = {'id': job_id, 'request_id': payload.request_id, 'account_id': aid,
                        'account_name': row['name'], 'requested_model': payload.model_id,
@@ -196,7 +202,7 @@ class ModelTests:
                 with self.store.transaction() as data:
                     data['accounts'][str(aid)] = job
                     data['requests'][payload.request_id] = job_id
-                task = asyncio.create_task(self.run(job, row, owner, target, lease))
+                task = asyncio.create_task(self.run(job, row, owner, target, lease, bank_snapshot))
                 self.tasks[job_id] = task
                 task.add_done_callback(lambda value: self.finished(job_id, lease, value))
                 return job
@@ -204,7 +210,7 @@ class ModelTests:
                 lease.release()
                 raise
 
-    async def run(self, job, row, owner, target, lease):
+    async def run(self, job, row, owner, target, lease, bank_snapshot):
         started = time.monotonic()
         samples, returned, completed, attempts = [], set(), 0, 0
         job_id = job['id']
@@ -234,7 +240,7 @@ class ModelTests:
                         self.update(job_id, status='retrying', error=ERRORS[failed.code])
                         await asyncio.sleep((1, 3)[attempt])
                 completed += 1
-                report = analyze(samples)
+                report = analyze(samples, snapshot=bank_snapshot)
                 self.update(job_id, completed_groups=completed, valid_groups=(report or {}).get('used_outputs', 0),
                             returned_models=sorted(returned), report=report,
                             duration_ms=round((time.monotonic() - started) * 1000))
