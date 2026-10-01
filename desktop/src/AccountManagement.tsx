@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
-import { api, command } from "./bridge";
+import { command } from "./bridge";
+import { accountOperation } from "./accountOperations";
 import type { Account } from "./types";
 import { useBackAction } from "./mobile";
 
@@ -70,12 +71,11 @@ export function DeleteAccountsDialog({
         }
         update(index, { status: "running" });
         try {
-          const result = await api<{
+          const result = await accountOperation<{
             deleted: boolean;
             verified: boolean;
             detached: boolean;
-          }>("DELETE", `/accounts/${account.id}`, {
-            expected_version: account.version,
+          }>(account, "delete", {
             detach_managed: account.managed,
           });
           if (!result.deleted || !result.verified)
@@ -200,10 +200,8 @@ export function RecoverStateButton({
     running.current = true;
     setBusy(true);
     try {
-      const result = await api<{ verified: boolean }>(
-        "POST",
-        `/accounts/${account.id}/recover-state`,
-        { expected_version: account.version },
+      const result = await accountOperation<{ verified: boolean }>(
+        account, "recover", {},
       );
       report(
         result.verified

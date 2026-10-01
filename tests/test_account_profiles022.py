@@ -74,13 +74,13 @@ class ProfileTests(unittest.TestCase):
                       {'mappings': [{'source': 'a*b', 'target': 'b'}]}, {'mappings': [{'source': 'a*', 'target': '*'}]}):
             with self.assertRaises(HTTPException): combine(value)
 
-    def test_preview_excludes_key_shadow_deleted_includes_disabled_and_conflict(self):
+    def test_preview_includes_key_disabled_excludes_shadow_deleted_and_detects_conflict(self):
         self.p.initialize_sources()
         for aid, change in [(1, {'type': 'apikey'}), (2, {'parent_account_id': 396}), (3, {'deleted_at': '2026-10-01'}),
                             (4, {'status': 'disabled'}), (5, {'passthrough': True}), (6, {'platform': 'grok'})]:
             self.db.rows[aid] = {**self.db.rows[413], 'id': aid, **change}
         items = self.p.preview()['items']
-        self.assertEqual({i['account_id'] for i in items}, {396, 387, 413, 4, 5})
+        self.assertEqual({i['account_id'] for i in items}, {396, 387, 413, 1, 4, 5})
         self.assertEqual(next(i for i in items if i['account_id'] == 5)['status'], 'conflict')
         self.assertEqual(next(i for i in items if i['account_id'] == 396)['status'], 'unchanged')
 

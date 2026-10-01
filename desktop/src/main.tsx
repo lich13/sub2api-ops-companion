@@ -58,6 +58,8 @@ import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountModelProfiles from "./AccountModelProfiles";
+import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
+import { accountOperation, bindOperationConnection } from "./accountOperations";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
@@ -174,6 +176,7 @@ export default function App() {
   }, [mobile, page]);
   const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
+  useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
   const filterKey = JSON.stringify([
     query,
     group,
@@ -203,7 +206,7 @@ export default function App() {
     setConfig(null);
     setGroupChanges({ count: 0, busy: false });
   }, [connectionKey]);
-  const report = (e: unknown) => setToast(String(e).replace(/^Error: /, ""));
+  const report = (e: unknown) => { if (!String(e).includes("连接已切换；请求保留在原连接")) setToast(String(e).replace(/^Error: /, "")); };
   useEffect(() => {
     let disposed = false;
     let un: () => void = () => {},
@@ -372,9 +375,8 @@ export default function App() {
     setConfirm(null);
     setBusy(a.id);
     try {
-      await api("POST", `/accounts/${a.id}/schedulable`, {
+      await accountOperation(a, "schedulable", {
         schedulable: !a.schedulable,
-        expected_version: a.version,
         detach_managed: detach,
       });
       setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
@@ -609,6 +611,7 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
+            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount}/>
             {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
@@ -949,7 +952,7 @@ export default function App() {
                                     </span>
                                   )}
                                 </small>
-                                <DegradationBadge account={a}/>
+                                <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
                               </td>
                               <td>
                                 <PriorityEditor
@@ -1036,7 +1039,7 @@ export default function App() {
                               <td>{schedule(a)}</td>
                               <td>
                                 <div className="account-actions">
-                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>{a.type === "oauth" && <DegradationAction account={a} online={state.online} report={report}/>}</div></details>}
+                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>{["oauth", "apikey"].includes(a.type) && <DegradationAction account={a} online={state.online} report={report}/>}</div></details>}
                                   <button
                                     className="test-button"
                                     disabled={

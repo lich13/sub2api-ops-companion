@@ -91,4 +91,20 @@ describe("ModelTestDialog candidates", () => {
     await act(async () => start.click());
     expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toMatchObject({ model_id: "gpt-5.6-sol", concurrency: 3 });
   });
+
+  it("allows a conflicted task to be cancelled", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = { id: "f".repeat(32), status: "needs_confirmation", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna", returned_models: [], completed_groups: 0, valid_groups: 0, attempts: 0, duration_ms: 0 };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return job as never;
+      if (path.endsWith("/cancel")) return { ...job, status: "cancelled" } as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}}/>));
+    const cancel = [...container.querySelectorAll("button")].find((button) => button.textContent === "取消任务")!;
+    expect(cancel).toBeTruthy();
+    await act(async () => cancel.click());
+    expect(container.textContent).toContain("已停止");
+    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(1);
+  });
 });

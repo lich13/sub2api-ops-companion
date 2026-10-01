@@ -183,7 +183,7 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(self.request(3, "recover").status_code, 409)
         self.assertEqual(len(self.calls), 1)
 
-    def test_mutations_share_account_and_recovery_locks(self):
+    def test_mutations_share_account_lock_without_blocking_unrelated_monitor(self):
         lock = self.service.account_lock(1)
         lock.acquire()
         try:

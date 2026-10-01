@@ -7,6 +7,7 @@ import json
 import re
 import time
 import uuid
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from .audit import write_audit
 from .account_locks import AccountLease
+from .account_operations import busy
 from .bark import sanitize_error_text
 from .model_rules import admitted
 from .usage_query import parse_iso_datetime
@@ -168,18 +170,18 @@ class DesktopActions:
             raise HTTPException(502, "无法读取 Sub2API 响应") from None
 
     async def account(self, account_id: int, version: str | None = None) -> dict[str, Any]:
-        from .desktop_api import ACCOUNT_SQL, account_dto
+        from .desktop_api import ACCOUNT_SQL, account_dto, account_version_matches
         row = await asyncio.to_thread(self.s.r.db.fetch_one, ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
         if not row:
             raise HTTPException(404, "账号不存在")
-        if version and version != account_dto(row, datetime.now(timezone.utc), set())["version"]:
+        if version and not account_version_matches(row, version):
             raise HTTPException(409, "账号已变化，请刷新后重试")
         return row
 
     async def set_priority(self, account_id: int, payload: PriorityRequest, key: str) -> dict[str, Any]:
         lock = self.s.account_lock(account_id)
         if not lock.acquire(blocking=False):
-            raise HTTPException(409, "此账号正在执行操作")
+            raise busy()
         try:
             row = await self.account(account_id, payload.expected_version)
             with self.s.recovery_guard(row):
@@ -271,7 +273,7 @@ class DesktopActions:
             raise HTTPException(422, "分组范围无效")
         lock = self.s.account_lock(account_id)
         if not lock.acquire(blocking=False):
-            raise HTTPException(409, "此账号正在执行操作")
+            raise busy()
         try:
             row = await self.account(account_id, payload.expected_version)
             with self.s.recovery_guard(row):
@@ -304,8 +306,8 @@ class DesktopActions:
 
     async def set_degradation_mark(self, account_id: int, payload: DegradationMarkRequest) -> dict[str, Any]:
         row = await self.account(account_id)
-        if (row["platform"], row["type"]) != ("openai", "oauth"):
-            raise HTTPException(422, "仅支持 OpenAI OAuth 账号")
+        if row["platform"] != "openai" or row["type"] not in {"oauth", "apikey"}:
+            raise HTTPException(422, "仅支持 OpenAI OAuth 或 Key 账号")
         alerts = getattr(self.s.r, "capacity_alerts", None)
         if alerts is None:
             raise HTTPException(503, "告警服务尚未就绪")
@@ -327,7 +329,7 @@ class DesktopActions:
     async def prepare_test(self, account_id: int, payload: TestRequest) -> tuple[Any, Any]:
         lock = self.s.account_lock(account_id)
         if not lock.acquire(blocking=False):
-            raise HTTPException(409, "此账号正在执行操作")
+            raise busy()
         monitor_lock = None
         try:
             row = await self.account(account_id, payload.expected_version)
@@ -351,7 +353,7 @@ class DesktopActions:
             monitor_lock = AccountLease(self.s.r.db, row, include_account=False) if row.get("parent_account_id") else None
             if monitor_lock and not monitor_lock.acquire():
                 monitor_lock = None
-                raise HTTPException(409, "母账号正在执行操作，请稍后测试")
+                raise busy()
             return lock, monitor_lock
         except BaseException:
             lock.release()
@@ -464,14 +466,20 @@ class DesktopActions:
                     acquired = True
                 semaphore = asyncio.Semaphore(limit)
                 async with self.client(key) as client:
+                    @asynccontextmanager
+                    async def wait_account(row, item):
+                        lock = self.s.account_lock(row["id"])
+                        while not lock.acquire(blocking=False):
+                            item["status"] = "queued"
+                            await asyncio.sleep(0.1)
+                        try:
+                            yield
+                        finally:
+                            lock.release()
+
                     async def query(row: dict[str, Any]):
                         item = next(i for i in batch["items"] if i["account_id"] == row["id"])
-                        async with semaphore:
-                            lock = self.s.account_lock(row["id"])
-                            if not lock.acquire(blocking=False):
-                                item.update(status="failed", error="此账号正在执行其他操作", error_code="account_busy")
-                                batch["completed"] += 1
-                                return
+                        async with wait_account(row, item), semaphore:
                             queried_at = stamp()
                             try:
                                 live = await self.account(row["id"])
@@ -515,7 +523,6 @@ class DesktopActions:
                                 item.update(status="failed", error="整轮查询超时，未重复请求", error_code="batch_timeout")
                                 raise
                             finally:
-                                lock.release()
                                 batch["completed"] += 1
                                 await asyncio.to_thread(self.s.invalidate)
                     await asyncio.gather(*(query(row) for row in platform_rows))
@@ -523,8 +530,7 @@ class DesktopActions:
                 if acquired:
                     monitor_lock.release()
         try:
-            async with asyncio.timeout(120):
-                await asyncio.gather(platform_run("openai"), platform_run("grok"))
+            await asyncio.gather(platform_run("openai"), platform_run("grok"))
         except (TimeoutError, asyncio.CancelledError):
             pass
         except Exception:
@@ -532,7 +538,7 @@ class DesktopActions:
             write_audit(self.s.r.settings.audit_path, "desktop_quota_batch_error", {"code": "batch_failed"})
         finally:
             for item in batch["items"]:
-                if item["status"] in {"pending", "running"}:
+                if item["status"] in {"pending", "queued", "running"}:
                     item.update(status="failed", error="本轮未取得结果，未重复请求", error_code="batch_incomplete")
             batch.update(status="completed", completed=len(batch["items"]), completed_at=stamp())
             await asyncio.to_thread(self.s.invalidate)

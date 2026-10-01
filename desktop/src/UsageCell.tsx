@@ -1,3 +1,4 @@
+import { accountOperation } from "./accountOperations";
 import { useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
 import { api } from "./bridge";
@@ -75,11 +76,7 @@ export default function UsageCell({
     setBusy(action);
     setConfirm(null);
     try {
-      const result = await api<{ message: string }>(
-        "POST",
-        `/accounts/${account.id}/usage-action`,
-        { action, expected_version: version, confirmed },
-      );
+      const result = await accountOperation<{ message: string }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed }, account.operation_versions?.[action === "reset_quota" ? "reset_quota" : "usage"] ?? version);
       report(result.message);
     } catch (error) {
       report(error);

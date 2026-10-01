@@ -170,10 +170,15 @@ async def lifespan(_: FastAPI):
     capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
     capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
     profile_task = asyncio.create_task(desktop_service.account_model_profiles.loop())
+    operation_task = asyncio.create_task(desktop_service.operations.loop())
+    desktop_service.model_tests.resume()
     fingerprint_bank_task = asyncio.create_task(fingerprint_bank_loop())
     try:
         yield
     finally:
+        operation_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await operation_task
         profile_task.cancel()
         with suppress(asyncio.CancelledError):
             await profile_task
@@ -201,9 +206,9 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await oauth_monitor_task
             oauth_monitor_task = None
+        await desktop_service.close()
         oauth_monitor = None
         key_fallback_controller = None
-        await desktop_service.close()
         model_service.close()
         db.close()
 

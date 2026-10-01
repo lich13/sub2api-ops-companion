@@ -42,7 +42,7 @@ class GatewayAlertTests(unittest.TestCase):
             row = gateway(15886, self.clock())
             row.update(error_message=None, error_body=json.dumps({'type': event_type, 'response': {'error': {'message': MESSAGES[0]}}}))
             self.assertEqual(match_message(row), MESSAGES[0])
-        for change in ({'account_type': 'apikey'}, {'account_platform': 'grok'}, {'error_source': 'client'}, {'stream': False, 'error_body': None},
+        for change in ({'account_type': 'key'}, {'account_platform': 'grok'}, {'error_source': 'client'}, {'stream': False, 'error_body': None},
                        {'account_deleted_at': self.clock()}, {'error_message': 'Selected model is at capacity.', 'error_body': None},
                        {'error_message': 'server_error', 'error_body': '{"error":{"code":"server_error","message":"An error occurred"}}'},
                        {'error_message': None, 'error_body': json.dumps({'request': {'error': {'message': MESSAGES[0]}}})}):

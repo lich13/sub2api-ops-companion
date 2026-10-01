@@ -21,7 +21,7 @@ from .usage_query import parse_iso_datetime
 from .error_evidence import MESSAGES, match_message as match_evidence
 
 RETRY_SECONDS = (5, 30, 120, 600)
-TITLE = "⚠️ Codex OAuth 疑似降智"
+TITLE = "⚠️ Codex 疑似降智"
 PUSH_OPTIONS = {"level": "critical", "sound": "alarm", "group": "Sub2Ops 疑似降智"}
 _LOCK = threading.RLock()
 _ACCOUNT_LOCKS: dict[tuple[str, int], threading.RLock] = {}
@@ -156,6 +156,9 @@ class CapacityAlerts:
             # notification replay of errors predating this upgrade.
             with self.store.transaction() as data:
                 data.setdefault("gateway_since", self.clock().isoformat())
+        if not state.get("apikey_since"):
+            with self.store.transaction() as data:
+                data.setdefault("apikey_since", self.clock().isoformat())
         if state["cursor"] is None:
             initialized_at = self.clock().isoformat()
             row = self.db.fetch_one("SELECT coalesce(max(id),0) AS id FROM ops_error_logs")
@@ -202,12 +205,14 @@ class CapacityAlerts:
                     continue
                 if row.get("error_owner") == "platform" and at < (parse_iso_datetime(data.get("gateway_since")) or now):
                     continue
+                if row.get("account_type") == "apikey" and at < (parse_iso_datetime(data.get("apikey_since")) or now):
+                    continue
                 mark = data["marks"].get(str(row["account_id"]), {})
                 changed = parse_iso_datetime(mark.get("changed_at"))
                 suppressed = mark.get("marked") or (changed and at <= changed) or (runtime.config_valid and not runtime.enabled)
                 event = {"id": int(row["id"]), "account_id": int(row["account_id"]), "account_name": sanitize_error_text(row.get("account_name"), 120),
                          "requested_model": sanitize_error_text(row.get("requested_model") or row.get("model") or "未知", 160),
-                         "upstream_model": sanitize_error_text(row.get("upstream_model") or "未知", 160), "message": message,
+                         "upstream_model": sanitize_error_text(row.get("upstream_model") or "未知", 160), "message": message, "account_type": row.get("account_type", "oauth"),
                          "created_at": at.isoformat(), "next_at": now.isoformat(), "attempts": 0}
                 if not suppressed:
                     data["pending"][key] = event
@@ -234,7 +239,7 @@ class CapacityAlerts:
                 return
             live = self.db.fetch_one("SELECT platform,type,deleted_at FROM accounts WHERE id=%(id)s", {"id": event["account_id"]})
             suppressed = (state["marks"].get(str(event["account_id"]), {}).get("marked") or not runtime.enabled or not live
-                          or live.get("deleted_at") or (live.get("platform"), live.get("type")) != ("openai", "oauth"))
+                          or live.get("deleted_at") or live.get("platform") != "openai" or live.get("type") not in {"oauth", "apikey"})
             if suppressed:
                 with self.store.transaction() as data:
                     data["pending"].pop(key, None)
@@ -246,7 +251,8 @@ class CapacityAlerts:
                 queued = data["pending"][key]
                 queued["attempts"] += 1
                 queued["next_at"] = (self.clock() + timedelta(seconds=RETRY_SECONDS[min(queued["attempts"] - 1, 3)])).isoformat()
-            body = (f"账号：{event['account_name']} #{event['account_id']}\n请求模型：{event['requested_model']}\n"
+            account_kind = '（Key）' if event.get('account_type') == 'apikey' else ''
+            body = (f"账号：{event['account_name']} #{event['account_id']}{account_kind}\n请求模型：{event['requested_model']}\n"
                     f"上游模型：{event['upstream_model']}\n错误：{event['message']}\n"
                     f"时间：{_beijing_time(event['created_at'])}\n错误记录：#{event['id']}")
             result = self.notifier.push(TITLE, body, timeout=3, options=PUSH_OPTIONS)

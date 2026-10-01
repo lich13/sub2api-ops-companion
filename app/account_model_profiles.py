@@ -99,7 +99,7 @@ def split(mapping: Any) -> dict:
 
 def eligible(row):
     return bool(row and not row.get("deleted_at") and row.get("platform") == "openai"
-                and row.get("type") == "oauth" and not row.get("parent_account_id"))
+                and row.get("type") in {"oauth", "apikey"} and not row.get("parent_account_id"))
 
 
 def account_version(row):
@@ -207,7 +207,7 @@ class AccountModelProfiles:
         if not profiles['configured']:
             raise HTTPException(409, '请先保存两套模板')
         marks = self.r.capacity_alerts.store.snapshot()['marks']
-        rows = self.r.db.fetch_all(SELECT + " WHERE deleted_at IS NULL AND platform='openai' AND type='oauth' ORDER BY id")
+        rows = self.r.db.fetch_all(SELECT + " WHERE deleted_at IS NULL AND platform='openai' AND type IN ('oauth','apikey') ORDER BY id")
         items = [self.item(row, profiles, mark_view(row['id'], marks.get(str(row['id'])))) for row in rows if eligible(row)]
         return {'items': items, 'version': digest([self.config_version(profiles), items])}
 
@@ -291,7 +291,7 @@ class AccountModelProfiles:
         aid = item['account_id']
         row = self.account(aid)
         if not eligible(row):
-            self._save_item(source, item, status='conflict', error='账号已删除或不再是 OAuth 母账号')
+            self._save_item(source, item, status='conflict', error='账号已删除或不再是独立 OpenAI 账号')
             return
         lease = AccountLease(self.r.db, row)
         if not lease.acquire():

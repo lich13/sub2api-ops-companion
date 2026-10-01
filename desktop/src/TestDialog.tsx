@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
 import { fullTime, type Account, type TestEvent } from "./types";
+import { submitOperation, followOperation } from "./accountOperations";
 import { useBackAction } from "./mobile";
 
 export type TestMode = "default" | "compact" | "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime";
@@ -37,6 +38,7 @@ export default function TestDialog({ account, online, close }: {account: Account
   const [status, setStatus] = useState("");
   const [outputs, setOutputs] = useState<TestEvent[]>([]);
   const [result, setResult] = useState<TestEvent | null>(null);
+  const operationId = useRef<string | null>(null);
   const running = useRef(false), alive = useRef(true), cancelled = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -44,7 +46,7 @@ export default function TestDialog({ account, online, close }: {account: Account
       if (!alive.current) return;
       setModels(list); setModel(preferredModel(list, account.platform, mode));
     }).catch((e) => { if (alive.current) setError(String(e)); }).finally(() => { if (alive.current) setLoading(false); });
-    return () => { alive.current = false; if (running.current) void command("cancel_test"); };
+    return () => { alive.current = false; if (running.current && !account.operation_versions) void command("cancel_test"); };
   }, [account.id]);
   const choices: {id: TestMode; label: string}[] = account.platform === "grok"
     ? [{id:"text",label:"文本"},{id:"image",label:"图像"},{id:"video",label:"视频"},{id:"search",label:"搜索"},{id:"tts",label:"TTS"},{id:"stt",label:"STT"},{id:"realtime",label:"Realtime"}]
@@ -65,22 +67,29 @@ export default function TestDialog({ account, online, close }: {account: Account
     reader.onload = () => { if (alive.current) { setMedia(String(reader.result)); setFileName(file.name); setError(""); } };
     reader.onerror = () => setError("素材读取失败"); reader.readAsDataURL(file);
   }
-  async function cancel() { cancelled.current = true; await command("cancel_test"); }
+  async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); else await command("cancel_test"); }
   async function start() {
     if (running.current || !online) return;
     running.current = true; cancelled.current = false; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
     let terminal = false;
     try {
-      await runTest(account.id, {expected_version: account.version, mode, model_id: standalone ? "" : model,
+      const body = {expected_version: account.version, mode, model_id: standalone ? "" : model,
         prompt: hasPrompt ? prompt || (imageModel ? defaults.image : defaults[mode]) || "" : "",
-        ...(media ? {[mode === "stt" ? "audio_data_url" : "image_data_url"]: media} : {})}, (event) => {
+        ...(media ? {[mode === "stt" ? "audio_data_url" : "image_data_url"]: media} : {})};
+      const receive = (event: TestEvent) => {
         if (!alive.current || cancelled.current) return;
         if (event.type === "content") setText((old) => (old + (event.text ?? "")).slice(-500_000));
         if (event.type === "status") setStatus(event.text ?? "");
         if (event.type === "test_start") setStatus(event.model ?? "测试中");
         if (["image", "audio", "video"].includes(event.type)) setOutputs((old) => [...old, event]);
         if (event.type === "error" || event.type === "test_complete") { terminal = true; setResult(event); setStatus(event.type === "test_complete" && event.success ? "测试通过" : "测试失败"); if (event.error) setError(event.error); }
-      });
+      };
+      if (account.operation_versions?.test) {
+        const { expected_version: _version, ...payload } = body;
+        const job = await submitOperation(account, 'test', { ...payload, confirmed: true });
+        operationId.current = job.id;
+        await followOperation(job, receive);
+      } else await runTest(account.id, body, receive);
       if (!terminal && !cancelled.current && alive.current) setError("连接结束，未收到完成结果");
     } catch (e) { if (alive.current && !cancelled.current) setError(String(e).replace(/^Error: /, "")); }
     finally {
