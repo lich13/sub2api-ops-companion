@@ -66,6 +66,7 @@ import GroupManager from "./GroupManager";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
+import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
 import "./mobile-layout.css";
 
 type Page = "accounts" | "groups" | "records" | "events" | "features" | "settings";
@@ -132,6 +133,7 @@ export default function App() {
     [filter, setFilter] = useState(""),
     [type, setType] = useState(""),
     [config, setConfig] = useState<Config | null>(null),
+    [runtimeVersion, setRuntimeVersion] = useState<string | null>(null),
     [history, setHistory] = useState<OpsError[] | null>(null),
     [cursor, setCursor] = useState<number | null>(null),
     [eventTab, setEventTab] = useState<"errors" | "recoveries">("errors"),
@@ -240,6 +242,10 @@ export default function App() {
       return () => clearTimeout(id);
     }
   }, [toast]);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void getRuntimeVersion().then(setRuntimeVersion).catch(() => {});
+  }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing) return;
@@ -1165,6 +1171,7 @@ export default function App() {
                       config={config}
                       accounts={accounts}
                       state={state}
+                      runtimeVersion={runtimeVersion}
                       prefs={prefs}
                       onChange={(key, value) =>
                         setConfig({ ...config, [key]: value })
@@ -1460,6 +1467,7 @@ function SettingsPage({
   config,
   accounts,
   state,
+  runtimeVersion,
   prefs,
   onChange,
   onMessage,
@@ -1470,6 +1478,7 @@ function SettingsPage({
   config: Config;
   accounts: Account[];
   state: ViewState;
+  runtimeVersion: string | null;
   prefs: (p: Partial<Preferences>) => Promise<void>;
   onChange: (k: string, c: ConfigSection) => void;
   onMessage: (m: string) => void;
@@ -1597,7 +1606,7 @@ function SettingsPage({
                     .catch(onError)
                 }
               >
-                {appVersion} · 检查更新 <ExternalLink size={13} />
+                {runtimeVersion ?? appVersion} · 检查更新 <ExternalLink size={13} />
               </button>
             </div>
           </section>
