@@ -16,6 +16,24 @@
   font-variant-numeric: tabular-nums;
   min-width: 20px;
 }
+.quality-warning,
+.slow-warning-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--warn);
+  flex: 0 0 auto;
+}
+.slow-warning-badge {
+  gap: 4px;
+  font-size: 11px;
+  margin-left: 6px;
+}
+.slow-warning-badge.compact {
+  width: 16px;
+  height: 16px;
+  margin-left: 0;
+}
 .quality-badge.green,
 .quality-headline.green {
   color: var(--good);

@@ -4,6 +4,7 @@ import { accountOperation } from "./accountOperations";
 import type { Account, Group } from "./types";
 import { command } from "./bridge";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
+import { SlowWarningBadge } from "./AccountQuality";
 import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts, type Zone } from "./groupDraft";
 import { useBackAction } from "./mobile";
 import "./group-manager.css";
@@ -106,7 +107,7 @@ export default function GroupManager(props: Props) {
     return <article key={a.id} className={`group-account${selected === a.id ? " selected" : ""}${dirty ? " dirty" : ""}${drag?.id === a.id ? " dragging" : ""}`}>
       <button className="group-grip" aria-label={`拖动 ${a.name} #${a.id}`} disabled={!online || busy} onPointerDown={(e) => pointerDown(e, a.id)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); }} onClick={(e) => e.stopPropagation()}><GripVertical size={16}/></button>
       <button className="group-account-select" disabled={!online || busy} aria-pressed={selected === a.id} onClick={(e) => { e.stopPropagation(); setSelected(selected === a.id ? null : a.id); }}>
-        <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/>{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
+        <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/><SlowWarningBadge value={a.quality} compact />{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
       </button>
       {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><button className="degradation-action" disabled={!online || busy} onClick={() => props.modelTest?.(a)}>模型测试</button>{["oauth", "apikey"].includes(a.type) && <DegradationAction account={a} online={online && !busy} report={props.report}/>}</div></details>}
     </article>;

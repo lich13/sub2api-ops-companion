@@ -43,6 +43,17 @@ export type Quality = {
   sample_status: "complete" | "insufficient" | "empty" | "pending";
   data_status: "fresh" | "delayed" | "stale";
   computed_at: string | null;
+  warnings?: SlowTTFTWarning[];
+};
+export type SlowTTFTWarning = {
+  kind: "slow_ttft";
+  sample_count: number;
+  slow_count: number;
+  threshold_ms: number;
+  active: boolean;
+  latest_sample_id?: number;
+  latest_first_token_ms?: number;
+  latest_at?: string;
 };
 export type QualityCohort = {
   platform: string;
