@@ -7,7 +7,7 @@ python3 -B scripts/devhost/devhost.py install
 /workspace/devhost/bin/devhost-up
 ```
 
-首次 Android 安装若返回 `ANDROID_LICENSE_HANDOFF_REQUIRED`，由用户在云端终端阅读并交互接受协议，然后重新执行 `devhost-up`。不得自动输入 `yes` 或复制 license 哈希。Command-Line Tools 使用 Google 官方 `15859902` Linux 包并校验官网 SHA-256；SDK 36、Build Tools 36.0.0、NDK 28.2.13676358、JDK 21、Rust 1.94.1 / `aarch64-linux-android`。不装模拟器。
+首次 Android 安装若返回 `ANDROID_LICENSE_HANDOFF_REQUIRED`，由用户在云端终端阅读并交互接受协议，然后重新执行 `devhost-up`。不得自动输入 `yes` 或复制 license 哈希。Command-Line Tools 使用 Google 官方 `15859902` Linux 包并校验官网 SHA-256；SDK 36、Build Tools 35.0.0/36.0.0、NDK 28.2.13676358、JDK 21、Rust 1.94.1 / `aarch64-linux-android`。35.0.0 为现有 Android Gradle 构建所需，两个版本均受清理保护。不装模拟器。
 
 每次安装依赖、测试或构建均使用受控入口；`--cwd` 相对仓库根目录：
 
@@ -30,7 +30,7 @@ devhost-clean --mode=postbuild --apply
 Gradle 保留 released wrapper 45 天、snapshot 10 天、build cache 5 天、daemon 日志 14 天；`devhost-run` 禁用常驻 Gradle daemon。当前 SDK 包受保护；旧 SDK 必须显式指定：
 
 ```sh
-devhost-sdk-prune --package 'build-tools;35.0.0'
+devhost-sdk-prune --package 'build-tools;34.0.0'
 # 检查 dry-run 后才添加 --apply。
 ```
 

@@ -87,7 +87,8 @@ def props(p):
                 if '=' in line and not line.startswith('#'))
 def values(p):
     return {k.strip():v.strip() for k,v in props(p).items()}
-expected = {'platforms/android-36':None, 'build-tools/36.0.0':'36.0.0',
+expected = {'platforms/android-36':None, 'build-tools/35.0.0':'35.0.0',
+            'build-tools/36.0.0':'36.0.0',
             'ndk/28.2.13676358':'28.2.13676358', 'platform-tools':None,
             'cmdline-tools/latest':None}
 result = {}
