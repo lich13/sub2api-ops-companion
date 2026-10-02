@@ -14,14 +14,18 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import signal
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
-import shlex
+import urllib.error
+import urllib.parse
+import urllib.request
 
 GIB = 1024 ** 3
 DAY = 86400
@@ -34,6 +38,13 @@ STOP_FREE = 15 * GIB
 CACHE_BUDGET = 50 * GIB
 MIN_INODES = .10
 STOP_INODES = .02
+VSCODE_CLI_URL = 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable'
+VSCODE_CLI_API = 'https://update.code.visualstudio.com/api/update/cli-linux-x64/stable/latest'
+VSCODE_CLI_HOSTS = frozenset({
+    'update.code.visualstudio.com',
+    'vscode.download.prss.microsoft.com',
+})
+VSCODE_CLI_MAX_ARCHIVE = 80 * 1024 * 1024
 
 
 class Refused(Exception):
@@ -302,8 +313,13 @@ class Host:
             return self.clean_locked(mode, apply)
 
     def preflight_locked(self):
+        # Cleanup must run before the 40 GiB admission gate so emergency
+        # collection is not rejected by the healthy() check while space is low.
         space = self.probe()
-        self.healthy(space)
+        if space.get('readonly'):
+            raise Refused('Filesystem is read-only; no build or cleanup attempted.', 74)
+        if space.get('inodes_total', 0) <= 0 or space['inodes_free'] / space['inodes_total'] < STOP_INODES:
+            raise Refused('Filesystem inode reserve is below 2%; cleanup stopped.', 74)
         mode = 'emergency' if space['free_bytes'] < EMERGENCY_FREE else 'preflight'
         result = self.clean_locked(mode, True)
         if not self.healthy(self.probe()) or result['cache_bytes'] > CACHE_BUDGET:
@@ -465,6 +481,141 @@ class Host:
         return subprocess.run(['bash', str(self.home / 'lib/android-setup.sh')],
                               env=self.environment()).returncode
 
+    def _cli_https_url(self, url, label):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != 'https' or not parsed.hostname:
+            raise Refused(label + ' must use HTTPS with an explicit host.')
+        if parsed.hostname not in VSCODE_CLI_HOSTS:
+            raise Refused(label + ' host is not on the VS Code CLI allowlist.')
+        return parsed
+
+    def _cli_open(self, url, label):
+        self._cli_https_url(url, label)
+
+        class GuardedRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(inner_self, req, fp, code, msg, headers, newurl):
+                parsed = urllib.parse.urlparse(newurl)
+                if parsed.scheme != 'https' or parsed.hostname not in VSCODE_CLI_HOSTS:
+                    raise Refused('VS Code CLI download redirected to an unexpected host.')
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        opener = urllib.request.build_opener(GuardedRedirect())
+        request = urllib.request.Request(url, method='GET', headers={'User-Agent': 'devhost-vscode-cli'})
+        try:
+            return opener.open(request, timeout=120)
+        except Refused:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise Refused('VS Code CLI download failed: network or TLS error.', 69) from exc
+
+    def ensure_vscode_cli(self, fetcher=None):
+        """Install the official Linux x64 CLI when missing; preserve auth data."""
+        cli_dir = self.home / 'vscode-cli'
+        binary = cli_dir / 'code'
+        link = self.home / 'bin/code'
+        data_dir = cli_dir / 'data'
+        self.safe(cli_dir, [self.home])
+        cli_dir.mkdir(parents=True, exist_ok=True)
+        # Preserve any existing auth directory contents; never delete or rewrite it.
+        data_before = sorted(p.name for p in data_dir.iterdir()) if data_dir.is_dir() else []
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        def link_ready():
+            return (binary.is_file() and not binary.is_symlink() and
+                    link.is_symlink() and link.resolve() == binary.resolve())
+
+        if link_ready():
+            return {'path': str(binary.relative_to(self.root)), 'downloaded': False}
+
+        fetch = fetcher or self._cli_open
+        stage = Path(tempfile.mkdtemp(prefix='.vscode-cli-stage-', dir=cli_dir))
+        try:
+            self.safe(stage, [cli_dir])
+            with fetch(VSCODE_CLI_API, 'VS Code CLI metadata') as meta_resp:
+                final_meta = meta_resp.geturl()
+                self._cli_https_url(final_meta, 'VS Code CLI metadata')
+                metadata = json.loads(meta_resp.read().decode())
+            expected = metadata.get('sha256hash')
+            if not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected):
+                raise Refused('VS Code CLI metadata lacks a SHA-256 digest.', 69)
+            source = metadata.get('url') or VSCODE_CLI_URL
+            if not isinstance(source, str):
+                source = VSCODE_CLI_URL
+            self._cli_https_url(source, 'VS Code CLI archive')
+            archive = stage / 'vscode_cli_linux_x64_cli.tar.gz'
+            digest = hashlib.sha256()
+            total = 0
+            with fetch(source, 'VS Code CLI archive') as resp:
+                final_url = resp.geturl()
+                self._cli_https_url(final_url, 'VS Code CLI archive')
+                length = resp.headers.get('Content-Length')
+                if length is not None:
+                    try:
+                        if int(length) > VSCODE_CLI_MAX_ARCHIVE:
+                            raise Refused('VS Code CLI archive exceeds size limit.', 69)
+                    except ValueError as exc:
+                        raise Refused('VS Code CLI archive size is invalid.', 69) from exc
+                with archive.open('wb') as out:
+                    while True:
+                        chunk = resp.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > VSCODE_CLI_MAX_ARCHIVE:
+                            raise Refused('VS Code CLI archive exceeds size limit.', 69)
+                        digest.update(chunk)
+                        out.write(chunk)
+            if digest.hexdigest() != expected:
+                raise Refused('VS Code CLI archive SHA-256 mismatch.', 69)
+            unpacked = stage / 'unpacked'
+            unpacked.mkdir()
+            with tarfile.open(archive, 'r:gz') as tar:
+                members = [m for m in tar.getmembers() if m.name not in ('', '.')]
+                if len(members) != 1 or members[0].name != 'code' or not members[0].isfile():
+                    raise Refused('VS Code CLI archive must contain a single code member.', 69)
+                if members[0].size > VSCODE_CLI_MAX_ARCHIVE:
+                    raise Refused('VS Code CLI binary exceeds size limit.', 69)
+                extract_kwargs = {'path': unpacked, 'set_attrs': False}
+                if hasattr(tarfile, 'data_filter'):
+                    extract_kwargs['filter'] = 'data'
+                tar.extract(members[0], **extract_kwargs)
+            extracted = unpacked / 'code'
+            if not extracted.is_file() or extracted.is_symlink():
+                raise Refused('VS Code CLI extraction did not produce a regular code file.', 69)
+            os.chmod(extracted, 0o755)
+            # Atomic replace of the binary only; auth data directory stays put.
+            fd, tmp_name = tempfile.mkstemp(prefix='.code-new-', dir=cli_dir)
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            try:
+                shutil.copyfile(extracted, tmp_path)
+                os.chmod(tmp_path, 0o755)
+                os.replace(tmp_path, binary)
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            self.safe(link.parent, [self.home])
+            link.parent.mkdir(parents=True, exist_ok=True)
+            if link.exists() or link.is_symlink():
+                if not (link.is_symlink() and link.resolve() == binary.resolve()):
+                    if link.is_symlink() or link.is_file():
+                        link.unlink()
+                    else:
+                        raise Refused('bin/code exists and is not a replaceable link.', 69)
+            link_tmp = link.parent / ('.code-link-' + str(os.getpid()))
+            if link_tmp.exists() or link_tmp.is_symlink():
+                link_tmp.unlink()
+            os.symlink(binary, link_tmp)
+            os.replace(link_tmp, link)
+            data_after = sorted(p.name for p in data_dir.iterdir())
+            if data_before != data_after and set(data_before) - set(data_after):
+                raise Refused('VS Code CLI auth data directory was altered during install.', 69)
+            return {'path': str(binary.relative_to(self.root)), 'downloaded': True,
+                    'sha256': expected, 'bytes': total}
+        finally:
+            if stage.exists() and not stage.is_symlink():
+                shutil.rmtree(stage)
+
     def tunnels(self):
         code = self.home / 'bin/code'
         result = []
@@ -487,9 +638,10 @@ class Host:
         with self.lock('startup'):
             with self.lock():
                 android_code = self.ensure_android_locked()
+                self.ensure_vscode_cli()
             code = self.home / 'bin/code'
             if not code.is_file():
-                raise Refused('VS Code CLI missing; restore the official Linux x64 CLI first.', 69)
+                raise Refused('VS Code CLI missing after guarded install attempt.', 69)
             running = self.tunnels()
             if len(running) > 1:
                 raise Refused('Multiple tunnel processes detected; manual inspection required.')
