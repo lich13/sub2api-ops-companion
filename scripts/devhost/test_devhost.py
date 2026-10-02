@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Only isolated temporary fixtures; no tool downloads or real caches."""
 import contextlib
+import hashlib
 import io
+import json
 import os
 from pathlib import Path
-import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -217,6 +219,214 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(recent.exists())
         self.assertFalse(snapshot.exists())
         self.assertFalse(build.exists())
+
+    def test_preflight_emergency_runs_before_admission_gate(self):
+        """Low space must enter cleanup first; gate is rechecked afterwards."""
+        old = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        self.repo()
+        sequence = {'n': 0}
+        healthy = {'free_bytes': 90*d.GIB, 'inodes_free': 900000,
+                   'inodes_total': 1000000, 'readonly': False}
+        low = {**healthy, 'free_bytes': 25*d.GIB}
+
+        def probe():
+            sequence['n'] += 1
+            # Only the initial preflight observation is low; after emergency cleanup, recover.
+            if sequence['n'] == 1:
+                return dict(low)
+            return dict(healthy)
+
+        self.host.probe = probe
+        cleaned = []
+
+        def clean_locked(mode, apply=False):
+            cleaned.append(mode)
+            return {'mode': mode, 'applied': apply, 'candidates': [], 'skipped': [],
+                    'free_bytes': healthy['free_bytes'], 'inodes_free': healthy['inodes_free'],
+                    'released_bytes': 10*d.GIB, 'cache_bytes': 0}
+
+        with patch.object(self.host, 'clean_locked', side_effect=clean_locked):
+            with patch.object(d.subprocess, 'Popen') as popen:
+                popen.return_value.poll.return_value = 0
+                popen.return_value.wait.return_value = 0
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = self.host.run('sub2api-ops-companion', ['true'])
+        self.assertEqual(cleaned, ['emergency', 'postbuild'])
+        self.assertEqual(code, 0)
+        popen.assert_called_once()
+
+    def test_preflight_still_blocks_when_cleanup_cannot_recover(self):
+        self.repo()
+        self.metrics['free_bytes'] = 25*d.GIB
+        with patch.object(d.subprocess, 'Popen') as popen:
+            with self.assertRaises(d.Refused) as ctx:
+                self.host.run('sub2api-ops-companion', ['fixture'])
+            popen.assert_not_called()
+        self.assertIn('40 GiB', str(ctx.exception))
+
+    def _fake_cli_archive(self, payload=b'#!/bin/sh\necho fixture\n', extra_members=None):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode='w:gz') as tar:
+            info = tarfile.TarInfo(name='code')
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+            for name, data in (extra_members or []):
+                info = tarfile.TarInfo(name=name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    def test_vscode_cli_download_is_guarded_and_preserves_auth_data(self):
+        archive = self._fake_cli_archive()
+        digest = hashlib.sha256(archive).hexdigest()
+        auth = self.host.home / 'vscode-cli/data/token.json'
+        auth.parent.mkdir(parents=True, exist_ok=True)
+        auth.write_text('{"fixture":true}\n')
+        os.chmod(auth, 0o600)
+        meta = json.dumps({
+            'url': 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable',
+            'sha256hash': digest,
+        }).encode()
+
+        class FakeResp:
+            def __init__(self, body, url, length=None):
+                self._body = body
+                self._url = url
+                self.headers = {'Content-Length': str(length if length is not None else len(body))}
+                self._offset = 0
+            def geturl(self):
+                return self._url
+            def read(self, n=-1):
+                if n is None or n < 0:
+                    data = self._body[self._offset:]
+                    self._offset = len(self._body)
+                    return data
+                data = self._body[self._offset:self._offset+n]
+                self._offset += len(data)
+                return data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        def fetcher(url, label):
+            if url == d.VSCODE_CLI_API:
+                return FakeResp(meta, url)
+            if 'cli-linux-x64' in url or url.endswith('.tar.gz') or 'latest' in url:
+                return FakeResp(archive, 'https://vscode.download.prss.microsoft.com/dbazure/download/stable/fixture/vscode_cli_linux_x64_cli.tar.gz')
+            raise AssertionError('unexpected url '+url)
+
+        result = self.host.ensure_vscode_cli(fetcher=fetcher)
+        binary = self.host.home / 'vscode-cli/code'
+        link = self.host.home / 'bin/code'
+        self.assertTrue(result['downloaded'])
+        self.assertTrue(binary.is_file())
+        self.assertFalse(binary.is_symlink())
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve(), binary.resolve())
+        self.assertTrue(auth.exists())
+        self.assertEqual(auth.read_text(), '{"fixture":true}\n')
+        self.assertEqual(oct(auth.stat().st_mode & 0o777), '0o600')
+
+    def test_vscode_cli_rejects_unexpected_host_and_multi_member_archive(self):
+        with self.assertRaises(d.Refused):
+            self.host._cli_https_url('https://evil.example/cli.tar.gz', 'VS Code CLI archive')
+        with self.assertRaises(d.Refused):
+            self.host._cli_https_url('http://update.code.visualstudio.com/latest/cli-linux-x64/stable', 'VS Code CLI archive')
+
+        archive = self._fake_cli_archive(extra_members=[('extra', b'nope')])
+        digest = hashlib.sha256(archive).hexdigest()
+        meta = json.dumps({
+            'url': 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable',
+            'sha256hash': digest,
+        }).encode()
+
+        class FakeResp:
+            def __init__(self, body, url):
+                self._body = body
+                self._url = url
+                self.headers = {'Content-Length': str(len(body))}
+                self._offset = 0
+            def geturl(self):
+                return self._url
+            def read(self, n=-1):
+                if n is None or n < 0:
+                    data = self._body[self._offset:]
+                    self._offset = len(self._body)
+                    return data
+                data = self._body[self._offset:self._offset+n]
+                self._offset += len(data)
+                return data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        def fetcher(url, label):
+            if url == d.VSCODE_CLI_API:
+                return FakeResp(meta, url)
+            return FakeResp(archive, 'https://vscode.download.prss.microsoft.com/artifact.tar.gz')
+
+        with self.assertRaises(d.Refused) as ctx:
+            self.host.ensure_vscode_cli(fetcher=fetcher)
+        self.assertIn('single code member', str(ctx.exception))
+        self.assertFalse((self.host.home / 'vscode-cli/code').exists())
+
+    def test_vscode_cli_rejects_sha_mismatch_and_oversize(self):
+        archive = self._fake_cli_archive()
+        meta = json.dumps({
+            'url': 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable',
+            'sha256hash': '0'*64,
+        }).encode()
+
+        class FakeResp:
+            def __init__(self, body, url, length=None):
+                self._body = body
+                self._url = url
+                self.headers = {}
+                if length is not None:
+                    self.headers['Content-Length'] = str(length)
+                else:
+                    self.headers['Content-Length'] = str(len(body))
+                self._offset = 0
+            def geturl(self):
+                return self._url
+            def read(self, n=-1):
+                if n is None or n < 0:
+                    data = self._body[self._offset:]
+                    self._offset = len(self._body)
+                    return data
+                data = self._body[self._offset:self._offset+n]
+                self._offset += len(data)
+                return data
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        def bad_sha(url, label):
+            if url == d.VSCODE_CLI_API:
+                return FakeResp(meta, url)
+            return FakeResp(archive, 'https://vscode.download.prss.microsoft.com/artifact.tar.gz')
+
+        with self.assertRaises(d.Refused) as ctx:
+            self.host.ensure_vscode_cli(fetcher=bad_sha)
+        self.assertIn('SHA-256', str(ctx.exception))
+
+        good_meta = json.dumps({
+            'url': 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable',
+            'sha256hash': hashlib.sha256(archive).hexdigest(),
+        }).encode()
+
+        def oversize(url, label):
+            if url == d.VSCODE_CLI_API:
+                return FakeResp(good_meta, url)
+            return FakeResp(archive, 'https://vscode.download.prss.microsoft.com/artifact.tar.gz',
+                            length=d.VSCODE_CLI_MAX_ARCHIVE + 1)
+
+        with self.assertRaises(d.Refused) as ctx:
+            self.host.ensure_vscode_cli(fetcher=oversize)
+        self.assertIn('size limit', str(ctx.exception))
 
 
 if __name__ == '__main__':
