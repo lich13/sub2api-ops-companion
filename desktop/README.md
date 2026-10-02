@@ -6,7 +6,7 @@ Rust / Tauri 2 / React 运维客户端，支持 macOS 12+ 的 Apple Silicon 和 
 
 从本仓库 Releases 下载对应的 `.dmg` 或 `_arm64-v8a.apk`，校验 `SHA256SUMS`。Mac 将 Sub2Ops 拖入 Applications；Android 安装签名 APK。Mac 使用本机签名，未经 Apple 公证；Android 使用固定发布签名支持覆盖升级。检查更新打开对应平台的安装包，不自动安装。
 
-填写 Companion 地址（例如 `https://companion.example.com/sub2ops`）和已有的 **Sub2API 管理员 API Key**。Mac Key 存储在 Keychain（服务 `com.lich13.sub2ops`）；Android 使用 Keystore 的不可导出 AES-GCM 密钥加密后保存在应用私有、禁止备份的目录。偏好设置及前端持久化不含 Key。断开连接删除对应凭据。
+填写你部署的 Companion 地址（例如 `https://companion.example.com/sub2ops`）和已有的 **Sub2API 管理员 API Key**。Mac Key 存储在 Keychain（服务 `com.lich13.sub2ops`）；Android 使用 Keystore 的不可导出 AES-GCM 密钥加密后保存在应用私有、禁止备份的目录。偏好设置及前端持久化不含 Key。断开连接删除对应凭据。
 
 - 账号：分组、平台、类型、状态筛选；用量栏对齐 Sub2API，包含窗口请求数、Token、A/U 费用。OpenAI OAuth 显示适用的 5h/7d；Grok 付费显示 7d/30d 和预付余额，免费显示 24h；API Key 显示今日统计及已配置的日/周/总配额。调度开关只改变允许调度，不清除限流、冷却或认证错误。
 - 记录：北京时间日期筛选及用户实扣总消费，展示历史真实模型路由、Token、费用和延迟。用户、账户、API 密钥可搜索筛选，隐藏已删除候选但保留停用项；历史记录和消费统计不因实体删除而移除。总消费显示六位小数。

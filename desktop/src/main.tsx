@@ -1397,7 +1397,7 @@ function Connection({
   beforeChange?: () => Promise<boolean>;
 }) {
   const [url, setUrl] = useState(
-      state.preferences.base_url || "https://companion.example.com/sub2ops",
+      state.preferences.base_url || "",
     ),
     [key, setKey] = useState(""),
     [busy, setBusy] = useState(false);

@@ -2,7 +2,7 @@
 
 Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件推送、桌面账号管理和新模型思考档位补全。
 
-**Sub2Ops** 支持 macOS Apple Silicon 和 Android ARM64，提供分组动态、账号管理、错误详情及 Ops 设置；Mac 另有菜单栏快捷面板。下载与使用见 [客户端说明](desktop/README.md)。仅通过 App 管理；网页、SSO 和旧表单接口已下线。
+**Sub2Ops** 支持 macOS Apple Silicon 和 Android ARM64，提供分组动态、账号管理、错误详情及 Ops 设置；Mac 另有菜单栏快捷面板。下载与使用见 [客户端说明](desktop/README.md)，版本变化见 [发布记录](desktop/CHANGELOG.md)。仅通过 App 管理；网页、SSO 和旧表单接口已下线。
 
 ## 功能
 
@@ -32,6 +32,8 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 cp .env.example .env
 docker compose up -d --build
 ```
+
+`.env.example` 只提供本地开发占位值；部署前请替换数据库连接、Sub2API 地址和 Bark 配置，并不要把 `.env` 或 `data/` 纳入公开发布。
 
 默认监听 `127.0.0.1:18081`。生产环境建议通过 nginx 挂载到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log。nginx 示例见 `deploy/nginx/sub2ops.location.conf`。
 
