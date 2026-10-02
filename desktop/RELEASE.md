@@ -2,7 +2,7 @@
 
 本版本新增慢首字预警，并统一过滤由 Companion 本地限流产生的 429 记录。
 
-完整历史见 [CHANGELOG.md](CHANGELOG.md)。
+完整历史见 [发布记录](https://github.com/lich13/sub2api-ops-companion/blob/main/desktop/CHANGELOG.md)。
 
 ## 新增
 
