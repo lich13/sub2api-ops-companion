@@ -19,6 +19,7 @@ from .audit import write_audit
 from .bark import _beijing_time, sanitize_error_text
 from .usage_query import parse_iso_datetime
 from .error_evidence import MESSAGES, match_message as match_evidence
+from .account_quality import slow_ttft_sample, slow_ttft_warning
 
 RETRY_SECONDS = (5, 30, 120, 600)
 TITLE = "⚠️ Codex 疑似降智"
@@ -53,10 +54,13 @@ class CapacityAlertStore:
         except FileNotFoundError:
             if self.existed:
                 raise OSError("告警状态文件已丢失") from None
-            return {"version": 1, "cursor": None, "initialized_at": None, "seen": {}, "marks": {}, "pending": {}}
+            return {"version": 1, "cursor": None, "initialized_at": None, "seen": {}, "marks": {}, "pending": {},
+                    "slow_ttft": {}, "slow_pending": {}}
         if not isinstance(data, dict) or data.get("version") != 1:
             raise ValueError("告警状态版本无效")
-        if any(not isinstance(data.get(k), dict) for k in ("seen", "marks", "pending")):
+        data.setdefault("slow_ttft", {})
+        data.setdefault("slow_pending", {})
+        if any(not isinstance(data.get(k), dict) for k in ("seen", "marks", "pending", "slow_ttft", "slow_pending")):
             raise ValueError("告警状态无效")
         if any(key in data and not isinstance(data[key], dict) for key in ("notifications", "profile_intents")):
             raise ValueError("告警扩展状态无效")
@@ -75,6 +79,20 @@ class CapacityAlertStore:
                     or not parse_iso_datetime(event.get("next_at")) or not parse_iso_datetime(event.get("created_at"))
                     or any(not isinstance(event.get(key), str) for key in ("account_name", "requested_model", "upstream_model", "message"))):
                 raise ValueError("待发告警状态无效")
+        for state in data["slow_ttft"].values():
+            if (not isinstance(state, dict) or type(state.get("active")) is not bool
+                    or type(state.get("alerted", False)) is not bool
+                    or (state.get("last_sample_id") is not None and type(state.get("last_sample_id")) is not int)
+                    or (state.get("reset_sample_id") is not None and type(state.get("reset_sample_id")) is not int)):
+                raise ValueError("慢首字阶段状态无效")
+        for event in data["slow_pending"].values():
+            if (not isinstance(event, dict) or event.get("kind") != "slow_ttft"
+                    or type(event.get("account_id")) is not int or event["account_id"] < 1
+                    or type(event.get("id")) is not int or type(event.get("attempts")) is not int
+                    or not parse_iso_datetime(event.get("next_at")) or not parse_iso_datetime(event.get("created_at"))
+                    or type(event.get("sample_count")) is not int or type(event.get("slow_count")) is not int
+                    or not isinstance(event.get("account_name"), str) or not isinstance(event.get("account_type"), str)):
+                raise ValueError("慢首字待发告警状态无效")
         self.existed = True
         return data
 
@@ -126,6 +144,14 @@ class CapacityAlertStore:
                 if event["account_id"] == account_id:
                     data.setdefault("notifications", {})[error_id] = {"status": "suppressed", "reason": "degradation_mark" if marked else "mark_changed", "at": now.isoformat()}
             data["pending"] = {k: e for k, e in data["pending"].items() if e["account_id"] != account_id}
+            for notification_id, event in data["slow_pending"].items():
+                if event["account_id"] == account_id:
+                    data.setdefault("notifications", {})[notification_id] = {
+                        "status": "suppressed", "reason": "degradation_mark" if marked else "mark_changed", "at": now.isoformat()}
+            data["slow_pending"] = {k: e for k, e in data["slow_pending"].items() if e["account_id"] != account_id}
+            slow_state = data.setdefault("slow_ttft", {}).get(key)
+            if slow_state and marked:
+                slow_state["alerted"] = True
             if intent_factory is not None:
                 intent = intent_factory(mark_view(account_id, mark))
                 if intent is not None:
@@ -138,6 +164,7 @@ class CapacityAlertStore:
 FIELDS = """e.id,e.account_id,e.created_at,e.error_owner,e.error_phase,e.error_source,e.stream,e.requested_model,e.model,e.upstream_model,
  e.upstream_error_message,e.error_message,to_jsonb(e)->'error_body' AS error_body,
  to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,
+ to_jsonb(e)->'upstream_errors' AS upstream_errors,
  a.name AS account_name,a.platform AS account_platform,a.type AS account_type,a.deleted_at AS account_deleted_at"""
 
 
@@ -186,6 +213,7 @@ class CapacityAlerts:
             after = int(rows[-1]["id"])
             if len(rows) < 200:
                 break
+        self._poll_slow_ttft()
 
     def _collect(self, rows: list[dict[str, Any]], *, advance: bool) -> None:
         now, emitted = self.clock(), []
@@ -225,6 +253,129 @@ class CapacityAlerts:
             self.audit("matched", error_id=record_id, account_id=account_id)
             self.audit(result, error_id=record_id, account_id=account_id, reason=reason)
 
+    def _poll_slow_ttft(self) -> None:
+        """Read recent usage metrics only; never calls an upstream service."""
+        start, now = self.clock() - timedelta(hours=24), self.clock()
+        query = """
+            WITH ranked AS (
+              SELECT u.id,u.account_id,u.created_at,u.model,u.upstream_model,u.stream,
+                     u.first_token_ms,u.duration_ms,u.output_tokens,u.inbound_endpoint,
+                     u.image_count,u.image_output_tokens,
+                     to_jsonb(u)->>'video_count' AS video_count,
+                     to_jsonb(u)->>'video_duration_seconds' AS video_duration_seconds,
+                     a.name AS account_name,a.platform AS account_platform,a.type AS account_type,
+                     row_number() OVER (PARTITION BY u.account_id ORDER BY u.created_at DESC,u.id DESC) AS sample_rank
+              FROM usage_logs u JOIN accounts a ON a.id=u.account_id
+              WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey')
+                AND u.created_at >= %(start)s AND u.created_at <= %(now)s
+                AND u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
+                AND u.output_tokens >= 0 AND coalesce(u.image_count,0)=0 AND coalesce(u.image_output_tokens,0)=0
+                AND coalesce(to_jsonb(u)->>'video_count','0') IN ('0','0.0')
+                AND coalesce(to_jsonb(u)->>'video_duration_seconds','0') IN ('0','0.0')
+                AND coalesce(u.upstream_model,u.model,'') <> ''
+                AND (coalesce(u.inbound_endpoint,'') || ' ' || coalesce(u.upstream_model,u.model,'')) !~* '(/audio|/images|/videos|-image|-video|-tts|-stt|realtime|whisper|dall-e)'
+            )
+            SELECT * FROM ranked WHERE sample_rank <= 10
+            ORDER BY account_id,created_at DESC,id DESC
+        """
+        try:
+            rows = self.db.fetch_all(query, {"start": start, "now": now})
+        except Exception as exc:
+            self.audit("slow_ttft_query_error", error=type(exc).__name__)
+            return
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        accounts: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            try:
+                account_id = int(row["account_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            accounts[account_id] = {"id": account_id, "platform": row.get("account_platform"), "type": row.get("account_type"),
+                                    "name": row.get("account_name") or f"账号 {account_id}"}
+            grouped.setdefault(account_id, []).append(row)
+        runtime = self.notifier.runtime_config()
+        emitted: list[tuple[str, str, int]] = []
+        with self.store.transaction() as data:
+            slow_state = data.setdefault("slow_ttft", {})
+            slow_pending = data.setdefault("slow_pending", {})
+            # A live-account query is authoritative for removal of stale state.
+            for key in list(slow_state):
+                if int(key) not in accounts:
+                    slow_state.pop(key, None)
+                    for pending_key, event in list(slow_pending.items()):
+                        if event["account_id"] == int(key):
+                            slow_pending.pop(pending_key, None)
+            for account_id, raw_rows in grouped.items():
+                samples = []
+                account = accounts[account_id]
+                for row in raw_rows:
+                    sample = slow_ttft_sample(row, account)
+                    if sample:
+                        samples.append(sample)
+                warning = slow_ttft_warning(samples, now)
+                key = str(account_id)
+                previous = slow_state.get(key, {"active": False, "alerted": False})
+                if warning is None:
+                    for pending_key, event in list(slow_pending.items()):
+                        if event["account_id"] == account_id:
+                            slow_pending.pop(pending_key, None)
+                            data.setdefault("notifications", {})[pending_key] = {"status": "reset", "at": now.isoformat()}
+                    slow_state[key] = {**previous, "active": False, "last_sample_id": max((s["id"] for s in samples), default=previous.get("last_sample_id")),
+                                       "reset_sample_id": max((s["id"] for s in samples), default=previous.get("reset_sample_id"))}
+                    continue
+                is_active = bool(warning["active"])
+                latest_id = int(warning["latest_sample_id"])
+                state = {**previous, "active": is_active, "last_sample_id": latest_id, "last_at": warning["latest_at"]}
+                if not is_active:
+                    state["alerted"] = False
+                    state["reset_sample_id"] = latest_id
+                    for pending_key, event in list(slow_pending.items()):
+                        if event["account_id"] == account_id:
+                            slow_pending.pop(pending_key, None)
+                            data.setdefault("notifications", {})[pending_key] = {"status": "reset", "at": now.isoformat()}
+                    slow_state[key] = state
+                    continue
+                mark = data["marks"].get(key, {})
+                if mark.get("marked") or (runtime.config_valid and not runtime.enabled):
+                    for pending_key, event in list(slow_pending.items()):
+                        if event["account_id"] == account_id:
+                            slow_pending.pop(pending_key, None)
+                            data.setdefault("notifications", {})[pending_key] = {
+                                "status": "suppressed", "reason": "degradation_mark" if mark.get("marked") else "disabled", "at": now.isoformat()}
+                    state["alerted"] = True
+                    slow_state[key] = state
+                    notification_key = f"slow:{account_id}:{latest_id}"
+                    data.setdefault("notifications", {})[notification_key] = {
+                        "status": "suppressed", "reason": "degradation_mark" if mark.get("marked") else "disabled", "at": now.isoformat()}
+                    self.audit("slow_ttft_suppressed", account_id=account_id, sample_id=latest_id,
+                               reason="degradation_mark" if mark.get("marked") else "disabled")
+                    continue
+                notification_key = f"slow:{account_id}:{latest_id}"
+                if not previous.get("active"):
+                    state["alerted"] = False
+                existing_key = next((pending_key for pending_key, pending_event in slow_pending.items()
+                                     if pending_event["account_id"] == account_id), None)
+                if not state.get("alerted") and existing_key:
+                    # Keep one durable notification per slow stage even when a
+                    # newer sample arrives while the original push is retrying.
+                    pending_event = slow_pending[existing_key]
+                    pending_event.update(id=latest_id, sample_count=warning["sample_count"],
+                                         slow_count=warning["slow_count"], latest_first_token_ms=warning["latest_first_token_ms"])
+                elif not state.get("alerted"):
+                    event = {"kind": "slow_ttft", "id": latest_id, "account_id": account_id,
+                             "account_name": sanitize_error_text(account.get("name"), 120),
+                             "account_type": account.get("type", "oauth"), "sample_count": warning["sample_count"],
+                             "slow_count": warning["slow_count"], "threshold_ms": warning["threshold_ms"],
+                             "latest_first_token_ms": warning["latest_first_token_ms"], "created_at": now.isoformat(),
+                             "next_at": now.isoformat(), "attempts": 0}
+                    slow_pending[notification_key] = event
+                    data.setdefault("notifications", {})[notification_key] = {"status": "queued", "at": now.isoformat()}
+                    emitted.append(("queued", notification_key, account_id))
+                slow_state[key] = state
+        for result, notification_key, account_id in emitted:
+            self.audit("slow_ttft_matched", account_id=account_id, notification=notification_key)
+            self.audit(result, account_id=account_id, notification=notification_key)
+
     def deliver_one(self, key: str) -> None:
         pending = self.store.snapshot()["pending"].get(key)
         if not pending:
@@ -262,8 +413,49 @@ class CapacityAlerts:
                 data.setdefault("notifications", {})[key] = {"status": "delivered" if result.success else "retry", "at": self.clock().isoformat(), "attempts": queued["attempts"], "next_at": None if result.success else queued["next_at"]}
             self.audit("delivered" if result.success else "retry", error_id=event["id"], account_id=event["account_id"], error_code=result.error_code)
 
+    def deliver_slow_one(self, key: str) -> None:
+        pending = self.store.snapshot().get("slow_pending", {}).get(key)
+        if not pending:
+            return
+        account_id = pending["account_id"]
+        with self.store.account_guard(account_id):
+            state = self.store.snapshot()
+            event = state.get("slow_pending", {}).get(key)
+            if not event or parse_iso_datetime(event["next_at"]) > self.clock():
+                return
+            runtime = self.notifier.runtime_config()
+            if not runtime.config_valid:
+                return
+            live = self.db.fetch_one("SELECT platform,type,deleted_at FROM accounts WHERE id=%(id)s", {"id": account_id})
+            marked = state["marks"].get(str(account_id), {}).get("marked")
+            suppressed = marked or not runtime.enabled or not live or live.get("deleted_at") or live.get("platform") != "openai" or live.get("type") not in {"oauth", "apikey"}
+            if suppressed:
+                with self.store.transaction() as data:
+                    data.setdefault("slow_pending", {}).pop(key, None)
+                    data.setdefault("notifications", {})[key] = {"status": "suppressed", "reason": "degradation_mark" if marked else "disabled", "at": self.clock().isoformat()}
+                    if marked:
+                        data.setdefault("slow_ttft", {}).setdefault(str(account_id), {})["alerted"] = True
+                self.audit("slow_ttft_suppressed", account_id=account_id, sample_id=event["id"])
+                return
+            with self.store.transaction() as data:
+                queued = data["slow_pending"][key]
+                queued["attempts"] += 1
+                queued["next_at"] = (self.clock() + timedelta(seconds=RETRY_SECONDS[min(queued["attempts"] - 1, 3)])).isoformat()
+            body = (f"账号：{event['account_name']} #{account_id}（{'Key' if event.get('account_type') == 'apikey' else 'OAuth'}）\n"
+                    f"慢首字：{event['slow_count']}/{event['sample_count']} 条超过 {event['threshold_ms'] / 1000:g} 秒\n"
+                    f"最近首字：{event['latest_first_token_ms'] / 1000:.2f}s\n时间：{_beijing_time(event['created_at'])}")
+            result = self.notifier.push(TITLE, body, timeout=3, options=PUSH_OPTIONS)
+            with self.store.transaction() as data:
+                if result.success:
+                    data["slow_pending"].pop(key, None)
+                    data.setdefault("slow_ttft", {}).setdefault(str(account_id), {})["alerted"] = True
+                data.setdefault("notifications", {})[key] = {"status": "delivered" if result.success else "retry", "at": self.clock().isoformat(),
+                                                               "attempts": queued["attempts"], "next_at": None if result.success else queued["next_at"]}
+            self.audit("delivered" if result.success else "retry", account_id=account_id, notification=key, error_code=result.error_code)
+
     def deliver_due(self) -> None:
-        pending = self.store.snapshot()["pending"]
+        state = self.store.snapshot()
+        pending = {**state["pending"], **state.get("slow_pending", {})}
         due = [k for k, e in pending.items() if parse_iso_datetime(e["next_at"]) <= self.clock()]
         # Each account remains ordered; different accounts cannot block one another.
         chosen, accounts = [], set()
@@ -276,7 +468,7 @@ class CapacityAlerts:
                 break
         if chosen:
             with ThreadPoolExecutor(max_workers=4) as executor:
-                list(executor.map(self.deliver_one, chosen))
+                list(executor.map(lambda key: self.deliver_slow_one(key) if key.startswith("slow:") else self.deliver_one(key), chosen))
 
     async def collect_loop(self) -> None:
         failures = 0

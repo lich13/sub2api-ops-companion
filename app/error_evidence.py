@@ -2,12 +2,30 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 MESSAGES = (
     "Our servers are currently overloaded. Please try again later.",
     "Selected model is at capacity. Please try a different model.",
     "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
+)
+
+# Sub2API emits this message for the local per-minute limiter.  Keep the
+# matcher deliberately narrow: a generic 429, an upstream rate limit, or a
+# request body containing similar text is not local evidence.
+_LOCAL_THROTTLE_RE = re.compile(
+    r"(?:您\s*已\s*(?:达到|超过)\s*请求(?:数|数量)\s*限制|"
+    r"you\s*(?:have\s*)?(?:reached|exceeded)\s*(?:the\s*)?(?:request\s*)?(?:rate\s*)?limit)"
+    r"[^\n]{0,120}?"
+    r"(?:(?:1\s*分钟内|每\s*(?:1\s*)?分钟)\s*(?:最多|至多)?\s*请求\s*[0-9]+\s*次|[0-9]+\s*requests?\s*(?:per|\/|a)\s*minute)",
+    re.IGNORECASE,
+)
+_LOCAL_THROTTLE_EN_RE = re.compile(
+    r"(?:request\s*(?:rate\s*)?limit|maximum\s+(?:number\s+of\s+)?requests?|"
+    r"requests?\s*(?:rate\s*)?limit)[^\n]{0,120}"
+    r"(?:maximum\s*)?[0-9]+\s*(?:requests?|reqs?)\s*(?:per|\/|a)\s*minute",
+    re.IGNORECASE,
 )
 
 
@@ -21,13 +39,78 @@ def recorded_message(value: Any, *, plain: bool = False) -> str | None:
             value = json.loads(value)
         except ValueError:
             return next((m for m in MESSAGES if plain and normalize(value) == normalize(m)), None)
+    if isinstance(value, list):
+        for item in value:
+            found = recorded_message(item, plain=True)
+            if found:
+                return found
+        return None
     if isinstance(value, dict):
+        if isinstance(value.get("message"), str):
+            found = recorded_message(value["message"], plain=True)
+            if found:
+                return found
+        if isinstance(value.get("error_message"), str):
+            found = recorded_message(value["error_message"], plain=True)
+            if found:
+                return found
         error = value.get("error")
         if isinstance(error, dict):
             return recorded_message(error.get("message"), plain=True)
         if value.get("type") in {"response.failed", "response.incomplete"}:
             return recorded_message(value.get("response"))
     return None
+
+
+def _recorded_texts(value: Any) -> list[str]:
+    """Return only structured error text, never arbitrary request JSON."""
+    if isinstance(value, list):
+        texts: list[str] = []
+        for item in value:
+            texts.extend(_recorded_texts(item))
+        return texts
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return [value]
+    if isinstance(value, dict):
+        texts: list[str] = []
+        if isinstance(value.get("message"), str):
+            texts.append(value["message"])
+        if isinstance(value.get("error_message"), str):
+            texts.append(value["error_message"])
+        error = value.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            texts.append(error["message"])
+        if value.get("type") in {"response.failed", "response.incomplete"}:
+            response = value.get("response")
+            if isinstance(response, dict):
+                nested = response.get("error")
+                if isinstance(nested, dict) and isinstance(nested.get("message"), str):
+                    texts.append(nested["message"])
+        return texts
+    return []
+
+
+def is_local_throttle(row: dict[str, Any]) -> bool:
+    """Whether recorded structured fields prove a Companion local limiter hit."""
+    # These are the fields populated from Sub2API's structured upstream error;
+    # intentionally do not inspect request/prompt/content fields.
+    for field in ("upstream_error_message", "error_message", "message", "upstream_errors", "error_body", "upstream_error_detail"):
+        value = row.get(field)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except ValueError:
+                values = [value]
+            else:
+                values = _recorded_texts(parsed)
+        else:
+            values = _recorded_texts(value)
+        if any(_LOCAL_THROTTLE_RE.search(text) or _LOCAL_THROTTLE_EN_RE.search(text) for text in values):
+            return True
+    return False
 
 
 def match_message(row: dict[str, Any]) -> str | None:
@@ -41,9 +124,19 @@ def match_message(row: dict[str, Any]) -> str | None:
     for field in ("upstream_error_message", "error_message", "error_body", "upstream_error_detail"):
         if wrapped and field == "error_message" and row.get("stream") is not True:
             continue
+        if is_local_throttle({field: row.get(field)}):
+            continue
         found = recorded_message(row.get(field), plain=field.endswith("_message"))
         if found:
             return found
+    events = row.get("upstream_errors")
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict) or is_local_throttle(event):
+                continue
+            found = recorded_message(event, plain=True)
+            if found:
+                return found
     return None
 
 
@@ -57,11 +150,57 @@ def gateway_capacity_sql(alias: str = "e") -> str:
                       + alias + "." + field + r''' FROM '^\s*\{[^{}]*"response"\s*:\s*\{[^{}]*"error"\s*:\s*\{[^{}]*"message"\s*:\s*"([^"]*)"') END''')
     choices = ",".join("'" + normalize(m).replace("'", "''") + "'" for m in MESSAGES)
     matches = [f"regexp_replace(regexp_replace(lower(btrim({field})), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ({choices})" for field in fields]
+    event_fields = ["event->>'message'", "event->>'error_message'", "event->'error'->>'message'", "event->'response'->'error'->>'message'"]
+    event_matches = [f"regexp_replace(regexp_replace(lower(btrim({field})), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ({choices})" for field in event_fields]
+    matches.append("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(" + alias
+                   + ")->'upstream_errors')='array' THEN to_jsonb(" + alias + ")->'upstream_errors' ELSE '[]'::jsonb END) event WHERE "
+                   + " OR ".join(event_matches) + ")")
     return (f"({alias}.account_id IS NOT NULL "
             f"AND {alias}.error_owner='platform' AND {alias}.error_phase='internal' AND {alias}.error_source='gateway' "
             f"AND EXISTS (SELECT 1 FROM accounts evidence_account WHERE evidence_account.id={alias}.account_id "
             "AND evidence_account.platform='openai' AND evidence_account.type IN ('oauth','apikey')) AND (" + " OR ".join(matches) + "))")
 
 
-ERROR_WHERE = "(e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner='provider') OR " + gateway_capacity_sql()
-ERROR_WHERE = "(" + ERROR_WHERE + ")"
+def local_throttle_sql(alias: str = "e") -> str:
+    """SQL predicate matching only structured local limiter messages."""
+    fields = [
+        f"CASE WHEN {alias}.upstream_error_message !~ '^\\s*\\{{' THEN {alias}.upstream_error_message END",
+        f"CASE WHEN {alias}.error_message !~ '^\\s*\\{{' THEN {alias}.error_message END",
+    ]
+    for field in ("error_body", "upstream_error_detail"):
+        fields.append("substring(" + alias + "." + field + r''' FROM '^\s*\{\s*"error"\s*:\s*\{[^{}]*"message"\s*:\s*"([^"]*)"')''')
+        fields.append("CASE WHEN " + alias + "." + field + r''' ~ '^\s*\{[^{}]*"type"\s*:\s*"response\.(failed|incomplete)"' THEN substring('''
+                      + alias + "." + field + r''' FROM '^\s*\{[^{}]*"response"\s*:\s*\{[^{}]*"error"\s*:\s*\{[^{}]*"message"\s*:\s*"([^"]*)"') END''')
+    patterns = (
+        r"您\s*已\s*(?:达到|超过)\s*请求(?:数|数量)\s*限制[^\n]{0,120}(?:1\s*分钟内|每\s*(?:1\s*)?分钟)\s*(?:最多|至多)?\s*请求\s*[0-9]+\s*次",
+        r"you\s*(?:have\s*)?(?:reached|exceeded)\s*(?:the\s*)?(?:request\s*)?(?:rate\s*)?limit[^\n]{0,120}[0-9]+\s*(?:requests?|reqs?)\s*(?:per|/|a)\s*minute",
+        r"(?:request\s*(?:rate\s*)?limit|maximum\s+(?:number\s+of\s+)?requests?|requests?\s*(?:rate\s*)?limit)[^\n]{0,120}(?:maximum\s*)?[0-9]+\s*(?:requests?|reqs?)\s*(?:per|/|a)\s*minute",
+    )
+    local_direct = "(" + " OR ".join(
+        f"{field} ~* '{pattern.replace(chr(39), chr(39) * 2)}'" for field in fields for pattern in patterns
+    ) + ")"
+    event_fields = ["event->>'message'", "event->>'error_message'", "event->'error'->>'message'", "event->'response'->'error'->>'message'"]
+    event_match = " OR ".join(
+        f"{field} ~* '{pattern.replace(chr(39), chr(39) * 2)}'" for field in event_fields for pattern in patterns
+    )
+    local_array = ("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(" + alias
+             + ")->'upstream_errors')='array' THEN to_jsonb(" + alias + ")->'upstream_errors' ELSE '[]'::jsonb END) event WHERE "
+             + event_match + ")")
+    local = "(" + local_direct + " OR " + local_array + ")"
+    choices = ",".join("'" + normalize(m).replace("'", "''") + "'" for m in MESSAGES)
+    capacity_direct = "(" + " OR ".join(
+        f"regexp_replace(regexp_replace(lower(btrim({field})), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ({choices})"
+        for field in fields
+    ) + ")"
+    capacity_array = ("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(" + alias
+                      + ")->'upstream_errors')='array' THEN to_jsonb(" + alias + ")->'upstream_errors' ELSE '[]'::jsonb END) event WHERE "
+                      + " OR ".join(
+                          f"regexp_replace(regexp_replace(lower(btrim({field})), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ({choices})"
+                          for field in event_fields
+                      ) + ")")
+    # A single log may contain multiple upstream events. Suppress a local-only
+    # record, while keeping a row that also carries a real capacity message.
+    return "(" + local + " AND NOT (" + capacity_direct + " OR " + capacity_array + "))"
+
+
+ERROR_WHERE = "((e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner='provider') OR " + gateway_capacity_sql() + ") AND NOT " + local_throttle_sql()

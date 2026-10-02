@@ -12,11 +12,17 @@ from datetime import datetime, timedelta, timezone
 from statistics import median
 from typing import Any, Callable
 
+from .error_evidence import is_local_throttle
+
 LOG = logging.getLogger(__name__)
 ERROR_CURVE = [(0, 100), (.005, 95), (.01, 90), (.03, 75), (.05, 60), (.1, 35), (.2, 0)]
 PERF_CURVE = [(.25, 0), (.5, 40), (.75, 70), (1, 85), (1.5, 95), (2, 100)]
 CAUSES = {"auth": "认证失败", "timeout": "频繁超时", "network": "连接不稳", "stream": "流式中断", "rate": "频繁限流", "upstream": "错误偏多"}
 SUPPORTED = "deleted_at IS NULL AND platform IN ('openai','grok') AND type IN ('oauth','apikey')"
+SLOW_TTFT_THRESHOLD_MS = 10_000
+SLOW_TTFT_SAMPLE_COUNT = 10
+SLOW_TTFT_MIN_COUNT = 8
+SLOW_TTFT_WINDOW = timedelta(hours=24)
 
 
 def timestamp(value: Any) -> datetime | None:
@@ -57,6 +63,8 @@ def interpolate(value: float, anchors: list[tuple[float, float]]) -> float:
 
 def failure_cause(record: dict[str, Any]) -> str | None:
     """Only explicit exclusions; a generic 429 is NOT quota exhaustion."""
+    if is_local_throttle(record):
+        return None
     code = number(record.get("upstream_status_code") or record.get("status_code"))
     text = " ".join(str(record.get(k) or "") for k in ("message", "error_message", "upstream_error_message",
         "provider_error_code", "provider_error_type", "error_type", "network_error_type", "kind")).lower()
@@ -150,6 +158,48 @@ def performance(row: dict, account: dict) -> dict | None:
         "tps": output / ((duration - first) / 1000) if output >= 32 and duration - first >= 500 else None}
 
 
+def slow_ttft_sample(row: dict, account: dict) -> dict | None:
+    """Return a valid text-stream timing sample for the fixed warning rule."""
+    if account.get("platform") != "openai" or account.get("type") not in {"oauth", "apikey"}:
+        return None
+    if row.get("stream") is not True:
+        return None
+    endpoint = str(row.get("inbound_endpoint") or "").lower()
+    model = str(row.get("upstream_model") or row.get("model") or "").strip()
+    if not model or any(number(row.get(k)) not in (None, 0) for k in
+                        ("image_count", "image_output_tokens", "video_count", "video_duration_seconds")):
+        return None
+    if any(s in (endpoint + " " + model.lower()) for s in
+           ("/audio", "/images", "/videos", "-image", "-video", "-tts", "-stt", "realtime", "whisper", "dall-e")):
+        return None
+    at = timestamp(row.get("created_at"))
+    first = number(row.get("first_token_ms"))
+    duration = number(row.get("duration_ms"))
+    output = number(row.get("output_tokens"))
+    if not at or first is None or duration is None or output is None or first <= 0 or duration <= first or output < 0:
+        return None
+    return {"account_id": account["id"], "id": int(row.get("id") or 0), "at": at,
+            "first_token_ms": first, "duration_ms": duration, "output_tokens": output}
+
+
+def slow_ttft_warning(samples: list[dict], now: datetime) -> dict | None:
+    """Evaluate the latest ten valid calls in the rolling 24-hour window."""
+    start = now - SLOW_TTFT_WINDOW
+    rows = [s for s in samples if s.get("at") and start <= s["at"] <= now]
+    rows.sort(key=lambda s: (s["at"], int(s.get("id") or 0)), reverse=True)
+    rows = rows[:SLOW_TTFT_SAMPLE_COUNT]
+    if len(rows) < SLOW_TTFT_SAMPLE_COUNT:
+        return None
+    slow_count = sum(number(row.get("first_token_ms")) is not None and row["first_token_ms"] > SLOW_TTFT_THRESHOLD_MS for row in rows)
+    latest_fast = rows[0]["first_token_ms"] <= SLOW_TTFT_THRESHOLD_MS
+    return {"kind": "slow_ttft", "sample_count": len(rows), "slow_count": slow_count,
+            "threshold_ms": SLOW_TTFT_THRESHOLD_MS,
+            "active": slow_count >= SLOW_TTFT_MIN_COUNT and not latest_fast,
+            "latest_sample_id": int(rows[0].get("id") or 0),
+            "latest_first_token_ms": rows[0]["first_token_ms"],
+            "latest_at": rows[0]["at"].isoformat()}
+
+
 def build_baselines(samples: list[dict]) -> dict:
     grouped: dict = defaultdict(lambda: defaultdict(list))
     for s in samples:
@@ -230,7 +280,7 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
               baselines: dict | None = None) -> tuple[dict[int, dict], dict]:
     live = {a["id"]: a for a in accounts if a.get("platform") in ("openai", "grok") and a.get("type") in ("oauth", "apikey") and not a.get("deleted_at")}
     start, recent = now - timedelta(days=7), now - timedelta(days=1)
-    success_by, failure_by, sample_by = defaultdict(list), defaultdict(list), defaultdict(list)
+    success_by, failure_by, sample_by, slow_by = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     seen = set()
     for row in usage:
         account = live.get(row.get("account_id"))
@@ -242,6 +292,9 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
         sample = performance(row, account)
         if sample:
             sample_by[account["id"]].append(sample)
+        slow_sample = slow_ttft_sample(row, account)
+        if slow_sample:
+            slow_by[account["id"]].append(slow_sample)
     for error in failures(errors, live, now):
         failure_by[error["account_id"]].append(error)
     if baselines is None:
@@ -295,7 +348,8 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
             "sample_status": status, "computed_at": now.isoformat(), "data_status": "fresh", "cap": cap,
             "period": {"start": start.isoformat(), "end": now.isoformat(), "recent_start": recent.isoformat()},
             "reliability": rel, "ttft": ttft, "throughput": tps, "consecutive_failures": len(consecutive),
-            "coverage": min(ttft["coverage"], tps["coverage"])}
+            "coverage": min(ttft["coverage"], tps["coverage"]),
+            "warnings": ([warning] if (warning := slow_ttft_warning(slow_by[account_id], now)) and warning["active"] else [])}
     return output, baselines
 
 
@@ -376,13 +430,15 @@ class QualityCache:
             result = {}
             for account_id in account_ids:
                 stored = self._results.get(account_id, {"account_id": account_id, "score": None, "grade": "yellow",
-                    "reasons": ["计算中"], "sample_status": "pending", "computed_at": None})
-                fields = ("score", "grade", "reasons", "sample_status", "computed_at", "data_status")
+                    "reasons": ["计算中"], "sample_status": "pending", "computed_at": None, "warnings": []})
+                fields = ("score", "grade", "reasons", "sample_status", "computed_at", "data_status", "warnings")
                 value = copy.deepcopy(stored if detail else {k: stored.get(k) for k in fields})
                 value["data_status"] = status
                 if status == "stale" or self._failed and value["sample_status"] == "pending":
                     value.update(score=None, grade="yellow", reasons=["数据过期" if status == "stale" else "计算延迟"])
+                if status != "fresh":
+                    value["warnings"] = []
                 if not detail:
-                    value = {k: value.get(k) for k in ("score", "grade", "reasons", "sample_status", "computed_at", "data_status")}
+                    value = {k: value.get(k) for k in ("score", "grade", "reasons", "sample_status", "computed_at", "data_status", "warnings")}
                 result[account_id] = value
             return result

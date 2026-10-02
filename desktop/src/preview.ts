@@ -180,6 +180,7 @@ for (const account of accounts) {
     sample_status: account.type === "apikey" ? "insufficient" : "complete",
     data_status: "fresh",
     computed_at: now,
+    warnings: account.id === 201 ? [{ kind: "slow_ttft", sample_count: 10, slow_count: 8, threshold_ms: 10000, active: true, latest_first_token_ms: 12400 }] : [],
   };
   account.usage = {
     branch:
