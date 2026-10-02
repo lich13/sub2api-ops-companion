@@ -22,6 +22,7 @@ from .quota_snapshot import latest_openai_result
 from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_result,
                           oauth_windows_by_key, parse_iso_datetime, percent_or_none,
                           required_oauth_window_keys)
+from .error_evidence import is_local_throttle
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
           "releasing", "recovered", "manual", "blocked", "closed"}
@@ -66,15 +67,37 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
         return None
     # status_code alone can represent client-key throttling. Only an actual
     # upstream 429 associated with this still-active account block is evidence.
-    return db.fetch_one("""
-        SELECT e.id,e.created_at FROM ops_error_logs e
+    params = {"id": int(row["id"]), "start": start - timedelta(seconds=5), "now": now}
+    enriched = """
+        SELECT e.id,e.created_at,
+               to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,
+               to_jsonb(e)->>'error_message' AS error_message,
+               to_jsonb(e)->'error_body' AS error_body,
+               to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,
+               to_jsonb(e)->'upstream_errors' AS upstream_errors
+        FROM ops_error_logs e
         WHERE e.account_id=%(id)s AND e.upstream_status_code=429
           AND e.created_at >= %(start)s AND e.created_at <= %(now)s
           AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id=e.account_id AND u.created_at>e.created_at)
           AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
             AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
         ORDER BY e.created_at DESC,e.id DESC LIMIT 1
-    """, {"id": int(row["id"]), "start": start - timedelta(seconds=5), "now": now})
+    """
+    try:
+        candidate = db.fetch_one(enriched, params)
+    except Exception:
+        # Legacy adapters and small isolated fixtures expose only the original
+        # columns. Preserve their query semantics, then inspect fields if any.
+        candidate = db.fetch_one("""
+            SELECT e.id,e.created_at FROM ops_error_logs e
+            WHERE e.account_id=%(id)s AND e.upstream_status_code=429
+              AND e.created_at >= %(start)s AND e.created_at <= %(now)s
+              AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id=e.account_id AND u.created_at>e.created_at)
+              AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
+                AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
+            ORDER BY e.created_at DESC,e.id DESC LIMIT 1
+        """, params)
+    return None if candidate and is_local_throttle(candidate) else candidate
 
 
 def _signature(row: dict[str, Any]) -> str:

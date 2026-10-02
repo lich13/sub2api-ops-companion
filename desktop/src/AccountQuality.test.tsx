@@ -56,6 +56,7 @@ const account = (id: number, score: number | null, grade: string) =>
       sample_status: score == null ? "insufficient" : "complete",
       computed_at: "2026-09-26T08:00:00Z",
       data_status: "fresh",
+      warnings: id === 2 ? [{ kind: "slow_ttft", sample_count: 10, slow_count: 8, threshold_ms: 10000, active: true }] : [],
     },
   }) as Account;
 it("keeps priority default, sorts both ways with unknowns last, filters grades and opens read-only details", async () => {
@@ -94,6 +95,7 @@ it("keeps priority default, sorts both ways with unknowns last, filters grades a
       (x) => x.textContent,
     );
   expect(names()).toEqual(["Quality 1", "Quality 2", "Quality 3"]);
+  expect(container.querySelector('[aria-label="首字慢"]')).toBeTruthy();
   const sort = () =>
     [...container.querySelectorAll("th button")].find((x) =>
       x.textContent?.startsWith("质量"),

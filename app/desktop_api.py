@@ -40,6 +40,7 @@ PREFIX = "/api/desktop/v1"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
  e.requested_model, e.upstream_model, e.status_code, e.upstream_status_code,
  e.provider_error_code, e.error_type, e.error_message, e.upstream_error_message,
+ to_jsonb(e)->'upstream_errors' AS upstream_errors,
  e.request_id, e.resolved, a.name AS account_name, g.name AS group_name"""
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw, Timer, X } from "lucide-react";
 import { api } from "./bridge";
 import { useBackAction } from "./mobile";
 import {
@@ -43,8 +43,16 @@ export function QualityBadge({
       {value?.data_status === "delayed" && (
         <span aria-label="计算延迟">⌛</span>
       )}
+      {value?.warnings?.some((warning) => warning.kind === "slow_ttft" && warning.active) && (
+        <span className="quality-warning" aria-label="首字慢" title="首字慢"><Timer size={12} aria-hidden="true" /></span>
+      )}
     </button>
   );
+}
+
+export function SlowWarningBadge({ value, compact = false }: { value?: Quality; compact?: boolean }) {
+  if (!value?.warnings?.some((warning) => warning.kind === "slow_ttft" && warning.active)) return null;
+  return <span className={`slow-warning-badge${compact ? " compact" : ""}`} aria-label="首字慢" title="首字慢"><Timer size={compact ? 12 : 13} aria-hidden="true" />{!compact && "首字慢"}</span>;
 }
 
 function Metric({
@@ -208,6 +216,7 @@ export default function QualityDialog({
         <div className={`quality-headline ${quality?.grade ?? "yellow"}`}>
           <b>{quality?.score ?? "—"}</b>
           <span>{quality?.reasons.join(" · ") ?? "计算中"}</span>
+          <SlowWarningBadge value={quality} />
         </div>
         {quality && quality.data_status !== "fresh" && (
           <p>

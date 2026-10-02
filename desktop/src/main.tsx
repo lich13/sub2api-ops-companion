@@ -55,7 +55,7 @@ import TestDialog from "./TestDialog";
 import ModelTestDialog from "./ModelTestDialog";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
-import QualityDialog, { QualityBadge } from "./AccountQuality";
+import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountModelProfiles from "./AccountModelProfiles";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
@@ -451,7 +451,7 @@ export default function App() {
                     <div className="compact-identity">
                       <strong title={call.account_name}>
                         {call.account_name}
-                        {a && <DegradationBadge account={a} compact />}
+                        {a && <><DegradationBadge account={a} compact /><SlowWarningBadge value={a.quality} compact /></>}
                       </strong>
                       {a && <MiniUsage account={a} />}
                     </div>
