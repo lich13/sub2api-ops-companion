@@ -203,6 +203,9 @@ class BarkPayloadTests(unittest.TestCase):
                 self.assertNotIn("top-secret-token", body)
 
     def test_error_sanitization_covers_common_secret_shapes_and_utf8_limit(self) -> None:
+        private_key_fixture = (
+            "-----BEGIN " + "PRIVATE KEY----- secret-material -----END " + "PRIVATE KEY-----"
+        )
         raw = "\n".join(
             (
                 '{"api_key":"sk-live-json-secret","other":"ok"}',
@@ -214,7 +217,7 @@ class BarkPayloadTests(unittest.TestCase):
                 "Incorrect API key provided: sk-live-test",
                 "token is narrative-token-secret",
                 "unlabelled sk-proj-test",
-                "-----BEGIN TEST KEY----- secret-material -----END PRIVATE KEY-----",
+                private_key_fixture,
             )
         )
         cleaned = sanitize_error_text(raw, 400)
