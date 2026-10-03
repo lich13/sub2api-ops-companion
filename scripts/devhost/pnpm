@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Select pnpm from the actual repository, including nested frontend folders."""
+import json
+import os
+from pathlib import Path
+import sys
+root = Path(os.environ.get('DEVHOST_ROOT', '/workspace'))
+base = root / 'devhost'
+versions = json.loads((base / 'lib/toolchains.lock.json').read_text())['pnpm']
+repo = os.environ.get('DEVHOST_REPO', '')
+try:
+    repo = Path.cwd().relative_to(root / 'repos').parts[0]
+except (ValueError, IndexError):
+    pass
+if repo == 'nexushub':
+    repo = 'NexusHub'
+version = versions.get(repo, '11.6.0')
+corepack = str(base / 'toolchains/corepack/bin/corepack')
+os.execv(corepack, [corepack, 'pnpm@' + version, *sys.argv[1:]])

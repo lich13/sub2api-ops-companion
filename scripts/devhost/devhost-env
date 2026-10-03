@@ -1,0 +1,46 @@
+#!/bin/sh
+# Source this for interactive work; devhost-run sets the same environment.
+DEVHOST_ROOT=${DEVHOST_ROOT:-/workspace}
+DEVHOST_HOME=$DEVHOST_ROOT/devhost
+DEVHOST_CACHE=$DEVHOST_ROOT/cache
+if [ -z "${DEVHOST_REPO:-}" ]; then
+    case "$PWD/" in
+        "$DEVHOST_ROOT/repos/"*) DEVHOST_REPO=${PWD#"$DEVHOST_ROOT/repos/"}; DEVHOST_REPO=${DEVHOST_REPO%%/*} ;;
+    esac
+fi
+case "${DEVHOST_REPO:-}" in
+    nexushub|NexusHub) DEVHOST_REPO=NexusHub; DEVHOST_PNPM_VERSION=11.0.8 ;;
+    lich13studio|sub2api-ops-companion) DEVHOST_PNPM_VERSION=10.27.0 ;;
+    lich13-switch|loon-mihomo-rule-sync) DEVHOST_PNPM_VERSION=11.6.0 ;;
+    '') DEVHOST_PNPM_VERSION=11.6.0 ;;
+    *) printf '%s\n' 'Unknown devhost repository' >&2; return 64 ;;
+esac
+export DEVHOST_ROOT DEVHOST_HOME DEVHOST_CACHE DEVHOST_REPO DEVHOST_PNPM_VERSION
+export ANDROID_HOME="$DEVHOST_HOME/toolchains/android-sdk" ANDROID_SDK_ROOT="$DEVHOST_HOME/toolchains/android-sdk"
+export NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export GRADLE_USER_HOME="$DEVHOST_CACHE/gradle" CARGO_HOME="$DEVHOST_CACHE/cargo-home"
+export CARGO_TARGET_DIR="$DEVHOST_CACHE/cargo-target/${DEVHOST_REPO:-tools}"
+export RUSTUP_HOME="$DEVHOST_HOME/toolchains/rustup" RUSTUP_TOOLCHAIN=1.94.1 CARGO_BUILD_JOBS=2
+export PIP_CACHE_DIR="$DEVHOST_CACHE/pip" UV_CACHE_DIR="$DEVHOST_CACHE/uv"
+export UV_PYTHON_INSTALL_DIR="$DEVHOST_HOME/toolchains/python"
+export GOCACHE="$DEVHOST_CACHE/go-build" GOMODCACHE="$DEVHOST_CACHE/go-mod"
+export npm_config_cache="$DEVHOST_CACHE/npm" npm_config_store_dir="$DEVHOST_CACHE/pnpm-store"
+export COREPACK_HOME="$DEVHOST_CACHE/corepack"
+export VSCODE_CLI_DATA_DIR="$HOME/.local/share/devhost/vscode-cli"
+case " ${GRADLE_OPTS:-} " in *' -Dorg.gradle.daemon=false '*) ;; *) GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false" ;; esac
+case " ${GRADLE_OPTS:-} " in *' -Dorg.gradle.workers.max=2 '*) ;; *) GRADLE_OPTS="$GRADLE_OPTS -Dorg.gradle.workers.max=2" ;; esac
+export GRADLE_OPTS
+for devhost_env_bin in "$ANDROID_HOME/platform-tools" "$ANDROID_HOME/cmdline-tools/latest/bin" "$CARGO_HOME/bin" "$DEVHOST_HOME/toolchains/corepack/bin" "$DEVHOST_HOME/toolchains/uv" "$DEVHOST_HOME/toolchains/go/bin" "$DEVHOST_HOME/toolchains/node/bin" "$DEVHOST_HOME/bin" "$JAVA_HOME/bin"; do
+    case ":$PATH:" in *":$devhost_env_bin:"*) ;; *) PATH="$devhost_env_bin:$PATH" ;; esac
+done
+if [ -n "${DEVHOST_REPO:-}" ]; then
+    UV_PROJECT_ENVIRONMENT="$DEVHOST_HOME/venvs/$DEVHOST_REPO"
+    export UV_PROJECT_ENVIRONMENT
+    if [ -x "$UV_PROJECT_ENVIRONMENT/bin/python" ]; then
+        VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT
+        export VIRTUAL_ENV
+        case ":$PATH:" in *":$VIRTUAL_ENV/bin:"*) ;; *) PATH="$VIRTUAL_ENV/bin:$PATH" ;; esac
+    fi
+fi
+export PATH DEVHOST_ENV_LOADED=1
+unset devhost_env_bin

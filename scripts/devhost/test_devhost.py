@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -42,8 +43,8 @@ class GuardTests(unittest.TestCase):
     def clean(self, apply=True):
         return self.host.clean('preflight', apply)
 
-    def repo(self):
-        base = self.root / 'repos/sub2api-ops-companion'
+    def repo(self, name='sub2api-ops-companion'):
+        base = self.root / 'repos' / name
         (base / '.git').mkdir(parents=True)
         return base
 
@@ -56,15 +57,19 @@ class GuardTests(unittest.TestCase):
 
     def test_old_targets_deleted_but_recent_children_preserved(self):
         old = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        nexus_old = self.file('cache/cargo-target/NexusHub/debug/fixture')
+        go_mod_old = self.file('cache/go-mod/fixture')
         fresh = self.file('cache/cargo-target/lich13-switch/debug/fixture', 1)
         self.clean()
         self.assertFalse(old.exists())
+        self.assertFalse(nexus_old.exists())
+        self.assertFalse(go_mod_old.exists())
         self.assertTrue(fresh.exists())
 
     def test_protected_data_survives_pressure(self):
         files = [self.file(p) for p in (
             'repos/sub2api-ops-companion/.git/fixture', 'repos/NexusHub/target/fixture',
-            'cache/cargo-target/NexusHub/debug/fixture', 'cache/cargo-home/credentials.toml',
+            'cache/cargo-home/credentials.toml',
             'cache/cargo-home/config.toml', 'cache/cargo-home/bin/fixture',
             'cache/rustup/toolchains/fixture', 'devhost/venvs/fixture',
             'devhost/toolchains/android-sdk/licenses/fixture', 'devhost/vscode-cli/data/fixture',
@@ -127,6 +132,24 @@ class GuardTests(unittest.TestCase):
             self.clean()
         self.assertTrue(file.exists())
 
+    def test_nondumpable_ssh_session_is_not_an_unmanaged_build(self):
+        proc = self.root / 'proc'
+        pid = proc / '123456789'
+        pid.mkdir(parents=True)
+        (pid / 'comm').write_text('sshd-session\n')
+        (pid / 'cmdline').write_bytes(b'sshd-session: fixture@notty\0')
+        original_resolve = Path.resolve
+        def resolve(path, *args, **kwargs):
+            if path == pid / 'exe': raise PermissionError()
+            return original_resolve(path, *args, **kwargs)
+        with patch.object(d, 'Path', side_effect=lambda p: proc if p == '/proc' else Path(p)), \
+             patch.object(Path, 'resolve', resolve):
+            self.assertEqual(self.host.unmanaged_processes(), [])
+            (pid / 'comm').write_text('cargo\n')
+            (pid / 'cmdline').write_bytes(b'cargo\0build\0')
+            with self.assertRaises(d.Refused):
+                self.host.unmanaged_processes()
+
     def test_low_space_does_not_start_child(self):
         self.repo()
         self.metrics['free_bytes'] = 39*d.GIB
@@ -188,13 +211,87 @@ class GuardTests(unittest.TestCase):
     def test_env_preserves_rustup_and_tunnel_auth_location(self):
         env = self.host.environment('lich13studio')
         self.assertEqual(env['CARGO_TARGET_DIR'],str(self.root/'cache/cargo-target/lich13studio'))
-        self.assertEqual(env['RUSTUP_HOME'],str(self.root/'cache/rustup'))
+        self.assertEqual(env['RUSTUP_HOME'],str(self.root/'devhost/toolchains/rustup'))
+        self.assertEqual(env['GOMODCACHE'],str(self.root/'cache/go-mod'))
         self.assertIn(str(self.root/'cache/cargo-home/bin'),env['PATH'])
-        self.assertEqual(env['VSCODE_CLI_DATA_DIR'],str(self.host.home/'vscode-cli/data'))
+        self.assertEqual(env['VSCODE_CLI_DATA_DIR'],str(Path.home()/'.local/share/devhost/vscode-cli'))
 
-    def test_nexushub_not_enrolled(self):
-        with self.assertRaises(d.Refused):
-            self.host.run('NexusHub',['fixture'])
+    def test_nexushub_is_enrolled(self):
+        self.repo('NexusHub')
+        with patch.object(self.host, 'preflight_locked', return_value={}), \
+             patch.object(self.host, 'clean_locked', return_value={'cache_bytes': 0}), \
+             patch.object(d.subprocess, 'Popen') as popen:
+            popen.return_value.poll.return_value = 0
+            popen.return_value.wait.return_value = 0
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = self.host.run('NexusHub', ['fixture'])
+        self.assertEqual(code, 0)
+        popen.assert_called_once()
+
+    def test_up_checks_transport_without_reinstalling_android(self):
+        with patch.object(self.host, 'ensure_android_locked', side_effect=AssertionError('bootstrap only')), \
+             patch.object(self.host, 'preflight_locked', return_value={}), \
+             patch.object(d.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.host.up()
+        self.assertEqual(code, 0)
+        self.assertIn('"tunnel_started": false', output.getvalue())
+
+    def test_up_propagates_transport_failure(self):
+        with patch.object(self.host, 'preflight_locked') as preflight, \
+             patch.object(d.subprocess, 'run', return_value=subprocess.CompletedProcess([], 69)):
+            self.assertEqual(self.host.up(), 69)
+        preflight.assert_not_called()
+
+    def test_nexushub_lowercase_directory_is_reused(self):
+        self.repo('nexushub')
+        self.assertEqual(self.host.repo_path('NexusHub'), self.root / 'repos/nexushub')
+
+    def test_tunnel_fallback_is_explicit(self):
+        self.host.home.joinpath('bin').mkdir(parents=True)
+        self.host.home.joinpath('logs').mkdir(parents=True)
+        code_path = self.host.home / 'bin/code'
+        code_path.write_text('#!/bin/sh\n')
+        code_path.chmod(0o755)
+        with patch.object(self.host, 'ensure_vscode_cli') as ensure, \
+             patch.object(self.host, 'tunnels', side_effect=[[], [321]]), \
+             patch.object(d.subprocess, 'Popen') as popen:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.host.tunnel_fallback()
+        self.assertEqual(code, 0)
+        ensure.assert_called_once()
+        popen.assert_called_once()
+        self.assertIn('"fallback": true', output.getvalue())
+
+    def test_sourceable_env_includes_go_module_cache(self):
+        env_script = Path(__file__).with_name('devhost-env')
+        result = subprocess.run(
+            ['sh', '-c', '. "$1"; . "$1"; printf "%s\\n%s\\n%s\\n%s\\n" "$DEVHOST_ROOT" "$GOMODCACHE" "$DEVHOST_ENV_LOADED" "$GRADLE_OPTS"',
+             'devhost-env-test', str(env_script)],
+            env={**os.environ, 'DEVHOST_ROOT': str(self.root), 'GRADLE_OPTS': ''},
+            check=True, capture_output=True, text=True)
+        values = result.stdout.splitlines()
+        self.assertEqual(values[:3], [str(self.root), str(self.root / 'cache/go-mod'), '1'])
+        self.assertEqual(values[3].count('-Dorg.gradle.daemon=false'), 1)
+        self.assertEqual(values[3].count('-Dorg.gradle.workers.max=2'), 1)
+
+    def test_sourceable_env_selects_repo_target_dir(self):
+        env_script = Path(__file__).with_name('devhost-env')
+        result = subprocess.run(
+            ['sh', '-c', '. "$1"; printf "%s\\n" "$CARGO_TARGET_DIR"',
+             'devhost-env-test', str(env_script)],
+            env={**os.environ, 'DEVHOST_ROOT': str(self.root),
+                 'DEVHOST_REPO': 'NexusHub', 'CARGO_TARGET_DIR': ''},
+            check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout.strip(), str(self.root / 'cache/cargo-target/NexusHub'))
+
+    def test_environment_separates_repo_targets_and_venvs(self):
+        a = self.host.environment('NexusHub')
+        b = self.host.environment('lich13studio')
+        self.assertNotEqual(a['CARGO_TARGET_DIR'], b['CARGO_TARGET_DIR'])
+        self.assertNotEqual(a['UV_PROJECT_ENVIRONMENT'], b['UV_PROJECT_ENVIRONMENT'])
+        self.assertEqual(a['DEVHOST_PNPM_VERSION'], '11.0.8')
+        self.assertEqual(b['DEVHOST_PNPM_VERSION'], '10.27.0')
 
     def test_fresh_log_retained_old_log_removed(self):
         old = self.file('devhost/logs/old.log')
