@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+umask 077
+[ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || exit 64
+sudo -n true
+DEVHOST_ROOT=${DEVHOST_ROOT:-/workspace}
+DEVHOST_HOME=${DEVHOST_HOME:-$DEVHOST_ROOT/devhost}
+transport_only=0
+if [ "${1:-}" = --transport-only ]; then transport_only=1; shift; fi
+sudo -n install -D -m 0755 "$DEVHOST_HOME/lib/transport.py" /usr/local/libexec/devhost-transport.py
+sudo -n install -D -m 0600 "$DEVHOST_HOME/lib/toolchains.lock.json" /etc/devhost/toolchains.lock.json
+sudo -n python3 -B /usr/local/libexec/devhost-transport.py configure --user "$(id -un)" "$@"
+if [ "$transport_only" = 0 ]; then
+    python3 -B "$DEVHOST_HOME/lib/toolchains.py"
+    "$DEVHOST_HOME/bin/android-sdk-ensure"
+fi
+"$DEVHOST_HOME/bin/devhost-up"

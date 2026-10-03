@@ -19,6 +19,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
+      - run: python -B -m unittest discover -s scripts/devhost -p 'test_*.py' -q
       - run: python -m compileall -q app tests
       - run: docker build -t sub2ops-desktop-check .
   macos:

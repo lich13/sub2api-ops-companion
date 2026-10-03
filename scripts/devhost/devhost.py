@@ -29,9 +29,12 @@ import urllib.request
 
 GIB = 1024 ** 3
 DAY = 86400
-REPOS = ('sub2api-ops-companion', 'lich13studio', 'lich13-switch', 'loon-mihomo-rule-sync')
+REPOS = ('NexusHub', 'sub2api-ops-companion', 'lich13studio', 'lich13-switch',
+         'loon-mihomo-rule-sync')
+PNPM = {'NexusHub': '11.0.8', 'lich13-switch': '11.6.0', 'loon-mihomo-rule-sync': '11.6.0',
+        'lich13studio': '10.27.0', 'sub2api-ops-companion': '10.27.0'}
 ENTRYPOINTS = ('devhost-clean', 'devhost-run', 'devhost-up', 'devhost-status',
-               'android-sdk-ensure', 'devhost-sdk-prune')
+               'android-sdk-ensure', 'devhost-sdk-prune', 'devhost-tunnel-fallback')
 MIN_FREE = 40 * GIB
 EMERGENCY_FREE = 30 * GIB
 STOP_FREE = 15 * GIB
@@ -169,17 +172,36 @@ class Host:
             except (FileNotFoundError, ProcessLookupError):
                 continue
             except PermissionError:
-                if pid.exists() and pid.stat().st_uid == os.geteuid():
-                    raise Refused('Cannot inspect an owned process; cleanup refused.')
+                try:
+                    if pid.stat().st_uid == os.geteuid():
+                        # OpenSSH's session deliberately stays non-dumpable after
+                        # changing UID. It is not a compiler/cache writer.
+                        comm = (pid / 'comm').read_text().strip()
+                        title = (pid / 'cmdline').read_bytes().split(b'\0', 1)[0]
+                        if comm == 'sshd-session' and title.startswith(b'sshd-session: '):
+                            continue
+                        raise Refused('Cannot inspect an owned process; cleanup refused.')
+                except (FileNotFoundError, ProcessLookupError):
+                    pass
                 continue
         return active
 
     def cache_bytes(self):
         paths = [self.cache]
         for repo in REPOS:
-            base = self.root / 'repos' / repo
-            paths.extend([base / 'node_modules', base / 'desktop/node_modules'])
+            base = self.repo_path(repo)
+            paths.extend(base / p for p in ('node_modules', 'desktop/node_modules', 'webui/node_modules'))
         return sum(tree_info(p)[0] for p in paths if p.exists())
+
+    def repo_path(self, repo):
+        canonical = self.root / 'repos' / repo
+        if repo == 'NexusHub':
+            lower = self.root / 'repos/nexushub'
+            if lower.exists():
+                if canonical.exists() and not os.path.samefile(lower, canonical):
+                    raise Refused('Ambiguous NexusHub directories; nothing moved.', 64)
+                return lower
+        return canonical
 
     def event(self, event, **fields):
         log = self.home / 'logs/maintenance.jsonl'
@@ -203,13 +225,14 @@ class Host:
         targets = self.cache / 'cargo-target'
         for repo in REPOS:
             items.append((targets / repo, 14, 'target', repo))
+        items.append((targets / 'tools', 14, 'target', None))
         # Never delete CARGO_HOME, credentials.toml, config.toml or bin.
         registry = self.cache / 'cargo-home/registry'
         for kind in ('cache', 'src', 'index'):
             parent = registry / kind
             if parent.is_dir() and not parent.is_symlink():
                 items.extend((p, 30, 'download-cache', None) for p in parent.iterdir())
-        for rel in ('npm/_cacache', 'npm/_logs', 'pip', 'uv', 'go-build'):
+        for rel in ('npm/_cacache', 'npm/_logs', 'pip', 'uv', 'go-build', 'go-mod'):
             items.append((self.cache / rel, 30, 'download-cache', None))
         gradle = self.cache / 'gradle'
         caches = gradle / 'caches'
@@ -340,15 +363,18 @@ class Host:
         values = {'ANDROID_HOME': sdk, 'ANDROID_SDK_ROOT': sdk,
                   'NDK_HOME': sdk / 'ndk/28.2.13676358', 'GRADLE_USER_HOME': self.cache / 'gradle',
                   'CARGO_HOME': self.cache / 'cargo-home', 'PIP_CACHE_DIR': self.cache / 'pip',
-                  'RUSTUP_HOME': self.cache / 'rustup',
+                  'RUSTUP_HOME': self.home / 'toolchains/rustup',
                   'UV_CACHE_DIR': self.cache / 'uv', 'GOCACHE': self.cache / 'go-build',
+                  'GOMODCACHE': self.cache / 'go-mod',
                   'npm_config_cache': self.cache / 'npm',
                   'npm_config_store_dir': self.cache / 'pnpm-store'}
         env.update({k: str(v) for k, v in values.items()})
         java = Path('/usr/lib/jvm/java-21-openjdk-amd64')
         if java.exists():
             env['JAVA_HOME'] = str(java)
-        paths = [self.home / 'bin', self.home / 'node/bin', self.home / 'npm/bin',
+        paths = [self.home / 'bin', self.home / 'toolchains/node/bin',
+                 self.home / 'toolchains/go/bin', self.home / 'toolchains/uv',
+                 self.home / 'toolchains/corepack/bin',
                  self.cache / 'cargo-home/bin', Path.home() / '.cargo/bin',
                  sdk / 'cmdline-tools/latest/bin', sdk / 'platform-tools']
         if java.exists():
@@ -358,15 +384,26 @@ class Host:
                               ' -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2').strip()
         env['CARGO_BUILD_JOBS'] = '2'
         env['RUSTUP_TOOLCHAIN'] = '1.94.1'
-        env['VSCODE_CLI_DATA_DIR'] = str(self.home / 'vscode-cli/data')
+        env['VSCODE_CLI_DATA_DIR'] = str(Path.home() / '.local/share/devhost/vscode-cli')
+        env['COREPACK_HOME'] = str(self.cache / 'corepack')
+        env['UV_PYTHON_INSTALL_DIR'] = str(self.home / 'toolchains/python')
+        env['DEVHOST_ROOT'] = str(self.root)
+        env['DEVHOST_HOME'] = str(self.home)
         if repo:
+            env['DEVHOST_REPO'] = repo
+            env['DEVHOST_PNPM_VERSION'] = PNPM[repo]
+            venv = self.home / 'venvs' / repo
+            env['UV_PROJECT_ENVIRONMENT'] = str(venv)
+            if (venv / 'bin/python').exists():
+                env['VIRTUAL_ENV'] = str(venv)
+                env['PATH'] = str(venv / 'bin') + os.pathsep + env['PATH']
             env['CARGO_TARGET_DIR'] = str(self.cache / 'cargo-target' / repo)
         return env
 
     def run(self, repo, command, subdir='.'):
         if repo not in REPOS:
-            raise Refused('Repository is not enrolled (NexusHub is excluded).', 64)
-        base = self.root / 'repos' / repo
+            raise Refused('Repository is not enrolled.', 64)
+        base = self.repo_path(repo)
         cwd = self.safe(base / subdir, [base])
         if not cwd.is_dir() or not (base / '.git').exists():
             raise Refused('Repository or working directory is missing.', 64)
@@ -434,7 +471,9 @@ class Host:
                          self.cache / 'gradle/init.d', self.root / 'artifacts/tmp'):
                 self.safe(path, [self.home, self.cache, self.root / 'artifacts'])
                 path.mkdir(parents=True, exist_ok=True)
-            for name in ('devhost.py', 'android-setup.sh', 'android-packages.txt'):
+            for name in ('devhost.py', 'android-setup.sh', 'android-packages.txt',
+                         'devhost-bootstrap', 'devhost-env', 'transport.py', 'toolchains.py',
+                         'toolchains.lock.json', 'pnpm'):
                 dest = self.home / 'lib' / name
                 self.safe(dest, [self.home / 'lib'])
                 data = (source / name).read_bytes()
@@ -454,22 +493,23 @@ class Host:
                     out.write(text)
                 os.chmod(temp, 0o755)
                 os.replace(temp, dest)
+            for name in ('devhost-bootstrap', 'devhost-env', 'pnpm'):
+                dest = self.home / 'bin' / name
+                if (name == 'pnpm' and dest.is_symlink() and
+                        dest.resolve() == self.home / 'lib/node_modules/pnpm/bin/pnpm.cjs'):
+                    dest.unlink()
+                self.safe(dest, [self.home / 'bin'])
+                fd, temp = tempfile.mkstemp(prefix='.entry-', dir=dest.parent)
+                with os.fdopen(fd, 'wb') as out:
+                    out.write((source / name).read_bytes())
+                os.chmod(temp, 0o755)
+                os.replace(temp, dest)
             dest = self.cache / 'gradle/init.d/devhost-cache.gradle'
             self.safe(dest, [self.cache / 'gradle/init.d'])
             shutil.copyfile(source / 'cache-settings.init.gradle', dest)
             env_path = self.home / 'env'
             self.safe(env_path, [self.home])
-            env = self.environment()
-            exported = ('ANDROID_HOME', 'ANDROID_SDK_ROOT', 'NDK_HOME', 'GRADLE_USER_HOME',
-                        'CARGO_HOME', 'RUSTUP_HOME', 'PIP_CACHE_DIR', 'UV_CACHE_DIR', 'GOCACHE',
-                        'npm_config_cache', 'npm_config_store_dir', 'VSCODE_CLI_DATA_DIR',
-                        'RUSTUP_TOOLCHAIN', 'CARGO_BUILD_JOBS')
-            contents = '# Managed devhost paths; no credentials. Run builds via devhost-run.\n'
-            contents += ''.join('export '+key+'='+shlex.quote(env[key])+'\n' for key in exported)
-            contents += 'export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64\n'
-            contents += ('export PATH="/usr/lib/jvm/java-21-openjdk-amd64/bin:/workspace/devhost/bin:'
-                         '/workspace/cache/cargo-home/bin:/workspace/devhost/node/bin:'
-                         '/workspace/devhost/npm/bin:$PATH"\n')
+            contents = '. ' + shlex.quote(str(self.home / 'bin/devhost-env')) + '\n'
             fd, temp = tempfile.mkstemp(prefix='.env-', dir=env_path.parent)
             with os.fdopen(fd, 'w') as out:
                 out.write(contents)
@@ -518,7 +558,6 @@ class Host:
         cli_dir.mkdir(parents=True, exist_ok=True)
         # Preserve any existing auth directory contents; never delete or rewrite it.
         data_before = sorted(p.name for p in data_dir.iterdir()) if data_dir.is_dir() else []
-        data_dir.mkdir(parents=True, exist_ok=True)
 
         def link_ready():
             return (binary.is_file() and not binary.is_symlink() and
@@ -607,7 +646,7 @@ class Host:
                 link_tmp.unlink()
             os.symlink(binary, link_tmp)
             os.replace(link_tmp, link)
-            data_after = sorted(p.name for p in data_dir.iterdir())
+            data_after = sorted(p.name for p in data_dir.iterdir()) if data_dir.is_dir() else []
             if data_before != data_after and set(data_before) - set(data_after):
                 raise Refused('VS Code CLI auth data directory was altered during install.', 69)
             return {'path': str(binary.relative_to(self.root)), 'downloaded': True,
@@ -634,10 +673,26 @@ class Host:
         return result
 
     def up(self):
-        # A license handoff must not prevent accessing the existing tunnel.
+        """Prepare the host for the SSH-first workflow.
+
+        VS Code tunnel access is deliberately opt-in and lives in
+        :meth:`tunnel_fallback`.  Keeping it out of the default startup path
+        means an SSH session can be used without downloading or starting a
+        second remote-control service.
+        """
+        result = subprocess.run(['sudo', '-n', 'python3', '-B',
+                                 '/usr/local/libexec/devhost-transport.py', 'up'])
+        if result.returncode:
+            return result.returncode
+        with self.lock():
+            self.preflight_locked()
+        print(json.dumps({'environment_checked': True, 'tunnel_started': False}))
+        return 0
+
+    def tunnel_fallback(self):
+        """Start the explicitly requested VS Code tunnel fallback."""
         with self.lock('startup'):
             with self.lock():
-                android_code = self.ensure_android_locked()
                 self.ensure_vscode_cli()
             code = self.home / 'bin/code'
             if not code.is_file():
@@ -649,24 +704,43 @@ class Host:
                 log = self.home / 'logs/tunnel.log'
                 self.safe(log, [self.home / 'logs'])
                 env = self.environment()
-                env['VSCODE_CLI_DATA_DIR'] = str(self.home / 'vscode-cli/data')
+                env['VSCODE_CLI_DATA_DIR'] = str(Path.home() / '.local/share/devhost/vscode-cli')
                 with log.open('ab') as output:
                     subprocess.Popen([str(code), 'tunnel', '--name', 'grok-box',
                                       '--accept-server-license-terms', '--no-sleep'],
                                      env=env, stdin=subprocess.DEVNULL, stdout=output,
                                      stderr=output, start_new_session=True)
-            print(json.dumps({'tunnel_pids': self.tunnels(), 'android_exit_code': android_code}))
-            return android_code
+            print(json.dumps({'tunnel_pids': self.tunnels(), 'fallback': True}))
+            return 0
 
     def status(self):
         # Read-only: no locks, mkdir, installers, cleanup or cache-generating tools.
         if not self.root.exists():
             return {'workspace': str(self.root), 'available': False, 'reason': 'workspace missing',
-                    'protected_repositories': ['NexusHub']}
+                    'managed_repositories': list(REPOS)}
+        transport = {'ssh_ready': False, 'reason': 'transport not installed'}
+        if Path('/usr/local/libexec/devhost-transport.py').is_file():
+            try:
+                probe = subprocess.run(['sudo', '-n', 'python3', '-B',
+                                        '/usr/local/libexec/devhost-transport.py', 'status'],
+                                       capture_output=True, text=True, timeout=8)
+                if probe.returncode == 0:
+                    transport = json.loads(probe.stdout)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                transport = {'ssh_ready': False, 'reason': 'transport probe failed'}
+        receipt = self.state / 'toolchains-installed.json'
+        versions = {}
+        if receipt.is_file():
+            versions = {key: value['version'] for key, value in json.loads(receipt.read_text()).items()
+                        if isinstance(value, dict) and 'version' in value}
         return {'workspace': str(self.root), **self.space(), 'cache_bytes': self.cache_bytes(),
+                'transport': transport, 'installed_toolchain_versions': versions,
+                'repositories_bytes': tree_info(self.root / 'repos')[0],
+                'toolchains_bytes': tree_info(self.home / 'toolchains')[0],
+                'artifacts_bytes': tree_info(self.root / 'artifacts')[0],
                 'tunnel_pids': self.tunnels(),
                 'android_receipt_present': (self.state / 'android-install.json').exists(),
-                'protected_repositories': ['NexusHub']}
+                'managed_repositories': list(REPOS)}
 
 
 def main(argv=None):
@@ -683,6 +757,7 @@ def main(argv=None):
     run.add_argument('command', nargs=argparse.REMAINDER)
     commands.add_parser('devhost-status')
     commands.add_parser('devhost-up')
+    commands.add_parser('devhost-tunnel-fallback')
     commands.add_parser('android-sdk-ensure')
     commands.add_parser('install')
     prune = commands.add_parser('devhost-sdk-prune')
@@ -705,6 +780,8 @@ def main(argv=None):
                 return host.ensure_android_locked()
         elif args.action == 'devhost-up':
             return host.up()
+        elif args.action == 'devhost-tunnel-fallback':
+            return host.tunnel_fallback()
         elif args.action == 'devhost-sdk-prune':
             package = args.package
             protected = (Path(__file__).parent / 'android-packages.txt').read_text().splitlines()
