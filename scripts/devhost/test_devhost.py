@@ -34,7 +34,7 @@ class GuardTests(unittest.TestCase):
         self.host = d.Host(self.root, probe=lambda: dict(self.metrics), now=self.now,
                            process_probe=lambda: [])
 
-    def file(self, rel, age=60):
+    def file(self, rel, age=180):
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('fixture\n')
@@ -46,6 +46,7 @@ class GuardTests(unittest.TestCase):
         return path
 
     def clean(self, apply=True):
+        self.metrics['free_bytes'] = 10*d.GIB
         return self.host.clean('preflight', apply)
 
     def repo(self, name='sub2api-ops-companion'):
@@ -80,7 +81,7 @@ class GuardTests(unittest.TestCase):
             'devhost/toolchains/android-sdk/licenses/fixture', 'devhost/vscode-cli/data/fixture',
             'artifacts/release/fixture.apk', 'artifacts/unknown/fixture',
             'devhost/logs/tunnel.log')]
-        self.metrics['free_bytes'] = 20*d.GIB
+        self.metrics['free_bytes'] = 10*d.GIB
         self.host.clean('emergency', True)
         self.assertTrue(all(f.exists() for f in files))
 
@@ -157,7 +158,7 @@ class GuardTests(unittest.TestCase):
 
     def test_low_space_does_not_start_child(self):
         self.repo()
-        self.metrics['free_bytes'] = 39*d.GIB
+        self.metrics['free_bytes'] = 7*d.GIB
         with patch.object(d.subprocess, 'Popen') as popen:
             with self.assertRaises(d.Refused):
                 self.host.run('sub2api-ops-companion', ['fixture'])
@@ -178,13 +179,85 @@ class GuardTests(unittest.TestCase):
             self.clean()
         self.assertTrue(file.exists())
 
-    def test_cache_budget_blocks_child(self):
+    def test_large_cache_does_not_block_child_or_trigger_a_sweep(self):
         self.repo()
-        with patch.object(self.host, 'cache_bytes', return_value=51*d.GIB):
-            with patch.object(d.subprocess, 'Popen') as popen:
-                with self.assertRaises(d.Refused):
-                    self.host.run('sub2api-ops-companion', ['fixture'])
-                popen.assert_not_called()
+        old = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        with patch.object(self.host, 'cache_bytes', return_value=80*d.GIB) as inventory:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = self.host.run('sub2api-ops-companion', [sys.executable, '-c', 'pass'])
+        self.assertEqual(code, 0)
+        self.assertTrue(old.exists())
+        inventory.assert_not_called()
+
+    def test_healthy_preflight_and_postbuild_preserve_old_caches(self):
+        old = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        self.file('cache/pnpm-store/fixture')
+        with patch.object(d.subprocess, 'run') as native_prune:
+            for mode in ('preflight', 'postbuild', 'emergency'):
+                result = self.host.clean(mode, True)
+                self.assertFalse(result['triggered'])
+                self.assertEqual(result['candidates'], [])
+                self.assertTrue(old.exists())
+            native_prune.assert_not_called()
+
+    def test_relaxed_admission_allows_eight_gib_and_one_percent_inodes(self):
+        self.repo()
+        self.metrics.update(free_bytes=8*d.GIB, inodes_free=10000)
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = self.host.run('sub2api-ops-companion', [sys.executable, '-c', 'pass'])
+        self.assertEqual(code, 0)
+
+    def test_cleanup_stops_after_recovering_headroom(self):
+        first = self.file('cache/cargo-target/sub2api-ops-companion/debug/fixture')
+        second = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        healthy = dict(self.metrics)
+        self.host.probe = lambda: {**healthy, 'free_bytes': (10 if first.exists() else 16)*d.GIB}
+        result = self.host.clean('preflight', True)
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        self.assertEqual(len(result['candidates']), 1)
+        self.assertEqual(result['released_bytes'], 6*d.GIB)
+
+    def test_inode_pressure_can_be_recovered_below_stop_threshold(self):
+        old = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        healthy = dict(self.metrics)
+        self.host.probe = lambda: {**healthy, 'inodes_free': 100 if old.exists() else 900000}
+        result = self.host.clean('emergency', True)
+        self.assertFalse(old.exists())
+        self.assertTrue(result['triggered'])
+        self.assertEqual(result['inodes_free'], 900000)
+
+    def test_native_prune_is_rate_limited_and_uses_valid_store_option(self):
+        self.file('cache/pnpm-store/fixture')
+        self.metrics['free_bytes'] = 10*d.GIB
+        with patch.object(d.shutil, 'which', return_value='/fixture/pnpm'), \
+             patch.object(d.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as prune:
+            self.host.clean('preflight', True)
+            self.host.clean('postbuild', True)
+        prune.assert_called_once()
+        self.assertEqual(prune.call_args.args[0],
+                         ['/fixture/pnpm', '--config.store-dir=' + str(self.host.cache/'pnpm-store'),
+                          'store', 'prune'])
+
+    def test_io_error_prevents_child_start(self):
+        self.repo()
+        with patch.object(d.os, 'fsync', side_effect=OSError(d.errno.EIO, 'fixture')), \
+             patch.object(d.subprocess, 'Popen') as popen:
+            with self.assertRaises(OSError):
+                self.host.run('sub2api-ops-companion', ['fixture'])
+            popen.assert_not_called()
+
+    def test_running_command_can_continue_with_four_gib_free(self):
+        self.repo()
+        marker = self.root/'started'
+        healthy = dict(self.metrics)
+        self.host.probe = lambda: {**healthy, 'free_bytes': (4 if marker.exists() else 9)*d.GIB,
+                                   'inodes_free': 3000 if marker.exists() else 10000}
+        command = [sys.executable, '-c',
+                   'from pathlib import Path; import time; Path('+repr(str(marker))+').touch(); time.sleep(1.2)']
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = self.host.run('sub2api-ops-companion', command)
+        self.assertEqual(code, 0)
 
     def test_failed_command_returns_original_code_and_runs_cleanup(self):
         self.repo()
@@ -312,10 +385,10 @@ class GuardTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_gradle_retention_categories(self):
-        released = self.file('cache/gradle/wrapper/dists/gradle-8.0-bin/fixture',46)
-        recent = self.file('cache/gradle/wrapper/dists/gradle-8.14.3-bin/fixture',44)
-        snapshot = self.file('cache/gradle/caches/9.0-SNAPSHOT/fixture',11)
-        build = self.file('cache/gradle/caches/build-cache-1/fixture',6)
+        released = self.file('cache/gradle/wrapper/dists/gradle-8.0-bin/fixture',91)
+        recent = self.file('cache/gradle/wrapper/dists/gradle-8.14.3-bin/fixture',89)
+        snapshot = self.file('cache/gradle/caches/9.0-SNAPSHOT/fixture',31)
+        build = self.file('cache/gradle/caches/build-cache-1/fixture',31)
         self.clean()
         self.assertFalse(released.exists())
         self.assertTrue(recent.exists())
@@ -329,7 +402,7 @@ class GuardTests(unittest.TestCase):
         sequence = {'n': 0}
         healthy = {'free_bytes': 90*d.GIB, 'inodes_free': 900000,
                    'inodes_total': 1000000, 'readonly': False}
-        low = {**healthy, 'free_bytes': 25*d.GIB}
+        low = {**healthy, 'free_bytes': 7*d.GIB}
 
         def probe():
             sequence['n'] += 1
@@ -359,12 +432,12 @@ class GuardTests(unittest.TestCase):
 
     def test_preflight_still_blocks_when_cleanup_cannot_recover(self):
         self.repo()
-        self.metrics['free_bytes'] = 25*d.GIB
+        self.metrics['free_bytes'] = 7*d.GIB
         with patch.object(d.subprocess, 'Popen') as popen:
             with self.assertRaises(d.Refused) as ctx:
                 self.host.run('sub2api-ops-companion', ['fixture'])
             popen.assert_not_called()
-        self.assertIn('40 GiB', str(ctx.exception))
+        self.assertIn('8 GiB', str(ctx.exception))
 
     def _fake_cli_archive(self, payload=b'#!/bin/sh\necho fixture\n', extra_members=None):
         buffer = io.BytesIO()
