@@ -18,6 +18,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from transport_backup import Store
+
 CONFIG = Path('/etc/devhost/transport.json')
 RUN = Path('/run/devhost')
 STATE = Path('/var/lib/devhost/tailscaled.state')
@@ -161,6 +163,7 @@ def health_event(category):
 
 def watch_health():
     gate = RecoveryGate()
+    next_backup = 0
     time.sleep(120)
     while True:
         try:
@@ -169,6 +172,13 @@ def watch_health():
             data = json.loads(prefs.stdout) if prefs.returncode == 0 else {}
             authenticated = data.get('WantRunning') is True and data.get('LoggedOut') is False
             now = time.monotonic()
+            if online and authenticated and now >= next_backup:
+                next_backup = now + 6 * 60 * 60
+                try:
+                    Store(json.loads(CONFIG.read_text())['user']).backup()
+                    health_event('private-backup-verified')
+                except (OSError, ValueError, RuntimeError):
+                    health_event('private-backup-refused')
             if gate.should_recover(online, authenticated, now):
                 gate.attempted(now)
                 config = json.loads(CONFIG.read_text())
@@ -466,7 +476,9 @@ def up():
     for _ in range(30):
         info = status()
         if info['ssh_ready']:
-            print(json.dumps(info)); return 0
+            backup = Store(json.loads(CONFIG.read_text())['user']).backup()
+            print(json.dumps({**info, 'backup_verified': True,
+                              'backup_created_at': backup['created_at']})); return 0
         time.sleep(.5)
     print(json.dumps(info)); return 69
 
