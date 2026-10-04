@@ -3,11 +3,8 @@ import org.gradle.util.GradleVersion
 if (GradleVersion.current() >= GradleVersion.version('8.0')) {
     beforeSettings { settings ->
         settings.caches {
-            releasedWrappers.removeUnusedEntriesAfterDays = 45
-            snapshotWrappers.removeUnusedEntriesAfterDays = 10
-            downloadedResources.removeUnusedEntriesAfterDays = 30
-            createdResources.removeUnusedEntriesAfterDays = 7
-            buildCache.removeUnusedEntriesAfterDays = 5
+            // devhost collects idle caches only under real disk/inode pressure.
+            cleanup = org.gradle.api.cache.Cleanup.DISABLED
         }
     }
 }
