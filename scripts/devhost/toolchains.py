@@ -37,12 +37,45 @@ def fetch(url, path, digest=None, integrity=None):
     return h.hexdigest()
 
 
+def restore_missing_tree(source, destination):
+    """Repair a partially retained pinned toolchain, without overwriting changes."""
+    for entry in sorted(source.rglob('*'), key=lambda p: len(p.parts)):
+        target = destination / entry.relative_to(source)
+        if any(p.is_symlink() for p in target.parents):
+            raise d.Refused('Symlink parent in existing toolchain')
+        if entry.is_symlink():
+            link = os.readlink(entry)
+            if not entry.resolve().is_relative_to(source.resolve()):
+                raise d.Refused('Toolchain link escapes archive')
+            if target.is_symlink() and os.readlink(target) == link:
+                continue
+            if target.exists() or target.is_symlink():
+                raise d.Refused('Existing toolchain link differs from pinned archive')
+            target.symlink_to(link)
+        elif target.is_symlink():
+            raise d.Refused('Symlink replacing a regular toolchain entry')
+        elif entry.is_dir():
+            target.mkdir(exist_ok=True)
+        elif entry.is_file():
+            if target.exists():
+                if (not target.is_file() or
+                        hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(entry.read_bytes()).digest()):
+                    raise d.Refused('Existing toolchain file differs from pinned archive')
+            else:
+                with target.open('xb') as output:
+                    output.write(entry.read_bytes())
+                target.chmod(entry.stat().st_mode & 0o777)
+
+
 def install_archive(host, name, item, stage):
     dest = host.home / 'toolchains' / name
     receipt = host.state / (name + '-install.json')
     host.safe(dest, [host.home / 'toolchains'])
     binary = dest / {'node': 'bin/node', 'go': 'bin/go', 'uv': 'uv'}[name]
-    if binary.is_file() and receipt.exists():
+    required = [binary]
+    if name == 'node':
+        required += [dest / 'bin/npm', dest / 'bin/npx']
+    if all(p.is_file() for p in required) and receipt.exists():
         installed = json.loads(receipt.read_text())
         if (installed.get('sha256') == item['sha256'] and
                 installed.get('executable_sha256') == hashlib.sha256(binary.read_bytes()).hexdigest()):
@@ -60,6 +93,7 @@ def install_archive(host, name, item, stage):
     if dest.exists():
         if not binary.is_file() or hashlib.sha256(binary.read_bytes()).hexdigest() != digest:
             raise d.Refused('Existing toolchain differs from pinned archive; inspect before replacement')
+        restore_missing_tree(source, dest)
     else:
         shutil.move(source, dest)
     d.atomic_json(receipt, {**item, 'executable_sha256': digest})
@@ -167,6 +201,14 @@ def install():
                                env=env, check=True)
             lock['cargo_tauri']['executable_sha256'] = hashlib.sha256(cli.read_bytes()).hexdigest()
             for version in sorted(set(d.PNPM.values())):
+                cached = host.cache / 'corepack/v1/pnpm' / version
+                if cached.exists():
+                    host.safe(cached, [host.cache])
+                    unpack = stage / ('pnpm-' + version)
+                    unpack.mkdir()
+                    with tarfile.open(stage / ('pnpm-' + version + '.tgz')) as package:
+                        package.extractall(unpack, filter='data')
+                    restore_missing_tree(unpack / 'package', cached)
                 subprocess.run([str(corepack), 'pnpm@' + version, '--version'], env=env, check=True)
             d.atomic_json(manifest_path, lock)
             d.atomic_json(host.state / 'toolchains-installed.json', lock)

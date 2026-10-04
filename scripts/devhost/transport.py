@@ -21,6 +21,7 @@ import urllib.request
 CONFIG = Path('/etc/devhost/transport.json')
 RUN = Path('/run/devhost')
 STATE = Path('/var/lib/devhost/tailscaled.state')
+SYSTEM_HOST_KEY = Path('/etc/ssh/ssh_host_ed25519_key')
 SOCKET = Path('/run/devhost/tailscaled.sock')
 SELF = '/usr/local/libexec/devhost-transport.py'
 
@@ -41,6 +42,78 @@ def write(path, text, mode=0o600):
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
+
+
+def identity_directory(user):
+    account = pwd.getpwnam(user)
+    if account.pw_uid == 0:
+        raise RuntimeError('A regular development user is required')
+    directory = Path(account.pw_dir) / '.local/state/devhost/transport'
+    if any(p.is_symlink() for p in (directory, *directory.parents)):
+        raise RuntimeError('Refusing symlink in persistent identity path')
+    return directory
+
+
+def load_config(user):
+    saved = identity_directory(user) / 'transport.json'
+    source = CONFIG if CONFIG.exists() else saved
+    if source.exists():
+        if source.is_symlink():
+            raise RuntimeError('Refusing symlink in transport configuration')
+        config = json.loads(source.read_text())
+        if config.get('user') != user:
+            raise RuntimeError('Existing SSH user differs')
+        return config
+    return {'user': user}
+
+
+def state_path():
+    if CONFIG.exists():
+        config = json.loads(CONFIG.read_text())
+        if config.get('persistent_identity'):
+            return identity_directory(config['user']) / 'tailscaled.state'
+    return STATE
+
+
+def host_key_path():
+    if CONFIG.exists():
+        config = json.loads(CONFIG.read_text())
+        if config.get('persistent_identity'):
+            return identity_directory(config['user']) / 'ssh_host_ed25519_key'
+    return SYSTEM_HOST_KEY
+
+
+def prepare_identity(config):
+    directory = identity_directory(config['user'])
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    key = directory / 'ssh_host_ed25519_key'
+    if key.is_symlink():
+        raise RuntimeError('Refusing symlink in persistent host key')
+    if not key.exists():
+        original = SYSTEM_HOST_KEY
+        if original.is_symlink():
+            raise RuntimeError('Refusing symlink in system host key')
+        write(key, original.read_text())
+    key.chmod(0o600)
+    config['persistent_identity'] = True
+    write(directory / 'transport.json', json.dumps(config) + '\n')
+    return directory / 'tailscaled.state'
+
+
+def stop_managed_tail(pid):
+    # Stop the owner first, otherwise autorestart races identity migration.
+    if uses_systemd():
+        result = run(['systemctl', 'stop', 'devhost-tailscale'])
+        if result.returncode:
+            raise RuntimeError('Cannot stop managed Tailscale for identity migration')
+    else:
+        path = '/etc/devhost/supervisor.conf'
+        probe = run(['supervisorctl', '-c', path, 'pid', 'tailscale'])
+        if probe.returncode == 0 and probe.stdout.strip() == str(pid):
+            run(['supervisorctl', '-c', path, 'stop', 'tailscale'], check=True)
+        else:
+            stop(pid)
 
 
 def ts(*args):
@@ -103,7 +176,7 @@ def watch_health():
                 with urllib.request.urlopen(request, timeout=15) as response:
                     reachable = response.status == 200
                 daemons = [(pid, argv) for pid, argv in processes('tailscaled')
-                           if '--state=' + str(STATE) in argv]
+                           if '--state=' + str(state_path()) in argv]
                 if reachable and len(daemons) == 1:
                     health_event('authenticated-client-offline-restart')
                     stop(daemons[0][0])  # Its existing manager starts the same identity again.
@@ -153,20 +226,36 @@ def stop(pid):
         raise RuntimeError('Existing transport did not stop; inspect before retry')
 
 
-def migrate_daemon():
+def migrate_daemon(destination):
+    if any(p.is_symlink() for p in (destination, *destination.parents)):
+        raise RuntimeError('Refusing symlink in persistent Tailscale state')
     daemons = processes('tailscaled')
-    if len(daemons) > 1: raise RuntimeError('Multiple Tailscale daemons; inspect before migration')
+    if len(daemons) > 1:
+        raise RuntimeError('Multiple Tailscale daemons; inspect before migration')
+    source = STATE if STATE.exists() else None
     for pid, args in daemons:
         current = next((a.split('=', 1)[1] for a in args if a.startswith('--state=')), None)
-        if current == str(STATE): return
-        if not current: raise RuntimeError('Cannot identify current Tailscale state')
+        if current == str(destination):
+            return False
+        if not current:
+            raise RuntimeError('Cannot identify current Tailscale state')
         source = Path(current)
-        if source.is_symlink() or not source.is_file() or STATE.exists():
+        if (any(p.is_symlink() for p in (source, *source.parents))
+                or not source.is_file() or destination.exists()):
             raise RuntimeError('Conflicting or unsafe Tailscale state; nothing replaced')
-        stop(pid)
-        STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.move(str(source), STATE)
-        STATE.chmod(0o600)
+        stop_managed_tail(pid)
+    if destination.is_symlink():
+        raise RuntimeError('Refusing symlink in persistent Tailscale state')
+    if destination.exists():
+        destination.chmod(0o600)
+        return False
+    if source is not None:
+        if any(p.is_symlink() for p in (source, *source.parents)):
+            raise RuntimeError('Refusing symlink in prior Tailscale state')
+        write(destination, source.read_text())
+        source.unlink()
+        return True
+    return False
 
 
 def ssh_config(user, address):
@@ -175,7 +264,7 @@ def ssh_config(user, address):
     ipaddress.ip_address(address)
     return f'''Port 22
 ListenAddress {address}
-HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey {host_key_path()}
 AuthorizedKeysFile .ssh/authorized_keys
 PubkeyAuthentication yes
 AuthenticationMethods publickey
@@ -216,7 +305,7 @@ def uses_systemd():
 
 
 def configure_manager():
-    tail = '/usr/sbin/tailscaled --state=' + str(STATE) + ' --socket=' + str(SOCKET) + ' --tun=tailscale0 --port=0'
+    tail = '/usr/sbin/tailscaled --state=' + str(state_path()) + ' --socket=' + str(SOCKET) + ' --tun=tailscale0 --port=0'
     ssh = '/usr/bin/python3 -B ' + SELF + ' serve-sshd'
     health = '/usr/bin/python3 -B ' + SELF + ' watch-health'
     if uses_systemd():
@@ -290,7 +379,7 @@ def configure(args):
                     if not member.isfile(): raise RuntimeError('Invalid Tailscale archive member')
                     Path(dest).write_bytes(package.extractfile(member).read())
                     Path(dest).chmod(0o755)
-    config = json.loads(CONFIG.read_text()) if CONFIG.exists() else {'user': args.user}
+    config = load_config(args.user)
     if config['user'] != args.user: raise RuntimeError('Existing SSH user differs')
     if args.control_url_file:
         url = Path(args.control_url_file).read_text().strip()
@@ -335,14 +424,20 @@ def configure(args):
                 policy.unlink()
     if not Path('/usr/sbin/tailscaled').exists():
         raise RuntimeError('Install the official Tailscale package before enrollment')
+    run(['ssh-keygen', '-A'], check=True)
+    destination = prepare_identity(config)
+    migrated = migrate_daemon(destination)
     write(CONFIG, json.dumps(config) + '\n')
-    migrate_daemon()
     for pid, argv in processes('sshd'):
         if re.search(r'\s-D(?:\s|$)', ' '.join(argv)) and any('/workspace/devhost/' in a for a in argv): stop(pid)
-    STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     SOCKET.parent.mkdir(parents=True, exist_ok=True)
-    run(['ssh-keygen', '-A'], check=True)
     configure_manager()
+    if migrated:
+        if uses_systemd():
+            run(['systemctl', 'restart', 'devhost-network-health'], check=True)
+        else:
+            run(['supervisorctl', '-c', '/etc/devhost/supervisor.conf',
+                 'restart', 'network-health'], check=True)
     for _ in range(30):
         if SOCKET.exists(): break
         time.sleep(.2)

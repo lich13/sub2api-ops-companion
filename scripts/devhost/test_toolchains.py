@@ -36,6 +36,36 @@ class ToolchainTests(unittest.TestCase):
                 with self.assertRaises(t.d.Refused): t.install_archive(host, 'node', item, stage)
             self.assertEqual((dest / 'node').read_text(), 'existing fixture')
 
+    def test_missing_npm_tree_is_restored_without_changing_node(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            source = root / 'archive'; dest = root / 'retained'
+            for folder in (source, dest): (folder / 'bin').mkdir(parents=True)
+            (source / 'bin/node').write_text('same-node')
+            (dest / 'bin/node').write_text('same-node')
+            npm = source / 'lib/node_modules/npm/bin/npm-cli.js'
+            npm.parent.mkdir(parents=True); npm.write_text('fixture-npm')
+            (source / 'bin/npm').symlink_to('../lib/node_modules/npm/bin/npm-cli.js')
+            (dest / 'bin/npm').symlink_to('../lib/node_modules/npm/bin/npm-cli.js')
+            t.restore_missing_tree(source, dest)
+            self.assertEqual((dest / 'bin/npm').read_text(), 'fixture-npm')
+            self.assertEqual((dest / 'bin/node').read_text(), 'same-node')
+            t.restore_missing_tree(source, dest)
+
+    def test_repair_refuses_changed_files_and_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            source = root / 'archive'; dest = root / 'retained'
+            source.mkdir(); dest.mkdir()
+            (source / 'tool').write_text('official')
+            (dest / 'tool').write_text('keep')
+            with self.assertRaises(t.d.Refused): t.restore_missing_tree(source, dest)
+            self.assertEqual((dest / 'tool').read_text(), 'keep')
+            (dest / 'tool').unlink(); outside = root / 'outside'; outside.write_text('outside')
+            (dest / 'tool').symlink_to(outside)
+            with self.assertRaises(t.d.Refused): t.restore_missing_tree(source, dest)
+            self.assertEqual(outside.read_text(), 'outside')
+
     def test_digest_mismatch_is_rejected(self):
         class Response(io.BytesIO):
             url = 'https://example.invalid/fixture'

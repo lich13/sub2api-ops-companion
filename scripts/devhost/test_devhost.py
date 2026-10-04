@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -53,6 +54,29 @@ class GuardTests(unittest.TestCase):
         base = self.root / 'repos' / name
         (base / '.git').mkdir(parents=True)
         return base
+
+    def test_overlay_lower_file_device_does_not_imply_mount(self):
+        item = self.file('devhost/lib/fixture-code')
+        original = Path.lstat
+        def lower_stat(path):
+            value = original(path)
+            if path == item:
+                return SimpleNamespace(st_mode=value.st_mode, st_dev=value.st_dev + 1,
+                    st_blocks=value.st_blocks, st_mtime=value.st_mtime)
+            return value
+        with patch.object(d, 'mount_points', return_value=set()), \
+             patch.object(Path, 'lstat', lower_stat):
+            self.assertEqual(self.host.safe(item, [self.host.home]), item)
+            self.assertFalse(d.tree_info(item.parent)[2])
+
+    def test_real_mount_and_children_are_never_allowed_or_cleaned(self):
+        item = self.file('cache/cargo-target/lich13studio/debug/fixture')
+        mount = item.parent
+        with patch.object(d, 'mount_points', return_value={mount}):
+            with self.assertRaises(d.Refused): self.host.safe(item, [self.host.cache])
+            self.assertTrue(d.tree_info(mount.parent)[2])
+            self.clean(True)
+        self.assertTrue(item.is_file())
 
     def test_dry_run_does_not_delete(self):
         file = self.file('cache/cargo-target/lich13studio/debug/fixture')
