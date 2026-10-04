@@ -32,6 +32,15 @@ class TransportTests(unittest.TestCase):
             self.assertFalse(gate.should_recover(True, True, now))
         self.assertFalse(gate.should_recover(False, True, 1000))
 
+    def test_probe_errors_do_not_erase_known_authenticated_failures(self):
+        gate = t.RecoveryGate()
+        for now in (0, 30, 60):
+            self.assertFalse(gate.probe_unavailable(True, now))
+        self.assertTrue(gate.probe_unavailable(True, 90))
+        gate.attempted(90)
+        self.assertFalse(gate.probe_unavailable(True, 120))
+        self.assertFalse(gate.probe_unavailable(False, 150))
+
     def test_running_process_is_not_online_evidence(self):
         result = subprocess.CompletedProcess([], 0, json.dumps({
             'BackendState': 'Running', 'Self': {'Online': False},
@@ -49,14 +58,29 @@ class TransportTests(unittest.TestCase):
     def test_status_requires_private_listener_and_running_backend(self):
         listener = subprocess.CompletedProcess([], 0, 'LISTEN 0 128 127.0.0.1:22 *:* users:(("sshd"))', '')
         with patch.object(t, 'network', return_value=(False, '127.0.0.1')), \
-             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[]):
+             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[]), \
+             patch.object(t, 'ssh_banner_ready', return_value=False):
             self.assertFalse(t.status()['ssh_ready'])
         with patch.object(t, 'network', return_value=(True, '127.0.0.1')), \
-             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[(1, [])]):
+             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[(1, [])]), \
+             patch.object(t, 'ssh_banner_ready', return_value=True):
             self.assertTrue(t.status()['ssh_ready'])
         with patch.object(t, 'network', return_value=(True, '127.0.0.2')), \
-             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[]):
+             patch.object(t, 'run', return_value=listener), patch.object(t, 'processes', return_value=[]), \
+             patch.object(t, 'ssh_banner_ready', return_value=False):
             self.assertFalse(t.status()['ssh_ready'])
+
+    def test_ssh_banner_probe_requires_ssh_prefix(self):
+        class Connection:
+            def __init__(self, payload): self.payload = payload
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def settimeout(self, value): pass
+            def recv(self, size): return self.payload
+        with patch.object(t.socket, 'create_connection', return_value=Connection(b'SSH-2.0-test\r\n')):
+            self.assertTrue(t.ssh_banner_ready('127.0.0.1'))
+        with patch.object(t.socket, 'create_connection', return_value=Connection(b'HTTP/1.1 200')):
+            self.assertFalse(t.ssh_banner_ready('127.0.0.1'))
 
     def test_runtime_write_refuses_symlink_and_keeps_private_mode(self):
         with tempfile.TemporaryDirectory() as name:
