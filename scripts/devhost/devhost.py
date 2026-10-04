@@ -38,12 +38,15 @@ PNPM = {name: profile['package_manager_version'] for name, profile in PROFILES.i
 ENTRYPOINTS = ('devhost-clean', 'devhost-run', 'devhost-up', 'devhost-status',
                'android-sdk-ensure', 'devhost-sdk-prune', 'devhost-tunnel-fallback',
                'devhost-prepare', 'devhost-check', 'devhost-editor', 'devhost-rust-analyzer')
-MIN_FREE = 40 * GIB
-EMERGENCY_FREE = 30 * GIB
-STOP_FREE = 15 * GIB
-CACHE_BUDGET = 50 * GIB
-MIN_INODES = .10
-STOP_INODES = .02
+MIN_FREE = 8 * GIB
+EMERGENCY_FREE = 12 * GIB
+RECOVER_FREE = 16 * GIB
+STOP_FREE = 3 * GIB
+MIN_INODES = .01
+EMERGENCY_INODES = .02
+RECOVER_INODES = .03
+STOP_INODES = .002
+STOP_GRACE_SECONDS = 3
 VSCODE_CLI_URL = 'https://update.code.visualstudio.com/latest/cli-linux-x64/stable'
 VSCODE_CLI_API = 'https://update.code.visualstudio.com/api/update/cli-linux-x64/stable/latest'
 VSCODE_CLI_HOSTS = frozenset({
@@ -228,36 +231,36 @@ class Host:
         if logs.exists():
             for p in logs.iterdir():
                 if p.name not in ('maintenance.jsonl', 'tunnel.log') and p.suffix in ('.log', '.1'):
-                    items.append((p, 7, 'log', None))
+                    items.append((p, 30, 'log', None))
         targets = self.cache / 'cargo-target'
         for repo in REPOS:
-            items.append((targets / repo, 14, 'target', repo))
-        items.append((targets / 'tools', 14, 'target', None))
+            items.append((targets / repo, 30, 'target', repo))
+        items.append((targets / 'tools', 30, 'target', None))
         # Never delete CARGO_HOME, credentials.toml, config.toml or bin.
         registry = self.cache / 'cargo-home/registry'
         for kind in ('cache', 'src', 'index'):
             parent = registry / kind
             if parent.is_dir() and not parent.is_symlink():
-                items.extend((p, 30, 'download-cache', None) for p in parent.iterdir())
+                items.extend((p, 90, 'download-cache', None) for p in parent.iterdir())
         for rel in ('npm/_cacache', 'npm/_logs', 'pip', 'uv', 'go-build', 'go-mod'):
-            items.append((self.cache / rel, 30, 'download-cache', None))
+            items.append((self.cache / rel, 90, 'download-cache', None))
         gradle = self.cache / 'gradle'
         caches = gradle / 'caches'
         if caches.is_dir() and not caches.is_symlink():
             for p in caches.iterdir():
                 if p.name.startswith('build-cache-'):
-                    items.append((p, 5, 'gradle', None))
+                    items.append((p, 30, 'gradle', None))
                 elif re.fullmatch(r'\d+(?:\.\d+)+(?:-.*)?', p.name):
-                    items.append((p, 10 if 'SNAPSHOT' in p.name else 45, 'gradle', None))
+                    items.append((p, 30 if 'SNAPSHOT' in p.name else 90, 'gradle', None))
         dists = gradle / 'wrapper/dists'
         if dists.is_dir() and not dists.is_symlink():
-            items.extend((p, 10 if 'SNAPSHOT' in p.name else 45, 'gradle', None)
+            items.extend((p, 30 if 'SNAPSHOT' in p.name else 90, 'gradle', None)
                          for p in dists.iterdir() if p.is_dir())
         daemons = gradle / 'daemon'
         if daemons.is_dir() and not daemons.is_symlink():
             for version in daemons.iterdir():
                 if version.is_dir() and not version.is_symlink():
-                    items.extend((p, 14, 'gradle-log', None) for p in version.iterdir()
+                    items.extend((p, 30, 'gradle-log', None) for p in version.iterdir()
                                  if re.fullmatch(r'daemon-\d+\.out\.log', p.name))
         # Only the tool-owned tmp namespace can be collected. Unknown artifacts
         # and releases are protected regardless of tag, age or disk pressure.
@@ -265,24 +268,26 @@ class Host:
         if tmp.is_dir() and not tmp.is_symlink():
             for p in tmp.iterdir():
                 if p.is_dir() and (p / '.devhost-temporary').is_file():
-                    items.append((p, 7, 'temporary-artifact', None))
+                    items.append((p, 14, 'temporary-artifact', None))
         return items
 
     def clean_locked(self, mode, apply=False):
         before = self.probe()
-        # Collection is allowed while below the build admission threshold;
-        # only an unreadable filesystem or an unusable inode table blocks it.
-        if before.get('readonly'):
-            raise Refused('Filesystem is read-only; no build or cleanup attempted.', 74)
-        if before.get('inodes_total', 0) <= 0 or before['inodes_free'] / before['inodes_total'] < STOP_INODES:
-            raise Refused('Filesystem inode reserve is below 2%; cleanup stopped.', 74)
+        # Low free inodes must still allow recovery; only invalid capacity or a
+        # read-only filesystem prevents collection.
+        pressure = not self.healthy(before, EMERGENCY_FREE, EMERGENCY_INODES)
         active = self.process_probe()
         if active:
             raise Refused('Unmanaged build processes found; cleanup skipped: ' +
                           ', '.join(str(p['pid']) + ':' + p['tool'] for p in active))
         allowed = [self.cache, self.home / 'logs', self.root / 'artifacts/tmp']
         removed, skipped = [], []
-        for path, days, kind, repo in self.candidates():
+        candidates = self.candidates() if pressure else []
+        for path, days, kind, repo in candidates:
+            # Stop as soon as useful headroom is restored; do not sweep every
+            # old cache simply because a cleanup was triggered.
+            if apply and self.healthy(self.probe(), RECOVER_FREE, RECOVER_INODES):
+                break
             if not path.exists() and not path.is_symlink():
                 continue
             try:
@@ -292,7 +297,6 @@ class Host:
                     continue
                 cm = self.lock('repo-' + repo) if repo else contextlib.nullcontext()
                 with cm:
-                    # Recheck after acquiring the lock. Never remove active logs.
                     if tree_info(path)[1] != newest:
                         continue
                     record = {'path': str(path.relative_to(self.root)), 'bytes': size, 'kind': kind}
@@ -307,20 +311,20 @@ class Host:
                     removed.append(record)
             except Refused as exc:
                 skipped.append({'path': str(path.relative_to(self.root)), 'reason': str(exc)})
-        # Use pnpm's own reference-aware collector; never remove its live store
-        # by recursively guessing the on-disk format.
+        # Native pnpm pruning is pressure-driven and rate limited, never a
+        # weekly maintenance task or a reaction to a fixed cache-size limit.
         store = self.cache / 'pnpm-store'
-        prune_at = self.state / 'pnpm-prune.json'
-        pressure = before['free_bytes'] < MIN_FREE or self.cache_bytes() > CACHE_BUDGET
-        due = not prune_at.exists() or self.now - prune_at.stat().st_mtime > 7 * DAY
-        if store.exists() and (due or pressure):
+        prune_at = self.safe(self.state / 'pnpm-prune.json', [self.state])
+        due = not prune_at.exists() or self.now - prune_at.stat().st_mtime > DAY
+        recovered = self.healthy(self.probe(), RECOVER_FREE, RECOVER_INODES)
+        if pressure and not recovered and store.exists() and due:
             self.safe(store, [self.cache])
             if tree_info(store)[2]:
                 skipped.append({'path': 'cache/pnpm-store', 'reason': 'symlink found'})
             elif apply:
                 pnpm = shutil.which('pnpm', path=self.environment().get('PATH'))
                 if pnpm:
-                    result = subprocess.run([pnpm, '--store-dir', str(store), 'store', 'prune'],
+                    result = subprocess.run([pnpm, '--config.store-dir=' + str(store), 'store', 'prune'],
                                             env=self.environment(), stdin=subprocess.DEVNULL,
                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     if result.returncode == 0:
@@ -330,12 +334,16 @@ class Host:
             else:
                 skipped.append({'path': 'cache/pnpm-store', 'reason': 'native prune eligible (dry-run)'})
         after = self.probe()
-        result = {'mode': mode, 'applied': apply, 'candidates': removed, 'skipped': skipped,
+        result = {'mode': mode, 'applied': apply, 'triggered': pressure,
+                  'candidates': removed, 'skipped': skipped,
                   'free_bytes': after['free_bytes'], 'inodes_free': after['inodes_free'],
                   'released_bytes': max(0, after['free_bytes'] - before['free_bytes']) if apply else 0,
-                  'cache_bytes': self.cache_bytes()}
+                  # Inventory is diagnostic, never an admission gate. Avoid a
+                  # full cache scan at every healthy preflight/postbuild.
+                  'cache_bytes': self.cache_bytes() if pressure else None}
         if apply:
-            self.event('cleanup', mode=mode, count=len(removed), released_bytes=result['released_bytes'])
+            self.event('cleanup', mode=mode, triggered=pressure,
+                       count=len(removed), released_bytes=result['released_bytes'])
         return result
 
     def clean(self, mode, apply=False):
@@ -343,17 +351,12 @@ class Host:
             return self.clean_locked(mode, apply)
 
     def preflight_locked(self):
-        # Cleanup must run before the 40 GiB admission gate so emergency
-        # collection is not rejected by the healthy() check while space is low.
         space = self.probe()
-        if space.get('readonly'):
-            raise Refused('Filesystem is read-only; no build or cleanup attempted.', 74)
-        if space.get('inodes_total', 0) <= 0 or space['inodes_free'] / space['inodes_total'] < STOP_INODES:
-            raise Refused('Filesystem inode reserve is below 2%; cleanup stopped.', 74)
-        mode = 'emergency' if space['free_bytes'] < EMERGENCY_FREE else 'preflight'
+        mode = ('emergency' if not self.healthy(space, EMERGENCY_FREE, EMERGENCY_INODES)
+                else 'preflight')
         result = self.clean_locked(mode, True)
-        if not self.healthy(self.probe()) or result['cache_bytes'] > CACHE_BUDGET:
-            raise Refused('Build blocked: need 40 GiB free, 10% free inodes and caches <= 50 GiB.')
+        if not self.healthy(self.probe()):
+            raise Refused('Build blocked: need 8 GiB free and 1% free inodes after recovery.')
         # Actual writable/fsync check catches EROFS/EIO before starting a build.
         fd, name = tempfile.mkstemp(prefix='.probe-', dir=self.state)
         try:
@@ -459,10 +462,10 @@ class Host:
                         if (not ok or interrupted) and stopped_at is None:
                             cancel(signal.SIGTERM, None)
                             stopped_at = time.monotonic()
-                        if stopped_at is not None and time.monotonic() - stopped_at > 20:
+                        if stopped_at is not None and time.monotonic() - stopped_at > STOP_GRACE_SECONDS:
                             with contextlib.suppress(ProcessLookupError):
                                 os.killpg(process.pid, signal.SIGKILL)
-                        time.sleep(2)
+                        time.sleep(1)
                     code = process.wait()
                     if interrupted:
                         code = 74
@@ -472,7 +475,7 @@ class Host:
                     if process.poll() is None:
                         cancel(signal.SIGTERM, None)
                         try:
-                            process.wait(timeout=20)
+                            process.wait(timeout=STOP_GRACE_SECONDS)
                         except subprocess.TimeoutExpired:
                             os.killpg(process.pid, signal.SIGKILL)
                             process.wait()
@@ -794,6 +797,15 @@ class Host:
             versions = {key: value['version'] for key, value in json.loads(receipt.read_text()).items()
                         if isinstance(value, dict) and 'version' in value}
         return {'workspace': str(self.root), **self.space(), 'cache_bytes': self.cache_bytes(),
+                'disk_policy': {'build_min_free_bytes': MIN_FREE,
+                    'cleanup_below_free_bytes': EMERGENCY_FREE,
+                    'cleanup_recover_free_bytes': RECOVER_FREE,
+                    'stop_below_free_bytes': STOP_FREE,
+                    'build_min_inode_ratio': MIN_INODES,
+                    'cleanup_below_inode_ratio': EMERGENCY_INODES,
+                    'cleanup_recover_inode_ratio': RECOVER_INODES,
+                    'stop_below_inode_ratio': STOP_INODES,
+                    'cache_limit_bytes': None, 'cleanup_only_under_pressure': True},
                 'transport': transport, 'installed_toolchain_versions': versions,
                 'repositories_bytes': tree_info(self.root / 'repos')[0],
                 'toolchains_bytes': tree_info(self.home / 'toolchains')[0],

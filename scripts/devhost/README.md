@@ -56,13 +56,13 @@ devhost-clean --mode=postbuild --apply
 devhost-clean --mode=emergency --apply
 ```
 
-开始大型构建要求至少 40 GiB 可用空间、10% 可用 inode，缓存不超过 50 GiB。低于 30 GiB 进入 emergency 清理。运行中低于 15 GiB、2% 可用 inode，或遇到文件系统异常，只终止本次任务；不自动重试。
+开始构建要求至少 8 GiB 可用空间、1% 可用 inode；缓存容量没有硬上限。低于 12 GiB 或 2% 可用 inode 才清理，恢复到至少 16 GiB 且 3% 可用 inode 后停止。空间充足时 preflight/postbuild/emergency 均不删除缓存，也不执行定期 pnpm prune。运行中每秒检查：低于 3 GiB、0.2% 可用 inode 或遇到文件系统异常，只终止本次任务；3 秒内未退出则强制停止该任务进程组，不自动重试。
 
-回收顺序：7 天旧日志、14 天闲置 Rust target、30 天旧下载缓存、pnpm 原生 prune、Gradle 旧缓存、明确标记的 7 天临时成果。Gradle released wrapper 保留 45 天、snapshot 10 天、build cache 5 天、daemon 日志 14 天。
+低空间时按顺序回收：30 天旧日志、30 天闲置 Rust target、90 天旧下载缓存、Gradle 旧缓存、明确标记的 14 天临时成果，仍不足时调用 pnpm 原生 prune（最多每天一次）。Gradle released wrapper/版本缓存保留 90 天，snapshot、build cache 和 daemon 日志保留 30 天。关闭 Gradle User Home 的独立定期清理，统一由 devhost 的空间检查触发；清理只涉及可再生目录，保留最新使用时间判断和路径保护。
 
 全局锁和仓库锁保护活动构建；未受管理构建存在时拒绝清理。源码、Git、凭据、虚拟环境、当前工具链、正式成果、symlink 和挂载点不进入回收范围。Android 旧版本仅通过显式 `devhost-sdk-prune --package <package> --apply` 删除；当前包清单受保护。
 
-缓存统一放在 `/workspace/cache`，Rust 工具链在 `/workspace/devhost/toolchains/rustup`。诊断同时统计仓库、工具链和成果占用。清理不足时拒绝构建，不降低保护标准；无法阻止其他 Bot 绕过入口写盘，也不承诺修复供应商硬件故障。
+缓存统一放在 `/workspace/cache`，Rust 工具链在 `/workspace/devhost/toolchains/rustup`。诊断同时统计仓库、工具链和成果占用。回收后仍低于 8 GiB 或 1% inode 才拒绝构建；无法阻止其他 Bot 绕过入口写盘，也不承诺修复供应商硬件故障。
 
 运行记录只保存资源、仓库名和退出码，不记录命令参数、环境或输出正文。
 
