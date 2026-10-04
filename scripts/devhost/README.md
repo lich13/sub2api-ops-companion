@@ -30,7 +30,7 @@ python3 -B scripts/devhost/devhost.py install
 - Python 3.12、uv、Go 版本见锁定清单。sub2api、Pylon、Settlement 使用独立 `devhost/venvs/<repo>`；插件验证复用 Python 标准库。
 - Android 36、Build Tools 35.0.0/36.0.0、NDK 28.2.13676358，包清单见 `android-packages.txt`。不安装模拟器或 AVD。
 
-交互式终端可 source `devhost-env`；切换项目后设置对应 `DEVHOST_REPO` 并重新 source。自动化命令通过 `devhost-run` 获取一致环境：
+交互式终端可 source `devhost-env`；切换目录后重新 source，自动识别已注册仓库。自动化命令通过 `devhost-run` 获取一致环境：
 
 ```sh
 devhost-run --repo NexusHub -- cargo test --workspace
@@ -42,7 +42,7 @@ devhost-run --repo lich13studio -- pnpm tauri:build:android
 
 Python 和 pnpm 版本按项目选择；npm 不接收 pnpm 的配置变量。Tauri 打包使用项目本身的 CLI（`pnpm exec tauri` 或 `npm exec --offline -- tauri`）。浏览器引擎只在 CI 安装；日常浏览器交互由本机现有浏览器经 SSH 端口转发完成。
 
-连接 VS Code Remote-SSH 后运行 `devhost-editor`，安装锁定版本的远端扩展并生成 `devhost/workspaces/<repo>.code-workspace`。打开对应工作区可获得 Rust/Python 导航、调试和 prepare/check 任务；Rust 默认关闭保存时编译，构建脚本检查经过 `devhost-run`。扩展、语言服务和调试适配器留在云端。
+连接 VS Code Remote-SSH 后运行 `devhost-editor`，安装锁定版本的远端扩展并生成 `devhost/workspaces/<repo>.code-workspace`。打开对应工作区可获得 Rust/Python 导航、调试和 prepare/check 任务；机器设置与工作区均通过 `devhost-rust-analyzer` 管理编译；保存时自动检查默认关闭，手动检查和构建脚本遵守资源门禁。扩展、语言服务和调试适配器留在云端。
 
 新增覆盖：Pylon、Settlement、Apple Music 工具、CloudTune、Obsidian 扩展、Design Director 插件、Open Computer Use 插件及 SlimBrave。macOS/Windows 原生构建和 ARM64 容器构建交给对应 CI；生产服务、浏览器登录状态、签名私钥和数据库不会随开发环境迁移。
 
@@ -73,5 +73,3 @@ python3 -B -m unittest discover -s scripts/devhost -p 'test_*.py'
 ```
 
 测试使用隔离 fixture，覆盖活动锁、路径保护、低空间与 inode 门禁、失败后清理和环境选择。真实 SSH、Remote-SSH、Android 构建、隔夜重连和重建恢复分别验收。
-
-Remote-SSH 的机器设置和生成的工作区均将 rust-analyzer 编译交给 `devhost-rust-analyzer`；保存时不自动检查，手动检查及构建脚本仍遵守 devhost 资源门禁。
