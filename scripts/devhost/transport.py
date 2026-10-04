@@ -163,7 +163,9 @@ def health_event(category):
 
 def watch_health():
     gate = RecoveryGate()
+    ssh_gate = RecoveryGate()
     next_backup = 0
+    last_state = None
     time.sleep(120)
     while True:
         try:
@@ -172,6 +174,10 @@ def watch_health():
             data = json.loads(prefs.stdout) if prefs.returncode == 0 else {}
             authenticated = data.get('WantRunning') is True and data.get('LoggedOut') is False
             now = time.monotonic()
+            state = ('online' if online else 'offline') + ('-authenticated' if authenticated else '-unauthenticated')
+            if state != last_state:
+                health_event('transport-state-' + state)
+                last_state = state
             if online and authenticated and now >= next_backup:
                 next_backup = now + 6 * 60 * 60
                 try:
@@ -196,6 +202,22 @@ def watch_health():
                     health_event('authenticated-client-offline-no-daemon')
                 else:
                     health_event('recovery-deferred-multiple-daemons')
+
+            if online and authenticated:
+                ssh_ready = status()['ssh_ready']
+                if ssh_gate.should_recover(ssh_ready, True, now):
+                    ssh_gate.attempted(now)
+                    listeners = [(pid, argv) for pid, argv in processes('sshd')
+                                 if '/run/devhost/sshd.conf' in argv]
+                    if len(listeners) == 1:
+                        health_event('ssh-listener-restart')
+                        stop(listeners[0][0])
+                    elif not listeners:
+                        health_event('ssh-listener-no-daemon')
+                    else:
+                        health_event('ssh-listener-recovery-deferred')
+            else:
+                ssh_gate.failures = 0
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
             # Connectivity and authentication failures must never cause rapid restarts.
             gate.attempted(time.monotonic())
