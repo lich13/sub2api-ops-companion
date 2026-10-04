@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from types import SimpleNamespace
 from pathlib import Path
 import subprocess
 import tempfile
@@ -70,6 +71,73 @@ class TransportTests(unittest.TestCase):
             t.write(target, json.dumps({'fixture': True}))
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(target.read_text()), {'fixture': True})
+
+
+class PersistentIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.config = self.root / 'system-config.json'
+        self.legacy = self.root / 'legacy.state'
+        self.key = self.root / 'system-key'
+        self.key.write_text('fixture-host-key')
+        self.account = SimpleNamespace(pw_uid=1000, pw_dir=str(self.root / 'home'))
+        for target, value in [('CONFIG', self.config), ('STATE', self.legacy),
+                              ('SYSTEM_HOST_KEY', self.key)]:
+            patcher = patch.object(t, target, value); patcher.start(); self.addCleanup(patcher.stop)
+        patcher = patch.object(t.pwd, 'getpwnam', return_value=self.account)
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def test_system_loss_recovers_config_state_and_original_host_key(self):
+        config = {'user': 'fixture', 'control_url': 'https://example.invalid'}
+        self.legacy.write_text('{"fixture": "registered"}')
+        target = t.prepare_identity(config)
+        with patch.object(t, 'processes', return_value=[]):
+            self.assertTrue(t.migrate_daemon(target))
+        self.assertFalse(self.legacy.exists())
+        self.key.write_text('replacement-system-key')
+        restored = t.load_config('fixture')
+        self.assertEqual(restored, config)
+        t.prepare_identity(restored)
+        t.write(self.config, json.dumps(restored))
+        self.assertEqual(t.state_path().read_text(), '{"fixture": "registered"}')
+        self.assertEqual(t.host_key_path().read_text(), 'fixture-host-key')
+        self.assertEqual(target.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(t.host_key_path().stat().st_mode & 0o777, 0o600)
+
+    def test_running_state_migration_stops_owner_before_copying(self):
+        self.legacy.write_text('before-stop')
+        target = t.prepare_identity({'user': 'fixture'})
+        def flush_on_stop(pid):
+            self.assertEqual(pid, 42)
+            self.legacy.write_text('flushed-state')
+        with patch.object(t, 'processes', return_value=[(42, ['--state=' + str(self.legacy)])]), \
+             patch.object(t, 'stop_managed_tail', side_effect=flush_on_stop) as stopped:
+            self.assertTrue(t.migrate_daemon(target))
+            stopped.assert_called_once_with(42)
+        self.assertEqual(target.read_text(), 'flushed-state')
+
+    def test_conflicting_and_symlink_state_never_stops_or_overwrites(self):
+        self.legacy.write_text('old-state')
+        target = t.prepare_identity({'user': 'fixture'})
+        target.write_text('different-identity')
+        with patch.object(t, 'processes', return_value=[(42, ['--state=' + str(self.legacy)])]), \
+             patch.object(t, 'stop_managed_tail') as stopped:
+            with self.assertRaises(RuntimeError): t.migrate_daemon(target)
+            stopped.assert_not_called()
+        self.assertEqual(target.read_text(), 'different-identity')
+        target.unlink(); target.symlink_to(self.legacy)
+        with self.assertRaises(RuntimeError): t.migrate_daemon(target)
+        self.assertEqual(self.legacy.read_text(), 'old-state')
+
+    def test_persistent_identity_parent_symlink_is_rejected(self):
+        home = Path(self.account.pw_dir); home.mkdir()
+        outside = self.root / 'outside'; outside.mkdir()
+        (home / '.local').symlink_to(outside)
+        with self.assertRaises(RuntimeError): t.prepare_identity({'user': 'fixture'})
+        self.assertEqual(list(outside.iterdir()), [])
 
 
 if __name__ == '__main__':

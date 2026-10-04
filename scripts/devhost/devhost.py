@@ -77,12 +77,28 @@ def atomic_json(path, data):
             os.unlink(name)
 
 
+def mount_points():
+    """Use kernel mount boundaries; overlay lower files can have another st_dev."""
+    table = Path('/proc/self/mountinfo')
+    if not table.is_file():
+        return None
+    result = set()
+    for line in table.read_text().splitlines():
+        fields = line.split()
+        if len(fields) < 6:
+            raise Refused('Cannot establish filesystem mount boundaries.', 74)
+        path = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m.group(1), 8)), fields[4])
+        result.add(Path(path))
+    return result
+
+
 def tree_info(path):
     """Allocated size and newest mtime; never traverse a symlink or a mount."""
     if not path.exists() and not path.is_symlink():
         return 0, 0, False
     first = path.lstat()
     device = first.st_dev
+    mounts = mount_points()
     total, newest, unsafe = 0, 0, False
     stack = [path]
     while stack:
@@ -90,7 +106,8 @@ def tree_info(path):
         st = item.lstat()
         total += st.st_blocks * 512
         newest = max(newest, st.st_mtime)
-        if stat.S_ISLNK(st.st_mode) or st.st_dev != device:
+        boundary = item in mounts if mounts is not None else st.st_dev != device
+        if stat.S_ISLNK(st.st_mode) or boundary:
             unsafe = True
             continue
         if stat.S_ISDIR(st.st_mode):
@@ -123,7 +140,12 @@ class Host:
                 raise Refused('Symlink traversal refused.')
             if part == self.root:
                 break
-        if path.exists() and path.stat().st_dev != self.root.stat().st_dev:
+        mounts = mount_points()
+        if mounts is not None:
+            if any(p in mounts for p in (path, *path.parents)
+                   if p != self.root and self.root in p.parents):
+                raise Refused('Mount traversal refused.')
+        elif path.exists() and path.stat().st_dev != self.root.stat().st_dev:
             raise Refused('Mount traversal refused.')
         return path
 
@@ -534,7 +556,7 @@ class Host:
                 self.safe(path, [self.home, self.cache, self.root / 'artifacts'])
                 path.mkdir(parents=True, exist_ok=True)
             for name in ('devhost.py', 'android-setup.sh', 'android-packages.txt',
-                         'devhost-bootstrap', 'devhost-env', 'transport.py', 'toolchains.py',
+                         'devhost-bootstrap', 'devhost-recover', 'devhost-env', 'transport.py', 'toolchains.py',
                          'toolchains.lock.json', 'pnpm', 'repositories.json', 'repositories.py',
                          'editor.py'):
                 dest = self.home / 'lib' / name
@@ -556,7 +578,7 @@ class Host:
                     out.write(text)
                 os.chmod(temp, 0o755)
                 os.replace(temp, dest)
-            for name in ('devhost-bootstrap', 'devhost-env', 'pnpm'):
+            for name in ('devhost-bootstrap', 'devhost-recover', 'devhost-env', 'pnpm'):
                 dest = self.home / 'bin' / name
                 if (name == 'pnpm' and dest.is_symlink() and
                         dest.resolve() == self.home / 'lib/node_modules/pnpm/bin/pnpm.cjs'):

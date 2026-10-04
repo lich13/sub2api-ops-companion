@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+umask 077
+DEVHOST_ROOT=${DEVHOST_ROOT:-/workspace}
+DEVHOST_HOME=${DEVHOST_HOME:-$DEVHOST_ROOT/devhost}
+if [ "${1:-}" = --full ]; then
+    shift
+    exec "$DEVHOST_HOME/bin/devhost-bootstrap" "$@"
+fi
+exec "$DEVHOST_HOME/bin/devhost-bootstrap" --transport-only "$@"

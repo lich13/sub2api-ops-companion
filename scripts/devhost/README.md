@@ -15,6 +15,16 @@ python3 -B scripts/devhost/devhost.py install
 
 `devhost-bootstrap --transport-only` 只准备连接。已有环境使用 `devhost-up` 恢复连接并检查空间；它不重新安装 Android，不默认启动 Tunnel。`devhost-status` 只读诊断。备用 Tunnel 由 `devhost-tunnel-fallback` 显式启动。
 
+SSH 失联时，在 Grok 云端终端运行一个恢复入口：
+
+```sh
+/workspace/devhost/bin/devhost-recover
+```
+
+默认只恢复连接组件、同一私网身份和 SSH 服务，不升级开发工具链、不重新安装 Android、不重置仓库。系统层丢失导致 Java、Tauri 系统库或 npm/pnpm 缺失时，运行 `devhost-recover --full` 按清单补齐开发环境；仅补回固定工具链的缺失文件，已有不同内容会停止。运行副本也缺失时，先在此仓库运行上面的 `devhost.py install`，再执行恢复入口。出现注册交接或主机指纹变化时停止自动处理，不清空身份或跳过指纹校验。
+
+连接身份、SSH 主机私钥和恢复配置保存在开发用户的 `~/.local/state/devhost/transport`，由 root 管理，目录 700、文件 600；不放在仓库或 `/workspace`。系统层软件丢失、但该用户目录保留时，恢复命令会复用原身份。用户目录也丢失时仍需要重新注册和独立核对指纹；不能承诺供应商 Reset 会保留这些数据。
+
 连接服务使用 systemd；没有 systemd 时由独立 supervisord 管理。只监听私网 SSH，允许密钥认证、本地端口转发和 SFTP。实例停止或重建仍需从 Grok 入口执行恢复；未实际测试的供应商恢复能力不得标为通过。
 
 连接健康检查每 30 秒运行一次。已登录客户端连续 4 次离线、且控制面 HTTPS 正常时，只重启本机受管 Tailscale 进程，至少间隔 10 分钟；未登录时不循环重启。诊断仅保存时间和事件类别。
@@ -60,7 +70,7 @@ devhost-clean --mode=emergency --apply
 
 低空间时按顺序回收：30 天旧日志、30 天闲置 Rust target、90 天旧下载缓存、Gradle 旧缓存、明确标记的 14 天临时成果，仍不足时调用 pnpm 原生 prune（最多每天一次）。Gradle released wrapper/版本缓存保留 90 天，snapshot、build cache 和 daemon 日志保留 30 天。关闭 Gradle User Home 的独立定期清理，统一由 devhost 的空间检查触发；清理只涉及可再生目录，保留最新使用时间判断和路径保护。
 
-全局锁和仓库锁保护活动构建；未受管理构建存在时拒绝清理。源码、Git、凭据、虚拟环境、当前工具链、正式成果、symlink 和挂载点不进入回收范围。Android 旧版本仅通过显式 `devhost-sdk-prune --package <package> --apply` 删除；当前包清单受保护。
+全局锁和仓库锁保护活动构建；未受管理构建存在时拒绝清理。源码、Git、凭据、虚拟环境、当前工具链、正式成果、symlink 和真实挂载点不进入回收范围。挂载边界读取 Linux mountinfo，兼容 overlay 保留文件的设备编号差异。Android 旧版本仅通过显式 `devhost-sdk-prune --package <package> --apply` 删除；当前包清单受保护。
 
 缓存统一放在 `/workspace/cache`，Rust 工具链在 `/workspace/devhost/toolchains/rustup`。诊断同时统计仓库、工具链和成果占用。回收后仍低于 8 GiB 或 1% inode 才拒绝构建；无法阻止其他 Bot 绕过入口写盘，也不承诺修复供应商硬件故障。
 
