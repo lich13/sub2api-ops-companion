@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+umask 077
+DEVHOST_HOME=${DEVHOST_HOME:-/workspace/devhost}
+full=
+if [ "${1:-}" = --full ]; then full=--full; shift; fi
+sudo -n python3 -B "$DEVHOST_HOME/lib/transport_backup.py" restore --user "$(id -un)" "$@"
+if [ -n "$full" ]; then
+    exec "$DEVHOST_HOME/bin/devhost-bootstrap"
+fi
+exec "$DEVHOST_HOME/bin/devhost-bootstrap" --transport-only

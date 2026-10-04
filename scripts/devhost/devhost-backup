@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+umask 077
+DEVHOST_HOME=${DEVHOST_HOME:-/workspace/devhost}
+action=backup
+if [ "${1:-}" = --export ]; then
+    shift
+    sudo -n python3 -B "$DEVHOST_HOME/lib/transport_backup.py" backup --user "$(id -un)" >/dev/null
+    action=export
+elif [ "${1:-}" = --status ]; then
+    shift
+    action=status
+fi
+exec sudo -n python3 -B "$DEVHOST_HOME/lib/transport_backup.py" "$action" --user "$(id -un)" "$@"

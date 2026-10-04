@@ -12,6 +12,7 @@ import fcntl
 import hashlib
 import json
 import os
+import pwd
 from pathlib import Path
 import re
 import shlex
@@ -556,7 +557,8 @@ class Host:
                 self.safe(path, [self.home, self.cache, self.root / 'artifacts'])
                 path.mkdir(parents=True, exist_ok=True)
             for name in ('devhost.py', 'android-setup.sh', 'android-packages.txt',
-                         'devhost-bootstrap', 'devhost-recover', 'devhost-env', 'transport.py', 'toolchains.py',
+                         'devhost-bootstrap', 'devhost-recover', 'devhost-backup', 'devhost-restore',
+                         'transport_backup.py', 'devhost-env', 'transport.py', 'toolchains.py',
                          'toolchains.lock.json', 'pnpm', 'repositories.json', 'repositories.py',
                          'editor.py'):
                 dest = self.home / 'lib' / name
@@ -578,7 +580,8 @@ class Host:
                     out.write(text)
                 os.chmod(temp, 0o755)
                 os.replace(temp, dest)
-            for name in ('devhost-bootstrap', 'devhost-recover', 'devhost-env', 'pnpm'):
+            for name in ('devhost-bootstrap', 'devhost-recover', 'devhost-backup',
+                         'devhost-restore', 'devhost-env', 'pnpm'):
                 dest = self.home / 'bin' / name
                 if (name == 'pnpm' and dest.is_symlink() and
                         dest.resolve() == self.home / 'lib/node_modules/pnpm/bin/pnpm.cjs'):
@@ -813,6 +816,17 @@ class Host:
                     transport = json.loads(probe.stdout)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 transport = {'ssh_ready': False, 'reason': 'transport probe failed'}
+        backup = {'available': False}
+        backup_tool = self.home / 'lib/transport_backup.py'
+        if backup_tool.is_file():
+            try:
+                probe = subprocess.run(['sudo', '-n', 'python3', '-B', str(backup_tool),
+                    'status', '--user', pwd.getpwuid(os.getuid()).pw_name],
+                    capture_output=True, text=True, timeout=8)
+                if probe.returncode == 0:
+                    backup = json.loads(probe.stdout)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                backup = {'available': False, 'reason': 'backup probe failed'}
         receipt = self.state / 'toolchains-installed.json'
         versions = {}
         if receipt.is_file():
@@ -828,7 +842,7 @@ class Host:
                     'cleanup_recover_inode_ratio': RECOVER_INODES,
                     'stop_below_inode_ratio': STOP_INODES,
                     'cache_limit_bytes': None, 'cleanup_only_under_pressure': True},
-                'transport': transport, 'installed_toolchain_versions': versions,
+                'transport': transport, 'transport_backup': backup, 'installed_toolchain_versions': versions,
                 'repositories_bytes': tree_info(self.root / 'repos')[0],
                 'toolchains_bytes': tree_info(self.home / 'toolchains')[0],
                 'artifacts_bytes': tree_info(self.root / 'artifacts')[0],
