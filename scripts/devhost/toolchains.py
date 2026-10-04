@@ -119,7 +119,7 @@ def install():
                 elif shim.exists():
                     raise d.Refused('Existing Python entrypoint requires inspection')
                 shim.symlink_to(python)
-            for repo in d.REPOS:
+            for repo in (name for name in d.REPOS if d.PROFILES[name]['python']):
                 venv = host.home / 'venvs' / repo
                 existing = venv / 'bin/python'
                 existing_version = subprocess.check_output(
@@ -140,7 +140,7 @@ def install():
             if not rustup_version.startswith('rustup ' + lock['rustup']['version'] + ' '):
                 raise d.Refused('Installed rustup differs from the pinned version')
             subprocess.run([str(rustup), 'toolchain', 'install', lock['rust']['version'], '--profile', 'minimal',
-                            '--target', lock['rust']['target'], '--component', 'clippy,rustfmt',
+                            '--target', lock['rust']['target'], '--component', ','.join(lock['rust']['components']),
                             '--no-self-update'], env=env, check=True)
             packages = ['build-essential', 'pkg-config', 'libwebkit2gtk-4.1-dev', 'libssl-dev',
                         'libxdo-dev', 'libayatana-appindicator3-dev', 'librsvg2-dev', 'patchelf',
