@@ -27,14 +27,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from repositories import PROFILES, canonical, from_directory
+
 GIB = 1024 ** 3
 DAY = 86400
-REPOS = ('NexusHub', 'sub2api-ops-companion', 'lich13studio', 'lich13-switch',
-         'loon-mihomo-rule-sync')
-PNPM = {'NexusHub': '11.0.8', 'lich13-switch': '11.6.0', 'loon-mihomo-rule-sync': '11.6.0',
-        'lich13studio': '10.27.0', 'sub2api-ops-companion': '10.27.0'}
+REPOS = tuple(PROFILES)
+PNPM = {name: profile['package_manager_version'] for name, profile in PROFILES.items()
+        if profile['package_manager'] == 'pnpm'}
 ENTRYPOINTS = ('devhost-clean', 'devhost-run', 'devhost-up', 'devhost-status',
-               'android-sdk-ensure', 'devhost-sdk-prune', 'devhost-tunnel-fallback')
+               'android-sdk-ensure', 'devhost-sdk-prune', 'devhost-tunnel-fallback',
+               'devhost-prepare', 'devhost-check', 'devhost-editor', 'devhost-rust-analyzer')
 MIN_FREE = 40 * GIB
 EMERGENCY_FREE = 30 * GIB
 STOP_FREE = 15 * GIB
@@ -190,18 +193,22 @@ class Host:
         paths = [self.cache]
         for repo in REPOS:
             base = self.repo_path(repo)
-            paths.extend(base / p for p in ('node_modules', 'desktop/node_modules', 'webui/node_modules'))
+            paths.extend({base / 'node_modules', base / PROFILES[repo]['frontend'] / 'node_modules'})
         return sum(tree_info(p)[0] for p in paths if p.exists())
 
     def repo_path(self, repo):
-        canonical = self.root / 'repos' / repo
+        repo = canonical(repo)
+        primary = self.root / 'repos' / PROFILES[repo]['directory']
         if repo == 'NexusHub':
+            legacy = self.root / 'repos/NexusHub'
             lower = self.root / 'repos/nexushub'
             if lower.exists():
-                if canonical.exists() and not os.path.samefile(lower, canonical):
+                if legacy.exists() and not os.path.samefile(lower, legacy):
                     raise Refused('Ambiguous NexusHub directories; nothing moved.', 64)
                 return lower
-        return canonical
+            if legacy.exists():
+                return legacy
+        return primary
 
     def event(self, event, **fields):
         log = self.home / 'logs/maintenance.jsonl'
@@ -359,15 +366,20 @@ class Host:
 
     def environment(self, repo=None):
         env = os.environ.copy()
+        # npm rejects pnpm-only configuration; the pnpm wrapper owns its store.
+        for key in ('npm_config_store_dir', 'NPM_CONFIG_STORE_DIR', 'VIRTUAL_ENV',
+                    'UV_PROJECT_ENVIRONMENT', 'DEVHOST_REPO', 'DEVHOST_PNPM_VERSION',
+                    'DEVHOST_PACKAGE_MANAGER'):
+            env.pop(key, None)
         sdk = self.home / 'toolchains/android-sdk'
         values = {'ANDROID_HOME': sdk, 'ANDROID_SDK_ROOT': sdk,
                   'NDK_HOME': sdk / 'ndk/28.2.13676358', 'GRADLE_USER_HOME': self.cache / 'gradle',
-                  'CARGO_HOME': self.cache / 'cargo-home', 'PIP_CACHE_DIR': self.cache / 'pip',
+                  'CARGO_HOME': self.cache / 'cargo-home',
+                  'CARGO_TARGET_DIR': self.cache / 'cargo-target/tools', 'PIP_CACHE_DIR': self.cache / 'pip',
                   'RUSTUP_HOME': self.home / 'toolchains/rustup',
                   'UV_CACHE_DIR': self.cache / 'uv', 'GOCACHE': self.cache / 'go-build',
                   'GOMODCACHE': self.cache / 'go-mod',
-                  'npm_config_cache': self.cache / 'npm',
-                  'npm_config_store_dir': self.cache / 'pnpm-store'}
+                  'npm_config_cache': self.cache / 'npm'}
         env.update({k: str(v) for k, v in values.items()})
         java = Path('/usr/lib/jvm/java-21-openjdk-amd64')
         if java.exists():
@@ -379,9 +391,12 @@ class Host:
                  sdk / 'cmdline-tools/latest/bin', sdk / 'platform-tools']
         if java.exists():
             paths.insert(0, java / 'bin')
-        env['PATH'] = os.pathsep.join(str(p) for p in paths) + os.pathsep + env.get('PATH', '')
-        env['GRADLE_OPTS'] = (env.get('GRADLE_OPTS', '') +
-                              ' -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2').strip()
+        inherited = [p for p in env.get('PATH', '').split(os.pathsep)
+                     if p and not p.startswith(str(self.home / 'venvs') + os.sep)]
+        env['PATH'] = os.pathsep.join(dict.fromkeys([*(str(p) for p in paths), *inherited]))
+        gradle = env.get('GRADLE_OPTS', '').split()
+        env['GRADLE_OPTS'] = ' '.join(dict.fromkeys([*gradle, '-Dorg.gradle.daemon=false',
+                                                   '-Dorg.gradle.workers.max=2']))
         env['CARGO_BUILD_JOBS'] = '2'
         env['RUSTUP_TOOLCHAIN'] = '1.94.1'
         env['VSCODE_CLI_DATA_DIR'] = str(Path.home() / '.local/share/devhost/vscode-cli')
@@ -389,9 +404,17 @@ class Host:
         env['UV_PYTHON_INSTALL_DIR'] = str(self.home / 'toolchains/python')
         env['DEVHOST_ROOT'] = str(self.root)
         env['DEVHOST_HOME'] = str(self.home)
+        env['DEVHOST_CACHE'] = str(self.cache)
+        env['DEVHOST_ENV_LOADED'] = '1'
+        env['PYTHONDONTWRITEBYTECODE'] = '1'
+        # Browser interaction runs locally; browser engines are installed only in CI.
+        env['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'] = '1'
         if repo:
+            repo = canonical(repo)
             env['DEVHOST_REPO'] = repo
-            env['DEVHOST_PNPM_VERSION'] = PNPM[repo]
+            env['DEVHOST_PACKAGE_MANAGER'] = PROFILES[repo]['package_manager'] or ''
+            if repo in PNPM:
+                env['DEVHOST_PNPM_VERSION'] = PNPM[repo]
             venv = self.home / 'venvs' / repo
             env['UV_PROJECT_ENVIRONMENT'] = str(venv)
             if (venv / 'bin/python').exists():
@@ -401,7 +424,9 @@ class Host:
         return env
 
     def run(self, repo, command, subdir='.'):
-        if repo not in REPOS:
+        try:
+            repo = canonical(repo)
+        except ValueError:
             raise Refused('Repository is not enrolled.', 64)
         base = self.repo_path(repo)
         cwd = self.safe(base / subdir, [base])
@@ -462,6 +487,40 @@ class Host:
                 print('Postbuild cleanup skipped: ' + str(exc), file=sys.stderr)
             return code if code >= 0 else 128 - code
 
+    def rust_analyzer(self, repo=None, cwd=None):
+        repo = canonical(repo) if repo else from_directory(cwd or Path.cwd(), self.root)
+        if not repo or not PROFILES[repo]['rust_manifest']:
+            raise Refused('Rust project is not enrolled; no editor build started.', 64)
+        manifest = self.repo_path(repo) / PROFILES[repo]['rust_manifest']
+        # Cargo owns stdout (JSON protocol); devhost diagnostics go to stderr.
+        with contextlib.redirect_stdout(sys.stderr):
+            return self.run(repo, ['cargo', 'check', '--locked', '--quiet', '--workspace',
+                                  '--all-targets', '--message-format=json',
+                                  '--manifest-path', str(manifest)])
+
+    def profile(self, repo, action):
+        repo = canonical(repo)
+        return self.run(repo, [sys.executable, '-B', str(Path(__file__).parent / 'repositories.py'),
+                               action, '--repo', repo, '--base', str(self.repo_path(repo))])
+
+    def shell_environment(self, repo=None, cwd=None):
+        if cwd:
+            repo = from_directory(cwd, self.root) or repo
+        env = self.environment(repo)
+        keys = ('PATH', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'NDK_HOME', 'JAVA_HOME',
+                'GRADLE_USER_HOME', 'GRADLE_OPTS', 'CARGO_HOME', 'CARGO_TARGET_DIR',
+                'CARGO_BUILD_JOBS', 'RUSTUP_HOME', 'RUSTUP_TOOLCHAIN', 'PIP_CACHE_DIR',
+                'UV_CACHE_DIR', 'UV_PYTHON_INSTALL_DIR', 'GOCACHE', 'GOMODCACHE',
+                'npm_config_cache', 'COREPACK_HOME', 'VSCODE_CLI_DATA_DIR',
+                'DEVHOST_ROOT', 'DEVHOST_HOME', 'DEVHOST_CACHE', 'DEVHOST_ENV_LOADED',
+                'DEVHOST_REPO', 'DEVHOST_PNPM_VERSION', 'DEVHOST_PACKAGE_MANAGER',
+                'VIRTUAL_ENV', 'UV_PROJECT_ENVIRONMENT', 'PYTHONDONTWRITEBYTECODE',
+                'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
+        lines = ['unset npm_config_store_dir NPM_CONFIG_STORE_DIR']
+        lines.extend('export ' + key + '=' + shlex.quote(env[key]) if key in env
+                     else 'unset ' + key for key in keys)
+        return '\n'.join(lines)
+
     def install(self, source):
         if sys.platform != 'linux' or os.uname().machine != 'x86_64':
             raise Refused('Install requires Linux x86_64; local Mac is not a build host.', 64)
@@ -473,7 +532,8 @@ class Host:
                 path.mkdir(parents=True, exist_ok=True)
             for name in ('devhost.py', 'android-setup.sh', 'android-packages.txt',
                          'devhost-bootstrap', 'devhost-env', 'transport.py', 'toolchains.py',
-                         'toolchains.lock.json', 'pnpm'):
+                         'toolchains.lock.json', 'pnpm', 'repositories.json', 'repositories.py',
+                         'editor.py'):
                 dest = self.home / 'lib' / name
                 self.safe(dest, [self.home / 'lib'])
                 data = (source / name).read_bytes()
@@ -740,7 +800,14 @@ class Host:
                 'artifacts_bytes': tree_info(self.root / 'artifacts')[0],
                 'tunnel_pids': self.tunnels(),
                 'android_receipt_present': (self.state / 'android-install.json').exists(),
-                'managed_repositories': list(REPOS)}
+                'managed_repositories': list(REPOS),
+                'repository_profiles': {name: {'directory': PROFILES[name]['directory'],
+                    'present': self.repo_path(name).is_dir(),
+                    'package_manager': PROFILES[name]['package_manager'],
+                    'package_manager_version': PROFILES[name]['package_manager_version'],
+                    'python_environment': bool(PROFILES[name]['python']),
+                    'ci_platforms': PROFILES[name]['ci_platforms']} for name in REPOS},
+                'browser_interaction': 'local-over-ssh', 'browser_automation': 'ci'}
 
 
 def main(argv=None):
@@ -752,7 +819,7 @@ def main(argv=None):
     behavior.add_argument('--apply', action='store_true')
     behavior.add_argument('--dry-run', action='store_true')
     run = commands.add_parser('devhost-run')
-    run.add_argument('--repo', choices=REPOS, required=True)
+    run.add_argument('--repo', required=True)
     run.add_argument('--cwd', default='.')
     run.add_argument('command', nargs=argparse.REMAINDER)
     commands.add_parser('devhost-status')
@@ -760,11 +827,20 @@ def main(argv=None):
     commands.add_parser('devhost-tunnel-fallback')
     commands.add_parser('android-sdk-ensure')
     commands.add_parser('install')
+    for action in ('devhost-prepare', 'devhost-check'):
+        recipe = commands.add_parser(action)
+        recipe.add_argument('--repo', required=True)
+    shell = commands.add_parser('shell-env')
+    shell.add_argument('--repo')
+    shell.add_argument('--cwd')
+    commands.add_parser('devhost-editor')
+    analyzer = commands.add_parser('devhost-rust-analyzer')
+    analyzer.add_argument('--repo')
     prune = commands.add_parser('devhost-sdk-prune')
     prune.add_argument('--package', required=True)
     prune.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
-    host = Host()
+    host = Host(Path(os.environ.get('DEVHOST_ROOT', '/workspace')))
     try:
         if args.action == 'install':
             host.install(Path(__file__).resolve().parent)
@@ -775,6 +851,15 @@ def main(argv=None):
         elif args.action == 'devhost-run':
             command = args.command[1:] if args.command[:1] == ['--'] else args.command
             return host.run(args.repo, command, args.cwd)
+        elif args.action in ('devhost-prepare', 'devhost-check'):
+            return host.profile(args.repo, args.action.removeprefix('devhost-'))
+        elif args.action == 'shell-env':
+            print(host.shell_environment(args.repo, args.cwd))
+        elif args.action == 'devhost-rust-analyzer':
+            return host.rust_analyzer(args.repo)
+        elif args.action == 'devhost-editor':
+            return subprocess.run([sys.executable, '-B', str(Path(__file__).parent / 'editor.py')],
+                                  env=host.environment()).returncode
         elif args.action == 'android-sdk-ensure':
             with host.lock():
                 return host.ensure_android_locked()
@@ -801,6 +886,9 @@ def main(argv=None):
     except Refused as exc:
         print(str(exc), file=sys.stderr)
         return exc.code
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 64
     except OSError as exc:
         label = errno.errorcode.get(exc.errno, 'IO_ERROR')
         print('Filesystem/tool error: ' + label + '. No automatic retry.', file=sys.stderr)

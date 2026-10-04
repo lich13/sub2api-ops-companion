@@ -1,0 +1,663 @@
+{
+  "schema": 1,
+  "browser_interaction": "local-over-ssh",
+  "browser_automation": "ci",
+  "repositories": {
+    "NexusHub": {
+      "directory": "nexushub",
+      "package_manager": "pnpm",
+      "package_manager_version": "11.0.8",
+      "frontend": "webui",
+      "python": null,
+      "rust_manifest": "Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": "webui",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "rust-tests",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--locked"
+          ]
+        },
+        {
+          "name": "rust-clippy",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        },
+        {
+          "name": "frontend-tests",
+          "cwd": "webui",
+          "argv": [
+            "pnpm",
+            "test"
+          ]
+        },
+        {
+          "name": "frontend-types",
+          "cwd": "webui",
+          "argv": [
+            "pnpm",
+            "typecheck"
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "cwd": "webui",
+          "argv": [
+            "pnpm",
+            "build:tauri"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux-browser",
+        "macos"
+      ]
+    },
+    "sub2api-ops-companion": {
+      "directory": "sub2api-ops-companion",
+      "package_manager": "pnpm",
+      "package_manager_version": "10.27.0",
+      "frontend": "desktop",
+      "python": "3.12.15",
+      "rust_manifest": "desktop/src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "python-install",
+          "cwd": ".",
+          "argv": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "{venv}/bin/python",
+            "-r",
+            "requirements.txt"
+          ]
+        },
+        {
+          "name": "frontend-install",
+          "cwd": "desktop",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "backend-tests",
+          "cwd": ".",
+          "argv": [
+            "python",
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests"
+          ]
+        },
+        {
+          "name": "devhost-tests",
+          "cwd": ".",
+          "argv": [
+            "python",
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "scripts/devhost",
+            "-p",
+            "test_*.py"
+          ]
+        },
+        {
+          "name": "frontend-test",
+          "cwd": "desktop",
+          "argv": [
+            "pnpm",
+            "test"
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "cwd": "desktop",
+          "argv": [
+            "pnpm",
+            "run",
+            "build"
+          ]
+        },
+        {
+          "name": "rust-check",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "check",
+            "--locked",
+            "--manifest-path",
+            "desktop/src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos",
+        "android"
+      ]
+    },
+    "lich13studio": {
+      "directory": "lich13studio",
+      "package_manager": "pnpm",
+      "package_manager_version": "10.27.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": "src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-check",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "ci:basic-check"
+          ]
+        },
+        {
+          "name": "renderer-tests",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "test:renderer"
+          ]
+        },
+        {
+          "name": "upgrade-tests",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "test:upgrade"
+          ]
+        },
+        {
+          "name": "rust-check",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "check",
+            "--locked",
+            "--manifest-path",
+            "src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos",
+        "windows",
+        "android"
+      ]
+    },
+    "lich13-switch": {
+      "directory": "lich13-switch",
+      "package_manager": "pnpm",
+      "package_manager_version": "11.6.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": "src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-test",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "test"
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "run",
+            "build"
+          ]
+        },
+        {
+          "name": "rust-test",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "test",
+            "--locked",
+            "--manifest-path",
+            "src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos",
+        "windows"
+      ]
+    },
+    "loon-mihomo-rule-sync": {
+      "directory": "loon-mihomo-rule-sync",
+      "package_manager": "pnpm",
+      "package_manager_version": "11.6.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": "src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-build",
+          "cwd": ".",
+          "argv": [
+            "pnpm",
+            "run",
+            "build"
+          ]
+        },
+        {
+          "name": "rust-check",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "check",
+            "--locked",
+            "--manifest-path",
+            "src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos"
+      ]
+    },
+    "pylon": {
+      "directory": "pylon",
+      "package_manager": "npm",
+      "package_manager_version": "11.8.0",
+      "frontend": "tools/chiphell",
+      "python": "3.12.15",
+      "rust_manifest": null,
+      "prepare": [
+        {
+          "name": "python-locked",
+          "cwd": ".",
+          "argv": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "{venv}/bin/python",
+            "--require-hashes",
+            "-r",
+            "requirements.lock"
+          ]
+        },
+        {
+          "name": "python-project",
+          "cwd": ".",
+          "argv": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "{venv}/bin/python",
+            "--no-deps",
+            "-e",
+            "."
+          ]
+        },
+        {
+          "name": "pytest",
+          "cwd": ".",
+          "argv": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "{venv}/bin/python",
+            "pytest==9.1.1"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "python-tests",
+          "cwd": ".",
+          "argv": [
+            "python",
+            "-B",
+            "-m",
+            "pytest",
+            "-q",
+            "tests"
+          ]
+        },
+        {
+          "name": "node-tests",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "test",
+            "--prefix",
+            "tools/chiphell"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux-browser",
+        "linux-arm64-containers"
+      ]
+    },
+    "sub2api-settlement": {
+      "directory": "sub2api-settlement",
+      "package_manager": "pnpm",
+      "package_manager_version": "10.27.0",
+      "frontend": "frontend",
+      "python": "3.12.15",
+      "rust_manifest": null,
+      "prepare": [
+        {
+          "name": "python-install",
+          "cwd": ".",
+          "argv": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "{venv}/bin/python",
+            "-r",
+            "requirements-dev.txt"
+          ]
+        },
+        {
+          "name": "frontend-install",
+          "cwd": "frontend",
+          "argv": [
+            "pnpm",
+            "install",
+            "--frozen-lockfile"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "python-tests",
+          "cwd": ".",
+          "argv": [
+            "python",
+            "-B",
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        {
+          "name": "frontend-test",
+          "cwd": "frontend",
+          "argv": [
+            "pnpm",
+            "test"
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "cwd": "frontend",
+          "argv": [
+            "pnpm",
+            "run",
+            "build"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux"
+      ]
+    },
+    "apple-music-playlist-region-links": {
+      "directory": "apple-music-playlist-region-links",
+      "package_manager": "npm",
+      "package_manager_version": "11.8.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": "src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "ci"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-build",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "run",
+            "build"
+          ]
+        },
+        {
+          "name": "rust-test",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "test",
+            "--locked",
+            "--manifest-path",
+            "src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos"
+      ]
+    },
+    "cloudtune": {
+      "directory": "cloudtune",
+      "package_manager": "npm",
+      "package_manager_version": "11.8.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": "src-tauri/Cargo.toml",
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "ci"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-build",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "run",
+            "build"
+          ]
+        },
+        {
+          "name": "rust-check",
+          "cwd": ".",
+          "argv": [
+            "cargo",
+            "check",
+            "--locked",
+            "--manifest-path",
+            "src-tauri/Cargo.toml"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "macos",
+        "windows"
+      ]
+    },
+    "obsidian-clipper-inline-images": {
+      "directory": "obsidian-clipper-inline-images",
+      "package_manager": "npm",
+      "package_manager_version": "11.8.0",
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": null,
+      "prepare": [
+        {
+          "name": "frontend-install",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "ci"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "name": "frontend-test",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "test"
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "cwd": ".",
+          "argv": [
+            "npm",
+            "run",
+            "build"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux-browser",
+        "macos-safari"
+      ]
+    },
+    "codex-design-director-plugin": {
+      "directory": "codex-design-director-plugin",
+      "package_manager": null,
+      "package_manager_version": null,
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": null,
+      "prepare": [],
+      "check": [
+        {
+          "name": "plugin-validation",
+          "cwd": ".",
+          "argv": [
+            "python",
+            "-B",
+            "plugins/design-director/scripts/validate-references.py"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux"
+      ]
+    },
+    "open-computer-use-grok": {
+      "directory": "open-computer-use-grok",
+      "package_manager": null,
+      "package_manager_version": null,
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": null,
+      "prepare": [],
+      "check": [
+        {
+          "name": "plugin-tests",
+          "cwd": ".",
+          "argv": [
+            "node",
+            "--test"
+          ]
+        }
+      ],
+      "ci_platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    "SlimBrave": {
+      "directory": "SlimBrave",
+      "package_manager": null,
+      "package_manager_version": null,
+      "frontend": ".",
+      "python": null,
+      "rust_manifest": null,
+      "prepare": [],
+      "check": [],
+      "ci_platforms": [
+        "windows"
+      ]
+    }
+  }
+}
