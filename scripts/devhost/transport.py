@@ -11,6 +11,7 @@ import pwd
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 import tarfile
@@ -26,6 +27,7 @@ STATE = Path('/var/lib/devhost/tailscaled.state')
 SYSTEM_HOST_KEY = Path('/etc/ssh/ssh_host_ed25519_key')
 SOCKET = Path('/run/devhost/tailscaled.sock')
 SELF = '/usr/local/libexec/devhost-transport.py'
+SSH_BANNER_TIMEOUT = 4
 
 
 def run(args, **kwargs):
@@ -151,6 +153,14 @@ class RecoveryGate:
         self.failures = 0
         self.next_attempt = now + 600
 
+    def probe_unavailable(self, authenticated, now):
+        """Keep counting a known authenticated client when a probe itself fails."""
+        if authenticated is not True:
+            self.failures = 0
+            return False
+        self.failures += 1
+        return self.failures >= 4 and now >= self.next_attempt
+
 
 def health_event(category):
     # Deliberately record no addresses, daemon output, keys or authentication URLs.
@@ -161,18 +171,49 @@ def health_event(category):
     write(path, '\n'.join(entries) + '\n')
 
 
+def ssh_banner_ready(address):
+    """Verify that the managed listener accepts a real SSH banner."""
+    if not address:
+        return False
+    try:
+        with socket.create_connection((address, 22), timeout=SSH_BANNER_TIMEOUT) as connection:
+            connection.settimeout(SSH_BANNER_TIMEOUT)
+            data = connection.recv(256)
+            return data.startswith(b'SSH-')
+    except (OSError, ValueError):
+        return False
+
+
+def restart_tailscale():
+    """Restart exactly one managed Tailscale daemon after a gated failure."""
+    daemons = [(pid, argv) for pid, argv in processes('tailscaled')
+               if '--state=' + str(state_path()) in argv]
+    if len(daemons) == 1:
+        health_event('authenticated-client-offline-restart')
+        stop(daemons[0][0])
+    elif not daemons:
+        health_event('authenticated-client-offline-no-daemon')
+    else:
+        health_event('recovery-deferred-multiple-daemons')
+
+
 def watch_health():
     gate = RecoveryGate()
     ssh_gate = RecoveryGate()
     next_backup = 0
     last_state = None
-    time.sleep(120)
+    last_authenticated = None
+    time.sleep(15)
     while True:
         try:
             online, _ = network()
             prefs = ts('debug', 'prefs')
-            data = json.loads(prefs.stdout) if prefs.returncode == 0 else {}
-            authenticated = data.get('WantRunning') is True and data.get('LoggedOut') is False
+            if prefs.returncode == 0:
+                data = json.loads(prefs.stdout)
+                authenticated = data.get('WantRunning') is True and data.get('LoggedOut') is False
+                last_authenticated = authenticated
+            else:
+                authenticated = last_authenticated is True
             now = time.monotonic()
             state = ('online' if online else 'offline') + ('-authenticated' if authenticated else '-unauthenticated')
             if state != last_state:
@@ -187,21 +228,7 @@ def watch_health():
                     health_event('private-backup-refused')
             if gate.should_recover(online, authenticated, now):
                 gate.attempted(now)
-                daemons = [(pid, argv) for pid, argv in processes('tailscaled')
-                           if '--state=' + str(state_path()) in argv]
-                if len(daemons) == 1:
-                    # The client is still authenticated, so a local daemon restart
-                    # is safe even when the control endpoint health URL is
-                    # temporarily unavailable. The supervisor owns the process
-                    # and starts the same state file again.
-                    health_event('authenticated-client-offline-restart')
-                    stop(daemons[0][0])
-                elif not daemons:
-                    # Supervisor is already responsible for restarting it; do not
-                    # create a second daemon from this watcher.
-                    health_event('authenticated-client-offline-no-daemon')
-                else:
-                    health_event('recovery-deferred-multiple-daemons')
+                restart_tailscale()
 
             if online and authenticated:
                 ssh_ready = status()['ssh_ready']
@@ -219,8 +246,11 @@ def watch_health():
             else:
                 ssh_gate.failures = 0
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-            # Connectivity and authentication failures must never cause rapid restarts.
-            gate.attempted(time.monotonic())
+            # Keep a known authenticated client's failure count across probe errors.
+            now = time.monotonic()
+            if gate.probe_unavailable(last_authenticated is True, now):
+                gate.attempted(now)
+                restart_tailscale()
             health_event('health-probe-unavailable')
         time.sleep(30)
 
@@ -242,8 +272,11 @@ def status():
     result = run(['ss', '-H', '-ltnp']) if address else None
     listening = bool(result and any(address + ':22' in row and 'sshd' in row
                                     for row in result.stdout.splitlines()))
+    banner = bool(running and listening and ssh_banner_ready(address))
     return {'tailscale_running': running, 'ssh_listening': listening,
-            'ssh_ready': running and listening, 'tailscaled_count': len(processes('tailscaled'))}
+            'ssh_banner_ready': banner,
+            'ssh_ready': running and listening and banner,
+            'tailscaled_count': len(processes('tailscaled'))}
 
 
 def stop(pid):
