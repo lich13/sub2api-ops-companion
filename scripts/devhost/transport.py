@@ -181,17 +181,21 @@ def watch_health():
                     health_event('private-backup-refused')
             if gate.should_recover(online, authenticated, now):
                 gate.attempted(now)
-                config = json.loads(CONFIG.read_text())
-                request = urllib.request.Request(config['control_url'].rstrip('/') + '/health')
-                with urllib.request.urlopen(request, timeout=15) as response:
-                    reachable = response.status == 200
                 daemons = [(pid, argv) for pid, argv in processes('tailscaled')
                            if '--state=' + str(state_path()) in argv]
-                if reachable and len(daemons) == 1:
+                if len(daemons) == 1:
+                    # The client is still authenticated, so a local daemon restart
+                    # is safe even when the control endpoint health URL is
+                    # temporarily unavailable. The supervisor owns the process
+                    # and starts the same state file again.
                     health_event('authenticated-client-offline-restart')
-                    stop(daemons[0][0])  # Its existing manager starts the same identity again.
+                    stop(daemons[0][0])
+                elif not daemons:
+                    # Supervisor is already responsible for restarting it; do not
+                    # create a second daemon from this watcher.
+                    health_event('authenticated-client-offline-no-daemon')
                 else:
-                    health_event('recovery-deferred')
+                    health_event('recovery-deferred-multiple-daemons')
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
             # Connectivity and authentication failures must never cause rapid restarts.
             gate.attempted(time.monotonic())
