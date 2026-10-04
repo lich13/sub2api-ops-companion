@@ -19,4 +19,4 @@ except ValueError as exc:
 for key in ('npm_config_store_dir', 'NPM_CONFIG_STORE_DIR'):
     os.environ.pop(key, None)
 corepack = str(base / 'toolchains/corepack/bin/corepack')
-os.execv(corepack, [corepack, 'pnpm@' + version, '--store-dir', str(root / 'cache/pnpm-store'), *sys.argv[1:]])
+os.execv(corepack, [corepack, 'pnpm@' + version, '--config.store-dir=' + str(root / 'cache/pnpm-store'), *sys.argv[1:]])
