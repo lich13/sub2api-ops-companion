@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -23,6 +24,10 @@ class GuardTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='devhost-fixture-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
+        lib = self.root / 'devhost/lib'
+        lib.mkdir(parents=True)
+        for name in ('devhost.py', 'repositories.py', 'repositories.json'):
+            shutil.copyfile(Path(__file__).with_name(name), lib / name)
         self.now = time.time()
         self.metrics = {'free_bytes': 90*d.GIB, 'inodes_free': 900000,
                         'inodes_total': 1000000, 'readonly': False}
@@ -206,7 +211,7 @@ class GuardTests(unittest.TestCase):
     def test_status_is_readonly(self):
         with patch.object(self.host, 'tunnels', return_value=[]):
             self.host.status()
-        self.assertFalse(self.host.home.exists())
+        self.assertFalse(self.host.state.exists())
 
     def test_env_preserves_rustup_and_tunnel_auth_location(self):
         env = self.host.environment('lich13studio')
@@ -268,7 +273,7 @@ class GuardTests(unittest.TestCase):
         result = subprocess.run(
             ['sh', '-c', '. "$1"; . "$1"; printf "%s\\n%s\\n%s\\n%s\\n" "$DEVHOST_ROOT" "$GOMODCACHE" "$DEVHOST_ENV_LOADED" "$GRADLE_OPTS"',
              'devhost-env-test', str(env_script)],
-            env={**os.environ, 'DEVHOST_ROOT': str(self.root), 'GRADLE_OPTS': ''},
+            env={**os.environ, 'DEVHOST_ROOT': str(self.root), 'DEVHOST_HOME': str(self.host.home), 'DEVHOST_REPO': '', 'GRADLE_OPTS': ''},
             check=True, capture_output=True, text=True)
         values = result.stdout.splitlines()
         self.assertEqual(values[:3], [str(self.root), str(self.root / 'cache/go-mod'), '1'])
@@ -281,7 +286,7 @@ class GuardTests(unittest.TestCase):
             ['sh', '-c', '. "$1"; printf "%s\\n" "$CARGO_TARGET_DIR"',
              'devhost-env-test', str(env_script)],
             env={**os.environ, 'DEVHOST_ROOT': str(self.root),
-                 'DEVHOST_REPO': 'NexusHub', 'CARGO_TARGET_DIR': ''},
+                 'DEVHOST_HOME': str(self.host.home), 'DEVHOST_REPO': 'NexusHub', 'CARGO_TARGET_DIR': ''},
             check=True, capture_output=True, text=True)
         self.assertEqual(result.stdout.strip(), str(self.root / 'cache/cargo-target/NexusHub'))
 

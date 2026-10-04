@@ -1,0 +1,22 @@
+name: Devhost checks
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/devhost/**', '.github/workflows/devhost.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -B -m unittest discover -s scripts/devhost -p 'test_*.py' -q
+      - run: git diff --check
