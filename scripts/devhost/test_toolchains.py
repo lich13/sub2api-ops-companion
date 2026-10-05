@@ -75,4 +75,70 @@ class ToolchainTests(unittest.TestCase):
                 t.fetch('https://example.invalid/fixture', Path(name) / 'archive', '0' * 64)
 
 
+
+class NativeDependencyTests(unittest.TestCase):
+    def test_installed_package_does_not_hide_missing_pc_file(self):
+        lock = {'apt_packages': {'fixture-native-dev': '1.2'},
+                'native_checks': {'pkg_config': ['fixture-native']}}
+        def probe(argv, **kwargs):
+            if argv[0] == 'dpkg-query':
+                return t.subprocess.CompletedProcess(argv, 0, 'installed\t1.2', '')
+            self.assertEqual(argv, ['pkg-config', '--modversion', 'fixture-native'])
+            return t.subprocess.CompletedProcess(argv, 1, '', 'fixture unavailable')
+        with patch.object(t.subprocess, 'run', side_effect=probe) as run:
+            result = t.system_status(lock)
+        self.assertFalse(result['ready'])
+        self.assertTrue(result['packages']['fixture-native-dev']['matches'])
+        self.assertFalse(result['pkg_config']['fixture-native']['available'])
+        self.assertEqual(run.call_count, 2)
+
+    def test_manifest_drives_missing_package_installation(self):
+        lock = {'apt_packages': {'fixture-new-dev': '2.3'}}
+        before = {'ready': False, 'packages': {'fixture-new-dev':
+                  {'installed': False, 'matches': False, 'expected': '2.3'}},
+                  'pkg_config': {}, 'shared_libraries': {}}
+        after = {'ready': True}
+        with patch.object(t, 'system_status', side_effect=[before, after]), \
+             patch.object(t.subprocess, 'run') as run:
+            self.assertEqual(t.install_system_packages(lock), after)
+        self.assertEqual(run.call_args_list[1].args[0][-1], 'fixture-new-dev=2.3')
+        self.assertIn('--no-remove', run.call_args_list[1].args[0])
+        self.assertNotIn('upgrade', str(run.call_args_list))
+
+    def test_version_drift_never_downgrades_or_upgrades_automatically(self):
+        observed = {'packages': {'fixture-dev':
+                    {'installed': True, 'matches': False, 'expected': '1.2', 'version': '1.3'}}}
+        with patch.object(t, 'system_status', return_value=observed), \
+             patch.object(t.subprocess, 'run') as run:
+            with self.assertRaises(t.d.Refused):
+                t.install_system_packages({'apt_packages': {'fixture-dev': '1.2'}})
+        run.assert_not_called()
+
+    def test_healthy_system_install_is_idempotent(self):
+        observed = {'ready': True, 'packages': {'fixture-dev':
+                    {'installed': True, 'matches': True, 'expected': '1.2'}},
+                    'pkg_config': {}, 'shared_libraries': {}}
+        with patch.object(t, 'system_status', return_value=observed), \
+             patch.object(t.subprocess, 'run') as run:
+            t.install_system_packages({'apt_packages': {'fixture-dev': '1.2'}})
+        run.assert_not_called()
+
+    def test_shared_library_must_actually_load(self):
+        lock = {'apt_packages': {}, 'native_checks': {'shared_libraries': ['fixture']}}
+        with patch.object(t.ctypes.util, 'find_library', return_value='libfixture.so'), \
+             patch.object(t.ctypes, 'CDLL', side_effect=OSError('fixture missing')):
+            result = t.system_status(lock)
+        self.assertFalse(result['ready'])
+        self.assertFalse(result['shared_libraries']['fixture'])
+
+    def test_unresolved_native_check_is_an_install_failure(self):
+        observed = {'ready': False, 'packages': {}, 'pkg_config':
+                    {'fixture-native': {'available': False}}, 'shared_libraries': {}}
+        with patch.object(t, 'system_status', return_value=observed), \
+             patch.object(t.subprocess, 'run') as run:
+            with self.assertRaisesRegex(t.d.Refused, 'fixture-native'):
+                t.install_system_packages({'apt_packages': {}})
+        run.assert_not_called()
+
+
 if __name__ == '__main__': unittest.main()
