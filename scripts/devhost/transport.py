@@ -177,8 +177,17 @@ def ssh_banner_ready(address):
         return False
     try:
         with socket.create_connection((address, 22), timeout=SSH_BANNER_TIMEOUT) as connection:
-            connection.settimeout(SSH_BANNER_TIMEOUT)
-            data = connection.recv(256)
+            deadline = time.monotonic() + SSH_BANNER_TIMEOUT
+            data = b''
+            while len(data) < 256 and b'\n' not in data:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                connection.settimeout(remaining)
+                chunk = connection.recv(256 - len(data))
+                if not chunk:
+                    break
+                data += chunk
             return data.startswith(b'SSH-')
     except (OSError, ValueError):
         return False
@@ -197,61 +206,94 @@ def restart_tailscale():
         health_event('recovery-deferred-multiple-daemons')
 
 
+class HealthMonitor:
+    """Keep network and SSH failures separate; never re-enroll a node."""
+    AUTH_MAX_AGE = 300
+
+    def __init__(self):
+        self.network_gate = RecoveryGate()
+        self.ssh_gate = RecoveryGate()
+        self.authenticated = False
+        self.auth_observed_at = float('-inf')
+        self.next_backup = 0
+        self.last_state = None
+
+    def authentication(self, now):
+        try:
+            result = ts('debug', 'prefs')
+            if result.returncode:
+                raise RuntimeError('Authentication probe unavailable')
+            prefs = json.loads(result.stdout)
+            # Unknown/malformed prefs are not evidence of a login or logout.
+            if (not isinstance(prefs, dict) or not isinstance(prefs.get('WantRunning'), bool)
+                    or not isinstance(prefs.get('LoggedOut'), bool)):
+                raise ValueError('Incomplete authentication probe')
+            self.authenticated = prefs['WantRunning'] and not prefs['LoggedOut']
+            self.auth_observed_at = now
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            pass
+        return self.authenticated and now - self.auth_observed_at <= self.AUTH_MAX_AGE
+
+    def recover_ssh(self):
+        listeners = [(pid, argv) for pid, argv in processes('sshd')
+                     if '/run/devhost/sshd.conf' in argv]
+        if len(listeners) == 1:
+            health_event('ssh-listener-restart')
+            stop(listeners[0][0])
+        elif not listeners:
+            health_event('ssh-listener-no-daemon')
+        else:
+            health_event('ssh-listener-recovery-deferred')
+
+    def step(self, now):
+        online, address = network()
+        authenticated = self.authentication(now)
+        state = ('online' if online else 'offline') + ('-authenticated' if authenticated else '-unauthenticated')
+        if state != self.last_state:
+            health_event('transport-state-' + state)
+            self.last_state = state
+        if self.network_gate.should_recover(online, authenticated, now):
+            self.network_gate.attempted(now)
+            try:
+                restart_tailscale()
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                health_event('tailscale-recovery-failed')
+
+        if online and authenticated:
+            try:
+                ready = ssh_listener_status(online, address)['ssh_ready']
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                ready = False
+            if self.ssh_gate.should_recover(ready, True, now):
+                self.ssh_gate.attempted(now)
+                try:
+                    self.recover_ssh()
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                    health_event('ssh-recovery-failed')
+        else:
+            self.ssh_gate.failures = 0
+
+        if online and authenticated and now >= self.next_backup:
+            self.next_backup = now + 6 * 60 * 60
+            try:
+                Store(json.loads(CONFIG.read_text())['user']).backup()
+                health_event('private-backup-verified')
+            except (OSError, ValueError, RuntimeError):
+                health_event('private-backup-refused')
+
+
 def watch_health():
-    gate = RecoveryGate()
-    ssh_gate = RecoveryGate()
-    next_backup = 0
-    last_state = None
-    last_authenticated = None
+    monitor = HealthMonitor()
     time.sleep(15)
     while True:
         try:
-            online, _ = network()
-            prefs = ts('debug', 'prefs')
-            if prefs.returncode == 0:
-                data = json.loads(prefs.stdout)
-                authenticated = data.get('WantRunning') is True and data.get('LoggedOut') is False
-                last_authenticated = authenticated
-            else:
-                authenticated = last_authenticated is True
-            now = time.monotonic()
-            state = ('online' if online else 'offline') + ('-authenticated' if authenticated else '-unauthenticated')
-            if state != last_state:
-                health_event('transport-state-' + state)
-                last_state = state
-            if online and authenticated and now >= next_backup:
-                next_backup = now + 6 * 60 * 60
-                try:
-                    Store(json.loads(CONFIG.read_text())['user']).backup()
-                    health_event('private-backup-verified')
-                except (OSError, ValueError, RuntimeError):
-                    health_event('private-backup-refused')
-            if gate.should_recover(online, authenticated, now):
-                gate.attempted(now)
-                restart_tailscale()
-
-            if online and authenticated:
-                ssh_ready = status()['ssh_ready']
-                if ssh_gate.should_recover(ssh_ready, True, now):
-                    ssh_gate.attempted(now)
-                    listeners = [(pid, argv) for pid, argv in processes('sshd')
-                                 if '/run/devhost/sshd.conf' in argv]
-                    if len(listeners) == 1:
-                        health_event('ssh-listener-restart')
-                        stop(listeners[0][0])
-                    elif not listeners:
-                        health_event('ssh-listener-no-daemon')
-                    else:
-                        health_event('ssh-listener-recovery-deferred')
-            else:
-                ssh_gate.failures = 0
+            monitor.step(time.monotonic())
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-            # Keep a known authenticated client's failure count across probe errors.
-            now = time.monotonic()
-            if gate.probe_unavailable(last_authenticated is True, now):
-                gate.attempted(now)
-                restart_tailscale()
-            health_event('health-probe-unavailable')
+            # Unknown/logging failures never become evidence to restart Tailscale.
+            try:
+                health_event('health-probe-unavailable')
+            except (OSError, ValueError, RuntimeError):
+                pass
         time.sleep(30)
 
 
@@ -267,15 +309,19 @@ def processes(name):
     return result
 
 
-def status():
-    running, address = network()
-    result = run(['ss', '-H', '-ltnp']) if address else None
+def ssh_listener_status(running, address):
+    result = run(['ss', '-H', '-ltnp'], timeout=5) if address else None
     listening = bool(result and any(address + ':22' in row and 'sshd' in row
                                     for row in result.stdout.splitlines()))
     banner = bool(running and listening and ssh_banner_ready(address))
     return {'tailscale_running': running, 'ssh_listening': listening,
             'ssh_banner_ready': banner,
-            'ssh_ready': running and listening and banner,
+            'ssh_ready': running and listening and banner}
+
+
+def status():
+    running, address = network()
+    return {**ssh_listener_status(running, address),
             'tailscaled_count': len(processes('tailscaled'))}
 
 

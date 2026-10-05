@@ -28,6 +28,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+if __name__ == '__main__':
+    sys.modules['devhost'] = sys.modules[__name__]
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repositories import PROFILES, canonical, from_directory
 
@@ -38,7 +41,8 @@ PNPM = {name: profile['package_manager_version'] for name, profile in PROFILES.i
         if profile['package_manager'] == 'pnpm'}
 ENTRYPOINTS = ('devhost-clean', 'devhost-run', 'devhost-up', 'devhost-status',
                'android-sdk-ensure', 'devhost-sdk-prune', 'devhost-tunnel-fallback',
-               'devhost-prepare', 'devhost-check', 'devhost-editor', 'devhost-rust-analyzer')
+               'devhost-prepare', 'devhost-check', 'devhost-editor', 'devhost-rust-analyzer',
+               'cargo-cache-doctor')
 MIN_FREE = 8 * GIB
 EMERGENCY_FREE = 12 * GIB
 RECOVER_FREE = 16 * GIB
@@ -560,7 +564,7 @@ class Host:
                          'devhost-bootstrap', 'devhost-recover', 'devhost-backup', 'devhost-restore',
                          'transport_backup.py', 'devhost-env', 'transport.py', 'toolchains.py',
                          'toolchains.lock.json', 'pnpm', 'repositories.json', 'repositories.py',
-                         'editor.py'):
+                         'editor.py', 'cache_doctor.py'):
                 dest = self.home / 'lib' / name
                 self.safe(dest, [self.home / 'lib'])
                 data = (source / name).read_bytes()
@@ -873,6 +877,9 @@ def main(argv=None):
     commands.add_parser('devhost-status')
     commands.add_parser('devhost-up')
     commands.add_parser('devhost-tunnel-fallback')
+    doctor = commands.add_parser('cargo-cache-doctor')
+    doctor.add_argument('--online', action='store_true', help='fetch missing checksums over official HTTPS')
+    doctor.add_argument('--repair', action='store_true', help='restore missing or modified files from verified archives')
     commands.add_parser('android-sdk-ensure')
     commands.add_parser('install')
     for action in ('devhost-prepare', 'devhost-check'):
@@ -915,6 +922,11 @@ def main(argv=None):
             return host.up()
         elif args.action == 'devhost-tunnel-fallback':
             return host.tunnel_fallback()
+        elif args.action == 'cargo-cache-doctor':
+            from cache_doctor import audit
+            result = audit(host, args.repair, args.online)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result.get('ok') else 1
         elif args.action == 'devhost-sdk-prune':
             package = args.package
             protected = (Path(__file__).parent / 'android-packages.txt').read_text().splitlines()

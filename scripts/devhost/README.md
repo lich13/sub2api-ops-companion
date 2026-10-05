@@ -27,7 +27,7 @@ SSH 失联时，在 Grok 云端终端运行一个恢复入口：
 
 连接服务使用 systemd；没有 systemd 时由独立 supervisord 管理。只监听私网 SSH，允许密钥认证、本地端口转发和 SFTP。实例停止或重建仍需从 Grok 入口执行恢复；未实际测试的供应商恢复能力不得标为通过。
 
-连接健康检查启动 15 秒后开始、每 30 秒运行一次。已登录客户端连续 4 次离线后，直接重启本机受管 Tailscale 进程，至少间隔 10 分钟；探测命令临时失败时保留已知认证状态，不清空失败计数。SSH listener 连续两次没有返回 SSH banner 时也会单独重启一次；supervisor 负责拉起同一身份的进程。诊断仅保存时间和事件类别。
+连接健康检查启动 15 秒后开始、每 30 秒运行一次。已登录客户端连续 4 次离线后，直接重启云端受管 Tailscale 进程，至少间隔 10 分钟；认证探测临时失败时最多沿用 5 分钟内的已知状态，明确退出登录后不再自动重启。SSH listener 连续 4 次无法返回 SSH banner 时单独重启；SSH 探测和备份异常不会计为 Tailscale 故障，重启失败也不会令监控进程退出。supervisor 负责拉起同一身份的进程。诊断仅保存时间和事件类别。
 
 ## 自动备份与一键恢复
 
@@ -109,3 +109,16 @@ python3 -B -m unittest discover -s scripts/devhost -p 'test_*.py'
 ```
 
 测试使用隔离 fixture，覆盖活动锁、路径保护、低空间与 inode 门禁、失败后清理和环境选择。真实 SSH、Remote-SSH、Android 构建、隔夜重连和重建恢复分别验收。
+
+## Rust 依赖缓存修复
+
+`cc`、`openssl-sys` 等 crate 的 `build`、`src/target`、`dist` 目录可能包含编译器实际读取的源码，不能按目录名递归清理。空间回收只处理已确认的缓存根目录和完整缓存单元。
+
+遇到缓存文件缺失时运行：
+
+```sh
+cargo-cache-doctor --online
+cargo-cache-doctor --online --repair
+```
+
+默认只检查；`--repair` 才会补回缺失文件或替换与归档不一致的缓存文件。先验证 `.crate` 的 SHA-256 与 registry 索引一致，再逐文件比对和原子修复。`--online` 仅在本地索引缺少校验值时通过官方 HTTPS 查询。下载包校验失败、活动构建、Cargo 锁、软链接或挂载边界冲突时停止对应操作；不删除项目源码、额外文件或凭据，不重试构建。大范围检查按需执行，不增加日常构建的全量扫描。
