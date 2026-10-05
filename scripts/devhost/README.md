@@ -84,6 +84,24 @@ Python 和 pnpm 版本按项目选择；npm 不接收 pnpm 的配置变量。Tau
 
 同一仓库只允许一个写入者。构建经资源锁串行执行，Rust 和 Gradle 默认两个 worker。SSH 非交互命令直接调用 `/workspace/devhost/bin/devhost-run`，不依赖交互式 shell 配置。
 
+## Linux 原生构建依赖
+
+系统包统一以 `toolchains.lock.json` 的 `apt_packages` 为准，bootstrap 和完整恢复安装整份清单。截图和 Wayland 依赖包含 PipeWire、SPA、Clang、GBM 和 XCB RandR。仅用于 Windows 的依赖不作为 Linux 系统包安装依据。GTK/WebKit、OpenSSL、D-Bus、Wayland 和 X11 同样进行实际可用性检查。
+
+只读检查系统包版本、pkg-config 元数据和共享库加载：
+
+```sh
+python3 -B /workspace/devhost/lib/toolchains.py --check-system
+```
+
+仅补齐清单中的系统包：
+
+```sh
+python3 -B /workspace/devhost/lib/toolchains.py --system-only
+```
+
+安装使用构建锁和现有空间门禁，不重装 Node、Rust 或 Android。已有版本与锁定清单不一致时报告差异，不自动降级或全量升级。`devhost-status` 的 `system_dependencies.ready` 来自实际探测；包管理器显示已安装但 `.pc` 文件或共享库缺失时，仍会报告未就绪。Linux 编译通过不代表已验收真实屏幕捕获、音频设备或 macOS 原生权限。
+
 ## 空间保护
 
 ```sh

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Install pinned public toolchains; run explicitly during bootstrap only."""
+"""Install or inspect pinned cloud toolchains and native build dependencies."""
+import argparse
 import base64
+import ctypes
+import ctypes.util
 import hashlib
 import importlib.util
 import json
@@ -99,6 +102,61 @@ def install_archive(host, name, item, stage):
     d.atomic_json(receipt, {**item, 'executable_sha256': digest})
 
 
+def system_status(lock, env=None):
+    """Read actual native build prerequisites, not just installation receipts."""
+    packages, modules, libraries = {}, {}, {}
+    for package, expected in lock['apt_packages'].items():
+        result = subprocess.run(
+            ['dpkg-query', '-W', '-f=${db:Status-Status}\t${Version}', package],
+            capture_output=True, text=True, env=env)
+        fields = result.stdout.strip().split('\t', 1)
+        installed = result.returncode == 0 and len(fields) == 2 and fields[0] == 'installed'
+        actual = fields[1] if installed else None
+        packages[package] = {'installed': installed, 'expected': expected,
+                             'version': actual, 'matches': actual == expected}
+    for module in lock.get('native_checks', {}).get('pkg_config', []):
+        try:
+            result = subprocess.run(['pkg-config', '--modversion', module],
+                                    capture_output=True, text=True, env=env)
+            modules[module] = {'available': result.returncode == 0,
+                               'version': result.stdout.strip() if result.returncode == 0 else None}
+        except OSError:
+            modules[module] = {'available': False, 'version': None}
+    for library in lock.get('native_checks', {}).get('shared_libraries', []):
+        try:
+            name = ctypes.util.find_library(library)
+            libraries[library] = bool(name and ctypes.CDLL(name))
+        except OSError:
+            libraries[library] = False
+    return {'ready': (all(item['matches'] for item in packages.values())
+                      and all(item['available'] for item in modules.values())
+                      and all(libraries.values())),
+            'packages': packages, 'pkg_config': modules, 'shared_libraries': libraries}
+
+
+def install_system_packages(lock, env=None):
+    """Install the complete pinned manifest; never upgrade or downgrade drift."""
+    before = system_status(lock, env)
+    drift = [name for name, item in before['packages'].items()
+             if item['installed'] and not item['matches']]
+    if drift:
+        raise d.Refused('System packages differ from pinned manifest: ' + ', '.join(drift))
+    missing = [name + '=' + item['expected'] for name, item in before['packages'].items()
+               if not item['installed']]
+    if missing:
+        subprocess.run(['sudo', '-n', 'apt-get', 'update'], check=True)
+        subprocess.run(['sudo', '-n', 'env', 'DEBIAN_FRONTEND=noninteractive',
+                        'apt-get', 'install', '-y', '--no-install-recommends', '--no-remove',
+                        *missing], check=True)
+    after = system_status(lock, env)
+    if not after['ready']:
+        failed = ([name for name, item in after['packages'].items() if not item['matches']]
+                  + [name for name, item in after['pkg_config'].items() if not item['available']]
+                  + [name for name, available in after['shared_libraries'].items() if not available])
+        raise d.Refused('Native build dependencies unavailable after setup: ' + ', '.join(failed))
+    return after
+
+
 def install():
     host = d.Host()
     if os.uname().sysname != 'Linux' or os.uname().machine != 'x86_64':
@@ -176,20 +234,7 @@ def install():
             subprocess.run([str(rustup), 'toolchain', 'install', lock['rust']['version'], '--profile', 'minimal',
                             '--target', lock['rust']['target'], '--component', ','.join(lock['rust']['components']),
                             '--no-self-update'], env=env, check=True)
-            packages = ['build-essential', 'pkg-config', 'libwebkit2gtk-4.1-dev', 'libssl-dev',
-                        'libxdo-dev', 'libayatana-appindicator3-dev', 'librsvg2-dev', 'patchelf',
-                        'openjdk-21-jdk-headless', 'unzip', 'ca-certificates']
-            missing = []
-            for package in packages:
-                p = subprocess.run(['dpkg-query', '-W', '-f=${db:Status-Status}\t${Version}', package], capture_output=True, text=True)
-                expected = lock['apt_packages'][package]
-                if p.returncode or not p.stdout.startswith('installed\t'):
-                    missing.append(package + '=' + expected)
-                elif p.stdout.split('\t', 1)[1] != expected:
-                    raise d.Refused('System package differs from pinned manifest: ' + package)
-            if missing:
-                subprocess.run(['sudo', '-n', 'apt-get', 'update'], check=True)
-                subprocess.run(['sudo', '-n', 'apt-get', 'install', '-y', '--no-install-recommends', *missing], check=True)
+            install_system_packages(lock, env)
             cargo = str(host.cache / 'cargo-home/bin/cargo')
             cli = host.cache / 'cargo-home/bin/cargo-tauri'
             current_cli = subprocess.run([str(cli), '--version'], capture_output=True, text=True) if cli.exists() else None
@@ -224,5 +269,33 @@ def install():
             print('Pinned toolchains installed; runtime lock manifest finalized.')
 
 
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--system-only', action='store_true')
+    mode.add_argument('--check-system', action='store_true')
+    args = parser.parse_args()
+    if not (args.system_only or args.check_system):
+        install()
+        return 0
+    host = d.Host()
+    lock = json.loads((SOURCE / 'toolchains.lock.json').read_text())
+    if args.check_system:
+        result = system_status(lock, host.environment())
+    else:
+        if os.uname().sysname != 'Linux' or os.uname().machine != 'x86_64':
+            raise d.Refused('System packages belong on the Linux cloud host')
+        with host.lock():
+            host.preflight_locked()
+            result = install_system_packages(lock, host.environment())
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result['ready'] else 1
+
+
 if __name__ == '__main__':
-    install()
+    try:
+        raise SystemExit(main())
+    except d.Refused as error:
+        import sys
+        print(str(error), file=sys.stderr)
+        raise SystemExit(error.code)

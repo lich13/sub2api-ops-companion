@@ -831,6 +831,14 @@ class Host:
                     backup = json.loads(probe.stdout)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 backup = {'available': False, 'reason': 'backup probe failed'}
+        native = {'ready': False, 'reason': 'toolchain manifest missing'}
+        manifest = self.home / 'lib/toolchains.lock.json'
+        if manifest.is_file():
+            from toolchains import system_status
+            try:
+                native = system_status(json.loads(manifest.read_text()), self.environment())
+            except (OSError, ValueError):
+                native = {'ready': False, 'reason': 'native dependency probe failed'}
         receipt = self.state / 'toolchains-installed.json'
         versions = {}
         if receipt.is_file():
@@ -847,6 +855,7 @@ class Host:
                     'stop_below_inode_ratio': STOP_INODES,
                     'cache_limit_bytes': None, 'cleanup_only_under_pressure': True},
                 'transport': transport, 'transport_backup': backup, 'installed_toolchain_versions': versions,
+                'system_dependencies': native,
                 'repositories_bytes': tree_info(self.root / 'repos')[0],
                 'toolchains_bytes': tree_info(self.home / 'toolchains')[0],
                 'artifacts_bytes': tree_info(self.root / 'artifacts')[0],
