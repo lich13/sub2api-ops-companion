@@ -109,6 +109,14 @@ class GuardTests(unittest.TestCase):
         self.host.clean('emergency', True)
         self.assertTrue(all(f.exists() for f in files))
 
+    def test_crate_source_directory_names_are_not_build_outputs(self):
+        prefix = 'cache/cargo-home/registry/src/fixture/cc-1.2.60/'
+        sources = [self.file(prefix + name) for name in
+                   ('build/probe.rs', 'src/target/parser.rs', 'src/dist/mod.rs')]
+        self.file(prefix + '.cargo-ok', 1)
+        self.clean()
+        self.assertTrue(all(path.is_file() for path in sources))
+
     def test_only_marked_tmp_artifacts_deleted(self):
         marked = self.file('artifacts/tmp/build1/.devhost-temporary')
         unmarked = self.file('artifacts/tmp/build2/fixture.apk')

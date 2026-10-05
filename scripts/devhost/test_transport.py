@@ -166,3 +166,69 @@ class PersistentIdentityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HealthMonitorTests(unittest.TestCase):
+    def monitor(self):
+        monitor = t.HealthMonitor()
+        monitor.next_backup = float('inf')
+        return monitor
+
+    def prefs(self, authenticated=True):
+        return subprocess.CompletedProcess([], 0, json.dumps({
+            'WantRunning': authenticated, 'LoggedOut': not authenticated}), '')
+
+    def test_ssh_probe_exception_never_restarts_healthy_tailscale(self):
+        monitor = self.monitor()
+        with patch.object(t, 'network', return_value=(True, '127.0.0.1')), \
+             patch.object(t, 'ts', return_value=self.prefs()), \
+             patch.object(t, 'ssh_listener_status', side_effect=subprocess.TimeoutExpired('ss', 5)), \
+             patch.object(t, 'health_event'), patch.object(t, 'restart_tailscale') as network, \
+             patch.object(monitor, 'recover_ssh') as ssh:
+            for now in (0, 30, 60, 90):
+                monitor.step(now)
+        network.assert_not_called()
+        ssh.assert_called_once_with()
+
+    def test_stuck_client_recovers_with_recent_authentication(self):
+        monitor = self.monitor()
+        with patch.object(t, 'network', return_value=(False, None)), \
+             patch.object(t, 'ts', side_effect=[self.prefs(), OSError(), OSError(), OSError()]), \
+             patch.object(t, 'health_event'), patch.object(t, 'restart_tailscale') as restart:
+            for now in (0, 30, 60, 90):
+                monitor.step(now)
+        restart.assert_called_once_with()
+
+    def test_old_or_logged_out_authentication_never_causes_restart(self):
+        monitor = self.monitor()
+        with patch.object(t, 'ts', return_value=self.prefs()):
+            self.assertTrue(monitor.authentication(0))
+        with patch.object(t, 'ts', side_effect=OSError()):
+            self.assertTrue(monitor.authentication(90))
+            self.assertFalse(monitor.authentication(301))
+        with patch.object(t, 'ts', return_value=self.prefs(False)):
+            self.assertFalse(monitor.authentication(400))
+        with patch.object(t, 'ts', side_effect=OSError()):
+            self.assertFalse(monitor.authentication(401))
+
+    def test_restart_exception_is_contained_and_backoff_kept(self):
+        monitor = self.monitor()
+        with patch.object(t, 'network', return_value=(False, None)), \
+             patch.object(t, 'ts', return_value=self.prefs()), \
+             patch.object(t, 'health_event') as events, \
+             patch.object(t, 'restart_tailscale', side_effect=OSError()) as restart:
+            for now in (0, 30, 60, 90, 120):
+                monitor.step(now)
+        restart.assert_called_once_with()
+        self.assertIn(unittest.mock.call('tailscale-recovery-failed'), events.call_args_list)
+        self.assertEqual(monitor.network_gate.next_attempt, 690)
+
+    def test_fragmented_ssh_banner_is_accepted(self):
+        class Connection:
+            def __init__(self): self.parts = iter([b'S', b'SH-2.0-test\r', b'\n'])
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def settimeout(self, value): pass
+            def recv(self, size): return next(self.parts)
+        with patch.object(t.socket, 'create_connection', return_value=Connection()):
+            self.assertTrue(t.ssh_banner_ready('127.0.0.1'))
