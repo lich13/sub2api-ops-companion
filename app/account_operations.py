@@ -35,7 +35,7 @@ def busy():
 
 class OperationRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'degradation_mark']
+    action: Literal['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'degradation_mark', 'account_template']
     request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     expected_version: str = Field(min_length=64, max_length=64)
@@ -155,6 +155,8 @@ class AccountOperations:
         return set(config.managed_account_ids)
 
     def fingerprint(self, row, job):
+        if job['action'] == 'account_template':
+            return self.s.account_templates.fingerprint(row['id'])
         if job['action'] == 'degradation_mark':
             from .capacity_alerts import mark_view
             state = self.s.r.capacity_alerts.store.snapshot()
@@ -165,7 +167,8 @@ class AccountOperations:
     def validate_payload(action, payload):
         from .desktop_actions import PriorityRequest, GroupsRequest, TestRequest, DegradationMarkRequest
         from .desktop_api import ScheduleRequest, DeleteRequest, AccountVersionRequest, UsageActionRequest
-        models = {'priority': PriorityRequest, 'groups': GroupsRequest, 'test': TestRequest,
+        from .account_templates import TemplateApplication
+        models = {'account_template': TemplateApplication, 'priority': PriorityRequest, 'groups': GroupsRequest, 'test': TestRequest,
                   'schedulable': ScheduleRequest, 'delete': DeleteRequest, 'recover': AccountVersionRequest,
                   'usage': UsageActionRequest, 'reset_quota': UsageActionRequest, 'degradation_mark': DegradationMarkRequest}
         value = dict(payload)
@@ -240,6 +243,8 @@ class AccountOperations:
         if action == 'recover':
             from .desktop_api import recoverable_state
             return not recoverable_state(row, datetime.now(timezone.utc))
+        if action == 'account_template':
+            return self.s.account_templates.achieved(row['id'], p)
         if action == 'degradation_mark':
             state = self.s.r.capacity_alerts.store.snapshot()
             return bool(state['marks'].get(str(row['id']), {}).get('marked')) == p['marked']
@@ -356,6 +361,8 @@ class AccountOperations:
         from .desktop_actions import PriorityRequest, GroupsRequest, TestRequest, DegradationMarkRequest
         aid, action = row['id'], job['action']
         p = {**job['payload'], 'expected_version': account_dto(row, datetime.now(timezone.utc), self.managed())['version']}
+        if action == 'account_template':
+            return await self.thread_write(self.s.account_templates.apply, aid, {**job['payload'], 'expected_version': job['expected_version']}, key)
         if action == 'priority':
             return await self.s.actions.set_priority(aid, PriorityRequest(**p), key)
         if action == 'groups':

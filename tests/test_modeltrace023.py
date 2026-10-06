@@ -176,16 +176,17 @@ class Execution023Tests(unittest.IsolatedAsyncioTestCase):
         def read(sql, params):
             row = copy.deepcopy(original); row['id'] = params['id']; return row
         self.tests.s.r.db.fetch_one = read
-        active, peak = 0, 0; release = asyncio.Event()
+        active, peak = 0, 0; second_started = asyncio.Event(); release = asyncio.Event()
         async def run(**kwargs):
             nonlocal active, peak
             active += 1; peak = max(peak, active)
+            if active == 2: second_started.set()
             try: await release.wait(); return OUTPUT, 'model'
             finally: active -= 1
         self.tests.execute = run
         from app.model_tests import ModelTestRequest
         jobs = [await self.tests.start(aid, ModelTestRequest(model_id='gpt-6-luna', expected_version='a'*64, request_id=f'account-request-{aid}')) for aid in (1, 2, 3)]
-        await asyncio.sleep(.08)
+        await asyncio.wait_for(second_started.wait(), 2)
         self.assertEqual((active, peak), (2, 2))
         self.assertEqual(sum(self.tests.get(j['id'])['status'] == 'queued' for j in jobs), 1)
         release.set(); await asyncio.gather(*list(self.tests.tasks.values()))

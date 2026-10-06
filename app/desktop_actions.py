@@ -258,12 +258,17 @@ class DesktopActions:
             return False, allowlists
         return True, allowlists
 
-    async def model_allowed(self, row: dict[str, Any], model: str) -> bool:
+    async def model_allowed(self, row: dict[str, Any], model: str, *, candidate_required: bool = False) -> bool:
         if not is_text_model_id(model):
             return False
         strict, allowlists = await self.model_test_allowlist(row)
         if not strict:
-            return True
+            if not candidate_required:
+                return True
+            key = await asyncio.to_thread(self.s.r.oauth_state_store().admin_token)
+            if not key:
+                raise HTTPException(503, "管理员授权不可用，无法核对模型目录")
+            return model in {item["id"] for item in await self.models(row["id"], key, "model_test")}
         return model in {item["id"] for item in exact_model_options(allowlists)}
 
     async def set_groups(self, account_id: int, payload: GroupsRequest, key: str) -> dict[str, Any]:
@@ -311,20 +316,23 @@ class DesktopActions:
         alerts = getattr(self.s.r, "capacity_alerts", None)
         if alerts is None:
             raise HTTPException(503, "告警服务尚未就绪")
+        def commit():
+            from .account_locks import control_lock
+            with control_lock(self.s.r.db, account_id):
+                current = alerts.store.snapshot()["marks"].get(str(account_id))
+                from .capacity_alerts import mark_view
+                if mark_view(account_id, current)["version"] != payload.expected_mark_version:
+                    raise HTTPException(409, "降智标记已变化，请重新读取")
+                if hasattr(self.s.r.settings, "usage_query_state_path"):
+                    self.s.model_detection.human_control(account_id)
+                return alerts.store.set_mark(account_id, payload.marked, payload.expected_mark_version, datetime.now(timezone.utc))
         try:
-            factory = await asyncio.to_thread(self.s.account_model_profiles.mark_intent_factory, account_id)
-            mark = await asyncio.to_thread(alerts.store.set_mark, account_id, payload.marked, payload.expected_mark_version,
-                                         datetime.now(timezone.utc), intent_factory=factory)
+            mark = await asyncio.to_thread(commit)
         except (OSError, ValueError):
             raise HTTPException(503, "降智标记保存失败，请重试") from None
         write_audit(self.s.r.settings.audit_path, "desktop_degradation_mark", {"account_id": account_id, "marked": payload.marked})
         await asyncio.to_thread(self.s.invalidate)
-        try:
-            profile = await asyncio.to_thread(self.s.account_model_profiles.mark_status, account_id)
-        except (OSError, ValueError):
-            profile = {"status": "failed", "error": "配置应用状态无法读取"}
-        return {"verified": True, "account_id": account_id, "degradation_mark": mark,
-                "model_profile": profile}
+        return {"verified": True, "account_id": account_id, "degradation_mark": mark}
 
     async def prepare_test(self, account_id: int, payload: TestRequest) -> tuple[Any, Any]:
         lock = self.s.account_lock(account_id)

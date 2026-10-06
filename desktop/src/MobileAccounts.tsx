@@ -16,7 +16,7 @@ type Props = {
   schedule: (account: Account) => ReactNode;
   quality: (account: Account) => void; test: (account: Account) => void;
   remove: (account: Account) => void; error: (id: number) => void;
-  report: (error: unknown) => void; modelTest: (account: Account) => void;
+  report: (error: unknown) => void; modelTest: (account: Account) => void; modelDetection: (account: Account) => void; template: (account: Account) => void;
 };
 
 export default function MobileAccounts(props: Props) {
@@ -43,16 +43,19 @@ export default function MobileAccounts(props: Props) {
           {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已成功</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}
           <button className="text-button" onClick={() => setActiveId(a.id)}>优先级 {a.priority}</button>
         </footer>
+        {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <div className="mobile-primary-actions">
+          <button disabled={!props.online} onClick={() => props.modelTest(a)}>模型测试</button>
+          <DegradationAction account={a} online={props.online} report={props.report}/>
+          <button disabled={!props.online} onClick={() => props.modelDetection(a)}>定时检测</button>
+        </div>}
       </article>)}
     </div>
     {active && <div className="modal-backdrop" onClick={() => setActiveId(null)}><section className="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="账号操作" onClick={(e) => e.stopPropagation()}>
       <header><h2>{active.name}</h2><button className="icon-button" aria-label="关闭账号操作" onClick={() => setActiveId(null)}><X size={20}/></button></header>
       <div className="field"><span>优先级</span><PriorityEditor account={active} online={props.online} report={props.report}/></div>
-      <button disabled={!props.online || !["openai", "grok"].includes(active.platform) || !["oauth", "apikey"].includes(active.type)} onClick={() => { props.test(active); setActiveId(null); }}>测试连接</button>
-      {active.platform === "openai" && ["oauth", "apikey"].includes(active.type) && <button disabled={!props.online} onClick={() => { props.modelTest(active); setActiveId(null); }}>模型测试</button>}
-      <RecoverStateButton account={active} online={props.online} report={props.report}/>
-      <DegradationAction account={active} online={props.online} report={props.report}/>
-      <button className="danger-text" disabled={!props.online} onClick={() => { props.remove(active); setActiveId(null); }}>删除账号</button>
+      <details className="mobile-more-actions"><summary>更多操作</summary>      <button disabled={!props.online || !["openai", "grok"].includes(active.platform) || !["oauth", "apikey"].includes(active.type)} onClick={() => { props.test(active); setActiveId(null); }}>测试连接</button>
+{active.platform === "openai" && ["oauth", "apikey"].includes(active.type) && <button disabled={!props.online} onClick={() => { props.template(active); setActiveId(null); }}>应用模板</button>}<RecoverStateButton account={active} online={props.online} report={props.report}/>
+      <button className="danger-text" disabled={!props.online} onClick={() => { props.remove(active); setActiveId(null); }}>删除账号</button></details>
     </section></div>}
   </>;
 }

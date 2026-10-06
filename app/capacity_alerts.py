@@ -55,14 +55,15 @@ class CapacityAlertStore:
             if self.existed:
                 raise OSError("告警状态文件已丢失") from None
             return {"version": 1, "cursor": None, "initialized_at": None, "seen": {}, "marks": {}, "pending": {},
-                    "slow_ttft": {}, "slow_pending": {}}
+                    "slow_ttft": {}, "slow_pending": {}, "detection_events": {}}
         if not isinstance(data, dict) or data.get("version") != 1:
             raise ValueError("告警状态版本无效")
         data.setdefault("slow_ttft", {})
         data.setdefault("slow_pending", {})
-        if any(not isinstance(data.get(k), dict) for k in ("seen", "marks", "pending", "slow_ttft", "slow_pending")):
+        data.setdefault("detection_events", {})
+        if any(not isinstance(data.get(k), dict) for k in ("seen", "marks", "pending", "slow_ttft", "slow_pending", "detection_events")):
             raise ValueError("告警状态无效")
-        if any(key in data and not isinstance(data[key], dict) for key in ("notifications", "profile_intents")):
+        if any(key in data and not isinstance(data[key], dict) for key in ("notifications", "profile_intents", "detection_events")):
             raise ValueError("告警扩展状态无效")
         if data.get("gateway_since") and not parse_iso_datetime(data["gateway_since"]):
             raise ValueError("告警证据水位无效")
@@ -133,12 +134,14 @@ class CapacityAlertStore:
                     fcntl.flock(handle, fcntl.LOCK_UN)
 
     def set_mark(self, account_id: int, marked: bool, expected: str, now: datetime,
-                 *, intent_factory: Callable | None = None) -> dict[str, Any]:
+                 *, detection_job_id: str | None = None) -> dict[str, Any]:
         with self.account_guard(account_id), self.transaction() as data:
             key = str(account_id)
             if mark_view(account_id, data["marks"].get(key))["version"] != expected:
                 raise HTTPException(409, "降智标记已变化，请刷新后重试")
             mark = {"marked": marked, "marked_at": now.isoformat() if marked else None, "changed_at": now.isoformat()}
+            if detection_job_id:
+                mark["detection_job_id"] = detection_job_id
             data["marks"][key] = mark
             for error_id, event in data["pending"].items():
                 if event["account_id"] == account_id:
@@ -152,12 +155,6 @@ class CapacityAlertStore:
             slow_state = data.setdefault("slow_ttft", {}).get(key)
             if slow_state and marked:
                 slow_state["alerted"] = True
-            if intent_factory is not None:
-                intent = intent_factory(mark_view(account_id, mark))
-                if intent is not None:
-                    data.setdefault("profile_intents", {})[key] = intent
-                else:
-                    data.setdefault("profile_intents", {}).pop(key, None)
         return mark_view(account_id, mark)
 
 
@@ -242,6 +239,10 @@ class CapacityAlerts:
                          "requested_model": sanitize_error_text(row.get("requested_model") or row.get("model") or "未知", 160),
                          "upstream_model": sanitize_error_text(row.get("upstream_model") or "未知", 160), "message": message, "account_type": row.get("account_type", "oauth"),
                          "created_at": at.isoformat(), "next_at": now.isoformat(), "attempts": 0}
+                detection_since = parse_iso_datetime(data.get("detection_since"))
+                if detection_since and at > detection_since and not mark.get("marked") and not (changed and at <= changed):
+                    data.setdefault("detection_events", {}).setdefault("error:" + key,
+                        {"account_id": event["account_id"], "created_at": at.isoformat()})
                 if not suppressed:
                     data["pending"][key] = event
                 reason = "degradation_mark" if mark.get("marked") else "mark_changed" if changed and at <= changed else "disabled" if suppressed else None
@@ -336,6 +337,11 @@ class CapacityAlerts:
                     slow_state[key] = state
                     continue
                 mark = data["marks"].get(key, {})
+                detection_since = parse_iso_datetime(data.get("detection_since"))
+                sample_at = parse_iso_datetime(warning.get("latest_at"))
+                if not previous.get("active") and not mark.get("marked") and detection_since and sample_at and sample_at > detection_since:
+                    data.setdefault("detection_events", {}).setdefault(f"slow:{account_id}:{latest_id}",
+                        {"account_id": account_id, "created_at": sample_at.isoformat()})
                 if mark.get("marked") or (runtime.config_valid and not runtime.enabled):
                     for pending_key, event in list(slow_pending.items()):
                         if event["account_id"] == account_id:

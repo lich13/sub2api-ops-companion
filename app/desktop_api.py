@@ -34,7 +34,8 @@ from .error_evidence import ERROR_WHERE
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
 from .account_operations import AccountOperations, OperationRequest, busy
-from .account_model_profiles import AccountModelProfiles, ProfilesRequest, ApplyRequest
+from .account_templates import AccountTemplates, TemplatesRequest
+from .model_detection import ModelDetection, DetectionRequest
 
 PREFIX = "/api/desktop/v1"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
@@ -150,6 +151,7 @@ SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, 
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.proxy_id, md5(a.credentials::text) AS credential_version,
+ md5(coalesce(a.credentials->'model_mapping','{{{{}}}}'::jsonb)::text) AS model_mapping_version,
  (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
   FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
  a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,
@@ -238,7 +240,8 @@ class DesktopService:
         self.quality = QualityCache(getattr(runtime, "db", None))
         self._model_tests: ModelTests | None = None
         self._operations = None
-        self._account_model_profiles: AccountModelProfiles | None = None
+        self._account_templates = None
+        self._model_detection = None
 
     @property
     def operations(self):
@@ -247,10 +250,16 @@ class DesktopService:
         return self._operations
 
     @property
-    def account_model_profiles(self) -> AccountModelProfiles:
-        if self._account_model_profiles is None:
-            self._account_model_profiles = AccountModelProfiles(self)
-        return self._account_model_profiles
+    def account_templates(self):
+        if getattr(self, "_account_templates", None) is None:
+            self._account_templates = AccountTemplates(self)
+        return self._account_templates
+
+    @property
+    def model_detection(self):
+        if getattr(self, "_model_detection", None) is None:
+            self._model_detection = ModelDetection(self)
+        return self._model_detection
 
     @property
     def model_tests(self) -> ModelTests:
@@ -484,9 +493,10 @@ class DesktopService:
                     for account in accounts:
                         if account["platform"] == "openai" and account["type"] in {"oauth", "apikey"}:
                             account["degradation_mark"] = mark_view(account["id"], marks.get(str(account["id"])))
-                            intent = alert_state.get("profile_intents", {}).get(str(account["id"]))
-                            if intent:
-                                account["model_profile"] = {k: intent.get(k) for k in ("status", "error")}
+                            try:
+                                account["model_detection"] = self.model_detection.view(account["id"])
+                            except (ValueError, OSError):
+                                account["model_detection"] = {"status": "error", "reason": "检测状态暂不可读取"}
                 except (ValueError, OSError):
                     for account in accounts:
                         if account["platform"] == "openai" and account["type"] in {"oauth", "apikey"}:
@@ -534,8 +544,12 @@ class DesktopService:
         return result
 
     def set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
-        with control_lock(self.r.db, account_id):
-            return self._set_schedulable(account_id, payload, key)
+        initial = self.r.db.fetch_one(ACCOUNT_SQL.format(filter="AND a.id=%(id)s"), {"id": account_id})
+        oauth = initial and initial.get('platform') == 'openai' and initial.get('type') == 'oauth'
+        controller = self.r.key_fallback_controller
+        with (nullcontext() if oauth or controller is None else self.config.thread_lock), (nullcontext() if oauth or controller is None else controller._lock):
+            with control_lock(self.r.db, account_id):
+                return self._set_schedulable(account_id, payload, key)
 
     def _set_schedulable(self, account_id: int, payload: Any, key: str) -> dict[str, Any]:
         r, controller = self.r, self.r.key_fallback_controller
@@ -566,6 +580,8 @@ class DesktopService:
                     config_version=config.config_version + 1, updated_by="desktop:admin")
                 detached = True
                 write_audit(r.settings.audit_path, "desktop_detach_managed", {"account_id": account_id})
+            if hasattr(r.settings, "usage_query_state_path"):
+                self.model_detection.human_control(account_id, release_hold=True)
             monitor = getattr(r, "oauth_monitor", None)
             if oauth and monitor:
                 try:
@@ -927,30 +943,38 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         key = await auth(request)
         return await service.actions.models(account_id, key, purpose or "legacy")
 
-    @router.get("/account-model-profiles")
-    async def profiles_read(request: Request) -> Any:
+    @router.get("/account-templates")
+    async def templates_read(request: Request, account_id: int | None = None):
         await auth(request)
-        return await asyncio.to_thread(service.account_model_profiles.view)
+        if account_id is not None and account_id < 1:
+            raise HTTPException(422, "账号编号无效")
+        return await asyncio.to_thread(service.account_templates.view, account_id)
 
-    @router.put("/account-model-profiles")
-    async def profiles_save(payload: ProfilesRequest, request: Request) -> Any:
+    @router.put("/account-templates")
+    async def templates_save(payload: TemplatesRequest, request: Request):
         await auth(request)
-        return await asyncio.to_thread(service.account_model_profiles.save, payload)
+        return await asyncio.to_thread(service.account_templates.save, payload)
 
-    @router.get("/account-model-profiles/preview")
-    async def profiles_preview(request: Request) -> Any:
+    @router.get("/accounts/{account_id}/model-detection")
+    async def detection_read(account_id: int, request: Request):
         await auth(request)
-        return await asyncio.to_thread(service.account_model_profiles.preview)
+        await service.model_tests.account(account_id)
+        return await asyncio.to_thread(service.model_detection.view, account_id)
 
-    @router.post("/account-model-profiles/apply")
-    async def profiles_apply(payload: ApplyRequest, request: Request) -> Any:
+    @router.put("/accounts/{account_id}/model-detection")
+    async def detection_save(account_id: int, payload: DetectionRequest, request: Request):
         await auth(request)
-        return await asyncio.to_thread(service.account_model_profiles.apply, payload)
+        return await service.model_detection.save(account_id, payload)
 
-    @router.get("/account-model-profiles/jobs/{job_id}")
-    async def profiles_job(job_id: str, request: Request) -> Any:
+    @router.get("/modeltrace/fingerprint-bank")
+    async def bank_read(request: Request):
         await auth(request)
-        return await asyncio.to_thread(service.account_model_profiles.job, job_id)
+        return await asyncio.to_thread(service.r.fingerprint_bank.public)
+
+    @router.post("/modeltrace/fingerprint-bank/sync")
+    async def bank_sync(request: Request):
+        await auth(request)
+        return service.r.fingerprint_bank.request_sync()
 
     @router.post("/accounts/{account_id}/test")
     async def test(account_id: int, payload: TestRequest, request: Request) -> Any:

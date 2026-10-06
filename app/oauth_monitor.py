@@ -1287,7 +1287,13 @@ class OAuthMonitor:
         generation = kwargs.pop("control_generation", None)
         if generation is not None and self.store.control_generation(account_id) != generation:
             return {"success": False, "skipped": True, "error_code": "manual_intervention"}
+        if getattr(self, "detection_gate", lambda _aid: False)(account_id):
+            return {"success": False, "skipped": True, "error_code": "detection_held",
+                    "error": "账号已由模型检测接管"}
         try:
+            if getattr(self, "detection_gate", lambda _aid: False)(account_id):
+                return {"success": False, "skipped": True, "error_code": "detection_held",
+                        "error": "账号已由模型检测接管"}
             result = dict(self.test_runner(account_id, model, **kwargs))
         except Exception as exc:
             result = {"success": False, "error": str(exc), "error_code": "account_test_error", "model_id": model}
@@ -1878,7 +1884,11 @@ class OAuthMonitor:
                         live = self._read_account(account_id)
                         if not recovery_block_change_is_safe(frozen_row, live):
                             continue
-                        recovery_result = self.recovery_runner(account_id, base_url=base_url, admin_token=token, timeout_seconds=3)
+                        if getattr(self, "detection_gate", lambda _aid: False)(account_id):
+                            recovery_result = {"success": False, "error_code": "detection_held",
+                                               "error": "账号已由模型检测接管"}
+                        else:
+                            recovery_result = self.recovery_runner(account_id, base_url=base_url, admin_token=token, timeout_seconds=3)
                     try:
                         recovered_row = self._read_account(account_id)
                     except Exception as exc:

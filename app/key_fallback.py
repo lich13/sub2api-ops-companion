@@ -681,7 +681,11 @@ class KeyFallbackController:
                 exhausted = True
                 report["reason"] = "dispatch_budget_exhausted"
                 break
-            result = self._set_schedulable(account_id, desired)
+            from .account_locks import control_lock
+            with control_lock(self.db, account_id):
+                if desired and getattr(self, 'detection_gate', lambda aid: False)(account_id):
+                    continue
+                result = self._set_schedulable(account_id, desired)
             if result.get("success"):
                 changed.append(account_id)
                 write_audit(

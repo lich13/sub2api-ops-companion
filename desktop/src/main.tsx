@@ -57,7 +57,8 @@ import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
-import AccountModelProfiles from "./AccountModelProfiles";
+import AccountTemplates from "./AccountTemplates";
+import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
 import { accountOperation, bindOperationConnection } from "./accountOperations";
 import UsageRecords from "./UsageRecords";
@@ -121,6 +122,9 @@ export default function App() {
     [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
+    [modelDetectionAccount, setModelDetectionAccount] = useState<Account | null>(null),
+    [templatesOpen, setTemplatesOpen] = useState(false),
+    [templateAccount, setTemplateAccount] = useState<Account | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
@@ -730,7 +734,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -803,7 +807,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "priority" | "quality"); setAscending(order === "asc"); }}><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
                       <div className="selection-bar">
@@ -821,7 +825,7 @@ export default function App() {
                           删除所选
                         </button>
                       </div>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} report={report}/> : <table className="accounts-table">
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} modelDetection={(a) => setModelDetectionAccount(a)} template={(a) => { setTemplateAccount(a); setTemplatesOpen(true); }} report={report}/> : <table className="accounts-table">
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -1045,32 +1049,17 @@ export default function App() {
                               <td>{schedule(a)}</td>
                               <td>
                                 <div className="account-actions">
-                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu"><summary aria-label={`${a.name}操作`}><MoreHorizontal size={16}/></summary><div><button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>{["oauth", "apikey"].includes(a.type) && <DegradationAction account={a} online={state.online} report={report}/>}</div></details>}
-                                  <button
-                                    className="test-button"
-                                    disabled={
-                                      !state.online ||
-                                      !["openai", "grok"].includes(
-                                        a.platform,
-                                      ) ||
-                                      !["oauth", "apikey"].includes(a.type)
-                                    }
-                                    onClick={() => setTestAccount(a)}
-                                  >
-                                    测试连接
-                                  </button>
-                                  <RecoverStateButton
-                                    account={a}
-                                    online={state.online}
-                                    report={report}
-                                  />
-                                  <button
-                                    className="danger-text"
-                                    disabled={!state.online}
-                                    onClick={() => setDeleteAccounts([a])}
-                                  >
-                                    删除
-                                  </button>
+                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <>
+                                    <button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>
+                                    <DegradationAction account={a} online={state.online} report={report}/>
+                                    <button className="detection-action" disabled={!state.online} onClick={() => setModelDetectionAccount(a)}>定时检测</button>
+                                  </>}
+                                  <details className="group-account-menu"><summary aria-label={`${a.name}更多操作`}><MoreHorizontal size={16}/>更多</summary><div>
+                                    <button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button>
+                                    <RecoverStateButton account={a} online={state.online} report={report}/>
+                                    {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <button disabled={!state.online} onClick={() => { setTemplateAccount(a); setTemplatesOpen(true); }}>应用模板</button>}
+                                    <button className="danger-text" disabled={!state.online} onClick={() => setDeleteAccounts([a])}>删除</button>
+                                  </div></details>
                                 </div>
                               </td>
                             </tr>
@@ -1361,6 +1350,8 @@ export default function App() {
           saveConcurrency={(value) => void prefs({ model_test_concurrency: value })}
         />
       )}
+      {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} close={() => setTemplatesOpen(false)} report={report}/>}
+      {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {qualityAccount && (
         <QualityDialog
           key={`${connectionKey}:${qualityAccount.id}`}
@@ -1582,7 +1573,6 @@ function SettingsPage({
               </>
             )}
           </ConfigForm>
-          <AccountModelProfiles key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>
           <section className="feature-models">
             <h2>模型配置</h2>
             <ModelConfig key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>

@@ -53,7 +53,9 @@ class FingerprintBankTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 3)
         self.clock[0] += 3600
         service.sync()
-        self.assertEqual(len(self.calls), 6)
+        # The same upstream revision only needs a head check; the tree and
+        # payload are not downloaded again.
+        self.assertEqual(len(self.calls), 4)
 
         restarted = self.service(fetcher=lambda url: (_ for _ in ()).throw(AssertionError(url)))
         self.assertEqual(restarted.snapshot()[1]["revision"], self.head)

@@ -195,16 +195,18 @@ fn allowed_request(method: &str, path: &str) -> bool {
             _ => false,
         };
     }
-    if plain.starts_with("/account-model-profiles") {
-        if path.contains('?') { return false; }
+    if plain == "/account-templates" {
         return match method {
-            "GET" => matches!(path, "/account-model-profiles" | "/account-model-profiles/preview")
-                || path.strip_prefix("/account-model-profiles/jobs/").is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit())),
-            "PUT" => path == "/account-model-profiles",
-            "POST" => path == "/account-model-profiles/apply",
+            "GET" => path == "/account-templates" || path.strip_prefix("/account-templates?account_id=").is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0)),
+            "PUT" => path == "/account-templates",
             _ => false,
         };
     }
+    if account_path(plain, "/model-detection") {
+        return match method { "GET" | "PUT" => !path.contains('?'), _ => false };
+    }
+    if plain == "/modeltrace/fingerprint-bank" { return method == "GET" && !path.contains('?'); }
+    if plain == "/modeltrace/fingerprint-bank/sync" { return method == "POST" && !path.contains('?'); }
     let group_path = |suffix: &str| plain.strip_prefix("/model-groups/").and_then(|s| s.strip_suffix(suffix))
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0));
     if !path.contains('?') && match method {
@@ -1356,17 +1358,19 @@ mod tests {
     }
 
     #[test]
-    fn account_profiles_have_explicit_method_and_path_allowlist() {
-        for (method, path) in [("GET", "/account-model-profiles"), ("PUT", "/account-model-profiles"),
-            ("GET", "/account-model-profiles/preview"), ("POST", "/account-model-profiles/apply"),
-            ("GET", "/account-model-profiles/jobs/0123456789abcdef0123456789abcdef")] {
+    fn account_templates_and_detection_have_explicit_method_and_path_allowlist() {
+        for (method, path) in [("GET", "/account-templates"), ("PUT", "/account-templates"),
+            ("GET", "/account-templates?account_id=421"), ("GET", "/accounts/421/model-detection"),
+            ("PUT", "/accounts/421/model-detection"), ("GET", "/modeltrace/fingerprint-bank"),
+            ("POST", "/modeltrace/fingerprint-bank/sync")] {
             assert!(allowed_request(method, path));
-            assert!(!allowed_request(method, &format!("{path}?unknown=1")));
-            assert!(!allowed_request("DELETE", path));
         }
-        for path in ["/account-model-profiles/jobs/invalid", "/account-model-profiles/jobs/1", "/account-model-profiles/preview/", "/account-model-profiles/apply/../credentials"] {
+        for path in ["/account-templates?unknown=1", "/account-templates?account_id=0",
+                     "/accounts/421/model-detection?x=1", "/modeltrace/fingerprint-bank?x=1"] {
             assert!(!allowed_request("GET", path));
         }
+        assert!(!allowed_request("DELETE", "/account-templates"));
+        assert!(!allowed_request("PUT", "/modeltrace/fingerprint-bank"));
         let old: Preferences = serde_json::from_str("{}").unwrap();
         assert!(old.model_test_concurrency.is_none());
         let changed = Preferences { model_test_concurrency: Some(3), ..old };

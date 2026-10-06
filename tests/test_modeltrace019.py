@@ -59,7 +59,7 @@ class ModelTrace019Tests(unittest.TestCase):
         tests = ModelTests.__new__(ModelTests)
         tests.s = service
         row = {
-            "id": 387, "name": "yx", "platform": "openai", "type": "apikey",
+            "id": 387, "name": "fixture-slow", "platform": "openai", "type": "apikey",
             "parent_account_id": None, "credentials": {
                 "api_key": "secret", "base_url": "https://api.example.test/v1",
                 "model_mapping": {"gpt-6-luna": "gpt-6-astra"},
@@ -82,7 +82,7 @@ class ModelTrace019Tests(unittest.TestCase):
         tests = ModelTests.__new__(ModelTests)
         tests.s = service
         row = {
-            "id": 387, "name": "yx", "platform": "openai", "type": "oauth",
+            "id": 387, "name": "fixture-slow", "platform": "openai", "type": "oauth",
             "parent_account_id": None, "credentials": {"access_token": "secret"},
             "extra": {}, "proxy_id": None,
         }

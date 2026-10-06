@@ -201,7 +201,7 @@ class AutoResetController:
         return latest_openai_result(row, saved, now)
 
     def _eligible(self, row, now, *, held=False):
-        return bool(row and not row.get("parent_account_id")
+        return bool(row and not getattr(self.m, "detection_gate", lambda _aid: False)(int(row["id"])) and not row.get("parent_account_id")
                     and not (row.get("extra") or {}).get("parent_account_id")
                     and automatic_eligible({**row, "schedulable": True} if held else row, now))
 
