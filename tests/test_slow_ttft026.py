@@ -107,7 +107,7 @@ class SlowAlertIntegrationTests(unittest.TestCase):
         class Db:
             def __init__(self) -> None:
                 self.usage = [sample(i, 11001 if i < 8 else 9000, account_id=1) | {
-                    "account_name": "tmq", "account_platform": "openai", "account_type": "oauth"} for i in range(10)]
+                    "account_name": "fixture-fast", "account_platform": "openai", "account_type": "oauth"} for i in range(10)]
 
             def fetch_one(self, sql, params=None):
                 if "coalesce(max(id)" in sql:

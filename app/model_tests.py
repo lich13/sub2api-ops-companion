@@ -105,6 +105,7 @@ class ModelTests:
         self.start_lock = asyncio.Lock()
         self.execute = execute
         self.job_slots = asyncio.Semaphore(2)
+        self.waiting_leases: dict[str, AccountLease] = {}
         self.contexts: dict[str, dict] = {}
         self.closing = False
         with self.store.transaction() as data:
@@ -222,12 +223,12 @@ class ModelTests:
             if job.get('status') == 'queued' and job['id'] not in self.tasks:
                 self.launch(job)
 
-    def launch(self, job, context=None):
-        task = asyncio.create_task(self.wait_and_run(job, context))
+    def launch(self, job, context=None, prepared=None):
+        task = asyncio.create_task(self.wait_and_run(job, context, prepared))
         self.tasks[job['id']] = task
         task.add_done_callback(lambda value: self.finished(job['id'], value))
 
-    async def start(self, aid, payload):
+    async def start(self, aid, payload, automatic: dict | None = None):
         async with self.start_lock:
             data = self.store.read()
             previous = data['requests'].get(payload.request_id)
@@ -252,12 +253,18 @@ class ModelTests:
                     conflict = True
             target, owner = await self.target(row, payload.model_id)
             job_id = uuid.uuid4().hex
+            auto = dict(automatic or {})
             job = {'id': job_id, 'request_id': payload.request_id, 'account_id': aid,
                    'account_name': row['name'], 'requested_model': payload.model_id,
                    'forwarded_model': target['model'], 'returned_models': [],
                    'status': 'queued', 'completed_groups': 0, 'valid_groups': 0, 'attempts': 0,
                    'queued_at': stamp(), 'started_at': None, 'completed_at': None, 'duration_ms': 0, 'error': '',
                    'report': None, 'bank_version': None, 'concurrency': payload.concurrency,
+                   'trigger_source': 'automatic' if automatic else 'manual', 'automatic': bool(automatic),
+                   'triggers': sorted(set(auto.get('triggers') or [])),
+                   'detection_generation': auto.get('detection_generation'),
+                   'detection_mark_version': auto.get('detection_mark_version'),
+                   'first_group_prediction': None, 'automatic_disposition': None,
                    'target_signature': target_signature(row), 'owner_signature': target_signature(owner),
                    'groups': [{'index': i+1, 'status': 'queued', 'attempts': 0, 'ttft_ms': None,
                                'duration_ms': None, 'error': ''} for i in range(3)]}
@@ -273,26 +280,64 @@ class ModelTests:
                 data['accounts'][str(aid)] = job
                 data['requests'][payload.request_id] = job_id
             if not conflict:
-                self.launch(job)
+                # Keep credentials and the target only in memory for the short
+                # handoff.  The worker still re-reads the account immediately
+                # before dispatch, so queued work cannot use stale credentials.
+                self.launch(job, prepared={'row': row, 'owner': owner, 'target': target})
             return self.public(job)
 
     @staticmethod
     def public(job):
         return {k: v for k, v in job.items() if k not in {'target_signature', 'owner_signature'}}
 
-    async def wait_and_run(self, job, context=None):
+    async def wait_and_run(self, job, context=None, prepared=None):
         lease, slot = None, False
         try:
-            row = await self.account(job['account_id'])
+            prepared = prepared if isinstance(prepared, dict) else None
+            row = prepared.get('row') if prepared else await self.account(job['account_id'])
             lease = AccountLease(self.s.r.db, row)
+            self.waiting_leases[job['id']] = lease
             while True:
-                if not self.job_slots.locked() and lease.acquire():
+                manual_waiting = job.get('automatic') and any(
+                    not value.get('automatic') and value.get('status') == 'queued'
+                    and value['id'] in self.waiting_leases
+                    and all(not lock.locked() for lock in self.waiting_leases[value['id']].locks)
+                    for value in self.store.read()['jobs'].values())
+                if not manual_waiting and not self.job_slots.locked() and lease.acquire():
                     await self.job_slots.acquire()
                     slot = True
+                    self.waiting_leases.pop(job['id'], None)
                     break
                 await asyncio.sleep(.25)
-            row = await self.account(job['account_id'])
-            target, owner = await self.target(row, job['requested_model'])
+            # Automatic detection is billable and may be superseded while it
+            # waits in the queue. Recheck the short-lived control generation
+            # immediately before reading credentials/dispatching a request.
+            if job.get('automatic'):
+                await self.s.model_detection.guard(self.get(job['id']))
+            fresh_row = await self.account(job['account_id'])
+            if job.get('automatic') and not await self.s.actions.model_allowed(fresh_row, job['requested_model'], candidate_required=True):
+                self.update(job['id'], status='needs_confirmation', error='所选模型已不在当前模型候选中', completed_at=stamp())
+                return
+            if prepared:
+                prepared_row = prepared['row']
+                if target_signature(fresh_row) != target_signature(prepared_row):
+                    self.update(job['id'], status='needs_confirmation', error='测试目标已变化，请重新选择', completed_at=stamp())
+                    return
+                row = fresh_row
+                owner = prepared['owner']
+                target = prepared['target']
+                if not await self.s.actions.model_allowed(row, job['requested_model']):
+                    self.update(job['id'], status='needs_confirmation', error='所选模型已不在当前分组白名单中', completed_at=stamp())
+                    return
+                if owner['id'] != row['id']:
+                    fresh_owner = await self.account(owner['id'])
+                    if target_signature(fresh_owner) != target_signature(owner):
+                        self.update(job['id'], status='needs_confirmation', error='母账号凭据已变化，请重新选择', completed_at=stamp())
+                        return
+                    owner = fresh_owner
+            else:
+                row = fresh_row
+                target, owner = await self.target(row, job['requested_model'])
             if target_signature(row) != job['target_signature'] or target_signature(owner) != job['owner_signature']:
                 self.update(job['id'], status='needs_confirmation', error='测试目标已变化，请重新选择', completed_at=stamp())
                 return
@@ -300,6 +345,8 @@ class ModelTests:
                 snapshot = self.s.r.fingerprint_bank.capture() if getattr(self.s.r, 'fingerprint_bank', None) is not None else bank()
                 context = {'samples': {}, 'challenges': list(challenges()), 'snapshot': snapshot,
                            'row': row, 'owner': owner, 'target': target}
+                if job.get('automatic') and not any(m['id'] == 'gpt-5.6-luna' for m in snapshot[0]['models']):
+                    raise HTTPException(409, '当前指纹库缺少降智判定模型')
                 self.contexts[job['id']] = context
             else:
                 # Retried groups use the original identity, bank and request target.
@@ -320,6 +367,7 @@ class ModelTests:
         except Exception:
             self.update(job['id'], status='failed', error='测试无法完成', completed_at=stamp())
         finally:
+            self.waiting_leases.pop(job['id'], None)
             if lease:
                 lease.release()
             if slot:
@@ -331,6 +379,7 @@ class ModelTests:
         groups, returned = job['groups'], set(job.get('returned_models') or [])
         slots, analysis_lock, progress_lock = asyncio.Semaphore(job.get('concurrency', 1)), asyncio.Lock(), asyncio.Lock()
         attempts, fatal, early, children = 0, None, False, []
+        automatic_disposition = None
 
         async def persist(**changes):
             async with progress_lock:
@@ -356,7 +405,7 @@ class ModelTests:
                     child.cancel()
 
         async def sample(index, expected, prompt, client):
-            nonlocal attempts, fatal, early
+            nonlocal attempts, fatal, early, automatic_disposition
             group, group_started = groups[index], time.monotonic()
             try:
                 for attempt in range(3):
@@ -365,6 +414,11 @@ class ModelTests:
                         if early or fatal:
                             group['status'] = 'skipped' if early else 'cancelled'
                             return
+                        if job.get('automatic'):
+                            try:
+                                await self.s.model_detection.guard(self.get(job_id))
+                            except HTTPException as exc:
+                                raise TestFailure('account_changed') from exc
                         if target_signature(await self.account(row['id'])) != target_signature(row):
                             raise TestFailure('account_changed')
                         if owner['id'] != row['id'] and target_signature(await self.account(owner['id'])) != target_signature(owner):
@@ -422,8 +476,20 @@ class ModelTests:
                             return
                         group.update(status='completed', analysis_ms=round((time.monotonic()-analysis_started)*1000))
                         await persist(completed_groups=len(samples), valid_groups=(report or {}).get('used_outputs', 0),
-                                      returned_models=sorted(returned), report=report)
-                        if report and report['probability'] >= .99:
+                                      returned_models=sorted(returned), report=report,
+                                      first_group_prediction=(report or {}).get('prediction') if index == 0 else self.get(job_id).get('first_group_prediction'))
+                        # Automatic disposition is deliberately based only on the first
+                        # valid sample. Later groups may refine a manual result but can
+                        # never retroactively stop an account.
+                        if index == 0 and job.get('automatic') and report and report.get('used_outputs', 0) >= 1 and report.get('prediction') == 'gpt-5.6-luna':
+                            early = True
+                            try:
+                                automatic_disposition = await self.s.model_detection.verdict(self.get(job_id), report)
+                            except HTTPException as exc:
+                                automatic_disposition = {'status': 'overridden', 'reason': str(exc.detail)[:200]}
+                            await persist(automatic_disposition=automatic_disposition, completion_reason='automatic_degradation')
+                            stop_peers()
+                        if report and report['probability'] >= .99 and not early:
                             early = True
                             stop_peers()
                         await progress()
@@ -441,12 +507,25 @@ class ModelTests:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10, write=10, pool=10),
                     follow_redirects=False, trust_env=False, proxy=target['proxy']) as client:
-                children = [asyncio.create_task(sample(i, expected, prompt, client))
-                            for i, (expected, prompt) in enumerate(context['challenges']) if i not in samples]
+                pending_groups = [(i, expected, prompt) for i, (expected, prompt) in enumerate(context['challenges']) if i not in samples]
                 try:
-                    results = await asyncio.gather(*children, return_exceptions=True)
-                    if any(isinstance(value, Exception) for value in results):
-                        fatal = fatal or 'internal_error'
+                    # Automatic detection gives the first sample exclusive priority;
+                    # this prevents groups 2/3 from spending a request before the
+                    # immediate gpt-5.6-luna decision has completed.
+                    if job.get('automatic') and pending_groups:
+                        i, expected, prompt = pending_groups.pop(0)
+                        first = asyncio.create_task(sample(i, expected, prompt, client))
+                        children.append(first)
+                        result = await asyncio.gather(first, return_exceptions=True)
+                        if any(isinstance(value, Exception) for value in result):
+                            fatal = fatal or 'internal_error'
+                    if not early and not fatal and pending_groups:
+                        children.extend(asyncio.create_task(sample(i, expected, prompt, client))
+                                        for i, expected, prompt in pending_groups)
+                        results = await asyncio.gather(*children[1:] if job.get('automatic') else children,
+                                                       return_exceptions=True)
+                        if any(isinstance(value, Exception) for value in results):
+                            fatal = fatal or 'internal_error'
                 finally:
                     stop_peers()
                     await asyncio.gather(*children, return_exceptions=True)
@@ -454,8 +533,10 @@ class ModelTests:
             retryable = any(g.get('retryable') and g['status'] == 'failed' for g in groups) and not fatal and not early
             status = 'failed' if fatal or (not samples and not early) else 'completed'
             error = ERRORS[fatal] if fatal else '' if current.get('report') else '有效样本不足，无法识别'
-            await persist(status=status, error=error, can_retry=retryable,
-                          completion_reason='confidence_99' if early else 'fatal_error' if fatal else 'samples_finished')
+            completion_reason = ('automatic_degradation' if automatic_disposition else
+                                 'confidence_99' if early else 'fatal_error' if fatal else 'samples_finished')
+            await persist(status=status, error=error, can_retry=retryable, completion_reason=completion_reason,
+                          automatic_disposition=automatic_disposition)
         finally:
             await persist(groups=groups, completed_at=stamp(), duration_ms=round((time.monotonic()-started)*1000))
             final = self.get(job_id)

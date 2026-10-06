@@ -1,7 +1,7 @@
 import copy
 import unittest
 from tests import test_capacity_alerts as alerts_fixture
-from tests import test_account_profiles022 as profiles_fixture
+from tests import test_account_templates027 as templates_fixture
 from app.capacity_alerts import CapacityAlerts, MESSAGES, mark_view, match_message
 
 
@@ -42,22 +42,28 @@ class KeyAlerts023Tests(unittest.TestCase):
 
 
 class KeyProfiles023Tests(unittest.TestCase):
-    setUp = profiles_fixture.ProfileTests.setUp
-    mark = profiles_fixture.ProfileTests.mark
-    create = profiles_fixture.ProfileTests.create
-
-    def test_key_mark_applies_only_mapping_preserves_key_url_proxy_pool(self):
-        row = self.db.rows[413]
-        row.update(type='apikey', credentials={'api_key': 'private-key', 'base_url': 'https://gateway.invalid'},
-                   proxy_id=9, group_ids=[13], extra={'pool': {'size': 4}}, status='disabled', schedulable=False)
+    def test_key_template_applies_only_model_mapping(self):
+        fixture = templates_fixture.AccountTemplateTests()
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        row = {
+            "id": 501, "name": "key-account", "platform": "openai", "type": "apikey",
+            "deleted_at": None, "parent_account_id": None, "passthrough": False,
+            "model_mapping": {}, "credentials": {"api_key": "fixture-key", "base_url": "https://gateway.invalid"},
+            "proxy_id": 9, "group_ids": [13], "extra": {"pool": {"size": 4}},
+            "status": "disabled", "schedulable": False,
+        }
+        fixture.db.rows[501] = row
+        templates = fixture.templates
+        view = templates.initialize_sources(1, 2)
         before = copy.deepcopy(row)
-        self.p.initialize_sources()
-        self.assertEqual(self.writes, [])
-        self.mark(413, True)
-        for source, item in self.p.pending(): self.p.process(source, item)
-        self.assertEqual(row['model_mapping'], self.db.rows[387]['model_mapping'])
-        self.assertEqual({k: v for k, v in row.items() if k != 'model_mapping'}, {k: v for k, v in before.items() if k != 'model_mapping'})
-        self.mark(413, False)
-        for source, item in self.p.pending(): self.p.process(source, item)
-        self.assertEqual(row['model_mapping'], self.db.rows[396]['model_mapping'])
-        self.assertEqual(len(self.writes), 2)
+        templates.writer = lambda aid, mapping, _key: (fixture.db.rows[aid].update(model_mapping=dict(mapping)) or "ok")
+        current = templates.account(501)
+        expected = templates_fixture.AccountTemplateTests
+        from app.account_templates import TemplateApplication
+        from app.account_templates import account_version
+        payload = TemplateApplication(expected_version=account_version(current), template_id="degraded", template_version=view["version"])
+        result = templates.apply(501, payload, "admin-key")
+        self.assertTrue(result["verified"])
+        self.assertEqual(row["model_mapping"], {"fixture-model": "fixture-model", "fixture-input-*": "fixture-model", "fixture-terra-*": "fixture-model"})
+        self.assertEqual({k: v for k, v in row.items() if k != "model_mapping"}, {k: v for k, v in before.items() if k != "model_mapping"})

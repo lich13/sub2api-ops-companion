@@ -5,12 +5,19 @@ import threading
 from typing import Any
 
 _guard = threading.Lock()
+_fallback_control_locks: dict[int, dict[int, threading.RLock]] = {}
 
 
 def control_lock(db: Any, account_id: int) -> Any:
     """Short scheduling mutations never wait on a model/quota operation lease."""
     with _guard:
-        locks = vars(db).setdefault("_companion_control_locks", {})
+        try:
+            locks = vars(db).setdefault("_companion_control_locks", {})
+        except TypeError:
+            # Lightweight test/database adapters may use ``__slots__``. Keep a
+            # process-local map keyed by adapter identity without requiring a
+            # writable instance dictionary.
+            locks = _fallback_control_locks.setdefault(id(db), {})
         return locks.setdefault(int(account_id), threading.RLock())
 
 

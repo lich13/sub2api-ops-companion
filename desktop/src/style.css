@@ -2186,3 +2186,78 @@ td:last-child {
   .operation-dialog { width: 100%; max-height: 100dvh; border-radius: 16px 16px 0 0; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); }
   .operation-dialog button { min-height: 48px; }
 }
+
+
+/* Account templates and timed ModelTrace detection share the compact settings surface. */
+.account-templates-dialog,
+.model-detection-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  max-height: min(90dvh, 900px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.account-templates-dialog > header,
+.model-detection-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.account-templates-dialog h2,
+.model-detection-dialog h2 { margin: 3px 0 0; font-size: 19px; }
+.account-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.account-template-card,
+.account-template-apply { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); }
+.account-template-card > header,
+.account-template-heading,
+.account-template-apply .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.account-template-card h3,
+.account-template-card h4,
+.account-template-apply h3 { margin: 0; }
+.account-template-card h3 { font-size: 14px; }
+.account-template-card h4 { margin-top: 14px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.account-template-heading .text-button { min-height: 32px; padding: 4px 7px; }
+.account-template-row { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.account-template-row input { min-width: 0; flex: 1; width: 100%; }
+.account-template-row.mapping input { width: calc(50% - 13px); }
+.account-template-row .icon-button { flex: 0 0 36px; min-width: 36px; min-height: 36px; }
+.account-template-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 0; }
+.account-template-apply { display: grid; gap: 10px; margin-top: 4px; }
+.account-template-apply-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.account-template-apply select { min-width: 0; width: 100%; }
+.account-template-apply .muted { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.model-detection-dialog { width: min(520px, calc(100vw - 32px)); }
+.model-detection-dialog .switch-row,
+.model-detection-dialog .field { display: grid; grid-template-columns: 1fr minmax(150px, 260px); gap: 12px; align-items: center; margin: 12px 0; }
+.model-detection-dialog .field > span { color: var(--muted); font-size: 12px; }
+.model-detection-dialog .field input,
+.model-detection-dialog .field select { min-width: 0; width: 100%; }
+.detection-meta { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px 12px; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.detection-meta dt { color: var(--muted); font-size: 12px; }
+.detection-meta dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.model-detection-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 820px) {
+  .account-template-grid { grid-template-columns: 1fr; }
+}
+
+.fingerprint-status { margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.fingerprint-status-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.fingerprint-status details { flex: 1; min-width: 0; }
+.fingerprint-status summary { cursor: pointer; }
+.fingerprint-status dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 10px; }
+.fingerprint-status dt { color: var(--muted); }
+.fingerprint-status dd { margin: 0; overflow-wrap: anywhere; }
+.fingerprint-status button { flex: 0 0 auto; }
+@media (max-width: 760px) { .fingerprint-status button { min-height: 48px; } .account-template-row.mapping { grid-template-columns: minmax(0,1fr) 18px; } .account-template-row.mapping input:nth-of-type(2) { grid-column: 1; } }
+.model-detection-dialog .switch-row { display: flex; justify-content: space-between; min-height: 48px; cursor: pointer; }
+.model-detection-dialog .switch-row input { appearance: none; flex: 0 0 44px; width: 44px; height: 26px; min-height: 26px; padding: 3px; margin: 0; border: 0; border-radius: 20px; background: var(--line); cursor: pointer; }
+.model-detection-dialog .switch-row input::before { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform 120ms ease; }
+.model-detection-dialog .switch-row input:checked { background: var(--accent); }
+.model-detection-dialog .switch-row input:checked::before { transform: translateX(18px); }
+.model-detection-dialog .switch-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.model-detection-dialog .switch-row input:disabled { opacity: .5; cursor: default; }

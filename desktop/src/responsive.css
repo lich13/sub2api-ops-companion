@@ -140,3 +140,29 @@
 .mobile-groups-surface .compact .mini-usage { flex-wrap: wrap; }
 .mobile .toast { left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); max-width: none; width: auto; transform: none; }
 .mobile .connect-card { width: 100%; padding: 20px 12px; margin: 0; }
+
+@media (max-width: 680px) {
+  .mobile .account-templates-dialog,
+  .mobile .model-detection-dialog { width: 100%; max-width: none; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+  .mobile .account-template-grid { grid-template-columns: 1fr; }
+  .mobile .account-template-row { align-items: stretch; }
+  .mobile .account-template-row.mapping { flex-wrap: wrap; }
+  .mobile .account-template-row.mapping input { width: calc(100% - 42px); }
+  .mobile .account-template-row.mapping svg { transform: rotate(90deg); margin: -5px auto; }
+  .mobile .account-template-apply-row { grid-template-columns: 1fr; }
+  .mobile .account-template-actions,
+  .mobile .model-detection-dialog > footer { justify-content: stretch; }
+  .mobile .account-template-actions > button,
+  .mobile .model-detection-dialog > footer > button { flex: 1; }
+  .mobile .model-detection-dialog .switch-row,
+  .mobile .model-detection-dialog .field { grid-template-columns: 1fr; gap: 6px; align-items: start; }
+}
+
+.mobile-primary-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+.mobile-primary-actions > button { flex: 1 1 90px; min-height: 48px; justify-content: center; }
+@media (max-width: 680px) {
+  .mobile .account-template-row.mapping { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 4px 8px; }
+  .mobile .account-template-row.mapping input { grid-column: 1; width: 100%; }
+  .mobile .account-template-row.mapping > svg { grid-column: 1; justify-self: center; margin: 0; }
+  .mobile .account-template-row.mapping > button { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+}

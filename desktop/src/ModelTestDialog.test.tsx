@@ -43,6 +43,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.mocked(api).mockImplementation(async (_method, path) => {
+    if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
     if (path === "/accounts/101/models?purpose=model_test") {
       return ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "codex-auto-review"].map((id) => ({ id, display_name: id, type: "model" })) as never;
     }
@@ -60,13 +61,18 @@ describe("ModelTestDialog candidates", () => {
   it("requests and renders the exact group whitelist candidates", async () => {
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
-    expect(vi.mocked(api).mock.calls[0]).toEqual(["GET", "/accounts/101/models?purpose=model_test"]);
+    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/accounts/101/models?purpose=model_test"]);
     expect(container.querySelectorAll('select[aria-label="测试模型"] option')).toHaveLength(8);
     expect(container.querySelector("button")?.hasAttribute("disabled")).toBe(false);
   });
 
   it("disables start and offers retry when candidate loading fails", async () => {
-    vi.mocked(api).mockRejectedValueOnce(new Error("目录失败"));
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
+      if (path === "/accounts/101/models?purpose=model_test") throw new Error("目录失败");
+      if (path === "/accounts/101/model-tests/latest") return null as never;
+      throw new Error("unexpected " + path);
+    });
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("目录失败");
@@ -134,3 +140,13 @@ describe("ModelTestDialog candidates", () => {
     expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
   });
 });
+const fingerprintBank = {
+  version: {
+    revision: "fixture-revision",
+    sha256: "fixture-sha256",
+    built_at: "2026-10-06T00:00:00Z",
+    analyzer_version: 1,
+  },
+  source: "bundled",
+  status: "ready",
+};

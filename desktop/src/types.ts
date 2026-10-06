@@ -1,7 +1,7 @@
 export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
 export type Account = {
   degradation_mark?: DegradationMark;
-  model_profile?: { status: string; error?: string } | null;
+  model_detection?: { enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
   id: number;
   name: string;
   priority: number;

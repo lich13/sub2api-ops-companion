@@ -22,7 +22,7 @@ from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recover
 from .settings import load_settings
 from .versioning import APP_VERSION
 from .capacity_alerts import CapacityAlerts
-from .fingerprint_bank import FINGERPRINT_SYNC_INTERVAL_SECONDS, FingerprintBankService
+from .fingerprint_bank import FingerprintBankService
 from .modeltrace import configure_bank_provider
 
 settings = load_settings()
@@ -129,7 +129,7 @@ async def fingerprint_bank_loop() -> None:
             raise
         except Exception as exc:
             write_audit(settings.audit_path, "fingerprint_bank_loop_error", {"error": type(exc).__name__})
-        await asyncio.sleep(FINGERPRINT_SYNC_INTERVAL_SECONDS)
+        await asyncio.sleep(300)
 
 
 @asynccontextmanager
@@ -168,8 +168,14 @@ async def lifespan(_: FastAPI):
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
+    oauth_monitor.detection_gate = desktop_service.model_detection.held
+    key_fallback_controller.detection_gate = desktop_service.model_detection.held
+    with capacity_alerts.store.transaction() as alert_state:
+        from datetime import datetime, timezone
+        alert_state.setdefault("detection_since", datetime.now(timezone.utc).isoformat())
+    await asyncio.to_thread(desktop_service.account_templates.retire_legacy)
     capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
-    profile_task = asyncio.create_task(desktop_service.account_model_profiles.loop())
+    detection_task = asyncio.create_task(desktop_service.model_detection.loop())
     operation_task = asyncio.create_task(desktop_service.operations.loop())
     desktop_service.model_tests.resume()
     fingerprint_bank_task = asyncio.create_task(fingerprint_bank_loop())
@@ -179,9 +185,9 @@ async def lifespan(_: FastAPI):
         operation_task.cancel()
         with suppress(asyncio.CancelledError):
             await operation_task
-        profile_task.cancel()
+        detection_task.cancel()
         with suppress(asyncio.CancelledError):
-            await profile_task
+            await detection_task
         for task in capacity_tasks:
             task.cancel()
         for task in capacity_tasks:

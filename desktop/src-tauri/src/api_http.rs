@@ -37,6 +37,18 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
         p if p.ends_with("/model-tests/latest") && data.is_null() => true,
         p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
+        "/account-templates" => data["configured"].is_boolean() && data["version"].is_string()
+            && ["full", "degraded", "takeover"].iter().all(|name| {
+                let template = &data["templates"][*name];
+                template["whitelist"].as_array().is_some_and(|values| values.iter().all(Value::is_string))
+                    && template["mappings"].as_array().is_some_and(|values| values.iter().all(|v| v["source"].is_string() && v["target"].is_string()))
+            }),
+        p if p.ends_with("/model-detection") => data["account_id"].is_u64() && data["version"].is_string()
+            && data["enabled"].is_boolean() && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
+            && data["model_id"].is_string() && data["status"].is_string(),
+        "/modeltrace/fingerprint-bank" | "/modeltrace/fingerprint-bank/sync" => data["version"]["revision"].is_string()
+            && data["version"]["sha256"].is_string() && data["version"]["analyzer_version"].is_u64()
+            && data["source"].is_string() && data["status"].is_string(),
         "/quota-refresh" => data["status"].is_string() && data["items"].is_array(),
         p if p.ends_with("/models") => data.as_array().is_some_and(|m| m.iter().all(|v| v["id"].is_string())),
         _ => data.is_object(),
@@ -163,6 +175,21 @@ mod tests {
         let (result, log) = serve("200 OK", "Content-Type: application/json", body, false).await;
         assert!(result.is_ok()); assert!(log.is_empty());
         assert!(!snapshot_valid(&serde_json::json!({"accounts":null})));
+    }
+
+    #[test]
+    fn detection_templates_and_bank_response_guards() {
+        let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
+        assert!(shape_valid("/accounts/1/model-detection", &detection));
+        let mut bad = detection.clone(); bad["interval_minutes"] = serde_json::json!(0);
+        assert!(!shape_valid("/accounts/1/model-detection", &bad));
+        let profile = serde_json::json!({"whitelist":[],"mappings":[]});
+        let templates = serde_json::json!({"version":"fixture","configured":false,"templates":{"full":profile,"degraded":profile,"takeover":profile}});
+        assert!(shape_valid("/account-templates", &templates));
+        assert!(!shape_valid("/account-templates", &serde_json::json!({})));
+        let bank = serde_json::json!({"version":{"revision":"fixture","sha256":"fixture","analyzer_version":1},"source":"bundled","status":"idle"});
+        assert!(shape_valid("/modeltrace/fingerprint-bank", &bank));
+        assert!(!shape_valid("/modeltrace/fingerprint-bank/sync", &serde_json::json!({})));
     }
 
     #[test]

@@ -24,4 +24,5 @@ def versions(row, managed=False):
         'reset_quota': [limits, {k: v for k, v in extra.items() if 'reset_credit' in k or 'reset_quota' in k}],
         'test': [groups, row.get('model_catalog_version')],
         'model_test': [groups, row.get('model_catalog_version')],
+        'account_template': [row.get('model_mapping_version') or row.get('credential_version')],
     }.items()}
