@@ -25,7 +25,7 @@ use tokio::sync::{oneshot, watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
-use api_http::http;
+use api_http::{http, http_detailed, HttpFailure};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
@@ -60,6 +60,7 @@ struct ViewState {
     connected: bool,
     online: bool,
     error: String,
+    upstream_connection: Option<Value>,
     snapshot: Option<Value>,
     preferences: Preferences,
 }
@@ -175,6 +176,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain == "/connection-status" { return method == "GET" && path == plain; }
     let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
     if plain.starts_with("/account-operations") {
         let query_ok = path.split_once('?').is_none_or(|(_, q)| q.strip_prefix("after_event=")
@@ -199,8 +201,17 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return match method {
             "GET" => path == "/account-templates" || path.strip_prefix("/account-templates?account_id=").is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0)),
             "PUT" => path == "/account-templates",
+            "POST" => path == "/account-templates" || path == "/account-templates/custom",
             _ => false,
         };
+    }
+    let template_id = |s: &str| s.strip_prefix("custom-").is_some_and(|id| id.len() == 24 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+    if let Some(suffix) = plain.strip_prefix("/account-templates/") {
+        if suffix == "custom" { return method == "POST" && !path.contains('?'); }
+        if let Some(id) = suffix.strip_prefix("custom/") {
+            return !path.contains('?') && template_id(id) && matches!(method, "PUT" | "DELETE");
+        }
+        return !path.contains('?') && template_id(suffix) && matches!(method, "PUT" | "DELETE");
     }
     if account_path(plain, "/model-detection") {
         return match method { "GET" | "PUT" => !path.contains('?'), _ => false };
@@ -217,7 +228,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
     } { return true; }
     match method {
         "GET" => {
-            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities" | "/usage-records" | "/usage-record-options")
+            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities" | "/connection-status" | "/usage-records" | "/usage-record-options")
                 || plain.strip_prefix("/usage-records/")
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
                 || plain
@@ -279,10 +290,10 @@ fn publish(app: &tauri::AppHandle, value: &ViewState) {
     let _ = app.emit("ops-state", value);
 }
 
-fn apply_refresh(view: &mut ViewState, result: Result<Value, String>) {
+fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
     match result {
-        Ok(data) => { view.snapshot = Some(data); view.online = true; view.error.clear(); }
-        Err(error) => { view.online = false; view.error = error; }
+        Ok(data) => { view.snapshot = Some(data); view.online = true; view.error.clear(); view.upstream_connection = None; }
+        Err(error) => { view.online = false; view.error = error.message; view.upstream_connection = error.connection; }
     }
 }
 
@@ -297,7 +308,7 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     if base.is_empty() || key.is_none() {
         return;
     }
-    let result = active_read(state, http(
+    let result = active_read(state, http_detailed(
         &state.client,
         &base,
         key.as_deref().unwrap_or(""),
@@ -316,14 +327,20 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         let text = if view.online {
             "Sub2Ops · 已连接"
         } else {
-            "Sub2Ops · 离线"
+            match view.upstream_connection.as_ref().and_then(|c| c["state"].as_str()) {
+                Some("auth_rejected") => "Sub2Ops · 管理员 Key 被拒绝",
+                Some("network_unreachable") => "Sub2Ops · 上游不可达",
+                Some("route_not_found") => "Sub2Ops · 管理接口路径不兼容",
+                Some("protocol_mismatch") => "Sub2Ops · 管理接口响应不兼容",
+                _ => "Sub2Ops · 离线",
+            }
         };
         let _ = tray.set_tooltip(Some(text));
     }
     publish(app, &view);
 }
 
-async fn active_read<T>(state: &Runtime, request: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+async fn active_read<T, E: From<&'static str>>(state: &Runtime, request: impl std::future::Future<Output = Result<T, E>>) -> Result<T, E> {
     let mut changed = state.read_epoch.subscribe();
     if !state.foreground.load(Ordering::SeqCst) { return Err("应用已转入后台".into()); }
     tokio::select! {
@@ -406,6 +423,7 @@ async fn connect(
         view.connected = true;
         view.snapshot = None;
         view.error.clear();
+        view.upstream_connection = data.get("upstream_connection").cloned();
         *state.key.lock().await = Some(api_key.trim().to_string());
         publish(&app, &view);
     }
@@ -427,6 +445,7 @@ async fn disconnect(app: tauri::AppHandle, state: State<'_, Arc<Runtime>>) -> Re
     view.online = false;
     view.snapshot = None;
     view.error.clear();
+    view.upstream_connection = None;
     view.preferences.base_url.clear();
     save_preferences(&state.path, &view.preferences)?;
     publish(&app, &view);
@@ -457,7 +476,8 @@ async fn api_request(
     let (view, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await.clone();
-        if !view.online || !state.foreground.load(Ordering::SeqCst) {
+        let diagnostic = method == "GET" && path == "/connection-status";
+        if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) {
             return Err("当前离线，请恢复连接后操作".into());
         }
         let key = state.key.lock().await.clone().ok_or("尚未连接")?;
@@ -521,7 +541,8 @@ async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: St
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
-        if !view.online || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
+        let diagnostic = method == "GET" && path == "/connection-status";
+        if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
         (view.preferences.base_url.clone(), state.key.lock().await.clone().ok_or("尚未连接")?, state.generation.load(Ordering::SeqCst))
     };
     let (tx, rx) = oneshot::channel();
@@ -674,14 +695,37 @@ async fn check_updates(
     }).await?;
     if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION"), cfg!(mobile)) {
             app.opener()
-                .open_url(url, None::<&str>)
+                .open_url(&url, None::<&str>)
                 .map_err(|_| "无法打开发布页")?;
-            return Ok(format!("发现 {tag}，已打开安装包"));
+            return Ok(if cfg!(mobile) { format!("发现 {tag}，已打开发布页") }
+                else { format!("发现 {tag}，已打开安装包") });
+    }
+    if cfg!(mobile) {
+        let page = latest_release_page(&releases).unwrap_or_else(|| format!("{RELEASES}/latest"));
+        app.opener().open_url(&page, None::<&str>).map_err(|_| "无法打开发布页")?;
+        return Ok(format!("当前版本 {}，已打开发布页", env!("CARGO_PKG_VERSION")));
     }
     Ok(format!("当前版本 {}，已是最新", env!("CARGO_PKG_VERSION")))
 }
 
-fn release_update<'a>(releases: &'a Value, current: &str, android: bool) -> Option<(&'a str, &'a str)> {
+fn parsed_release_version(tag: &str) -> Option<(u64, u64, u64)> {
+    let raw = tag.strip_prefix("desktop-v")?;
+    if !raw.bytes().all(|c| c.is_ascii_digit() || c == b'.') { return None; }
+    let parts = raw.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
+    if parts.len() != 3 { return None; }
+    Some((parts[0], parts[1], parts[2]))
+}
+
+fn latest_release_page(releases: &Value) -> Option<String> {
+    releases.as_array()?.iter().filter_map(|release| {
+        if release["draft"].as_bool().unwrap_or(false) || release["prerelease"].as_bool().unwrap_or(false) { return None; }
+        let tag = release["tag_name"].as_str()?;
+        parsed_release_version(tag)?;
+        Some((parsed_release_version(tag)?, tag))
+    }).max_by_key(|r| r.0).map(|(_, tag)| format!("{RELEASES}/tag/{tag}"))
+}
+
+fn release_update(releases: &Value, current: &str, android: bool) -> Option<(String, String)> {
     let version = |value: &str| -> Option<(u64, u64, u64)> {
         let parts = value.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
         if parts.len() != 3 { return None; }
@@ -691,14 +735,15 @@ fn release_update<'a>(releases: &'a Value, current: &str, android: bool) -> Opti
     releases.as_array()?.iter().filter_map(|release| {
         if release["draft"].as_bool().unwrap_or(false) || release["prerelease"].as_bool().unwrap_or(false) { return None; }
         let tag = release["tag_name"].as_str()?;
-        let newer = version(tag.strip_prefix("desktop-v")?)?;
+        let newer = parsed_release_version(tag)?;
         if newer <= current { return None; }
+        if android { return Some((newer, tag.to_string(), format!("{RELEASES}/tag/{tag}"))); }
         let asset = release["assets"].as_array()?.iter().find(|asset| asset["name"].as_str().is_some_and(|name| {
-            if android { name.ends_with("_arm64-v8a.apk") } else { name.ends_with("_aarch64.dmg") }
+            name.ends_with("_aarch64.dmg")
         }))?;
         let url = asset["browser_download_url"].as_str()?;
         if !url.starts_with(&format!("{RELEASES}/download/{tag}/")) { return None; }
-        Some((newer, tag, url))
+        Some((newer, tag.to_string(), url.to_string()))
     }).max_by_key(|r| r.0).map(|(_, tag, url)| (tag, url))
 }
 
@@ -1165,9 +1210,9 @@ mod tests {
         });
         assert!(started.load(Ordering::SeqCst));
         assert!(result.unwrap_err().contains("后台"));
-        assert!(active_read(&state, async { panic!("background request must not be polled"); #[allow(unreachable_code)] Ok(()) }).await.is_err());
+        assert!(active_read(&state, async { panic!("background request must not be polled"); #[allow(unreachable_code)] Ok::<(), String>(()) }).await.is_err());
         state.foreground.store(true, Ordering::SeqCst);
-        assert_eq!(active_read(&state, async { Ok(7) }).await.unwrap(), 7);
+        assert_eq!(active_read(&state, async { Ok::<i32, String>(7) }).await.unwrap(), 7);
     }
     #[test]
     fn updates_select_newer_signed_platform_package_only() {
@@ -1178,9 +1223,38 @@ mod tests {
             {"tag_name":"desktop-v0.2.0","draft":true,"assets":[]},
             {"tag_name":"desktop-v9.0.0","assets":[{"name":"unsafe_arm64-v8a.apk","browser_download_url":"https://other.example/file.apk"}]}
         ]);
-        assert!(release_update(&data, "0.1.9", true).unwrap().1.ends_with("_arm64-v8a.apk"));
+        assert_eq!(release_update(&data, "0.1.9", true).unwrap().1, format!("{RELEASES}/tag/desktop-v9.0.0"));
         assert!(release_update(&data, "0.1.9", false).unwrap().1.ends_with("_aarch64.dmg"));
-        assert!(release_update(&data, "0.1.10", true).is_none());
+        assert!(release_update(&data, "9.0.0", true).is_none());
+        assert_eq!(latest_release_page(&data).as_deref(), Some("https://github.com/lich13/sub2api-ops-companion/releases/tag/desktop-v9.0.0"));
+    }
+    #[test]
+    fn release_pages_reject_untrusted_tags_and_nonstable_releases() {
+        let data = serde_json::json!([
+            {"tag_name":"desktop-v9.9.9/../../other"},
+            {"tag_name":"desktop-v9.9.9?redirect=bad"},
+            {"tag_name":"desktop-v99.1.1","prerelease":true},
+            {"tag_name":"desktop-v99.1.2","draft":true},
+            {"tag_name":"desktop-v1.2.3","html_url":"https://other.invalid"}
+        ]);
+        assert_eq!(latest_release_page(&data), Some(format!("{RELEASES}/tag/desktop-v1.2.3")));
+        assert_eq!(release_update(&data, "1.2.2", true).unwrap().1, format!("{RELEASES}/tag/desktop-v1.2.3"));
+        assert!(latest_release_page(&serde_json::json!([])).is_none());
+    }
+    #[test]
+    fn custom_templates_only_allow_generated_ids_and_explicit_methods() {
+        let id = "custom-0123456789abcdef01234567";
+        assert!(allowed_request("POST", "/account-templates"));
+        assert!(allowed_request("POST", "/account-templates/custom"));
+        for method in ["PUT", "DELETE"] {
+            assert!(allowed_request(method, &format!("/account-templates/{id}")));
+            assert!(allowed_request(method, &format!("/account-templates/custom/{id}")));
+            for suffix in ["full", "custom-not-an-id", "custom-0123456789ABCDEF01234567"] {
+                assert!(!allowed_request(method, &format!("/account-templates/{suffix}")));
+            }
+            assert!(!allowed_request(method, &format!("/account-templates/{id}?x=1")));
+        }
+        assert!(!allowed_request("GET", &format!("/account-templates/{id}")));
     }
     #[test]
     fn transient_failure_keeps_last_data_and_recovers() {
@@ -1190,6 +1264,9 @@ mod tests {
         apply_refresh(&mut view, Err("网关暂不可用 [502]".into()));
         assert!(!view.online);
         assert_eq!(view.snapshot, Some(first));
+        let connection = serde_json::json!({"state":"auth_rejected"});
+        apply_refresh(&mut view, Err(HttpFailure { message: "管理员 Key 被拒绝".into(), connection: Some(connection.clone()) }));
+        assert_eq!(view.upstream_connection, Some(connection));
         let next = serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":2}]});
         apply_refresh(&mut view, Ok(next.clone()));
         assert!(view.online && view.error.is_empty());
@@ -1251,6 +1328,9 @@ mod tests {
             }
         }
         assert!(allowed_request("GET", "/usage-records?limit=50&after_id=12"));
+        assert!(allowed_request("GET", "/connection-status"));
+        assert!(!allowed_request("POST", "/connection-status"));
+        assert!(!allowed_request("GET", "/connection-status?url=https://other.invalid"));
         assert!(allowed_request("GET", "/usage-records/12"));
         assert!(allowed_request("GET", "/usage-record-options?kind=api_keys&user_id=7"));
         for path in ["/usage-records/0", "/usage-records/12/credentials", "/usage-records/../config", "/usage-record-options/keys", "/usage-record-options/../config"] {

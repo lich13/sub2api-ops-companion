@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import urllib.request
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 import copy
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,10 +43,21 @@ class TemplatesRequest(BaseModel):
     degraded: Template
     takeover: Template
 
+class CustomTemplateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: str = Field(min_length=64, max_length=64)
+    name: str = Field(min_length=1, max_length=40)
+    whitelist: list[str] = Field(default_factory=list, max_length=300)
+    mappings: list[MappingRule] = Field(default_factory=list, max_length=300)
+
+class CustomTemplateDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: str = Field(min_length=64, max_length=64)
+
 class TemplateApplication(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: str = Field(min_length=64, max_length=64)
-    template_id: Literal["full", "degraded", "takeover"]
+    template_id: str = Field(min_length=4, max_length=31, pattern=r"^(?:full|degraded|takeover|custom-[a-f0-9]{24})$")
     template_version: str = Field(min_length=64, max_length=64)
 
 def combine(value: dict) -> dict[str, str]:
@@ -88,23 +100,69 @@ class AccountTemplates:
     def __init__(self, service):
         self.s, self.r = service, service.r
         self.store = PolicyStore(Path(self.r.settings.usage_query_state_path).with_name('account-templates.json'),
-            {"revision": 0, "configured": False, "templates": {k: {"whitelist": [], "mappings": []} for k in NAMES}})
+            {"revision": 0, "configured": False, "templates": {k: {"whitelist": [], "mappings": []} for k in NAMES},
+             "template_meta": {}, "template_order": list(NAMES), "custom_templates": []})
         self.writer = self._write_mapping
 
     def account(self, aid):
         return self.r.db.fetch_one(SELECT + " WHERE id=%(id)s", {"id": aid})
 
-    def data(self):
-        data = self.store.read()
-        if type(data.get('configured')) is not bool or set(data.get('templates', {})) != set(NAMES):
+    @staticmethod
+    def _sync_custom(data: dict) -> list[dict]:
+        items = []
+        for key in data.get('template_order', []):
+            if key in NAMES or key not in data.get('templates', {}):
+                continue
+            meta = data.get('template_meta', {}).get(key, {})
+            items.append({"id": key, "name": meta.get('name', key), **copy.deepcopy(data['templates'][key])})
+        data['custom_templates'] = items
+        return items
+
+    @staticmethod
+    def _normalize(data):
+        if (type(data.get('configured')) is not bool or not isinstance(data.get('templates'), dict)
+                or type(data.get('revision')) is not int or len(data['templates']) > 32
+                or not set(NAMES).issubset(data['templates'])):
             raise ValueError('账号模板状态无效')
-        for value in data['templates'].values():
+        meta = data.setdefault('template_meta', {})
+        if not isinstance(meta, dict):
+            raise ValueError('账号模板状态无效')
+        for key, value in data['templates'].items():
             combine(Template.model_validate(value).model_dump())
+            if key in NAMES:
+                continue
+            name = meta.get(key, {}).get('name') if isinstance(meta.get(key), dict) else None
+            if (not re.fullmatch(r'custom-[a-f0-9]{24}', str(key)) or not isinstance(name, str)
+                    or not name.strip() or len(name) > 40):
+                raise ValueError('自定义模板状态无效')
+        order = data.setdefault('template_order', list(NAMES))
+        if not isinstance(order, list) or any(not isinstance(key, str) for key in order):
+            raise ValueError('账号模板顺序无效')
+        data['template_order'] = list(dict.fromkeys(
+            [key for key in order if key in data['templates']] + list(data['templates'])))
+        AccountTemplates._sync_custom(data)
         return data
+
+    def data(self):
+        original = self.store.read()
+        normalized = self._normalize(copy.deepcopy(original))
+        if normalized == original:
+            return normalized
+        # Re-read under the file lock so a migration cannot overwrite a concurrent edit.
+        with self.store.transaction() as current:
+            migrated = self._normalize(copy.deepcopy(current))
+            if migrated != current:
+                migrated['revision'] = current['revision'] + 1
+                current.clear()
+                current.update(migrated)
+            normalized = copy.deepcopy(current)
+        return normalized
 
     def view(self, aid=None):
         data = self.data()
-        result = {'configured': data['configured'], 'version': digest(data), 'templates': data['templates']}
+        result = {'configured': data['configured'], 'version': digest(data), 'templates': data['templates'],
+                  'template_meta': data.get('template_meta', {}), 'template_order': data.get('template_order', list(NAMES)),
+                  'custom_templates': data.get('custom_templates', [])}
         if aid is not None:
             row = self.account(aid)
             if row is None:
@@ -120,7 +178,11 @@ class AccountTemplates:
         with self.store.transaction() as data:
             if digest(data) != payload.expected_version:
                 raise HTTPException(409, '模板已变化，请重新读取')
-            data.update(templates=values, configured=True, revision=data['revision'] + 1)
+            data.setdefault('template_meta', {})
+            data.setdefault('template_order', list(NAMES))
+            data.setdefault('templates', {}).update(values)
+            self._sync_custom(data)
+            data.update(configured=True, revision=data.get('revision', 0) + 1)
         write_audit(self.r.settings.audit_path, 'account_templates_saved', {'revision': data['revision']})
         return self.view()
 
@@ -137,9 +199,69 @@ class AccountTemplates:
         if digest(data) != self._payload_value(payload, 'template_version'):
             raise HTTPException(409, '模板已变化，请重新选择')
         template_id = self._payload_value(payload, 'template_id')
-        if template_id not in NAMES:
+        if template_id not in data.get('templates', {}):
             raise HTTPException(422, '账号模板无效')
         return combine(data['templates'][template_id])
+
+    def create_custom(self, payload):
+        data = self.data()
+        if digest(data) != payload.expected_version:
+            raise HTTPException(409, '模板已变化，请重新读取')
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(422, '模板名称不能为空')
+        profile = {"whitelist": list(payload.whitelist), "mappings": [rule.model_dump() for rule in payload.mappings]}
+        combine(profile)
+        if len(data['templates']) >= 32:
+            raise HTTPException(409, '最多保存 32 套模板')
+        template_id = f"custom-{secrets.token_hex(12)}"
+        with self.store.transaction() as current:
+            if digest(current) != payload.expected_version:
+                raise HTTPException(409, '模板已变化，请重新读取')
+            current.setdefault('templates', {})[template_id] = profile
+            current.setdefault('template_meta', {})[template_id] = {"name": name, "builtin": False}
+            current.setdefault('template_order', list(NAMES)).append(template_id)
+            self._sync_custom(current)
+            current['configured'] = True
+            current['revision'] = current.get('revision', 0) + 1
+        write_audit(self.r.settings.audit_path, 'account_template_created', {'template_id': template_id})
+        return self.view()
+
+    def update_custom(self, template_id: str, payload):
+        data = self.data()
+        if template_id in NAMES or template_id not in data['templates']:
+            raise HTTPException(404, '自定义模板不存在')
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(422, '模板名称不能为空')
+        profile = {"whitelist": list(payload.whitelist), "mappings": [rule.model_dump() for rule in payload.mappings]}
+        combine(profile)
+        with self.store.transaction() as current:
+            if digest(current) != payload.expected_version:
+                raise HTTPException(409, '模板已变化，请重新读取')
+            current['templates'][template_id] = profile
+            current.setdefault('template_meta', {})[template_id] = {"name": name, "builtin": False}
+            self._sync_custom(current)
+            current['revision'] = current.get('revision', 0) + 1
+        write_audit(self.r.settings.audit_path, 'account_template_updated', {'template_id': template_id})
+        return self.view()
+
+    def delete_custom(self, template_id: str, expected_version: str | CustomTemplateDeleteRequest):
+        if isinstance(expected_version, BaseModel):
+            expected_version = expected_version.expected_version
+        data = self.data()
+        if template_id in NAMES or template_id not in data['templates']:
+            raise HTTPException(404, '自定义模板不存在')
+        with self.store.transaction() as current:
+            if digest(current) != expected_version:
+                raise HTTPException(409, '模板已变化，请重新读取')
+            current['templates'].pop(template_id, None)
+            current.setdefault('template_meta', {}).pop(template_id, None)
+            current['template_order'] = [item for item in current.get('template_order', []) if item != template_id]
+            self._sync_custom(current)
+            current['revision'] = current.get('revision', 0) + 1
+        write_audit(self.r.settings.audit_path, 'account_template_deleted', {'template_id': template_id})
+        return self.view()
 
     def fingerprint(self, aid):
         return account_version(self.account(aid) or {})

@@ -14,7 +14,9 @@ vi.mock("./accountOperations", () => ({ accountOperation: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
-type Config = { version: string; configured: boolean; templates: Record<"full" | "degraded" | "takeover", Profile> };
+type BuiltinTemplateId = "full" | "degraded" | "takeover";
+type CustomTemplate = Profile & { id: string; name: string };
+type Config = { version: string; configured: boolean; templates: Record<BuiltinTemplateId, Profile>; custom_templates?: CustomTemplate[] };
 type AccountConfig = { account?: { id: number; eligible: boolean; passthrough: boolean; version: string; config: Profile } };
 
 const account: Account = {
@@ -100,13 +102,22 @@ async function setInput(node: HTMLInputElement, value: string) {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-
-async function renderLoaded() {
-  vi.mocked(api).mockImplementation(async (method, path) => {
-    if (method === "GET" && path === "/account-templates") return config as never;
-    if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-    throw new Error("unexpected " + method + " " + path);
+async function setSelect(node: HTMLSelectElement, value: string) {
+  await act(async () => {
+    node.value = value;
+    node.dispatchEvent(new Event("change", { bubbles: true }));
   });
+}
+
+
+async function renderLoaded(templateConfig: Config = config, retainMock = false) {
+  if (!retainMock) {
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return templateConfig as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+  }
   await act(async () => root.render(
     <AccountTemplates
       accounts={[account]}
@@ -215,5 +226,102 @@ describe("account template reads and drafts", () => {
       "account-template-version-1",
     );
     expect(command).toHaveBeenCalledWith("refresh");
+  });
+  it("creates a custom template using the loaded version", async () => {
+    const emptyConfig: Config = { ...config, custom_templates: [] };
+    const item: CustomTemplate = {
+      id: "custom-0123456789abcdef01234567",
+      name: "Fixture custom",
+      whitelist: [],
+      mappings: [],
+    };
+    const created: Config = { ...emptyConfig, version: "template-version-2", custom_templates: [item] };
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return emptyConfig as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
+      if (method === "POST" && path === "/account-templates/custom") return created as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await renderLoaded(emptyConfig, true);
+
+    await act(async () => button("新增模板").click());
+    const name = container.querySelector<HTMLInputElement>('[aria-label="自定义模板名称"]');
+    expect(name).not.toBeNull();
+    await setInput(name!, "Fixture custom");
+    await act(async () => button("保存自定义模板").click());
+
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toEqual({
+      expected_version: "template-version-1",
+      name: "Fixture custom",
+      whitelist: [],
+      mappings: [],
+    });
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')!;
+    expect([...select.options].map((option) => option.textContent)).toContain("Fixture custom");
+  });
+
+  it("applies a custom template with its dynamic id", async () => {
+    const item: CustomTemplate = {
+      id: "custom-89abcdef0123456701234567",
+      name: "Fixture custom",
+      whitelist: ["fixture-custom-model"],
+      mappings: [],
+    };
+    const withCustom: Config = { ...config, custom_templates: [item] };
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return withCustom as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await renderLoaded(withCustom);
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')!;
+    await setSelect(select, item.id);
+    expect(container.textContent).toContain("目标：fixture-custom-model");
+    await act(async () => button("应用模板").click());
+
+    expect(accountOperation).toHaveBeenCalledWith(
+      account,
+      "account_template",
+      { template_id: item.id, template_version: "template-version-1" },
+      "account-template-version-1",
+    );
+  });
+  it("updates and deletes a custom template with fresh versions", async () => {
+    const item: CustomTemplate = {
+      id: "custom-abcdef012345678901234567",
+      name: "Fixture custom",
+      whitelist: ["fixture-before"],
+      mappings: [],
+    };
+    const initial: Config = { ...config, custom_templates: [item] };
+    const updatedItem: CustomTemplate = { ...item, name: "Fixture edited" };
+    const updated: Config = { ...initial, version: "template-version-2", custom_templates: [updatedItem] };
+    const deleted: Config = { ...initial, version: "template-version-3", custom_templates: [] };
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return initial as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
+      if (method === "PUT" && path === "/account-templates/custom/" + item.id) return updated as never;
+      if (method === "DELETE" && path === "/account-templates/custom/" + item.id) return deleted as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await renderLoaded(initial, true);
+
+    const name = container.querySelector<HTMLInputElement>('[aria-label="自定义模板名称"]');
+    expect(name).not.toBeNull();
+    await setInput(name!, "Fixture edited");
+    await act(async () => button("保存自定义模板").click());
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
+      expected_version: "template-version-1",
+      name: "Fixture edited",
+      whitelist: ["fixture-before"],
+      mappings: [],
+    });
+
+    await act(async () => button("删除自定义模板").click());
+    await act(async () => button("确认删除").click());
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "DELETE")?.[2]).toEqual({
+      expected_version: "template-version-2",
+    });
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')?.textContent).not.toContain("Fixture edited");
   });
 });

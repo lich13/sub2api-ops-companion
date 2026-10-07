@@ -17,6 +17,7 @@ export type Account = {
   version: string;
   operation_versions?: Record<string, string>;
   last_success_at: string | null;
+  last_called_at?: string | null;
   last_error_at: string | null;
   last_error_id: number | null;
   last_error_code: string | null;
@@ -245,6 +246,7 @@ export type ViewState = {
   connected: boolean;
   online: boolean;
   error: string;
+  upstream_connection?: { state: string; endpoint: string; http_status: number | null; message: string; retryable: boolean; checked_at: string | null } | null;
   snapshot: Snapshot | null;
   preferences: Preferences;
 };
@@ -345,4 +347,17 @@ export function filterAccounts(
               ? !!a.last_error_id
               : !a.schedulable)),
   );
+}
+
+export function sortRecentCall(accounts: Account[], ascending = false): Account[] {
+  const timestamp = (account: Account) => {
+    const recent = callTime(account.last_called_at ?? null);
+    return Number.isFinite(recent) ? recent : callTime(account.last_success_at);
+  };
+  return [...accounts].sort((a, b) => {
+    const left = timestamp(a), right = timestamp(b);
+    if (!Number.isFinite(left)) return !Number.isFinite(right) ? b.id - a.id : 1;
+    if (!Number.isFinite(right)) return -1;
+    return (ascending ? 1 : -1) * (left - right) || b.id - a.id;
+  });
 }

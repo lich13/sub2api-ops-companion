@@ -15,7 +15,6 @@ from fastapi import FastAPI
 
 from .audit import write_audit
 from .bark import BarkNotifier, DEFAULT_BARK_SERVER_URL, normalize_bark_server_url
-from .connection_config import connection_config
 from .db import Database
 from .key_fallback import EVAL_INTERVAL_SECONDS, KeyFallbackController
 from .oauth_monitor import OAuthMonitor, OAuthStateStore, migrate_legacy_recovery_state
@@ -24,6 +23,7 @@ from .versioning import APP_VERSION
 from .capacity_alerts import CapacityAlerts
 from .fingerprint_bank import FingerprintBankService
 from .modeltrace import configure_bank_provider
+from .upstream_router import UpstreamRouter
 
 settings = load_settings()
 db = Database(settings.database_url)
@@ -42,6 +42,7 @@ fingerprint_bank_service = FingerprintBankService(
 fingerprint_bank = fingerprint_bank_service
 configure_bank_provider(fingerprint_bank_service)
 fingerprint_bank_task: asyncio.Task[None] | None = None
+upstream_router = UpstreamRouter(settings)
 
 
 def oauth_state_store() -> OAuthStateStore:
@@ -53,8 +54,8 @@ def legacy_recovery_state_path() -> str:
 
 
 def oauth_base_url() -> str:
-    config = connection_config(settings)
-    return config["verify_base_url"] or config["base_url"]
+    upstream_router.settings = settings
+    return upstream_router.active_url()
 
 
 async def deliver_oauth_monitor_events(events: list[dict[str, Any]]) -> None:
@@ -121,6 +122,23 @@ async def key_fallback_loop() -> None:
         await asyncio.sleep(EVAL_INTERVAL_SECONDS)
 
 
+async def refresh_upstream_route() -> None:
+    # Use only the saved admin token and the read-only permission probe.
+    try:
+        key = await asyncio.to_thread(oauth_state_store().admin_token)
+        if key:
+            await asyncio.to_thread(upstream_router.authenticate, key)
+    except Exception:
+        # The router keeps a redacted status; an outage must not abort startup.
+        pass
+
+
+async def upstream_route_loop() -> None:
+    while True:
+        await asyncio.sleep(30)
+        await refresh_upstream_route()
+
+
 async def fingerprint_bank_loop() -> None:
     while True:
         try:
@@ -164,6 +182,8 @@ async def lifespan(_: FastAPI):
         admin_token_provider=lambda: oauth_state_store().admin_token(),
     )
     await asyncio.to_thread(key_fallback_controller.migrate_legacy_config)
+    await refresh_upstream_route()
+    upstream_task = asyncio.create_task(upstream_route_loop())
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
@@ -182,6 +202,9 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        upstream_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await upstream_task
         operation_task.cancel()
         with suppress(asyncio.CancelledError):
             await operation_task

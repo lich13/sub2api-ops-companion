@@ -1,7 +1,7 @@
 /* Desktop columns keep the scheduling and action controls inside the viewport. */
 .filter-options { display: contents; }
-.account-toolbar { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
-.accounts-table { table-layout: fixed; min-width: 1014px; }
+.account-toolbar { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 8px; min-width: 0; }
+.accounts-table { table-layout: fixed; min-width: 1230px; }
 .accounts-table .col-select { width: 30px; }
 .accounts-table .col-priority { width: 64px; }
 .accounts-table .col-quality { width: 130px; }
@@ -9,7 +9,7 @@
 .accounts-table .col-usage { width: 262px; }
 .accounts-table .col-error { width: 122px; }
 .accounts-table .col-schedule { width: 72px; }
-.accounts-table .col-actions { width: 76px; }
+.accounts-table .col-actions { width: 192px; }
 .accounts-table th, .accounts-table td { padding: 9px 7px; }
 .accounts-table .account-name { min-width: 0; max-width: none; }
 .accounts-table .account-name strong { display: block; }
@@ -23,7 +23,14 @@
 .accounts-table .limit-until { white-space: normal; }
 .accounts-table .limit-until time, .accounts-table .error-time time { white-space: nowrap; }
 .accounts-table .error-time small { white-space: nowrap; font-size: 10px; }
-.accounts-table .account-actions { align-items: stretch; }
+.accounts-table th:last-child, .accounts-table td:last-child { position: sticky; right: 0; width: 192px; min-width: 192px; background: var(--surface); z-index: 2; box-shadow: -1px 0 var(--line); }
+.accounts-table th:last-child { z-index: 3; }
+.accounts-table .account-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+.accounts-table .account-actions > button, .accounts-table .account-actions > details > summary { min-height: 30px; width: 100%; padding: 5px 6px; font-size: 11px; }
+.accounts-table .account-actions > details { align-self: stretch; }
+.accounts-table .account-actions > details > summary { gap: 4px; border: 1px solid var(--line); border-radius: 6px; }
+.account-sort { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--muted); }
+.account-sort select { min-height: 32px; }
 .accounts-table .account-actions button { white-space: nowrap; justify-content: center; }
 .sidebar { width: 176px; }
 .content { padding: 20px; }
@@ -57,10 +64,10 @@
 .mobile .switch > span { position: absolute; top: 15px; left: 5px; width: 18px; height: 18px; }
 .mobile .switch.on > span { transform: translateX(20px); }
 .mobile .switch-cell { align-self: center; }
-.mobile .account-toolbar { align-items: start; }
-.mobile .quota-batch { gap: 6px; margin-bottom: 10px; flex: 1; min-width: 0; }
+.mobile .account-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 8px; }
+.mobile .quota-batch { grid-column: 1 / -1; gap: 6px; margin-bottom: 0; min-width: 0; }
 .mobile .quota-batch > button { font-size: 12px; padding: 0 8px; white-space: nowrap; }
-.mobile .account-toolbar > button { font-size: 12px; padding: 0 10px; }
+.mobile .account-toolbar > button { width: 100%; min-width: 0; font-size: 12px; padding: 0 8px; white-space: normal; }
 .mobile .filters { flex-wrap: nowrap; gap: 8px; margin-bottom: 6px; }
 .mobile .filters .search { min-width: 0; flex: 1; }
 .mobile .filter-options { display: none; }
@@ -99,7 +106,13 @@
 .bottom-nav button.active { color: var(--accent); background: var(--accent-bg); }
 .mobile .modal-backdrop, .mobile .drawer-backdrop { z-index: 60; padding: 0; align-items: end; }
 .mobile .modal, .mobile-action-sheet { width: 100%; max-width: none; max-height: 90dvh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); background: var(--surface); border: 1px solid var(--line); }
-.mobile .model-test-dialog { width: 100%; max-width: none; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+.mobile .model-test-dialog { width: 100%; max-width: none; max-height: 100dvh; height: 100dvh; border-radius: 0; padding: 0; }
+.mobile .model-test-dialog > header { padding: calc(12px + env(safe-area-inset-top)) 16px 12px; }
+.mobile .model-test-content { padding: 16px; }
+.mobile .model-test-dialog > footer { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+.mobile .model-test-controls { grid-template-columns: minmax(0, 1fr); }
+.mobile .model-test-model select { min-height: 48px; }
+.mobile .model-test-result dl > div { grid-template-columns: 78px minmax(0, 1fr); gap: 8px; }
 .mobile-action-sheet { display: grid; gap: 12px; }
 .mobile-action-sheet .priority-edit input { width: 110px; }
 .mobile-action-sheet .field { margin: 0; }
@@ -140,6 +153,7 @@
 .mobile-groups-surface .compact .mini-usage { flex-wrap: wrap; }
 .mobile .toast { left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); max-width: none; width: auto; transform: none; }
 .mobile .connect-card { width: 100%; padding: 20px 12px; margin: 0; }
+.mobile .account-template-grid { grid-template-columns: 1fr; }
 
 @media (max-width: 680px) {
   .mobile .account-templates-dialog,

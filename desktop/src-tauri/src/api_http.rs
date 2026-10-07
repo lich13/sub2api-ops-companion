@@ -27,22 +27,46 @@ fn operation_valid(data: &Value) -> bool {
         && data["requested"].is_object()
 }
 
+fn connection_valid(data: &Value) -> bool {
+    ["ok", "network_unreachable", "auth_rejected", "route_not_found", "protocol_mismatch", "upstream_error"]
+        .contains(&data["state"].as_str().unwrap_or(""))
+        && ["verify", "public", "none"].contains(&data["endpoint"].as_str().unwrap_or(""))
+        && (data["http_status"].is_null() || data["http_status"].as_u64().is_some_and(|n| (100..=599).contains(&n)))
+        && data["message"].is_string()
+        && data["retryable"].is_boolean()
+        && (data["checked_at"].is_null() || data["checked_at"].is_string())
+}
+
+fn templates_valid(data: &Value) -> bool {
+    let Some(templates) = data["templates"].as_object() else { return false; };
+    data["configured"].is_boolean() && data["version"].is_string()
+        && (3..=32).contains(&templates.len())
+        && ["full", "degraded", "takeover"].iter().all(|id| templates.contains_key(*id))
+        && templates.iter().all(|(id, value)| {
+            let builtin = matches!(id.as_str(), "full" | "degraded" | "takeover");
+            let custom = id.strip_prefix("custom-").is_some_and(|v| v.len() == 24 && v.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+            (builtin || custom) && value["whitelist"].as_array().is_some_and(|v| v.iter().all(Value::is_string))
+                && value["mappings"].as_array().is_some_and(|v| v.iter().all(|m| m["source"].is_string() && m["target"].is_string()))
+        })
+        && (data["template_order"].is_null() || data["template_order"].as_array().is_some_and(|values| {
+            let ids = values.iter().filter_map(Value::as_str).collect::<std::collections::HashSet<_>>();
+            ids.len() == values.len() && ids.len() == templates.len() && ids.iter().all(|id| templates.contains_key(*id))
+        }))
+}
+
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
         "/config" => ["oauth", "bark", "key_fallback"].iter().all(|k| data[*k]["revision"].is_string()),
-        "/capabilities" => data["api_version"].as_u64() == Some(1),
+        "/capabilities" => data["api_version"].as_u64() == Some(1)
+            && (data["upstream_connection"].is_null() || connection_valid(&data["upstream_connection"])),
+        "/connection-status" => connection_valid(data),
         "/errors" | "/recoveries" => data["items"].is_array(),
         "/account-operations" => data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid)),
         p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
         p if p.ends_with("/model-tests/latest") && data.is_null() => true,
         p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
-        "/account-templates" => data["configured"].is_boolean() && data["version"].is_string()
-            && ["full", "degraded", "takeover"].iter().all(|name| {
-                let template = &data["templates"][*name];
-                template["whitelist"].as_array().is_some_and(|values| values.iter().all(Value::is_string))
-                    && template["mappings"].as_array().is_some_and(|values| values.iter().all(|v| v["source"].is_string() && v["target"].is_string()))
-            }),
+        p if p == "/account-templates" || p.starts_with("/account-templates/") => templates_valid(data),
         p if p.ends_with("/model-detection") => data["account_id"].is_u64() && data["version"].is_string()
             && data["enabled"].is_boolean() && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
             && data["model_id"].is_string() && data["status"].is_string(),
@@ -79,10 +103,32 @@ fn diagnostic(file: &Path, method: &str, path: &str, status: u16, kind: &str, st
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct HttpFailure {
+    pub message: String,
+    pub connection: Option<Value>,
+}
+impl From<String> for HttpFailure {
+    fn from(message: String) -> Self { Self { message, connection: None } }
+}
+impl From<&str> for HttpFailure {
+    fn from(message: &str) -> Self { message.to_string().into() }
+}
+impl From<HttpFailure> for String {
+    fn from(error: HttpFailure) -> Self { error.message }
+}
+
 pub(crate) async fn http(
     client: &reqwest::Client, base: &str, key: &str, method: &str, path: &str,
     body: Option<Value>, log: &Path,
 ) -> Result<Value, String> {
+    http_detailed(client, base, key, method, path, body, log).await.map_err(String::from)
+}
+
+pub(crate) async fn http_detailed(
+    client: &reqwest::Client, base: &str, key: &str, method: &str, path: &str,
+    body: Option<Value>, log: &Path,
+) -> Result<Value, HttpFailure> {
     let parsed_method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "请求方式无效")?;
     let mut req = client.request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key).header("Accept", "application/json");
@@ -101,9 +147,8 @@ pub(crate) async fn http(
         .unwrap_or("-").to_string();
     let fail = |stage: &str, message: &str| {
         diagnostic(log, method, path, status, kind, stage, &request_id);
-        message.to_string()
+        HttpFailure::from(message)
     };
-    if matches!(status, 401 | 403) { return Err(fail("auth", "管理员 API Key 已失效，请重新连接")); }
     let limit = if path.starts_with("/account-operations/") { 134_217_728 } else { MAX_JSON_BYTES };
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|e| fail(
@@ -115,11 +160,14 @@ pub(crate) async fn http(
     }
     let parsed = serde_json::from_slice::<Value>(&bytes);
     if !(200..300).contains(&status) {
-        let fallback = match status { 429 => "请求过于频繁", 502..=504 => "网关暂不可用", 500..=599 => "服务暂不可用", _ => "请求失败" };
+        let fallback = match status { 401 | 403 => "管理员 API Key 被拒绝，请重新连接", 429 => "请求过于频繁", 502..=504 => "网关暂不可用", 500..=599 => "服务暂不可用", _ => "请求失败" };
         let detail = parsed.as_ref().ok().and_then(|d| d.get("detail"));
         let message = detail.and_then(Value::as_str).or_else(|| detail.and_then(|d| d["message"].as_str())).unwrap_or(fallback);
         let suffix = if detail.is_some_and(|d| d["detached"].as_bool() == Some(true)) { "（该账号已解除托管）" } else { "" };
-        return Err(fail("http", &format!("{}{} [{}]", message.chars().take(240).collect::<String>(), suffix, status)));
+        let mut error = fail(if status == 401 || status == 403 { "auth" } else { "http" },
+            &format!("{}{} [{}]", message.chars().take(240).collect::<String>(), suffix, status));
+        error.connection = detail.and_then(|d| d.get("connection")).filter(|v| connection_valid(v)).cloned();
+        return Err(error);
     }
     if bytes.iter().all(u8::is_ascii_whitespace) { return Err(fail("empty", "服务返回空响应")); }
     if kind != "json" { return Err(fail("content_type", "服务返回了非 JSON 响应")); }
@@ -158,7 +206,7 @@ mod tests {
             ("200 OK", "Content-Type: text/html", "secret-body", "非 JSON", "content_type", false),
             ("200 OK", "Content-Type: application/json", "{", "JSON 响应不完整", "json", false),
             ("200 OK", "Content-Type: application/json", "{}", "数据结构不兼容", "schema", false),
-            ("401 Unauthorized", "Content-Type: text/html", "secret-body", "API Key 已失效", "auth", false),
+            ("401 Unauthorized", "Content-Type: text/html", "secret-body", "API Key 被拒绝", "auth", false),
             ("200 OK", "Content-Type: application/json\r\nContent-Length: 1000", "{", "读取中断", "body_interrupted", false),
             ("200 OK", "Content-Type: application/json\r\nContent-Length: 1000", "{", "读取超时", "body_timeout", true),
         ] {
@@ -167,6 +215,28 @@ mod tests {
             assert!(log.contains(&format!("stage={stage}")));
             assert!(!log.contains("secret"));
         }
+    }
+
+    #[tokio::test]
+    async fn structured_upstream_failure_survives_transport() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let connection = serde_json::json!({"state":"auth_rejected","endpoint":"verify","http_status":403,
+            "message":"管理员 Key 被拒绝","retryable":false,"checked_at":"2026-10-07T00:00:00Z"});
+        let body = serde_json::json!({"detail":{"code":"auth_rejected","message":"管理员 Key 被拒绝","connection":connection}}).to_string();
+        let reply = format!("HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096]; let _ = stream.read(&mut request);
+            let _ = stream.write_all(reply.as_bytes());
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let error = http_detailed(&client, &base, "fixture-key", "GET", "/snapshot", None, &temp.path().join("network.log")).await.unwrap_err();
+        thread.join().unwrap();
+        assert_eq!(error.connection, Some(connection));
+        assert!(error.message.contains("管理员 Key 被拒绝"));
+        assert!(!std::fs::read_to_string(temp.path().join("network.log")).unwrap().contains("fixture-key"));
     }
 
     #[tokio::test]
@@ -190,6 +260,20 @@ mod tests {
         let bank = serde_json::json!({"version":{"revision":"fixture","sha256":"fixture","analyzer_version":1},"source":"bundled","status":"idle"});
         assert!(shape_valid("/modeltrace/fingerprint-bank", &bank));
         assert!(!shape_valid("/modeltrace/fingerprint-bank/sync", &serde_json::json!({})));
+    }
+
+    #[test]
+    fn connection_diagnostics_require_redacted_known_shape() {
+        let status = serde_json::json!({"state":"auth_rejected","endpoint":"verify","http_status":403,
+            "message":"管理员 API Key 被上游拒绝，请重新连接","retryable":false,"checked_at":"2026-10-07T00:00:00Z"});
+        assert!(connection_valid(&status));
+        assert!(shape_valid("/connection-status", &status));
+        let mut invalid = status.clone();
+        invalid["endpoint"] = serde_json::json!("https://private.invalid");
+        assert!(!connection_valid(&invalid));
+        invalid = status;
+        invalid["state"] = serde_json::json!("unknown");
+        assert!(!connection_valid(&invalid));
     }
 
     #[test]
