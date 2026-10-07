@@ -3,6 +3,7 @@ import {
   fullTime,
   filterAccounts,
   sortPriority,
+  sortRecentCall,
   sortQuality,
   currentGroups,
   type Account,
@@ -92,6 +93,17 @@ describe("account evidence", () => {
     ] as Account[];
     expect(sortPriority(data).map((a) => a.id)).toEqual([1, 3, 2]);
     expect(sortPriority(data, false).map((a) => a.id)).toEqual([2, 1, 3]);
+  });
+  it("sorts recent calls by last_called_at with a last_success_at fallback", () => {
+    const data = [
+      { id: 4, last_called_at: null, last_success_at: null },
+      { id: 2, last_called_at: "2026-10-07T00:00:00Z", last_success_at: "2026-10-04T00:00:00Z" },
+      { id: 1, last_called_at: "2026-10-07T00:00:00Z", last_success_at: null },
+      { id: 3, last_called_at: null, last_success_at: "2026-10-05T00:00:00Z" },
+      { id: 5, last_called_at: "invalid", last_success_at: "2026-10-06T00:00:00Z" },
+    ] as Account[];
+    expect(sortRecentCall(data).map((a) => a.id)).toEqual([2, 1, 5, 3, 4]);
+    expect(sortRecentCall(data, true).map((a) => a.id)).toEqual([3, 5, 2, 1, 4]);
   });
 });
 

@@ -59,7 +59,7 @@ const account = (id: number, score: number | null, grade: string) =>
       warnings: id === 2 ? [{ kind: "slow_ttft", sample_count: 10, slow_count: 8, threshold_ms: 10000, active: true }] : [],
     },
   }) as Account;
-it("keeps priority default, sorts both ways with unknowns last, filters grades and opens read-only details", async () => {
+it("uses recent default, sorts both ways with unknowns last, filters grades and opens read-only details", async () => {
   const state = {
     connected: true,
     online: true,
@@ -94,7 +94,7 @@ it("keeps priority default, sorts both ways with unknowns last, filters grades a
     [...container.querySelectorAll("tbody .account-name strong")].map(
       (x) => x.textContent,
     );
-  expect(names()).toEqual(["Quality 1", "Quality 2", "Quality 3"]);
+  expect(names()).toEqual(["Quality 3", "Quality 2", "Quality 1"]);
   expect(container.querySelector('[aria-label="首字慢"]')).toBeTruthy();
   const sort = () =>
     [...container.querySelectorAll("th button")].find((x) =>

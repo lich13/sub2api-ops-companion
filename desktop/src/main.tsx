@@ -31,6 +31,7 @@ import {
   filterAccounts,
   currentGroups,
   sortPriority,
+  sortRecentCall,
   sortQuality,
   fullTime,
   initialState,
@@ -53,6 +54,7 @@ import {
 } from "./AccountControls";
 import TestDialog from "./TestDialog";
 import ModelTestDialog from "./ModelTestDialog";
+import ConnectionStatusCard from "./ConnectionStatusCard";
 import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
@@ -116,8 +118,8 @@ export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
-    [ascending, setAscending] = useState(true),
-    [sortBy, setSortBy] = useState<"priority" | "quality">("priority"),
+    [ascending, setAscending] = useState(false),
+    [sortBy, setSortBy] = useState<"recent" | "priority" | "quality">("recent"),
     [qualityFilter, setQualityFilter] = useState(""),
     [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
@@ -345,7 +347,7 @@ export default function App() {
   );
   const filteredAccounts = useMemo(
     () =>
-      (sortBy === "quality" ? sortQuality : sortPriority)(
+      (sortBy === "recent" ? sortRecentCall : sortBy === "quality" ? sortQuality : sortPriority)(
         filterAccounts(accounts, query, group, platform, filter, type).filter(
           (a) => !qualityFilter || a.quality?.grade === qualityFilter,
         ),
@@ -693,9 +695,10 @@ export default function App() {
                 <h2>等待云端数据</h2>
                 <p>{state.error || "正在连接运维服务"}</p>
                 <button onClick={() => setPage("settings")}>连接设置</button>
-                {page === "settings" && (
-                  <Connection state={state} onError={report} />
-                )}
+                {page === "settings" && <>
+                  <ConnectionStatusCard connectionKey={connectionKey}/>
+                  <Connection state={state} onError={report} beforeChange={beforeConnectionChange}/>
+                </>}
               </div>
             ) : quick ? (
               <>
@@ -734,7 +737,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -808,7 +811,7 @@ export default function App() {
                       </div>
                     </div>
                     {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
-                    {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "priority" | "quality"); setAscending(order === "asc"); }}><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
+                    {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
                       <div className="selection-bar">
                         {mobile && <label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label>}
@@ -1153,6 +1156,7 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {page === "settings" && <ConnectionStatusCard connectionKey={connectionKey}/>}
                 {(page === "features" || page === "settings") &&
                   (config ? (
                     <SettingsPage
@@ -1169,9 +1173,9 @@ export default function App() {
                       onError={report}
                       beforeConnectionChange={beforeConnectionChange}
                     />
-                  ) : (
-                    <Empty text="正在读取设置" />
-                  ))}
+                  ) : page === "settings" ? (
+                    <section className="settings-card"><Connection state={state} onError={report} beforeChange={beforeConnectionChange}/></section>
+                  ) : <Empty text="正在读取设置" />)}
                 </div>
               </>
             )}
@@ -1596,7 +1600,7 @@ function SettingsPage({
                     .catch(onError)
                 }
               >
-                {runtimeVersion ?? appVersion} · 检查更新 <ExternalLink size={13} />
+                {runtimeVersion ?? appVersion} · {state.platform === "android" ? "查看发布页" : "检查更新"} <ExternalLink size={13} />
               </button>
             </div>
           </section>

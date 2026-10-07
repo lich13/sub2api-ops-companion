@@ -66,6 +66,16 @@ describe("ModelTestDialog candidates", () => {
     expect(container.querySelector("button")?.hasAttribute("disabled")).toBe(false);
   });
 
+  it("keeps the header and actions outside the scrollable content", async () => {
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    const dialog = container.querySelector<HTMLElement>(".model-test-dialog")!;
+    const content = dialog.children[1];
+    expect(dialog.firstElementChild?.tagName).toBe("HEADER");
+    expect(dialog.lastElementChild?.tagName).toBe("FOOTER");
+    expect(content.contains(container.querySelector('select[aria-label="测试模型"]'))).toBe(true);
+    expect(content.contains(container.querySelector(".fingerprint-status"))).toBe(true);
+  });
+
   it("disables start and offers retry when candidate loading fails", async () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;

@@ -90,10 +90,13 @@ export default function ModelTestDialog({ account, online, close, report, concur
   const reportResult = job?.report;
   return <div className="modal-backdrop" onClick={close}><section className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" onClick={(e) => e.stopPropagation()}>
     <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={close}><X size={18}/></button></header>
+    <div className="model-test-content">
+    <div className="model-test-controls">
     <label className="model-test-model">模型<select aria-label="测试模型" value={model} disabled={loading || !!modelError || !models.length || running || busy} onChange={(e) => { selectionTouched.current = true; setModel(e.target.value); }}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
       {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
     </label>
     <label className="model-test-model">并发<select aria-label="测试并发" value={slots} disabled={running || busy} onChange={(e) => { const value = Number(e.target.value); setSlots(value); saveConcurrency?.(value); }}>{[1, 2, 3].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+    </div>
     {job && <div className="model-test-result" aria-live="polite">
       <div className="model-test-status">{job.status === "running" || job.status === "retrying" ? <LoaderCircle size={16} className="spin"/> : null}<span>{job.status === "queued" ? "已排队" : job.status === "needs_confirmation" ? "账号已变化，需重新确认" : job.status === "completed" ? job.completion_reason === "automatic_degradation" ? "首组命中降智模型" : job.completion_reason === "confidence_99" ? "已提前完成" : "已完成" : job.status === "cancelled" ? "已停止" : job.status === "interrupted" ? "服务重启后中断" : job.status === "failed" ? "测试失败" : `${job.completed_groups}/3 组`}</span><span>{job.attempts} 次请求</span></div>
       {job.groups && <div className="model-test-groups">{job.groups.map((group) => <div key={group.index}><strong>第 {group.index} 组</strong><span>{({ queued: "等待", running: "等待响应", receiving: "接收中", analyzing: "分析中", skipped: "提前结束", retrying: "等待重试", completed: "完成", failed: "失败", cancelled: "已停止" } as Record<string, string>)[group.status] ?? group.status}</span><span>{group.attempts} 次</span><span>首字 {group.ttft_ms == null ? "—" : `${(group.ttft_ms / 1000).toFixed(1)}s`}</span><span>耗时 {group.duration_ms == null ? "—" : `${(group.duration_ms / 1000).toFixed(1)}s`}</span>{group.error && <span className="bad-text">{group.error}</span>}</div>)}</div>}
@@ -103,6 +106,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
       {job.error && <p className="bad-text">{job.error}</p>}
     </div>}
     <FingerprintBankStatus online={online} taskVersion={job?.bank_version}/>
+    </div>
     <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || !!modelError || !models.length || busy || !model || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
   </section></div>;
 }

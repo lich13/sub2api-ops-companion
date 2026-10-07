@@ -516,6 +516,7 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (args.path === "/connection-status") return { state: "ok", endpoint: "verify", http_status: 200, message: "Sub2API 管理权限已验证", retryable: false, checked_at: new Date().toISOString() };
     if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) return (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);

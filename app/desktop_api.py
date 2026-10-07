@@ -34,7 +34,7 @@ from .error_evidence import ERROR_WHERE
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
 from .account_operations import AccountOperations, OperationRequest, busy
-from .account_templates import AccountTemplates, TemplatesRequest
+from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest
 from .model_detection import ModelDetection, DetectionRequest
 
 PREFIX = "/api/desktop/v1"
@@ -99,7 +99,7 @@ def error_dto(row: dict[str, Any], detail: bool = False) -> dict[str, Any]:
 
 def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_result: dict[str, Any] | None = None) -> dict[str, Any]:
     fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids", "priority",
-              "last_success_at", "last_error_at", "last_error_id", "last_error_code", "last_error_status")
+              "last_success_at", "last_called_at", "last_error_at", "last_error_id", "last_error_code", "last_error_status")
     value = {key: row.get(key) for key in fields}
     value["name"] = clean(row.get("name"), 160)
     value["priority"] = int(value["priority"] or 0)
@@ -158,7 +158,7 @@ SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, 
  a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,
  coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,
  ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids,
- u.created_at AS last_success_at, e.created_at AS last_error_at, e.id AS last_error_id,
+ u.created_at AS last_success_at, u.created_at AS last_called_at, e.created_at AS last_error_at, e.id AS last_error_id,
  e.provider_error_code AS last_error_code, coalesce(e.upstream_status_code,e.status_code) AS last_error_status,
  coalesce(nullif(e.upstream_error_message,''),e.error_message) AS last_error_message
 FROM accounts a
@@ -227,6 +227,8 @@ class DesktopService:
         self._auth: dict[str, float] = {}
         self._auth_lock = threading.Lock()
         self._snapshot_lock = threading.Lock()
+        self._cache_state_lock = threading.Lock()
+        self._cache_epoch = 0
         self._cached: dict[str, Any] | None = None
         self._cached_at = 0.0
         self._stats: dict = {}
@@ -417,6 +419,20 @@ class DesktopService:
         return {"items": items, "next_cursor": items[-1]["id"] if len(records) > limit else None}
 
     def authenticate(self, key: str, *, fresh: bool = False) -> None:
+        upstream = getattr(self.r, "upstream_router", None)
+        if upstream is not None:
+            from .upstream_router import UpstreamProbeError
+            try:
+                upstream.authenticate(key, fresh=fresh)
+                return
+            except UpstreamProbeError as exc:
+                result = exc.result
+                status = 401 if result.state == "auth_rejected" else 502
+                raise HTTPException(status, {
+                    "code": result.state,
+                    "message": result.message,
+                    "connection": result.public(),
+                }) from None
         if not key or len(key) > 4096 or any(ord(c) < 33 for c in key):
             raise HTTPException(401, "管理员 API Key 无效")
         base = self.r.oauth_base_url()
@@ -443,14 +459,19 @@ class DesktopService:
             self._auth[digest] = time.monotonic() + 15
 
     def invalidate(self) -> None:
-        with self._snapshot_lock:
+        # Never wait on snapshot assembly while holding account/controller locks.
+        # Those same locks may be needed by the snapshot's readers.
+        with self._cache_state_lock:
+            self._cache_epoch += 1
             self._cached_at = 0
             self._stats_at = 0
 
     def snapshot(self) -> dict[str, Any]:
         with self._snapshot_lock:
-            if self._cached and time.monotonic() - self._cached_at < 1.5:
-                return self._cached
+            with self._cache_state_lock:
+                epoch = self._cache_epoch
+                if self._cached and time.monotonic() - self._cached_at < 1.5:
+                    return self._cached
             r = self.r
             now = datetime.now(timezone.utc)
             config = r.key_fallback_controller.load_config() if r.key_fallback_controller else None
@@ -506,11 +527,18 @@ class DesktopService:
                 {account["id"]: set(account.get("group_ids") or []) for account in accounts},
             )
             errors = self.errors(None, None, 20)
-            self._cached = jsonable_encoder({"schema_version": 1, "observed_at": now, "accounts": accounts,
-                                           "groups": groups, "errors": errors["items"],
-                                           "recoveries": self.recoveries(limit=20)["items"]})
-            self._cached_at = time.monotonic()
-            return self._cached
+            result = jsonable_encoder({"schema_version": 1, "observed_at": now, "accounts": accounts,
+                                       "groups": groups, "errors": errors["items"],
+                                       "recoveries": self.recoveries(limit=20)["items"]})
+            with self._cache_state_lock:
+                if self._cache_epoch == epoch:
+                    self._cached = result
+                    self._cached_at = time.monotonic()
+                else:
+                    # An operation completed while this snapshot was assembled.
+                    # Return the read but do not revive an invalidated cache.
+                    self._stats_at = 0
+            return result
 
     def quality_detail(self, account_id: int) -> dict[str, Any]:
         row = self.r.db.fetch_one(f"SELECT id FROM accounts WHERE id=%(id)s AND {SUPPORTED}", {"id": account_id})
@@ -826,7 +854,24 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     @router.get("/capabilities")
     async def capabilities(request: Request) -> dict[str, Any]:
         await auth(request)
-        return {"api_version": 1, "service": "Sub2API Ops Companion", "platforms": ["macos"], "version": runtime.APP_VERSION}
+        return {"api_version": 1, "service": "Sub2API Ops Companion", "platforms": ["macos"],
+                "version": runtime.APP_VERSION,
+                "upstream_connection": runtime.upstream_router.status() if hasattr(runtime, "upstream_router") else None}
+
+    @router.get("/connection-status")
+    async def connection_status(request: Request) -> dict[str, Any]:
+        upstream = getattr(runtime, "upstream_router", None)
+        if upstream is None:
+            await auth(request)
+            return {"state": "unknown", "endpoint": "none", "http_status": None,
+                    "message": "连接诊断暂不可用", "retryable": True, "checked_at": None}
+        try:
+            await asyncio.to_thread(service.authenticate, request.headers.get("x-api-key", ""), fresh=True)
+        except HTTPException as exc:
+            if isinstance(exc.detail, dict) and isinstance(exc.detail.get("connection"), dict):
+                return exc.detail["connection"]
+            raise
+        return upstream.status()
 
     @router.get("/snapshot")
     async def snapshot(request: Request) -> Any:
@@ -954,6 +999,32 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def templates_save(payload: TemplatesRequest, request: Request):
         await auth(request)
         return await asyncio.to_thread(service.account_templates.save, payload)
+
+    @router.post("/account-templates")
+    async def templates_create(payload: CustomTemplateRequest, request: Request):
+        await auth(request)
+        return await asyncio.to_thread(service.account_templates.create_custom, payload)
+
+    @router.post("/account-templates/custom")
+    async def templates_create_legacy_alias(payload: CustomTemplateRequest, request: Request):
+        await auth(request)
+        return await asyncio.to_thread(service.account_templates.create_custom, payload)
+
+    @router.put("/account-templates/{template_id}")
+    async def templates_update(template_id: str, payload: CustomTemplateRequest, request: Request):
+        await auth(request)
+        return await asyncio.to_thread(service.account_templates.update_custom, template_id, payload)
+
+    @router.put("/account-templates/custom/{template_id}")
+    async def templates_update_legacy_alias(template_id: str, payload: CustomTemplateRequest, request: Request):
+        await auth(request)
+        return await asyncio.to_thread(service.account_templates.update_custom, template_id, payload)
+
+    @router.delete("/account-templates/{template_id}")
+    @router.delete("/account-templates/custom/{template_id}")
+    async def templates_delete(template_id: str, payload: CustomTemplateDeleteRequest, request: Request):
+        await auth(request)
+        return await asyncio.to_thread(service.account_templates.delete_custom, template_id, payload)
 
     @router.get("/accounts/{account_id}/model-detection")
     async def detection_read(account_id: int, request: Request):

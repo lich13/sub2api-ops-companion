@@ -215,3 +215,75 @@ describe("main page surface ownership", () => {
     ]);
   });
 });
+
+describe("account sorting and Android connection settings", () => {
+  it("defaults Android accounts to recent calls and keeps priority and quality sorting", async () => {
+    const initial = state();
+    initial.platform = "android";
+    initial.snapshot!.accounts = [
+      Object.assign(account(1), { last_called_at: null, last_success_at: "2026-10-06T00:00:00Z" }),
+      Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
+      Object.assign(account(3), { last_called_at: "2026-10-05T00:00:00Z" }),
+    ];
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    await act(async () => root.render(<App />));
+    const names = () =>
+      [...container.querySelectorAll<HTMLElement>(".mobile-account .mobile-identity strong")].map((node) => node.textContent);
+    expect(names()).toEqual(["账号 2", "账号 1", "账号 3"]);
+    const sort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    expect(sort.value).toBe("recent:desc");
+    expect([...sort.options].map((option) => option.value)).toEqual([
+      "recent:desc", "recent:asc", "priority:asc", "priority:desc", "quality:desc", "quality:asc",
+    ]);
+    await act(async () => {
+      sort.value = "priority:asc";
+      sort.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(names()).toEqual(["账号 1", "账号 2", "账号 3"]);
+  });
+
+  it("shows Android release-page copy and distinct upstream diagnostics with manual retry", async () => {
+    const initial = state();
+    initial.platform = "android";
+    const diagnostics = [
+      { state: "network_unreachable", endpoint: "verify", http_status: null, message: "无法连接 Sub2API 上游", retryable: true, checked_at: "2026-10-07T00:00:00Z" },
+      { state: "route_not_found", endpoint: "verify", http_status: 404, message: "Sub2API 管理接口路径不存在", retryable: true, checked_at: "2026-10-07T00:01:00Z" },
+      { state: "auth_rejected", endpoint: "verify", http_status: 403, message: "管理员 API Key 被上游拒绝，请重新连接", retryable: false, checked_at: "2026-10-07T00:02:00Z" },
+    ];
+    let statusReads = 0;
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/connection-status") return diagnostics[Math.min(statusReads++, diagnostics.length - 1)] as never;
+      if (path === "/config") return { bark: { revision: "fixture", enabled: false, device_key_set: false } } as never;
+      if (path === "/account-operations") return { items: [] } as never;
+      if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
+      if (path === "/errors") return { items: [], next_cursor: null } as never;
+      throw new Error(`Unexpected fixture request: ${path}`);
+    });
+    await act(async () => root.render(<App />));
+    const settings = [...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].find((button) => button.textContent?.includes("设置"))!;
+    await act(async () => settings.click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(container.textContent).toContain("查看发布页");
+    expect(container.textContent).toContain(diagnostics[0].message);
+
+    const retry = () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      /重试|重新检查|检查连接/.test(`${button.textContent} ${button.getAttribute("aria-label")} ${button.title}`),
+    );
+    for (const diagnostic of diagnostics.slice(1)) {
+      const button = retry();
+      expect(button).toBeTruthy();
+      await act(async () => button!.click());
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(container.textContent).toContain(diagnostic.message);
+    }
+    expect(statusReads).toBe(3);
+    const accounts = [...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].find((button) => button.textContent?.includes("账号"))!;
+    await act(async () => accounts.click());
+    expect(container.querySelector(".mobile-account")?.textContent).toContain("账号 1");
+  });
+});

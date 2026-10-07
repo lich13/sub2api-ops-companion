@@ -30,6 +30,36 @@ def row(**changes):
 
 
 class DesktopEvidenceTests(unittest.TestCase):
+    def test_invalidation_never_waits_for_an_inflight_snapshot(self):
+        service = DesktopService(SimpleNamespace(db=Mock()))
+        completed = threading.Event()
+        service._snapshot_lock.acquire()
+        worker = threading.Thread(target=lambda: (service.invalidate(), completed.set()), daemon=True)
+        try:
+            worker.start()
+            self.assertTrue(completed.wait(1), "invalidation must not acquire the snapshot lock")
+        finally:
+            service._snapshot_lock.release()
+            worker.join(timeout=2)
+
+    def test_inflight_snapshot_cannot_revive_invalidated_cache(self):
+        service = DesktopService(SimpleNamespace(db=Mock(), key_fallback_controller=None))
+        service.r.db.fetch_all.return_value = []
+        service.quality.get = Mock(return_value={})
+        service.errors = Mock(return_value={"items": []})
+        def recoveries(**_kwargs):
+            service.invalidate()
+            return {"items": []}
+        service.recoveries = recoveries
+        self.assertEqual(service.snapshot()["accounts"], [])
+        self.assertIsNone(service._cached)
+        self.assertEqual(service._cached_at, 0)
+        self.assertEqual(service._stats_at, 0)
+        service.recoveries = Mock(return_value={"items": []})
+        service.snapshot()
+        self.assertIsNotNone(service._cached)
+        self.assertGreater(service._cached_at, 0)
+
     def test_recent_accounts_are_distinct_and_group_scoped(self):
         timestamps = [NOW + timedelta(minutes=offset) for offset in range(7)]
 
