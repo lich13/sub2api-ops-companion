@@ -14,7 +14,6 @@ import {
   ListOrdered,
   LayoutDashboard,
   LoaderCircle,
-  MoreHorizontal,
   Pin,
   Plug,
   RefreshCw,
@@ -60,6 +59,7 @@ import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
+import AccountActionMenu from "./AccountActionMenu";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
 import { accountOperation, bindOperationConnection } from "./accountOperations";
@@ -1053,16 +1053,16 @@ export default function App() {
                               <td>
                                 <div className="account-actions">
                                   {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <>
-                                    <button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}>模型测试</button>
+                                    <button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}><Activity size={12} aria-hidden="true"/>模型测试</button>
                                     <DegradationAction account={a} online={state.online} report={report}/>
-                                    <button className="detection-action" disabled={!state.online} onClick={() => setModelDetectionAccount(a)}>定时检测</button>
+                                    <button className="detection-action" disabled={!state.online} onClick={() => setModelDetectionAccount(a)}><Clock3 size={12} aria-hidden="true"/>定时检测</button>
                                   </>}
-                                  <details className="group-account-menu"><summary aria-label={`${a.name}更多操作`}><MoreHorizontal size={16}/>更多</summary><div>
+                                  <AccountActionMenu label={`${a.name}更多操作`}>
                                     <button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button>
                                     <RecoverStateButton account={a} online={state.online} report={report}/>
                                     {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <button disabled={!state.online} onClick={() => { setTemplateAccount(a); setTemplatesOpen(true); }}>应用模板</button>}
                                     <button className="danger-text" disabled={!state.online} onClick={() => setDeleteAccounts([a])}>删除</button>
-                                  </div></details>
+                                  </AccountActionMenu>
                                 </div>
                               </td>
                             </tr>

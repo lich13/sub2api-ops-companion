@@ -1682,6 +1682,31 @@ td:last-child {
   padding: 3px 6px;
   font-size: 11px;
 }
+.account-action-popup {
+  position: fixed;
+  z-index: 300;
+  width: min(164px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0002;
+}
+.account-action-popup > button {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  justify-content: flex-start;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: normal;
+  text-align: left;
+}
 .danger-text,
 .bad-text {
   color: var(--bad);
