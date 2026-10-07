@@ -541,8 +541,7 @@ async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: St
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
-        let diagnostic = method == "GET" && path == "/connection-status";
-        if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
+        if !view.online || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
         (view.preferences.base_url.clone(), state.key.lock().await.clone().ok_or("尚未连接")?, state.generation.load(Ordering::SeqCst))
     };
     let (tx, rx) = oneshot::channel();
