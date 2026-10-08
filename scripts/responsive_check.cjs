@@ -609,7 +609,44 @@ async function templateChecks(h) {
   await h.click(account101.locator("label.account-check"), "batch-select-account");
   await h.click(account102.locator("label.account-check"), "batch-select-long-name-account");
   await h.layout();
-  await h.click(surface.locator(".selection-bar").getByRole("button", { name: "应用模板", exact: true }), "batch-template-entry");
+  const selectionBar = surface.locator(".selection-bar");
+  const selectionSummary = selectionBar.locator(".selection-summary");
+  const selectionActions = selectionBar.locator(".selection-actions");
+  const applyTemplateAction = selectionActions.getByRole("button", { name: "应用模板", exact: true });
+  const deleteSelectedAction = selectionActions.getByRole("button", { name: "删除所选", exact: true });
+  await h.state(await selectionActions.getAttribute("role") === "group"
+    && await selectionActions.getAttribute("aria-label") === "批量账号操作",
+  "batch-actions-group-semantics", selectionActions);
+  await h.state(await selectionBar.evaluate((element) => {
+    const summary = element.querySelector(".selection-summary");
+    const actions = element.querySelector(".selection-actions");
+    return !!summary && !!actions
+      && !!(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), "batch-summary-not-before-actions", selectionBar);
+  await h.state((await selectionSummary.textContent())?.includes("已选 2 个账号"),
+    "batch-selection-summary-count", selectionSummary);
+  const actionLayout = await selectionActions.evaluate((element) => {
+    const buttons = Array.from(element.querySelectorAll("button"));
+    const first = buttons[0]?.getBoundingClientRect();
+    const second = buttons[1]?.getBoundingClientRect();
+    return {
+      count: buttons.length,
+      adjacent: buttons[0]?.nextElementSibling === buttons[1],
+      sameRow: !!first && !!second && Math.abs(first.top - second.top) < 1,
+      gap: getComputedStyle(element).columnGap,
+      wrap: getComputedStyle(element).flexWrap,
+      actualGap: first && second ? second.left - first.right : null,
+    };
+  });
+  const selectionWrap = await selectionBar.evaluate((element) => getComputedStyle(element).flexWrap);
+  await h.state(selectionWrap === "wrap" && actionLayout.count === 2 && actionLayout.adjacent
+    && actionLayout.sameRow && actionLayout.wrap === "nowrap" && actionLayout.gap === "8px"
+    && actionLayout.actualGap !== null && Math.abs(actionLayout.actualGap - 8) < 1,
+  "batch-actions-not-adjacent-at-eight-pixels", selectionActions);
+  await h.within(applyTemplateAction, "batch-template-entry", { vertical: false });
+  await h.within(deleteSelectedAction, "batch-delete-entry", { vertical: false });
+  await h.layout();
+  await h.click(applyTemplateAction, "batch-template-entry");
   const batchDialog = page.getByRole("dialog", { name: "账号模板", exact: true });
   await h.within(batchDialog, "batch-template-dialog", { touch: false, scroll: false });
   const templateSelect = batchDialog.getByRole("combobox", { name: "选择账号模板", exact: true });
@@ -635,6 +672,18 @@ async function templateChecks(h) {
   await h.layout();
   await h.click(batchDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "batch-template-close");
   await batchDialog.waitFor({ state: "hidden" });
+
+  await h.click(deleteSelectedAction, "batch-delete-entry");
+  const deleteAccountsDialog = page.getByRole("dialog", { name: "删除 2 个账号？", exact: true });
+  await h.within(deleteAccountsDialog, "batch-delete-confirmation", { touch: false, scroll: false });
+  const deleteConfirmation = await deleteAccountsDialog.textContent() || "";
+  await h.state(deleteConfirmation.includes("删除后无法撤销")
+    && deleteConfirmation.includes("Codex · 主力")
+    && deleteConfirmation.includes("Codex · 备用账号"),
+  "batch-delete-confirmation-missing-selected-accounts", deleteAccountsDialog);
+  await h.click(deleteAccountsDialog.getByRole("button", { name: "取消", exact: true }), "batch-delete-cancel");
+  await deleteAccountsDialog.waitFor({ state: "hidden" });
+  await h.layout();
 
   await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "account-templates-reopen");
   const deleteDialog = page.getByRole("dialog", { name: "账号模板", exact: true });

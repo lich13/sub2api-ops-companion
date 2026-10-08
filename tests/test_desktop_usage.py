@@ -97,7 +97,10 @@ class UsageActionTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.calls=[]; self.block=None; self.entered=threading.Event(); self.result={}
-        self.live=row(codex_reset_credit_snapshot={"available_count":1})
+        self.now=datetime.now(timezone.utc)
+        self.credit_snapshot={"available_count":1,
+                              "credits":[{"expires_at":(self.now+timedelta(days=2)).isoformat()}]}
+        self.live=row(codex_reset_credit_snapshot=json.loads(json.dumps(self.credit_snapshot)))
         owner=self
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self): self.respond()
@@ -107,12 +110,39 @@ class UsageActionTests(unittest.TestCase):
                 owner.calls.append((self.command,self.path,self.headers.get("x-api-key")))
                 owner.entered.set()
                 if owner.block: owner.block.wait(2)
-                if self.path.endswith("reset-quota"):
-                    owner.live["extra"]["codex_reset_credit_snapshot"]["available_count"]=0
                 self.send_response(200);self.send_header("Content-Type","application/json");self.end_headers()
-                self.wfile.write(json.dumps({"code":0,"data":{"code":"ok","windows_reset":1,"cache_refreshed":True,"cache_persisted":True,
-                    "five_hour":{"utilization":10},"seven_day":{"utilization":20},
-                    "credentials":{"api_key":"secret-marker"},"points":99,"referral":"private-invite",**owner.result}}).encode())
+                if "/usage?" in self.path:
+                    # Keep the older query_usage protocol fixture intact.
+                    data={"code":"ok","windows_reset":1,"cache_refreshed":True,"cache_persisted":True,
+                          "five_hour":{"utilization":10},"seven_day":{"utilization":20},
+                          "credentials":{"api_key":"secret-marker"},"points":99,"referral":"private-invite",
+                          **owner.result}
+                elif self.path.endswith("/quota/refresh"):
+                    owner.live["extra"]["codex_reset_credit_snapshot"] = json.loads(json.dumps(owner.credit_snapshot))
+                    observed=datetime.now(timezone.utc)
+                    reset_at=observed+timedelta(days=7)
+                    data={"code":"success","windows_reset":0,"cache_refreshed":True,"cache_persisted":True,
+                          "rate_limit":{"primary_window":{"limit_window_seconds":18000,"used_percent":10,
+                                    "reset_at":int((observed+timedelta(hours=5)).timestamp())},
+                                        "secondary_window":{"limit_window_seconds":604800,"used_percent":20,
+                                    "reset_at":int(reset_at.timestamp())}},
+                          "fetched_at":int(observed.timestamp()),
+                          "rate_limit_reset_credits":json.loads(json.dumps(owner.credit_snapshot)),**owner.result}
+                elif self.path.endswith("/reset-quota"):
+                    owner.live["extra"]["codex_reset_credit_snapshot"]={"available_count":0,"credits":[]}
+                    observed=datetime.now(timezone.utc)
+                    data={"code":"success","windows_reset":1,"cache_refreshed":True,"cache_persisted":True,
+                          "rate_limit":{"primary_window":{"limit_window_seconds":18000,"used_percent":10,
+                                    "reset_at":int((observed+timedelta(hours=5)).timestamp())},
+                                        "secondary_window":{"limit_window_seconds":604800,"used_percent":20,
+                                    "reset_at":int((observed+timedelta(days=7)).timestamp())}},
+                          "fetched_at":int(observed.timestamp()),**owner.result}
+                else:
+                    data={"code":"ok","windows_reset":1,"cache_refreshed":True,"cache_persisted":True,
+                          "five_hour":{"utilization":10},"seven_day":{"utilization":20},
+                          "credentials":{"api_key":"secret-marker"},"points":99,"referral":"private-invite",
+                          **owner.result}
+                self.wfile.write(json.dumps({"code":0,"data":data}).encode())
             def log_message(self,*_): pass
         self.server=ThreadingHTTPServer(("127.0.0.1",0),Handler)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()

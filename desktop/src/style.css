@@ -1652,12 +1652,25 @@ td:last-child {
 }
 .selection-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   font-size: 11px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
+}
+.selection-summary,
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.selection-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .selection-bar button {
   padding: 4px 8px;

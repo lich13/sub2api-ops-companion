@@ -119,6 +119,9 @@ class OAuthStateStore:
             if "auto_reset_credit" in metadata:
                 from .auto_reset import validate_state
                 validate_state(metadata["auto_reset_credit"])
+            if "reset_credit_observation" in metadata:
+                from .reset_credit_observation import validate_observation
+                validate_observation(metadata["reset_credit_observation"])
             if "manual_control" in metadata:
                 control = metadata["manual_control"]
                 if (not isinstance(control, dict) or type(control.get("generation")) is not int or control["generation"] < 1
