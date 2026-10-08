@@ -139,8 +139,33 @@ async function geometry(locator) {
     };
     const box = element.getBoundingClientRect();
     const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    const createsFixedContainingBlock = (style) => {
+      const changed = style.willChange.split(",").map((value) => value.trim());
+      return ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdropFilter"]
+        .some((property) => style[property] && style[property] !== "none")
+        || /\b(layout|paint|strict|content)\b/.test(style.contain)
+        || style.contentVisibility === "auto"
+        || changed.some((property) => ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdrop-filter", "contain", "content-visibility"].includes(property));
+    };
+    let fixedRoot = null;
+    for (let node = element; node; node = node.parentElement) {
+      if (getComputedStyle(node).position === "fixed") {
+        fixedRoot = node;
+        break;
+      }
+    }
+    let viewportFixed = !!fixedRoot;
+    for (let node = fixedRoot?.parentElement; node; node = node.parentElement) {
+      if (createsFixedContainingBlock(getComputedStyle(node))) {
+        viewportFixed = false;
+        break;
+      }
+    }
+    // A viewport-fixed surface escapes ordinary outer overflow containers.
+    // Its own scrolling/clipping ancestors still apply to its descendants.
+    const clipStop = viewportFixed ? fixedRoot.parentElement : null;
     const clips = [];
-    for (let node = element.parentElement; node; node = node.parentElement) {
+    for (let node = element.parentElement; node && node !== clipStop; node = node.parentElement) {
       const style = getComputedStyle(node);
       const r = node.getBoundingClientRect();
       const horizontal = /auto|scroll|hidden|clip/.test(style.overflowX)
@@ -152,7 +177,7 @@ async function geometry(locator) {
     return {
       element: element.tagName.toLowerCase(), class: element.className,
       ...rect(element), viewport: { width: innerWidth, height: innerHeight },
-      hit: !!hit && (hit === element || element.contains(hit)), clips,
+      hit: !!hit && (hit === element || element.contains(hit)), viewportFixed, clips,
     };
   });
 }
