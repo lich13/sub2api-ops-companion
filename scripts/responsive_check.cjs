@@ -691,6 +691,7 @@ async function templateChecks(h) {
   const deleteCard = deleteDialog.locator(".account-template-grid > .account-template-card").filter({
     has: page.getByRole("button", { name: `删除${customName}模板`, exact: true }),
   });
+  await h.visible(deleteCard, "deletable-template-card");
   await h.state(await deleteCard.count() === 1, "deletable-template-card-not-unique", deleteCard);
   await h.within(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon", { hit: true });
   await h.click(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon");
