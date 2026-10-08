@@ -163,6 +163,7 @@ class ModelConcurrencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_actual_http_three_samples_obey_requested_peak_and_target(self):
         counts = {'active': 0, 'peak': 0, 'requests': 0}
         bodies, lock = [], threading.Lock()
+        round_state = {'concurrency': 0, 'first_batch_ready': threading.Event(), 'barrier_timed_out': False}
         class Handler(BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'
             def log_message(self, *args): pass
@@ -171,7 +172,14 @@ class ModelConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 with lock:
                     bodies.append(body); counts['active'] += 1; counts['requests'] += 1
                     counts['peak'] = max(counts['peak'], counts['active'])
-                time.sleep(.06)
+                    # Only the first batch waits; the final partial batch must proceed.
+                    ready = round_state['first_batch_ready'] if counts['requests'] <= round_state['concurrency'] else None
+                    if ready is not None and counts['active'] == round_state['concurrency']:
+                        ready.set()
+                if ready is not None and not ready.wait(5):
+                    with lock:
+                        round_state['barrier_timed_out'] = True
+                    ready.set()
                 payload = ('data: ' + json.dumps({'type': 'response.completed', 'response': {'status': 'completed',
                     'model': 'gpt-6-luna', 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': OUTPUT}]}]}}) + '\n\n').encode()
                 with lock: counts['active'] -= 1
@@ -182,9 +190,13 @@ class ModelConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
         self.row['credentials']['base_url'] = f'http://127.0.0.1:{server.server_port}'
         for concurrency in (1, 2, 3):
-            counts.update(active=0, peak=0, requests=0)
+            with lock:
+                counts.update(active=0, peak=0, requests=0)
+                round_state.update(concurrency=concurrency, first_batch_ready=threading.Event(), barrier_timed_out=False)
             job = await self.start(concurrency); await self.tests.tasks[job['id']]
             result = self.tests.get(job['id'])
+            self.assertFalse(round_state['barrier_timed_out'],
+                f'first HTTP batch did not reach concurrency={concurrency} within 5 seconds; peak={counts["peak"]}')
             self.assertEqual(result['status'], 'completed')
             self.assertEqual((counts['peak'], counts['requests']), (concurrency, 3))
             self.assertTrue(all(group['ttft_ms'] is not None for group in result['groups']))
