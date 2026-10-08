@@ -69,15 +69,17 @@ class GatewayAlertTests(unittest.TestCase):
         self.clock.advance(seconds=1)
         self.db.rows.extend([gateway(15887, self.clock(), aid=2), gateway(15889, self.clock())])
         self.alerts.poll(); self.alerts.deliver_due()
-        self.assertEqual(len(self.capture.requests), 1)
-        statuses = self.alerts.store.snapshot()['notifications']
+        self.assertEqual(self.capture.requests, [])
+        state = self.alerts.store.snapshot()
+        self.assertEqual(set(state['detection_events']), {'error:15889'})
+        statuses = state['notifications']
         self.assertEqual(statuses['15887']['reason'], 'degradation_mark')
-        self.assertEqual(statuses['15889']['status'], 'delivered')
+        self.assertEqual(statuses['15889']['status'], 'clue')
         self.assertNotIn('15886', statuses)
         self.alerts.poll(); self.alerts.deliver_due()
-        self.assertEqual(len(self.capture.requests), 1)
+        self.assertEqual(self.capture.requests, [])
 
-    def test_gateway_first_actual_bark_http_under_three_seconds_while_other_work_waits(self):
+    def test_gateway_clue_persists_under_three_seconds_while_other_work_waits(self):
         async def scenario():
             collector = asyncio.create_task(self.alerts.collect_loop())
             sender = asyncio.create_task(self.alerts.delivery_loop())
@@ -87,14 +89,13 @@ class GatewayAlertTests(unittest.TestCase):
                 self.clock.advance(seconds=1)
                 self.db.rows.append(gateway(15884, self.clock()))
                 began = time.monotonic()
-                self.assertTrue(await asyncio.to_thread(self.capture.wait_for_request, 3))
+                while 'error:15884' not in self.alerts.store.snapshot()['detection_events'] and time.monotonic() - began < 3:
+                    await asyncio.sleep(.05)
                 latency = time.monotonic() - began
                 self.assertLess(latency, 3)
-                request = self.capture.requests[0]
-                self.assertEqual((request['level'], request['sound'], request['group']), ('critical', 'alarm', 'Sub2Ops 疑似降智'))
-                self.assertIn('#15884', request['body'])
+                self.assertIn('error:15884', self.alerts.store.snapshot()['detection_events'])
+                self.assertEqual(self.capture.requests, [])
                 self.assertFalse(unrelated_long_work.done())
-                print(f'gateway isolated Bark first HTTP: {latency:.3f}s; requests={len(self.capture.requests)}')
             finally:
                 for task in (collector, sender, unrelated_long_work): task.cancel()
                 await asyncio.gather(collector, sender, unrelated_long_work, return_exceptions=True)

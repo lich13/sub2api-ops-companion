@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import uuid
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import HTTPException
@@ -12,6 +13,8 @@ from .capacity_alerts import mark_view
 from .operation_versions import digest, versions
 from .policy_store import PolicyStore
 from .usage_query import parse_iso_datetime
+from .detection_dispatch import DetectionDispatch
+from .recovery_models import RecoveryModels
 
 TARGET = 'gpt-5.6-luna'
 DEFAULT_MODEL = 'gpt-6-luna'
@@ -27,12 +30,13 @@ class DetectionRequest(BaseModel):
     interval_minutes: int = Field(default=15, ge=1, le=525600, strict=True)
     model_id: str = Field(default=DEFAULT_MODEL, min_length=1, max_length=200, pattern=r'^[A-Za-z0-9._:/-]+$')
 
-class ModelDetection:
+class ModelDetection(DetectionDispatch, RecoveryModels):
     def __init__(self, service, *, clock=utcnow):
         self.s, self.r, self.clock = service, service.r, clock
         self.store = PolicyStore(Path(self.r.settings.usage_query_state_path).with_name('model-detection-state.json'),
                                  {'accounts': {}, 'consumed': {}})
         self.tick_lock = asyncio.Lock()
+        self._notification_lock = threading.Lock()
 
     @staticmethod
     def default():
@@ -58,7 +62,11 @@ class ModelDetection:
 
     def view(self, aid):
         value = self.control(aid)
-        return {**value, 'version': self.version(value), 'account_id': aid}
+        start = self.data().get('automatic_starts', {}).get(str(aid), {})
+        notice = self.data().get('disposition_notifications', {}).get((value.get('disposition') or {}).get('job_id'))
+        return {**value, 'version': self.version(value), 'account_id': aid,
+                'last_automatic_started_at': start.get('started_at'), 'next_allowed_at': self.next_allowed_at(aid),
+                'disposition_notification': notice}
 
     def held(self, aid):
         try:
@@ -134,10 +142,27 @@ class ModelDetection:
         value, mark = self.control(aid), self.mark(aid)
         if value['generation'] != job.get('detection_generation') or mark['version'] != job.get('detection_mark_version'):
             raise HTTPException(409, '检测已被新的人工操作替代')
-        reason = self.reason(row, mark)
+        context = job.get('recovery_context')
+        reason = (self.recovery_reason(row, context, before_reset=bool(context.get('consume')) and not job.get('attempts'))
+                  if context else self.reason(row, mark))
         if reason:
             raise HTTPException(409, reason)
         return row
+
+    def clue_status(self, causes, status, *, reason='', job_id=None):
+        clues = [cause for cause in causes if cause.startswith(('error:', 'slow:'))]
+        if not clues:
+            return
+        with self.r.capacity_alerts.store.transaction() as data:
+            for key in clues:
+                record = {'status': status, 'reason': reason, 'job_id': job_id, 'updated_at': self.clock().isoformat()}
+                data.setdefault('detection_clues', {})[key] = record
+                if key.startswith('error:'):
+                    # No fabricated error or delivery receipt; enrich the actual
+                    # collected record with its detection outcome only.
+                    data.setdefault('notifications', {})[key.split(':', 1)[1]] = record
+            data['detection_clues'] = dict(list(data['detection_clues'].items())[-10000:])
+        write_audit(self.r.settings.audit_path, 'model_detection_clue', {'triggers': clues, 'result': status, 'reason': reason, 'job_id': job_id})
 
     async def trigger(self, aid, causes):
         value = self.control(aid)
@@ -149,20 +174,35 @@ class ModelDetection:
                     raise
                 job = None
             if job and job['status'] in ACTIVE:
-                self.update(aid, triggers=sorted(set(value.get('triggers', []) + causes)))
+                self.clue_status(causes, 'ignored', reason='已有检测排队或运行')
                 return job
+        latest = self.s.model_tests.latest(aid)
+        if latest and latest['status'] in ACTIVE:
+            self.clue_status(causes, 'ignored', reason='已有模型测试排队或运行')
+            return latest
+        allowed = parse_iso_datetime(self.next_allowed_at(aid))
+        if allowed and self.clock() < allowed:
+            if 'scheduled' in causes:
+                self.update(aid, status='waiting', next_at=allowed.isoformat(), reason='等待自动检测冷却')
+            write_audit(self.r.settings.audit_path, 'model_detection_cooldown',
+                        {'account_id': aid, 'triggers': causes, 'result': 'deferred' if 'scheduled' in causes else 'ignored'})
+            self.clue_status(causes, 'ignored', reason='五分钟冷却中')
+            return None
         row = await self.s.actions.account(aid)
         mark = self.mark(aid)
         reason = self.reason(row, mark)
         if reason:
             self.update(aid, status='paused', reason=reason, next_at=None)
+            self.clue_status(causes, 'ignored', reason=reason)
             return None
         if not await self.s.actions.model_allowed(row, value['model_id'], candidate_required=True):
             self.update(aid, status='paused', reason='所选模型不在当前模型候选中', next_at=None, candidate_blocked=True, candidate_recheck_at=(self.clock()+timedelta(minutes=1)).isoformat())
+            self.clue_status(causes, 'failed', reason='所选模型不在当前候选中')
             return None
         bank = self.r.fingerprint_bank.capture()
         if not any(model['id'] == TARGET for model in bank[0]['models']):
             self.update(aid, status='paused', reason='当前指纹库缺少降智判定模型', next_at=None, candidate_blocked=True, candidate_recheck_at=(self.clock()+timedelta(minutes=1)).isoformat())
+            self.clue_status(causes, 'failed', reason='当前指纹库缺少判定目标')
             return None
         # Persist the idempotency key before starting a potentially billable job.
         request_id = value.get('pending_request_id') or uuid.uuid4().hex
@@ -173,6 +213,7 @@ class ModelDetection:
         job = await self.s.model_tests.start(aid, payload, automatic={
             'detection_generation': value['generation'], 'detection_mark_version': mark['version'], 'triggers': causes})
         self.update(aid, job_id=job['id'], pending_request_id=None, status=job['status'], reason=job.get('error',''))
+        self.clue_status(causes, 'testing', job_id=job['id'])
         return job
 
     async def verdict(self, job, report):
@@ -187,12 +228,14 @@ class ModelDetection:
                 if value['generation'] != job['detection_generation'] or mark['version'] != job['detection_mark_version']:
                     raise HTTPException(409, '人工操作已变化，旧检测不再处置')
                 row = self.r.db.fetch_one(ACCOUNT_SQL.format(filter='AND a.id=%(id)s'), {'id':aid})
-                reason = self.reason(row, mark)
+                reason = self.recovery_reason(row, job['recovery_context']) if job.get('recovery_context') else self.reason(row, mark)
                 if reason:
                     raise HTTPException(409, reason)
                 disposition = {'status':'pending', 'job_id':job['id'], 'generation':value['generation'],
                                'mark_version':mark['version'], 'marked':False, 'schedule_verified':False,
-                               'created_at':self.clock().isoformat()}
+                               'created_at':self.clock().isoformat(), 'model_id': job['requested_model'],
+                               'prediction': report['prediction'], 'probability': report.get('probability'),
+                               'triggers': job.get('triggers', [])}
                 self.update(aid, hold=True, disposition=disposition, status='handling', reason='正在标记并停止调度')
         await asyncio.to_thread(prepare)
         return await asyncio.to_thread(self.finish_disposition, aid)
@@ -250,7 +293,7 @@ class ModelDetection:
                         d.update(status='completed', schedule_verified=True, reason='')
                     else:
                         d.update(status='checking', reason='停调度待核对')
-            self.update(aid, disposition=d, status='paused', reason='已标记降智' if d['schedule_verified'] else d.get('reason','停调度待核对'))
+            self.commit_disposition(aid, d, row)
             write_audit(self.r.settings.audit_path, 'model_detection_disposition',
                         {'account_id':aid, 'job_id':d['job_id'], 'marked':d['marked'], 'schedule_verified':d['schedule_verified'], 'status':d['status']})
             return d
@@ -266,6 +309,7 @@ class ModelDetection:
                         await self.trigger(event['account_id'], [key])
                     except HTTPException as exc:
                         self.update(event['account_id'], status='paused', reason=str(exc.detail)[:200])
+                        self.clue_status([key], 'failed', reason=str(exc.detail)[:200])
                     with self.store.transaction() as data:
                         data['consumed'][key] = self.clock().isoformat()
                         data['consumed'] = dict(list(data['consumed'].items())[-10000:])
@@ -297,11 +341,19 @@ class ModelDetection:
                         await self.s.model_tests.cancel(job['id'])
                     continue
                 if job and value.get('handled_job') != job['id']:
+                    report = job.get('report') or {}
+                    valid = job['status'] == 'completed' and report.get('used_outputs', 0) > 0
+                    confirmed = job.get('first_group_prediction') == TARGET and valid
+                    self.clue_status(job.get('triggers', []), 'confirmed' if confirmed else 'ignored' if valid else 'failed',
+                                     reason='首组指纹确认降智' if confirmed else '未确认降智' if valid else job.get('error') or '分析不足', job_id=job['id'])
                     timer = {}
                     if value['generation'] == job.get('detection_generation'):
                         ended = parse_iso_datetime(job.get('completed_at')) or self.clock()
                         timer = {'status':'waiting' if value['enabled'] else 'disabled',
                                  'next_at':(max(ended, self.clock())+timedelta(minutes=value['interval_minutes'])).isoformat() if value['enabled'] else None}
+                        allowed = self.next_allowed_at(aid)
+                        if timer['next_at'] and allowed:
+                            timer['next_at'] = max(parse_iso_datetime(timer['next_at']), parse_iso_datetime(allowed)).isoformat()
                     self.update(aid, handled_job=job['id'], **timer,
                                 last_result={'id':job['id'], 'disposition':job.get('automatic_disposition'), 'status':job['status'], 'report':job.get('report'), 'completed_at':job.get('completed_at'),
                                              'error':job.get('error'), 'bank_version':job.get('bank_version')})

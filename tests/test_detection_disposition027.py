@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from app.account_templates import AccountTemplates, TemplateApplication, account_version
 from app.capacity_alerts import CapacityAlertStore
-from app.model_detection import TARGET, ModelDetection
+from app.model_detection import DEFAULT_MODEL, TARGET, ModelDetection
 
 
 NOW = datetime(2026, 10, 6, 3, 0, tzinfo=timezone.utc)
@@ -174,6 +174,7 @@ class DetectionDispositionTests(unittest.IsolatedAsyncioTestCase):
         return {
             "id": job_id,
             "account_id": 1,
+            "requested_model": DEFAULT_MODEL,
             "detection_generation": self.detection.control(1)["generation"],
             "detection_mark_version": self.detection.mark(1)["version"],
         }

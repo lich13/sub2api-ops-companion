@@ -395,6 +395,8 @@ const config: Config = {
     revision: "1".repeat(64),
     oauth_recovery_monitor_enabled: true,
     oauth_auto_reset_credit_enabled: false,
+    oauth_recovery_connection_account_ids: accounts.filter(a => a.platform === "openai" && a.type === "oauth").map(a => a.id),
+    oauth_recovery_model_account_ids: [],
     oauth_daily_test_enabled: true,
     oauth_daily_test_time: "05:00",
     oauth_usage_refresh_concurrency: 4,
@@ -408,6 +410,7 @@ const config: Config = {
     openai_enabled: false,
     grok_enabled: false,
     managed_account_ids: [389],
+    coexist_account_ids: [],
   },
 };
 const listeners = new Set<(s: ViewState) => void>();
@@ -658,8 +661,18 @@ export async function run(
       };
       return structuredClone(config[section]);
     }
-    if (path === "/errors" || path.startsWith("/errors?"))
-      return { items: state.snapshot?.errors, next_cursor: null };
+    if (path === "/errors" || path.startsWith("/errors?")) {
+      const params = new URLSearchParams(path.split("?")[1]);
+      const category = params.get("category");
+      const before = Number(params.get("before_id")) || Infinity;
+      const items = (state.snapshot?.errors ?? []).filter(e => {
+        const account = state.snapshot?.accounts.find(a => a.id === e.account_id);
+        const degradation = account?.platform === "openai" && ["oauth", "apikey"].includes(account.type)
+          && ["Our servers are currently overloaded. Please try again later.", "Selected model is at capacity. Please try a different model.", "stream disconnected before completion: Concurrency limit exceeded for account, please retry later"].includes(e.message);
+        return e.id < before && (!category || (category === "degradation" ? degradation : !degradation));
+      });
+      return { items, next_cursor: null };
+    }
     if (path.startsWith("/recoveries"))
       return { items: state.snapshot?.recoveries, next_cursor: null };
     if (path === "/quota-refresh")
@@ -697,7 +710,7 @@ export async function run(
     }
     if (path.startsWith("/errors/")) {
       const e = state.snapshot?.errors.find(
-        (e) => e.id === Number(path.split("/")[2]),
+        (e) => e.id === Number(path.split("?")[0].split("/")[2]),
       );
       return {
         ...e,

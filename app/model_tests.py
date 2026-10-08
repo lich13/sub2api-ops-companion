@@ -24,6 +24,7 @@ from .audit import write_audit
 from .codex_identity import codex_identity, codex_originator
 from .model_test_stream import TestFailure, execute
 from .modeltrace import analyze, bank, challenges
+from .usage_query import parse_iso_datetime
 
 ACTIVE = {"queued", "running", "retrying"}
 ERRORS = {"auth_or_quota": "认证失败或额度不足", "rate_limited": "账号受到限流",
@@ -264,10 +265,11 @@ class ModelTests:
                    'triggers': sorted(set(auto.get('triggers') or [])),
                    'detection_generation': auto.get('detection_generation'),
                    'detection_mark_version': auto.get('detection_mark_version'),
+                   'recovery_context': auto.get('recovery_context'), 'planned_groups': auto.get('planned_groups', 3),
                    'first_group_prediction': None, 'automatic_disposition': None,
                    'target_signature': target_signature(row), 'owner_signature': target_signature(owner),
                    'groups': [{'index': i+1, 'status': 'queued', 'attempts': 0, 'ttft_ms': None,
-                               'duration_ms': None, 'error': ''} for i in range(3)]}
+                               'duration_ms': None, 'error': ''} for i in range(auto.get('planned_groups', 3))]}
             if conflict:
                 job.update(status='needs_confirmation', error='测试目标已变化，请重新确认')
             with self.store.transaction() as data:
@@ -298,6 +300,14 @@ class ModelTests:
             lease = AccountLease(self.s.r.db, row)
             self.waiting_leases[job['id']] = lease
             while True:
+                if job.get('automatic'):
+                    until = self.s.model_detection.next_allowed_at(job['account_id'])
+                    deadline = parse_iso_datetime(until)
+                    if deadline and self.s.model_detection.clock() < deadline:
+                        if self.get(job['id']).get('waiting_until') != until:
+                            self.update(job['id'], waiting_until=until)
+                        await asyncio.sleep(1)
+                        continue
                 manual_waiting = job.get('automatic') and any(
                     not value.get('automatic') and value.get('status') == 'queued'
                     and value['id'] in self.waiting_leases
@@ -351,7 +361,12 @@ class ModelTests:
             else:
                 # Retried groups use the original identity, bank and request target.
                 target = context['target']
-            job = self.update(job['id'], status='running', started_at=stamp(), error='', completed_at=None,
+            if job.get('recovery_context'):
+                result = await self.s.model_detection.prepare_recovery(job)
+                if result:
+                    self.update(job['id'], status='failed', preflight_result=result, completed_at=stamp(), error=result.get('error', '恢复条件未确认'))
+                    return
+            job = self.update(job['id'], status='running', started_at=stamp(), error='', completed_at=None, waiting_until=None,
                               bank_version=context['snapshot'][1], can_retry=False)
             write_audit(self.s.r.settings.audit_path, 'model_test_identity',
                         {'account_id': row['id'], 'job_id': job['id'], 'user_agent': target['headers']['User-Agent'],
@@ -423,6 +438,8 @@ class ModelTests:
                             raise TestFailure('account_changed')
                         if owner['id'] != row['id'] and target_signature(await self.account(owner['id'])) != target_signature(owner):
                             raise TestFailure('account_changed')
+                        if job.get('automatic') and attempts == 0:
+                            await asyncio.to_thread(self.s.model_detection.register_dispatch, self.get(job_id))
                         attempts += 1
                         group.update(status='running', attempts=attempt+1, error='', ttft_ms=None, retryable=False,
                                      started_at=stamp(), diagnostics={})
@@ -507,7 +524,7 @@ class ModelTests:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10, write=10, pool=10),
                     follow_redirects=False, trust_env=False, proxy=target['proxy']) as client:
-                pending_groups = [(i, expected, prompt) for i, (expected, prompt) in enumerate(context['challenges']) if i not in samples]
+                pending_groups = [(i, expected, prompt) for i, (expected, prompt) in enumerate(context['challenges'][:job.get('planned_groups', 3)]) if i not in samples]
                 try:
                     # Automatic detection gives the first sample exclusive priority;
                     # this prevents groups 2/3 from spending a request before the
@@ -535,7 +552,7 @@ class ModelTests:
             error = ERRORS[fatal] if fatal else '' if current.get('report') else '有效样本不足，无法识别'
             completion_reason = ('automatic_degradation' if automatic_disposition else
                                  'confidence_99' if early else 'fatal_error' if fatal else 'samples_finished')
-            await persist(status=status, error=error, can_retry=retryable, completion_reason=completion_reason,
+            await persist(status=status, error=error, error_code=fatal, can_retry=retryable, completion_reason=completion_reason,
                           automatic_disposition=automatic_disposition)
         finally:
             await persist(groups=groups, completed_at=stamp(), duration_ms=round((time.monotonic()-started)*1000))

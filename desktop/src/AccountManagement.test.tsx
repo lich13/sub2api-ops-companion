@@ -452,15 +452,11 @@ it("selects current filters, preserves live selections on polling and clears on 
   await act(async () => receive({ ...state, connection_revision: 1 }));
   expect(container.textContent).toContain("已选 0 个账号");
   await act(async () => button("事件").click());
-  expect(container.querySelector("#errors-panel")?.hasAttribute("hidden")).toBe(
-    false,
-  );
-  const errors = container.querySelector("#errors-panel") as HTMLElement;
-  errors.scrollTop = 50;
-  await act(async () => button("恢复成功").click());
-  expect(container.querySelector("#errors-panel")?.hasAttribute("hidden")).toBe(
-    true,
-  );
-  await act(async () => button("上游与认证错误").click());
-  expect(errors.scrollTop).toBe(50);
+  expect(container.querySelector("#degradation-panel")).not.toBeNull();
+  await act(async () => button("恢复历史").click());
+  expect(container.querySelector("#degradation-panel")).toBeNull();
+  expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(false);
+  await act(async () => button("降智错误").click());
+  expect(container.querySelector("#degradation-panel")).not.toBeNull();
+  expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
 });

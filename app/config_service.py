@@ -22,6 +22,7 @@ OAUTH_FIELDS = {
     "oauth_daily_test_time", "oauth_usage_refresh_concurrency", "oauth_recovery_test_concurrency",
     "oauth_early_probe_batch_size",
     "oauth_recovery_test_model_id",
+    "oauth_recovery_connection_account_ids", "oauth_recovery_model_account_ids",
 }
 
 
@@ -88,9 +89,40 @@ class ConfigService:
                 if not model or len(model) > 160:
                     raise ValueError("测活模型无效")
                 values["oauth_recovery_test_model_id"] = model
+                from .recovery_policy import CONNECTION_IDS, MODEL_IDS, account_ids
+                for field in (CONNECTION_IDS, MODEL_IDS):
+                    values[field] = account_ids([] if values.get(field) is None else values[field])
+                if set(values[CONNECTION_IDS]) & set(values[MODEL_IDS]):
+                    raise ValueError("账号只能选择一种恢复验证方式")
+                selected = set(values[CONNECTION_IDS]) | set(values[MODEL_IDS])
+                if selected and ({CONNECTION_IDS, MODEL_IDS} & set(changes)):
+                    from . import account_ops
+                    eligible = {int(row["id"]) for row in account_ops.current_oauth_accounts(r.db)
+                                if row.get("platform") == "openai" and row.get("type") == "oauth"
+                                and not row.get("deleted_at") and not row.get("parent_account_id")
+                                and not (row.get("extra") or {}).get("parent_account_id")}
+                    # Keep stale IDs already saved for old clients; newly added
+                    # accounts must belong to the current eligible inventory.
+                    previous = set(current[section].get(CONNECTION_IDS) or []) | set(current[section].get(MODEL_IDS) or [])
+                    if selected - previous - eligible:
+                        raise ValueError("所选账号不属于可管理的 OpenAI OAuth 账号")
                 payload = {**r.oauth_config_file(), **values, **stamp}
                 for retired in ("oauth_early_probe_interval_seconds", "oauth_recovery_push_enabled", "oauth_night_recovery_cooldown_enabled", "oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"):
                     payload.pop(retired, None)
+                monitor = getattr(r, 'oauth_monitor', None)
+                if monitor and ({CONNECTION_IDS, MODEL_IDS} & set(changes)):
+                    from .recovery_policy import recovery_method
+                    from types import SimpleNamespace
+                    following = SimpleNamespace(**values)
+                    affected = (set(values[CONNECTION_IDS]) | set(values[MODEL_IDS])
+                                | set(current[section].get(CONNECTION_IDS) or []) | set(current[section].get(MODEL_IDS) or []))
+                    affected = {aid for aid in affected if recovery_method(s, aid) != recovery_method(following, aid)}
+                    def invalidate(data):
+                        for aid in affected:
+                            meta = data['scheduler'].setdefault(str(aid), {})
+                            meta['recovery_method_generation'] = int(meta.get('recovery_method_generation', 0)) + 1
+                    if affected:
+                        monitor.store.transaction(invalidate)
                 r.save_oauth_runtime_config(payload)
                 r.apply_oauth_runtime_config(payload)
             elif section == "bark":
@@ -113,12 +145,13 @@ class ConfigService:
                     r.save_bark_runtime_config(payload)
                     r.apply_bark_runtime_config(payload)
             elif section == "key_fallback":
-                if set(changes) - {"openai_enabled", "grok_enabled", "managed_account_ids"}:
+                if set(changes) - {"openai_enabled", "grok_enabled", "managed_account_ids", "coexist_account_ids"}:
                     raise ValueError("未知 Key 回退设置")
                 if r.key_fallback_controller is None:
                     raise ValueError("Key 回退尚未就绪")
                 values = {key: current[section][key] for key in ("openai_enabled", "grok_enabled", "managed_account_ids")}
                 values.update(changes)
+                values.setdefault("coexist_account_ids", [aid for aid in current[section].get("coexist_account_ids", []) if aid in values["managed_account_ids"]])
                 self._validate_switches(values)
                 r.key_fallback_controller.save_user_config(**values, user=user)
             write_audit(s.audit_path, f"{section}_config_update", {"user": user, "fields": sorted(changes)})

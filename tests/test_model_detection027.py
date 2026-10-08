@@ -62,10 +62,12 @@ class _DetectionFixture(unittest.IsolatedAsyncioTestCase):
             job_id = f"{self.job_index:032x}"
             job = {
                 "id": job_id,
-                "account_id": 1,
+                "account_id": _aid,
                 "status": "queued",
                 "automatic": bool(automatic),
                 "triggers": sorted(set((automatic or {}).get("triggers") or [])),
+                "detection_generation": (automatic or {}).get("detection_generation"),
+                "detection_mark_version": (automatic or {}).get("detection_mark_version"),
             }
             self.jobs[job_id] = job
             return copy.deepcopy(job)
@@ -73,6 +75,10 @@ class _DetectionFixture(unittest.IsolatedAsyncioTestCase):
         self.model_tests = SimpleNamespace(
             account=AsyncMock(return_value=copy.deepcopy(self.row)),
             get=lambda job_id: copy.deepcopy(self.jobs[job_id]),
+            latest=lambda aid: next(
+                (copy.deepcopy(job) for job in reversed(list(self.jobs.values())) if job["account_id"] == aid),
+                None,
+            ),
             start=AsyncMock(side_effect=start),
             cancel=AsyncMock(),
         )
@@ -154,15 +160,22 @@ class _DetectionFixture(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.model_tests.start.await_count, 1)
         self.assertEqual(datetime.fromisoformat(state["next_at"]), self.clock.value + timedelta(minutes=15))
 
-    async def test_duplicate_detection_events_merge_into_one_active_job(self):
-        self._event("warning:one")
+    async def test_duplicate_detection_events_are_ignored_while_job_is_active(self):
+        self._event("error:one")
+        await self.detection.tick()
+        first_job_id = self.detection.control(1)["job_id"]
         self._event("slow:one")
         await self.detection.tick()
         self.assertEqual(self.model_tests.start.await_count, 1)
         state = self.detection.control(1)
-        self.assertEqual(state["triggers"], ["slow:one", "warning:one"])
-        self.assertEqual(self.capacity.store.snapshot()["detection_events"], {})
-        self.assertEqual(set(self.detection.data()["consumed"]), {"warning:one", "slow:one"})
+        self.assertEqual(state["job_id"], first_job_id)
+        self.assertEqual(state["triggers"], ["error:one"])
+        self.assertEqual(self.jobs[first_job_id]["triggers"], ["error:one"])
+        snapshot = self.capacity.store.snapshot()
+        self.assertEqual(snapshot["detection_events"], {})
+        self.assertEqual(snapshot["detection_clues"]["error:one"]["status"], "testing")
+        self.assertEqual(snapshot["detection_clues"]["slow:one"]["status"], "ignored")
+        self.assertEqual(set(self.detection.data()["consumed"]), {"error:one", "slow:one"})
 
     async def test_manual_generation_overrides_an_older_automatic_job(self):
         self.detection.update(1, enabled=True, status="handling", hold=True, disposition={"status": "pending"})
@@ -229,6 +242,8 @@ class _ModelTestFixture(unittest.IsolatedAsyncioTestCase):
         self.row = _row()
         self.detection = SimpleNamespace(
             guard=AsyncMock(return_value=copy.deepcopy(self.row)),
+            next_allowed_at=Mock(return_value=None),
+            register_dispatch=Mock(),
             verdict=AsyncMock(return_value={"status": "completed"}),
         )
         db = SimpleNamespace(

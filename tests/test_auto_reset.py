@@ -35,24 +35,49 @@ def wham(now, *, five=10, seven=20, observed=None):
 
 
 class EvidenceDB:
-    """Run the actual upstream-evidence predicates against isolated SQL rows."""
+    """Run evidence SQL with only PostgreSQL JSON and limiter syntax adapted."""
+
+    ERROR_FIELDS = ("error_owner", "error_phase", "upstream_error_message", "error_message",
+                    "error_body", "upstream_error_detail", "upstream_errors")
 
     def __init__(self):
         self.raw = sqlite3.connect(":memory:", check_same_thread=False)
         self.raw.row_factory = sqlite3.Row
         self.raw.executescript("""
             CREATE TABLE ops_error_logs (id INTEGER, account_id INTEGER, upstream_status_code INTEGER,
-                                         status_code INTEGER, created_at TEXT);
+                                         status_code INTEGER, created_at TEXT, error_owner TEXT,
+                                         error_phase TEXT, upstream_error_message TEXT, error_message TEXT,
+                                         error_body TEXT, upstream_error_detail TEXT, upstream_errors TEXT);
             CREATE TABLE usage_logs (id INTEGER, account_id INTEGER, created_at TEXT);
         """)
+        from app.error_evidence import is_local_throttle
+
+        self.raw.create_function("fixture_local_throttle", len(self.ERROR_FIELDS),
+                                 lambda *values: int(is_local_throttle(dict(zip(self.ERROR_FIELDS, values)))))
         self.reads = 0
 
-    def event(self, record_id=1, *, at=None, upstream=429, status=429, account_id=ACCOUNT_ID):
-        self.raw.execute("INSERT INTO ops_error_logs VALUES (?,?,?,?,?)",
-                         (record_id, account_id, upstream, status, (at or NOW - timedelta(minutes=5)).isoformat()))
+    def event(self, record_id=1, *, at=None, upstream=429, status=429, account_id=ACCOUNT_ID, **fields):
+        unknown = set(fields) - set(self.ERROR_FIELDS)
+        if unknown:
+            raise ValueError("Unsupported fixture error fields: " + ", ".join(sorted(unknown)))
+        recorded = {"error_owner": "provider", "error_phase": "upstream", **fields}
+        values = [json.dumps(recorded[name]) if isinstance(recorded.get(name), (dict, list))
+                  else recorded.get(name) for name in self.ERROR_FIELDS]
+        self.raw.execute("INSERT INTO ops_error_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (record_id, account_id, upstream, status,
+                          (at or NOW - timedelta(minutes=5)).isoformat(), *values))
 
     def fetch_one(self, sql, params=None):
         self.reads += 1
+        if "to_jsonb(e)" in sql:
+            from app.error_evidence import local_throttle_sql
+
+            predicate = local_throttle_sql()
+            if predicate not in sql:
+                raise AssertionError("Structured evidence SQL must retain the local limiter exclusion")
+            columns = ",".join("e." + name for name in self.ERROR_FIELDS)
+            sql = sql.replace(predicate, "fixture_local_throttle(" + columns + ")")
+            sql = re.sub(r"to_jsonb\(e\)->>?'([a-z_]+)'", r"e.\1", sql)
         sql = re.sub(r"%\((\w+)\)s", r":\1", sql)
         values = {key: value.isoformat() if isinstance(value, datetime) else value for key, value in (params or {}).items()}
         result = self.raw.execute(sql, values).fetchone()

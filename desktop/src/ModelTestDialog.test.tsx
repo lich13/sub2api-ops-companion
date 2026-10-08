@@ -55,6 +55,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 describe("ModelTestDialog candidates", () => {
@@ -148,6 +149,44 @@ describe("ModelTestDialog candidates", () => {
     await act(async () => resolveLatest({ id: "f".repeat(32), status: "completed", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna", returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200 }));
     expect(model.value).toBe("gpt-6-astra");
     expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+  });
+
+  it("shows one-group verification progress and the final 1/1 result while polling an existing task", async () => {
+    vi.useFakeTimers();
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = {
+      id: "f".repeat(32), status: "running", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna",
+      returned_models: [], planned_groups: 1, completed_groups: 0, valid_groups: 0, attempts: 1, duration_ms: 0,
+      groups: [{ index: 1, status: "running", attempts: 1, ttft_ms: null, duration_ms: null }],
+    };
+    let polls = 0;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return job as never;
+      if (path === `/model-tests/${job.id}`) {
+        polls += 1;
+        return {
+          ...job, status: polls === 1 ? "handling" : "completed", completed_groups: 1, valid_groups: 1,
+          completion_reason: "automatic_degradation", report: { used_outputs: 1, prediction_name: "Fixture prediction" },
+          groups: [{ ...job.groups[0], status: "completed", duration_ms: 900 }],
+        } as never;
+      }
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}}/>));
+    const validGroups = () => [...container.querySelectorAll("dt")].find((node) => node.textContent === "有效组数")?.nextElementSibling?.textContent;
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("0/1 组");
+    expect(validGroups()).toBe("0/1");
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("1/1 组");
+    expect(validGroups()).toBe("1/1");
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("首组命中降智模型");
+    expect(validGroups()).toBe("1/1");
+    expect(container.querySelectorAll(".model-test-groups > div")).toHaveLength(1);
+    expect(container.textContent).not.toContain("1/3");
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(polls).toBe(2);
   });
 });
 const fingerprintBank = {

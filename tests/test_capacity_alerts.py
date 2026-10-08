@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.bark import BarkNotifier, BarkPushResult
+from app.bark import BarkNotifier
 from app.capacity_alerts import (
     MESSAGES,
     CapacityAlerts,
@@ -57,6 +57,8 @@ class CapacityDb:
 
     def fetch_all(self, sql: str, params: dict) -> list[dict]:
         self.fetch_all_calls.append((sql, copy.deepcopy(params)))
+        if "FROM usage_logs" in sql:
+            return []
         if "created_at>=" in sql:
             after = int(params["after"])
             since = params["since"]
@@ -156,23 +158,6 @@ class BarkCapture:
         return self.requested.wait(timeout)
 
 
-class BlockingNotifier:
-    def __init__(self) -> None:
-        self.entered = threading.Event()
-        self.release = threading.Event()
-        self.calls: list[tuple[str, str, dict]] = []
-
-    def runtime_config(self):
-        return SimpleNamespace(enabled=True, config_valid=True)
-
-    def push(self, title: str, body: str, *, timeout: float, options: dict) -> BarkPushResult:
-        self.calls.append((title, body, options))
-        self.entered.set()
-        if not self.release.wait(timeout=2):
-            return BarkPushResult(False, "timeout")
-        return BarkPushResult(True)
-
-
 class CapacityAlertTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -240,7 +225,7 @@ class CapacityAlertTests(unittest.TestCase):
             with self.subTest(row=row["id"]):
                 self.assertIsNone(match_message(row))
 
-    def test_first_watermark_has_no_history_and_each_new_event_pushes_once(self) -> None:
+    def test_first_watermark_has_no_history_and_each_new_event_creates_one_clue(self) -> None:
         old = self.clock() - timedelta(minutes=1)
         rows = [error_row(1, created_at=old)]
         db = CapacityDb(rows, self.accounts)
@@ -258,16 +243,14 @@ class CapacityAlertTests(unittest.TestCase):
         ])
         alerts.poll()
         alerts.deliver_due()
-        self.assertEqual(len(self.capture.requests), 2)
-        self.assertEqual({request["body"].split("\n", 1)[0] for request in self.capture.requests}, {"账号：Account 1 #1", "账号：Account 2 #2"})
-        for request in self.capture.requests:
-            self.assertEqual(request["level"], "critical")
-            self.assertEqual(request["sound"], "alarm")
-            self.assertEqual(request["group"], "Sub2Ops 疑似降智")
+        self.assertEqual(set(alerts.store.snapshot()["detection_events"]), {"error:2", "error:3"})
+        self.assertEqual(alerts.store.snapshot()["pending"], {})
+        self.assertEqual(self.capture.requests, [])
 
         alerts.poll()
         alerts.deliver_due()
-        self.assertEqual(len(self.capture.requests), 2)
+        self.assertEqual(set(alerts.store.snapshot()["detection_events"]), {"error:2", "error:3"})
+        self.assertEqual(self.capture.requests, [])
 
     def test_pagination_replay_delay_and_restart_continue_from_persisted_cursor(self) -> None:
         old = self.clock() - timedelta(minutes=1)
@@ -280,31 +263,32 @@ class CapacityAlertTests(unittest.TestCase):
         self.clock.advance(seconds=1)
         rows.append(error_row(1, account_id=1, created_at=self.clock()))
         alerts.poll()
-        self.assertIn("1", alerts.store.snapshot()["pending"])
+        self.assertIn("error:1", alerts.store.snapshot()["detection_events"])
 
         # More than one page drains fully without calling Bark during collection.
         rows.extend(error_row(i, account_id=1, created_at=self.clock()) for i in range(3, 404))
         alerts.poll()
         state = alerts.store.snapshot()
-        self.assertEqual(len(state["pending"]), 402)
+        self.assertEqual(len(state["detection_events"]), 402)
+        self.assertEqual(state["pending"], {})
         cursor_calls = [call for call in db.fetch_all_calls if "cursor" in call[1]]
         self.assertGreaterEqual(len(cursor_calls), 3)
         self.assertEqual(self.capture.requests, [])
 
         restarted = CapacityAlerts(self.settings, db, self.notifier, clock=self.clock)
         restarted.deliver_one("1")
-        self.assertEqual(len(self.capture.requests), 1)
-        self.assertNotIn("1", restarted.store.snapshot()["pending"])
+        self.assertEqual(self.capture.requests, [])
+        self.assertIn("error:1", restarted.store.snapshot()["detection_events"])
 
         self.clock.advance(seconds=1)
         rows.append(error_row(404, account_id=2, created_at=self.clock()))
         restarted.poll()
         restarted.deliver_one("404")
-        self.assertEqual(len(self.capture.requests), 2)
+        self.assertEqual(self.capture.requests, [])
+        self.assertIn("error:404", restarted.store.snapshot()["detection_events"])
         self.assertEqual(restarted.store.snapshot()["cursor"], 404)
 
-    def test_retry_schedule_is_five_thirty_one_twenty_and_six_hundred_seconds(self) -> None:
-        self.capture.responses = [(200, {"code": 500})] * 4 + [(200, {"code": 200})]
+    def test_raw_clues_never_enter_bark_retry_schedule(self) -> None:
         old = self.clock() - timedelta(minutes=1)
         rows = [error_row(1, created_at=old)]
         db = CapacityDb(rows, self.accounts)
@@ -314,16 +298,13 @@ class CapacityAlertTests(unittest.TestCase):
         rows.append(error_row(2, account_id=1, created_at=self.clock()))
         alerts.poll()
 
-        expected_delays = (5, 30, 120, 600)
-        for attempt, delay in enumerate(expected_delays, start=1):
+        for delay in (5, 30, 120, 600):
             alerts.deliver_due()
-            pending = alerts.store.snapshot()["pending"]["2"]
-            self.assertEqual(pending["attempts"], attempt)
-            self.assertEqual(_dt(pending["next_at"]), self.clock() + timedelta(seconds=delay))
+            self.assertEqual(alerts.store.snapshot()["pending"], {})
+            self.assertIn("error:2", alerts.store.snapshot()["detection_events"])
             self.clock.advance(seconds=delay)
         alerts.deliver_due()
-        self.assertNotIn("2", alerts.store.snapshot()["pending"])
-        self.assertEqual(len(self.capture.requests), 5)
+        self.assertEqual(self.capture.requests, [])
 
     def test_save_failure_does_not_advance_cursor_or_claim_delivery(self) -> None:
         old = self.clock() - timedelta(minutes=1)
@@ -339,42 +320,61 @@ class CapacityAlertTests(unittest.TestCase):
             restarted_after_failed_save.store.snapshot()
         self.assertEqual(self.capture.requests, [])
 
-        # Build a pending event, then make the attempt journal fail before the HTTP boundary.
+        # A failed clue write cannot advance the cursor or lose the evidence.
         second_settings = SimpleNamespace(**vars(self.settings))
         second_settings.usage_query_state_path = str(Path(self.tmp.name) / "second" / "usage-state.json")
         db2 = CapacityDb([error_row(1, created_at=old)], self.accounts)
         alerts = CapacityAlerts(second_settings, db2, self.notifier, clock=self.clock)
         alerts.poll()
+        self.clock.advance(seconds=1)
         alerts.db.rows.append(error_row(2, account_id=1, created_at=self.clock()))
-        alerts.poll()
         with patch("app.capacity_alerts.write_json", side_effect=OSError("state-save-failed")):
             with self.assertRaises(OSError):
-                alerts.deliver_one("2")
-        pending = alerts.store.snapshot()["pending"]["2"]
-        self.assertEqual(pending["attempts"], 0)
+                alerts.poll()
+        self.assertEqual(alerts.store.snapshot()["cursor"], 1)
+        self.assertEqual(alerts.store.snapshot()["detection_events"], {})
+        alerts.poll()
+        self.assertEqual(alerts.store.snapshot()["cursor"], 2)
+        self.assertIn("error:2", alerts.store.snapshot()["detection_events"])
         self.assertEqual(self.capture.requests, [])
 
-    def test_mark_cancels_current_pending_and_retry_but_preserves_other_account(self) -> None:
+    def test_mark_suppresses_new_clues_but_preserves_other_account(self) -> None:
         old = self.clock() - timedelta(minutes=1)
         rows = [error_row(1, created_at=old)]
         db = CapacityDb(rows, self.accounts)
         alerts, _ = self.make_alerts(db)
         alerts.poll()
+        expected = mark_view(1)["version"]
+        alerts.store.set_mark(1, True, expected, self.clock())
         self.clock.advance(seconds=1)
         rows.extend([
             error_row(2, account_id=1, created_at=self.clock()),
             error_row(3, account_id=2, created_at=self.clock()),
         ])
         alerts.poll()
-        self.capture.responses = [(200, {"code": 500})]
         alerts.deliver_one("2")
-        self.assertEqual(alerts.store.snapshot()["pending"]["2"]["attempts"], 1)
-
-        expected = mark_view(1)["version"]
-        alerts.store.set_mark(1, True, expected, self.clock())
         state = alerts.store.snapshot()
-        self.assertNotIn("2", state["pending"])
-        self.assertIn("3", state["pending"])
+        self.assertNotIn("error:2", state["detection_events"])
+        self.assertIn("error:3", state["detection_events"])
+        self.assertEqual(state["notifications"]["2"]["reason"], "degradation_mark")
+        self.assertEqual(self.capture.requests, [])
+
+    def test_mark_clears_legacy_pending_and_retry_but_preserves_other_account(self) -> None:
+        alerts, _ = self.make_alerts()
+        alerts.poll()
+        with alerts.store.transaction() as data:
+            for aid in (1, 2):
+                data["pending"][str(aid)] = {
+                    "id": aid, "account_id": aid, "account_name": "fixture-account",
+                    "requested_model": "fixture-model", "upstream_model": "fixture-model", "message": MESSAGES[0],
+                    "created_at": self.clock().isoformat(), "next_at": self.clock().isoformat(), "attempts": 1,
+                }
+        alerts.store.set_mark(1, True, mark_view(1)["version"], self.clock())
+        state = alerts.store.snapshot()
+        self.assertNotIn("1", state["pending"])
+        self.assertIn("2", state["pending"])
+        self.assertEqual(state["notifications"]["1"]["reason"], "degradation_mark")
+        self.assertEqual(self.capture.requests, [])
 
     def test_mark_is_scoped_to_id_not_parent_or_same_name_account(self) -> None:
         self.accounts[10] = {
@@ -388,6 +388,7 @@ class CapacityAlertTests(unittest.TestCase):
         db = CapacityDb(rows, self.accounts)
         alerts, _ = self.make_alerts(db)
         alerts.poll()
+        alerts.store.set_mark(1, True, mark_view(1)["version"], self.clock())
         self.clock.advance(seconds=1)
         rows.extend([
             error_row(2, account_id=1, account_name="Shared name", created_at=self.clock()),
@@ -395,13 +396,12 @@ class CapacityAlertTests(unittest.TestCase):
         ])
         alerts.poll()
 
-        alerts.store.set_mark(1, True, mark_view(1)["version"], self.clock())
         state = alerts.store.snapshot()
-        self.assertNotIn("2", state["pending"])
-        self.assertIn("3", state["pending"])
+        self.assertNotIn("error:2", state["detection_events"])
+        self.assertIn("error:3", state["detection_events"])
         self.assertEqual(set(state["marks"]), {"1"})
 
-    def test_collect_loop_persists_one_new_error_and_first_bark_http_within_three_seconds(self) -> None:
+    def test_collect_loop_persists_one_new_clue_within_three_seconds_without_bark(self) -> None:
         async def scenario() -> None:
             old = self.clock() - timedelta(minutes=1)
             rows = [error_row(1, created_at=old)]
@@ -414,18 +414,15 @@ class CapacityAlertTests(unittest.TestCase):
                 self.clock.advance(seconds=1)
                 rows.append(error_row(2, account_id=1, created_at=self.clock()))
                 inserted_at = time.monotonic()
-                self.assertTrue(await asyncio.to_thread(self.capture.wait_for_request, 3.0))
+                while "error:2" not in alerts.store.snapshot()["detection_events"] and time.monotonic() - inserted_at < 3:
+                    await asyncio.sleep(.05)
                 elapsed = time.monotonic() - inserted_at
                 self.assertLessEqual(elapsed, 3.0)
-                self.assertEqual(len(self.capture.requests), 1)
-                request = self.capture.requests[0]
-                self.assertIn("错误记录：#2", request["body"])
-                self.assertEqual(request["level"], "critical")
-                self.assertEqual(request["sound"], "alarm")
-                self.assertEqual(request["group"], "Sub2Ops 疑似降智")
+                self.assertIn("error:2", alerts.store.snapshot()["detection_events"])
+                self.assertEqual(self.capture.requests, [])
                 self.assertIn("2", alerts.store.snapshot()["seen"])
                 await asyncio.sleep(0.25)
-                self.assertEqual(len(self.capture.requests), 1)
+                self.assertEqual(self.capture.requests, [])
             finally:
                 collector.cancel()
                 delivery.cancel()
@@ -453,26 +450,25 @@ class CapacityAlertTests(unittest.TestCase):
         ])
         self.clock.advance(seconds=1)
         alerts.poll()
-        self.assertNotIn("2", alerts.store.snapshot()["pending"])
-        self.assertIn("3", alerts.store.snapshot()["pending"])
+        self.assertNotIn("error:2", alerts.store.snapshot()["detection_events"])
+        self.assertIn("error:3", alerts.store.snapshot()["detection_events"])
 
         restarted = CapacityAlerts(self.settings, db, self.notifier, clock=self.clock)
         rows.append(error_row(4, account_id=1, created_at=changed_at - timedelta(seconds=1)))
         restarted.poll()
-        self.assertNotIn("4", restarted.store.snapshot()["pending"])
+        self.assertNotIn("error:4", restarted.store.snapshot()["detection_events"])
         restarted.deliver_due()
-        self.assertEqual(len(self.capture.requests), 1)
+        self.assertEqual(self.capture.requests, [])
 
         with self.assertRaises(HTTPException) as raised:
             restarted.store.set_mark(1, True, "0" * 64, self.clock())
         self.assertEqual(raised.exception.status_code, 409)
 
-    def test_mark_and_send_serialize_per_account(self) -> None:
+    def test_mark_and_account_guard_serialize_per_account(self) -> None:
         old = self.clock() - timedelta(minutes=1)
         rows = [error_row(1, created_at=old)]
         db = CapacityDb(rows, self.accounts)
-        notifier = BlockingNotifier()
-        alerts, _ = self.make_alerts(db, notifier)
+        alerts, _ = self.make_alerts(db)
         alerts.poll()
         self.clock.advance(seconds=1)
         rows.append(error_row(2, account_id=1, created_at=self.clock()))
@@ -480,10 +476,16 @@ class CapacityAlertTests(unittest.TestCase):
         expected = mark_view(1)["version"]
 
         executor = ThreadPoolExecutor(max_workers=2)
-        mark_started = threading.Event()
+        mark_started, entered, release = threading.Event(), threading.Event(), threading.Event()
+
+        def guarded_operation():
+            with alerts.store.account_guard(1):
+                entered.set()
+                release.wait(timeout=2)
+
         try:
-            delivery = executor.submit(alerts.deliver_one, "2")
-            self.assertTrue(notifier.entered.wait(timeout=2))
+            guarded = executor.submit(guarded_operation)
+            self.assertTrue(entered.wait(timeout=2))
 
             def mark() -> dict:
                 mark_started.set()
@@ -493,13 +495,13 @@ class CapacityAlertTests(unittest.TestCase):
             self.assertTrue(mark_started.wait(timeout=2))
             time.sleep(0.05)
             self.assertFalse(marking.done())
-            notifier.release.set()
-            self.assertIsInstance(delivery.result(timeout=2), type(None))
+            release.set()
+            self.assertIsInstance(guarded.result(timeout=2), type(None))
             self.assertTrue(marking.result(timeout=2)["marked"])
         finally:
-            notifier.release.set()
+            release.set()
             executor.shutdown(wait=True)
-        self.assertEqual(len(notifier.calls), 1)
+        self.assertEqual(self.capture.requests, [])
         self.assertEqual(alerts.store.snapshot()["pending"], {})
 
 
