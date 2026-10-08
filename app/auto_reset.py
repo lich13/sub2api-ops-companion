@@ -63,15 +63,17 @@ def project_state(value: dict[str, Any] | None) -> dict[str, Any] | None:
     return {"stage": value["stage"], "label": {"conflict": "自动用卡冲突", "auth_paused": "等待凭据更新", "no_credit": "等待重置卡"}.get(code, STATE_LABELS[value["stage"]]),
             "error": ERRORS.get(code, "操作未确认" if code else ""),
             "next_at": value.get("next_at"), "attempt_at": value.get("attempt_at"),
+            "evidence_source": value.get("evidence_source"), "evidence_at": value.get("evidence_at"),
             "test_completed_at": value.get("test_completed_at"), "recovered_at": value.get("recovered_at")}
 
 
 def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
     start = parse_iso_datetime(row.get("rate_limited_at"))
-    if not start:
+    reset = parse_iso_datetime(row.get("rate_limit_reset_at"))
+    if not start or start > now or not reset or reset <= now or reset <= start:
         return None
-    # status_code alone can represent client-key throttling. Only an actual
-    # upstream 429 associated with this still-active account block is evidence.
+    # WS semantic 429s persist this account block without necessarily emitting
+    # an ops_error_logs row. Quota and eligibility are checked by _depletion.
     params = {"id": int(row["id"]), "start": start - timedelta(seconds=5), "now": now}
     enriched = f"""
         SELECT e.id,e.created_at,
@@ -83,19 +85,33 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
                to_jsonb(e)->'upstream_errors' AS upstream_errors
         FROM ops_error_logs e
         WHERE e.account_id=%(id)s AND e.upstream_status_code=429
+          AND coalesce(e.error_owner,'') <> 'client'
           AND NOT {local_throttle_sql()}
           AND e.created_at >= %(start)s AND e.created_at <= %(now)s
-          AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id=e.account_id AND u.created_at>e.created_at)
           AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
             AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
         ORDER BY e.created_at DESC,e.id DESC LIMIT 1
     """
     try:
         candidate = db.fetch_one(enriched, params)
+        if candidate and not is_local_throttle(candidate):
+            return {**candidate, "source": "upstream_error"}
+        # Missing logs are compatible; failed reads or affirmative contrary
+        # evidence are not. Do not turn a local limiter into a consumption grant.
+        blocked = db.fetch_one(f"""
+            SELECT e.id FROM ops_error_logs e
+            WHERE e.account_id=%(id)s AND e.created_at >= %(start)s AND e.created_at <= %(now)s
+              AND (e.upstream_status_code IN (401,402) OR {local_throttle_sql()}
+                   OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))
+            ORDER BY e.created_at DESC,e.id DESC LIMIT 1
+        """, params)
     except Exception:
-        # An unverified error row cannot authorize irreversible consumption.
+        raise ValueError("限流证据无法可靠读取") from None
+    if blocked:
         return None
-    return None if candidate and is_local_throttle(candidate) else candidate
+    fingerprint = hashlib.sha256(f"{row['id']}:{start.isoformat()}:{reset.isoformat()}".encode()).hexdigest()
+    return {"id": f"account-rate-limit:{fingerprint}", "created_at": start,
+            "source": "account_rate_limit"}
 
 
 def _signature(row: dict[str, Any]) -> str:
@@ -231,8 +247,14 @@ class AutoResetController:
         if not stamp or stamp > now:
             return None
         duration = seven.get("window_minutes") or 7 * 24 * 60
+        if observed < reset - timedelta(minutes=duration) or stamp < reset - timedelta(minutes=duration):
+            return None
+        fingerprint = hashlib.sha256(json.dumps({"account_id": row["id"],
+            "limited_at": str(row.get("rate_limited_at")), "block_until": block.isoformat(),
+            "quota_reset": reset.isoformat()}, sort_keys=True).encode()).hexdigest()
         return {"reset_at": reset.isoformat(), "window_minutes": duration,
-                "evidence_at": stamp.isoformat(), "evidence_id": str(evidence["id"])}
+                "evidence_at": stamp.isoformat(), "evidence_id": str(evidence["id"]),
+                "evidence_source": evidence.get("source", "upstream_error"), "evidence_fingerprint": fingerprint}
 
     def _available(self, row, now, task):
         result = self._saved_quota(row, now)
@@ -285,6 +307,7 @@ class AutoResetController:
                     depletion = self._depletion(live, now)
                     credits = reset_credits(live.get("extra") or {}, now)
                     if (not depletion or depletion["reset_at"] != task.get("reset_at")
+                            or depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
                             or (credits["available"] or 0) <= 0):
                         return {"success": False, "error_code": "reset_state_changed"}
                     with control_lock(self.m.db, aid):
@@ -302,6 +325,7 @@ class AutoResetController:
                     final_depletion = self._depletion(final, self.m.clock(), held=True) if final else None
                     if (not self._owned(final, active_task) or not final_depletion
                             or final_depletion["reset_at"] != task.get("reset_at")
+                            or final_depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
                             or (reset_credits(final.get("extra") or {}, self.m.clock())["available"] or 0) <= 0):
                         self._save(aid, active_task, stage="blocked", error_code="ownership_changed")
                         return {"success": False, "error_code": "ownership_changed"}
@@ -472,8 +496,12 @@ class AutoResetController:
             self.store.transaction(replace)
         elif not task:
             task = self._save(aid, {"episode": uuid.uuid4().hex, "stage": "waiting", **evidence})
-        elif task.get("reset_at") != evidence["reset_at"]:
-            task = self._save(aid, task, **evidence, next_at=None, error_code="")
+        elif any(task.get(key) != evidence[key] for key in ("reset_at", "evidence_source", "evidence_fingerprint")):
+            task = self._save(aid, task, **evidence, evidence_audited=False, next_at=None, error_code="")
+        if not task.get("evidence_audited"):
+            task = self._save(aid, task, evidence_audited=True)
+            self._audit(aid, "evidence", source=task.get("evidence_source"),
+                        evidence_fingerprint=task.get("evidence_fingerprint"))
         deadline = parse_iso_datetime(task.get("next_at"))
         if deadline and deadline > now:
             return
@@ -642,6 +670,9 @@ class AutoResetController:
         event = {**history, "status": "recovered", "stage": "recovery", "checked_at": completed,
                  "test_success": True, "window_labels": ["7d"], "fingerprint": task["episode"], "dedupe_key": key,
                  "plan_type": oauth_quota_summary_from_result(final, self._saved_quota(final, self.m.clock())).get("plan_type")}
+        if task.get("consumed") is True and task.get("reset_completed_at"):
+            event["reset_credit"] = {"consumed": True, "completed_at": task["reset_completed_at"],
+                                     "verification_method": task.get("verification_method") or "connection"}
         def finish(data):
             current = data["scheduler"].get(str(aid), {}).get("auto_reset_credit") or {}
             if current.get("episode") != task["episode"] or current.get("stage") != "releasing":

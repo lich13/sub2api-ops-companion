@@ -398,10 +398,18 @@ async function recordChecks(h) {
   await h.state(await columns.getAttribute("open") === null, "columns-did-not-close", columns);
 
   h.phase = "records/detail";
-  await h.click(records.locator(".mobile-record-open").first(), "record-detail-trigger");
+  const missingFirstToken = records.locator(".mobile-record").filter({
+    has: page.locator('.mobile-record-open[aria-label="查看记录 #196"]'),
+  });
+  await h.visible(missingFirstToken, "record-without-first-token");
+  const compactTps = missingFirstToken.locator(".record-tps");
+  await h.state(/4\.98\s*tok\/s/.test((await compactTps.textContent()) || ""), "tps-requires-first-token", compactTps);
+  await h.click(missingFirstToken.locator(".mobile-record-open"), "record-missing-first-detail-trigger");
   const detail = page.getByRole("dialog", { name: "调用记录详情", exact: true });
   await h.within(detail, "record-detail", { touch: false, scroll: false });
   await h.visible(detail.locator(".record-detail-section").first(), "record-detail-content");
+  const tpsValue = detail.locator("dt").filter({ hasText: /^TPS$/ }).locator("xpath=following-sibling::dd[1]");
+  await h.state((await tpsValue.textContent())?.includes("4.98 tok/s"), "detail-tps-requires-first-token", tpsValue);
   await h.layout();
   await h.click(detail.getByRole("button", { name: "关闭详情", exact: true }), "record-detail-close");
   await detail.waitFor({ state: "hidden" });
@@ -534,6 +542,126 @@ async function featureChecks(h, baseline) {
   await h.layout();
 }
 
+async function templateChecks(h) {
+  const { page } = h;
+  await h.navigate("账号", "accounts");
+  const surface = page.locator('.page-surface[data-page="accounts"]');
+  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "account-templates-entry");
+  const dialog = page.getByRole("dialog", { name: "账号模板", exact: true });
+  await h.within(dialog, "account-templates-dialog", { touch: false, scroll: false });
+  const cards = dialog.locator(".account-template-grid > .account-template-card");
+  await h.visible(cards.first(), "first-editable-template-card");
+  await h.state(await cards.count() === 3, "template-card-count", cards);
+  for (let index = 0; index < await cards.count(); index++) {
+    const card = cards.nth(index);
+    await h.within(card, "editable-template-card", { touch: false, vertical: false });
+    await h.state(await card.getByRole("heading", { name: "白名单", exact: true }).count() === 1
+      && await card.getByRole("heading", { name: "模型映射", exact: true }).count() === 1,
+    "template-editor-sections-missing", card);
+    await h.allWithin(card.locator(".account-template-tools .icon-button"), "template-save-delete-icon", { hit: true });
+    await h.allWithin(card.locator(".account-template-row .icon-button"), "template-row-delete-icon", { hit: true });
+  }
+
+  const full = cards.nth(0);
+  const longName = "响应式账号模板长名称在窄屏与深浅主题下仍可编辑保存";
+  const nameInput = full.locator(".account-template-name");
+  await h.within(nameInput, "template-long-name-input", { touch: false, vertical: false });
+  await nameInput.fill(longName);
+  const saveRenamed = full.getByRole("button", { name: `保存${longName}模板`, exact: true });
+  await h.click(saveRenamed, "template-save-icon");
+  const deleteRenamed = full.locator('button[title="删除模板"]');
+  await page.waitForFunction((button) => !button.disabled, await deleteRenamed.elementHandle());
+  await h.state(await saveRenamed.isDisabled(), "template-save-did-not-settle", saveRenamed);
+  await h.state((await nameInput.inputValue()) === longName, "template-long-name-lost", nameInput);
+  await h.layout();
+
+  // Deleting every profile row must leave an intentionally empty profile, without auto-filling a row.
+  for (let index = 0; index < 3; index++) {
+    const remove = full.getByRole("button", { name: new RegExp(`^删除${longName}白名单 1$`) });
+    await h.click(remove, "template-whitelist-row-delete");
+  }
+  await h.state(await full.locator(".account-template-row").count() === 0, "empty-template-auto-filled-row", full);
+  await h.state((await full.locator(".account-template-fields > .muted").textContent()) === "不限制模型", "empty-template-label", full);
+  await h.layout();
+
+  await h.click(dialog.getByRole("button", { name: "新增模板", exact: true }), "template-add");
+  const creating = dialog.locator(".account-template-card").last();
+  await h.within(creating, "new-empty-template-card", { touch: false, vertical: false });
+  await h.state((await creating.locator(".account-template-fields > .muted").textContent()) === "不限制模型"
+    && await creating.locator(".account-template-row").count() === 0,
+  "new-template-not-empty", creating);
+  const customName = "响应式空模板批量预览";
+  await creating.getByRole("textbox", { name: "新模板名称" }).fill(customName);
+  await h.click(creating.getByRole("button", { name: "保存新模板", exact: true }), "new-template-save-icon");
+  await creating.waitFor({ state: "detached" });
+  const created = dialog.locator(".account-template-grid > .account-template-card").last();
+  await h.state((await created.locator(".account-template-name").inputValue()) === customName, "new-template-not-saved", created);
+  await h.state((await created.locator(".account-template-fields > .muted").textContent()) === "不限制模型", "saved-empty-template-label", created);
+  await h.layout();
+  await h.click(dialog.getByRole("button", { name: "关闭账号模板", exact: true }), "template-close");
+  await dialog.waitFor({ state: "hidden" });
+
+  const account101 = surface.locator(".mobile-account").filter({ has: page.getByRole("checkbox", { name: "选择 Codex · 主力", exact: true }) });
+  const account102 = surface.locator(".mobile-account").filter({ has: page.getByRole("checkbox", { name: "选择 Codex · 备用账号 · 用于验证长名称的显示与调度开关", exact: true }) });
+  await h.click(account101.locator("label.account-check"), "batch-select-account");
+  await h.click(account102.locator("label.account-check"), "batch-select-long-name-account");
+  await h.layout();
+  await h.click(surface.locator(".selection-bar").getByRole("button", { name: "应用模板", exact: true }), "batch-template-entry");
+  const batchDialog = page.getByRole("dialog", { name: "账号模板", exact: true });
+  await h.within(batchDialog, "batch-template-dialog", { touch: false, scroll: false });
+  const templateSelect = batchDialog.getByRole("combobox", { name: "选择账号模板", exact: true });
+  await h.within(templateSelect, "batch-template-select", { hit: true });
+  await templateSelect.selectOption({ label: customName });
+  const apply = batchDialog.getByRole("button", { name: "应用模板", exact: true });
+  await h.within(apply, "batch-template-apply", { hit: true });
+  await page.waitForFunction((button) => !button.disabled, await apply.elementHandle());
+  await h.state(await apply.isEnabled(), "batch-template-apply-disabled", apply);
+  await h.click(apply, "batch-template-preview-submit");
+  const previews = batchDialog.locator(".account-template-preview");
+  await h.visible(previews.first(), "batch-template-first-preview");
+  await h.state(await previews.count() === 2, "batch-template-preview-count", previews);
+  const longPreview = previews.filter({ hasText: "Codex · 备用账号 · 用于验证长名称的显示与调度开关" });
+  await h.within(longPreview.locator("strong"), "batch-preview-long-account-name", { touch: false, vertical: false });
+  const longNameStyle = await longPreview.locator("strong").evaluate((element) => ({
+    overflowWrap: getComputedStyle(element).overflowWrap,
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+  }));
+  await h.state(longNameStyle.overflowWrap === "anywhere" && longNameStyle.width > 0, "batch-preview-long-name-not-wrappable", longPreview.locator("strong"));
+  await h.allWithin(previews, "batch-template-preview-card", { touch: false, vertical: false });
+  await h.layout();
+  await h.click(batchDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "batch-template-close");
+  await batchDialog.waitFor({ state: "hidden" });
+
+  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "account-templates-reopen");
+  const deleteDialog = page.getByRole("dialog", { name: "账号模板", exact: true });
+  await h.within(deleteDialog, "delete-template-dialog", { touch: false, scroll: false });
+  const deleteCard = deleteDialog.locator(".account-template-grid > .account-template-card").last();
+  await h.within(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon", { hit: true });
+  await h.click(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon");
+  await h.click(deleteCard.getByRole("button", { name: "确认删除", exact: true }), "template-delete-confirm");
+  await deleteCard.waitFor({ state: "detached" });
+  await h.state(await deleteDialog.locator(".account-template-grid > .account-template-card").count() === 3, "deleted-template-remained-or-was-refilled", deleteDialog.locator(".account-template-grid"));
+  await h.layout();
+  await h.click(deleteDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "delete-template-close");
+  await deleteDialog.waitFor({ state: "hidden" });
+
+  await page.goto(`${ORIGIN}/?mobile=1&scenario=empty`, { waitUntil: "domcontentloaded" });
+  h.phase = "templates/empty-account-set";
+  await h.visible(page.locator('.page-surface[data-page="accounts"]'), "empty-account-surface");
+  const emptySurface = page.locator('.page-surface[data-page="accounts"]');
+  await h.click(emptySurface.getByRole("button", { name: "账号模板", exact: true }), "empty-account-templates-entry");
+  const emptyDialog = page.getByRole("dialog", { name: "账号模板", exact: true });
+  await h.within(emptyDialog, "empty-account-template-dialog", { touch: false, scroll: false });
+  const accountSelect = emptyDialog.getByRole("combobox", { name: "选择应用账号", exact: true });
+  await h.visible(accountSelect, "empty-account-selection");
+  await h.state(await accountSelect.count() === 1 && await accountSelect.locator("option").count() === 1
+    && await accountSelect.inputValue() === "0", "empty-account-set-selected-account", accountSelect);
+  await h.state(await emptyDialog.getByRole("button", { name: "应用模板", exact: true }).isDisabled(), "empty-account-set-allows-apply");
+  await h.state(await emptyDialog.locator(".account-template-preview").count() === 0, "empty-account-set-rendered-preview", emptyDialog);
+  await h.layout();
+}
+
 async function desktopMenuChecks(h, fixture) {
   const { page } = h;
   h.phase = "desktop/compact-more";
@@ -606,6 +734,7 @@ async function runScenario(scenario) {
       await recordChecks(h);
       await eventChecks(h);
       await featureChecks(h, fixture.config);
+      await templateChecks(h);
     } else {
       await desktopMenuChecks(h, fixture);
     }

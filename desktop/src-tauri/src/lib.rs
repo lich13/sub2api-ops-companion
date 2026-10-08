@@ -199,7 +199,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
         let query_ok = path.split_once('?').is_none_or(|(_, q)| q.strip_prefix("after_event=")
             .is_some_and(|v| !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u64>().is_ok()));
         return match method {
-            "GET" => path == "/account-operations" || query_ok && plain.strip_prefix("/account-operations/").is_some_and(job_id),
+            "GET" => path == "/account-operations"
+                || path.strip_prefix("/account-operations?batch_id=").is_some_and(|id| job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase()))
+                || query_ok && plain.strip_prefix("/account-operations/").is_some_and(job_id),
             "POST" => !path.contains('?') && plain.strip_prefix("/account-operations/").and_then(|s| s.strip_suffix("/cancel")).is_some_and(job_id),
             _ => false,
         };
@@ -222,9 +224,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
             _ => false,
         };
     }
-    let template_id = |s: &str| s.strip_prefix("custom-").is_some_and(|id| id.len() == 24 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+    let template_id = |s: &str| matches!(s, "full" | "degraded" | "takeover") || s.strip_prefix("custom-").is_some_and(|id| id.len() == 24 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
     if let Some(suffix) = plain.strip_prefix("/account-templates/") {
-        if suffix == "custom" { return method == "POST" && !path.contains('?'); }
+        if matches!(suffix, "custom" | "apply") { return method == "POST" && !path.contains('?'); }
         if let Some(id) = suffix.strip_prefix("custom/") {
             return !path.contains('?') && template_id(id) && matches!(method, "PUT" | "DELETE");
         }
@@ -1269,19 +1271,38 @@ mod tests {
         assert!(latest_release_page(&serde_json::json!([])).is_none());
     }
     #[test]
-    fn custom_templates_only_allow_generated_ids_and_explicit_methods() {
+    fn templates_allow_legacy_and_generated_ids_with_explicit_methods() {
         let id = "custom-0123456789abcdef01234567";
         assert!(allowed_request("POST", "/account-templates"));
         assert!(allowed_request("POST", "/account-templates/custom"));
         for method in ["PUT", "DELETE"] {
             assert!(allowed_request(method, &format!("/account-templates/{id}")));
             assert!(allowed_request(method, &format!("/account-templates/custom/{id}")));
-            for suffix in ["full", "custom-not-an-id", "custom-0123456789ABCDEF01234567"] {
+            for legacy in ["full", "degraded", "takeover"] {
+                assert!(allowed_request(method, &format!("/account-templates/{legacy}")));
+            }
+            for suffix in ["unknown", "custom-not-an-id", "custom-0123456789ABCDEF01234567"] {
                 assert!(!allowed_request(method, &format!("/account-templates/{suffix}")));
             }
             assert!(!allowed_request(method, &format!("/account-templates/{id}?x=1")));
         }
         assert!(!allowed_request("GET", &format!("/account-templates/{id}")));
+    }
+    #[test]
+    fn template_batch_paths_reject_extra_parameters_and_methods() {
+        let id = "0123456789abcdef0123456789abcdef";
+        assert!(allowed_request("POST", "/account-templates/apply"));
+        assert!(allowed_request("GET", &format!("/account-operations?batch_id={id}")));
+        for path in [format!("/account-operations?batch_id={id}&limit=30"),
+                     format!("/account-operations?batch_id={id}&batch_id={id}"),
+                     format!("/account-operations/{id}?batch_id={id}"),
+                     "/account-operations?batch_id=invalid".into(),
+                     "/account-operations?batch_id=".into()] {
+            assert!(!allowed_request("GET", &path));
+        }
+        assert!(!allowed_request("PUT", "/account-templates/apply"));
+        assert!(!allowed_request("POST", "/account-templates/apply?unknown=1"));
+        assert!(!allowed_request("POST", &format!("/account-operations?batch_id={id}")));
     }
     #[test]
     fn transient_failure_keeps_last_data_and_recovers() {

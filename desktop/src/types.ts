@@ -4,6 +4,7 @@ export type Account = {
   recovery_selectable?: boolean;
   model_detection?: { enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
   id: number;
+  parent_account_id?: number | null;
   name: string;
   priority: number;
   platform: string;
@@ -29,6 +30,8 @@ export type Account = {
   usage?: UsageSummary;
   quality?: Quality;
   auto_reset_credit?: {
+    evidence_source?: "upstream_error" | "account_rate_limit";
+    evidence_at?: string | null;
     stage: string;
     label: string;
     error: string;

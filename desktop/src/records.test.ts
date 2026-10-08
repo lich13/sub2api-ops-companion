@@ -150,12 +150,29 @@ describe("record performance metrics", () => {
     ).toBe(2);
   });
 
-  it("uses total duration without first-token timing only for a synchronous request", () => {
+  it.each([
+    ["stream", 600, 30000, null, 20],
+    ["ws_v2", 300, 30000, null, 10],
+    ["sync", 120, 60000, null, 2],
+    ["stream", 600, 30000, undefined, 20],
+    ["ws_v2", 300, 30000, undefined, 10],
+    ["sync", 120, 60000, undefined, 2],
+  ] as const)(
+    "uses total duration for %s when first-token timing is absent",
+    (request_type, output_tokens, duration_ms, first_token_ms, expected) => {
+      expect(
+        speed({ request_type, output_tokens, duration_ms, first_token_ms }),
+      ).toBe(expected);
+    },
+  );
+
+  it("continues subtracting a valid first-token duration", () => {
     expect(
-      speed({ request_type: "sync", first_token_ms: null, output_tokens: 120 }),
+      speed({ request_type: "stream", output_tokens: 120, duration_ms: 70000, first_token_ms: 10000 }),
     ).toBe(2);
-    expect(speed({ request_type: "stream", first_token_ms: null })).toBeNull();
-    expect(speed({ request_type: "ws_v2", first_token_ms: null })).toBeNull();
+    expect(
+      speed({ request_type: "ws_v2", output_tokens: 300, duration_ms: 30000, first_token_ms: 0 }),
+    ).toBe(10);
   });
 
   it.each([

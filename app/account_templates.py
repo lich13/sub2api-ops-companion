@@ -60,6 +60,19 @@ class TemplateApplication(BaseModel):
     template_id: str = Field(min_length=4, max_length=31, pattern=r"^(?:full|degraded|takeover|custom-[a-f0-9]{24})$")
     template_version: str = Field(min_length=64, max_length=64)
 
+class TemplateBatchAccount(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    account_id: int = Field(gt=0)
+    expected_version: str = Field(min_length=64, max_length=64)
+
+class TemplateBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    template_id: str = Field(pattern=r"^(?:full|degraded|takeover|custom-[a-f0-9]{24})$")
+    template_version: str = Field(min_length=64, max_length=64)
+    accounts: list[TemplateBatchAccount] = Field(min_length=1, max_length=1000)
+    request_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    client_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+
 def combine(value: dict) -> dict[str, str]:
     result = {}
     for name in value.get("whitelist", []):
@@ -100,7 +113,7 @@ class AccountTemplates:
     def __init__(self, service):
         self.s, self.r = service, service.r
         self.store = PolicyStore(Path(self.r.settings.usage_query_state_path).with_name('account-templates.json'),
-            {"revision": 0, "configured": False, "templates": {k: {"whitelist": [], "mappings": []} for k in NAMES},
+            {"schema_version": 2, "revision": 0, "configured": False, "templates": {k: {"whitelist": [], "mappings": []} for k in NAMES},
              "template_meta": {}, "template_order": list(NAMES), "custom_templates": []})
         self.writer = self._write_mapping
 
@@ -122,19 +135,22 @@ class AccountTemplates:
     def _normalize(data):
         if (type(data.get('configured')) is not bool or not isinstance(data.get('templates'), dict)
                 or type(data.get('revision')) is not int or len(data['templates']) > 32
-                or not set(NAMES).issubset(data['templates'])):
+                or data.get('schema_version', 1) not in (1, 2)):
             raise ValueError('账号模板状态无效')
         meta = data.setdefault('template_meta', {})
         if not isinstance(meta, dict):
             raise ValueError('账号模板状态无效')
         for key, value in data['templates'].items():
             combine(Template.model_validate(value).model_dump())
-            if key in NAMES:
-                continue
             name = meta.get(key, {}).get('name') if isinstance(meta.get(key), dict) else None
-            if (not re.fullmatch(r'custom-[a-f0-9]{24}', str(key)) or not isinstance(name, str)
+            if name is None and key in NAMES:
+                name = NAMES[key]
+            if ((key not in NAMES and not re.fullmatch(r'custom-[a-f0-9]{24}', str(key))) or not isinstance(name, str)
                     or not name.strip() or len(name) > 40):
-                raise ValueError('自定义模板状态无效')
+                raise ValueError('账号模板状态无效')
+            meta[key] = {'name': name.strip(), 'builtin': False}
+        data['template_meta'] = {key: meta[key] for key in data['templates']}
+        data['schema_version'] = 2
         order = data.setdefault('template_order', list(NAMES))
         if not isinstance(order, list) or any(not isinstance(key, str) for key in order):
             raise ValueError('账号模板顺序无效')
@@ -162,12 +178,15 @@ class AccountTemplates:
         data = self.data()
         result = {'configured': data['configured'], 'version': digest(data), 'templates': data['templates'],
                   'template_meta': data.get('template_meta', {}), 'template_order': data.get('template_order', list(NAMES)),
+                  'template_versions': {key: digest(value) for key, value in data['templates'].items()},
                   'custom_templates': data.get('custom_templates', [])}
         if aid is not None:
             row = self.account(aid)
             if row is None:
                 raise HTTPException(404, '账号不存在')
             result['account'] = {'id': aid, 'eligible': eligible(row), 'passthrough': bool(row.get('passthrough')),
+                                 'reason': '仅支持独立 OpenAI OAuth 或 Key 账号' if not eligible(row) else
+                                           '透传模式会绕过模型限制，请先处理透传设置' if row.get('passthrough') else '',
                                  'version': account_version(row), 'config': split(row.get('model_mapping'))}
         return result
 
@@ -176,6 +195,8 @@ class AccountTemplates:
         for value in values.values():
             combine(value)
         with self.store.transaction() as data:
+            if not set(NAMES).issubset(data['templates']):
+                raise HTTPException(409, '模板已删除，请升级客户端后逐个编辑模板')
             if digest(data) != payload.expected_version:
                 raise HTTPException(409, '模板已变化，请重新读取')
             data.setdefault('template_meta', {})
@@ -196,11 +217,11 @@ class AccountTemplates:
         data = self.data()
         if not data['configured']:
             raise HTTPException(409, '请先保存账号模板')
-        if digest(data) != self._payload_value(payload, 'template_version'):
-            raise HTTPException(409, '模板已变化，请重新选择')
         template_id = self._payload_value(payload, 'template_id')
         if template_id not in data.get('templates', {}):
-            raise HTTPException(422, '账号模板无效')
+            raise HTTPException(409, '模板已删除，请重新选择')
+        if self._payload_value(payload, 'template_version') not in {digest(data), digest(data['templates'][template_id])}:
+            raise HTTPException(409, '模板内容已变化，请重新选择')
         return combine(data['templates'][template_id])
 
     def create_custom(self, payload):
@@ -229,8 +250,8 @@ class AccountTemplates:
 
     def update_custom(self, template_id: str, payload):
         data = self.data()
-        if template_id in NAMES or template_id not in data['templates']:
-            raise HTTPException(404, '自定义模板不存在')
+        if template_id not in data['templates']:
+            raise HTTPException(404, '账号模板不存在')
         name = payload.name.strip()
         if not name:
             raise HTTPException(422, '模板名称不能为空')
@@ -242,6 +263,7 @@ class AccountTemplates:
             current['templates'][template_id] = profile
             current.setdefault('template_meta', {})[template_id] = {"name": name, "builtin": False}
             self._sync_custom(current)
+            current['configured'] = True
             current['revision'] = current.get('revision', 0) + 1
         write_audit(self.r.settings.audit_path, 'account_template_updated', {'template_id': template_id})
         return self.view()
@@ -250,8 +272,8 @@ class AccountTemplates:
         if isinstance(expected_version, BaseModel):
             expected_version = expected_version.expected_version
         data = self.data()
-        if template_id in NAMES or template_id not in data['templates']:
-            raise HTTPException(404, '自定义模板不存在')
+        if template_id not in data['templates']:
+            raise HTTPException(404, '账号模板不存在')
         with self.store.transaction() as current:
             if digest(current) != expected_version:
                 raise HTTPException(409, '模板已变化，请重新读取')

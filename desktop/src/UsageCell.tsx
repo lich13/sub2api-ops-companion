@@ -216,6 +216,7 @@ export default function UsageCell({
       {account.auto_reset_credit && !["manual", "recovered", "closed"].includes(account.auto_reset_credit.stage) && (
         <details className="auto-reset-status">
           <summary>{account.auto_reset_credit.label}</summary>
+          {account.auto_reset_credit.evidence_source && <span>依据：{account.auto_reset_credit.evidence_source === "account_rate_limit" ? "账号限流状态" : "上游 429 记录"}</span>}
           {account.auto_reset_credit.error && <span role="status">{account.auto_reset_credit.error}</span>}
           {account.auto_reset_credit.next_at && <time>下次 {fullTime(account.auto_reset_credit.next_at)}</time>}
           {account.auto_reset_credit.attempt_at && <time>用卡 {fullTime(account.auto_reset_credit.attempt_at)}</time>}

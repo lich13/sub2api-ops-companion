@@ -2,10 +2,14 @@ import type { Account } from './types';
 import type { Operation } from './accountOperations';
 const jobs = new Map<string, Operation>();
 const requests = new Map<string, string>();
+const batches = new Map<string, string[]>();
+const batchRequests = new Map<string, { id: string; signature: string }>();
 export async function operationPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], emit: () => void) {
-  if (path === '/account-operations') {
-    const items = [...jobs.values()].reverse();
-    return { items, pending: items.filter((j) => ['queued', 'running', 'checking', 'needs_confirmation'].includes(j.status)).length };
+  if (path.split('?')[0] === '/account-operations') {
+    const bid = new URLSearchParams(path.split('?')[1]).get('batch_id');
+    if (bid && !batches.has(bid)) throw new Error('批次不存在');
+    const items = bid ? batches.get(bid)!.map(id => jobs.get(id)!) : [...jobs.values()].reverse();
+    return { ...(bid ? { batch_id: bid } : {}), items: structuredClone(items), pending: items.filter((j) => ['queued', 'running', 'checking', 'needs_confirmation'].includes(j.status)).length };
   }
   if (method === 'POST' && path.endsWith('/operations')) {
     const old = requests.get(String(body.request_id));
@@ -38,4 +42,35 @@ export async function operationPreview(method: string, path: string, body: Recor
   if (!job) throw new Error('操作不存在');
   if (method === 'POST' && path.endsWith('/cancel') && job.status === 'queued') job.status = 'cancelled';
   return structuredClone(job);
+}
+
+
+type TemplateProfile = { whitelist: string[]; mappings: { source: string; target: string }[] };
+export function templateBatchPreview(body: Record<string, unknown>, accounts: Account[], profile: TemplateProfile,
+  currentVersion: () => string | undefined, read: (id: number) => TemplateProfile, write: (id: number, value: TemplateProfile) => void) {
+  const signature = JSON.stringify(body), old = batchRequests.get(String(body.request_id));
+  if (old && old.signature !== signature) throw new Error('请求 ID 已用于其他操作');
+  const bid = old?.id ?? crypto.randomUUID().replaceAll('-', '');
+  if (!old) {
+    const items = (body.accounts as { account_id: number; expected_version: string }[]).map(target => {
+      const account = accounts.find(a => a.id === target.account_id);
+      const eligible = account?.platform === 'openai' && ['oauth', 'apikey'].includes(account.type) && !account.parent_account_id;
+      const unchanged = JSON.stringify(read(target.account_id)) === JSON.stringify(profile);
+      const conflict = account?.version !== target.expected_version;
+      const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), batch_id: bid, account_id: target.account_id, account_name: account?.name ?? '账号', action: 'account_template',
+        requested: { template_id: body.template_id, template_version: body.template_version },
+        status: !eligible ? 'failed' : unchanged ? 'completed' : conflict ? 'needs_confirmation' : 'queued',
+        reason: !eligible ? '仅支持独立 OpenAI OAuth 或 Key 账号' : unchanged ? '配置无变化' : conflict ? '账号配置已变化' : '等待账号空闲' };
+      jobs.set(job.id, job);
+      if (job.status === 'queued') setTimeout(() => {
+        if (job.status !== 'queued') return;
+        if (currentVersion() !== body.template_version || account?.version !== target.expected_version) { job.status = 'needs_confirmation'; job.reason = '模板或账号配置已变化'; return; }
+        write(target.account_id, structuredClone(profile)); job.status = 'completed'; job.reason = ''; job.result = { verified: true };
+      }, 1200);
+      return job.id;
+    });
+    batches.set(bid, items); batchRequests.set(String(body.request_id), { id: bid, signature });
+  }
+  const items = batches.get(bid)!.map(id => jobs.get(id)!);
+  return structuredClone({ batch_id: bid, items, pending: items.filter(j => ['queued', 'running', 'checking', 'needs_confirmation'].includes(j.status)).length });
 }

@@ -1956,11 +1956,6 @@ td:last-child {
 .connection-diagnostic-heading h2 { margin: 0; }
 .connection-diagnostic p { margin: 8px 0; overflow-wrap: anywhere; }
 .connection-diagnostic > [role="status"] { margin-top: 12px; }
-.account-template-custom { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; min-width: 0; }
-.account-template-custom-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-.account-template-custom-heading label { display: grid; gap: 6px; flex: 1 1 160px; min-width: 0; }
-.account-template-custom-heading input { width: 100%; min-width: 0; }
-.account-template-custom-heading > div { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 520px) {
   .model-test-controls { grid-template-columns: minmax(0, 1fr); }
   .model-test-groups > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -2269,7 +2264,7 @@ td:last-child {
 }
 .account-templates-dialog h2,
 .model-detection-dialog h2 { margin: 3px 0 0; font-size: 19px; }
-.account-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.account-template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; align-items: start; }
 .account-template-card,
 .account-template-apply { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); }
 .account-template-card > header,
@@ -2290,6 +2285,29 @@ td:last-child {
 .account-template-apply-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .account-template-apply select { min-width: 0; width: 100%; }
 .account-template-apply .muted { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+/* All templates use the same compact, individually saved card. */
+.account-template-name { min-width: 0; width: 100%; font: inherit; font-weight: 600; }
+.account-template-tools { display: flex; flex: 0 0 auto; gap: 2px; }
+.account-template-tools .icon-button { width: 32px; min-height: 32px; padding: 6px; }
+.account-template-fields { min-width: 0; padding-top: 10px; }
+.account-template-fields > .muted { font-size: 11px; }
+.account-template-delete { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.account-template-delete > span { flex: 1 1 100%; overflow-wrap: anywhere; }
+.account-template-actions { flex-wrap: wrap; }
+.account-template-previews { display: grid; gap: 12px; }
+.account-template-preview { min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.account-template-preview > header { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 6px; }
+.account-template-preview strong { min-width: 0; overflow-wrap: anywhere; }
+.account-template-preview p { margin: 6px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .account-templates-dialog { width: 100%; max-height: 100dvh; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .account-templates-dialog input, .account-templates-dialog select, .account-templates-dialog button { min-height: 48px; }
+  .account-template-tools .icon-button, .account-template-row .icon-button { min-width: 48px; min-height: 48px; }
+  .account-template-apply-row { grid-template-columns: minmax(0, 1fr); }
+  .account-template-row.mapping { display: grid; grid-template-columns: minmax(0, 1fr) 48px; }
+  .account-template-row.mapping input { width: 100%; }
+  .account-template-row.mapping > svg { justify-self: center; transform: rotate(90deg); }
+}
 .model-detection-dialog { width: min(520px, calc(100vw - 32px)); }
 .model-detection-dialog .switch-row,
 .model-detection-dialog .field { display: grid; grid-template-columns: 1fr minmax(150px, 260px); gap: 12px; align-items: center; margin: 12px 0; }
@@ -2312,7 +2330,7 @@ td:last-child {
 .fingerprint-status dt { color: var(--muted); }
 .fingerprint-status dd { margin: 0; overflow-wrap: anywhere; }
 .fingerprint-status button { flex: 0 0 auto; }
-@media (max-width: 760px) { .fingerprint-status button { min-height: 48px; } .account-template-row.mapping { grid-template-columns: minmax(0,1fr) 18px; } .account-template-row.mapping input:nth-of-type(2) { grid-column: 1; } }
+@media (max-width: 760px) { .fingerprint-status button { min-height: 48px; } .account-template-row.mapping input:nth-of-type(2) { grid-column: 1; } }
 .model-detection-dialog .switch-row { display: flex; justify-content: space-between; min-height: 48px; cursor: pointer; }
 .model-detection-dialog .switch-row input { appearance: none; flex: 0 0 44px; width: 44px; height: 26px; min-height: 26px; padding: 3px; margin: 0; border: 0; border-radius: 20px; background: var(--line); cursor: pointer; }
 .model-detection-dialog .switch-row input::before { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform 120ms ease; }
@@ -2321,9 +2339,6 @@ td:last-child {
 .model-detection-dialog .switch-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .model-detection-dialog .switch-row input:disabled { opacity: .5; cursor: default; }
 
-.account-template-custom-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
-.account-template-custom-grid:empty { display: none; }
-.account-template-custom-grid .account-template-custom { min-width: 0; }
 
 /* Recovery selections share the existing compact control scale. */
 .recovery-selection { grid-column: 1 / -1; min-width: 0; }

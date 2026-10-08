@@ -3,25 +3,59 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountTemplates from "./AccountTemplates";
-import { accountOperation } from "./accountOperations";
+import { bindOperationConnection, getOperations, setOperations, type Operation } from "./accountOperations";
 import { api, command } from "./bridge";
 import type { Account } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn() }));
 vi.mock("./mobile", () => ({ useBackAction: vi.fn() }));
-vi.mock("./accountOperations", () => ({ accountOperation: vi.fn() }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
-type BuiltinTemplateId = "full" | "degraded" | "takeover";
-type CustomTemplate = Profile & { id: string; name: string };
-type Config = { version: string; configured: boolean; templates: Record<BuiltinTemplateId, Profile>; custom_templates?: CustomTemplate[] };
-type AccountConfig = { account?: { id: number; eligible: boolean; passthrough: boolean; version: string; config: Profile } };
+type TemplateConfig = {
+  version: string;
+  configured: boolean;
+  templates: Record<string, Profile>;
+  template_meta: Record<string, { name: string; builtin: false }>;
+  template_order: string[];
+  template_versions: Record<string, string>;
+  custom_templates?: { id: string; name: string }[];
+};
+type AccountConfig = {
+  account?: {
+    id: number;
+    eligible: boolean;
+    passthrough: boolean;
+    version: string;
+    config: Profile;
+    reason?: string;
+  };
+};
+type BatchResult = {
+  batch_id: string;
+  items: { id: string; batch_id: string; account_id: number; status: string }[];
+  pending: number;
+};
+
+const profileAlpha: Profile = { whitelist: ["alpha-model"], mappings: [] };
+const profileBeta: Profile = { whitelist: ["beta-model"], mappings: [] };
+const baseConfig: TemplateConfig = {
+  version: "config-v1",
+  configured: true,
+  templates: { alpha: profileAlpha, beta: profileBeta },
+  template_meta: {
+    alpha: { name: "Alpha", builtin: false },
+    beta: { name: "Beta", builtin: false },
+  },
+  template_order: ["beta", "alpha"],
+  template_versions: { alpha: "alpha-v7", beta: "beta-v3" },
+  custom_templates: [{ id: "legacy-only", name: "Legacy only" }],
+};
 
 const account: Account = {
   id: 1,
-  name: "OpenAI OAuth",
+  name: "OpenAI OAuth 1",
   priority: 1,
   platform: "openai",
   type: "oauth",
@@ -41,26 +75,39 @@ const account: Account = {
   success_after_error: false,
   usage_windows: [],
 };
+const secondAccount: Account = { ...account, id: 2, name: "OpenAI OAuth 2", version: "account-version-2" };
+const thirdAccount: Account = { ...account, id: 3, name: "OpenAI OAuth 3", version: "account-version-3" };
 
-const config: Config = {
-  version: "template-version-1",
-  configured: true,
-  templates: {
-    full: { whitelist: ["gpt-6-sol"], mappings: [] },
-    degraded: { whitelist: ["gpt-6-luna"], mappings: [] },
-    takeover: { whitelist: [], mappings: [{ source: "gpt-6-*", target: "gpt-6-luna" }] },
-  },
-};
+function configFor(entries: [string, string, Profile][]): TemplateConfig {
+  return {
+    version: "config-v1",
+    configured: entries.length > 0,
+    templates: Object.fromEntries(entries.map(([id, , profile]) => [id, profile])),
+    template_meta: Object.fromEntries(entries.map(([id, name]) => [id, { name, builtin: false as const }])),
+    template_order: entries.map(([id]) => id),
+    template_versions: Object.fromEntries(entries.map(([id]) => [id, "template-" + id + "-v1"])),
+  };
+}
 
-const accountConfig: AccountConfig = {
-  account: {
-    id: 1,
-    eligible: true,
-    passthrough: false,
-    version: "account-template-version-1",
-    config: { whitelist: ["account-model"], mappings: [] },
-  },
-};
+function accountConfigFor(
+  target: Account,
+  overrides: Partial<NonNullable<AccountConfig["account"]>> = {},
+): AccountConfig {
+  return {
+    account: {
+      id: target.id,
+      eligible: true,
+      passthrough: false,
+      version: "account-version-" + target.id,
+      config: { whitelist: ["current-" + target.id], mappings: [] },
+      ...overrides,
+    },
+  };
+}
+
+function clone<T>(value: T): T {
+  return structuredClone(value);
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -72,11 +119,17 @@ function deferred<T>() {
 
 let container: HTMLDivElement;
 let root: Root;
+let operationConnectionSequence = 0;
+
+function resetOperationStore() {
+  bindOperationConnection("account-template-test-" + ++operationConnectionSequence);
+  setOperations([]);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(command).mockResolvedValue(undefined as never);
-  vi.mocked(accountOperation).mockResolvedValue(undefined as never);
+  resetOperationStore();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -84,15 +137,42 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  resetOperationStore();
   container.remove();
 });
 
-function button(text: string) {
+function buttonByLabel(label: string) {
+  const result = container.querySelector<HTMLButtonElement>('button[aria-label="' + label + '"]');
+  if (!result) throw new Error("missing button: " + label);
+  return result;
+}
+
+function buttonByText(text: string) {
   const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.includes(text),
   );
   if (!result) throw new Error("missing button: " + text);
   return result;
+}
+
+function inputByLabel(label: string) {
+  const result = container.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]');
+  if (!result) throw new Error("missing input: " + label);
+  return result;
+}
+
+function selectByLabel(label: string) {
+  const result = container.querySelector<HTMLSelectElement>('select[aria-label="' + label + '"]');
+  if (!result) throw new Error("missing select: " + label);
+  return result;
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 async function setInput(node: HTMLInputElement, value: string) {
@@ -102,6 +182,7 @@ async function setInput(node: HTMLInputElement, value: string) {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
 async function setSelect(node: HTMLSelectElement, value: string) {
   await act(async () => {
     node.value = value;
@@ -109,219 +190,579 @@ async function setSelect(node: HTMLSelectElement, value: string) {
   });
 }
 
+type ApiOptions = {
+  config?: TemplateConfig;
+  accountConfigs?: Record<number, AccountConfig>;
+  createdId?: string;
+  batchResponse?: BatchResult;
+  operationsResponse?: BatchResult;
+  failTemplateReads?: number;
+};
 
-async function renderLoaded(templateConfig: Config = config, retainMock = false) {
-  if (!retainMock) {
-    vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return templateConfig as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-      throw new Error("unexpected " + method + " " + path);
-    });
-  }
-  await act(async () => root.render(
-    <AccountTemplates
-      accounts={[account]}
-      initialAccount={account}
-      online
-      close={() => {}}
-      report={() => {}}
-    />,
-  ));
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+function installApi(options: ApiOptions = {}) {
+  let current = clone(options.config ?? baseConfig);
+  let revision = 1;
+  let failedReads = options.failTemplateReads ?? 0;
+  const createdId = options.createdId ?? "created-template";
+  const defaultAccounts: Record<number, AccountConfig> = {
+    1: accountConfigFor(account),
+    2: accountConfigFor(secondAccount),
+    3: accountConfigFor(thirdAccount),
+  };
+  const accountConfigs = { ...defaultAccounts, ...options.accountConfigs };
+
+  vi.mocked(api).mockImplementation(async (method, path, body) => {
+    if (method === "GET" && path === "/account-templates") {
+      if (failedReads > 0) {
+        failedReads -= 1;
+        throw new Error("temporary template read failure");
+      }
+      return clone(current) as never;
+    }
+
+    if (method === "GET" && path.startsWith("/account-templates?account_id=")) {
+      const id = Number(path.slice(path.indexOf("=") + 1));
+      const value = accountConfigs[id];
+      if (!value) throw new Error("missing account fixture " + id);
+      return clone(value) as never;
+    }
+
+    if (method === "POST" && path === "/account-templates/apply") {
+      return clone(options.batchResponse ?? {
+        batch_id: "batch-default",
+        items: [],
+        pending: 0,
+      }) as never;
+    }
+
+    if (method === "GET" && path.startsWith("/account-operations?batch_id=")) {
+      return clone(options.operationsResponse ?? {
+        batch_id: "batch-default",
+        items: [],
+        pending: 0,
+      }) as never;
+    }
+
+    if (method === "POST" && path === "/account-templates") {
+      const input = body as { name?: string; whitelist?: string[]; mappings?: Profile["mappings"] };
+      current = clone(current);
+      current.templates[createdId] = {
+        whitelist: input.whitelist ?? [],
+        mappings: input.mappings ?? [],
+      };
+      current.template_meta[createdId] = { name: input.name ?? createdId, builtin: false };
+      current.template_order.push(createdId);
+      current.template_versions[createdId] = "template-" + createdId + "-v1";
+      current.version = "config-v" + ++revision;
+      current.configured = true;
+      return clone(current) as never;
+    }
+
+    if (method === "PUT" && path.startsWith("/account-templates/")) {
+      const id = path.slice("/account-templates/".length);
+      const input = body as { name?: string; whitelist?: string[]; mappings?: Profile["mappings"] };
+      if (!current.templates[id]) throw new Error("missing template fixture " + id);
+      current = clone(current);
+      current.templates[id] = {
+        whitelist: input.whitelist ?? current.templates[id].whitelist,
+        mappings: input.mappings ?? current.templates[id].mappings,
+      };
+      current.template_meta[id] = {
+        name: input.name ?? current.template_meta[id].name,
+        builtin: false,
+      };
+      current.template_versions[id] = "template-" + id + "-v" + (revision + 1);
+      current.version = "config-v" + ++revision;
+      return clone(current) as never;
+    }
+
+    if (method === "DELETE" && path.startsWith("/account-templates/")) {
+      const id = path.slice("/account-templates/".length);
+      current = clone(current);
+      delete current.templates[id];
+      delete current.template_meta[id];
+      delete current.template_versions[id];
+      current.template_order = current.template_order.filter((entry) => entry !== id);
+      current.version = "config-v" + ++revision;
+      current.configured = current.template_order.length > 0;
+      return clone(current) as never;
+    }
+
+    throw new Error("unexpected " + method + " " + path);
   });
+
+  return {
+    get current() {
+      return current;
+    },
+  };
 }
 
-describe("account template reads and drafts", () => {
-  it("keeps independent template and account reads when responses arrive in reverse order", async () => {
-    const templateRead = deferred<Config>();
-    const accountRead = deferred<AccountConfig>();
-    vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method !== "GET") throw new Error("unexpected method " + method);
-      if (path === "/account-templates") return templateRead.promise as never;
-      if (path === "/account-templates?account_id=1") return accountRead.promise as never;
-      throw new Error("unexpected path " + path);
-    });
-
-    await act(async () => root.render(
+async function renderTemplates(options: {
+  accounts?: Account[];
+  initialAccount?: Account | null;
+  initialAccounts?: Account[];
+  online?: boolean;
+} = {}) {
+  const accounts = options.accounts ?? [account];
+  await act(async () => {
+    root.render(
       <AccountTemplates
-        accounts={[account]}
-        initialAccount={account}
-        online
+        accounts={accounts}
+        initialAccount={options.initialAccount}
+        initialAccounts={options.initialAccounts}
+        online={options.online ?? true}
         close={() => {}}
         report={() => {}}
       />,
-    ));
-    expect(vi.mocked(api).mock.calls.map((call) => call[1])).toEqual([
-      "/account-templates",
-      "/account-templates?account_id=1",
-    ]);
-
-    await act(async () => {
-      accountRead.resolve(accountConfig);
-      await accountRead.promise;
-    });
-    await act(async () => {
-      templateRead.resolve(config);
-      await templateRead.promise;
-    });
-
-    expect(container.textContent).toContain("当前：account-model");
-    expect(container.textContent).toContain("目标：gpt-6-sol");
-    expect(container.querySelector<HTMLInputElement>('[aria-label="满血白名单 1"]')?.value).toBe("gpt-6-sol");
-    expect(container.querySelector("[role=alert]")).toBeNull();
-  });
-
-  it("supports discarding a draft and saving the edited template with its revision", async () => {
-    await renderLoaded();
-    const whitelist = container.querySelector<HTMLInputElement>('[aria-label="满血白名单 1"]')!;
-    await setInput(whitelist, "gpt-6-astra");
-    expect(button("保存模板").disabled).toBe(false);
-
-    await act(async () => button("放弃修改").click());
-    expect(whitelist.value).toBe("gpt-6-sol");
-    expect(button("保存模板").disabled).toBe(true);
-
-    await setInput(whitelist, "gpt-6-astra");
-    const saved: Config = {
-      ...config,
-      version: "template-version-2",
-      templates: { ...config.templates, full: { whitelist: ["gpt-6-astra"], mappings: [] } },
-    };
-    vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "PUT" && path === "/account-templates") return saved as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-      if (method === "GET" && path === "/account-templates") return config as never;
-      throw new Error("unexpected " + method + " " + path);
-    });
-    await act(async () => button("保存模板").click());
-
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
-      expected_version: "template-version-1",
-      full: { whitelist: ["gpt-6-astra"], mappings: [] },
-      degraded: config.templates.degraded,
-      takeover: config.templates.takeover,
-    });
-    expect(container.querySelector<HTMLInputElement>('[aria-label="满血白名单 1"]')?.value).toBe("gpt-6-astra");
-    expect(button("保存模板").disabled).toBe(true);
-  });
-
-  it("blocks applying a dirty draft and applies the saved revision after discard", async () => {
-    await renderLoaded();
-    const whitelist = container.querySelector<HTMLInputElement>('[aria-label="满血白名单 1"]')!;
-    await setInput(whitelist, "gpt-6-astra");
-    expect(button("应用模板").disabled).toBe(true);
-    await act(async () => button("应用模板").click());
-    expect(accountOperation).not.toHaveBeenCalled();
-
-    await act(async () => button("放弃修改").click());
-    expect(button("应用模板").disabled).toBe(false);
-    await act(async () => button("应用模板").click());
-
-    expect(accountOperation).toHaveBeenCalledWith(
-      account,
-      "account_template",
-      { template_id: "full", template_version: "template-version-1" },
-      "account-template-version-1",
     );
-    expect(command).toHaveBeenCalledWith("refresh");
   });
-  it("creates a custom template using the loaded version", async () => {
-    const emptyConfig: Config = { ...config, custom_templates: [] };
-    const item: CustomTemplate = {
-      id: "custom-0123456789abcdef01234567",
-      name: "Fixture custom",
-      whitelist: [],
+  await flush();
+}
+
+describe("unified account templates", () => {
+  it("renders every template in template_order and ignores the legacy custom_templates field", async () => {
+    installApi();
+    await renderTemplates();
+
+    expect(
+      [...container.querySelectorAll<HTMLInputElement>('input[aria-label^="模板名称 "]')].map((input) => input.value),
+    ).toEqual(["Beta", "Alpha"]);
+    expect(inputByLabel("模板名称 beta").value).toBe("Beta");
+    expect(inputByLabel("模板名称 alpha").value).toBe("Alpha");
+    expect(container.textContent).not.toContain("Legacy only");
+    expect(
+      [...selectByLabel("选择账号模板").options].map((option) => option.textContent),
+    ).toEqual(["Beta", "Alpha"]);
+  });
+
+  it("saves one card without discarding another card's independent draft", async () => {
+    const server = installApi();
+    await renderTemplates();
+
+    await setInput(inputByLabel("模板名称 alpha"), "Alpha renamed");
+    await setInput(inputByLabel("模板名称 beta"), "Beta draft");
+    await act(async () => buttonByLabel("保存Alpha renamed模板").click());
+    await flush();
+
+    const update = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "PUT" && path === "/account-templates/alpha",
+    );
+    expect(update?.[2]).toMatchObject({
+      expected_version: "config-v1",
+      name: "Alpha renamed",
+      whitelist: ["alpha-model"],
       mappings: [],
-    };
-    const created: Config = { ...emptyConfig, version: "template-version-2", custom_templates: [item] };
-    vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return emptyConfig as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-      if (method === "POST" && path === "/account-templates/custom") return created as never;
-      throw new Error("unexpected " + method + " " + path);
     });
-    await renderLoaded(emptyConfig, true);
+    expect(inputByLabel("模板名称 beta").value).toBe("Beta draft");
+    expect(buttonByLabel("保存Beta draft模板").disabled).toBe(false);
+    expect(inputByLabel("模板名称 alpha").value).toBe("Alpha renamed");
+    expect(server.current.version).toBe("config-v2");
+  });
 
-    await act(async () => button("新增模板").click());
-    const name = container.querySelector<HTMLInputElement>('[aria-label="自定义模板名称"]');
-    expect(name).not.toBeNull();
-    await setInput(name!, "Fixture custom");
-    await act(async () => button("保存自定义模板").click());
+  it.each(["full", "degraded", "takeover"])(
+    "renames and deletes legacy template id %s through the unified endpoints",
+    async (id) => {
+      installApi({
+        config: configFor([[id, id, { whitelist: [id + "-model"], mappings: [] }]]),
+      });
+      await renderTemplates();
 
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toEqual({
-      expected_version: "template-version-1",
-      name: "Fixture custom",
+      await setInput(inputByLabel("模板名称 " + id), "Renamed " + id);
+      await act(async () => buttonByLabel("保存Renamed " + id + "模板").click());
+      await flush();
+
+      const put = vi.mocked(api).mock.calls.find(
+        ([method, path]) => method === "PUT" && path === "/account-templates/" + id,
+      );
+      expect(put?.[2]).toMatchObject({
+        expected_version: "config-v1",
+        name: "Renamed " + id,
+      });
+
+      await act(async () => buttonByLabel("删除Renamed " + id + "模板").click());
+      expect(vi.mocked(api).mock.calls.some(
+        ([method, path]) => method === "DELETE" && path === "/account-templates/" + id,
+      )).toBe(false);
+      await act(async () => buttonByText("确认删除").click());
+      await flush();
+
+      const deletion = vi.mocked(api).mock.calls.find(
+        ([method, path]) => method === "DELETE" && path === "/account-templates/" + id,
+      );
+      expect(deletion?.[2]).toMatchObject({ expected_version: "config-v2" });
+      expect(container.querySelector('input[aria-label="模板名称 ' + id + '"]')).toBeNull();
+    },
+  );
+
+  it("creates into an empty collection and leaves it empty after deleting the last template", async () => {
+    const server = installApi({ config: configFor([]), createdId: "created-last" });
+    await renderTemplates();
+
+    expect(container.querySelectorAll('input[aria-label^="模板名称 "]')).toHaveLength(0);
+    await act(async () => buttonByText("新增模板").click());
+    await setInput(inputByLabel("新模板名称"), "First template");
+    await act(async () => buttonByLabel("保存新模板").click());
+    await flush();
+
+    const creation = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "POST" && path === "/account-templates",
+    );
+    expect(creation?.[2]).toMatchObject({
+      expected_version: "config-v1",
+      name: "First template",
       whitelist: [],
       mappings: [],
     });
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')!;
-    expect([...select.options].map((option) => option.textContent)).toContain("Fixture custom");
+    expect(inputByLabel("模板名称 created-last").value).toBe("First template");
+
+    await act(async () => buttonByLabel("删除First template模板").click());
+    await act(async () => buttonByText("确认删除").click());
+    await flush();
+
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "DELETE" && path === "/account-templates/created-last",
+    )).toBe(true);
+    expect(container.querySelectorAll('input[aria-label^="模板名称 "]')).toHaveLength(0);
+    expect(server.current.template_order).toEqual([]);
   });
 
-  it("applies a custom template with its dynamic id", async () => {
-    const item: CustomTemplate = {
-      id: "custom-89abcdef0123456701234567",
-      name: "Fixture custom",
-      whitelist: ["fixture-custom-model"],
-      mappings: [],
-    };
-    const withCustom: Config = { ...config, custom_templates: [item] };
-    vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return withCustom as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-      throw new Error("unexpected " + method + " " + path);
-    });
-    await renderLoaded(withCustom);
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')!;
-    await setSelect(select, item.id);
-    expect(container.textContent).toContain("目标：fixture-custom-model");
-    await act(async () => button("应用模板").click());
+  it("shows a failed read and recovers through the explicit reread action", async () => {
+    installApi({ failTemplateReads: 1 });
+    await renderTemplates();
 
-    expect(accountOperation).toHaveBeenCalledWith(
-      account,
-      "account_template",
-      { template_id: item.id, template_version: "template-version-1" },
-      "account-template-version-1",
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("temporary template read failure");
+    await act(async () => buttonByText("重新读取").click());
+    await flush();
+
+    expect(inputByLabel("模板名称 alpha").value).toBe("Alpha");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("reads each locked batch account, previews the diff, uses the selected template version, and follows the batch", async () => {
+    const batchResponse: BatchResult = {
+      batch_id: "batch-42",
+      items: [
+        { id: "operation-1", batch_id: "batch-42", account_id: 1, status: "queued" },
+        { id: "operation-2", batch_id: "batch-42", account_id: 2, status: "queued" },
+      ],
+      pending: 2,
+    };
+    const operationsResponse: BatchResult = {
+      ...batchResponse,
+      items: batchResponse.items.map((item) => ({ ...item, status: "completed" })),
+      pending: 0,
+    };
+    installApi({
+      batchResponse,
+      operationsResponse,
+      accountConfigs: {
+        1: accountConfigFor(account),
+        2: accountConfigFor(secondAccount),
+      },
+    });
+    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+    expect(selectByLabel("选择应用账号").disabled).toBe(true);
+
+    const reads = vi.mocked(api).mock.calls
+      .filter(([method, path]) => method === "GET" && path.startsWith("/account-templates?account_id="))
+      .map(([, path]) => path)
+      .sort();
+    expect(reads).toEqual(["/account-templates?account_id=1", "/account-templates?account_id=2"]);
+
+    await setSelect(selectByLabel("选择账号模板"), "alpha");
+    expect(container.textContent).toContain("current-1");
+    expect(container.textContent).toContain("current-2");
+    expect(container.textContent).toContain("alpha-model");
+
+    await setInput(inputByLabel("模板名称 beta"), "Beta draft");
+    expect(buttonByText("应用模板").disabled).toBe(false);
+    await setInput(inputByLabel("模板名称 alpha"), "Alpha draft");
+    expect(buttonByText("应用模板").disabled).toBe(true);
+    await act(async () => buttonByText("放弃修改").click());
+    expect(buttonByText("应用模板").disabled).toBe(false);
+
+    await act(async () => buttonByText("应用模板").click());
+    await flush();
+
+    const apply = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
     );
+    expect(apply?.[2]).toMatchObject({
+      template_id: "alpha",
+      template_version: "alpha-v7",
+      accounts: [
+        { account_id: 1, expected_version: "account-version-1" },
+        { account_id: 2, expected_version: "account-version-2" },
+      ],
+    });
+    const request = apply?.[2] as { request_id?: unknown; client_id?: unknown };
+    expect(typeof request?.request_id).toBe("string");
+    expect(String(request?.request_id).length).toBeGreaterThan(0);
+    expect(typeof request?.client_id).toBe("string");
+    expect(String(request?.client_id).length).toBeGreaterThan(0);
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-42",
+    )).toBe(true);
+    expect(container.textContent).toContain("已完成");
   });
-  it("updates and deletes a custom template with fresh versions", async () => {
-    const item: CustomTemplate = {
-      id: "custom-abcdef012345678901234567",
-      name: "Fixture custom",
-      whitelist: ["fixture-before"],
-      mappings: [],
+
+  it("discards a late accepted batch after an epoch change while preserving it on the original connection", async () => {
+    const latePost = deferred<BatchResult>();
+    const acceptedBatch: BatchResult = {
+      batch_id: "batch-late",
+      items: [
+        { id: "operation-late", batch_id: "batch-late", account_id: 1, status: "queued" },
+      ],
+      pending: 1,
     };
-    const initial: Config = { ...config, custom_templates: [item] };
-    const updatedItem: CustomTemplate = { ...item, name: "Fixture edited" };
-    const updated: Config = { ...initial, version: "template-version-2", custom_templates: [updatedItem] };
-    const deleted: Config = { ...initial, version: "template-version-3", custom_templates: [] };
+    let serverConnection = "connection-before-late-response";
+    const serverBatches = new Map<string, Map<string, BatchResult>>();
+    serverBatches.set(serverConnection, new Map());
+    const currentConnectionOperation: Operation = {
+      id: "operation-current-connection",
+      account_id: 99,
+      account_name: "Current connection account",
+      action: "account_template",
+      status: "queued",
+      requested: {},
+    };
+    bindOperationConnection("connection-before-late-response");
+    setOperations([]);
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "GET" && path === "/account-templates") return initial as never;
-      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfig as never;
-      if (method === "PUT" && path === "/account-templates/custom/" + item.id) return updated as never;
-      if (method === "DELETE" && path === "/account-templates/custom/" + item.id) return deleted as never;
+      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") {
+        return accountConfigFor(account) as never;
+      }
+      if (method === "POST" && path === "/account-templates/apply") {
+        serverBatches.get(serverConnection)?.set(acceptedBatch.batch_id, clone(acceptedBatch));
+        return latePost.promise as never;
+      }
+      if (method === "GET" && path === "/account-operations?batch_id=batch-late") {
+        const batch = serverBatches.get(serverConnection)?.get(acceptedBatch.batch_id);
+        if (!batch) throw new Error("batch not found on " + serverConnection);
+        return clone(batch) as never;
+      }
       throw new Error("unexpected " + method + " " + path);
     });
-    await renderLoaded(initial, true);
 
-    const name = container.querySelector<HTMLInputElement>('[aria-label="自定义模板名称"]');
-    expect(name).not.toBeNull();
-    await setInput(name!, "Fixture edited");
-    await act(async () => button("保存自定义模板").click());
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
-      expected_version: "template-version-1",
-      name: "Fixture edited",
-      whitelist: ["fixture-before"],
-      mappings: [],
+    await renderTemplates({ initialAccount: account });
+    await setSelect(selectByLabel("选择账号模板"), "alpha");
+    await act(async () => buttonByText("应用模板").click());
+    await flush();
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
+    )).toBe(true);
+
+    serverConnection = "connection-after-late-response";
+    bindOperationConnection(serverConnection);
+    setOperations([currentConnectionOperation]);
+    await act(async () => {
+      latePost.resolve(clone(acceptedBatch));
+      await latePost.promise;
+    });
+    await flush();
+
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late",
+    )).toBe(false);
+    expect(container.textContent).not.toContain("已完成");
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "POST" && path === "/account-operations/operation-late/cancel",
+    )).toBe(false);
+    expect(getOperations()).toEqual([currentConnectionOperation]);
+
+    serverConnection = "connection-before-late-response";
+    bindOperationConnection(serverConnection);
+    setOperations([]);
+    let restored: BatchResult | undefined;
+    await act(async () => {
+      restored = await api<BatchResult>("GET", "/account-operations?batch_id=batch-late");
+    });
+    expect(restored).toEqual(acceptedBatch);
+    expect(vi.mocked(api).mock.calls.filter(
+      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late",
+    )).toHaveLength(1);
+  });
+
+  it("keeps initialAccount as a single-account entry point", async () => {
+    installApi();
+    await renderTemplates({ accounts: [account, secondAccount], initialAccount: secondAccount });
+
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "GET" && path === "/account-templates?account_id=2",
+    )).toBe(true);
+    const accountSelect = selectByLabel("选择应用账号");
+    expect(accountSelect.value).toBe("2");
+    expect(accountSelect.disabled).toBe(true);
+
+    await setSelect(selectByLabel("选择账号模板"), "alpha");
+    await act(async () => buttonByText("应用模板").click());
+    await flush();
+    const apply = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
+    );
+    expect(apply?.[2]).toMatchObject({
+      template_id: "alpha",
+      accounts: [{ account_id: 2, expected_version: "account-version-2" }],
+    });
+  });
+
+  it("falls back to the template collection version when a template version is absent", async () => {
+    const config = clone(baseConfig);
+    delete config.template_versions.alpha;
+    installApi({ config });
+    await renderTemplates({ initialAccount: account });
+
+    await setSelect(selectByLabel("选择账号模板"), "alpha");
+    await act(async () => buttonByText("应用模板").click());
+    await flush();
+
+    const apply = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
+    );
+    expect(apply?.[2]).toMatchObject({
+      template_id: "alpha",
+      template_version: "config-v1",
+      accounts: [{ account_id: 1, expected_version: "account-version-1" }],
+    });
+  });
+
+  it("shows each ineligible reason and still submits a mixed batch", async () => {
+    const batchResponse: BatchResult = {
+      batch_id: "batch-mixed",
+      items: [
+        { id: "operation-1", batch_id: "batch-mixed", account_id: 1, status: "queued" },
+        { id: "operation-2", batch_id: "batch-mixed", account_id: 2, status: "failed" },
+      ],
+      pending: 1,
+    };
+    installApi({
+      batchResponse,
+      operationsResponse: { ...batchResponse, pending: 0 },
+      accountConfigs: {
+        1: accountConfigFor(account),
+        2: accountConfigFor(secondAccount, {
+          eligible: false,
+          reason: "账号策略不允许独立模板",
+        }),
+      },
+    });
+    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+
+    expect(container.textContent).toContain("账号策略不允许独立模板");
+    expect(buttonByText("应用模板").disabled).toBe(false);
+    await act(async () => buttonByText("应用模板").click());
+    await flush();
+
+    const apply = vi.mocked(api).mock.calls.find(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
+    );
+    expect(apply?.[2]).toMatchObject({
+      accounts: [
+        { account_id: 1, expected_version: "account-version-1" },
+        { account_id: 2, expected_version: "account-version-2" },
+      ],
+    });
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-mixed",
+    )).toBe(true);
+  });
+
+  it("disables batch apply only when every selected account is ineligible", async () => {
+    installApi({
+      accountConfigs: {
+        1: accountConfigFor(account, { eligible: false, reason: "账号 1 不适用" }),
+        2: accountConfigFor(secondAccount, {
+          eligible: true,
+          passthrough: true,
+          reason: "账号 2 是透传模式",
+        }),
+      },
+    });
+    await renderTemplates({ accounts: [account, secondAccount], initialAccounts: [account, secondAccount] });
+
+    expect(container.textContent).toContain("账号 1 不适用");
+    expect(container.textContent).toContain("账号 2 是透传模式");
+    expect(buttonByText("应用模板").disabled).toBe(true);
+    await act(async () => buttonByText("应用模板").click());
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "POST" && path === "/account-templates/apply",
+    )).toBe(false);
+  });
+
+  it("keeps an empty eligible-account candidate list unselected", async () => {
+    const unsupported = { ...account, platform: "anthropic" };
+    installApi();
+    await renderTemplates({ accounts: [unsupported] });
+
+    expect(selectByLabel("选择应用账号").value).toBe("0");
+    expect(selectByLabel("选择应用账号").options).toHaveLength(1);
+    expect(buttonByText("应用模板").disabled).toBe(true);
+    expect(vi.mocked(api).mock.calls.some(
+      ([method, path]) => method === "GET" && path.startsWith("/account-templates?account_id="),
+    )).toBe(false);
+  });
+
+  it("shows a read error when the initial single account no longer exists", async () => {
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates?account_id=99") {
+        throw new Error("404 account not found");
+      }
+      throw new Error("unexpected " + method + " " + path);
+    });
+    const missingAccount = { ...account, id: 99, name: "Removed account" };
+    await renderTemplates({ accounts: [account], initialAccount: missingAccount });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("404 account not found");
+    expect(buttonByText("应用模板").disabled).toBe(true);
+  });
+
+  it("discards an account response that arrives after the selected account changes", async () => {
+    const stale = deferred<AccountConfig>();
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return clone(baseConfig) as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return stale.promise as never;
+      if (method === "GET" && path === "/account-templates?account_id=2") {
+        return accountConfigFor(secondAccount) as never;
+      }
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await renderTemplates({ accounts: [account, secondAccount] });
+
+    expect(selectByLabel("选择应用账号").value).toBe("1");
+    await setSelect(selectByLabel("选择应用账号"), "2");
+    await flush();
+    await act(async () => {
+      stale.resolve(accountConfigFor(account));
+      await stale.promise;
     });
 
-    await act(async () => button("删除自定义模板").click());
-    await act(async () => button("确认删除").click());
-    expect(vi.mocked(api).mock.calls.find(([method]) => method === "DELETE")?.[2]).toEqual({
-      expected_version: "template-version-2",
+    expect(container.textContent).toContain("current-2");
+    expect(container.textContent).not.toContain("current-1");
+  });
+
+  it("drops a template response from a connection that went offline", async () => {
+    const stale = deferred<TemplateConfig>();
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/account-templates") return stale.promise as never;
+      if (method === "GET" && path === "/account-templates?account_id=1") return accountConfigFor(account) as never;
+      throw new Error("unexpected " + method + " " + path);
     });
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="选择账号模板"]')?.textContent).not.toContain("Fixture edited");
+
+    await renderTemplates({ online: true });
+    await act(async () => {
+      root.render(
+        <AccountTemplates accounts={[account]} online={false} close={() => {}} report={() => {}} />,
+      );
+    });
+    await flush();
+    await act(async () => {
+      stale.resolve(baseConfig);
+      await stale.promise;
+    });
+
+    expect(container.querySelector('input[aria-label="模板名称 alpha"]')).toBeNull();
   });
 });

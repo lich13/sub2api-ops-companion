@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 from app.account_locks import AccountLease, account_lock
-from app.account_operations import AccountOperations, OperationRequest, busy
+from app.account_operations import AccountOperations, OperationRequest, OperationStore, busy
 from app.desktop_actions import DesktopActions
 from app.operation_versions import versions
 
@@ -142,3 +142,29 @@ class Queue023Tests(unittest.IsolatedAsyncioTestCase):
         result = await self.final(job)
         self.assertEqual(result['status'], 'completed')
         self.assertEqual(self.calls, [])
+
+
+class OperationStoreBatchMigrationTests(unittest.TestCase):
+    def test_legacy_single_operation_state_migrates_batch_indexes_without_losing_jobs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'account-operations.json'
+            legacy_job = {
+                'id': '1' * 32, 'account_id': 7, 'payload': {'priority': 3}, 'status': 'queued',
+                'action': 'priority', 'created_at': 'fixture-created-at',
+            }
+            path.write_text(json.dumps({
+                'version': 1,
+                'jobs': {legacy_job['id']: legacy_job},
+                'requests': {'fixture-request-id-0001': legacy_job['id']},
+            }))
+
+            store = OperationStore(path)
+            with store.transaction() as data:
+                self.assertEqual(data['batches'], {})
+                self.assertEqual(data['batch_requests'], {})
+
+            migrated = OperationStore(path).read()
+            self.assertEqual(migrated['jobs'][legacy_job['id']], legacy_job)
+            self.assertEqual(migrated['requests'], {'fixture-request-id-0001': legacy_job['id']})
+            self.assertEqual(migrated['batches'], {})
+            self.assertEqual(migrated['batch_requests'], {})

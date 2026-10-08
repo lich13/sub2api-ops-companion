@@ -40,8 +40,7 @@ fn connection_valid(data: &Value) -> bool {
 fn templates_valid(data: &Value) -> bool {
     let Some(templates) = data["templates"].as_object() else { return false; };
     data["configured"].is_boolean() && data["version"].is_string()
-        && (3..=32).contains(&templates.len())
-        && ["full", "degraded", "takeover"].iter().all(|id| templates.contains_key(*id))
+        && templates.len() <= 32
         && templates.iter().all(|(id, value)| {
             let builtin = matches!(id.as_str(), "full" | "degraded" | "takeover");
             let custom = id.strip_prefix("custom-").is_some_and(|v| v.len() == 24 && v.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
@@ -52,6 +51,21 @@ fn templates_valid(data: &Value) -> bool {
             let ids = values.iter().filter_map(Value::as_str).collect::<std::collections::HashSet<_>>();
             ids.len() == values.len() && ids.len() == templates.len() && ids.iter().all(|id| templates.contains_key(*id))
         }))
+        && (data["template_meta"].is_null() || data["template_meta"].as_object().is_some_and(|meta| {
+            meta.len() == templates.len() && templates.keys().all(|id| meta.get(id).is_some_and(|value| {
+                value["name"].as_str().is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 40)
+            }))
+        }))
+        && (data["template_versions"].is_null() || data["template_versions"].as_object().is_some_and(|versions| {
+            versions.len() == templates.len() && templates.keys().all(|id| versions.get(id).and_then(Value::as_str)
+                .is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())))
+        }))
+}
+
+fn batch_valid(data: &Value) -> bool {
+    data["batch_id"].as_str().is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))
+        && data["pending"].is_u64()
+        && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| operation_valid(row) && row["batch_id"] == data["batch_id"]))
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
@@ -62,10 +76,13 @@ fn shape_valid(path: &str, data: &Value) -> bool {
             && (data["upstream_connection"].is_null() || connection_valid(&data["upstream_connection"])),
         "/connection-status" => connection_valid(data),
         "/errors" | "/recoveries" => data["items"].is_array(),
-        "/account-operations" => data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid)),
+        "/account-operations" => if path.contains("?batch_id=") { batch_valid(data) } else {
+            data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid))
+        },
         p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
         p if p.ends_with("/model-tests/latest") && data.is_null() => true,
         p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
+        "/account-templates/apply" => batch_valid(data),
         p if p == "/account-templates" || p.starts_with("/account-templates/") => templates_valid(data),
         p if p.ends_with("/model-detection") => data["account_id"].is_u64() && data["version"].is_string()
             && data["enabled"].is_boolean() && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
@@ -287,5 +304,22 @@ mod tests {
         wrong = job.clone(); wrong["account_id"] = serde_json::json!("421");
         assert!(!shape_valid("/accounts/421/operations", &wrong));
         assert!(!shape_valid("/account-operations", &serde_json::json!({"items":[job]})));
+    }
+
+    #[test]
+    fn empty_templates_and_full_batch_responses_are_validated() {
+        let empty = serde_json::json!({"version":"fixture", "configured":true, "templates":{},
+            "template_order":[],"template_meta":{},"template_versions":{}});
+        assert!(shape_valid("/account-templates/full", &empty));
+        let mut bad = empty.clone(); bad["template_order"] = serde_json::json!(["full"]);
+        assert!(!shape_valid("/account-templates", &bad));
+        let id = "0123456789abcdef0123456789abcdef";
+        let job = serde_json::json!({"id":id,"batch_id":id,"account_id":1,"action":"account_template","status":"completed","requested":{}});
+        let mut batch = serde_json::json!({"batch_id":id,"pending":0,"items":vec![job; 40]});
+        assert!(shape_valid("/account-templates/apply", &batch));
+        assert!(shape_valid(&format!("/account-operations?batch_id={id}"), &batch));
+        batch["items"][0]["batch_id"] = serde_json::json!("ffffffffffffffffffffffffffffffff");
+        assert!(!shape_valid("/account-templates/apply", &batch));
+        assert!(!shape_valid("/account-templates/apply", &empty));
     }
 }

@@ -39,12 +39,32 @@ class AccountTemplateTests(unittest.TestCase):
         self.assertEqual(view["templates"]["degraded"]["mappings"], [{"source": "fixture-input-*", "target": "fixture-model"}, {"source": "fixture-terra-*", "target": "fixture-model"}])
         self.assertEqual(view["templates"]["takeover"], view["templates"]["degraded"]); self.db.rows[1]["model_mapping"] = {}
         self.assertEqual(self.templates.view()["templates"]["full"]["whitelist"], ["fixture-full-model", "fixture-full-alt", "fixture-full-third"]); self.assertNotIn("credentials", json.dumps(view)); self.assertEqual(self.templates.store.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(set(view["template_versions"]), set(view["templates"]))
+        self.assertTrue(all(meta["name"] and meta["builtin"] is False for meta in view["template_meta"].values()))
     def test_initialization_is_idempotent_without_nested_lock(self):
         first = self.templates.initialize_sources(1, 2); second = self.templates.initialize_sources(1, 2); self.assertEqual(first["version"], second["version"])
     def test_desired_and_application_are_versioned(self):
-        view = self.templates.initialize_sources(1, 2); payload = TemplateApplication(expected_version="0" * 64, template_id="degraded", template_version=view["version"])
+        view = self.templates.initialize_sources(1, 2); payload = TemplateApplication(expected_version="0" * 64, template_id="degraded", template_version=view["template_versions"]["degraded"])
         self.assertEqual(self.templates.desired(payload), {"fixture-model": "fixture-model", "fixture-input-*": "fixture-model", "fixture-terra-*": "fixture-model"}); self.assertTrue(self.templates.achieved(2, payload))
         with self.assertRaises(HTTPException): self.templates.desired(TemplateApplication(expected_version="0" * 64, template_id="degraded", template_version="1" * 64))
+
+    def test_template_versions_track_profile_content_but_ignore_names(self):
+        view = self.templates.view()
+        original = view["template_versions"]["full"]
+        renamed = self.templates.update_custom("full", CustomTemplateRequest(
+            expected_version=view["version"], name="fixture renamed full",
+            whitelist=view["templates"]["full"]["whitelist"], mappings=view["templates"]["full"]["mappings"],
+        ))
+        self.assertEqual(renamed["template_versions"]["full"], original)
+        self.assertEqual(renamed["template_meta"]["full"], {"name": "fixture renamed full", "builtin": False})
+
+        changed = self.templates.update_custom("full", CustomTemplateRequest(
+            expected_version=renamed["version"], name="fixture renamed full",
+            whitelist=["fixture-new-full-model"], mappings=[],
+        ))
+        self.assertNotEqual(changed["template_versions"]["full"], original)
+        self.assertEqual(set(changed["template_meta"]), set(changed["templates"]))
+        self.assertTrue(all(item["name"] and item["builtin"] is False for item in changed["template_meta"].values()))
 
     def test_migrates_legacy_template_state_with_three_builtin_profiles(self):
         old_templates = {
@@ -75,7 +95,7 @@ class AccountTemplateTests(unittest.TestCase):
         custom = created["custom_templates"][0]
         self.assertRegex(custom["id"], r"^custom-[a-f0-9]{24}$")
         payload = TemplateApplication(expected_version="0" * 64, template_id=custom["id"],
-                                      template_version=created["version"])
+                                      template_version=created["template_versions"][custom["id"]])
         self.assertEqual(self.templates.desired(payload), {
             "fixture-custom-model": "fixture-custom-model",
             "fixture-custom-*": "fixture-custom-model",
@@ -89,7 +109,7 @@ class AccountTemplateTests(unittest.TestCase):
         ))
         self.assertEqual(updated["custom_templates"][0]["name"], "fixture custom edited")
         self.assertEqual(self.templates.desired(TemplateApplication(
-            expected_version="0" * 64, template_id=custom["id"], template_version=updated["version"],
+            expected_version="0" * 64, template_id=custom["id"], template_version=updated["template_versions"][custom["id"]],
         )), {"fixture-edited-model": "fixture-edited-model"})
 
         legacy_put = TemplatesRequest(
@@ -107,11 +127,12 @@ class AccountTemplateTests(unittest.TestCase):
 
         deleted = self.templates.delete_custom(custom["id"], CustomTemplateDeleteRequest(expected_version=saved["version"]))
         self.assertEqual(deleted["custom_templates"], [])
+        self.assertNotIn(custom["id"], deleted["template_versions"])
         with self.assertRaises(HTTPException) as missing:
             self.templates.desired(TemplateApplication(
-                expected_version="0" * 64, template_id=custom["id"], template_version=deleted["version"],
+                expected_version="0" * 64, template_id=custom["id"], template_version="0" * 64,
             ))
-        self.assertEqual(missing.exception.status_code, 422)
+        self.assertEqual(missing.exception.status_code, 409)
 
     def test_custom_templates_are_capped_at_32_total(self):
         view = self.templates.view()
@@ -155,14 +176,49 @@ class AccountTemplateTests(unittest.TestCase):
             )
         self.assertEqual(self.templates.view()["custom_templates"], [])
 
-    def test_builtin_templates_cannot_be_deleted(self):
-        version = self.templates.view()["version"]
+    def test_legacy_template_ids_can_be_renamed_deleted_and_remain_empty_after_reload(self):
+        view = self.templates.view()
         for template_id in ("full", "degraded", "takeover"):
             with self.subTest(template_id=template_id):
-                with self.assertRaises(HTTPException) as missing:
-                    self.templates.delete_custom(template_id, version)
-                self.assertEqual(missing.exception.status_code, 404)
-        self.assertEqual(set(self.templates.view()["templates"]), {"full", "degraded", "takeover"})
+                renamed = self.templates.update_custom(template_id, CustomTemplateRequest(
+                    expected_version=view["version"], name=f"fixture {template_id} renamed",
+                    whitelist=[], mappings=[],
+                ))
+                self.assertEqual(renamed["template_meta"][template_id], {
+                    "name": f"fixture {template_id} renamed", "builtin": False,
+                })
+                view = self.templates.delete_custom(template_id,
+                    CustomTemplateDeleteRequest(expected_version=renamed["version"]))
+
+        self.assertEqual(view["templates"], {})
+        self.assertEqual(view["template_meta"], {})
+        self.assertEqual(view["template_versions"], {})
+        reopened = AccountTemplates(self.service).view()
+        self.assertEqual(reopened["templates"], {})
+        self.assertEqual(reopened["template_meta"], {})
+        self.assertEqual(reopened["template_versions"], {})
+
+    def test_legacy_three_item_save_after_template_deletion_requires_upgrade_without_partial_write(self):
+        initial = self.templates.view()
+        deleted = self.templates.delete_custom("degraded", CustomTemplateDeleteRequest(
+            expected_version=initial["version"],
+        ))
+        before = copy.deepcopy(deleted["templates"])
+        payload = TemplatesRequest(
+            expected_version=deleted["version"],
+            full={"whitelist": ["fixture-full-updated"], "mappings": []},
+            degraded={"whitelist": ["fixture-degraded-updated"], "mappings": []},
+            takeover={"whitelist": ["fixture-takeover-updated"], "mappings": []},
+        )
+
+        with self.assertRaises(HTTPException) as upgrade:
+            self.templates.save(payload)
+
+        self.assertEqual(upgrade.exception.status_code, 409)
+        self.assertIn("升级", str(upgrade.exception.detail))
+        current = self.templates.view()
+        self.assertEqual(current["templates"], before)
+        self.assertNotIn("degraded", current["templates"])
 
     def test_legacy_migration_save_error_is_propagated(self):
         old_templates = {
