@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import fcntl
 import hashlib
 import json
@@ -398,7 +399,10 @@ class ModelTests:
 
         async def persist(**changes):
             async with progress_lock:
-                writing = asyncio.create_task(asyncio.to_thread(self.update, job_id, **changes))
+                # Streams keep mutating nested diagnostics on the event loop.
+                # Freeze the payload before the writer thread serializes it.
+                snapshot = copy.deepcopy(changes)
+                writing = asyncio.create_task(asyncio.to_thread(self.update, job_id, **snapshot))
                 cancelled = False
                 while not writing.done():
                     try:
