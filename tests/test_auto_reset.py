@@ -69,10 +69,9 @@ class EvidenceDB:
 
     def fetch_one(self, sql, params=None):
         self.reads += 1
-        if "to_jsonb(e)" in sql:
-            from app.error_evidence import local_throttle_sql
-
-            predicate = local_throttle_sql()
+        from app.error_evidence import local_throttle_sql
+        predicate = local_throttle_sql()
+        if "to_jsonb(e)" in sql or predicate in sql:
             if predicate not in sql:
                 raise AssertionError("Structured evidence SQL must retain the local limiter exclusion")
             columns = ",".join("e." + name for name in self.ERROR_FIELDS)
@@ -264,25 +263,73 @@ class AutoResetEligibilityTests(AutoResetFixture):
         self.run_once()
         self.assertEqual(self.calls, [])
 
-    def test_current_upstream_429_excludes_client_throttle_history_and_newer_success_or_auth(self):
-        for case in ("missing", "client_429", "historical", "future", "other_account", "new_success", "new_401", "new_402"):
+    def test_active_account_block_fallback_is_used_only_without_explicit_blockers(self):
+        for case in ("missing", "historical", "future", "other_account"):
             with self.subTest(case=case):
                 self.fresh_case()
                 self.db.raw.execute("DELETE FROM ops_error_logs")
-                if case == "client_429":
-                    self.db.event(upstream=200, status=429)
-                elif case == "historical":
+                if case == "historical":
                     self.db.event(at=NOW - timedelta(hours=1))
                 elif case == "future":
                     self.db.event(at=NOW + timedelta(seconds=1))
                 elif case == "other_account":
                     self.db.event(account_id=8)
+                self.run_once()
+                self.assertEqual(self.calls.count("reset"), 1)
+                task = self.state()
+                self.assertEqual(task["evidence_source"], "account_rate_limit")
+                self.assertTrue(task["evidence_fingerprint"])
+                self.assertNotIn("fixture-access-v1", json.dumps(task))
+
+        self.fresh_case()
+        self.db.raw.execute("INSERT INTO usage_logs VALUES (?,?,?)", (2, ACCOUNT_ID, (NOW - timedelta(minutes=1)).isoformat()))
+        self.run_once()
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.state()["evidence_source"], "upstream_error")
+
+        for case in ("client_429", "new_401", "new_402"):
+            with self.subTest(case=case):
+                self.fresh_case()
+                self.db.raw.execute("DELETE FROM ops_error_logs")
+                if case == "client_429":
+                    self.db.event(error_owner="client", error_phase="request")
                 elif case.startswith("new_"):
                     self.db.event()
-                    if case == "new_success":
-                        self.db.raw.execute("INSERT INTO usage_logs VALUES (?,?,?)", (2, ACCOUNT_ID, (NOW - timedelta(minutes=1)).isoformat()))
-                    else:
-                        self.db.event(2, at=NOW - timedelta(minutes=1), upstream=int(case[-3:]))
+                    self.db.event(2, at=NOW - timedelta(minutes=1), upstream=int(case[-3:]))
+                self.run_once()
+                self.assertEqual(self.calls, [])
+
+    def test_actionable_upstream_error_is_saved_as_primary_evidence(self):
+        self.run_once()
+        task = self.state()
+        self.assertEqual(task["evidence_source"], "upstream_error")
+        self.assertEqual(task["evidence_id"], "1")
+        self.assertTrue(task["evidence_fingerprint"])
+        self.assertNotIn("fixture-access-v1", json.dumps(task))
+
+    def test_account_rate_limit_fallback_requires_same_window_exhaustion_and_live_state(self):
+        changes = [
+            {"rate_limit_reset_at": NOW.isoformat()},
+            {"rate_limited_at": None},
+            {"expires_at": (NOW - timedelta(seconds=1)).isoformat(), "auto_pause_on_expired": True},
+        ]
+        extra_changes = [
+            {"codex_7d_used_percent": 99.999},
+            {"codex_usage_updated_at": (NOW - timedelta(days=8)).isoformat()},
+            {"codex_usage_updated_at": (NOW + timedelta(seconds=1)).isoformat()},
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                self.fresh_case()
+                self.db.raw.execute("DELETE FROM ops_error_logs")
+                self.row.update(change)
+                self.run_once()
+                self.assertEqual(self.calls, [])
+        for change in extra_changes:
+            with self.subTest(extra=change):
+                self.fresh_case()
+                self.db.raw.execute("DELETE FROM ops_error_logs")
+                self.row["extra"].update(change)
                 self.run_once()
                 self.assertEqual(self.calls, [])
 
@@ -358,12 +405,35 @@ class AutoResetLifecycleTests(AutoResetFixture):
         self.assertTrue(self.monitor._cycle_tests[ACCOUNT_ID]["success"])
         self.assertEqual(len(self.store.snapshot()["recovery_history"]), 1)
         self.assertEqual(len(self.store.pending_events()), 1)
+        event = self.store.pending_events()[0]
+        self.assertEqual(event["reset_credit"]["consumed"], True)
+        self.assertEqual(event["reset_credit"]["completed_at"], self.state()["reset_completed_at"])
+        self.assertIn(event["reset_credit"]["verification_method"], {"connection", "model"})
         self.assertNotIn(ADMIN_TOKEN, Path(self.settings.audit_path).read_text())
+        self.assertNotIn("fixture-access-v1", Path(self.settings.usage_query_state_path).read_text())
         self.make_controller()
         self.now += timedelta(hours=1)
         self.run_once()
         self.assertEqual(self.calls.count("reset"), 1)
         self.assertEqual(self.calls.count("test"), 1)
+
+    def test_unknown_consumption_can_recover_without_use_card_event_metadata(self):
+        self.request_results.append({"success": False, "consumed": False, "uncertain": True,
+                                     "error_code": "result_uncertain"})
+        self.run_once()
+        self.assertEqual(self.state()["stage"], "uncertain")
+        self.assertFalse(self.state()["consumed"])
+
+        self.now += timedelta(hours=1)
+        self.store.commit(results={ACCOUNT_ID: quota_result(wham(self.now, five=10, seven=20), self.row, self.now)})
+        self.step()
+
+        self.assertEqual(self.state()["stage"], "recovered")
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.calls.count("test"), 1)
+        event = self.store.pending_events()[0]
+        self.assertEqual(event["status"], "recovered")
+        self.assertNotIn("reset_credit", event)
 
     def test_failed_tests_back_off_one_five_fifteen_thirty_minutes_without_new_consumption(self):
         self.test_results.extend({"success": False, "error_code": "http_502"} for _ in range(6))
@@ -720,6 +790,36 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(self.server.quota_reads, 1)
         self.assertEqual(len(self.query_state()["automatic_attempts"]), 1)
         self.assertEqual(self.state()["stage"], "recovered")
+
+    def test_missing_error_rows_use_account_block_fallback_once_and_merge_recovery_event(self):
+        self.db.raw.execute("DELETE FROM ops_error_logs")
+
+        self.run_once()
+
+        self.assertEqual(self.state()["evidence_source"], "account_rate_limit")
+        self.assertTrue(self.state()["evidence_fingerprint"])
+        self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
+            ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
+            ("POST", "/api/v1/admin/accounts/7/test"),
+        ])
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.calls.count("test"), 1)
+        self.assertEqual(self.state()["stage"], "recovered")
+        self.assertEqual(len(self.store.pending_events()), 1)
+        event = self.store.pending_events()[0]
+        self.assertEqual(event["status"], "recovered")
+        self.assertEqual(event["reset_credit"]["consumed"], True)
+        self.assertEqual(event["reset_credit"]["completed_at"], self.state()["reset_completed_at"])
+        self.assertIn(event["reset_credit"]["verification_method"], {"connection", "model"})
+
+        self.make_controller(real_http=True)
+        self.now += timedelta(hours=1)
+        self.run_once()
+
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.calls.count("test"), 1)
+        self.assertEqual(len(self.server.requests), 2)
+        self.assertEqual(len(self.store.pending_events()), 1)
 
     def test_card_refresh_consume_and_usage_share_hourly_cooldown_and_six_read_budget(self):
         self.row["extra"]["codex_reset_credit_snapshot"] = {}

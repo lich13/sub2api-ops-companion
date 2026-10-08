@@ -202,7 +202,6 @@ export function tokensPerSecond(
   )
     return null;
   if (first != null && (!Number.isFinite(first) || first < 0)) return null;
-  if (first == null && row.request_type !== "sync") return null;
   const elapsed = total - (first ?? 0);
   if (elapsed <= 0) return null;
   const speed = (output * 1000) / elapsed;

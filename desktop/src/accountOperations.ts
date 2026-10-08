@@ -2,7 +2,7 @@ import { api, command } from './bridge';
 import type { Account, TestEvent } from './types';
 
 export type Operation = {
-  id: string; account_id: number; account_name: string; action: string; status: string;
+  id: string; account_id: number; account_name: string; action: string; status: string; batch_id?: string;
   reason?: string; requested: Record<string, unknown>; current?: Record<string, unknown>;
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
 };
@@ -10,7 +10,7 @@ export const operationTerminal = new Set(['completed', 'failed', 'cancelled', 's
 const listeners = new Set<() => void>();
 let rows: Operation[] = [], epoch = 0, connection = '';
 const clientKey = 'sub2ops-operation-client';
-function clientId() {
+export function clientId() {
   const storage = typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
   let id = storage?.getItem(clientKey) ?? null;
   if (!id) { id = crypto.randomUUID(); storage?.setItem(clientKey, id); }

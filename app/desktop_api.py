@@ -34,7 +34,7 @@ from .error_evidence import ERROR_WHERE, error_category_sql
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
 from .account_operations import AccountOperations, OperationRequest, busy
-from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest
+from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest, TemplateBatchRequest
 from .model_detection import ModelDetection, DetectionRequest
 
 PREFIX = "/api/desktop/v1"
@@ -942,9 +942,9 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         return await service.operations.submit(account_id, payload, key)
 
     @router.get("/account-operations")
-    async def operation_list(request: Request):
+    async def operation_list(request: Request, batch_id: str | None = None):
         await auth(request)
-        return service.operations.listing()
+        return service.operations.listing(batch_id)
 
     @router.get("/account-operations/{job_id}")
     async def operation_detail(job_id: str, request: Request, after_event: int = 0):
@@ -1017,6 +1017,11 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def templates_create(payload: CustomTemplateRequest, request: Request):
         await auth(request)
         return await asyncio.to_thread(service.account_templates.create_custom, payload)
+
+    @router.post("/account-templates/apply", status_code=202)
+    async def templates_apply(payload: TemplateBatchRequest, request: Request):
+        key = await auth(request)
+        return await service.operations.submit_template_batch(payload, key)
 
     @router.post("/account-templates/custom")
     async def templates_create_legacy_alias(payload: CustomTemplateRequest, request: Request):

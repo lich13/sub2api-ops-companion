@@ -171,6 +171,16 @@ def sanitize_error_text(value: Any, limit: int = MAX_ERROR_TEXT_LENGTH) -> str:
 
 def oauth_event_message(event: dict[str, Any]) -> tuple[str, str]:
     status = str(event.get("status") or "auth_failed")
+    credit = event.get("reset_credit")
+    if (status == "recovered" and event.get("test_success") is True and event.get("recovered_at")
+            and isinstance(credit, dict) and credit.get("consumed") is True and credit.get("completed_at")):
+        method = "模型测试" if credit.get("verification_method") == "model" else "测试连接"
+        return "✅ OAuth 用卡成功，已恢复调度", "\n".join([
+            f"账号：{sanitize_error_text(event.get('account_name'), 120)} #{int(event.get('account_id') or 0)}",
+            f"验证方式：{method}", f"模型：{sanitize_error_text(event.get('model_id'), 120)}",
+            f"用卡时间：{_beijing_time(credit['completed_at'])}",
+            f"恢复时间：{_beijing_time(event['recovered_at'])}",
+        ])
     titles = {
         "recovered": "OAuth 账号额度已恢复可用",
         "test_failed": "OAuth 账号额度恢复后测试失败",

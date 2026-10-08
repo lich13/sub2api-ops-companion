@@ -129,6 +129,7 @@ export default function App() {
     [modelDetectionAccount, setModelDetectionAccount] = useState<Account | null>(null),
     [templatesOpen, setTemplatesOpen] = useState(false),
     [templateAccount, setTemplateAccount] = useState<Account | null>(null),
+    [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(undefined),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
@@ -556,7 +557,7 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
-            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount}/>
+            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
             {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
@@ -670,7 +671,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -743,12 +744,13 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
                       <div className="selection-bar">
                         {mobile && <label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label>}
                         <span>已选 {selected.size} 个账号</span>
+                        <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}>应用模板</button>
                         <button
                           className="danger-text"
                           disabled={!state.online || selected.size === 0}
@@ -761,7 +763,7 @@ export default function App() {
                           删除所选
                         </button>
                       </div>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} modelDetection={(a) => setModelDetectionAccount(a)} template={(a) => { setTemplateAccount(a); setTemplatesOpen(true); }} report={report}/> : <table className="accounts-table">
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} modelDetection={(a) => setModelDetectionAccount(a)} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} report={report}/> : <table className="accounts-table">
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -993,7 +995,7 @@ export default function App() {
                                   <AccountActionMenu label={`${a.name}更多操作`}>
                                     <button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button>
                                     <RecoverStateButton account={a} online={state.online} report={report}/>
-                                    {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <button disabled={!state.online} onClick={() => { setTemplateAccount(a); setTemplatesOpen(true); }}>应用模板</button>}
+                                    {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <button disabled={!state.online} onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }}>应用模板</button>}
                                     <button className="danger-text" disabled={!state.online} onClick={() => setDeleteAccounts([a])}>删除</button>
                                   </AccountActionMenu>
                                 </div>
@@ -1233,7 +1235,7 @@ export default function App() {
           saveConcurrency={(value) => void prefs({ model_test_concurrency: value })}
         />
       )}
-      {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} close={() => setTemplatesOpen(false)} report={report}/>}
+      {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {qualityAccount && (
         <QualityDialog

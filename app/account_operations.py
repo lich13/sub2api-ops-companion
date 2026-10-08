@@ -53,7 +53,7 @@ class OperationStore:
         except FileNotFoundError:
             if self.existed:
                 raise ValueError('操作状态文件丢失') from None
-            return {'version': 1, 'jobs': {}, 'requests': {}}
+            return {'version': 1, 'jobs': {}, 'requests': {}, 'batches': {}, 'batch_requests': {}}
         if (not isinstance(data, dict) or data.get('version') != 1
                 or not isinstance(data.get('jobs'), dict) or not isinstance(data.get('requests'), dict)):
             raise ValueError('操作状态无法读取')
@@ -61,6 +61,15 @@ class OperationStore:
             if (not isinstance(job, dict) or not isinstance(job.get('account_id'), int)
                     or not isinstance(job.get('payload'), dict) or not isinstance(job.get('status'), str)):
                 raise ValueError('操作任务无法读取')
+        for field in ('batches', 'batch_requests'):
+            if not isinstance(data.setdefault(field, {}), dict):
+                raise ValueError('批量操作状态无法读取')
+        for bid, batch in data['batches'].items():
+            if (not isinstance(batch, dict) or not isinstance(batch.get('job_ids'), list)
+                    or any(jid not in data['jobs'] or data['jobs'][jid].get('batch_id') != bid for jid in batch['job_ids'])):
+                raise ValueError('批量操作任务无法读取')
+        if any(bid not in data['batches'] for bid in data['batch_requests'].values()):
+            raise ValueError('批量操作索引无法读取')
         self.existed = True
         return data
 
@@ -107,7 +116,7 @@ class AccountOperations:
 
     def public(self, job, *, detail=False, after_event=0):
         result = {k: copy.deepcopy(v) for k, v in job.items()
-                  if k not in {'client_id', 'request_id', 'request_hash', 'expected_version', 'payload'}}
+                  if k not in {'client_id', 'request_id', 'request_hash', 'expected_version', 'payload', 'template_target'}}
         result['requested'] = {k: v for k, v in job['payload'].items()
                                if k not in {'prompt', 'image_data_url', 'audio_data_url', 'expected_version'}}
         if detail and job['action'] == 'test':
@@ -127,8 +136,15 @@ class AccountOperations:
             raise HTTPException(404, '操作不存在')
         return self.public(job, detail=True, after_event=after_event)
 
-    def listing(self):
-        jobs = sorted(self.store.read()['jobs'].values(), key=lambda j: j['created_at'], reverse=True)
+    def listing(self, batch_id=None):
+        data = self.store.read()
+        if batch_id is not None:
+            if not re.fullmatch('[a-f0-9]{32}', batch_id) or batch_id not in data['batches']:
+                raise HTTPException(404, '批量操作不存在')
+            batch = data['batches'][batch_id]
+            items = [self.public(data['jobs'][jid]) for jid in batch['job_ids']]
+            return {'batch_id': batch_id, 'items': items, 'pending': sum(j['status'] in PENDING for j in items)}
+        jobs = sorted(data['jobs'].values(), key=lambda j: j['created_at'], reverse=True)
         active = [j for j in jobs if j['status'] in PENDING]
         recent = [j for j in jobs if j['status'] not in PENDING][:30]
         items = [self.public(j) for j in active + recent]
@@ -138,6 +154,65 @@ class AccountOperations:
                 if job['status'] in {'queued', 'running', 'retrying', 'needs_confirmation'}:
                     items.append(self.model_view(job))
         return {'items': items, 'pending': sum(j['status'] in PENDING for j in items)}
+
+    async def submit_template_batch(self, request, key):
+        from .account_templates import eligible, combine, account_version
+        ids = [item.account_id for item in request.accounts]
+        if len(set(ids)) != len(ids):
+            raise HTTPException(422, '批量账号不能重复')
+        signature = digest({**request.model_dump(exclude={'request_id'}),
+                            'accounts': sorted([item.model_dump() for item in request.accounts], key=lambda x: x['account_id'])})
+        async with self.submit_lock:
+            data = self.store.read()
+            existing = data['batch_requests'].get(request.request_id)
+            if existing:
+                batch = data['batches'][existing]
+                if batch['request_hash'] != signature:
+                    raise HTTPException(409, {'code': 'idempotency_conflict', 'message': '请求 ID 已用于其他批量操作'})
+                for jid in batch['job_ids']:
+                    self.keys[jid] = key
+                return self.listing(existing)
+            # Freeze only this template. Changes to other templates or its name
+            # must not invalidate the queued account intents.
+            target = self.s.account_templates.desired(request)
+            config = self.s.account_templates.view()
+            selected = config['templates'].get(request.template_id)
+            if selected is None or combine(selected) != target:
+                raise HTTPException(409, '模板内容已变化，请重新预览')
+            content_version = config['template_versions'][request.template_id]
+            bid, created = uuid.uuid4().hex, stamp()
+            jobs = []
+            for item in request.accounts:
+                row = await asyncio.to_thread(self.s.account_templates.account, item.account_id)
+                jid = uuid.uuid4().hex
+                payload = {'template_id': request.template_id, 'template_version': content_version}
+                job = {'id': jid, 'batch_id': bid, 'account_id': item.account_id,
+                       'account_name': str((row or {}).get('name') or f'#{item.account_id}'),
+                       'action': 'account_template', 'payload': payload, 'template_target': target,
+                       'expected_version': item.expected_version, 'client_id': request.client_id,
+                       'request_id': uuid.uuid4().hex, 'request_hash': digest([payload, item.expected_version]),
+                       'parent_account_id': (row or {}).get('parent_account_id'), 'created_at': created,
+                       'updated_at': created, 'status': 'queued', 'reason': '等待执行', 'result': None}
+                if not eligible(row):
+                    job.update(status='failed', reason='仅可应用到未删除的独立 OpenAI OAuth 或 Key 账号')
+                elif row.get('passthrough'):
+                    job.update(status='needs_confirmation', reason='透传模式会绕过模型限制，请先处理透传设置')
+                elif (row.get('model_mapping') or {}) == target:
+                    job.update(status='completed', reason='', result={'verified': True, 'unchanged': True})
+                elif account_version(row) != item.expected_version:
+                    job.update(status='needs_confirmation', reason='账号模型配置或凭据已变化，请重新预览')
+                jobs.append(job)
+            with self.store.transaction() as latest:
+                latest['batches'][bid] = {'id': bid, 'request_hash': signature, 'client_id': request.client_id,
+                    'request_id': request.request_id, 'created_at': created, 'job_ids': [j['id'] for j in jobs]}
+                latest['batch_requests'][request.request_id] = bid
+                for job in jobs:
+                    latest['jobs'][job['id']] = job
+                    latest['requests'][job['request_id']] = job['id']
+            for job in jobs:
+                self.keys[job['id']] = key
+                self.audit(job, 'accepted')
+            return self.listing(bid)
 
     @staticmethod
     def model_view(job):
@@ -205,6 +280,13 @@ class AccountOperations:
                    'request_id': request.request_id, 'request_hash': digest([request.action, payload, request.expected_version]),
                    'parent_account_id': row.get('parent_account_id'), 'created_at': stamp(), 'updated_at': stamp(),
                    'status': 'queued', 'reason': '等待执行', 'result': None}
+            if request.action == 'account_template':
+                try:
+                    job['template_target'] = self.s.account_templates.desired(payload)
+                except HTTPException as exc:
+                    if exc.status_code != 409:
+                        raise
+                    job.update(status='needs_confirmation', reason=str(exc.detail))
             actual = self.fingerprint(row, job)
             if actual != request.expected_version:
                 job.update(status='needs_confirmation', reason='相关字段已变化，请核对后重新提交', current=self.current(row, job))
@@ -244,6 +326,11 @@ class AccountOperations:
             from .desktop_api import recoverable_state
             return not recoverable_state(row, datetime.now(timezone.utc))
         if action == 'account_template':
+            if job['status'] == 'checking' and isinstance(job.get('template_target'), dict):
+                from .account_templates import eligible
+                live = self.s.account_templates.account(job['account_id'])
+                return bool(eligible(live) and not live.get('passthrough')
+                            and (live.get('model_mapping') or {}) == job['template_target'])
             return self.s.account_templates.achieved(row['id'], p)
         if action == 'degradation_mark':
             state = self.s.r.capacity_alerts.store.snapshot()

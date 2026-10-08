@@ -202,6 +202,19 @@ class BarkPayloadTests(unittest.TestCase):
                     self.assertIn(expected, body)
                 self.assertNotIn("top-secret-token", body)
 
+        confirmed_credit = event()
+        confirmed_credit["reset_credit"] = {
+            "consumed": True,
+            "completed_at": NOW,
+            "verification_method": "connection",
+        }
+        confirmed_credit["test_success"] = True
+        confirmed_credit["recovered_at"] = NOW
+        self.assertEqual(oauth_event_message(confirmed_credit)[0], "✅ OAuth 用卡成功，已恢复调度")
+        incomplete_credit = event()
+        incomplete_credit["reset_credit"] = {"consumed": True, "completed_at": NOW}
+        self.assertEqual(oauth_event_message(incomplete_credit)[0], "OAuth 账号额度已恢复可用")
+
     def test_error_sanitization_covers_common_secret_shapes_and_utf8_limit(self) -> None:
         private_key_fixture = (
             "-----BEGIN " + "PRIVATE KEY----- secret-material -----END " + "PRIVATE KEY-----"
@@ -682,6 +695,28 @@ class BarkQueueTests(unittest.IsolatedAsyncioTestCase):
         metadata = self.store.scheduler()[7]
         self.assertFalse(metadata["last_notification_suppressed"])
         self.assertFalse(hasattr(main_module, "TelegramOpsBot"))
+
+    async def test_confirmed_reset_credit_event_is_pushed_once_with_specific_title(self) -> None:
+        self.pending["reset_credit"] = {
+            "consumed": True,
+            "completed_at": NOW,
+            "verification_method": "connection",
+        }
+        self.pending["test_success"] = True
+        self.pending["recovered_at"] = NOW
+        self.store.commit(pending_events={self.pending["dedupe_key"]: self.pending})
+        main_module.settings = SimpleNamespace(bark_config_valid=True, bark_enabled=True)
+
+        with BarkCapture() as capture:
+            main_module.bark_notifier = BarkNotifier(bark_settings(capture.url))
+            await main_module.deliver_oauth_monitor_events([self.pending])
+            await main_module.deliver_oauth_monitor_events([self.pending])
+
+        self.assertEqual(len(capture.requests), 1)
+        self.assertEqual(capture.requests[0]["payload"]["title"], "✅ OAuth 用卡成功，已恢复调度")
+        self.assertEqual(self.store.pending_events(), [])
+        reloaded = OAuthStateStore(str(Path(self.tmpdir.name) / "oauth-state.json"))
+        self.assertIn(self.pending["dedupe_key"], reloaded.scheduler()[7]["notified_keys"])
 
     async def test_failure_keeps_pending_for_retry(self) -> None:
         class FailedNotifier:
