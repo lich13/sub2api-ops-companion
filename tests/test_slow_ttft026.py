@@ -103,7 +103,7 @@ class LocalThrottleTests(unittest.TestCase):
 
 
 class SlowAlertIntegrationTests(unittest.TestCase):
-    def test_capacity_alert_queues_and_delivers_one_slow_stage(self) -> None:
+    def test_capacity_alert_persists_one_slow_stage_clue_without_bark(self) -> None:
         class Db:
             def __init__(self) -> None:
                 self.usage = [sample(i, 11001 if i < 8 else 9000, account_id=1) | {
@@ -133,16 +133,20 @@ class SlowAlertIntegrationTests(unittest.TestCase):
                 return SimpleNamespace(success=True, error_code=None)
 
         with tempfile.TemporaryDirectory() as root:
-            clock_value = NOW
+            clock_value = NOW - timedelta(seconds=1)
             notifier = Notifier()
             settings = SimpleNamespace(usage_query_state_path=str(Path(root) / "usage.json"), audit_path=str(Path(root) / "audit.jsonl"))
             alerts = CapacityAlerts(settings, Db(), notifier, clock=lambda: clock_value)
             alerts.poll()  # initialize the error cursor without replaying old records
+            clock_value = NOW
             alerts.poll()
             state = alerts.store.snapshot()
-            self.assertEqual(len(state["slow_pending"]), 1)
+            self.assertEqual(set(state["detection_events"]), {"slow:1:0"})
+            self.assertEqual(state["slow_pending"], {})
             alerts.deliver_due()
-            self.assertEqual(len(notifier.sent), 1)
+            self.assertEqual(notifier.sent, [])
+            alerts.poll()
+            self.assertEqual(alerts.store.snapshot()["detection_events"], state["detection_events"])
             self.assertEqual(alerts.store.snapshot()["slow_pending"], {})
 
 

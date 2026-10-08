@@ -209,17 +209,24 @@ export function RecoveryHistory({
   latest,
   accounts,
   online,
+  active = true,
+  onCount,
   report,
 }: {
   latest: Recovery[];
   accounts: Account[];
   online: boolean;
+  active?: boolean;
+  onCount?: (count: number) => void;
   report: (e: unknown) => void;
 }) {
   const [rows, setRows] = useState<Recovery[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
+  const generation = useRef(0);
+  const enabled = useRef(active && online);
+  enabled.current = active && online;
   const liveAccounts = useRef(new Set<number>());
   liveAccounts.current = new Set(accounts.map((a) => a.id));
   useEffect(() => {
@@ -230,25 +237,9 @@ export function RecoveryHistory({
     );
   }, [accounts]);
   useEffect(() => {
-    if (!online) return;
-    let gone = false;
-    void api<{ items: Recovery[]; next_cursor: number | null }>(
-      "GET",
-      "/recoveries",
-    )
-      .then((r) => {
-        if (!gone) {
-          setRows(
-            r.items.filter((row) => liveAccounts.current.has(row.account_id)),
-          );
-          setCursor(r.next_cursor);
-        }
-      })
-      .catch(report);
-    return () => {
-      gone = true;
-    };
-  }, [online]);
+    if (active && online) void load();
+    return () => { ++generation.current; running.current = false; };
+  }, [online, active]);
   const live = new Set(accounts.map((a) => a.id));
   const items = [
     ...new Map(
@@ -257,8 +248,11 @@ export function RecoveryHistory({
         .map((i) => [i.id, i]),
     ).values(),
   ].sort((a, b) => b.id - a.id);
+  useEffect(() => { onCount?.(items.length); }, [items.length, onCount]);
   async function load(more = false) {
-    if (running.current || !online) return;
+    if (running.current || !online || !active) return;
+    const epoch = ++generation.current;
+    const valid = () => epoch === generation.current && enabled.current;
     running.current = true;
     setBusy(true);
     try {
@@ -266,6 +260,7 @@ export function RecoveryHistory({
         "GET",
         more ? `/recoveries?before_id=${cursor}` : "/recoveries",
       );
+      if (!valid()) return;
       setRows((old) =>
         (more ? [...old, ...r.items] : r.items).filter((row) =>
           liveAccounts.current.has(row.account_id),
@@ -273,10 +268,9 @@ export function RecoveryHistory({
       );
       setCursor(r.next_cursor);
     } catch (e) {
-      report(e);
+      if (valid()) report(e);
     } finally {
-      running.current = false;
-      setBusy(false);
+      if (valid()) { running.current = false; setBusy(false); }
     }
   }
   return (

@@ -30,7 +30,7 @@ from .desktop_actions import DesktopActions, PriorityRequest, TestRequest, Group
 from .desktop_errors import DesktopErrorMiddleware, DesktopRoute
 from .account_quality import QualityCache, SUPPORTED
 from .model_tests import ModelTests, ModelTestRequest
-from .error_evidence import ERROR_WHERE
+from .error_evidence import ERROR_WHERE, error_category_sql
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
 from .account_operations import AccountOperations, OperationRequest, busy
@@ -41,6 +41,7 @@ PREFIX = "/api/desktop/v1"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
  e.requested_model, e.upstream_model, e.status_code, e.upstream_status_code,
  e.provider_error_code, e.error_type, e.error_message, e.upstream_error_message,
+ e.error_owner,e.error_phase,e.error_source,
  to_jsonb(e)->'upstream_errors' AS upstream_errors,
  e.request_id, e.resolved, a.name AS account_name, g.name AS group_name"""
 
@@ -84,7 +85,7 @@ def safe_error_body(value: Any) -> str:
 def error_dto(row: dict[str, Any], detail: bool = False) -> dict[str, Any]:
     fields = ("id", "account_id", "group_id", "created_at", "platform", "model", "requested_model",
               "upstream_model", "status_code", "upstream_status_code", "provider_error_code", "error_type",
-              "request_id", "resolved", "account_name", "group_name")
+              "request_id", "resolved", "account_name", "group_name", "error_owner", "error_phase", "error_source")
     result = {key: row.get(key) for key in fields}
     for key, value in result.items():
         if isinstance(value, str):
@@ -106,6 +107,8 @@ def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_res
     value["group_ids"] = row.get("group_ids") or []
     value["usage_windows"] = usage_windows(row, now, quota_result)
     value["managed"] = row["id"] in managed
+    value["recovery_selectable"] = (row.get("platform") == "openai" and row.get("type") == "oauth"
+                                    and not row.get("parent_account_id") and not (row.get("extra") or {}).get("parent_account_id"))
     value["recoverable"] = recoverable_state(row, now)
     value["error_message"] = safe_error_text(row.get("last_error_message") or row.get("error_message"))
     reasons = []
@@ -546,18 +549,20 @@ class DesktopService:
             raise HTTPException(404, "账号不存在或不支持质量评分")
         return self.quality.get([account_id], detail=True)[account_id]
 
-    def errors(self, account_id: int | None, before_id: int | None, limit: int = 50) -> dict[str, Any]:
+    def errors(self, account_id: int | None, before_id: int | None, limit: int = 50, category: str | None = None) -> dict[str, Any]:
+        where = error_category_sql(category)
         rows = self.r.db.fetch_all(f"""SELECT {ERROR_FIELDS} FROM ops_error_logs e
           LEFT JOIN accounts a ON a.id=e.account_id LEFT JOIN groups g ON g.id=e.group_id
-          WHERE {ERROR_WHERE} AND (%(account_id)s::bigint IS NULL OR e.account_id=%(account_id)s)
+          WHERE {where} AND (%(account_id)s::bigint IS NULL OR e.account_id=%(account_id)s)
             AND (%(before_id)s::bigint IS NULL OR e.id < %(before_id)s)
           ORDER BY e.id DESC LIMIT %(limit)s""", {"account_id": account_id, "before_id": before_id, "limit": limit + 1})
         return {"items": [error_dto(row) for row in rows[:limit]], "next_cursor": rows[limit-1]["id"] if len(rows) > limit else None}
 
-    def error_detail(self, error_id: int) -> dict[str, Any]:
+    def error_detail(self, error_id: int, category: str | None = None) -> dict[str, Any]:
+        where = error_category_sql(category)
         row = self.r.db.fetch_one(f"""SELECT {ERROR_FIELDS},e.error_body,e.upstream_error_detail FROM ops_error_logs e
           LEFT JOIN accounts a ON a.id=e.account_id LEFT JOIN groups g ON g.id=e.group_id
-          WHERE {ERROR_WHERE} AND e.id=%(id)s""", {"id": error_id})
+          WHERE {where} AND e.id=%(id)s""", {"id": error_id})
         if not row:
             raise HTTPException(404, "错误记录不存在或已过保留期")
         result = error_dto(row, detail=True)
@@ -567,6 +572,10 @@ class DesktopService:
                 notification = alerts.store.snapshot().get("notifications", {}).get(str(error_id))
                 if notification:
                     result["notification"] = notification
+                    if notification.get("job_id"):
+                        notice = self.model_detection.data().get("disposition_notifications", {}).get(notification["job_id"])
+                        if notice:
+                            result["disposition_notification"] = {key: notice.get(key) for key in ("status", "attempts", "delivered_at", "next_at", "error_code")}
             except (OSError, ValueError):
                 result["notification"] = {"status": "unavailable"}
         return result
@@ -879,11 +888,13 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         return await asyncio.to_thread(service.snapshot)
 
     @router.get("/errors")
-    async def errors(request: Request, account_id: int | None = None, before_id: int | None = None, limit: int = 50) -> Any:
+    async def errors(request: Request, account_id: int | None = None, before_id: int | None = None, limit: int = 50, category: str | None = None) -> Any:
         await auth(request)
         if not 1 <= limit <= 100 or (account_id is not None and account_id < 1) or (before_id is not None and before_id < 1):
             raise HTTPException(422, "分页参数无效")
-        return await asyncio.to_thread(service.errors, account_id, before_id, limit)
+        if category not in (None, 'degradation', 'other'):
+            raise HTTPException(422, "错误分类无效")
+        return await asyncio.to_thread(service.errors, account_id, before_id, limit, category)
 
     @router.get("/usage-records")
     async def usage_records(request: Request, from_at: str | None = None, to_at: str | None = None,
@@ -919,9 +930,11 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         return await asyncio.to_thread(service.quality_detail, account_id)
 
     @router.get("/errors/{error_id}")
-    async def error_detail(error_id: int, request: Request) -> Any:
+    async def error_detail(error_id: int, request: Request, category: str | None = None) -> Any:
         await auth(request)
-        return await asyncio.to_thread(service.error_detail, error_id)
+        if category not in (None, 'degradation', 'other'):
+            raise HTTPException(422, "错误分类无效")
+        return await asyncio.to_thread(service.error_detail, error_id, category)
 
     @router.post("/accounts/{account_id}/operations", status_code=202)
     async def operation_submit(account_id: int, payload: OperationRequest, request: Request):

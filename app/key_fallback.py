@@ -103,6 +103,7 @@ class KeyFallbackConfig:
     valid: bool
     openai_enabled: bool | None = None
     grok_enabled: bool | None = None
+    coexist_account_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         # Keep the old aggregate attribute for API and on-disk compatibility.
@@ -474,6 +475,7 @@ class KeyFallbackController:
             "openai_enabled": bool(config.openai_enabled and config.valid),
             "grok_enabled": bool(config.grok_enabled and config.valid),
             "managed_account_ids": list(config.managed_account_ids),
+            "coexist_account_ids": list(config.coexist_account_ids),
             "config_valid": config.valid,
             "config_updated_at": config.updated_at or None,
         }
@@ -486,6 +488,7 @@ class KeyFallbackController:
         grok_enabled: bool | None = None,
         managed_account_ids: list[Any],
         user: str,
+        coexist_account_ids: list[Any] | None = None,
     ) -> KeyFallbackConfig:
         ids = parse_managed_account_ids(list(managed_account_ids or []))
         with self._lock:
@@ -503,6 +506,10 @@ class KeyFallbackController:
                     f"Key 回退保存失败：账号 {listed} 不是有效的 OpenAI 或 Grok apikey"
                 )
             current = self._read_config_unlocked()
+            coexist = ([aid for aid in current.coexist_account_ids if aid in ids] if coexist_account_ids is None
+                       else parse_managed_account_ids(coexist_account_ids))
+            if set(coexist) - set(ids):
+                raise KeyFallbackConfigError("同步启用账号必须属于已托管 Key")
             legacy_enabled = bool(enabled) if enabled is not None else None
             next_openai = bool(openai_enabled) if openai_enabled is not None else (
                 legacy_enabled if legacy_enabled is not None else current.platform_enabled("openai")
@@ -514,6 +521,7 @@ class KeyFallbackController:
                 openai_enabled=next_openai,
                 grok_enabled=next_grok,
                 managed_account_ids=ids,
+                coexist_account_ids=coexist,
                 config_version=int(current.config_version) + 1,
                 updated_by=str(user or ""),
             )
@@ -667,12 +675,16 @@ class KeyFallbackController:
                 continue
             if not _is_live_fallback_apikey(live, account_id):
                 continue
+            if str(live.get('status') or 'active').lower() != 'active':
+                continue
             platform = str(live["platform"]).strip().lower()
             if not latest.platform_enabled(platform):
                 continue
             desired = desired_by_platform[platform]
             if desired is None:
                 continue
+            if not desired and account_id in latest.coexist_account_ids:
+                desired = True
             current_schedulable = (live or {}).get("schedulable") is True
             if current_schedulable is desired:
                 continue
@@ -767,6 +779,9 @@ class KeyFallbackController:
                 return KeyFallbackConfig(False, (), 0, "", "", False)
             if account_id not in ids:
                 ids.append(account_id)
+        coexist = data.get("coexist_account_ids", [])
+        if not isinstance(coexist, list) or any(type(aid) is not int or aid not in ids for aid in coexist):
+            return KeyFallbackConfig(False, (), 0, "", "", False)
         version = int_value(data.get("config_version"), 0, 0, MAX_CONFIG_VERSION)
         return KeyFallbackConfig(
             enabled=bool(openai_enabled or grok_enabled),
@@ -777,6 +792,7 @@ class KeyFallbackController:
             valid=True,
             openai_enabled=bool(openai_enabled),
             grok_enabled=bool(grok_enabled),
+            coexist_account_ids=tuple(sorted(set(coexist))),
         )
 
     def _write_config_unlocked(
@@ -787,13 +803,19 @@ class KeyFallbackController:
         managed_account_ids: list[int],
         config_version: int,
         updated_by: str,
+        coexist_account_ids: list[int] | None = None,
     ) -> KeyFallbackConfig:
+        if coexist_account_ids is None:
+            coexist_account_ids = [aid for aid in self._read_config_unlocked().coexist_account_ids if aid in managed_account_ids]
+        if set(coexist_account_ids) - set(managed_account_ids):
+            raise KeyFallbackConfigError("同步启用账号必须属于已托管 Key")
         updated_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "enabled": bool(openai_enabled or grok_enabled),
             "openai_enabled": bool(openai_enabled),
             "grok_enabled": bool(grok_enabled),
             "managed_account_ids": [int(item) for item in managed_account_ids],
+            "coexist_account_ids": sorted(set(coexist_account_ids)),
             "config_version": int(config_version),
             "updated_at": updated_at,
             "updated_by": str(updated_by or ""),
@@ -811,6 +833,7 @@ class KeyFallbackController:
             valid=True,
             openai_enabled=bool(openai_enabled),
             grok_enabled=bool(grok_enabled),
+            coexist_account_ids=tuple(sorted(set(coexist_account_ids))),
         )
 
 

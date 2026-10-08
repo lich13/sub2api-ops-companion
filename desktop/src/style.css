@@ -2324,3 +2324,21 @@ td:last-child {
 .account-template-custom-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
 .account-template-custom-grid:empty { display: none; }
 .account-template-custom-grid .account-template-custom { min-width: 0; }
+
+/* Recovery selections share the existing compact control scale. */
+.recovery-selection { grid-column: 1 / -1; min-width: 0; }
+.recovery-selection .search { max-width: 100%; margin-bottom: 12px; }
+.recovery-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.recovery-columns fieldset { min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.recovery-columns legend { padding: 0 4px; font-size: 13px; font-weight: 600; }
+.recovery-account-list { max-height: 280px; overflow-y: auto; }
+.recovery-account-list .check-account span { min-width: 0; overflow-wrap: anywhere; }
+.fallback-account { min-width: 0; padding: 4px 0; }
+.fallback-account .coexist-option { margin-left: 24px; font-size: 12px; color: var(--muted); }
+.event-model { color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .recovery-columns { grid-template-columns: minmax(0, 1fr); }
+  .recovery-selection .check-account, .fallback-account .check-account { min-height: 48px; }
+  .events-view .event-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .events-view .event-tabs button { min-width: 0; padding-inline: 6px; white-space: normal; }
+}

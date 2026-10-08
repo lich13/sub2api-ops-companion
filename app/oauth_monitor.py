@@ -1087,6 +1087,9 @@ class OAuthMonitor:
     def _discover_recoveries(self, rows: list[dict], now: datetime) -> None:
         def discover(data: dict) -> None:
             for row in rows:
+                from .recovery_policy import recovery_method
+                if not recovery_method(self.settings, int(row['id'])):
+                    continue
                 aid = str(row["id"])
                 metadata = data["scheduler"].setdefault(aid, {})
                 saved = latest_openai_result(row, data["oauth_results"].get(aid), now)
@@ -1300,6 +1303,24 @@ class OAuthMonitor:
         result["completed_at"] = _utc(self.clock()).isoformat()
         return result
 
+    def _recovery_test(self, account_id: int, model: str, *, fingerprint: str, attempt: int,
+                       verification_method: str, verification_generation: int, **kwargs: Any) -> dict[str, Any]:
+        from .recovery_policy import recovery_method
+        method = recovery_method(self.settings, account_id)
+        metadata = self.store.snapshot()['scheduler'].get(str(account_id), {})
+        selection = int(metadata.get('recovery_method_generation', 0))
+        if method != verification_method or selection != verification_generation:
+            return {'success': False, 'skipped': True, 'error_code': 'recovery_method_changed',
+                    'recovery_method': verification_method, 'recovery_method_generation': verification_generation}
+        if method == 'model':
+            verifier = getattr(self, 'model_verifier', None)
+            if verifier is None:
+                return {'success': False, 'error_code': 'model_verifier_unavailable'}
+            result = verifier(account_id, kind='recovery', fingerprint=fingerprint, attempt=attempt)
+        else:
+            result = self._timed_test(account_id, model, **kwargs)
+        return {**result, 'recovery_method_generation': selection, 'recovery_method': method}
+
     def force_refresh(
         self,
         timeout_seconds: float = 120,
@@ -1430,8 +1451,9 @@ class OAuthMonitor:
             ]
         else:
             self.queries.observe_gates(self._accounts, results, scheduler, current)
+            from .recovery_policy import recovery_method
             candidates = build_monitor_candidates(
-                self._accounts,
+                [row for row in self._accounts if recovery_method(self.settings, int(row['id']))],
                 results,
                 scheduler,
                 current,
@@ -1442,10 +1464,12 @@ class OAuthMonitor:
         )
         selected = candidates if force or daily else candidates[:batch_size]
         admitted = []
+        lease_by_account = {}
         for item in selected:
             lease = AccountLease(self.db, item["row"])
             if lease.acquire():
                 leases.append(lease)
+                lease_by_account[item['account_id']] = lease
                 admitted.append(item)
         selected = admitted
         reused_quota = {item["account_id"]: item["reuse_quota"] for item in selected if item.get("reuse_quota")}
@@ -1745,6 +1769,11 @@ class OAuthMonitor:
         pretest_updates: dict[int, dict[str, Any]] = {}
         for item, intent in test_jobs:
             account_id = int(item["account_id"])
+            from .recovery_policy import recovery_method
+            method = recovery_method(self.settings, account_id)
+            selection = int(self.store.snapshot()['scheduler'].get(str(account_id), {}).get('recovery_method_generation', 0))
+            if not method:
+                continue
             if self.store.control_generation(account_id) != generations.get(account_id, 0):
                 continue
             try:
@@ -1790,7 +1819,11 @@ class OAuthMonitor:
                 }
             )
             pretest_updates[account_id] = {"recovery_intent": testing}
-            runnable_jobs.append((item, testing, row or {}))
+            # Lock ownership and dispatch must use the same selected method.
+            # Re-reading it after releasing a model worker's lease could run a
+            # newly selected connection test without an account lease.
+            frozen_item = {**item, 'verification_method': method, 'verification_generation': selection}
+            runnable_jobs.append((frozen_item, testing, row or {}))
         if pretest_updates:
             self.store.commit(scheduler_updates=pretest_updates, expected_generations=generations)
 
@@ -1804,16 +1837,23 @@ class OAuthMonitor:
             or DEFAULT_TEST_MODEL_ID
         ).strip()
         if runnable_jobs:
+            for item, _intent, _row in runnable_jobs:
+                if item['verification_method'] == 'model':
+                    # The queued worker acquires its own lease. Do not hold a
+                    # quota lease while waiting on the same model task.
+                    lease_by_account[int(item['account_id'])].release()
             with ThreadPoolExecutor(max_workers=max(1, test_workers)) as executor:
                 futures = {
                     executor.submit(
-                        self._timed_test,
+                        self._recovery_test,
                         int(item["account_id"]),
                         model_id,
                         base_url=base_url,
                         admin_token=token,
                         timeout_seconds=30,
                         control_generation=generations.get(int(item["account_id"]), 0),
+                        fingerprint=intent['fingerprint'], attempt=intent['attempt_count'],
+                        verification_method=item['verification_method'], verification_generation=item['verification_generation'],
                     ): (item, intent, frozen_row)
                     for item, intent, frozen_row in runnable_jobs
                 }
@@ -1840,6 +1880,21 @@ class OAuthMonitor:
                 continue
             test_result = test_results[account_id]
             final_intent = dict(intent)
+            if (test_result.get('recovery_method') != recovery_method(self.settings, account_id)
+                    or test_result.get('recovery_method_generation') != int(self.store.snapshot()['scheduler'].get(str(account_id), {}).get('recovery_method_generation', 0))):
+                continue
+            if test_result.get('deferred'):
+                final_intent.update(status='retry', attempt_count=max(0, int(intent['attempt_count']) - 1),
+                                    next_retry_at=test_result.get('next_at') or (current + timedelta(seconds=5)).isoformat(),
+                                    last_error=test_result.get('error', ''), last_error_code='model_verification_pending')
+                final_updates[account_id] = {'recovery_intent': final_intent}
+                continue
+            if test_result.get('recovery_method') == 'model' and not lease_by_account[account_id].acquire():
+                final_intent.update(status='retry', attempt_count=max(0, int(intent['attempt_count']) - 1),
+                                    next_retry_at=(current + timedelta(seconds=5)).isoformat(),
+                                    last_error='等待账号操作完成', last_error_code='model_verification_pending')
+                final_updates[account_id] = {'recovery_intent': final_intent}
+                continue
             error_code = str(test_result.get("error_code") or "")
             success = bool(test_result.get("success"))
             recovery_result: dict[str, Any] = {}

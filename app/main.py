@@ -160,6 +160,8 @@ async def lifespan(_: FastAPI):
     old_oauth_config = oauth_config_file()
     if "oauth_7d_probe_interval_seconds" in old_oauth_config:
         await asyncio.to_thread(save_oauth_runtime_config, old_oauth_config)
+    from .recovery_policy import migrate_recovery_selection
+    await asyncio.to_thread(migrate_recovery_selection, sys.modules[__name__])
     store = oauth_state_store()
     await asyncio.to_thread(store.commit)
     await asyncio.to_thread(
@@ -184,17 +186,20 @@ async def lifespan(_: FastAPI):
     await asyncio.to_thread(key_fallback_controller.migrate_legacy_config)
     await refresh_upstream_route()
     upstream_task = asyncio.create_task(upstream_route_loop())
+    capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
+    await asyncio.to_thread(capacity_alerts.retire_legacy_warnings)
+    oauth_monitor.detection_gate = desktop_service.model_detection.held
+    key_fallback_controller.detection_gate = desktop_service.model_detection.held
+    desktop_service.model_detection.bind_recovery(oauth_monitor, asyncio.get_running_loop())
+    await asyncio.to_thread(desktop_service.model_detection.migrate_dispatches)
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
-    capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
-    oauth_monitor.detection_gate = desktop_service.model_detection.held
-    key_fallback_controller.detection_gate = desktop_service.model_detection.held
     with capacity_alerts.store.transaction() as alert_state:
         from datetime import datetime, timezone
         alert_state.setdefault("detection_since", datetime.now(timezone.utc).isoformat())
     await asyncio.to_thread(desktop_service.account_templates.retire_legacy)
-    capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(capacity_alerts.delivery_loop())]
+    capacity_tasks = [asyncio.create_task(capacity_alerts.collect_loop()), asyncio.create_task(desktop_service.model_detection.notification_loop())]
     detection_task = asyncio.create_task(desktop_service.model_detection.loop())
     operation_task = asyncio.create_task(desktop_service.operations.loop())
     desktop_service.model_tests.resume()

@@ -40,6 +40,9 @@ type Detection = {
   model_id: string;
   version: string;
   next_at?: string | null;
+  next_allowed_at?: string | null;
+  disposition?: { marked: boolean; schedule_verified: boolean };
+  disposition_notification?: { status: string } | null;
   status: string;
   reason?: string;
   job_id?: string;
@@ -197,5 +200,60 @@ describe("scheduled model detection", () => {
     expect(container.textContent).toContain("已取消");
     expect(container.querySelector("button")?.textContent).not.toContain("取消任务");
     expect(button("保存").disabled).toBe(false);
+  });
+
+  it("updates cooldown, disposition and notification results without overwriting an unsaved interval", async () => {
+    vi.setSystemTime(new Date("2026-10-08T00:00:00Z"));
+    const handling: Detection = {
+      ...baseDetection,
+      enabled: true,
+      status: "handling",
+      next_allowed_at: "2026-10-08T00:00:01Z",
+      disposition: { marked: false, schedule_verified: false },
+      disposition_notification: { status: "queued" },
+    };
+    await renderDialog(handling);
+    const detail = (label: string) => [...container.querySelectorAll(".detection-meta dt")].find((node) => node.textContent === label)?.nextElementSibling?.textContent;
+    expect(detail("状态")).toBe("正在处置");
+    expect(detail("冷却至")).toBe("10-08 08:00:01");
+    expect(detail("处置")).toBe("标记待保存 · 停调度待确认");
+    expect(detail("结果通知")).toBe("待推送");
+
+    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      interval.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const original = vi.mocked(api).getMockImplementation()!;
+    let notification = "retry";
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return {
+        ...handling, status: "completed", disposition: { marked: true, schedule_verified: true },
+        disposition_notification: { status: notification },
+      } as never;
+      return original(method, path, body);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(detail("冷却至")).toBeUndefined();
+    expect(detail("状态")).toBe("已完成");
+    expect(detail("处置")).toBe("标记已保存 · 停调度已确认");
+    expect(detail("结果通知")).toBe("待重试");
+    expect(interval.value).toBe("45");
+    notification = "delivered";
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(detail("结果通知")).toBe("已推送");
+    expect(interval.value).toBe("45");
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+  });
+
+  it("shows a suppressed notification as cancelled and omits expired cooldown information", async () => {
+    vi.setSystemTime(new Date("2026-10-08T00:00:00Z"));
+    await renderDialog({
+      ...baseDetection,
+      next_allowed_at: "2026-10-07T23:59:59Z",
+      disposition_notification: { status: "suppressed" },
+    });
+    expect(container.querySelector(".detection-meta")?.textContent).toContain("结果通知已取消");
+    expect(container.querySelector(".detection-meta")?.textContent).not.toContain("冷却至");
   });
 });

@@ -22,7 +22,7 @@ from .quota_snapshot import latest_openai_result
 from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_result,
                           oauth_windows_by_key, parse_iso_datetime, percent_or_none,
                           required_oauth_window_keys)
-from .error_evidence import is_local_throttle
+from .error_evidence import is_local_throttle, local_throttle_sql
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
           "releasing", "recovered", "manual", "blocked", "closed"}
@@ -38,7 +38,8 @@ ERRORS = {"no_credit": "没有可用重置卡", "conflict": "Sub2API 自动用�
           "query_state_unavailable": "状态无法保存，已暂停自动处理", "test_failed": "测活失败",
           "incomplete_quota": "额度证据不完整", "query_cooldown": "等待查询冷却",
           "query_budget": "等待查询预算", "query_backoff": "等待查询退避",
-          "quota_unavailable": "必要额度窗口尚未恢复", "recovery_failed": "恢复调度未确认"}
+          "quota_unavailable": "必要额度窗口尚未恢复", "recovery_failed": "恢复调度未确认",
+          "model_verification_pending": "等待模型验证", "model_verifier_unavailable": "模型验证服务尚未就绪"}
 
 
 def validate_state(value: Any) -> None:
@@ -52,7 +53,11 @@ def validate_state(value: Any) -> None:
 
 
 def project_state(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not value or value.get("stage") == "closed":
+    if not value:
+        return None
+    if value.get('stage') == 'manual' and value.get('attempt_at') and not value.get('reset_completed_at') and value.get('consumed') is not True:
+        value = {**value, 'stage': 'uncertain', 'error_code': 'result_uncertain', 'next_at': None}
+    elif value.get('stage') in {'manual', 'recovered', 'closed'}:
         return None
     code = str(value.get("error_code") or "")
     return {"stage": value["stage"], "label": {"conflict": "自动用卡冲突", "auth_paused": "等待凭据更新", "no_credit": "等待重置卡"}.get(code, STATE_LABELS[value["stage"]]),
@@ -68,8 +73,9 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
     # status_code alone can represent client-key throttling. Only an actual
     # upstream 429 associated with this still-active account block is evidence.
     params = {"id": int(row["id"]), "start": start - timedelta(seconds=5), "now": now}
-    enriched = """
+    enriched = f"""
         SELECT e.id,e.created_at,
+               e.error_owner,e.error_phase,
                to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,
                to_jsonb(e)->>'error_message' AS error_message,
                to_jsonb(e)->'error_body' AS error_body,
@@ -77,6 +83,7 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
                to_jsonb(e)->'upstream_errors' AS upstream_errors
         FROM ops_error_logs e
         WHERE e.account_id=%(id)s AND e.upstream_status_code=429
+          AND NOT {local_throttle_sql()}
           AND e.created_at >= %(start)s AND e.created_at <= %(now)s
           AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id=e.account_id AND u.created_at>e.created_at)
           AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
@@ -86,17 +93,8 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
     try:
         candidate = db.fetch_one(enriched, params)
     except Exception:
-        # Legacy adapters and small isolated fixtures expose only the original
-        # columns. Preserve their query semantics, then inspect fields if any.
-        candidate = db.fetch_one("""
-            SELECT e.id,e.created_at FROM ops_error_logs e
-            WHERE e.account_id=%(id)s AND e.upstream_status_code=429
-              AND e.created_at >= %(start)s AND e.created_at <= %(now)s
-              AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id=e.account_id AND u.created_at>e.created_at)
-              AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
-                AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
-            ORDER BY e.created_at DESC,e.id DESC LIMIT 1
-        """, params)
+        # An unverified error row cannot authorize irreversible consumption.
+        return None
     return None if candidate and is_local_throttle(candidate) else candidate
 
 
@@ -201,6 +199,9 @@ class AutoResetController:
         return latest_openai_result(row, saved, now)
 
     def _eligible(self, row, now, *, held=False):
+        from .recovery_policy import recovery_method
+        if not row or not recovery_method(self.m.settings, int(row['id'])) or not getattr(self.m.settings, 'oauth_recovery_monitor_enabled', True):
+            return False
         return bool(row and not getattr(self.m, "detection_gate", lambda _aid: False)(int(row["id"])) and not row.get("parent_account_id")
                     and not (row.get("extra") or {}).get("parent_account_id")
                     and automatic_eligible({**row, "schedulable": True} if held else row, now))
@@ -373,6 +374,9 @@ class AutoResetController:
         row, task = self.m._read_account(aid), self.state(aid)
         if not row:
             return
+        from .recovery_policy import recovery_method
+        if not recovery_method(self.m.settings, aid) or not getattr(self.m.settings, 'oauth_recovery_monitor_enabled', True):
+            return
         if (row.get("extra") or {}).get("auto_reset_credit_enabled"):
             if task or enabled:
                 task = task or {"episode": uuid.uuid4().hex, "stage": "waiting"}
@@ -499,6 +503,15 @@ class AutoResetController:
             no_credit = not live or (reset_credits(live.get("extra") or {}, now)["available"] or 0) <= 0
             self._defer(aid, self.state(aid), {"error_code": "no_credit" if no_credit else "query_cooldown"}, now)
             return
+        if recovery_method(self.m.settings, aid) == 'model':
+            verifier = getattr(self.m, 'model_verifier', None)
+            if verifier is None:
+                self._save(aid, task, error_code='model_verifier_unavailable')
+                return
+            result = verifier(aid, kind='credit', fingerprint=task['episode'], attempt=int(task.get('test_attempts') or 0) + 1, consume=True)
+            self._save(aid, self.state(aid), next_at=result.get('next_at') or (now + timedelta(minutes=1)).isoformat(),
+                       model_test_job_id=result.get('job_id'), error_code='model_verification_pending' if result.get('deferred') else result.get('error_code', ''))
+            return
         result = self._request(row, "reset", task, now)
         task = self.state(aid)
         if result.get("consumed") and task.get("stage") == "testing" and not result.get("uncertain"):
@@ -528,7 +541,26 @@ class AutoResetController:
         task = self._save(aid, task, stage="testing", test_attempts=attempts,
                           next_at=(now + timedelta(seconds=RETRY_SECONDS[min(attempts - 1, 3)])).isoformat())
         generation = self.store.control_generation(aid)
-        test = self.m._timed_test(aid, model, control_generation=generation, **self._connection())
+        from .recovery_policy import recovery_method
+        method = recovery_method(self.m.settings, aid)
+        selection = int(self.store.snapshot()['scheduler'].get(str(aid), {}).get('recovery_method_generation', 0))
+        if method == 'model':
+            verifier = getattr(self.m, 'model_verifier', None)
+            test = (verifier(aid, kind='credit', fingerprint=task['episode'], attempt=attempts) if verifier else
+                    {'success': False, 'error_code': 'model_verifier_unavailable'})
+        elif method == 'connection':
+            test = self.m._timed_test(aid, model, control_generation=generation, **self._connection())
+        else:
+            return
+        if (self.store.control_generation(aid) != generation or method != recovery_method(self.m.settings, aid)
+                or selection != int(self.store.snapshot()['scheduler'].get(str(aid), {}).get('recovery_method_generation', 0))):
+            return
+        if test.get('deferred'):
+            self._save(aid, task, stage='retry', test_attempts=attempts - 1,
+                       next_at=test.get('next_at') or (now + timedelta(seconds=5)).isoformat(),
+                       model_test_job_id=test.get('job_id'), error_code='model_verification_pending')
+            return
+        model = test.get('model_id') or model
         self.m._cycle_tests[aid] = test
         completed = self.m.clock()
         self._audit(aid, "test", success=bool(test.get("success")), error_code=str(test.get("error_code") or ""))
@@ -553,6 +585,7 @@ class AutoResetController:
         if not self._available(live, completed, task):
             self._save(aid, task, stage="confirming", error_code="incomplete_quota", next_at=(completed + timedelta(hours=1)).isoformat())
             return
+        task = self._save(aid, task, verification_method=method, verification_generation=selection)
         self._release(live, task, completed)
 
     def _release(self, row, task, now):
@@ -565,6 +598,10 @@ class AutoResetController:
     def _release_locked(self, row, task, now):
         from .oauth_monitor import account_recovery_confirmed
         aid = int(row["id"])
+        from .recovery_policy import recovery_method
+        if (task.get('verification_method') and task['verification_method'] != recovery_method(self.m.settings, aid)
+                or task.get('verification_generation', 0) != int(self.store.snapshot()['scheduler'].get(str(aid), {}).get('recovery_method_generation', 0))):
+            return
         fresh = self.m._read_account(aid)
         if (not self._owned(fresh, task) or not self._processing_eligible(fresh, task, now)
                 or not self._available(fresh, now, task)):

@@ -10,7 +10,7 @@ class KeyAlerts023Tests(unittest.TestCase):
     tearDown = alerts_fixture.CapacityAlertTests.tearDown
     make_alerts = alerts_fixture.CapacityAlertTests.make_alerts
 
-    def test_key_upgrade_watermark_mark_suppression_and_actual_bark_payload(self):
+    def test_key_upgrade_watermark_mark_suppression_and_detection_clues(self):
         self.accounts[1]['type'] = 'apikey'
         alerts, db = self.make_alerts()
         alerts.poll()
@@ -24,18 +24,16 @@ class KeyAlerts023Tests(unittest.TestCase):
             self.clock.advance(seconds=1)
             db.rows.append(alerts_fixture.error_row(index, account_type='apikey', message=message, created_at=self.clock()))
         alerts.poll(); alerts.deliver_due(); alerts.deliver_due(); alerts.deliver_due()
-        self.assertEqual(len(self.capture.requests), 3)
-        for request in self.capture.requests:
-            self.assertEqual(request['title'], '⚠️ Codex 疑似降智')
-            self.assertIn('（Key）', request['body'])
-            self.assertEqual((request['level'], request['sound']), ('critical', 'alarm'))
+        self.assertEqual(self.capture.requests, [])
+        self.assertEqual(set(alerts.store.snapshot()['detection_events']), {'error:2', 'error:3', 'error:4'})
+        alerts.store.set_mark(1, True, mark_view(1)['version'], self.clock())
         self.clock.advance(seconds=1)
         db.rows.append(alerts_fixture.error_row(5, account_type='apikey', created_at=self.clock()))
         alerts.poll()
-        alerts.store.set_mark(1, True, mark_view(1)['version'], self.clock())
         resumed = CapacityAlerts(self.settings, db, self.notifier, clock=self.clock)
         resumed.deliver_due()
-        self.assertEqual(len(self.capture.requests), 3)
+        self.assertEqual(self.capture.requests, [])
+        self.assertNotIn('error:5', resumed.store.snapshot()['detection_events'])
         self.assertTrue(resumed.store.snapshot()['marks']['1']['marked'])
         self.assertEqual(match_message(db.rows[-1]), MESSAGES[0])
         self.assertEqual(resumed.store.snapshot()['notifications']['5']['status'], 'suppressed')

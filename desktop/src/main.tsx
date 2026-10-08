@@ -45,6 +45,8 @@ import {
 import "./style.css";
 import "./responsive.css";
 import UsageCell from "./UsageCell";
+import RecoveryAccounts from "./RecoveryAccounts";
+import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import {
   MiniUsage,
   PriorityEditor,
@@ -140,9 +142,8 @@ export default function App() {
     [type, setType] = useState(""),
     [config, setConfig] = useState<Config | null>(null),
     [runtimeVersion, setRuntimeVersion] = useState<string | null>(null),
-    [history, setHistory] = useState<OpsError[] | null>(null),
-    [cursor, setCursor] = useState<number | null>(null),
-    [eventTab, setEventTab] = useState<"errors" | "recoveries">("errors"),
+    [recoveryCount, setRecoveryCount] = useState(0),
+    [eventTab, setEventTab] = useState<ErrorCategory | "recoveries">("degradation"),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
@@ -150,9 +151,6 @@ export default function App() {
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
-    eventGeneration = useRef(0),
-    eventAbort = useRef<AbortController | null>(null),
-    eventQueue = useRef<Promise<unknown>>(Promise.resolve()),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
   function closeDetail() {
@@ -198,12 +196,10 @@ export default function App() {
   }, [filterKey, connectionKey]);
   useEffect(() => {
     closeDetail();
-  }, [page, connectionKey]);
+  }, [page, connectionKey, eventTab]);
   useEffect(() => {
     setRemovedIds(new Set());
     setDeleteAccounts(null);
-    setHistory(null);
-    setCursor(null);
     closeDetail();
     setTestAccount(null);
     setModelTestAccount(null);
@@ -270,74 +266,10 @@ export default function App() {
       void api<Config>("GET", "/config").then((value) => { if (!disposed) setConfig(value); }).catch((error) => { if (!disposed) report(error); });
     return () => { disposed = true; };
   }, [page, state.online, connectionKey]);
-  function queueEventRequest<T>(task: () => Promise<T>) {
-    const next = eventQueue.current.then(task, task);
-    eventQueue.current = next.catch(() => {});
-    return next;
-  }
-  function loadEvents(mode: "replace" | "more" = "replace") {
-    if (page !== "events" || !state.online) return Promise.resolve(false);
-    const generation = ++eventGeneration.current;
-    eventAbort.current?.abort();
-    const controller = new AbortController();
-    eventAbort.current = controller;
-    const before = mode === "more" ? cursor : null;
-    if (mode === "replace") {
-      setHistory(null);
-      setCursor(null);
-    }
-    return queueEventRequest(async () => {
-      const valid = () =>
-        page === "events" &&
-        state.online &&
-        eventGeneration.current === generation &&
-        !controller.signal.aborted;
-      if (!valid() || (mode === "more" && !before)) return false;
-      try {
-        const response = await api<{
-          items: OpsError[];
-          next_cursor: number | null;
-        }>(
-          "GET",
-          mode === "more" ? `/errors?before_id=${before}` : "/errors",
-        );
-        if (!valid()) return false;
-        setHistory((old) =>
-          mode === "more"
-            ? [
-                ...new Map(
-                  [...(old ?? []), ...response.items].map((item) => [
-                    item.id,
-                    item,
-                  ]),
-                ).values(),
-              ]
-            : response.items,
-        );
-        setCursor(response.next_cursor);
-        return true;
-      } catch (error) {
-        if (valid()) report(error);
-        return false;
-      } finally {
-        if (eventAbort.current === controller) eventAbort.current = null;
-      }
-    });
-  }
-  useEffect(() => {
-    if (page !== "events" || !state.online) {
-      eventAbort.current?.abort();
-      eventAbort.current = null;
-      ++eventGeneration.current;
-      return;
-    }
-    void loadEvents();
-    return () => {
-      eventAbort.current?.abort();
-      eventAbort.current = null;
-      ++eventGeneration.current;
-    };
-  }, [page, state.online, connectionKey]);
+  const degradationFeed = useErrorFeed("degradation", !quick && page === "events" && eventTab === "degradation", state.online, connectionKey);
+  const otherFeed = useErrorFeed("other", !quick && page === "events" && eventTab === "other", state.online, connectionKey);
+  const eventFeed = eventTab === "other" ? otherFeed : degradationFeed;
+  const loadEvents = eventFeed.load;
   const snap = state.snapshot,
     groups = snap?.groups ?? [],
     errors = snap?.errors ?? [];
@@ -364,7 +296,8 @@ export default function App() {
         : new Set([...old].filter((id) => live.has(id))),
     );
   }, [accounts]);
-  const eventRows = (quick ? errors : history ?? []).slice().sort((a, b) => b.id - a.id);
+  const eventRows = (quick ? errors : eventFeed.items).slice().sort((a, b) => b.id - a.id);
+  const eventCount = eventTab === "recoveries" ? recoveryCount : eventRows.length;
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
@@ -398,14 +331,14 @@ export default function App() {
       setBusy(null);
     }
   }
-  async function openError(id: number) {
+  async function openError(id: number, category?: ErrorCategory) {
     const generation = ++detailGeneration.current;
     detailAbort.current?.abort();
     const controller = new AbortController();
     detailAbort.current = controller;
     setDetailBusy(true);
     try {
-      const value = await api<OpsError>("GET", `/errors/${id}`);
+      const value = await api<OpsError>("GET", `/errors/${id}${category ? `?category=${category}` : ""}`);
       if (generation === detailGeneration.current && !controller.signal.aborted)
         setDetail(value);
     } catch (e) {
@@ -531,14 +464,14 @@ export default function App() {
       </article>
     );
   }
-  function errorRow(e: OpsError, compact = false) {
+  function errorRow(e: OpsError, compact = false, category?: ErrorCategory) {
     const stateLabel = errorState(e);
     const account = accounts.find((item) => item.id === e.account_id);
     return (
       <button
         key={e.id}
         className="error-row"
-        onClick={() => void openError(e.id)}
+        onClick={() => void openError(e.id, category)}
       >
         <span
           className={`code ${e.upstream_status_code === 429 ? "warning" : ""}`}
@@ -547,14 +480,14 @@ export default function App() {
         </span>
         <div>
           <strong>
-            {e.account_name || `账号 #${e.account_id}`}
+            {e.account_name || (e.account_id ? `账号 #${e.account_id}` : "未关联账号")}
             {compact && account && <DegradationBadge account={account} compact />}
           </strong>
           <span>
             <em className={`error-state ${stateLabel === "当前" ? "active" : ""}`}>
               {stateLabel}
             </em>
-            {e.provider_error_code || e.message || "查看错误详情"}
+            {!compact && <span className="event-model">{e.requested_model || e.model || "未知模型"} · </span>}{e.provider_error_code || e.message || "查看错误详情"}
           </span>
         </div>
         <Time at={e.created_at} />
@@ -590,8 +523,8 @@ export default function App() {
               >
                 <p.icon size={17} />
                 {p.label}
-                {p.id === "events" && eventRows.length > 0 ? (
-                  <span className="nav-count">{eventRows.length}</span>
+                {p.id === "events" && eventCount > 0 ? (
+                  <span className="nav-count">{eventCount}</span>
                 ) : null}
               </button>
             ))}
@@ -1082,76 +1015,19 @@ export default function App() {
                 )}
                 {page === "events" && (
                   <div className="events-view">
-                    <nav
-                      className="event-tabs"
-                      role="tablist"
-                      aria-label="事件类型"
-                    >
-                      <button
-                        role="tab"
-                        id="errors-tab"
-                        aria-selected={eventTab === "errors"}
-                        aria-controls="errors-panel"
-                        onClick={() => setEventTab("errors")}
-                      >
-                        上游与认证错误
-                      </button>
-                      <button
-                        role="tab"
-                        id="recoveries-tab"
-                        aria-selected={eventTab === "recoveries"}
-                        aria-controls="recoveries-panel"
-                        onClick={() => setEventTab("recoveries")}
-                      >
-                        恢复成功
-                      </button>
+                    <nav className="event-tabs" role="tablist" aria-label="事件类型">
+                      {([['degradation', '降智错误'], ['other', '其他错误'], ['recoveries', '恢复历史']] as const).map(([id, label]) =>
+                        <button key={id} role="tab" id={`${id}-tab`} aria-selected={eventTab === id} aria-controls={`${id}-panel`} onClick={() => setEventTab(id)}>{label}</button>)}
                     </nav>
                     <div className="event-panels">
-                      <section
-                        id="errors-panel"
-                        className="event-panel"
-                        role="tabpanel"
-                        aria-labelledby="errors-tab"
-                        hidden={eventTab !== "errors"}
-                      >
-                        <div className="section-heading">
-                          <span>{eventRows.length} 条记录</span>
-                          <button
-                            className="text-button"
-                            disabled={!state.online}
-                            onClick={() => void loadEvents()}
-                          >
-                            刷新记录
-                          </button>
-                        </div>
-                        <div className="error-list">
-                          {eventRows.map((error) => errorRow(error))}
-                          {!eventRows.length && <Empty text="暂无账号错误" />}
-                        </div>
-                        {cursor && (
-                          <button
-                            className="load-more"
-                            disabled={!state.online}
-                            onClick={() => void loadEvents("more")}
-                          >
-                            加载更早记录
-                          </button>
-                        )}
-                      </section>
-                      <section
-                        id="recoveries-panel"
-                        className="event-panel"
-                        role="tabpanel"
-                        aria-labelledby="recoveries-tab"
-                        hidden={eventTab !== "recoveries"}
-                      >
-                        <RecoveryHistory
-                          key={connectionKey}
-                          latest={snap.recoveries ?? []}
-                          accounts={accounts}
-                          online={state.online}
-                          report={report}
-                        />
+                      {eventTab !== "recoveries" && <section id={`${eventTab}-panel`} className="event-panel" role="tabpanel" aria-labelledby={`${eventTab}-tab`}>
+                        <div className="section-heading"><span>{eventRows.length} 条记录</span><button className="text-button" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents()}>刷新记录</button></div>
+                        {eventFeed.error && <p className="bad-text" role="alert">{eventFeed.error} <button onClick={() => void loadEvents()}>重试</button></p>}
+                        <div className="error-list">{eventRows.map(error => errorRow(error, false, eventTab))}{!eventRows.length && <Empty text={eventFeed.loading ? "正在读取" : eventFeed.error ? "记录暂不可用" : "暂无错误记录"}/>}</div>
+                        {eventFeed.cursor !== null && <button className="load-more" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents("more")}>加载更早记录</button>}
+                      </section>}
+                      <section id="recoveries-panel" className="event-panel" role="tabpanel" aria-labelledby="recoveries-tab" hidden={eventTab !== "recoveries"}>
+                        <RecoveryHistory key={connectionKey} latest={snap.recoveries ?? []} accounts={accounts} online={state.online} active={eventTab === "recoveries"} onCount={setRecoveryCount} report={report}/>
                       </section>
                     </div>
                   </div>
@@ -1264,7 +1140,7 @@ export default function App() {
                   </div>
                   <dl className="detail-meta">
                     <dt>账号</dt>
-                    <dd>#{detail.account_id}</dd>
+                    <dd>#{detail.account_id ?? "—"}</dd>
                     <dt>分组</dt>
                     <dd>{detail.group_name || "无分组记录"}</dd>
                     <dt>发生时间</dt>
@@ -1279,10 +1155,13 @@ export default function App() {
                         detail.status_code ||
                         "未知"}
                     </dd>
+                    <dt>来源</dt><dd>{detail.error_source || detail.error_owner || "未知"}</dd>
+                    <dt>阶段</dt><dd>{detail.error_phase || "未知"}</dd>
                     <dt>请求 ID</dt>
                     <dd>{detail.request_id || "未知"}</dd>
-                    {detail.notification && <><dt>降智报警</dt><dd>{detail.notification.status === "suppressed" ? detail.notification.reason === "degradation_mark" ? "降智标记静默" : "已抑制" : ({ delivered: "已推送", queued: "待推送", retry: "待重试", unavailable: "投递状态暂不可读取" } as Record<string, string>)[detail.notification.status] ?? "—"}</dd></>}
+                    {detail.notification && <><dt>检测线索</dt><dd>{detail.notification.status === "suppressed" ? detail.notification.reason === "degradation_mark" ? "降智标记静默" : "已抑制" : ({ delivered: "历史预警已推送", retired: "历史预警已停发", clue: "已采集", testing: "检测中", ignored: "已忽略", failed: "检测未完成", confirmed: "已确认降智", unavailable: "状态暂不可读取" } as Record<string, string>)[detail.notification.status] ?? "—"}</dd></>}
                   </dl>
+                  {detail.disposition_notification && <p>处置通知：{({delivered: "已推送", queued: "待推送", retry: "待重试", suppressed: "已取消"} as Record<string, string>)[detail.disposition_notification.status] ?? "—"}</p>}
                   <h3>错误内容</h3>
                   {accounts.find((a) => a.id === detail.account_id) && <DegradationAction account={accounts.find((a) => a.id === detail.account_id)!} online={state.online} report={report}/>}
                   <pre>
@@ -1515,6 +1394,7 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
+                <RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/>
               </>
             )}
           </ConfigForm>
@@ -1536,39 +1416,17 @@ function SettingsPage({
                       value={draft[`${p}_enabled`]}
                       set={(v) => set(`${p}_enabled`, v)}
                     />
-                    {accounts
-                      .filter((a) => a.platform === p && a.type === "apikey")
-                      .map((a) => (
-                        <label className="check-account" key={a.id}>
-                          <input
-                            type="checkbox"
-                            checked={(
-                              (draft.managed_account_ids as number[]) ?? []
-                            ).includes(a.id)}
-                            onChange={(e) =>
-                              set(
-                                "managed_account_ids",
-                                e.target.checked
-                                  ? [
-                                      ...((draft.managed_account_ids as number[]) ??
-                                        []),
-                                      a.id,
-                                    ]
-                                  : (
-                                      (draft.managed_account_ids as number[]) ??
-                                      []
-                                    ).filter((id) => id !== a.id),
-                              )
-                            }
-                          />
-                          <span>
-                            {a.name}
-                            <small>
-                              #{a.id} · {a.platform}
-                            </small>
-                          </span>
-                        </label>
-                      ))}
+                    {accounts.filter(a => a.platform === p && a.type === "apikey").map(a => {
+                      const managed = (draft.managed_account_ids as number[]) ?? [];
+                      const coexist = (draft.coexist_account_ids as number[]) ?? [];
+                      return <div className="fallback-account" key={a.id}>
+                        <label className="check-account"><input type="checkbox" checked={managed.includes(a.id)} onChange={e => {
+                          set("managed_account_ids", e.target.checked ? [...managed, a.id] : managed.filter(id => id !== a.id));
+                          if (!e.target.checked) set("coexist_account_ids", coexist.filter(id => id !== a.id));
+                        }}/><span>{a.name}<small>#{a.id} · {a.platform}</small></span></label>
+                        <label className="check-account coexist-option"><input type="checkbox" disabled={!managed.includes(a.id)} checked={coexist.includes(a.id)} onChange={e => set("coexist_account_ids", e.target.checked ? [...coexist, a.id] : coexist.filter(id => id !== a.id))}/><span>OAuth 可用时也启用</span></label>
+                      </div>;
+                    })}
                     {!accounts.some(
                       (a) => a.platform === p && a.type === "apikey",
                     ) && <p className="hint">没有可选择的 Key 账号</p>}

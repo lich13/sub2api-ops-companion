@@ -1,6 +1,7 @@
 export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
 export type Account = {
   degradation_mark?: DegradationMark;
+  recovery_selectable?: boolean;
   model_detection?: { enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
   id: number;
   name: string;
@@ -196,7 +197,7 @@ export function currentGroups(groups: Group[], accounts: Account[]): Group[] {
 
 export type OpsError = {
   id: number;
-  account_id: number;
+  account_id: number | null;
   account_name: string;
   group_id: number | null;
   group_name: string;
@@ -210,6 +211,10 @@ export type OpsError = {
   message: string;
   request_id: string;
   resolved: boolean;
+  error_owner?: string;
+  error_phase?: string;
+  error_source?: string;
+  disposition_notification?: { status: string };
   content?: string;
   content_limited?: boolean;
   notification?: { status: string; reason?: string; at?: string; attempts?: number; next_at?: string | null };

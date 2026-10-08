@@ -9,7 +9,7 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 - OAuth 额度监控：等待恢复时间后确认额度，统一限制自动查询并执行恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
-- Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key，存在可用 OAuth 时关闭；没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
+- Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key；存在可用 OAuth 时，勾选“OAuth 可用时也启用”的 Key 保持开启，其余关闭。没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
 
 ## OAuth 监控机制
 
@@ -20,7 +20,7 @@ Sub2API 的旁路 OAuth 运维服务，提供 OAuth 额度监控、Bark 事件�
 - 手动单查和全部刷新可强制查询，不消耗或清空自动预算；结果共享并刷新自动冷却，同账号并发查询合并。
 - `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
 - 恢复监控全天运行；每日测活默认北京时间 `05:00`，先复用一小时内的完整额度，补查仍受限频约束；等待恢复或受限账号跳过，错过不补跑。
-- 额度确认恢复后调用 Sub2API account test，默认模型为 `gpt-5.6-luna`。
+- 恢复账号可互斥选择“测试连接”或“模型测试”。前者使用现有连接测活模型；后者使用账号保存的检测模型，仅验证第 1 组，之后仍须复核额度、阻断与暂停归属。未选账号不自动恢复或用卡。
 - active usage 同一账号不会并发重复请求；请求前登记预算，结果原子写入状态文件。
 - 测活结果先持久化为待推送事件。Bark 完整发送失败只重试发送，不重复测活；Bark 关闭时事件按 suppressed 语义确认。
 
@@ -51,7 +51,7 @@ docker compose up -d --build
 - `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。
 - `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
 
-Codex OAuth 指定容量错误由独立采集任务读取 `ops_error_logs`，每两秒增量采集并回看五分钟处理延迟落库；每条新错误单独发送 Bark `critical` 重要警告。游标、去重、重试和手动降智标记持久保存在 `USAGE_QUERY_STATE_PATH` 同目录的 `capacity-alert-state.json`，权限 `0600`；不新增数据库表，不发起额度或模型请求。失败按 5/30/120/600 秒重试，首次启动不推送历史记录，手动标记立即取消该账号待发报警。
+OpenAI OAuth 与 Key 的三类明确上游降智错误和慢首字预警只作为模型检测线索，不直接发送 Bark。独立采集任务每两秒读取既有记录；同一账号所有自动模型检测共用五分钟门限，冷却中的重复线索直接忽略。只有首组有效指纹判定降智、标记保存并确认停止调度后，才发送结果通知，失败按 5/30/120/600 秒独立重试。采集水位、标记、冷却与通知状态持久化为权限 `0600` 的独立文件，升级不补发历史通知或补跑历史线索，不修改数据库表。
 - `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
 - `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控到期恢复。
 - `OAUTH_AUTO_RESET_CREDIT_ENABLED`：7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。
@@ -66,7 +66,7 @@ Codex OAuth 指定容量错误由独立采集任务读取 `ops_error_logs`，每
 
 ## 新模型思考档位
 
-桌面“模型”页只维护需要补全的新模型。输入精确 ID 后读取真实上游，填写支持的思考档位与默认值；缺失信息不猜测。只写入 `supported_reasoning_levels` 和 `default_reasoning_level`，保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。白名单阻挡时经明确确认只追加当前模型，保留其他条目和开关；冲突、失败保留草稿。
+“功能”页的模型配置只维护需要补全的新模型。输入精确 ID 后读取真实上游，填写支持的思考档位与默认值；缺失信息不猜测。只写入 `supported_reasoning_levels` 和 `default_reasoning_level`，保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。白名单阻挡时经明确确认只追加当前模型，保留其他条目和开关；冲突、失败保留草稿。
 
 补全绑定普通或 Composite 分组的真实路由与账号映射。路由变化后停止应用；目录缺少新条目时只使用其自身的真实描述。当前已核对原版 Sub2API 0.2.9 / 0.2.10 的 Responses 转发规则：未知 Grok 型号会丢弃思考强度，部分档位会被改写；分组强度策略也可能限制请求。这些情况显示“转发受限”，未知版本或证据缺失显示“转发未核实”，均只存草稿。上游原生支持后可“恢复原生”，仅移除 Companion 补全，不撤销白名单或账号配置。升级不自动添加补全项，不修改 Sub2API 源码、镜像或表结构。
 

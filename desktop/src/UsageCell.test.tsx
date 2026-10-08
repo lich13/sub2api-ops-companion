@@ -153,7 +153,11 @@ describe("Sub2API usage cell", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
-  it("shows completed recovery evidence without inventing a retry time or an error", () => {
+  it.each([
+    ["manual", "已转人工"],
+    ["recovered", "已恢复"],
+    ["closed", "已关闭"],
+  ])("hides obsolete %s recovery status even when the snapshot retains timestamps and an error", (stage, label) => {
     const html = renderToStaticMarkup(
       <UsageCell
         account={
@@ -161,10 +165,10 @@ describe("Sub2API usage cell", () => {
             id: 1,
             usage_windows: [],
             auto_reset_credit: {
-              stage: "recovered",
-              label: "已恢复",
-              error: "",
-              next_at: null,
+              stage,
+              label,
+              error: "旧任务错误",
+              next_at: "2026-09-30T16:00:00Z",
               attempt_at: "2026-09-30T15:00:00Z",
               test_completed_at: "2026-09-30T15:00:10Z",
               recovered_at: "2026-09-30T15:00:20Z",
@@ -176,10 +180,12 @@ describe("Sub2API usage cell", () => {
         report={vi.fn()}
       />,
     );
-    expect(html).toContain("<summary>已恢复</summary>");
-    expect(html).toContain("用卡 09-30 23:00:00");
-    expect(html).toContain("测活 09-30 23:00:10");
-    expect(html).toContain("恢复 09-30 23:00:20");
+    expect(html).not.toContain("auto-reset-status");
+    expect(html).not.toContain(label);
+    expect(html).not.toContain("旧任务错误");
+    expect(html).not.toContain("用卡");
+    expect(html).not.toContain("测活");
+    expect(html).not.toContain("恢复");
     expect(html).not.toContain('role="status"');
     expect(html).not.toContain("下次");
     expect(html).not.toContain("暂无记录");

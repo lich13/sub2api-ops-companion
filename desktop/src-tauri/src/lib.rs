@@ -176,6 +176,23 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain == "/errors" || plain.starts_with("/errors/") {
+        if method != "GET" { return false; }
+        let list = plain == "/errors";
+        if !list && !plain.strip_prefix("/errors/").is_some_and(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit()) && s.parse::<u64>().is_ok_and(|id| id > 0)) { return false; }
+        return path.split_once('?').is_none_or(|(_, query)| {
+            if query.is_empty() { return false; }
+            let mut seen = std::collections::HashSet::new();
+            query.split('&').all(|pair| {
+                let Some((key, value)) = pair.split_once('=') else { return false; };
+                if !seen.insert(key) { return false; }
+                if key == "category" { return matches!(value, "degradation" | "other"); }
+                list && matches!(key, "account_id" | "before_id" | "limit")
+                    && !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit())
+                    && value.parse::<u64>().is_ok_and(|id| id > 0 && (key != "limit" || id <= 200))
+            })
+        });
+    }
     if plain == "/connection-status" { return method == "GET" && path == plain; }
     let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
     if plain.starts_with("/account-operations") {
@@ -1213,6 +1230,17 @@ mod tests {
         state.foreground.store(true, Ordering::SeqCst);
         assert_eq!(active_read(&state, async { Ok::<i32, String>(7) }).await.unwrap(), 7);
     }
+    #[test]
+    fn error_categories_have_exact_read_only_routes() {
+        for path in ["/errors", "/errors?category=degradation", "/errors?category=other&before_id=25&limit=50", "/errors/25?category=other"] {
+            assert!(allowed_request("GET", path), "{path}");
+            assert!(!allowed_request("POST", path), "{path}");
+        }
+        for path in ["/errors?category=all", "/errors?category=other&category=degradation", "/errors?url=example.invalid", "/errors/25?before_id=2", "/errors/0?category=other", "/errors?limit=201", "/errors?category=other&", "/errors/25?category=other#fragment"] {
+            assert!(!allowed_request("GET", path), "{path}");
+        }
+    }
+
     #[test]
     fn updates_select_newer_signed_platform_package_only() {
         let data = serde_json::json!([

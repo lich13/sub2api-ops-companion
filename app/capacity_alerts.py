@@ -6,7 +6,6 @@ import fcntl
 import hashlib
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -174,6 +173,7 @@ class CapacityAlerts:
         write_audit(self.audit_path, "capacity_alert_" + action, data)
 
     def poll(self) -> None:
+        self.retire_legacy_warnings()
         state = self.store.snapshot()
         if not state.get("gateway_since"):
             # New evidence rules must not turn the lookback window into a
@@ -214,7 +214,6 @@ class CapacityAlerts:
 
     def _collect(self, rows: list[dict[str, Any]], *, advance: bool) -> None:
         now, emitted = self.clock(), []
-        runtime = self.notifier.runtime_config()
         with self.store.transaction() as data:
             data["seen"] = {k: t for k, t in data["seen"].items() if int(k) > data["cursor"] or parse_iso_datetime(t) >= now - timedelta(minutes=10)}
             for row in rows:
@@ -234,7 +233,7 @@ class CapacityAlerts:
                     continue
                 mark = data["marks"].get(str(row["account_id"]), {})
                 changed = parse_iso_datetime(mark.get("changed_at"))
-                suppressed = mark.get("marked") or (changed and at <= changed) or (runtime.config_valid and not runtime.enabled)
+                suppressed = mark.get("marked") or (changed and at <= changed)
                 event = {"id": int(row["id"]), "account_id": int(row["account_id"]), "account_name": sanitize_error_text(row.get("account_name"), 120),
                          "requested_model": sanitize_error_text(row.get("requested_model") or row.get("model") or "未知", 160),
                          "upstream_model": sanitize_error_text(row.get("upstream_model") or "未知", 160), "message": message, "account_type": row.get("account_type", "oauth"),
@@ -243,11 +242,10 @@ class CapacityAlerts:
                 if detection_since and at > detection_since and not mark.get("marked") and not (changed and at <= changed):
                     data.setdefault("detection_events", {}).setdefault("error:" + key,
                         {"account_id": event["account_id"], "created_at": at.isoformat()})
-                if not suppressed:
-                    data["pending"][key] = event
-                reason = "degradation_mark" if mark.get("marked") else "mark_changed" if changed and at <= changed else "disabled" if suppressed else None
-                data.setdefault("notifications", {})[key] = {"status": "suppressed" if suppressed else "queued", "reason": reason, "at": now.isoformat()}
-                emitted.append(("suppressed" if suppressed else "queued", event["id"], event["account_id"], reason))
+                reason = "degradation_mark" if mark.get("marked") else "mark_changed" if changed and at <= changed else None
+                status = "suppressed" if suppressed else "clue"
+                data.setdefault("notifications", {})[key] = {"status": status, "reason": reason, "at": now.isoformat()}
+                emitted.append((status, event["id"], event["account_id"], reason))
             if advance:
                 data["cursor"] = max(data["cursor"], max(int(r["id"]) for r in rows))
         for result, record_id, account_id, reason in emitted:
@@ -276,8 +274,13 @@ class CapacityAlerts:
                 AND coalesce(u.upstream_model,u.model,'') <> ''
                 AND (coalesce(u.inbound_endpoint,'') || ' ' || coalesce(u.upstream_model,u.model,'')) !~* '(/audio|/images|/videos|-image|-video|-tts|-stt|realtime|whisper|dall-e)'
             )
-            SELECT * FROM ranked WHERE sample_rank <= 10
-            ORDER BY account_id,created_at DESC,id DESC
+            SELECT r.id,a.id AS account_id,r.created_at,r.model,r.upstream_model,r.stream,
+                   r.first_token_ms,r.duration_ms,r.output_tokens,r.inbound_endpoint,
+                   r.image_count,r.image_output_tokens,r.video_count,r.video_duration_seconds,
+                   a.name AS account_name,a.platform AS account_platform,a.type AS account_type
+            FROM accounts a LEFT JOIN ranked r ON r.account_id=a.id AND r.sample_rank <= 10
+            WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey')
+            ORDER BY account_id,r.created_at DESC,r.id DESC
         """
         try:
             rows = self.db.fetch_all(query, {"start": start, "now": now})
@@ -294,187 +297,62 @@ class CapacityAlerts:
             accounts[account_id] = {"id": account_id, "platform": row.get("account_platform"), "type": row.get("account_type"),
                                     "name": row.get("account_name") or f"账号 {account_id}"}
             grouped.setdefault(account_id, []).append(row)
-        runtime = self.notifier.runtime_config()
-        emitted: list[tuple[str, str, int]] = []
         with self.store.transaction() as data:
-            slow_state = data.setdefault("slow_ttft", {})
-            slow_pending = data.setdefault("slow_pending", {})
-            # A live-account query is authoritative for removal of stale state.
-            for key in list(slow_state):
+            states = data.setdefault("slow_ttft", {})
+            for key in list(states):
                 if int(key) not in accounts:
-                    slow_state.pop(key, None)
-                    for pending_key, event in list(slow_pending.items()):
-                        if event["account_id"] == int(key):
-                            slow_pending.pop(pending_key, None)
-            for account_id, raw_rows in grouped.items():
-                samples = []
-                account = accounts[account_id]
-                for row in raw_rows:
-                    sample = slow_ttft_sample(row, account)
-                    if sample:
-                        samples.append(sample)
+                    states.pop(key, None)
+            for aid, rows in grouped.items():
+                samples = [sample for row in rows if (sample := slow_ttft_sample(row, accounts[aid]))]
                 warning = slow_ttft_warning(samples, now)
-                key = str(account_id)
-                previous = slow_state.get(key, {"active": False, "alerted": False})
-                if warning is None:
-                    for pending_key, event in list(slow_pending.items()):
-                        if event["account_id"] == account_id:
-                            slow_pending.pop(pending_key, None)
-                            data.setdefault("notifications", {})[pending_key] = {"status": "reset", "at": now.isoformat()}
-                    slow_state[key] = {**previous, "active": False, "last_sample_id": max((s["id"] for s in samples), default=previous.get("last_sample_id")),
-                                       "reset_sample_id": max((s["id"] for s in samples), default=previous.get("reset_sample_id"))}
-                    continue
-                is_active = bool(warning["active"])
-                latest_id = int(warning["latest_sample_id"])
-                state = {**previous, "active": is_active, "last_sample_id": latest_id, "last_at": warning["latest_at"]}
-                if not is_active:
-                    state["alerted"] = False
-                    state["reset_sample_id"] = latest_id
-                    for pending_key, event in list(slow_pending.items()):
-                        if event["account_id"] == account_id:
-                            slow_pending.pop(pending_key, None)
-                            data.setdefault("notifications", {})[pending_key] = {"status": "reset", "at": now.isoformat()}
-                    slow_state[key] = state
-                    continue
-                mark = data["marks"].get(key, {})
-                detection_since = parse_iso_datetime(data.get("detection_since"))
-                sample_at = parse_iso_datetime(warning.get("latest_at"))
-                if not previous.get("active") and not mark.get("marked") and detection_since and sample_at and sample_at > detection_since:
-                    data.setdefault("detection_events", {}).setdefault(f"slow:{account_id}:{latest_id}",
-                        {"account_id": account_id, "created_at": sample_at.isoformat()})
-                if mark.get("marked") or (runtime.config_valid and not runtime.enabled):
-                    for pending_key, event in list(slow_pending.items()):
-                        if event["account_id"] == account_id:
-                            slow_pending.pop(pending_key, None)
-                            data.setdefault("notifications", {})[pending_key] = {
-                                "status": "suppressed", "reason": "degradation_mark" if mark.get("marked") else "disabled", "at": now.isoformat()}
-                    state["alerted"] = True
-                    slow_state[key] = state
-                    notification_key = f"slow:{account_id}:{latest_id}"
-                    data.setdefault("notifications", {})[notification_key] = {
-                        "status": "suppressed", "reason": "degradation_mark" if mark.get("marked") else "disabled", "at": now.isoformat()}
-                    self.audit("slow_ttft_suppressed", account_id=account_id, sample_id=latest_id,
-                               reason="degradation_mark" if mark.get("marked") else "disabled")
-                    continue
-                notification_key = f"slow:{account_id}:{latest_id}"
-                if not previous.get("active"):
-                    state["alerted"] = False
-                existing_key = next((pending_key for pending_key, pending_event in slow_pending.items()
-                                     if pending_event["account_id"] == account_id), None)
-                if not state.get("alerted") and existing_key:
-                    # Keep one durable notification per slow stage even when a
-                    # newer sample arrives while the original push is retrying.
-                    pending_event = slow_pending[existing_key]
-                    pending_event.update(id=latest_id, sample_count=warning["sample_count"],
-                                         slow_count=warning["slow_count"], latest_first_token_ms=warning["latest_first_token_ms"])
-                elif not state.get("alerted"):
-                    event = {"kind": "slow_ttft", "id": latest_id, "account_id": account_id,
-                             "account_name": sanitize_error_text(account.get("name"), 120),
-                             "account_type": account.get("type", "oauth"), "sample_count": warning["sample_count"],
-                             "slow_count": warning["slow_count"], "threshold_ms": warning["threshold_ms"],
-                             "latest_first_token_ms": warning["latest_first_token_ms"], "created_at": now.isoformat(),
-                             "next_at": now.isoformat(), "attempts": 0}
-                    slow_pending[notification_key] = event
-                    data.setdefault("notifications", {})[notification_key] = {"status": "queued", "at": now.isoformat()}
-                    emitted.append(("queued", notification_key, account_id))
-                slow_state[key] = state
-        for result, notification_key, account_id in emitted:
-            self.audit("slow_ttft_matched", account_id=account_id, notification=notification_key)
-            self.audit(result, account_id=account_id, notification=notification_key)
+                previous = states.get(str(aid), {"active": False, "alerted": False})
+                newest = max(samples, key=lambda sample: (sample['at'], sample['id']), default=None)
+                prior_at = parse_iso_datetime(previous.get('last_sample_at') or previous.get('last_at'))
+                prior_id = int(previous.get('last_sample_id') or 0)
+                fast = [sample for sample in samples if sample['first_token_ms'] <= 10000
+                        and (prior_at is None or (sample['at'], sample['id']) > (prior_at, prior_id))]
+                active = bool(warning and warning["active"])
+                state = {**previous, "active": active}
+                if newest:
+                    state.update(last_sample_id=newest['id'], last_sample_at=newest['at'].isoformat())
+                if fast:
+                    reset = max(fast, key=lambda sample: (sample['at'], sample['id']))
+                    state.update(alerted=False, reset_sample_id=reset['id'])
+                if active and not state.get('alerted'):
+                    key = f"slow:{aid}:{warning['latest_sample_id']}"
+                    mark = data["marks"].get(str(aid), {})
+                    since = parse_iso_datetime(data.get("detection_since"))
+                    at = parse_iso_datetime(warning["latest_at"])
+                    changed = parse_iso_datetime(mark.get("changed_at"))
+                    allowed = bool(since and at and at > since and not mark.get("marked") and not (changed and at <= changed))
+                    if allowed:
+                        data.setdefault("detection_events", {}).setdefault(key, {"account_id": aid, "created_at": at.isoformat()})
+                    state.update(alerted=True, last_at=warning["latest_at"])
+                    data.setdefault("notifications", {})[key] = {"status": "clue" if allowed else "suppressed",
+                        "reason": None if allowed else "degradation_mark" if mark.get("marked") else "historical", "at": now.isoformat()}
+                    self.audit("slow_ttft_matched", account_id=aid, sample_id=warning["latest_sample_id"])
+                states[str(aid)] = state
+
+    def retire_legacy_warnings(self):
+        if self.store.snapshot().get("clue_mode_since"):
+            return
+        with self.store.transaction() as data:
+            if data.get("clue_mode_since"):
+                return
+            now = self.clock().isoformat()
+            for key in (*data["pending"], *data.get("slow_pending", {})):
+                data.setdefault("notifications", {})[key] = {"status": "retired", "reason": "clue_only", "at": now}
+            data["pending"], data["slow_pending"], data["detection_events"] = {}, {}, {}
+            data["clue_mode_since"] = data["detection_since"] = now
 
     def deliver_one(self, key: str) -> None:
-        pending = self.store.snapshot()["pending"].get(key)
-        if not pending:
-            return
-        with self.store.account_guard(pending["account_id"]):
-            state = self.store.snapshot()
-            event = state["pending"].get(key)
-            if not event or parse_iso_datetime(event["next_at"]) > self.clock():
-                return
-            runtime = self.notifier.runtime_config()
-            if not runtime.config_valid:
-                return
-            live = self.db.fetch_one("SELECT platform,type,deleted_at FROM accounts WHERE id=%(id)s", {"id": event["account_id"]})
-            suppressed = (state["marks"].get(str(event["account_id"]), {}).get("marked") or not runtime.enabled or not live
-                          or live.get("deleted_at") or live.get("platform") != "openai" or live.get("type") not in {"oauth", "apikey"})
-            if suppressed:
-                with self.store.transaction() as data:
-                    data["pending"].pop(key, None)
-                    data.setdefault("notifications", {})[key] = {"status": "suppressed", "reason": "degradation_mark" if state["marks"].get(str(event["account_id"]), {}).get("marked") else "disabled", "at": self.clock().isoformat()}
-                self.audit("suppressed", error_id=event["id"], account_id=event["account_id"])
-                return
-            # Persist an attempt before the network boundary; crashes resume conservatively.
-            with self.store.transaction() as data:
-                queued = data["pending"][key]
-                queued["attempts"] += 1
-                queued["next_at"] = (self.clock() + timedelta(seconds=RETRY_SECONDS[min(queued["attempts"] - 1, 3)])).isoformat()
-            account_kind = '（Key）' if event.get('account_type') == 'apikey' else ''
-            body = (f"账号：{event['account_name']} #{event['account_id']}{account_kind}\n请求模型：{event['requested_model']}\n"
-                    f"上游模型：{event['upstream_model']}\n错误：{event['message']}\n"
-                    f"时间：{_beijing_time(event['created_at'])}\n错误记录：#{event['id']}")
-            result = self.notifier.push(TITLE, body, timeout=3, options=PUSH_OPTIONS)
-            with self.store.transaction() as data:
-                if result.success:
-                    data["pending"].pop(key, None)
-                data.setdefault("notifications", {})[key] = {"status": "delivered" if result.success else "retry", "at": self.clock().isoformat(), "attempts": queued["attempts"], "next_at": None if result.success else queued["next_at"]}
-            self.audit("delivered" if result.success else "retry", error_id=event["id"], account_id=event["account_id"], error_code=result.error_code)
+        self.retire_legacy_warnings()
 
     def deliver_slow_one(self, key: str) -> None:
-        pending = self.store.snapshot().get("slow_pending", {}).get(key)
-        if not pending:
-            return
-        account_id = pending["account_id"]
-        with self.store.account_guard(account_id):
-            state = self.store.snapshot()
-            event = state.get("slow_pending", {}).get(key)
-            if not event or parse_iso_datetime(event["next_at"]) > self.clock():
-                return
-            runtime = self.notifier.runtime_config()
-            if not runtime.config_valid:
-                return
-            live = self.db.fetch_one("SELECT platform,type,deleted_at FROM accounts WHERE id=%(id)s", {"id": account_id})
-            marked = state["marks"].get(str(account_id), {}).get("marked")
-            suppressed = marked or not runtime.enabled or not live or live.get("deleted_at") or live.get("platform") != "openai" or live.get("type") not in {"oauth", "apikey"}
-            if suppressed:
-                with self.store.transaction() as data:
-                    data.setdefault("slow_pending", {}).pop(key, None)
-                    data.setdefault("notifications", {})[key] = {"status": "suppressed", "reason": "degradation_mark" if marked else "disabled", "at": self.clock().isoformat()}
-                    if marked:
-                        data.setdefault("slow_ttft", {}).setdefault(str(account_id), {})["alerted"] = True
-                self.audit("slow_ttft_suppressed", account_id=account_id, sample_id=event["id"])
-                return
-            with self.store.transaction() as data:
-                queued = data["slow_pending"][key]
-                queued["attempts"] += 1
-                queued["next_at"] = (self.clock() + timedelta(seconds=RETRY_SECONDS[min(queued["attempts"] - 1, 3)])).isoformat()
-            body = (f"账号：{event['account_name']} #{account_id}（{'Key' if event.get('account_type') == 'apikey' else 'OAuth'}）\n"
-                    f"慢首字：{event['slow_count']}/{event['sample_count']} 条超过 {event['threshold_ms'] / 1000:g} 秒\n"
-                    f"最近首字：{event['latest_first_token_ms'] / 1000:.2f}s\n时间：{_beijing_time(event['created_at'])}")
-            result = self.notifier.push(TITLE, body, timeout=3, options=PUSH_OPTIONS)
-            with self.store.transaction() as data:
-                if result.success:
-                    data["slow_pending"].pop(key, None)
-                    data.setdefault("slow_ttft", {}).setdefault(str(account_id), {})["alerted"] = True
-                data.setdefault("notifications", {})[key] = {"status": "delivered" if result.success else "retry", "at": self.clock().isoformat(),
-                                                               "attempts": queued["attempts"], "next_at": None if result.success else queued["next_at"]}
-            self.audit("delivered" if result.success else "retry", account_id=account_id, notification=key, error_code=result.error_code)
+        self.retire_legacy_warnings()
 
     def deliver_due(self) -> None:
-        state = self.store.snapshot()
-        pending = {**state["pending"], **state.get("slow_pending", {})}
-        due = [k for k, e in pending.items() if parse_iso_datetime(e["next_at"]) <= self.clock()]
-        # Each account remains ordered; different accounts cannot block one another.
-        chosen, accounts = [], set()
-        for key in due:
-            account_id = pending[key]["account_id"]
-            if account_id not in accounts:
-                chosen.append(key)
-                accounts.add(account_id)
-            if len(chosen) == 4:
-                break
-        if chosen:
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                list(executor.map(lambda key: self.deliver_slow_one(key) if key.startswith("slow:") else self.deliver_one(key), chosen))
+        self.retire_legacy_warnings()
 
     async def collect_loop(self) -> None:
         failures = 0

@@ -87,6 +87,20 @@ const nav = (label: string) =>
     (button) => button.textContent?.trim().startsWith(label),
   )!;
 
+const eventTab = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>('.events-view [role="tab"]')].find(
+    (button) => button.textContent === label,
+  )!;
+
+const eventNames = () =>
+  [...container.querySelectorAll(".error-row strong")].map((node) => node.textContent);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function recordPage() {
   return {
     items: [],
@@ -109,7 +123,7 @@ beforeEach(() => {
   });
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.startsWith("/usage-records")) return recordPage() as never;
-    if (path === "/errors") return { items: [], next_cursor: null } as never;
+    if (path.startsWith("/errors?category=") || path === "/recoveries") return { items: [], next_cursor: null } as never;
     if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
@@ -149,7 +163,7 @@ describe("main page surface ownership", () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
       if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors") {
+      if (path === "/errors?category=degradation") {
         errorsCalls += 1;
         return new Promise((resolve) => {
           if (errorsCalls === 1) firstResolve = resolve;
@@ -177,8 +191,8 @@ describe("main page surface ownership", () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
       if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors") return { items: [error(21, "详情账号")], next_cursor: null } as never;
-      if (path === "/errors/21") return new Promise((resolve) => { resolveDetail = resolve; });
+      if (path === "/errors?category=degradation") return { items: [error(21, "详情账号")], next_cursor: null } as never;
+      if (path === "/errors/21?category=degradation") return new Promise((resolve) => { resolveDetail = resolve; });
       throw new Error(`Unexpected fixture request: ${path}`);
     });
 
@@ -196,7 +210,7 @@ describe("main page surface ownership", () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path.startsWith("/usage-records")) return recordPage() as never;
       if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors") return { items: [resolved, current], next_cursor: null } as never;
+      if (path === "/errors?category=degradation") return { items: [resolved, current], next_cursor: null } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
     const initial = state();
@@ -213,6 +227,118 @@ describe("main page surface ownership", () => {
       "当前",
       "已解决",
     ]);
+  });
+});
+
+describe("categorized event history", () => {
+  it("switches all three tabs and paginates each error category without duplicate IDs or snapshot rows", async () => {
+    const initial = state();
+    initial.snapshot!.errors = [error(999, "仅快照错误")];
+    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
+    const original = vi.mocked(api).getMockImplementation()!;
+    const pages: Record<string, { items: OpsError[]; next_cursor: number | null }> = {
+      "/errors?category=degradation": { items: [error(12, "降智最新"), error(11, "降智分页边界")], next_cursor: 11 },
+      "/errors?category=degradation&before_id=11": { items: [error(11, "降智边界更新"), error(10, "降智更早")], next_cursor: null },
+      "/errors?category=other": { items: [error(12, "其他最新"), error(8, "其他分页边界")], next_cursor: 8 },
+      "/errors?category=other&before_id=8": { items: [error(8, "其他边界更新"), error(7, "其他更早")], next_cursor: null },
+    };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (pages[path]) return pages[path] as never;
+      if (path === "/recoveries") return {
+        items: [{ id: 1, account_id: 1, account_name: "恢复记录账号", model_id: "fixture-model", test_completed_at: null, recovered_at: null, legacy: true }],
+        next_cursor: null,
+      } as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => nav("事件").click());
+    expect([...container.querySelectorAll('.events-view [role="tab"]')].map((node) => node.textContent)).toEqual(["降智错误", "其他错误", "恢复历史"]);
+    expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
+    expect(container.textContent).not.toContain("仅快照错误");
+    expect(vi.mocked(api).mock.calls.filter(([, path]) => path.startsWith("/errors?")).map(([, path]) => path)).toEqual(["/errors?category=degradation"]);
+
+    await act(async () => container.querySelector<HTMLButtonElement>("#degradation-panel .load-more")!.click());
+    expect(eventNames()).toEqual(["降智最新", "降智边界更新", "降智更早"]);
+    expect(container.querySelector("#degradation-panel .load-more")).toBeNull();
+    await act(async () => eventTab("其他错误").click());
+    expect(eventTab("其他错误").getAttribute("aria-selected")).toBe("true");
+    expect(eventNames()).toEqual(["其他最新", "其他分页边界"]);
+    await act(async () => container.querySelector<HTMLButtonElement>("#other-panel .load-more")!.click());
+    expect(eventNames()).toEqual(["其他最新", "其他边界更新", "其他更早"]);
+
+    await act(async () => eventTab("恢复历史").click());
+    expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(false);
+    expect(container.querySelector("#recoveries-panel")?.textContent).toContain("恢复记录账号");
+    expect(eventNames()).toEqual([]);
+    expect(vi.mocked(api).mock.calls.filter(([, path]) => path.startsWith("/errors?")).map(([, path]) => path)).toEqual([
+      "/errors?category=degradation", "/errors?category=degradation&before_id=11",
+      "/errors?category=other", "/errors?category=other&before_id=8",
+    ]);
+    await act(async () => eventTab("降智错误").click());
+    expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
+    expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
+  });
+
+  it("discards a late category response and a late detail after switching tabs", async () => {
+    const oldPage = deferred<{ items: OpsError[]; next_cursor: number | null }>();
+    const oldDetail = deferred<OpsError>();
+    let degradationReads = 0;
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/errors?category=degradation") {
+        degradationReads += 1;
+        return (degradationReads === 1 ? oldPage.promise : { items: [error(61, "降智新代次")], next_cursor: null }) as never;
+      }
+      if (path === "/errors?category=other") return { items: [error(61, "其他分类同 ID")], next_cursor: null } as never;
+      if (path === "/errors/61?category=other") return oldDetail.promise as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => nav("事件").click());
+    await act(async () => eventTab("其他错误").click());
+    expect(eventNames()).toEqual(["其他分类同 ID"]);
+    await act(async () => oldPage.resolve({ items: [error(61, "迟到降智旧页")], next_cursor: 60 }));
+    expect(eventNames()).toEqual(["其他分类同 ID"]);
+    await act(async () => container.querySelector<HTMLButtonElement>(".error-row")!.click());
+    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/errors/61?category=other"]);
+    await act(async () => eventTab("降智错误").click());
+    await act(async () => oldDetail.resolve(error(61, "迟到其他详情")));
+    expect(eventNames()).toEqual(["降智新代次"]);
+    expect(container.querySelector(".drawer")).toBeNull();
+    expect(container.textContent).not.toContain("迟到其他详情");
+    expect(container.querySelector("#degradation-panel .load-more")).toBeNull();
+  });
+
+  it("clears both categories on connection changes and ignores an old connection's pagination response", async () => {
+    const initial = state();
+    let receive!: (value: ViewState) => void;
+    vi.mocked(subscribe).mockImplementation(async (callback) => { receive = callback; return () => {}; });
+    const oldMore = deferred<{ items: OpsError[]; next_cursor: number | null }>();
+    const fresh = deferred<{ items: OpsError[]; next_cursor: number | null }>();
+    let connection = 0;
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/errors?category=degradation") return (connection ? fresh.promise : { items: [error(31, "旧连接降智")], next_cursor: 31 }) as never;
+      if (path === "/errors?category=degradation&before_id=31") return oldMore.promise as never;
+      if (path === "/errors?category=other") return { items: [error(31, connection ? "新连接其他" : "旧连接其他")], next_cursor: null } as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<App />));
+    await act(async () => nav("事件").click());
+    await act(async () => eventTab("其他错误").click());
+    expect(eventNames()).toEqual(["旧连接其他"]);
+    await act(async () => eventTab("降智错误").click());
+    await act(async () => container.querySelector<HTMLButtonElement>("#degradation-panel .load-more")!.click());
+    await act(async () => { connection = 1; receive({ ...initial, connection_revision: 1 }); });
+    expect(eventNames()).toEqual([]);
+    expect(container.querySelector("#degradation-panel .load-more")).toBeNull();
+    await act(async () => oldMore.resolve({ items: [error(30, "迟到旧连接分页")], next_cursor: 29 }));
+    expect(eventNames()).toEqual([]);
+    await act(async () => fresh.resolve({ items: [error(31, "新连接降智")], next_cursor: null }));
+    expect(eventNames()).toEqual(["新连接降智"]);
+    await act(async () => eventTab("其他错误").click());
+    expect(eventNames()).toEqual(["新连接其他"]);
+    expect(container.textContent).not.toContain("旧连接");
   });
 });
 
@@ -261,7 +387,7 @@ describe("account sorting and Android connection settings", () => {
       if (path === "/config") return { bark: { revision: "fixture", enabled: false, device_key_set: false } } as never;
       if (path === "/account-operations") return { items: [] } as never;
       if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
-      if (path === "/errors") return { items: [], next_cursor: null } as never;
+      if (path.startsWith("/errors?category=")) return { items: [], next_cursor: null } as never;
       throw new Error(`Unexpected fixture request: ${path}`);
     });
     await act(async () => root.render(<App />));
