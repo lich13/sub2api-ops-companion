@@ -8,7 +8,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.model_test_stream import TestFailure, execute, failure
 from app.model_tests import ModelTests, ModelTestRequest
@@ -116,6 +116,57 @@ class ModelConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'cancelled')
         self.assertTrue(all(g['status'] == 'cancelled' for g in result['groups']))
         self.tests.execute.assert_not_awaited()
+
+    async def test_progress_write_freezes_nested_diagnostics_before_background_update(self):
+        entered, release = threading.Event(), threading.Event()
+        original = self.tests.update
+        active_diagnostics, writer_diagnostics, snapshots = None, None, []
+        calls = 0
+
+        async def fake_execute(**kwargs):
+            nonlocal active_diagnostics, calls
+            calls += 1
+            if calls == 1:
+                active_diagnostics = kwargs['diagnostics']
+                active_diagnostics['snapshot_marker'] = {'value': 1}
+            await kwargs['on_stage']('receiving')
+            return OUTPUT, 'gpt-6-luna'
+
+        def delayed(job_id, **changes):
+            nonlocal writer_diagnostics
+            if not entered.is_set():
+                for group in changes.get('groups', []):
+                    diagnostics = group.get('diagnostics', {})
+                    if 'snapshot_marker' in diagnostics:
+                        writer_diagnostics = diagnostics
+                        entered.set()
+                        if not release.wait(3):
+                            raise TimeoutError('fixture progress write was not released')
+                        snapshots.append(copy.deepcopy(writer_diagnostics))
+                        break
+            return original(job_id, **changes)
+
+        with patch('app.model_tests.execute', fake_execute), \
+                patch.object(self.tests, 'execute', fake_execute), \
+                patch.object(self.tests, 'update', delayed):
+            task = None
+            try:
+                job = await self.start(3)
+                task = self.tests.tasks[job['id']]
+                self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+                active_diagnostics['snapshot_marker']['value'] = 2
+                active_diagnostics['late_field'] = True
+            finally:
+                release.set()
+                if task is not None:
+                    await task
+
+        final = self.tests.get(job['id'])
+        self.assertEqual((calls, final['attempts'], final['completed_groups'],
+                          final['valid_groups'], final['status']), (3, 3, 3, 3, 'completed'))
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual((snapshots[0]['snapshot_marker']['value'], 'late_field' in snapshots[0]),
+                         (1, False))
 
     async def test_invalid_completed_sample_is_not_retried_and_idempotency_binds_concurrency(self):
         self.tests.execute = AsyncMock(return_value=('1 1', 'gpt-6-luna'))
