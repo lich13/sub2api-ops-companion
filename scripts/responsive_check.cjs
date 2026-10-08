@@ -585,7 +585,10 @@ async function templateChecks(h) {
   await h.layout();
 
   await h.click(dialog.getByRole("button", { name: "新增模板", exact: true }), "template-add");
-  const creating = dialog.locator(".account-template-card").last();
+  const creating = dialog.locator(".account-template-card").filter({
+    has: page.getByRole("textbox", { name: "新模板名称", exact: true }),
+  });
+  await h.state(await creating.count() === 1, "new-template-card-not-unique", creating);
   await h.within(creating, "new-empty-template-card", { touch: false, vertical: false });
   await h.state((await creating.locator(".account-template-fields > .muted").textContent()) === "不限制模型"
     && await creating.locator(".account-template-row").count() === 0,
@@ -636,7 +639,10 @@ async function templateChecks(h) {
   await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "account-templates-reopen");
   const deleteDialog = page.getByRole("dialog", { name: "账号模板", exact: true });
   await h.within(deleteDialog, "delete-template-dialog", { touch: false, scroll: false });
-  const deleteCard = deleteDialog.locator(".account-template-grid > .account-template-card").last();
+  const deleteCard = deleteDialog.locator(".account-template-grid > .account-template-card").filter({
+    has: page.getByRole("button", { name: `删除${customName}模板`, exact: true }),
+  });
+  await h.state(await deleteCard.count() === 1, "deletable-template-card-not-unique", deleteCard);
   await h.within(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon", { hit: true });
   await h.click(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon");
   await h.click(deleteCard.getByRole("button", { name: "确认删除", exact: true }), "template-delete-confirm");
