@@ -23,6 +23,8 @@ from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_
                           oauth_windows_by_key, parse_iso_datetime, percent_or_none,
                           required_oauth_window_keys)
 from .error_evidence import is_local_throttle, local_throttle_sql
+from .reset_credit_observation import (create_observation, digest, limit_fingerprint,
+                                       normalized_credits, receipt_diagnostics, validate_observation)
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
           "releasing", "recovered", "manual", "blocked", "closed"}
@@ -38,6 +40,7 @@ ERRORS = {"no_credit": "没有可用重置卡", "conflict": "Sub2API 自动用�
           "query_state_unavailable": "状态无法保存，已暂停自动处理", "test_failed": "测活失败",
           "incomplete_quota": "额度证据不完整", "query_cooldown": "等待查询冷却",
           "query_budget": "等待查询预算", "query_backoff": "等待查询退避",
+          "credit_snapshot_unconfirmed": "重置卡查询结果尚未确认，等待重新核对",
           "quota_unavailable": "必要额度窗口尚未恢复", "recovery_failed": "恢复调度未确认",
           "model_verification_pending": "等待模型验证", "model_verifier_unavailable": "模型验证服务尚未就绪"}
 
@@ -158,22 +161,41 @@ def execute_credit_request(action: str, account_id: int, *, base_url: str, admin
     path = "reset-quota" if action == "reset" else "quota/refresh"
     request = urllib.request.Request(f"{base_url.rstrip('/')}/api/v1/admin/openai/accounts/{account_id}/{path}",
         data=b"{}", method="POST", headers={"x-api-key": admin_token, "Accept": "application/json", "Content-Type": "application/json"})
+    diagnostics = receipt_diagnostics(None, None)
     try:
         with (urlopen or urllib.request.build_opener(_NoRedirect()).open)(request, timeout=timeout_seconds) as response:
+            status = getattr(response, "status", None)
+            diagnostics = receipt_diagnostics(status, None)
             body = json.loads(response.read(2_000_000))
-        data = body.get("data")
-        if body.get("code") != 0 or not isinstance(data, dict):
-            return {"success": False, "uncertain": action == "reset", "error_code": "result_uncertain"}
+        data = body.get("data") if isinstance(body, dict) else None
+        envelope_ok = isinstance(body, dict) and type(body.get("code")) is int and body["code"] == 0
+        diagnostics = receipt_diagnostics(status, data if envelope_ok and isinstance(data, dict) else body)
+        if (not envelope_ok or not isinstance(data, dict)
+                or (status is not None and not 200 <= status < 300)):
+            return {"success": False, "uncertain": action == "reset", "error_code": "result_uncertain",
+                    "diagnostics": diagnostics}
         windows_reset = data.get("windows_reset")
-        consumed = (action == "reset" and data.get("code") in {"success", "ok", 0}
+        business_code = data.get("code")
+        confirmed_code = ((type(business_code) is int and business_code == 0)
+                          or (isinstance(business_code, str) and business_code in {"success", "ok"}))
+        consumed = (action == "reset" and confirmed_code
                     and isinstance(windows_reset, int) and not isinstance(windows_reset, bool) and windows_reset > 0)
         return {"success": bool(consumed) if action == "reset" else True, "consumed": consumed,
                 "uncertain": action == "reset" and not consumed,
-                "error_code": "" if action != "reset" or consumed else "result_uncertain", "data": data}
+                "error_code": "" if action != "reset" or consumed else "result_uncertain", "data": data,
+                "diagnostics": diagnostics}
     except urllib.error.HTTPError as exc:
-        return {"success": False, "uncertain": action == "reset", "error_code": f"http_{exc.code}"}
+        try:
+            error_body = json.loads(exc.read(2_000_000))
+            error_data = error_body.get("data") if isinstance(error_body, dict) else None
+            diagnostics = receipt_diagnostics(exc.code, error_data if isinstance(error_data, dict) else error_body)
+        except Exception:
+            diagnostics = receipt_diagnostics(exc.code, None)
+        return {"success": False, "uncertain": action == "reset", "error_code": f"http_{exc.code}",
+                "diagnostics": diagnostics}
     except Exception:
-        return {"success": False, "uncertain": action == "reset", "error_code": "result_uncertain"}
+        return {"success": False, "uncertain": action == "reset", "error_code": "result_uncertain",
+                "diagnostics": diagnostics}
 
 
 class AutoResetController:
@@ -213,6 +235,49 @@ class AutoResetController:
     def _saved_quota(self, row, now):
         saved = self.store.snapshot()["oauth_results"].get(str(row["id"]))
         return latest_openai_result(row, saved, now)
+
+    def _credit_known(self, row, evidence, now):
+        """Reuse a verified observation, never date an old native cache as now."""
+        meta = self.store.snapshot()["scheduler"].get(str(row["id"]), {})
+        observation = meta.get("reset_credit_observation")
+        raw = (row.get("extra") or {}).get("codex_reset_credit_snapshot") or {}
+        if observation is not None:
+            validate_observation(observation)
+            content = normalized_credits(raw)
+            if (content is None or digest(content) != observation["snapshot_sha256"]
+                    or credential_fingerprint(row) != observation["credential_fingerprint"]
+                    or limit_fingerprint(row) != observation["limit_fingerprint"]
+                    or parse_iso_datetime(observation["window_reset_at"]) != parse_iso_datetime(evidence["reset_at"])
+                    or observation["window_minutes"] != evidence["window_minutes"]):
+                return False
+            observed = parse_iso_datetime(observation["observed_at"])
+        else:
+            # Compatibility for older servers that explicitly dated their card
+            # cache. A native undated snapshot must first be actively verified.
+            observed = reset_credits(row.get("extra") or {}, now)["observed_at"]
+        reset = parse_iso_datetime(evidence["reset_at"])
+        return bool(observed and reset and reset - timedelta(minutes=evidence["window_minutes"]) <= observed <= now
+                    and observed < reset and parse_iso_datetime((self._saved_quota(row, now) or {}).get("queried_at")))
+
+    def _credit_observation(self, before, after, result, started, completed):
+        payload = result.get("data") or {}
+        if (not result.get("success") or payload.get("cache_persisted") is not True or not after
+                or credential_fingerprint(before) != credential_fingerprint(after)
+                or limit_fingerprint(before) != limit_fingerprint(after)):
+            return None
+        content = normalized_credits(payload.get("rate_limit_reset_credits"))
+        actual = normalized_credits((after.get("extra") or {}).get("codex_reset_credit_snapshot"))
+        observed = parse_iso_datetime(payload.get("fetched_at")) if payload.get("fetched_at") is not None else completed
+        if (content is None or content != actual or not observed
+                or observed < started - timedelta(seconds=1) or observed > completed):
+            return None
+        summary = oauth_quota_summary_from_result(after, result.get("quota_result"))
+        window = oauth_windows_by_key(summary.get("ui_windows")).get("codex_7d", {})
+        reset = parse_iso_datetime(window.get("reset_at"))
+        if not reset or reset <= observed:
+            return None
+        return create_observation(after, content, observed, credential_fingerprint(after), reset,
+                                  window.get("window_minutes") or 7 * 24 * 60)
 
     def _eligible(self, row, now, *, held=False):
         from .recovery_policy import recovery_method
@@ -308,6 +373,7 @@ class AutoResetController:
                     credits = reset_credits(live.get("extra") or {}, now)
                     if (not depletion or depletion["reset_at"] != task.get("reset_at")
                             or depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
+                            or not self._credit_known(live, depletion, self.m.clock())
                             or (credits["available"] or 0) <= 0):
                         return {"success": False, "error_code": "reset_state_changed"}
                     with control_lock(self.m.db, aid):
@@ -326,6 +392,7 @@ class AutoResetController:
                     if (not self._owned(final, active_task) or not final_depletion
                             or final_depletion["reset_at"] != task.get("reset_at")
                             or final_depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
+                            or not self._credit_known(final, final_depletion, self.m.clock())
                             or (reset_credits(final.get("extra") or {}, self.m.clock())["available"] or 0) <= 0):
                         self._save(aid, active_task, stage="blocked", error_code="ownership_changed")
                         return {"success": False, "error_code": "ownership_changed"}
@@ -339,6 +406,7 @@ class AutoResetController:
                 return {"success": False, "error_code": "manual_intervention"}
             result = (request_runner or self.request_runner)(action, aid, **connection)
             completed = self.m.clock()
+            diagnostics = result.get("diagnostics") or receipt_diagnostics(None, result.get("data"))
             if isinstance(result.get("data"), dict):
                 result["quota_result"] = quota_result(result["data"], live, completed)
                 if action == "query" and not quota_complete(live, result["quota_result"]):
@@ -352,19 +420,33 @@ class AutoResetController:
                     # the irreversible consumption receipt from an in-flight call.
                     self._save(aid, latest, consumed=bool(result.get("consumed")),
                                reset_completed_at=completed.isoformat() if result.get("consumed") else None,
-                               error_code="" if result.get("consumed") else "result_uncertain")
+                               error_code="" if result.get("consumed") else "result_uncertain", receipt=diagnostics)
                     return result
                 active_task = self._save(aid, active_task, stage="testing" if result.get("consumed") and source == "automatic" else "uncertain",
                     consumed=bool(result.get("consumed")), reset_completed_at=completed.isoformat() if result.get("consumed") else None,
-                    error_code="" if result.get("consumed") else "result_uncertain")
+                    error_code="" if result.get("consumed") else "result_uncertain", receipt=diagnostics)
             after = self.m._read_account(aid)
+            if action == "query":
+                observation = self._credit_observation(live, after, result, now, completed)
+                if observation is not None:
+                    result["reset_credit_observation"] = observation
+                elif result.get("success"):
+                    # Explicitly dated legacy caches remain compatible, but do
+                    # not persist a new observation without a matched receipt.
+                    stamp = reset_credits((after or {}).get("extra") or {}, completed)["observed_at"]
+                    legacy = ("rate_limit_reset_credits" not in (result.get("data") or {})
+                              and (result.get("data") or {}).get("cache_persisted") is not False
+                              and stamp and now - timedelta(seconds=1) <= stamp <= completed)
+                    if not legacy:
+                        result.update(success=False, error_code="credit_snapshot_unconfirmed")
             if active_task.get("owns_pause") and self._owned(after, active_task, same_version=False):
                 self._save(aid, active_task, owned_version=str(after.get("updated_at")))
             return result
         result = self.m.queries.external_read(row, source=source, reason="reset_credit_consume" if action == "reset" else "reset_credit_check",
                                              operation=operation, validate=valid, now=now)
         self._audit(aid, action, source=source, success=bool(result.get("success")),
-                    error_code=result.get("error_code", ""), next_at=result.get("next_query_at"))
+                    error_code=result.get("error_code", ""), next_at=result.get("next_query_at"),
+                    diagnostics=result.get("diagnostics", {}))
         return result
 
     def run(self, rows: list[dict[str, Any]], now: datetime) -> None:
@@ -511,14 +593,11 @@ class AutoResetController:
         credits = reset_credits(row.get("extra") or {}, now)
         if task.get("error_code") == "no_credit" and (credits["available"] or 0) <= 0:
             return
-        observed = credits["observed_at"]
         quota = self._saved_quota(row, now)
         quota_at = parse_iso_datetime((quota or {}).get("queried_at"))
         # Card evidence must describe this depletion window. A positive card
         # snapshot may be reused after the mandatory one-hour query cooldown.
-        known = bool(observed and quota_at and observed <= now
-                     and observed >= parse_iso_datetime(evidence["reset_at"]) - timedelta(minutes=evidence["window_minutes"])
-                     and observed < parse_iso_datetime(evidence["reset_at"]))
+        known = self._credit_known(row, evidence, now)
         meta = self.store.snapshot()["scheduler"].get(str(aid), {})
         failed = parse_iso_datetime(meta.get("last_error_at"))
         invalidated = bool(failed and quota_at and failed >= quota_at and meta.get("last_error_code"))

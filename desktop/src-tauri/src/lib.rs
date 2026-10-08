@@ -1320,6 +1320,7 @@ mod tests {
         assert!(view.online && view.error.is_empty());
         assert_eq!(view.snapshot, Some(next));
     }
+    #[cfg(desktop)]
     #[test]
     fn obsolete_blur_cannot_close_a_reopened_panel() {
         let mut panel = PanelLifecycle::default();
@@ -1335,6 +1336,7 @@ mod tests {
         panel.focus();
         assert!(!panel.can_hide(blur));
     }
+    #[cfg(desktop)]
     #[test]
     fn panel_stays_inside_secondary_and_scaled_displays() {
         for (x, y, w, h, scale, ax, ay) in [
@@ -1450,12 +1452,14 @@ mod tests {
             assert!(!allowed_request(method, &path), "{method} {path}");
         }
     }
+    #[cfg(desktop)]
     #[test]
     fn login_launch_is_silent_but_manual_and_second_instances_open() {
         assert!(silent_launch(&["sub2ops".into(), "--autostart".into()]));
         assert!(!silent_launch(&["sub2ops".into()]));
         assert!(!silent_launch(&["sub2ops".into(), "--autostart=false".into()]));
     }
+    #[cfg(desktop)]
     #[test]
     fn compact_panel_height_is_content_bounded() {
         for (height, expected) in [(100., 128), (386., 386), (800., 520)] {

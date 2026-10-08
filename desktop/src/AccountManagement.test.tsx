@@ -460,3 +460,92 @@ it("selects current filters, preserves live selections on polling and clears on 
   expect(container.querySelector("#degradation-panel")).not.toBeNull();
   expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
 });
+
+it("keeps batch actions adjacent and requires confirmation before deleting selected accounts", async () => {
+  let receive: (state: ViewState) => void = () => {};
+  const state: ViewState = {
+    platform: "macos",
+    connected: true,
+    online: true,
+    error: "",
+    preferences: {
+      base_url: "https://qa.invalid",
+      favorites: [],
+      pinned: false,
+      launch_at_login: false,
+    },
+    snapshot: {
+      observed_at: "2026-09-26T00:00:00Z",
+      accounts: [account(1), account(2)],
+      groups: [],
+      errors: [],
+      recoveries: [],
+    },
+  };
+  vi.mocked(subscribe).mockImplementation(async (cb) => {
+    receive = cb;
+    return () => {};
+  });
+  vi.mocked(command).mockResolvedValue(state);
+  vi.mocked(api).mockResolvedValue({
+    status: "idle",
+    items: [],
+    next_cursor: null,
+  });
+
+  await act(async () => root.render(<App />));
+
+  const selectionBar = container.querySelector<HTMLElement>(".selection-bar")!;
+  const summary = selectionBar.querySelector<HTMLElement>(".selection-summary")!;
+  const actions = selectionBar.querySelector<HTMLElement>(".selection-actions")!;
+  const actionButtons = Array.from(
+    actions.querySelectorAll<HTMLButtonElement>("button"),
+  );
+  const applyTemplate = actionButtons.find(
+    (element) => element.textContent?.trim() === "应用模板",
+  )!;
+  const deleteSelected = actionButtons.find(
+    (element) => element.textContent?.trim() === "删除所选",
+  )!;
+
+  expect(summary.textContent).toContain("已选 0 个账号");
+  expect(applyTemplate.disabled).toBe(true);
+  expect(deleteSelected.disabled).toBe(true);
+
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('[aria-label="选择 Account 1"]')!
+      .click(),
+  );
+  expect(summary.textContent).toContain("已选 1 个账号");
+  expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  expect(actions.contains(applyTemplate)).toBe(true);
+  expect(actions.contains(deleteSelected)).toBe(true);
+  expect(applyTemplate.nextElementSibling).toBe(deleteSelected);
+  expect(applyTemplate.disabled).toBe(false);
+  expect(deleteSelected.disabled).toBe(false);
+
+  await act(async () => receive({ ...state, online: false }));
+  expect(applyTemplate.disabled).toBe(true);
+  expect(deleteSelected.disabled).toBe(true);
+  await act(async () => receive(state));
+  const accountCheckbox = container.querySelector<HTMLInputElement>(
+    '[aria-label="选择 Account 1"]',
+  )!;
+  if (!accountCheckbox.checked)
+    await act(async () => accountCheckbox.click());
+  expect(summary.textContent).toContain("已选 1 个账号");
+  expect(deleteSelected.disabled).toBe(false);
+
+  await act(async () => deleteSelected.click());
+  const dialog = container.querySelector<HTMLElement>(
+    '[role="dialog"][aria-labelledby="delete-title"]',
+  )!;
+  expect(dialog.textContent).toContain("删除 1 个账号？");
+  expect(dialog.textContent).toContain("Account 1");
+  expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+
+  await act(async () => button("取消").click());
+  expect(container.querySelector('[aria-labelledby="delete-title"]')).toBeNull();
+  expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+});

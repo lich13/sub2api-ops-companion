@@ -220,6 +220,11 @@ class OAuthQueryCoordinator:
                         query.pop("auth_fingerprint", None)
                         if result.get("success"):
                             query.update(failure_count=0, retry_at=None)
+                    observation = result.get("reset_credit_observation")
+                    if observation is not None and result.get("success"):
+                        from .reset_credit_observation import validate_observation
+                        validate_observation(observation)
+                        meta["reset_credit_observation"] = dict(observation)
                     code = str(result.get("error_code") or "")
                     if code in AUTH_ERRORS:
                         query["auth_fingerprint"] = credential_fingerprint(row)

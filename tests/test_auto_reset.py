@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import re
 import socket
 import sqlite3
 import tempfile
 import threading
+import urllib.error
 import unittest
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -17,6 +19,7 @@ from unittest.mock import patch
 from app.auto_reset import AutoResetController, execute_credit_request, quota_result, upstream_evidence
 from app.oauth_monitor import OAuthMonitor, execute_sub2api_account_test
 from app.oauth_queries import credential_fingerprint
+from app.reset_credit_observation import receipt_diagnostics
 from app.settings import Settings
 from app.usage_query import execute_oauth_usage_query
 
@@ -26,12 +29,19 @@ ACCOUNT_ID = 7
 ADMIN_TOKEN = "auto-reset-isolated-fixture-admin"
 
 
-def wham(now, *, five=10, seven=20, observed=None):
+def wham(now, *, five=10, seven=20, observed=None, five_reset_at=None, seven_reset_at=None):
     return {"fetched_at": (observed or now).isoformat(), "rate_limit": {
         "primary_window": {"limit_window_seconds": 18000, "used_percent": five,
-                           "reset_at": int((now + timedelta(hours=5)).timestamp())},
+                           "reset_at": int((five_reset_at or now + timedelta(hours=5)).timestamp())},
         "secondary_window": {"limit_window_seconds": 604800, "used_percent": seven,
-                             "reset_at": int((now + timedelta(days=5)).timestamp())}}}
+                             "reset_at": int((seven_reset_at or now + timedelta(days=5)).timestamp())}}}
+
+
+def native_credit_snapshot(now, *, count=1, expiries=None):
+    if expiries is None:
+        expiries = [now + timedelta(days=2)] if count else []
+    return {"available_count": count,
+            "credits": [{"expires_at": value.isoformat()} for value in expiries]}
 
 
 class EvidenceDB:
@@ -121,6 +131,14 @@ class AutoResetFixture(unittest.TestCase):
         self.query_credits = 1
         self.query_five, self.query_seven = 20, 100
         self.reset_five, self.reset_seven = 10, 20
+        self.query_seven_reset_at = NOW + timedelta(days=5)
+        self.reset_seven_reset_at = NOW + timedelta(days=5)
+        self.native_credit_response = None
+        self.native_credit_db_snapshot = None
+        self.native_credit_fetched_at = None
+        self.native_credit_cache_persisted = True
+        self.native_credit_cache_refreshed = True
+        self.http_status_overrides = {}
         self.account_reads = 0
         self.db.raw.execute("DELETE FROM ops_error_logs")
         self.db.raw.execute("DELETE FROM usage_logs")
@@ -184,6 +202,30 @@ class AutoResetFixture(unittest.TestCase):
                 raise result
             return copy.deepcopy(result)
         count = 0 if action == "reset" else self.query_credits
+        if action == "query" and self.native_credit_response is not None:
+            response_snapshot = copy.deepcopy(self.native_credit_response)
+            database_snapshot = (self.native_credit_db_snapshot if self.native_credit_db_snapshot is not None
+                                 else response_snapshot)
+            self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(database_snapshot)
+            self.touch()
+            data = {**wham(self.now, five=self.query_five, seven=self.query_seven,
+                           seven_reset_at=self.query_seven_reset_at),
+                    "code": "success", "windows_reset": 0,
+                    "rate_limit_reset_credits": response_snapshot,
+                    "fetched_at": (self.native_credit_fetched_at if self.native_credit_fetched_at is not None
+                                   else int(self.now.timestamp())),
+                    "cache_persisted": self.native_credit_cache_persisted,
+                    "cache_refreshed": self.native_credit_cache_refreshed}
+            return {"success": True, "consumed": False, "uncertain": False, "error_code": "", "data": data}
+        if action == "reset" and self.native_credit_response is not None:
+            self.row["extra"]["codex_reset_credit_snapshot"] = {"available_count": 0, "credits": []}
+            self.touch()
+            data = {**wham(self.now, five=self.reset_five, seven=self.reset_seven,
+                           seven_reset_at=self.reset_seven_reset_at),
+                    "code": "success", "windows_reset": 1,
+                    "cache_refreshed": self.native_credit_cache_refreshed,
+                    "cache_persisted": self.native_credit_cache_persisted}
+            return {"success": True, "consumed": True, "uncertain": False, "error_code": "", "data": data}
         self.row["extra"]["codex_reset_credit_snapshot"] = {"available_count": count, "fetched_at": self.now.isoformat()}
         self.touch()
         return {"success": True, "consumed": action == "reset", "uncertain": False, "error_code": "",
@@ -734,6 +776,7 @@ class LocalCreditServer:
             def respond(self):
                 payload = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 owner.requests.append((self.command, self.path, self.headers.get("x-api-key")))
+                status = 200
                 if self.path.endswith("/test"):
                     result = fixture.account_test_runner(ACCOUNT_ID, json.loads(payload)["model_id"])
                     event = {"type": "test_complete", "success": True} if result["success"] else {
@@ -748,9 +791,14 @@ class LocalCreditServer:
                 else:
                     owner.quota_reads += 1
                     action = "reset" if self.path.endswith("/reset-quota") else "query"
-                    result = fixture.request_runner(action, ACCOUNT_ID, admin_token=ADMIN_TOKEN)
-                    body, content_type = json.dumps({"code": 0, "data": result["data"]}).encode(), "application/json"
-                self.send_response(200)
+                    override = fixture.http_status_overrides.get(action)
+                    if override:
+                        status, error_body = override
+                        body, content_type = json.dumps(error_body).encode(), "application/json"
+                    else:
+                        result = fixture.request_runner(action, ACCOUNT_ID, admin_token=ADMIN_TOKEN)
+                        body, content_type = json.dumps({"code": 0, "data": result["data"]}).encode(), "application/json"
+                self.send_response(status)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -780,6 +828,17 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.addCleanup(self.server.close)
         self.base_url = self.server.base_url
         self.make_controller(real_http=True)
+
+    def native_observation(self):
+        scheduler = self.store.scheduler()
+        account = scheduler.get(ACCOUNT_ID) or scheduler.get(str(ACCOUNT_ID)) or {}
+        return account.get("reset_credit_observation")
+
+    def use_native_credit_response(self, snapshot, *, database_snapshot=None, cache_persisted=True):
+        self.native_credit_response = copy.deepcopy(snapshot)
+        self.native_credit_db_snapshot = copy.deepcopy(database_snapshot if database_snapshot is not None else snapshot)
+        self.native_credit_cache_persisted = cache_persisted
+        self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(self.native_credit_db_snapshot)
 
     def test_real_consumption_http_has_one_attached_quota_read_and_immediate_sse_test(self):
         self.run_once()
@@ -855,6 +914,263 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertTrue(self.monitor.queries.query(copy.deepcopy(self.row), ADMIN_TOKEN, source="automatic", reason="fixture-restart")["success"])
         self.assertEqual(self.server.quota_reads, 7)
 
+    def test_native_snapshot_is_observed_once_then_reused_after_restart_and_hourly_budget(self):
+        expiries = [NOW + timedelta(days=3), NOW + timedelta(days=2), NOW + timedelta(days=2)]
+        snapshot = native_credit_snapshot(NOW, count=3, expiries=expiries)
+        for index, card in enumerate(snapshot["credits"]):
+            card["id"] = f"fixture-card-{index}"
+        self.use_native_credit_response(snapshot)
+
+        self.run_once()
+
+        self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
+            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh")])
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 0)
+        observation = self.native_observation()
+        self.assertIsInstance(observation, dict)
+        self.assertEqual(observation["version"], 1)
+        self.assertEqual(observation["available_count"], 3)
+        self.assertEqual(observation["expires_at"], sorted(value.isoformat() for value in expiries))
+        self.assertEqual(observation["observed_at"], NOW.isoformat())
+        self.assertEqual(observation["window_minutes"], 10080)
+        self.assertEqual(set(observation), {"version", "observed_at", "available_count", "expires_at",
+                                           "snapshot_sha256", "credential_fingerprint", "window_reset_at",
+                                           "window_minutes", "limit_fingerprint"})
+        self.assertTrue(observation["window_reset_at"])
+        self.assertEqual(len(observation["snapshot_sha256"]), 64)
+        self.assertEqual(len(observation["credential_fingerprint"]), 64)
+        self.assertEqual(len(observation["limit_fingerprint"]), 64)
+        serialized = json.dumps(observation)
+        self.assertNotIn(ADMIN_TOKEN, serialized)
+        self.assertNotIn("fixture-access-v1", serialized)
+        self.assertNotIn("fixture-card-", serialized)
+
+        self.make_controller(real_http=True)
+        self.now += timedelta(seconds=3599)
+        self.step()
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertEqual(len(self.server.requests), 1)
+
+        self.now += timedelta(seconds=1)
+        self.step()
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.calls.count("test"), 1)
+        self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
+            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh"),
+            ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
+            ("POST", "/api/v1/admin/accounts/7/test")])
+        self.assertEqual(len(self.store.pending_events()), 1)
+        self.assertEqual(self.store.pending_events()[0]["reset_credit"]["consumed"], True)
+        receipt = self.state()["receipt"]
+        self.assertEqual(receipt["http_status"], 200)
+        self.assertEqual(receipt["business_code"], "success")
+        self.assertEqual(receipt["windows_reset"], 1)
+        self.assertTrue(receipt["cache_refreshed"])
+        self.assertTrue(receipt["cache_persisted"])
+        self.assertEqual(set(receipt) - {"http_status", "business_code", "windows_reset", "cache_refreshed",
+                                         "cache_persisted", "account_state_recovered"}, set())
+
+        self.make_controller(real_http=True)
+        self.now += timedelta(hours=1)
+        self.run_once()
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 1)
+        self.assertEqual(self.calls.count("test"), 1)
+        self.assertEqual(len(self.server.requests), 3)
+        self.assertEqual(len(self.store.pending_events()), 1)
+
+    def test_native_snapshot_refresh_preserves_both_429_evidence_paths(self):
+        snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        for has_upstream_error in (True, False):
+            with self.subTest(has_upstream_error=has_upstream_error):
+                self.fresh_case()
+                self.server.requests.clear()
+                self.base_url = self.server.base_url
+                self.make_controller(real_http=True)
+                self.use_native_credit_response(snapshot)
+                if not has_upstream_error:
+                    self.db.raw.execute("DELETE FROM ops_error_logs")
+
+                self.run_once()
+
+                expected = "upstream_error" if has_upstream_error else "account_rate_limit"
+                self.assertEqual(self.state()["evidence_source"], expected)
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
+                    ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh")])
+
+    def test_native_observation_requeries_after_snapshot_or_credential_change(self):
+        first_snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        self.use_native_credit_response(first_snapshot)
+        self.run_once()
+        first = self.native_observation()
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 0)
+
+        changed_snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=4)])
+        self.native_credit_response = copy.deepcopy(changed_snapshot)
+        self.native_credit_db_snapshot = copy.deepcopy(changed_snapshot)
+        self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(changed_snapshot)
+        self.touch()
+        self.now += timedelta(hours=1)
+        self.step()
+        second = self.native_observation()
+        self.assertEqual(self.calls.count("query"), 2)
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertNotEqual(first["snapshot_sha256"], second["snapshot_sha256"])
+
+        self.row["credentials"]["access_token"] = "fixture-access-v2"
+        self.touch()
+        self.now += timedelta(hours=1)
+        self.step()
+        third = self.native_observation()
+        self.assertEqual(self.calls.count("query"), 3)
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertNotEqual(second["credential_fingerprint"], third["credential_fingerprint"])
+
+        next_reset = NOW + timedelta(days=6)
+        self.query_seven_reset_at = next_reset
+        self.row["rate_limit_reset_at"] = next_reset.isoformat()
+        self.row["extra"]["codex_7d_reset_at"] = next_reset.isoformat()
+        self.touch()
+        self.now += timedelta(hours=1)
+        changed_quota = wham(self.now, five=self.query_five, seven=self.query_seven,
+                             seven_reset_at=next_reset)
+        self.store.commit(results={ACCOUNT_ID: quota_result(changed_quota, self.row, self.now)})
+        self.step()
+        fourth = self.native_observation()
+        self.assertEqual(self.calls.count("query"), 4)
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertNotEqual(third["window_reset_at"], fourth["window_reset_at"])
+        self.assertNotEqual(third["limit_fingerprint"], fourth["limit_fingerprint"])
+        self.assertEqual(len(self.server.requests), 4)
+
+    def test_zero_or_expired_native_credit_does_not_repeat_refresh_on_each_step(self):
+        cases = (
+            ("zero", native_credit_snapshot(NOW, count=0, expiries=[])),
+            ("expired", native_credit_snapshot(NOW, count=1, expiries=[NOW - timedelta(seconds=1)])),
+        )
+        for name, snapshot in cases:
+            with self.subTest(name=name):
+                self.fresh_case()
+                self.server.requests.clear()
+                self.base_url = self.server.base_url
+                self.make_controller(real_http=True)
+                self.use_native_credit_response(snapshot)
+                self.run_once()
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(len(self.server.requests), 1)
+                self.now += timedelta(seconds=30)
+                self.step()
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(len(self.server.requests), 1)
+
+    def test_native_observation_requires_matching_database_snapshot_and_cache_confirmation(self):
+        good = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        mismatch = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=3)])
+        cases = (("db_mismatch", mismatch, True), ("cache_unconfirmed", good, False))
+        for name, database_snapshot, cache_persisted in cases:
+            with self.subTest(name=name):
+                self.fresh_case()
+                self.server.requests.clear()
+                self.base_url = self.server.base_url
+                self.make_controller(real_http=True)
+                self.use_native_credit_response(good, database_snapshot=database_snapshot,
+                                                cache_persisted=cache_persisted)
+                self.run_once()
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(self.state()["error_code"], "credit_snapshot_unconfirmed")
+                self.assertIsNone(self.native_observation())
+                self.assertEqual(len(self.server.requests), 1)
+                self.now += timedelta(seconds=30)
+                self.step()
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(len(self.server.requests), 1)
+
+    def test_native_observation_write_failure_cannot_authorize_card_consumption(self):
+        snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        self.use_native_credit_response(snapshot)
+        write = self.store._write
+        failed = []
+
+        def fail_observation_once(data):
+            account = data.get("scheduler", {}).get(str(ACCOUNT_ID), {})
+            if account.get("reset_credit_observation") and not failed:
+                failed.append(True)
+                raise OSError("fixture cannot persist credit observation")
+            return write(data)
+
+        with patch.object(self.store, "_write", side_effect=fail_observation_once):
+            try:
+                self.run_once()
+            except OSError:
+                pass
+
+        self.assertEqual(failed, [True])
+        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertIsNone(self.native_observation())
+        self.assertEqual(len(self.server.requests), 1)
+        self.make_controller(real_http=True)
+        self.now += timedelta(seconds=30)
+        self.step()
+        self.assertEqual(self.calls.count("reset"), 0)
+        self.assertEqual(len(self.server.requests), 1)
+
+    def test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot(self):
+        snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        for field, bad_value in (("snapshot_sha256", "invalid"), ("observed_at", "invalid-time")):
+            with self.subTest(field=field):
+                self.fresh_case()
+                self.server.requests.clear()
+                self.base_url = self.server.base_url
+                self.make_controller(real_http=True)
+                self.use_native_credit_response(snapshot)
+                self.run_once()
+                state_path = Path(self.settings.usage_query_state_path)
+                state_data = json.loads(state_path.read_text())
+                account = state_data["scheduler"][str(ACCOUNT_ID)]
+                account["reset_credit_observation"][field] = bad_value
+                state_path.write_text(json.dumps(state_data))
+                self.row["extra"]["codex_reset_credit_snapshot"] = {
+                    **copy.deepcopy(snapshot), "fetched_at": (NOW - timedelta(hours=2)).isoformat()}
+
+                self.now += timedelta(seconds=30)
+                with self.assertRaises(ValueError):
+                    self.run_once()
+
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(len(self.server.requests), 1)
+
+    def test_refresh_timestamp_outside_read_interval_is_not_trusted(self):
+        snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        cases = (("future", int(NOW.timestamp()) + 2), ("too_old", int(NOW.timestamp()) - 2))
+        for name, fetched_at in cases:
+            with self.subTest(name=name):
+                self.fresh_case()
+                self.server.requests.clear()
+                self.base_url = self.server.base_url
+                self.make_controller(real_http=True)
+                self.use_native_credit_response(snapshot)
+                self.native_credit_fetched_at = fetched_at
+
+                self.run_once()
+
+                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("reset"), 0)
+                self.assertEqual(self.state()["error_code"], "credit_snapshot_unconfirmed")
+                self.assertIsNone(self.native_observation())
+                self.assertEqual(len(self.server.requests), 1)
+
     def test_confirmed_consumption_with_cache_warning_still_tests_immediately(self):
         self.request_results.append({"success": True, "consumed": True, "uncertain": False,
             "data": {"code": "success", "windows_reset": 1, "cache_refreshed": False,
@@ -868,6 +1184,101 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(self.calls.count("test"), 1)
         self.assertEqual(self.server.quota_reads, 1)
         self.assertEqual(self.calls.count("schedule:True"), 0)
+
+    def test_refresh_http_429_records_status_without_retaining_response_body(self):
+        self.row["extra"]["codex_reset_credit_snapshot"] = native_credit_snapshot(
+            NOW, count=1, expiries=[NOW + timedelta(days=2)])
+        self.http_status_overrides["query"] = (429, {
+            "code": "fixture-card-secret", "message": "fixture-access-v1",
+            "card_id": "fixture-card-123"})
+
+        self.run_once()
+
+        self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
+            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh")])
+        self.assertEqual(self.calls.count("reset"), 0)
+        audit = Path(self.settings.audit_path).read_text()
+        self.assertIn('"http_status": 429', audit)
+        self.assertNotIn("fixture-card-secret", audit)
+        self.assertNotIn("fixture-access-v1", audit)
+        self.assertNotIn("fixture-card-123", audit)
+        self.assertIsNone(self.native_observation())
+
+
+class ResetCreditDiagnosticTests(unittest.TestCase):
+    def test_only_whitelisted_status_business_code_and_boolean_fields_are_retained(self):
+        result = receipt_diagnostics(200, {
+            "code": "OPENAI_QUOTA_REFRESHED", "windows_reset": 2,
+            "cache_persisted": True, "cache_refreshed": False,
+            "account_state_recovered": True, "message": "fixture-access-v1",
+            "card_id": "fixture-card-123", "credential": "fixture-secret"})
+        self.assertEqual(result, {"http_status": 200, "business_code": "OPENAI_QUOTA_REFRESHED",
+                                  "windows_reset": 2, "cache_persisted": True,
+                                  "cache_refreshed": False, "account_state_recovered": True})
+        self.assertNotIn("fixture-access-v1", json.dumps(result))
+        self.assertNotIn("fixture-card-123", json.dumps(result))
+        self.assertNotIn("fixture-secret", json.dumps(result))
+
+    def test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted(self):
+        result = receipt_diagnostics(429, {"code": "fixture-card-secret", "windows_reset": True,
+                                           "cache_persisted": False, "detail": "fixture-access-v1"})
+        self.assertEqual(result, {"http_status": 429, "business_code": "unrecognized",
+                                  "cache_persisted": False})
+
+    def test_reset_false_and_incomplete_business_codes_never_confirm_consumption(self):
+        class Response:
+            status = 200
+
+            def __init__(self, payload):
+                self.payload = json.dumps(payload).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return self.payload
+
+        for business_code in (False, True, None, "", "OPENAI_CARD_REJECTED"):
+            with self.subTest(business_code=business_code):
+                payload = {"code": 0, "data": {"code": business_code, "windows_reset": 1}}
+                result = execute_credit_request("reset", 1, base_url="http://example.invalid",
+                    admin_token="fixture-admin-token", urlopen=lambda *_a, **_k: Response(payload))
+                self.assertFalse(result["success"])
+                self.assertFalse(result["consumed"])
+                self.assertTrue(result["uncertain"])
+                self.assertEqual(result["error_code"], "result_uncertain")
+
+        missing = {"code": 0, "data": {"windows_reset": 1}}
+        result = execute_credit_request("reset", 1, base_url="http://example.invalid",
+            admin_token="fixture-admin-token", urlopen=lambda *_a, **_k: Response(missing))
+        self.assertFalse(result["consumed"])
+        confirmed = {"code": 0, "data": {"code": 0, "windows_reset": 1}}
+        result = execute_credit_request("reset", 1, base_url="http://example.invalid",
+            admin_token="fixture-admin-token", urlopen=lambda *_a, **_k: Response(confirmed))
+        self.assertTrue(result["success"])
+        self.assertTrue(result["consumed"])
+        self.assertFalse(result["uncertain"])
+
+    def test_structured_http_error_keeps_only_diagnostics_and_never_confirms_reset(self):
+        payload = {"code": 0, "data": {"code": "OPENAI_CARD_EXPIRED", "windows_reset": 1,
+                                        "cache_persisted": False, "message": "fixture-card-secret",
+                                        "card_id": "fixture-card-123"}}
+        error = urllib.error.HTTPError("http://example.invalid/reset", 409, "conflict", {},
+                                       io.BytesIO(json.dumps(payload).encode()))
+        def raise_http_error(*_args, **_kwargs):
+            raise error
+        result = execute_credit_request("reset", 1, base_url="http://example.invalid",
+            admin_token="fixture-admin-token", urlopen=raise_http_error)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["uncertain"])
+        self.assertEqual(result["error_code"], "http_409")
+        self.assertEqual(result["diagnostics"], {"http_status": 409, "business_code": "OPENAI_CARD_EXPIRED",
+                                                  "windows_reset": 1, "cache_persisted": False})
+        self.assertNotIn("fixture-card-secret", json.dumps(result["diagnostics"]))
+        self.assertNotIn("fixture-card-123", json.dumps(result["diagnostics"]))
 
 
 if __name__ == "__main__":
