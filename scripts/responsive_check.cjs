@@ -320,14 +320,45 @@ async function groupMenuChecks(h, fixture, manager) {
 
   async function open(account, keyboard = false) {
     const trigger = triggerFor(account);
+    let keyboardActivation;
     if (keyboard) {
       await h.visible(trigger, "group-account-actions-trigger");
+      await trigger.scrollIntoViewIfNeeded();
+      await trigger.focus();
+      // Flush scroll events before opening a menu that correctly dismisses on scroll.
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      keyboardActivation = {
+        trigger: await geometry(trigger),
+        scroll: await trigger.evaluate((element) => {
+          const ancestors = [];
+          for (let node = element.parentElement; node; node = node.parentElement) {
+            if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth
+              || node === document.scrollingElement) {
+              ancestors.push({
+                element: node.tagName.toLowerCase(), class: node.className,
+                top: node.scrollTop, left: node.scrollLeft,
+                height: node.scrollHeight, clientHeight: node.clientHeight,
+                width: node.scrollWidth, clientWidth: node.clientWidth,
+                behavior: getComputedStyle(node).scrollBehavior,
+              });
+            }
+          }
+          return { focused: document.activeElement === element, ancestors };
+        }),
+      };
       await trigger.press("Enter");
     } else {
       await h.click(trigger, "group-account-actions-trigger");
     }
     const popup = page.getByRole("group", { name: `${account.name}操作`, exact: true });
-    await h.within(popup, "group-account-actions-popup", { touch: false, scroll: false });
+    try {
+      await h.within(popup, "group-account-actions-popup", { touch: false, scroll: false });
+    } catch (error) {
+      if (keyboardActivation) error.keyboardActivation = keyboardActivation;
+      throw error;
+    }
     await h.state(await menus.count() === 1, "multiple-account-menus-open", popup);
     await h.state(await popup.evaluate((element) => element.parentElement === document.body), "group-popup-inside-clipped-card", popup);
     await h.state(await trigger.getAttribute("aria-expanded") === "true"
@@ -953,7 +984,8 @@ async function runScenario(scenario) {
       result: "FAIL", scenario: scenario.name, viewport: scenario.viewport,
       phase: h?.phase || "initialization", kind: h?.kind || "browser",
       reason: error instanceof CheckFailure ? error.message : error.name === "TimeoutError" ? "browser-action-timeout" : "browser-action-failed",
-      ...evidence, blocked, pageErrorCount: pageErrors.length,
+      ...evidence, ...(error.keyboardActivation ? { keyboardActivation: error.keyboardActivation } : {}),
+      blocked, pageErrorCount: pageErrors.length,
     };
     failures.push(failure);
     console.error(JSON.stringify(failure));
