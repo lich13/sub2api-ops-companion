@@ -3,6 +3,22 @@ use std::{io::Write, path::Path, time::Duration};
 
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 
+fn recoveries_valid(data: &Value) -> bool {
+    data.as_array().is_some_and(|rows| rows.iter().all(|row| {
+        let kind = &row["kind"];
+        let receipt = &row["reset_credit"];
+        (kind.is_null() || matches!(kind.as_str(), Some("quota_recovery" | "reset_credit")))
+            && (receipt.is_null() || receipt.is_object()
+                && receipt["completed_at"].as_str().is_some_and(|time| !time.is_empty())
+                && matches!(receipt["verification_method"].as_str(), Some("connection" | "model"))
+                && (receipt["consumed"].is_null() || receipt["consumed"].as_bool() == Some(true)))
+            && (kind.as_str() != Some("reset_credit") || !receipt.is_null()
+                && row["legacy"].as_bool() == Some(false)
+                && ["test_completed_at", "recovered_at"].iter().all(|key|
+                    row[*key].as_str().is_some_and(|time| !time.is_empty())))
+    }))
+}
+
 fn snapshot_valid(data: &Value) -> bool {
     data.get("observed_at").and_then(Value::as_str).is_some_and(|s| !s.is_empty())
         && data.get("accounts").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|a| {
@@ -16,7 +32,7 @@ fn snapshot_valid(data: &Value) -> bool {
         && data.get("groups").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|g| {
             g["id"].as_i64().is_some() && g["name"].is_string() && g["recent_accounts"].is_array()
         }))
-        && ["errors", "recoveries"].iter().all(|k| data[*k].is_array())
+        && data["errors"].is_array() && recoveries_valid(&data["recoveries"])
 }
 
 fn operation_valid(data: &Value) -> bool {
@@ -75,7 +91,8 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/capabilities" => data["api_version"].as_u64() == Some(1)
             && (data["upstream_connection"].is_null() || connection_valid(&data["upstream_connection"])),
         "/connection-status" => connection_valid(data),
-        "/errors" | "/recoveries" => data["items"].is_array(),
+        "/errors" => data["items"].is_array(),
+        "/recoveries" => recoveries_valid(&data["items"]),
         "/account-operations" => if path.contains("?batch_id=") { batch_valid(data) } else {
             data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid))
         },
@@ -262,6 +279,42 @@ mod tests {
         let (result, log) = serve("200 OK", "Content-Type: application/json", body, false).await;
         assert!(result.is_ok()); assert!(log.is_empty());
         assert!(!snapshot_valid(&serde_json::json!({"accounts":null})));
+    }
+
+    #[test]
+    fn recovery_response_accepts_legacy_and_complete_card_recovery_metadata() {
+        let legacy = serde_json::json!([{"id":1,"account_id":1,"legacy":true}]);
+        let ordinary = serde_json::json!([{"id":2,"account_id":1,"kind":"quota_recovery","legacy":false}]);
+        let card = serde_json::json!([{"id":3,"account_id":1,"kind":"reset_credit","legacy":false,
+            "test_completed_at":"2026-10-01T01:11:00Z","recovered_at":"2026-10-01T01:12:00Z",
+            "reset_credit":{"completed_at":"2026-10-01T01:10:00Z","verification_method":"connection"}}]);
+
+        assert!(recoveries_valid(&legacy));
+        assert!(recoveries_valid(&ordinary));
+        assert!(recoveries_valid(&card));
+        assert!(shape_valid("/recoveries", &serde_json::json!({"items":card})));
+    }
+
+    #[test]
+    fn recovery_response_rejects_partial_or_invalid_card_recovery_metadata() {
+        let valid = serde_json::json!({"id":1,"account_id":1,"kind":"reset_credit","legacy":false,
+            "test_completed_at":"2026-10-01T01:11:00Z","recovered_at":"2026-10-01T01:12:00Z",
+            "reset_credit":{"completed_at":"2026-10-01T01:10:00Z","verification_method":"model"}});
+        let mut invalid = Vec::new();
+        let mut row = valid.clone(); row["reset_credit"] = serde_json::Value::Null; invalid.push(row);
+        let mut row = valid.clone(); row["reset_credit"]["completed_at"] = serde_json::json!(""); invalid.push(row);
+        let mut row = valid.clone(); row["reset_credit"]["verification_method"] = serde_json::json!("unknown"); invalid.push(row);
+        let mut row = valid.clone(); row["reset_credit"]["consumed"] = serde_json::json!(false); invalid.push(row);
+        let mut row = valid.clone(); row["legacy"] = serde_json::json!(true); invalid.push(row);
+        let mut row = valid.clone(); row["legacy"] = serde_json::Value::Null; invalid.push(row);
+        let mut row = valid.clone(); row["test_completed_at"] = serde_json::json!(""); invalid.push(row);
+        let mut row = valid.clone(); row["recovered_at"] = serde_json::Value::Null; invalid.push(row);
+        let mut row = valid; row["kind"] = serde_json::json!("unknown"); invalid.push(row);
+
+        for row in invalid {
+            assert!(!recoveries_valid(&serde_json::json!([row])));
+        }
+        assert!(!recoveries_valid(&serde_json::json!({"items":[]})));
     }
 
     #[test]

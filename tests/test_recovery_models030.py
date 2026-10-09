@@ -478,6 +478,40 @@ class CreditModelRecovery030Tests(_RecoveryModelFixture):
         self.assertEqual(fixture.calls, ["schedule:False", "reset", "model", "recover", "schedule:True"])
         self.assertTrue(fixture.row["schedulable"])
         self.assertEqual(len(fixture.query_state()["automatic_attempts"]), 1)
+        fixture.assert_credit_recovery(method="model")
+        history = copy.deepcopy(fixture.store.snapshot()["recovery_history"])
+        fixture.now += timedelta(seconds=30)
+        await self._card_cycle()
+        self.assertEqual(fixture.calls.count("reset"), 1)
+        self.assertEqual(len(self.model_calls), 1)
+        self.assertEqual(fixture.store.snapshot()["recovery_history"], history)
+        self.assertEqual(len(fixture.store.pending_events()), 1)
+        self._assert_account_available()
+
+    async def test_manual_control_during_credit_model_verification_keeps_receipt_without_recovery(self):
+        fixture = self.fixture
+
+        async def manual_disable():
+            fixture.store.manual_control(fixture.row, False, fixture.now)
+            fixture.row["schedulable"] = False
+            fixture.touch()
+
+        self.model_hook = manual_disable
+        await self._card_cycle()
+        await self._finish()
+        original = fixture.state()
+        self.assertEqual(original["stage"], "manual")
+        self.assertTrue(original["consumed"])
+        self.assertTrue(original["reset_completed_at"])
+        self.assertFalse(original["owns_pause"])
+        fixture.now += timedelta(hours=2)
+        await self._card_cycle()
+        self.assertEqual(fixture.calls, ["schedule:False", "reset", "model"])
+        self.assertFalse(fixture.row["schedulable"])
+        self.assertEqual(fixture.state()["episode"], original["episode"])
+        self.assertEqual(fixture.state()["receipt"], original["receipt"])
+        self.assertEqual(fixture.store.snapshot()["recovery_history"], {})
+        self.assertEqual(fixture.store.pending_events(), [])
         self._assert_account_available()
 
     async def test_credit_cooldown_does_not_pause_consume_or_hold_account(self):

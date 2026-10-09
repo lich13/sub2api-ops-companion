@@ -1719,6 +1719,12 @@ td:last-child {
   line-height: 18px;
   white-space: normal;
   text-align: left;
+  overflow-wrap: anywhere;
+}
+.account-action-popup > button svg { flex-shrink: 0; }
+.mobile-more-actions { display: grid; gap: 8px; }
+@media (pointer: coarse), (max-width: 760px) {
+  .account-action-popup > button { min-height: 48px; }
 }
 .danger-text,
 .bad-text {

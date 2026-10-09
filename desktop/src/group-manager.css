@@ -1,7 +1,7 @@
 .group-manager { --group-left: var(--accent); --group-right: #387f8b; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .group-manager[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { .group-manager { --group-right: #78bac4; } }
-.group-manager button:focus-visible, .membership-zone:focus-visible, .group-account-menu summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.group-manager button:focus-visible, .membership-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .group-manager-toolbar { display: flex; align-items: center; gap: 12px; }
 .group-platforms { display: flex; padding: 3px; background: var(--canvas); border: 1px solid var(--line); border-radius: 10px; }
 .group-platforms button { border: 0; background: transparent; padding: 8px 24px; color: var(--muted); }
@@ -47,10 +47,7 @@
 .group-account-status { color: var(--warn); }
 .group-dirty-label { color: var(--accent); }
 .group-account-menu { align-self: flex-start; position: relative; flex-shrink: 0; }
-.group-account-menu > summary { display: flex; align-items: center; justify-content: center; list-style: none; width: 26px; height: 28px; color: var(--muted); cursor: pointer; border-radius: 6px; }
-.group-account-menu > summary::-webkit-details-marker { display: none; }
-.group-account-menu > div { z-index: 15; position: absolute; right: 0; min-width: 142px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 20px #0002; }
-.group-account-menu > div button { width: 100%; white-space: nowrap; }
+.group-account-menu > .account-more-trigger { display: flex; align-items: center; justify-content: center; width: 26px; height: 28px; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; }
 .group-empty { padding: 24px 0; text-align: center; color: var(--muted); font-size: 12px; }
 .group-pool { padding-top: 8px; border-top: 1px solid var(--line); }
 .group-pool .membership-zone { padding: 14px 0; }
@@ -104,7 +101,7 @@
 .mobile .group-account-select { min-height: 48px; }
 .mobile .group-account-select strong { font-size: 14px; }
 .mobile .group-account-meta { font-size: 11px; }
-.mobile .group-account-menu > summary { width: 48px; min-height: 48px; }
+.mobile .group-account-menu > .account-more-trigger { width: 48px; min-height: 48px; }
 .mobile .group-pool .membership-accounts { grid-template-columns: minmax(0, 1fr); }
 .mobile .group-pair-selectors { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .mobile .group-draft-panel { bottom: -12px; padding: 12px; }

@@ -213,6 +213,25 @@ class ManagementTests(unittest.TestCase):
 
 
 class RecoveryPaginationTests(unittest.TestCase):
+    def test_reset_credit_history_keeps_recovery_kind_and_safe_receipt_fields(self):
+        receipt = {"consumed": True, "completed_at": "2026-09-30T08:00:00+00:00",
+                   "verification_method": "model"}
+        history = {"fixture-reset": {"id": 1, "account_id": 7, "account_name": "Fixture account",
+            "model_id": "fixture-model", "legacy": False, "kind": "reset_credit",
+            "test_completed_at": "2026-09-30T08:00:01+00:00", "recovered_at": "2026-09-30T08:00:02+00:00",
+            "reset_credit": {**receipt, "card_id": "fixture-private-card", "message": "fixture-private-response"}}}
+        db, store = Mock(), Mock()
+        db.fetch_all.return_value = [{"id": 7, "name": "Fixture account"}]
+        store.cached_snapshot.return_value = {"recovery_history": history}
+        result = DesktopService(SimpleNamespace(db=db, oauth_monitor=SimpleNamespace(store=store))).recoveries()
+        self.assertEqual(len(result["items"]), 1)
+        item = result["items"][0]
+        self.assertEqual(item["kind"], "reset_credit")
+        self.assertEqual(item["reset_credit"], receipt)
+        self.assertEqual(item["model_id"], "fixture-model")
+        self.assertNotIn("fixture-private-card", json.dumps(result))
+        self.assertNotIn("fixture-private-response", json.dumps(result))
+
     def test_filters_before_cursor_without_changing_history(self):
         history = {str(i): {"id": i, "account_id": i, "account_name": f"Account {i}"} for i in range(1, 31)}
         db, store = Mock(), Mock()

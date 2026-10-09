@@ -56,12 +56,12 @@ import {
 import TestDialog from "./TestDialog";
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
-import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
+import { DeleteAccountsDialog } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
-import AccountActionMenu from "./AccountActionMenu";
+import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
 import { accountOperation, bindOperationConnection } from "./accountOperations";
@@ -212,6 +212,11 @@ export default function App() {
     setGroupChanges({ count: 0, busy: false });
   }, [connectionKey]);
   const report = (e: unknown) => { if (!String(e).includes("连接已切换；请求保留在原连接")) setToast(String(e).replace(/^Error: /, "")); };
+  const accountActions = useAccountActions({ online: state.online, connectionKey, report,
+    modelTest: setModelTestAccount, modelDetection: setModelDetectionAccount, test: setTestAccount,
+    template: (account) => { setTemplateAccounts(undefined); setTemplateAccount(account); setTemplatesOpen(true); },
+    remove: (account) => setDeleteAccounts([account]),
+  });
   useEffect(() => {
     let disposed = false;
     let un: () => void = () => {},
@@ -655,7 +660,7 @@ export default function App() {
               </>
             ) : (
               <>
-                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} modelTest={(account) => setModelTestAccount(account)} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
+                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
                 <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page}>
                   <div className="page-heading">
                     <div>
@@ -767,7 +772,7 @@ export default function App() {
                         </button>
                         </div>
                       </div>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} test={setTestAccount} remove={(a) => setDeleteAccounts([a])} error={(id) => void openError(id)} modelTest={(a) => setModelTestAccount(a)} modelDetection={(a) => setModelDetectionAccount(a)} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} report={report}/> : <table className="accounts-table">
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className="accounts-table">
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -990,19 +995,7 @@ export default function App() {
                               </td>
                               <td>{schedule(a)}</td>
                               <td>
-                                <div className="account-actions">
-                                  {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <>
-                                    <button className="degradation-action" disabled={!state.online} onClick={() => setModelTestAccount(a)}><Activity size={12} aria-hidden="true"/>模型测试</button>
-                                    <DegradationAction account={a} online={state.online} report={report}/>
-                                    <button className="detection-action" disabled={!state.online} onClick={() => setModelDetectionAccount(a)}><Clock3 size={12} aria-hidden="true"/>定时检测</button>
-                                  </>}
-                                  <AccountActionMenu label={`${a.name}更多操作`}>
-                                    <button className="test-button" disabled={!state.online || !["openai", "grok"].includes(a.platform) || !["oauth", "apikey"].includes(a.type)} onClick={() => setTestAccount(a)}>测试连接</button>
-                                    <RecoverStateButton account={a} online={state.online} report={report}/>
-                                    {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <button disabled={!state.online} onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }}>应用模板</button>}
-                                    <button className="danger-text" disabled={!state.online} onClick={() => setDeleteAccounts([a])}>删除</button>
-                                  </AccountActionMenu>
-                                </div>
+                                <AccountActions items={accountActions(a)} label={`${a.name}更多操作`} contextKey={connectionKey}/>
                               </td>
                             </tr>
                           ))}

@@ -83,11 +83,31 @@ def receipt_diagnostics(status: int | None, data: Any) -> dict[str, Any]:
     elif isinstance(code, str):
         # Known generic results and namespaced machine codes only. Arbitrary
         # strings are not safe diagnostics even when they fit in a short field.
-        out["business_code"] = code if (code in {"success", "ok", "error", "failed", "redeemed"}
-            or re.fullmatch(r"OPENAI_[A-Z_]{1,56}", code)) else "unrecognized"
+        normalized = code.strip().lower()
+        out["business_code"] = (normalized if normalized in {
+            "reset", "nothing_to_reset", "no_credit", "already_redeemed", "success", "ok", "error", "failed", "redeemed"
+        } else code if re.fullmatch(r"OPENAI_[A-Z_]{1,56}", code) else "unrecognized")
     if type(data.get("windows_reset")) is int:
         out["windows_reset"] = data["windows_reset"]
     for key in ("cache_persisted", "cache_refreshed", "account_state_recovered"):
         if type(data.get(key)) is bool:
             out[key] = data[key]
     return out
+
+
+def consumption_result(data: dict[str, Any]) -> dict[str, Any]:
+    """Classify the native consume receipt, independently of cache/recovery flags."""
+    raw_code = data.get("code")
+    code = raw_code.strip().lower() if isinstance(raw_code, str) else raw_code
+    windows = data.get("windows_reset")
+    credit = data.get("credit")
+    credit_ok = credit is None or (isinstance(credit, dict)
+        and credit.get("status") in (None, "", "redeemed"))
+    success_code = (type(code) is int and code == 0) or (isinstance(code, str) and code in {"reset", "success", "ok"})
+    consumed = bool(success_code and type(windows) is int and windows > 0 and credit_ok)
+    not_consumed = (isinstance(code, str) and code in {"no_credit", "nothing_to_reset"}
+        and type(windows) is int and windows == 0 and (credit is None or
+            isinstance(credit, dict) and credit.get("status") in (None, "", "available", "expired")))
+    error = "" if consumed else code if not_consumed or code == "already_redeemed" else "result_uncertain"
+    return {"success": consumed, "consumed": consumed, "uncertain": not (consumed or not_consumed),
+            "error_code": error, "consumption_outcome": "consumed" if consumed else "not_consumed" if not_consumed else "unknown"}

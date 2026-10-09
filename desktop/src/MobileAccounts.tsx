@@ -5,18 +5,17 @@ import { command } from "./bridge";
 import { fullTime, type Account } from "./types";
 import { QualityBadge } from "./AccountQuality";
 import { PriorityEditor } from "./AccountControls";
-import { RecoverStateButton } from "./AccountManagement";
+import { AccountActionButton, isPrimaryAction, type AccountActionItem } from "./AccountActions";
 import UsageCell from "./UsageCell";
 import { useBackAction } from "./mobile";
-import DegradationAction, { DegradationBadge } from "./DegradationMark";
+import { DegradationBadge } from "./DegradationMark";
 
 type Props = {
   accounts: Account[]; online: boolean; selected: Set<number>;
   select: (id: number, checked: boolean) => void;
   schedule: (account: Account) => ReactNode;
-  quality: (account: Account) => void; test: (account: Account) => void;
-  remove: (account: Account) => void; error: (id: number) => void;
-  report: (error: unknown) => void; modelTest: (account: Account) => void; modelDetection: (account: Account) => void; template: (account: Account) => void;
+  quality: (account: Account) => void; error: (id: number) => void;
+  report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[];
 };
 
 export default function MobileAccounts(props: Props) {
@@ -44,18 +43,15 @@ export default function MobileAccounts(props: Props) {
           <button className="text-button" onClick={() => setActiveId(a.id)}>优先级 {a.priority}</button>
         </footer>
         {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <div className="mobile-primary-actions">
-          <button disabled={!props.online} onClick={() => props.modelTest(a)}>模型测试</button>
-          <DegradationAction account={a} online={props.online} report={props.report}/>
-          <button disabled={!props.online} onClick={() => props.modelDetection(a)}>定时检测</button>
+          {props.accountActions(a).filter(isPrimaryAction).map((item) => <AccountActionButton key={item.id} item={item}/>)}
         </div>}
       </article>)}
     </div>
     {active && <div className="modal-backdrop" onClick={() => setActiveId(null)}><section className="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="账号操作" onClick={(e) => e.stopPropagation()}>
       <header><h2>{active.name}</h2><button className="icon-button" aria-label="关闭账号操作" onClick={() => setActiveId(null)}><X size={20}/></button></header>
       <div className="field"><span>优先级</span><PriorityEditor account={active} online={props.online} report={props.report}/></div>
-      <details className="mobile-more-actions"><summary>更多操作</summary>      <button disabled={!props.online || !["openai", "grok"].includes(active.platform) || !["oauth", "apikey"].includes(active.type)} onClick={() => { props.test(active); setActiveId(null); }}>测试连接</button>
-{active.platform === "openai" && ["oauth", "apikey"].includes(active.type) && <button disabled={!props.online} onClick={() => { props.template(active); setActiveId(null); }}>应用模板</button>}<RecoverStateButton account={active} online={props.online} report={props.report}/>
-      <button className="danger-text" disabled={!props.online} onClick={() => { props.remove(active); setActiveId(null); }}>删除账号</button></details>
+      <div className="mobile-more-actions">{props.accountActions(active).filter((item) => !isPrimaryAction(item)).map((item) =>
+        <AccountActionButton key={item.id} item={item} after={() => setActiveId(null)}/>)}</div>
     </section></div>}
   </>;
 }
