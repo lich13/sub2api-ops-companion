@@ -259,7 +259,7 @@ async function fixtureData(page) {
     const preview = await import("/src/preview.ts");
     const state = await preview.run("get_state", {});
     const config = await preview.run("api_request", { method: "GET", path: "/config" });
-    return { accounts: state.snapshot.accounts, config, platform: state.platform };
+    return { accounts: state.snapshot.accounts, recoveries: state.snapshot.recoveries, config, platform: state.platform };
   });
 }
 
@@ -282,6 +282,121 @@ async function unchangedConfig(h, baseline) {
   await h.state(isDeepStrictEqual(current, baseline), "draft-wrote-synthetic-config");
 }
 
+function fixtureAccountActions(account) {
+  const openai = account.platform === "openai" && ["oauth", "apikey"].includes(account.type);
+  return {
+    primary: openai ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
+    more: ["测试连接", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "删除"],
+  };
+}
+
+async function accountActionButtons(h, container, expected, kind) {
+  const buttons = container.getByRole("button");
+  await h.state(isDeepStrictEqual((await buttons.allTextContents()).map((label) => label.trim()), expected), "account-action-set-mismatch", container);
+  for (const label of expected) {
+    const button = container.getByRole("button", { name: label, exact: true });
+    await h.state(await button.isEnabled(), "available-account-action-disabled", button);
+    await h.within(button, kind, { hit: true });
+  }
+}
+
+async function cancelDeleteAction(h, source, account) {
+  await h.click(source.getByRole("button", { name: "删除", exact: true }), "account-delete-confirmation-entry");
+  await source.waitFor({ state: "hidden" });
+  const dialog = h.page.getByRole("dialog", { name: "删除 1 个账号？", exact: true });
+  await h.within(dialog, "account-delete-confirmation", { touch: false, scroll: false });
+  await h.state(await dialog.locator(".delete-list strong").textContent() === account.name, "account-action-target-mismatch", dialog);
+  // Opening and cancelling this confirmation exercises action dismissal without submitting an operation.
+  await h.click(dialog.getByRole("button", { name: "取消", exact: true }), "account-delete-cancel");
+  await dialog.waitFor({ state: "hidden" });
+}
+
+async function groupMenuChecks(h, fixture, manager) {
+  const { page } = h;
+  const tabs = manager.getByRole("tablist", { name: "分组平台" });
+  const search = manager.getByRole("textbox", { name: "搜索分组账号", exact: true });
+  const menus = page.locator(".account-action-popup");
+  const triggerFor = (account) => manager.getByRole("button", { name: `${account.name}操作`, exact: true });
+
+  async function open(account, keyboard = false) {
+    const trigger = triggerFor(account);
+    if (keyboard) {
+      await h.visible(trigger, "group-account-actions-trigger");
+      await trigger.press("Enter");
+    } else {
+      await h.click(trigger, "group-account-actions-trigger");
+    }
+    const popup = page.getByRole("group", { name: `${account.name}操作`, exact: true });
+    await h.within(popup, "group-account-actions-popup", { touch: false, scroll: false });
+    await h.state(await menus.count() === 1, "multiple-account-menus-open", popup);
+    await h.state(await popup.evaluate((element) => element.parentElement === document.body), "group-popup-inside-clipped-card", popup);
+    await h.state(await trigger.getAttribute("aria-expanded") === "true"
+      && await trigger.getAttribute("aria-controls") === await popup.getAttribute("id"), "group-menu-trigger-link", trigger);
+    return { trigger, popup };
+  }
+
+  for (const [platform, label, otherLabel] of [["openai", "Codex", "Grok"], ["grok", "Grok", "Codex"]]) {
+    h.phase = `groups/${platform}/actions`;
+    const tab = tabs.getByRole("tab", { name: label, exact: true });
+    await h.click(tab, "group-platform-tab");
+    await h.state(await tab.getAttribute("aria-selected") === "true", "group-tab-not-selected", tab);
+    const accounts = fixture.accounts.filter((account) => account.platform === platform);
+    await h.state(accounts.length >= 2 && accounts.some((account) => account.type === "oauth")
+      && accounts.some((account) => account.type === "apikey"), "missing-group-action-fixtures");
+    if (platform === "openai") await h.state(accounts.some((account) => account.recoverable), "missing-recoverable-openai-fixture");
+    for (const account of accounts) {
+      await search.fill(String(account.id));
+      const card = manager.locator(".group-account");
+      await h.state(await card.count() === 1, "group-menu-search-not-specific", card);
+      await h.within(card.locator(".group-account-select strong"), "group-account-name", { touch: false, vertical: false });
+      const { trigger, popup } = await open(account);
+      const actions = fixtureAccountActions(account);
+      await accountActionButtons(h, popup, [...actions.primary, ...actions.more], "group-account-action");
+      await h.layout();
+      await page.keyboard.press("Escape");
+      await popup.waitFor({ state: "hidden" });
+      await h.state(await trigger.getAttribute("aria-expanded") === "false", "group-menu-escape-still-expanded", trigger);
+      await h.state(await trigger.evaluate((element) => document.activeElement === element), "group-menu-focus-not-restored", trigger);
+    }
+
+    h.phase = `groups/${platform}/single-menu`;
+    await search.fill("");
+    const first = await open(accounts[0]);
+    // Keyboard activation remains reachable when the first popup covers the neighbouring trigger.
+    const second = await open(accounts[1], true);
+    await first.popup.waitFor({ state: "hidden" });
+    await h.state(await first.trigger.getAttribute("aria-expanded") === "false", "previous-group-menu-still-expanded", first.trigger);
+
+    h.phase = `groups/${platform}/outside-dismissal`;
+    // The positioned popup has an 8px viewport inset; this neutral corner remains outside it.
+    await page.mouse.click(1, 1);
+    await second.popup.waitFor({ state: "hidden" });
+    await h.state(await menus.count() === 0 && await second.trigger.getAttribute("aria-expanded") === "false", "group-menu-outside-still-open", second.trigger);
+
+    h.phase = `groups/${platform}/platform-dismissal`;
+    await search.fill(String(accounts[0].id));
+    const switching = await open(accounts[0]);
+    const otherTab = tabs.getByRole("tab", { name: otherLabel, exact: true });
+    await h.visible(otherTab, "group-platform-tab");
+    await otherTab.press("Enter");
+    await switching.popup.waitFor({ state: "hidden" });
+    await h.state(await menus.count() === 0 && await otherTab.getAttribute("aria-selected") === "true", "group-menu-survived-platform-switch", otherTab);
+    await h.click(tab, "group-platform-tab");
+    await h.state(await menus.count() === 0 && await triggerFor(accounts[0]).getAttribute("aria-expanded") === "false", "group-menu-reopened-after-platform-switch", triggerFor(accounts[0]));
+
+    h.phase = `groups/${platform}/action-dismissal`;
+    await search.fill(String(accounts[0].id));
+    const action = await open(accounts[0]);
+    await cancelDeleteAction(h, action.popup, accounts[0]);
+    await h.state(await menus.count() === 0 && await action.trigger.getAttribute("aria-expanded") === "false", "group-menu-action-still-open", action.trigger);
+    await h.state(await manager.locator('.group-account-select[aria-pressed="true"]').count() === 0
+      && await manager.locator(".group-draft-panel").count() === 0, "group-menu-changed-membership-draft", manager);
+    await search.fill("");
+    await h.layout();
+  }
+  await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "group-menu-mutated-preview-accounts");
+}
+
 async function accountChecks(h, fixture) {
   const { page } = h;
   h.phase = "accounts";
@@ -296,6 +411,8 @@ async function accountChecks(h, fixture) {
   await h.visible(card, "mobile-account");
   await h.state(await card.count() === 1, "account-search-not-specific", card);
   await h.within(card.locator(".mobile-identity strong"), "long-account-name", { touch: false, vertical: false });
+  const actions = fixtureAccountActions(account);
+  await accountActionButtons(h, card.locator(".mobile-primary-actions"), actions.primary, "mobile-primary-action");
   await h.layout();
 
   h.phase = "accounts/quality-detail";
@@ -310,15 +427,15 @@ async function accountChecks(h, fixture) {
   await h.click(card.getByRole("button", { name: `${account.name}操作`, exact: true }), "account-actions-trigger");
   const sheet = page.getByRole("dialog", { name: "账号操作", exact: true });
   await h.within(sheet, "account-actions-sheet", { touch: false, scroll: false });
-  const more = sheet.locator("details.mobile-more-actions");
-  await h.click(more.locator("summary"), "mobile-more-summary");
-  await h.state(await more.getAttribute("open") !== null, "more-details-did-not-open", more);
-  await h.allWithin(more.getByRole("button"), "mobile-more-action", { hit: true });
+  const more = sheet.locator("div.mobile-more-actions");
+  await h.visible(more, "mobile-more-actions");
+  await accountActionButtons(h, more, actions.more, "mobile-more-action");
   await h.layout();
-  await h.click(more.locator("summary"), "mobile-more-summary");
-  await h.state(await more.getAttribute("open") === null, "more-details-did-not-close", more);
   await h.click(sheet.getByRole("button", { name: "关闭账号操作", exact: true }), "account-actions-close");
   await sheet.waitFor({ state: "hidden" });
+  await h.click(card.getByRole("button", { name: `${account.name}操作`, exact: true }), "account-actions-trigger");
+  await cancelDeleteAction(h, sheet, account);
+  await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "account-sheet-mutated-preview-accounts");
   await search.fill("");
 
   h.phase = "accounts/filters";
@@ -354,10 +471,7 @@ async function accountChecks(h, fixture) {
   await h.layout();
   await h.click(manager.getByRole("button", { name: "取消选择", exact: true }), "group-selection-cancel");
   await groupSearch.fill("");
-  await h.click(tabs.getByRole("tab", { name: "Grok", exact: true }), "group-platform-tab");
-  await h.state(await tabs.getByRole("tab", { name: "Grok", exact: true }).getAttribute("aria-selected") === "true", "group-tab-not-selected");
-  await h.visible(manager.locator(".group-account").first(), "group-account");
-  await h.layout();
+  await groupMenuChecks(h, fixture, manager);
   await h.click(manager.getByRole("button", { name: "返回账号", exact: true }), "group-back");
   await manager.waitFor({ state: "hidden" });
 }
@@ -415,7 +529,7 @@ async function recordChecks(h) {
   await detail.waitFor({ state: "hidden" });
 }
 
-async function eventChecks(h) {
+async function eventChecks(h, fixture) {
   const { page } = h;
   await h.navigate("事件", "events");
   const events = page.locator(".events-view");
@@ -442,7 +556,37 @@ async function eventChecks(h) {
       await h.click(drawer.getByRole("button", { name: "关闭错误详情", exact: true }), "error-detail-close");
       await drawer.waitFor({ state: "hidden" });
     } else {
-      await h.visible(panel.locator(".recovery-table tbody tr").first(), "recovery-history-row");
+      const rows = panel.locator(".recovery-table tbody tr");
+      await h.visible(rows.first(), "recovery-history-row");
+      const columns = ["账号", "恢复类型", "验证方式", "测试模型", "用卡时间", "验证通过时间", "恢复确认时间"];
+      await h.state(isDeepStrictEqual(await panel.locator(".recovery-table th").allTextContents(), columns), "recovery-history-column-labels", panel);
+      const recoveries = [...fixture.recoveries].sort((a, b) => b.id - a.id);
+      await h.state(await rows.count() === recoveries.length && recoveries.some((item) => item.kind === "reset_credit")
+        && recoveries.some((item) => item.kind !== "reset_credit"), "missing-recovery-kind-fixtures", rows);
+      for (let index = 0; index < recoveries.length; index++) {
+        const recovery = recoveries[index];
+        const row = rows.nth(index);
+        const labels = await row.locator("td").evaluateAll((cells) => cells.map((cell) => ({
+          label: cell.dataset.label, rendered: getComputedStyle(cell, "::before").content,
+        })));
+        await h.state(isDeepStrictEqual(labels.map((item) => item.label), columns)
+          && labels.every((item) => item.rendered.includes(item.label) || item.rendered === "attr(data-label)"),
+        "recovery-history-mobile-labels", row);
+        const cellText = async (label) => (await row.locator(`td[data-label="${label}"]`).textContent())?.trim();
+        const card = recovery.kind === "reset_credit";
+        await h.state(await cellText("账号") === recovery.account_name && await cellText("测试模型") === recovery.model_id,
+          "recovery-history-fixture-mismatch", row);
+        await h.state(await cellText("恢复类型") === (card ? "用卡恢复" : "额度恢复"), "recovery-kind-label", row);
+        if (card) {
+          await h.state(!!recovery.reset_credit?.completed_at && ["model", "connection"].includes(recovery.reset_credit.verification_method), "missing-reset-credit-metadata", row);
+          await h.state(await cellText("验证方式") === (recovery.reset_credit.verification_method === "model" ? "模型测试" : "测试连接")
+            && !["", "—", "时间未知"].includes(await cellText("用卡时间")), "reset-credit-metadata-labels", row);
+        } else {
+          await h.state(await cellText("验证方式") === "—" && await cellText("用卡时间") === "—", "quota-recovery-has-card-metadata", row);
+        }
+        await h.state(!["", "—", "时间未知"].includes(await cellText("验证通过时间"))
+          && !["", "—", "时间未知"].includes(await cellText("恢复确认时间")), "recovery-history-timestamps-missing", row);
+      }
       await h.allWithin(panel.locator(".recovery-table td"), "recovery-history-cell", { touch: false, vertical: false });
     }
     await h.layout();
@@ -740,6 +884,10 @@ async function desktopMenuChecks(h, fixture) {
     await h.state(await trigger.getAttribute("aria-expanded") === "false", "more-trigger-still-expanded", trigger);
     await h.state(await trigger.evaluate((element) => document.activeElement === element), "more-focus-not-restored", trigger);
   }
+  await h.click(page.locator(".sidebar nav").getByRole("button", { name: "分组", exact: true }), "desktop-group-entry", { touch: false });
+  const manager = page.locator(".group-manager");
+  await h.visible(manager, "group-manager");
+  await groupMenuChecks(h, fixture, manager);
 }
 
 async function runScenario(scenario) {
@@ -788,7 +936,7 @@ async function runScenario(scenario) {
     if (scenario.mobile) {
       await accountChecks(h, fixture);
       await recordChecks(h);
-      await eventChecks(h);
+      await eventChecks(h, fixture);
       await featureChecks(h, fixture.config);
       await templateChecks(h);
     } else {

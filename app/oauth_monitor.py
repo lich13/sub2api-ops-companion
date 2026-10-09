@@ -323,7 +323,7 @@ class OAuthStateStore:
             card = meta.get("auto_reset_credit")
             if card and card.get("stage") not in {"recovered", "closed"}:
                 meta["auto_reset_credit"] = {**card, "stage": "manual", "owns_pause": False, "next_at": None,
-                    "revision": int(card.get("revision") or 0) + 1}
+                    "manual_at": now.isoformat(), "revision": int(card.get("revision") or 0) + 1}
             data["pending_events"] = {key: event for key, event in data["pending_events"].items()
                                       if int(event.get("account_id") or 0) != int(aid) or event.get("stage") == "active_usage"}
             return generation

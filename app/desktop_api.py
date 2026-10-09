@@ -419,6 +419,18 @@ class DesktopService:
         items = [{**{k: row.get(k) for k in ("id", "account_id", "test_completed_at", "recovered_at", "legacy")},
                   "account_name": clean(row.get("account_name") or names.get(row.get("account_id")), 160),
                   "model_id": clean(row.get("model_id"), 160)} for row in records[:limit]]
+        for item, row in zip(items, records):
+            if row.get("kind") == "quota_recovery":
+                item["kind"] = "quota_recovery"
+            receipt = row.get("reset_credit")
+            if (row.get("kind") == "reset_credit" and row.get("legacy") is False
+                    and isinstance(receipt, dict) and receipt.get("consumed") is True
+                    and receipt.get("verification_method") in {"connection", "model"}
+                    and all(parse_iso_datetime(value) for value in (receipt.get("completed_at"),
+                        row.get("test_completed_at"), row.get("recovered_at")))):
+                item["kind"] = "reset_credit"
+                item["reset_credit"] = {key: receipt[key] for key in
+                    ("consumed", "completed_at", "verification_method")}
         return {"items": items, "next_cursor": items[-1]["id"] if len(records) > limit else None}
 
     def authenticate(self, key: str, *, fresh: bool = False) -> None:

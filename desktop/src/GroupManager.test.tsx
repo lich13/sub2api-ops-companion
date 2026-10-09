@@ -87,6 +87,7 @@ function render(accounts: Account[], overrides: Partial<React.ComponentProps<typ
       connectionKey="fixture"
       back={vi.fn()}
       report={vi.fn()}
+      accountActions={() => [{ id: "test", label: "测试连接", run: vi.fn() }]}
       changed={vi.fn()}
       {...overrides}
     />,
@@ -102,6 +103,20 @@ const draftApplyButton = () =>
   [...container.querySelectorAll<HTMLButtonElement>(".group-draft-toolbar button")].find(
     (node) => node.textContent?.includes("应用变更"),
   )!;
+
+const menuTrigger = (name: string) =>
+  accountButton(name).closest(".group-account")!.querySelector<HTMLButtonElement>(".account-more-trigger")!;
+
+const menu = () => document.body.querySelector<HTMLElement>(".account-action-popup");
+
+async function moveTo(name: string, destination: string) {
+  await act(async () => accountButton(name).click());
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
+      .find((node) => node.textContent === destination)!
+      .click(),
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -295,5 +310,83 @@ describe("group manager drafts", () => {
     };
     await act(async () => render([flagged, account(2, "快账号", [1])]));
     expect(container.querySelector('[aria-label="首字慢"]')).toBeTruthy();
+  });
+
+  it("keeps an existing selection intact when opening and using another account's portal menu", async () => {
+    const accounts = [account(1, "Alpha", [1]), account(2, "Beta", [2])];
+    const run = vi.fn();
+    const accountActions = vi.fn((value: Account) => [
+      { id: "test", label: "测试连接", run: () => run(value.id) },
+    ]);
+    await act(async () => render(accounts, { accountActions }));
+    await act(async () => accountButton("Alpha").click());
+    await act(async () => menuTrigger("Beta").click());
+
+    expect(menu()?.parentElement).toBe(document.body);
+    expect(accountButton("Alpha").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelectorAll(".group-account.dirty")).toHaveLength(0);
+
+    const option = menu()!.querySelector<HTMLButtonElement>("button")!;
+    await act(async () => option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await act(async () => option.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true })));
+    await act(async () => option.click());
+
+    expect(run).toHaveBeenCalledExactlyOnceWith(2);
+    expect(menu()).toBeNull();
+    expect(accountButton("Alpha").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelectorAll(".group-account.dirty")).toHaveLength(0);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("closes its menu across platform changes and page deactivation", async () => {
+    const accounts = [account(1, "Alpha", [1]), account(2, "Grok", [3], "grok")];
+    await act(async () => render(accounts));
+    await act(async () => menuTrigger("Alpha").click());
+    expect(menu()).not.toBeNull();
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((node) => node.textContent === "Grok")!.click(),
+    );
+    expect(menu()).toBeNull();
+
+    await act(async () => menuTrigger("Grok").click());
+    expect(menu()).not.toBeNull();
+    await act(async () => render(accounts, { active: false }));
+    expect(menu()).toBeNull();
+    await act(async () => render(accounts));
+    expect(menu()).toBeNull();
+  });
+
+  it("drops only a deleted account's draft and never restores it through undo", async () => {
+    const alpha = account(1, "Alpha", [1]);
+    const beta = account(2, "Beta", [2]);
+    await act(async () => render([alpha, beta]));
+    await moveTo("Alpha", "右组");
+    await moveTo("Beta", "左组");
+    expect(container.textContent).toContain("2 个账号待应用");
+
+    await act(async () => render([beta]));
+
+    expect(container.textContent).toContain("1 个账号待应用");
+    expect(container.textContent).not.toContain("冲突");
+    expect(draftApplyButton().disabled).toBe(false);
+    expect([...container.querySelectorAll(".group-account.dirty strong")].map((node) => node.textContent)).toEqual(["Beta"]);
+    const undo = [...container.querySelectorAll<HTMLButtonElement>(".group-draft-toolbar button")]
+      .find((node) => node.textContent?.includes("撤销"))!;
+    if (!undo.disabled) {
+      await act(async () => undo.click());
+      expect(container.textContent).not.toContain("个账号待应用");
+      expect(container.textContent).not.toContain("Alpha");
+      await moveTo("Beta", "左组");
+    }
+    vi.mocked(api).mockResolvedValue({ verified: true } as never);
+    await act(async () => draftApplyButton().click());
+
+    expect(api).toHaveBeenCalledExactlyOnceWith("PUT", "/accounts/2/groups", {
+      expected_version: "version-2",
+      scope_group_ids: [1, 2],
+      group_ids: [1],
+    });
+    expect(container.textContent).not.toContain("个账号待应用");
   });
 });

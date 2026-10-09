@@ -1,16 +1,29 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
+import { useBackAction } from "./mobile";
 
-export default function AccountActionMenu({ label, children }: { label: string; children: ReactNode }) {
+const openedEvent = "sub2ops-account-menu-opened";
+
+export default function AccountActionMenu({ label, children, iconOnly = false, active = true, contextKey, disabled = false }: {
+  label: string; children: ReactNode; iconOnly?: boolean; active?: boolean; contextKey?: string; disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number }>();
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const id = useId();
+  const visible = open && active && !disabled;
+  useBackAction(visible, () => { setOpen(false); trigger.current?.focus({ preventScroll: true }); });
+  useEffect(() => { setOpen(false); setPosition(undefined); }, [active, contextKey, disabled]);
+  useEffect(() => {
+    const closeOther = (event: Event) => { if ((event as CustomEvent<string>).detail !== id) setOpen(false); };
+    document.addEventListener(openedEvent, closeOther);
+    return () => document.removeEventListener(openedEvent, closeOther);
+  }, [id]);
 
   useLayoutEffect(() => {
-    if (!open || !trigger.current || !popup.current) return;
+    if (!visible || !trigger.current || !popup.current) return;
     const anchor = trigger.current.getBoundingClientRect();
     const menu = popup.current.getBoundingClientRect();
     const below = window.innerHeight - anchor.bottom - 8;
@@ -20,14 +33,14 @@ export default function AccountActionMenu({ label, children }: { label: string; 
       top: Math.max(8, Math.min(top, window.innerHeight - menu.height - 8)),
       left: Math.max(8, Math.min(anchor.right - menu.width, window.innerWidth - menu.width - 8)),
     });
-  }, [open]);
+  }, [visible]);
 
   useLayoutEffect(() => {
-    if (open && position) popup.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
-  }, [open, position]);
+    if (visible && position) popup.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+  }, [visible, position]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const outside = (event: PointerEvent) => {
       if (!popup.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -52,17 +65,24 @@ export default function AccountActionMenu({ label, children }: { label: string; 
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("resize", resize);
     };
-  }, [open]);
+  }, [visible]);
 
   return <>
-    <button ref={trigger} type="button" className="account-more-trigger" aria-label={label} aria-expanded={open} aria-controls={open ? id : undefined}
-      onClick={() => { setPosition(undefined); setOpen(!open); }}>
-      <MoreHorizontal size={12} aria-hidden="true" />更多
+    <button ref={trigger} type="button" className={`account-more-trigger${iconOnly ? " icon-only" : ""}`} aria-label={label} aria-expanded={visible} aria-controls={visible ? id : undefined}
+      disabled={disabled || !active} onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!visible) document.dispatchEvent(new CustomEvent(openedEvent, { detail: id }));
+        setPosition(undefined); setOpen(!visible);
+      }}>
+      <MoreHorizontal size={iconOnly ? 17 : 12} aria-hidden="true" />{!iconOnly && "更多"}
     </button>
-    {open && createPortal(
+    {visible && createPortal(
       <div ref={popup} id={id} role="group" aria-label={label} className="account-action-popup"
         style={{ top: position?.top ?? 0, left: position?.left ?? 0, visibility: position ? "visible" : "hidden" }}
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
+          event.stopPropagation();
           const button = (event.target as Element).closest("button");
           if (button && !button.disabled) setOpen(false);
         }}
@@ -70,6 +90,7 @@ export default function AccountActionMenu({ label, children }: { label: string; 
           if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) setOpen(false);
         }}
         onKeyDown={(event) => {
+          event.stopPropagation();
           if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
           const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
           if (!buttons.length) return;

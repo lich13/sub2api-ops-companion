@@ -290,20 +290,31 @@ export function RecoveryHistory({
           <thead>
             <tr>
               <th>账号</th>
+              <th>恢复类型</th>
+              <th>验证方式</th>
               <th>测试模型</th>
-              <th>测活通过时间</th>
+              <th>用卡时间</th>
+              <th>验证通过时间</th>
               <th>恢复确认时间</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((r) => (
+            {items.map((r) => {
+              const card = r.kind === "reset_credit" && !r.legacy && r.reset_credit
+                && ["connection", "model"].includes(r.reset_credit.verification_method)
+                && [r.reset_credit.completed_at, r.test_completed_at, r.recovered_at].every((time) => !!time && Number.isFinite(Date.parse(time)))
+                ? r.reset_credit : undefined;
+              return (
               <tr key={r.id}>
                 <td data-label="账号">
                   {r.account_name ||
                     accounts.find((a) => a.id === r.account_id)?.name}
                 </td>
+                <td data-label="恢复类型">{card ? "用卡恢复" : "额度恢复"}</td>
+                <td data-label="验证方式">{card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>
                 <td data-label="测试模型">{r.model_id || "未知"}</td>
-                <td data-label="测活通过时间">
+                <td data-label="用卡时间"><time>{card ? fullTime(card.completed_at) : "—"}</time></td>
+                <td data-label="验证通过时间">
                   <time>
                     {r.test_completed_at
                       ? fullTime(r.test_completed_at)
@@ -316,7 +327,7 @@ export function RecoveryHistory({
                   </time>
                 </td>
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
         {!items.length && <div className="quiet">暂无恢复记录</div>}

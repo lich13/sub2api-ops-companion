@@ -379,6 +379,17 @@ let state: ViewState = {
     ],
     recoveries: [
       {
+        id: 2,
+        account_id: 101,
+        account_name: accounts[0].name,
+        model_id: "gpt-6-luna",
+        test_completed_at: before,
+        recovered_at: now,
+        legacy: false,
+        kind: "reset_credit",
+        reset_credit: { consumed: true, completed_at: before, verification_method: "model" },
+      },
+      {
         id: 1,
         account_id: 102,
         account_name: accounts[1].name,

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from "react";
+import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountActionMenu from "./AccountActionMenu";
+import { handleBack } from "./mobile";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -18,11 +19,14 @@ const popup = () =>
     '[role="group"][aria-label="账号操作"]',
   );
 
-async function renderMenu(children: ReactNode) {
+async function renderMenu(
+  children: ReactNode,
+  props: Partial<Omit<ComponentProps<typeof AccountActionMenu>, "label" | "children">> = {},
+) {
   await act(async () =>
     root.render(
       <div className="clipped-table" style={{ height: 24, overflow: "hidden" }}>
-        <AccountActionMenu label={label}>{children}</AccountActionMenu>
+        <AccountActionMenu label={label} {...props}>{children}</AccountActionMenu>
         <button type="button" data-outside>
           外部
         </button>
@@ -173,6 +177,86 @@ describe("account action menu", () => {
         .querySelector(".clipped-table")!
         .dispatchEvent(new Event("scroll", { bubbles: true }));
     });
+    expect(popup()).toBeNull();
+  });
+
+  it("keeps only one portal open when another account trigger is activated", async () => {
+    await act(async () => root.render(<>
+      <AccountActionMenu label="第一个账号操作"><button type="button">查看第一个</button></AccountActionMenu>
+      <AccountActionMenu label="第二个账号操作"><button type="button">查看第二个</button></AccountActionMenu>
+    </>));
+    const triggers = [...container.querySelectorAll<HTMLButtonElement>(".account-more-trigger")];
+    await click(triggers[0]);
+    expect(document.body.querySelectorAll(".account-action-popup")).toHaveLength(1);
+
+    await click(triggers[1]);
+
+    expect(document.body.querySelectorAll(".account-action-popup")).toHaveLength(1);
+    expect(document.body.querySelector(".account-action-popup")?.textContent).toBe("查看第二个");
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("closes on Android Back without invoking the page fallback", async () => {
+    const fallback = vi.fn();
+    await renderMenu(<button type="button">查看</button>);
+    await click(trigger());
+
+    await act(async () => handleBack(fallback));
+
+    expect(popup()).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+    await act(async () => handleBack(fallback));
+    expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it("closes when focus leaves the menu", async () => {
+    await renderMenu(<button type="button">查看</button>);
+    await click(trigger());
+
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-outside]")!.focus());
+
+    expect(popup()).toBeNull();
+  });
+
+  it("closes on deactivation and context changes without reopening on return", async () => {
+    const action = <button type="button">查看</button>;
+    await renderMenu(action, { active: true, contextKey: "connection-1:openai" });
+    await click(trigger());
+    await renderMenu(action, { active: false, contextKey: "connection-1:openai" });
+    expect(popup()).toBeNull();
+    await renderMenu(action, { active: true, contextKey: "connection-1:openai" });
+    expect(popup()).toBeNull();
+
+    await click(trigger());
+    await renderMenu(action, { active: true, contextKey: "connection-1:grok" });
+    expect(popup()).toBeNull();
+    await click(trigger());
+    await renderMenu(action, { active: true, contextKey: "connection-2:grok" });
+    expect(popup()).toBeNull();
+  });
+
+  it("does not let trigger or portal events reach a group destination", async () => {
+    const destinationClick = vi.fn();
+    const destinationKey = vi.fn();
+    const action = vi.fn();
+    await act(async () => root.render(
+      <section onClick={destinationClick} onKeyDown={destinationKey}>
+        <AccountActionMenu label={label} iconOnly>
+          <button type="button" onClick={action}>测试连接</button>
+        </AccountActionMenu>
+      </section>,
+    ));
+    await press(trigger(), "Enter");
+    await click(trigger());
+    const option = popup()!.querySelector<HTMLButtonElement>("button")!;
+    await press(option, "Enter");
+    await press(option, " ");
+    await click(option);
+
+    expect(action).toHaveBeenCalledOnce();
+    expect(destinationClick).not.toHaveBeenCalled();
+    expect(destinationKey).not.toHaveBeenCalled();
     expect(popup()).toBeNull();
   });
 

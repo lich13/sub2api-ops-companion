@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, MoreHorizontal, RefreshCw, Search, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, RefreshCw, Search, Undo2, X } from "lucide-react";
 import { accountOperation } from "./accountOperations";
 import type { Account, Group } from "./types";
 import { command } from "./bridge";
-import DegradationAction, { DegradationBadge } from "./DegradationMark";
+import { DegradationBadge } from "./DegradationMark";
+import AccountActions, { type AccountActionItem } from "./AccountActions";
 import { SlowWarningBadge } from "./AccountQuality";
 import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts, type Zone } from "./groupDraft";
 import { useBackAction } from "./mobile";
 import "./group-manager.css";
 
-type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; modelTest?: (account: Account) => void; changed: (count: number, busy: boolean) => void };
+type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[]; changed: (count: number, busy: boolean) => void };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
 export default function GroupManager(props: Props) {
   const { accounts, groups, online, mobile, active } = props;
@@ -32,6 +33,15 @@ export default function GroupManager(props: Props) {
   useEffect(() => { props.changed(pending.length, busy); }, [pending.length, busy]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(pointer.current?.timer); }; }, []);
   useEffect(() => { if (!active) { setSelected(null); setDrag(null); } }, [active]);
+  useEffect(() => {
+    const ids = new Set(accounts.map((account) => account.id));
+    const keepLive = (value: Drafts): Drafts => Object.values(value).every((draft) => ids.has(draft.id))
+      ? value : Object.fromEntries(Object.entries(value).filter(([, draft]) => ids.has(draft.id)));
+    if (Object.values(draftRef.current).some((draft) => !ids.has(draft.id))) setMessage("已删除账号的分组草稿已失效");
+    setDrafts(keepLive);
+    setHistory((values) => values.map(keepLive));
+    setSelected((id) => id !== null && !ids.has(id) ? null : id);
+  }, [accounts]);
   useBackAction(active && selected !== null, () => setSelected(null));
 
   function move(id: number, zone: Zone) {
@@ -109,7 +119,8 @@ export default function GroupManager(props: Props) {
       <button className="group-account-select" disabled={!online || busy} aria-pressed={selected === a.id} onClick={(e) => { e.stopPropagation(); setSelected(selected === a.id ? null : a.id); }}>
         <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/><SlowWarningBadge value={a.quality} compact />{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
       </button>
-      {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <details className="group-account-menu" onClick={(e) => e.stopPropagation()}><summary aria-label={`${a.name}操作`}><MoreHorizontal size={17}/></summary><div><button className="degradation-action" disabled={!online || busy} onClick={() => props.modelTest?.(a)}>模型测试</button>{["oauth", "apikey"].includes(a.type) && <DegradationAction account={a} online={online && !busy} report={props.report}/>}</div></details>}
+      <AccountActions items={props.accountActions(a)} label={`${a.name}操作`} mode="group" active={active}
+        contextKey={`${props.connectionKey}:${platform}:${pair.join(",")}`} disabled={busy || !!drag}/>
     </article>;
   }
   function zone(zone: Zone, label: string, values: Account[], extra = "") {
