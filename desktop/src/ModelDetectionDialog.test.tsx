@@ -39,10 +39,13 @@ type Detection = {
   interval_minutes: number;
   model_id: string;
   version: string;
+  generation?: number;
   next_at?: string | null;
   next_allowed_at?: string | null;
   disposition?: { marked: boolean; schedule_verified: boolean };
   disposition_notification?: { status: string } | null;
+  recheck_recovery?: { status: string; generation: number; mark_cleared: boolean; reason?: string } | null;
+  recovery_notification?: { status: string } | null;
   status: string;
   reason?: string;
   job_id?: string;
@@ -255,5 +258,78 @@ describe("scheduled model detection", () => {
     });
     expect(container.querySelector(".detection-meta")?.textContent).toContain("结果通知已取消");
     expect(container.querySelector(".detection-meta")?.textContent).not.toContain("冷却至");
+  });
+
+  it("polls same-generation recovery receipt and notification through queued, retry and delivered while preserving a draft", async () => {
+    const pending: Detection = {
+      ...baseDetection,
+      enabled: true,
+      status: "handling",
+      generation: 4,
+      disposition: { marked: true, schedule_verified: true },
+      disposition_notification: { status: "queued" },
+      recheck_recovery: { status: "pending", generation: 4, mark_cleared: false, reason: "正在取消降智标记" },
+      recovery_notification: { status: "queued" },
+    };
+    let current: Detection = pending;
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return current as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const detail = (label: string) => [...container.querySelectorAll(".detection-meta dt")]
+      .find((node) => node.textContent === label)?.nextElementSibling?.textContent;
+    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      interval.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(detail("复查结果")).toBe("正在取消降智标记");
+    expect(detail("结果通知")).toBe("待推送");
+
+    current = {
+      ...pending,
+      interval_minutes: 15,
+      status: "completed",
+      recheck_recovery: { status: "completed", generation: 4, mark_cleared: true, reason: "检测恢复正常，已取消降智标记" },
+      recovery_notification: { status: "retry" },
+    };
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(detail("复查结果")).toBe("已取消降智标记 · 调度保持不变");
+    expect(detail("结果通知")).toBe("待重试");
+    expect(interval.value).toBe("45");
+    expect(container.querySelector(".detection-meta")?.textContent).not.toContain("停调度已确认");
+
+    current = { ...current, recovery_notification: { status: "delivered" } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(detail("复查结果")).toBe("已取消降智标记 · 调度保持不变");
+    expect(detail("结果通知")).toBe("已推送");
+    expect(interval.value).toBe("45");
+    expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
+  });
+
+  it("ignores a recovery receipt from an older generation and keeps the prior disposition", async () => {
+    await renderDialog({
+      ...baseDetection,
+      generation: 9,
+      disposition: { marked: true, schedule_verified: true },
+      disposition_notification: { status: "retry" },
+      recheck_recovery: { status: "completed", generation: 8, mark_cleared: true, reason: "检测恢复正常，已取消降智标记" },
+      recovery_notification: { status: "delivered" },
+    });
+    const meta = container.querySelector(".detection-meta")!;
+    expect(meta.querySelector("dt")?.textContent).toBe("状态");
+    expect(meta.textContent).not.toContain("复查结果");
+    expect(meta.textContent).not.toContain("已取消降智标记 · 调度保持不变");
+    expect(meta.textContent).toContain("标记已保存 · 停调度已确认");
+    expect(meta.textContent).toContain("待重试");
   });
 });

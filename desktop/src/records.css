@@ -558,8 +558,16 @@
 }
 .records-pagination {
   padding: 14px;
+  min-height: 28px;
   text-align: center;
   border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .record-detail {
   width: min(530px, 100%);

@@ -188,6 +188,29 @@ describe("ModelTestDialog candidates", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(polls).toBe(2);
   });
+
+  it("shows only the recheck reason when a degraded account remains degraded", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = {
+      id: "e".repeat(32), status: "completed", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna",
+      returned_models: [], completed_groups: 1, valid_groups: 1, attempts: 1, duration_ms: 150,
+      completion_reason: "automatic_degradation",
+      automatic_disposition: {
+        kind: "recheck", status: "still_degraded", mark_cleared: false,
+        reason: "仍符合降智特征",
+      },
+    };
+    vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/latest") ? job as never : original(method, path, body));
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("仍符合降智特征");
+    expect(container.textContent).not.toContain("标记已保存");
+    expect(container.textContent).not.toContain("标记待核对");
+    expect(container.textContent).not.toContain("停调度");
+  });
 });
 const fingerprintBank = {
   version: {

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import threading
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .audit import write_audit
@@ -35,6 +38,30 @@ class ConfigService:
         self.r = runtime
         self.lock = asyncio.Lock()
         self.thread_lock = threading.RLock()
+        self._oauth_config_expected: bool | None = None
+
+    @contextmanager
+    def file_lock(self):
+        config_path = Path(self.r.settings.oauth_config_path)
+        path = config_path.with_suffix('.lock')
+        if self._oauth_config_expected is None:
+            self._oauth_config_expected = config_path.exists() or path.exists()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a+') as handle:
+            path.chmod(0o600)
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                if self._oauth_config_expected and not config_path.is_file():
+                    raise ValueError("OAuth 配置文件缺失，已暂停配置写入")
+                yield
+                self._oauth_config_expected = config_path.is_file()
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def reconcile_recovery_accounts(self, rows=None):
+        from .recovery_policy import migrate_recovery_selection
+        with self.thread_lock, self.file_lock():
+            return migrate_recovery_selection(self.r, rows)
 
     def snapshot(self, section: str | None = None) -> dict[str, Any]:
         with self.thread_lock:
@@ -43,7 +70,7 @@ class ConfigService:
     def _snapshot(self, section: str | None = None) -> dict[str, Any]:
         r, s = self.r, self.r.settings
         config = r.oauth_config_file() if section in (None, "oauth") else {}
-        oauth = {key: getattr(s, key, getattr(Settings, key)) for key in sorted(OAUTH_FIELDS)} if section in (None, "oauth") else {}
+        oauth = {key: config.get(key, getattr(s, key, getattr(Settings, key))) for key in sorted(OAUTH_FIELDS)} if section in (None, "oauth") else {}
         bark = r.build_bark_config() if section in (None, "bark") else {}
         fallback = r.key_fallback_controller.panel_snapshot() if r.key_fallback_controller and section in (None, "key_fallback") else {}
         result = {"oauth": oauth, "bark": bark,
@@ -62,7 +89,7 @@ class ConfigService:
 
     def _save(self, section: str, changes: dict[str, Any], user: str,
               expected_revision: str | None) -> dict[str, Any]:
-        with self.thread_lock:
+        with self.thread_lock, self.file_lock() if section == "oauth" else nullcontext():
             current = self.snapshot(section)
             if section not in current:
                 raise ValueError("未知设置分区")
@@ -107,6 +134,15 @@ class ConfigService:
                     if selected - previous - eligible:
                         raise ValueError("所选账号不属于可管理的 OpenAI OAuth 账号")
                 payload = {**r.oauth_config_file(), **values, **stamp}
+                from .recovery_policy import SEEN_IDS
+                if SEEN_IDS in payload:
+                    changed_selection = any(values[field] != (current[section].get(field) or [])
+                                            for field in (CONNECTION_IDS, MODEL_IDS))
+                    if expected_revision is None and changed_selection:
+                        raise ConfigConflict("修改恢复账号前请刷新设置并提交配置版本")
+                    # An explicit selection also counts as seen before the next
+                    # inventory refresh, so manual removal is never undone.
+                    payload[SEEN_IDS] = sorted(set(account_ids(payload[SEEN_IDS])) | selected)
                 for retired in ("oauth_early_probe_interval_seconds", "oauth_recovery_push_enabled", "oauth_night_recovery_cooldown_enabled", "oauth_usage_refresh_enabled", "oauth_regular_refresh_interval_seconds"):
                     payload.pop(retired, None)
                 monitor = getattr(r, 'oauth_monitor', None)

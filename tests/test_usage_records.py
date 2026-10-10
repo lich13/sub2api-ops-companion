@@ -218,6 +218,17 @@ class ProjectionTests(unittest.TestCase):
                 with self.subTest(kind=kind, flags=flags):
                     self.assertEqual(project({"request_type": kind, **flags})["request_type"], expected)
 
+    def test_native_request_type_keeps_legacy_projection_for_cyber_and_live(self):
+        for kind, expected in ((4, "cyber"), (5, "live")):
+            with self.subTest(kind=kind):
+                result = project({"request_type": kind, "stream": True})
+                self.assertEqual(result["request_type"], "stream")
+                self.assertEqual(result["native_request_type"], expected)
+
+        legacy = project({"request_type": 2})
+        self.assertEqual(legacy["request_type"], "stream")
+        self.assertEqual(legacy["native_request_type"], "stream")
+
     def test_all_money_is_decimal_text_and_account_cost_has_independent_basis(self):
         money = {"input_cost": Decimal("0.0000000001"), "output_cost": Decimal("0.1000000002"),
                  "cache_creation_cost": Decimal("0.0003"), "cache_read_cost": Decimal("0.0004"),

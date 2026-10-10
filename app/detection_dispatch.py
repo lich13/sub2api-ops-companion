@@ -15,6 +15,7 @@ from .usage_query import parse_iso_datetime
 COOLDOWN_SECONDS = 300
 RETRY_SECONDS = (5, 30, 120, 600)
 TITLE = "⚠️ Codex 已判定降智，已停止调度"
+RECOVERED_TITLE = "✅ Codex 检测恢复正常，已取消降智标记"
 OPTIONS = {"level": "critical", "sound": "alarm", "group": "Sub2Ops 降智处置"}
 
 
@@ -77,6 +78,18 @@ class DetectionDispatch:
                     "created_at": now, "next_at": now, "attempts": 0, "status": "queued"})
         self.s.invalidate()
 
+    def notification_is_current(self, event, current):
+        if event.get('status') not in {'queued', 'retry'} or current.get('generation') != event['generation']:
+            return False
+        recovered = event.get('kind') == 'recovered'
+        receipt = current.get('recheck_recovery' if recovered else 'disposition') or {}
+        if receipt.get('job_id') != event['job_id'] or receipt.get('status') != 'completed':
+            return False
+        if recovered:
+            mark = self.mark(event['account_id'])
+            return receipt.get('mark_cleared') is True and not mark['marked'] and mark['version'] == event['mark_version']
+        return True
+
     def _deliver_disposition(self, key):
         event = self.store.read().get("disposition_notifications", {}).get(key)
         if not event or event.get("status") not in {"queued", "retry"}:
@@ -93,9 +106,7 @@ class DetectionDispatch:
         with self.store.transaction() as data:
             event = data["disposition_notifications"][key]
             current = data["accounts"].get(str(event["account_id"]), {})
-            disposition = current.get("disposition") or {}
-            if (not runtime.enabled or current.get("generation") != event["generation"]
-                    or disposition.get("job_id") != key or disposition.get("status") != "completed"):
+            if not runtime.enabled or not self.notification_is_current(event, current):
                 event.update(status="suppressed", reason="disabled" if not runtime.enabled else "manual_intervention")
                 return
             event["attempts"] += 1
@@ -108,24 +119,33 @@ class DetectionDispatch:
                 labels.append(label)
         probability = event.get("probability")
         match = f"{probability * 100:.2f}%" if isinstance(probability, (int, float)) else "未知"
+        recovered = event.get('kind') == 'recovered'
         body = (f"账号：{event['account_name']} #{event['account_id']}（{'Key' if event['account_type'] == 'apikey' else 'OAuth'}）\n"
                 f"触发：{'、'.join(labels) or '自动检测'}\n请求模型：{event['model_id']}\n"
-                f"首组指纹推测：{event['prediction']}\n匹配度：{match}\n时间：{_beijing_time(event['created_at'])}")
-        if self.control(event['account_id'])['generation'] != event['generation']:
+                f"首组指纹推测：{event.get('first_group_prediction') or event['prediction']}\n")
+        if recovered:
+            body += (f"本轮指纹推测：{event['prediction']}\n有效组数：{event['valid_groups']}\n"
+                     f"调度保持{'开启' if event['schedulable'] else '关闭'}\n")
+        body += f"匹配度：{match}\n时间：{_beijing_time(event['created_at'])}"
+        latest = self.store.read().get('disposition_notifications', {}).get(key)
+        if not latest or not self.notification_is_current(latest, self.control(event['account_id'])):
             with self.store.transaction() as data:
                 data['disposition_notifications'][key].update(status='suppressed', reason='manual_intervention')
             return
         try:
-            result = notifier.push(TITLE, body, timeout=3, options=OPTIONS)
+            result = notifier.push(RECOVERED_TITLE if recovered else TITLE, body, timeout=3, options=OPTIONS)
             success, code = result.success, result.error_code
         except Exception:
             success, code = False, "notification_failed"
         with self.store.transaction() as data:
             saved = data["disposition_notifications"][key]
+            if not success and saved['status'] == 'suppressed':
+                return
             saved.update(status="delivered" if success else "retry", delivered_at=self.clock().isoformat() if success else None,
                          error_code=None if success else code)
         write_audit(self.r.settings.audit_path, "model_detection_notification", {
-            "account_id": event["account_id"], "job_id": key, "status": "delivered" if success else "retry"})
+            "account_id": event["account_id"], "job_id": key, "kind": event.get('kind', 'degraded'),
+            "status": "delivered" if success else "retry"})
 
     def deliver_notifications(self):
         if not hasattr(self, "_notification_lock"):

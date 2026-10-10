@@ -22,6 +22,7 @@ from app.settings import Settings, load_settings
 NOW = datetime(2026, 10, 8, 4, tzinfo=timezone.utc)
 CONNECTION = "oauth_recovery_connection_account_ids"
 MODEL = "oauth_recovery_model_account_ids"
+SEEN = "oauth_recovery_seen_account_ids"
 
 
 def oauth_account(account_id=31, **changes):
@@ -143,7 +144,7 @@ class RecoveryMigration030Tests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def test_legacy_accounts_migrate_once_and_new_accounts_are_not_auto_selected(self):
+    def test_legacy_accounts_migrate_and_first_new_account_is_auto_selected(self):
         from app.recovery_policy import migrate_recovery_selection
 
         runtime = ConfigRuntime(self.root, {"oauth_daily_test_time": "06:15"})
@@ -158,25 +159,29 @@ class RecoveryMigration030Tests(unittest.TestCase):
         saved = runtime.oauth_config_file()
         self.assertEqual(saved[CONNECTION], [31, 32])
         self.assertEqual(saved[MODEL], [])
+        self.assertEqual(saved[SEEN], [31, 32])
         self.assertEqual(saved["oauth_daily_test_time"], "06:15")
         self.assertEqual(getattr(runtime.settings, CONNECTION), [31, 32])
         before = runtime.path.read_bytes()
         runtime.db.fetch_all.return_value.append(oauth_account(39))
         migrate_recovery_selection(runtime)
-        self.assertEqual(runtime.path.read_bytes(), before)
-        self.assertEqual(len(runtime.saved_payloads), 1)
+        self.assertNotEqual(runtime.path.read_bytes(), before)
+        self.assertEqual(runtime.oauth_config_file()[CONNECTION], [31, 32, 39])
+        self.assertEqual(runtime.oauth_config_file()[SEEN], [31, 32, 39])
+        self.assertEqual(len(runtime.saved_payloads), 2)
 
-    def test_existing_empty_or_selected_lists_are_not_replaced_by_inventory(self):
+    def test_existing_empty_or_selected_lists_gain_a_seen_baseline_without_selection_changes(self):
         from app.recovery_policy import migrate_recovery_selection
 
         for connection, model in (([], []), ([31], [32])):
             with self.subTest(connection=connection, model=model):
                 runtime = ConfigRuntime(self.root, {CONNECTION: connection, MODEL: model})
-                before = runtime.path.read_bytes()
                 migrate_recovery_selection(runtime)
-                self.assertEqual(runtime.path.read_bytes(), before)
-                self.assertEqual(runtime.saved_payloads, [])
-                runtime.db.fetch_all.assert_not_called()
+                saved = runtime.oauth_config_file()
+                self.assertEqual(saved[CONNECTION], connection)
+                self.assertEqual(saved[MODEL], model)
+                self.assertEqual(saved[SEEN], [31, 32])
+                self.assertEqual(len(runtime.saved_payloads), 1)
 
     def test_failed_legacy_inventory_read_does_not_mark_migration_complete(self):
         from app.recovery_policy import migrate_recovery_selection

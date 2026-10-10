@@ -17,6 +17,7 @@ export default function RecordFilter({
   userId,
   options,
   onChange,
+  onOpenChange,
 }: {
   kind: "users" | "api_keys" | "accounts";
   active: boolean;
@@ -24,6 +25,7 @@ export default function RecordFilter({
   userId?: number;
   options?: RecordOption[];
   onChange: (value: RecordOption | null) => void;
+  onOpenChange?: (kind: "users" | "api_keys" | "accounts", open: boolean) => void;
 }) {
   const label = { users: "用户", api_keys: "API 密钥", accounts: "账户" }[kind];
   const [open, setOpen] = useState(false);
@@ -50,6 +52,10 @@ export default function RecordFilter({
     trigger.current?.focus({ preventScroll: true });
   };
   useBackAction(open, close);
+  useEffect(() => {
+    onOpenChange?.(kind, open);
+    return () => onOpenChange?.(kind, false);
+  }, [open, kind, onOpenChange]);
 
   function read(page: string | null, generation = epoch.current) {
     if (kind === "accounts") return;

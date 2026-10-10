@@ -513,6 +513,36 @@ async function recordChecks(h) {
   const records = page.getByRole("region", { name: "调用记录", exact: true });
   await h.visible(records.locator(".mobile-record").first(), "mobile-record");
   await h.layout();
+
+  h.phase = "records/pagination";
+  const scroll = records.locator(".records-scroll");
+  const pagination = records.locator(".records-pagination");
+  const firstPageIds = await records.locator(".mobile-record-open").evaluateAll((buttons) =>
+    buttons.map((button) => Number(button.getAttribute("aria-label")?.match(/#(\d+)$/)?.[1])),
+  );
+  await h.state(firstPageIds.length === 50 && firstPageIds.every(Number.isInteger), "records-initial-page-size", records);
+  await h.state(await pagination.getByRole("button", { name: "加载更多", exact: true }).count() === 0,
+    "legacy-load-more-button-still-visible", pagination);
+  const scrollState = await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return {
+      top: element.scrollTop,
+      height: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    };
+  });
+  await h.state(scrollState.top + scrollState.clientHeight >= scrollState.height - 1,
+    "records-scroll-bottom-not-reached", scroll);
+  await page.waitForFunction(() =>
+    document.querySelectorAll('.page-surface[data-page="records"] .mobile-record').length === 75,
+  );
+  const allPageIds = await records.locator(".mobile-record-open").evaluateAll((buttons) =>
+    buttons.map((button) => Number(button.getAttribute("aria-label")?.match(/#(\d+)$/)?.[1])),
+  );
+  await h.state(allPageIds.length === 75 && new Set(allPageIds).size === allPageIds.length
+    && firstPageIds.every((id, index) => id === allPageIds[index]), "records-pagination-duplicates-or-order", records);
+  await h.layout();
   h.phase = "records/date-picker";
   await h.click(records.getByRole("button", { name: "时间范围", exact: true }), "record-date-trigger");
   const date = page.getByRole("dialog", { name: "时间范围", exact: true });
@@ -548,13 +578,22 @@ async function recordChecks(h) {
   });
   await h.visible(missingFirstToken, "record-without-first-token");
   const compactTps = missingFirstToken.locator(".record-tps");
-  await h.state(/4\.98\s*tok\/s/.test((await compactTps.textContent()) || ""), "tps-requires-first-token", compactTps);
+  const listTps = ((await compactTps.textContent()) || "").replace(/\s+/g, " ").trim();
+  const previewRow = await page.evaluate(async () => {
+    const preview = await import("/src/preview.ts");
+    return preview.run("api_request", { method: "GET", path: "/usage-records/196" });
+  });
+  const expectedTps = previewRow.output_tokens > 0 && previewRow.duration_ms > 0
+    ? `${(previewRow.output_tokens * 1000 / previewRow.duration_ms).toFixed(1)} tok/s`
+    : "—";
+  await h.state(listTps === expectedTps, "list-tps-does-not-use-native-output-rate", compactTps);
   await h.click(missingFirstToken.locator(".mobile-record-open"), "record-missing-first-detail-trigger");
   const detail = page.getByRole("dialog", { name: "调用记录详情", exact: true });
   await h.within(detail, "record-detail", { touch: false, scroll: false });
   await h.visible(detail.locator(".record-detail-section").first(), "record-detail-content");
-  const tpsValue = detail.locator("dt").filter({ hasText: /^TPS$/ }).locator("xpath=following-sibling::dd[1]");
-  await h.state((await tpsValue.textContent())?.includes("4.98 tok/s"), "detail-tps-requires-first-token", tpsValue);
+  const tpsValue = detail.locator("dt").filter({ hasText: /^输出 TPS$/ }).locator("xpath=following-sibling::dd[1]");
+  await h.state(((await tpsValue.textContent()) || "").replace(/\s+/g, " ").trim() === listTps,
+    "detail-list-tps-mismatch", tpsValue);
   await h.layout();
   await h.click(detail.getByRole("button", { name: "关闭详情", exact: true }), "record-detail-close");
   await detail.waitFor({ state: "hidden" });

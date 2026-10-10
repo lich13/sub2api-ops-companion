@@ -19,6 +19,7 @@ export type UsageRecord = {
   reasoning_effort: string | null;
   requested_reasoning_effort: string | null;
   request_type: "sync" | "stream" | "ws_v2";
+  native_request_type?: string;
   input_tokens: number | null;
   output_tokens: number | null;
   cache_creation_tokens: number | null;
@@ -181,29 +182,19 @@ export function latencyTone(
         ? "warn"
         : "good";
 }
-export function tokensPerSecond(
-  row: Pick<
-    UsageRecord,
-    "output_tokens" | "duration_ms" | "first_token_ms" | "request_type"
-  >,
-) {
-  const {
-    output_tokens: output,
-    duration_ms: total,
-    first_token_ms: first,
-  } = row;
-  if (
-    output == null ||
-    !Number.isFinite(output) ||
-    output < 0 ||
-    total == null ||
-    !Number.isFinite(total) ||
-    total <= 0
-  )
-    return null;
-  if (first != null && (!Number.isFinite(first) || first < 0)) return null;
-  const elapsed = total - (first ?? 0);
-  if (elapsed <= 0) return null;
-  const speed = (output * 1000) / elapsed;
-  return Number.isFinite(speed) ? speed : null;
+// Sub2API native display rule, pinned to 3a6fd1c9db07203ca308aaba69e502bc1f35b307:
+// frontend/src/utils/latencyHealth.ts (formatUsageOutputRate).
+// Use the full duration: output_tokens can include reasoning tokens.
+export function formatUsageOutputRate(
+  row: Pick<UsageRecord, "output_tokens" | "duration_ms" | "image_count" |
+    "image_output_tokens" | "billing_mode"> & { request_type?: string | null; native_request_type?: string },
+): string {
+  const { output_tokens: output, duration_ms: total } = row;
+  const kind = row.native_request_type ?? row.request_type;
+  if ((row.image_count ?? 0) > 0 || (row.image_output_tokens ?? 0) > 0 ||
+      row.billing_mode === "image" ||
+      (kind && !["sync", "stream", "ws_v2", "cyber"].includes(kind)) ||
+      output == null || !Number.isFinite(output) || output <= 0 ||
+      total == null || !Number.isFinite(total) || total <= 0) return "—";
+  return `${(output * 1000 / total).toFixed(1)} tok/s`;
 }

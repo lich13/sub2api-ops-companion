@@ -266,8 +266,11 @@ class ModelTests:
                    'triggers': sorted(set(auto.get('triggers') or [])),
                    'detection_generation': auto.get('detection_generation'),
                    'detection_mark_version': auto.get('detection_mark_version'),
+                   'degradation_recheck': auto.get('degradation_recheck') is True,
+                   'recheck_account_version': auto.get('recheck_account_version'),
+                   'recheck_schedulable': auto.get('recheck_schedulable'),
                    'recovery_context': auto.get('recovery_context'), 'planned_groups': auto.get('planned_groups', 3),
-                   'first_group_prediction': None, 'automatic_disposition': None,
+                   'first_group_prediction': None, 'first_group_valid': False, 'automatic_disposition': None,
                    'target_signature': target_signature(row), 'owner_signature': target_signature(owner),
                    'groups': [{'index': i+1, 'status': 'queued', 'attempts': 0, 'ttft_ms': None,
                                'duration_ms': None, 'error': ''} for i in range(auto.get('planned_groups', 3))]}
@@ -477,6 +480,40 @@ class ModelTests:
                             write_audit(self.s.r.settings.audit_path, 'model_test_transport',
                                         {'account_id': row['id'], 'job_id': job_id, 'group': index+1,
                                          'attempt': attempt+1, **group['diagnostics']})
+                        if failed is None:
+                            # Keep a sample's slot through its decision so a serial
+                            # task cannot dispatch again before 99% early completion.
+                            async with analysis_lock:
+                                analysis_started = time.monotonic()
+                                try:
+                                    report = await asyncio.to_thread(analyze, [samples[i] for i in sorted(samples)], snapshot=bank_snapshot)
+                                    first_report = report
+                                    if index == 0 and job.get('automatic') and len(samples) > 1:
+                                        # A failed first-group retry may retain groups
+                                        # 2/3; they are not first-group evidence.
+                                        first_report = await asyncio.to_thread(analyze, [samples[0]], snapshot=bank_snapshot)
+                                except Exception:
+                                    group.update(status='completed', error='样本已完成，本地分析失败')
+                                    return
+                                group.update(status='completed', analysis_ms=round((time.monotonic()-analysis_started)*1000))
+                                await persist(completed_groups=len(samples), valid_groups=(report or {}).get('used_outputs', 0),
+                                              returned_models=sorted(returned), report=report,
+                                              first_group_valid=bool(first_report and first_report.get('used_outputs', 0) >= 1 and first_report.get('prediction')) if index == 0 else self.get(job_id).get('first_group_valid', False),
+                                              first_group_prediction=(first_report or {}).get('prediction') if index == 0 else self.get(job_id).get('first_group_prediction'))
+                                # Only first-group evidence can authorize an automatic disposition.
+                                if index == 0 and job.get('automatic') and first_report and first_report.get('used_outputs', 0) >= 1 and first_report.get('prediction') == 'gpt-5.6-luna':
+                                    early = True
+                                    try:
+                                        automatic_disposition = await self.s.model_detection.verdict(self.get(job_id), first_report)
+                                    except HTTPException as exc:
+                                        automatic_disposition = {'status': 'overridden', 'reason': str(exc.detail)[:200]}
+                                    await persist(automatic_disposition=automatic_disposition, completion_reason='automatic_degradation')
+                                    stop_peers()
+                                if report and report['probability'] >= .99 and not early:
+                                    early = True
+                                    stop_peers()
+                                await progress()
+                            return
                     if failed:
                         group.update(error=ERRORS[failed.code], retryable=failed.retryable)
                         if not failed.retryable:
@@ -488,33 +525,6 @@ class ModelTests:
                         await progress()
                         await asyncio.sleep((1, 3)[attempt])
                         continue
-                    async with analysis_lock:
-                        analysis_started = time.monotonic()
-                        try:
-                            report = await asyncio.to_thread(analyze, [samples[i] for i in sorted(samples)], snapshot=bank_snapshot)
-                        except Exception:
-                            group.update(status='completed', error='样本已完成，本地分析失败')
-                            return
-                        group.update(status='completed', analysis_ms=round((time.monotonic()-analysis_started)*1000))
-                        await persist(completed_groups=len(samples), valid_groups=(report or {}).get('used_outputs', 0),
-                                      returned_models=sorted(returned), report=report,
-                                      first_group_prediction=(report or {}).get('prediction') if index == 0 else self.get(job_id).get('first_group_prediction'))
-                        # Automatic disposition is deliberately based only on the first
-                        # valid sample. Later groups may refine a manual result but can
-                        # never retroactively stop an account.
-                        if index == 0 and job.get('automatic') and report and report.get('used_outputs', 0) >= 1 and report.get('prediction') == 'gpt-5.6-luna':
-                            early = True
-                            try:
-                                automatic_disposition = await self.s.model_detection.verdict(self.get(job_id), report)
-                            except HTTPException as exc:
-                                automatic_disposition = {'status': 'overridden', 'reason': str(exc.detail)[:200]}
-                            await persist(automatic_disposition=automatic_disposition, completion_reason='automatic_degradation')
-                            stop_peers()
-                        if report and report['probability'] >= .99 and not early:
-                            early = True
-                            stop_peers()
-                        await progress()
-                    return
             except asyncio.CancelledError:
                 group['status'] = 'skipped' if early else 'cancelled'
                 raise
@@ -550,6 +560,9 @@ class ModelTests:
                 finally:
                     stop_peers()
                     await asyncio.gather(*children, return_exceptions=True)
+                    for group in groups:
+                        if group['status'] == 'queued':
+                            group['status'] = 'skipped' if early else 'cancelled'
             current = self.get(job_id)
             retryable = any(g.get('retryable') and g['status'] == 'failed' for g in groups) and not fatal and not early
             status = 'failed' if fatal or (not samples and not early) else 'completed'
@@ -557,9 +570,11 @@ class ModelTests:
             completion_reason = ('automatic_degradation' if automatic_disposition else
                                  'confidence_99' if early else 'fatal_error' if fatal else 'samples_finished')
             await persist(status=status, error=error, error_code=fatal, can_retry=retryable, completion_reason=completion_reason,
-                          automatic_disposition=automatic_disposition)
+                          automatic_disposition=automatic_disposition, groups=groups, completed_at=stamp(),
+                          duration_ms=round((time.monotonic()-started)*1000))
         finally:
-            await persist(groups=groups, completed_at=stamp(), duration_ms=round((time.monotonic()-started)*1000))
+            await persist(groups=groups, completed_at=self.get(job_id).get('completed_at') or stamp(),
+                          duration_ms=round((time.monotonic()-started)*1000))
             final = self.get(job_id)
             write_audit(self.s.r.settings.audit_path, 'model_test_result',
                         {'account_id': row['id'], 'job_id': job_id, 'status': final['status'],

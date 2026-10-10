@@ -134,12 +134,14 @@ class _DetectionFixture(unittest.IsolatedAsyncioTestCase):
         await self._enable()
         mark = self.detection.mark(1)
         self.capacity.store.set_mark(1, True, mark["version"], self.clock())
+        self.actions.account.return_value["status"] = "disabled"
         await self.detection.tick()
         paused = self.detection.view(1)
         self.assertEqual((paused["status"], paused["next_at"]), ("paused", None))
 
         mark = self.detection.mark(1)
         self.capacity.store.set_mark(1, False, mark["version"], self.clock())
+        self.actions.account.return_value["status"] = "active"
         self.clock.value = NOW + timedelta(hours=4)
         await self.detection.tick()
         resumed = self.detection.view(1)
