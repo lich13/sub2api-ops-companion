@@ -261,7 +261,7 @@ class DesktopConfigTests(unittest.IsolatedAsyncioTestCase):
                 old=service.snapshot('oauth')['oauth']['revision']
                 await service.save('oauth',{'oauth_daily_test_time':'06:15'},'test',old)
                 data=json.loads(Path(s.oauth_config_path).read_text())
-                self.assertEqual(data['oauth_recovery_test_model_id'],'gpt-5.6-luna')
+                self.assertEqual(data['oauth_recovery_test_model_id'],'preserve-model')
                 self.assertEqual(data['oauth_daily_test_time'],'06:15')
                 self.assertEqual(Path(s.oauth_config_path).stat().st_mode&0o777,0o600)
                 with self.assertRaises(ConfigConflict):await service.save('oauth',{'oauth_daily_test_time':'07:00'},'test',old)

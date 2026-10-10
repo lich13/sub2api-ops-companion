@@ -160,8 +160,7 @@ async def lifespan(_: FastAPI):
     old_oauth_config = oauth_config_file()
     if "oauth_7d_probe_interval_seconds" in old_oauth_config:
         await asyncio.to_thread(save_oauth_runtime_config, old_oauth_config)
-    from .recovery_policy import migrate_recovery_selection
-    await asyncio.to_thread(migrate_recovery_selection, sys.modules[__name__])
+    await asyncio.to_thread(desktop_service.config.reconcile_recovery_accounts)
     store = oauth_state_store()
     await asyncio.to_thread(store.commit)
     await asyncio.to_thread(
@@ -175,6 +174,7 @@ async def lifespan(_: FastAPI):
         settings,
         db,
         base_url_provider=oauth_base_url,
+        inventory_observer=desktop_service.config.reconcile_recovery_accounts,
     )
     key_fallback_controller = KeyFallbackController(
         settings,
@@ -253,9 +253,11 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan, docs_url=None, redoc_u
 def oauth_config_file() -> dict[str, Any]:
     try:
         raw = json.loads(Path(settings.oauth_config_path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         raw = {}
-    return raw if isinstance(raw, dict) else {}
+    if not isinstance(raw, dict):
+        raise ValueError("OAuth 配置格式无效")
+    return raw
 
 
 def bark_config_file() -> dict[str, Any]:
@@ -270,7 +272,8 @@ def save_oauth_runtime_config(payload: dict[str, Any]) -> None:
     path = Path(settings.oauth_config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     from .config_service import OAUTH_FIELDS
-    payload = {key: value for key, value in payload.items() if key in OAUTH_FIELDS or key in {"updated_at", "updated_by"}}
+    from .recovery_policy import SEEN_IDS
+    payload = {key: value for key, value in payload.items() if key in OAUTH_FIELDS or key in {"updated_at", "updated_by", SEEN_IDS}}
     payload.pop("oauth_night_recovery_cooldown_enabled", None)
     payload.pop("oauth_usage_refresh_enabled", None)
     payload.pop("oauth_regular_refresh_interval_seconds", None)

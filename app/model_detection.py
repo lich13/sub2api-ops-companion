@@ -14,6 +14,7 @@ from .operation_versions import digest, versions
 from .policy_store import PolicyStore
 from .usage_query import parse_iso_datetime
 from .detection_dispatch import DetectionDispatch
+from .degradation_rechecks import DegradationRechecks
 from .recovery_models import RecoveryModels
 
 TARGET = 'gpt-5.6-luna'
@@ -30,7 +31,7 @@ class DetectionRequest(BaseModel):
     interval_minutes: int = Field(default=15, ge=1, le=525600, strict=True)
     model_id: str = Field(default=DEFAULT_MODEL, min_length=1, max_length=200, pattern=r'^[A-Za-z0-9._:/-]+$')
 
-class ModelDetection(DetectionDispatch, RecoveryModels):
+class ModelDetection(DetectionDispatch, DegradationRechecks, RecoveryModels):
     def __init__(self, service, *, clock=utcnow):
         self.s, self.r, self.clock = service, service.r, clock
         self.store = PolicyStore(Path(self.r.settings.usage_query_state_path).with_name('model-detection-state.json'),
@@ -61,12 +62,15 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
         return digest({k: value[k] for k in ('enabled','interval_minutes','model_id','generation')})
 
     def view(self, aid):
-        value = self.control(aid)
-        start = self.data().get('automatic_starts', {}).get(str(aid), {})
-        notice = self.data().get('disposition_notifications', {}).get((value.get('disposition') or {}).get('job_id'))
+        data = self.data()
+        value = data['accounts'].get(str(aid), self.default())
+        start = data.get('automatic_starts', {}).get(str(aid), {})
+        notices = data.get('disposition_notifications', {})
+        notice = notices.get((value.get('disposition') or {}).get('job_id'))
+        recovery_notice = notices.get((value.get('recheck_recovery') or {}).get('job_id'))
         return {**value, 'version': self.version(value), 'account_id': aid,
                 'last_automatic_started_at': start.get('started_at'), 'next_allowed_at': self.next_allowed_at(aid),
-                'disposition_notification': notice}
+                'disposition_notification': notice, 'recovery_notification': recovery_notice}
 
     def held(self, aid):
         try:
@@ -111,30 +115,31 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
         state = self.r.capacity_alerts.store.snapshot()
         return mark_view(aid, state['marks'].get(str(aid)))
 
-    def reason(self, row, mark):
+    def reason(self, row, mark, *, recheck=False):
         if not row or row.get('platform') != 'openai' or row.get('type') not in {'oauth','apikey'} or row.get('deleted_at'):
             return '账号已删除或不支持检测'
-        if mark.get('marked'):
+        value = self.control(row['id']) if recheck else None
+        if recheck and (not value['enabled'] or not mark.get('marked')):
+            return '定时复查设置或降智标记已变化'
+        if mark.get('marked') and not recheck:
             return '已标记降智'
         if row.get('status') != 'active':
             return '账号停用或认证异常'
-        if row.get('schedulable') is not True:
+        if row.get('schedulable') is not True and not (recheck and self.owns_degradation_pause(value)):
             return '调度已关闭'
-        from .desktop_usage import project_usage
-        for window in project_usage(row, self.clock()).get('windows', []):
-            used = window.get('used_percent')
-            if isinstance(used, (int,float)) and used >= 100:
-                return '已确认额度耗尽'
         monitor = getattr(self.r, 'oauth_monitor', None)
+        result = None
         if monitor and row['type'] == 'oauth':
             state = monitor.store.snapshot()
+            result = state.get('oauth_results', {}).get(str(row['id']))
             meta = state.get('scheduler', {}).get(str(row['id']), {})
             from .oauth_queries import credential_fingerprint
             auth = (meta.get('quota_query') or {}).get('auth_fingerprint')
             auth_row = (row if 'credentials' in row else monitor._read_account(int(row['id']))) if auth else None
             if auth and (not auth_row or auth == credential_fingerprint(auth_row)):
                 return '认证异常，等待凭据更新'
-        return ''
+        from .detection_quota import detection_quota_reason
+        return detection_quota_reason(row, self.clock(), result)
 
     async def guard(self, job):
         aid = job['account_id']
@@ -143,8 +148,11 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
         if value['generation'] != job.get('detection_generation') or mark['version'] != job.get('detection_mark_version'):
             raise HTTPException(409, '检测已被新的人工操作替代')
         context = job.get('recovery_context')
+        recheck = job.get('degradation_recheck') is True
+        if recheck and self.recheck_target_changed(row, value, job):
+            raise HTTPException(409, '复查目标或调度状态已变化')
         reason = (self.recovery_reason(row, context, before_reset=bool(context.get('consume')) and not job.get('attempts'))
-                  if context else self.reason(row, mark))
+                  if context else self.reason(row, mark, recheck=recheck))
         if reason:
             raise HTTPException(409, reason)
         return row
@@ -190,7 +198,8 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
             return None
         row = await self.s.actions.account(aid)
         mark = self.mark(aid)
-        reason = self.reason(row, mark)
+        recheck = 'scheduled' in causes and value['enabled'] and mark['marked']
+        reason = self.reason(row, mark, recheck=recheck)
         if reason:
             self.update(aid, status='paused', reason=reason, next_at=None)
             self.clue_status(causes, 'ignored', reason=reason)
@@ -211,7 +220,9 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
         payload = ModelTestRequest(model_id=value['model_id'], expected_version='0'*64,
             expected_operation_version=versions(row)['model_test'], request_id=request_id, concurrency=1)
         job = await self.s.model_tests.start(aid, payload, automatic={
-            'detection_generation': value['generation'], 'detection_mark_version': mark['version'], 'triggers': causes})
+            'detection_generation': value['generation'], 'detection_mark_version': mark['version'], 'triggers': causes,
+            'degradation_recheck': recheck, 'recheck_account_version': versions(row)['model_test'] if recheck else None,
+            'recheck_schedulable': row.get('schedulable') if recheck else None})
         self.update(aid, job_id=job['id'], pending_request_id=None, status=job['status'], reason=job.get('error',''))
         self.clue_status(causes, 'testing', job_id=job['id'])
         return job
@@ -220,6 +231,8 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
         if not report or report.get('used_outputs', 0) < 1 or report.get('prediction') != TARGET:
             return None
         await self.guard(job)
+        if job.get('degradation_recheck'):
+            return {'kind': 'recheck', 'status': 'still_degraded', 'mark_cleared': False, 'reason': '仍符合降智特征'}
         aid = job['account_id']
         def prepare():
             from .desktop_api import ACCOUNT_SQL
@@ -236,7 +249,8 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                                'created_at':self.clock().isoformat(), 'model_id': job['requested_model'],
                                'prediction': report['prediction'], 'probability': report.get('probability'),
                                'triggers': job.get('triggers', [])}
-                self.update(aid, hold=True, disposition=disposition, status='handling', reason='正在标记并停止调度')
+                self.update(aid, hold=True, disposition=disposition, recheck_recovery=None,
+                            status='handling', reason='正在标记并停止调度')
         await asyncio.to_thread(prepare)
         return await asyncio.to_thread(self.finish_disposition, aid)
 
@@ -320,6 +334,9 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                 if (value.get('disposition') or {}).get('status') in {'pending','marked','writing','checking'}:
                     await asyncio.to_thread(self.finish_disposition, aid)
                     value = self.control(aid)
+                if (value.get('recheck_recovery') or {}).get('status') == 'pending':
+                    await asyncio.to_thread(self.finish_recheck_recovery, aid)
+                    value = self.control(aid)
                 job = None
                 if value.get('job_id'):
                     try:
@@ -340,7 +357,16 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                     except HTTPException:
                         await self.s.model_tests.cancel(job['id'])
                     continue
-                if job and value.get('handled_job') != job['id']:
+                if job and (value.get('handled_job') != job['id'] or (
+                        job.get('degradation_recheck') and value.get('handled_completed_at') != job.get('completed_at'))):
+                    recheck_reason = ''
+                    try:
+                        receipt = await self.complete_recheck(job)
+                        if receipt:
+                            recheck_reason = receipt.get('reason', '')
+                    except HTTPException as exc:
+                        recheck_reason = str(exc.detail)[:200]
+                    value = self.control(aid)
                     report = job.get('report') or {}
                     valid = job['status'] == 'completed' and report.get('used_outputs', 0) > 0
                     confirmed = job.get('first_group_prediction') == TARGET and valid
@@ -354,13 +380,17 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                         allowed = self.next_allowed_at(aid)
                         if timer['next_at'] and allowed:
                             timer['next_at'] = max(parse_iso_datetime(timer['next_at']), parse_iso_datetime(allowed)).isoformat()
-                    self.update(aid, handled_job=job['id'], **timer,
+                        if job.get('degradation_recheck'):
+                            timer['reason'] = recheck_reason or ('仍符合降智特征' if confirmed else job.get('error') or '复查分析不足，保留降智标记')
+                    self.update(aid, handled_job=job['id'], handled_completed_at=job.get('completed_at'), **timer,
                                 last_result={'id':job['id'], 'disposition':job.get('automatic_disposition'), 'status':job['status'], 'report':job.get('report'), 'completed_at':job.get('completed_at'),
                                              'error':job.get('error'), 'bank_version':job.get('bank_version')})
                     value = self.control(aid)
-                if value.get('hold'):
+                mark = self.mark(aid)
+                recheck = value['enabled'] and mark['marked']
+                if value.get('hold') and not (recheck and self.owns_degradation_pause(value)):
                     d = value.get('disposition') or {}
-                    reason = '已标记降智，停调度已确认' if d.get('schedule_verified') else d.get('reason', '自动处置待核对')
+                    reason = ('调度保持关闭' if not mark['marked'] else '已标记降智，停调度已确认') if d.get('schedule_verified') else d.get('reason', '自动处置待核对')
                     if value['status'] != 'paused' or value.get('next_at') or value.get('reason') != reason:
                         self.update(aid, status='paused', next_at=None, reason=reason)
                     continue
@@ -368,7 +398,7 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                     continue
                 try:
                     row = await self.s.actions.account(aid)
-                    reason = self.reason(row, self.mark(aid))
+                    reason = self.reason(row, mark, recheck=recheck)
                     if reason:
                         if value['status'] != 'paused' or value.get('reason') != reason:
                             self.update(aid, status='paused', reason=reason, next_at=None)
@@ -385,7 +415,9 @@ class ModelDetection(DetectionDispatch, RecoveryModels):
                         self.update(aid, candidate_blocked=False, candidate_recheck_at=None)
                     due = parse_iso_datetime(value.get('next_at'))
                     if due is None:
-                        self.update(aid, status='waiting', reason='', next_at=(self.clock()+timedelta(minutes=value['interval_minutes'])).isoformat())
+                        due = self.clock()+timedelta(minutes=value['interval_minutes'])
+                        allowed = parse_iso_datetime(self.next_allowed_at(aid))
+                        self.update(aid, status='waiting', reason='', next_at=max(due, allowed or due).isoformat())
                     elif self.clock() >= due:
                         await self.trigger(aid, ['scheduled'])
                 except HTTPException as exc:

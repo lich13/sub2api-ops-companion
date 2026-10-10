@@ -1033,6 +1033,7 @@ class OAuthMonitor:
         test_runner: Callable[..., dict[str, Any]] = execute_sub2api_account_test,
         recovery_runner: Callable[..., dict[str, Any]] = execute_sub2api_account_recovery,
         account_reader: Callable[[Any, int], dict[str, Any] | None] = account_ops.fallback_account,
+        inventory_observer: Callable[[list[dict[str, Any]]], Any] | None = None,
         clock: Callable[[], datetime] = _utc,
     ) -> None:
         self.settings = settings
@@ -1040,6 +1041,7 @@ class OAuthMonitor:
         self.store = OAuthStateStore(settings.usage_query_state_path)
         self.base_url_provider = base_url_provider
         self.inventory_loader = inventory_loader
+        self.inventory_observer = inventory_observer
         self.usage_runner = usage_runner
         self.test_runner = test_runner
         self.recovery_runner = recovery_runner
@@ -1067,7 +1069,10 @@ class OAuthMonitor:
             and (now - self._inventory_loaded_at).total_seconds() < INVENTORY_REFRESH_SECONDS
         ):
             return
-        self._accounts = list(self.inventory_loader(self.db))
+        accounts = list(self.inventory_loader(self.db))
+        if self.inventory_observer:
+            self.inventory_observer(accounts)
+        self._accounts = accounts
         self._inventory_loaded_at = now
         self.store.reload()
         def migrate_queries(data: dict[str, Any]) -> None:

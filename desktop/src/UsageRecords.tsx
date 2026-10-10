@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -24,7 +24,7 @@ import {
   recordColumns,
   requestTypes,
   tokenCount,
-  tokensPerSecond,
+  formatUsageOutputRate,
   type RecordOption,
   type RecordColumn,
   type UsageRecord,
@@ -82,7 +82,7 @@ function Reasoning({ row }: { row: UsageRecord }) {
 function Latency({ row }: { row: UsageRecord }) {
   const first = latencyTone(row.first_token_ms, "first");
   const total = latencyTone(row.duration_ms, "total");
-  const speed = tokensPerSecond(row);
+  const speed = formatUsageOutputRate(row);
   return (
     <div
       className="record-latency"
@@ -101,13 +101,13 @@ function Latency({ row }: { row: UsageRecord }) {
         </span>
         <small>总耗时</small>
         <span className={`latency-${total}`}>{latency(row.duration_ms)}</span>
-        <small>TPS</small>
+        <small>输出 TPS</small>
         <span className="record-tps">
-          {speed == null ? (
+          {speed === "—" ? (
             "—"
           ) : (
             <>
-              {speed.toFixed(2)}
+              {speed.split(" ")[0]}
               <small> tok/s</small>
             </>
           )}
@@ -395,10 +395,8 @@ function RecordDetail({
                 {pair("首字延迟", latency(row.first_token_ms))}
                 {pair("总耗时", latency(row.duration_ms))}
                 {pair(
-                  "TPS",
-                  tokensPerSecond(row) == null
-                    ? "—"
-                    : `${tokensPerSecond(row)!.toFixed(2)} tok/s`,
+                  "输出 TPS",
+                  formatUsageOutputRate(row),
                 )}
               </dl>
             </section>
@@ -471,6 +469,11 @@ export default function UsageRecords({
   const [datePending, setDatePending] = useState(false),
     [filtersOpen, setFiltersOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [pickers, setPickers] = useState({ users: false, accounts: false, api_keys: false });
+  const pickerChanged = useCallback((kind: keyof typeof pickers, open: boolean) => {
+    setPickers(previous => previous[kind] === open ? previous : { ...previous, [kind]: open });
+  }, []);
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   const [focused, setFocused] = useState(!desktop);
   const [scrolled, setScrolled] = useState(false),
@@ -481,6 +484,7 @@ export default function UsageRecords({
     [columnError, setColumnError] = useState("");
   const [savingColumns, setSavingColumns] = useState(false);
   const scroll = useRef<HTMLDivElement>(null),
+    sentinel = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
     detailEpoch = useRef(0);
   const accountOptions = useMemo<RecordOption[]>(
@@ -554,11 +558,25 @@ export default function UsageRecords({
     return p.toString();
   }, [filters, range]);
   const active = online && foreground && visible && focused;
+  const overlayOpen = selected !== null || filtersOpen || columnsOpen || dateOpen || Object.values(pickers).some(Boolean);
+  const paginationActive = active && !overlayOpen;
   const feed = useRecordFeed(
     query,
     active,
-    scrolled || selected !== null || filtersOpen || datePending,
+    scrolled || overlayOpen || datePending,
+    paginationActive,
   );
+  useEffect(() => {
+    const target = sentinel.current, root = scroll.current;
+    if (!paginationActive || !feed.cursor || feed.loading || feed.pageError || !target || !root ||
+        typeof IntersectionObserver === "undefined") return;
+    let live = true;
+    const observer = new IntersectionObserver(entries => {
+      if (live && entries.some(entry => entry.isIntersecting)) void feed.more();
+    }, { root, rootMargin: "0px 0px 200px 0px" });
+    observer.observe(target);
+    return () => { live = false; observer.disconnect(); };
+  }, [paginationActive, feed.cursor, feed.loading, feed.pageError, feed.more, feed.items.length]);
   useEffect(() => {
     if (!active || !range.preset) return;
     const checkDate = () => {
@@ -638,6 +656,7 @@ export default function UsageRecords({
       <div className="records-filter-bar">
         <RecordDatePicker
           value={range}
+          onOpenChange={setDateOpen}
           disabled={!active || feed.loading}
           onChange={(next) => {
             setDatePending(false);
@@ -704,12 +723,14 @@ export default function UsageRecords({
               )}
               <RecordFilter
                 kind="users"
+                onOpenChange={pickerChanged}
                 active={active}
                 value={draft.user}
                 onChange={(user) => setDraft({ ...draft, user, key: null })}
               />
               <RecordFilter
                 kind="accounts"
+                onOpenChange={pickerChanged}
                 active={active}
                 value={accountOptions.find((account) => String(account.id) === draft.account) ?? null}
                 options={accountOptions}
@@ -719,6 +740,7 @@ export default function UsageRecords({
               />
               <RecordFilter
                 kind="api_keys"
+                onOpenChange={pickerChanged}
                 active={active}
                 value={draft.key}
                 userId={draft.user?.id}
@@ -787,7 +809,7 @@ export default function UsageRecords({
             }
           }}
         >
-          <summary>
+          <summary onClick={() => setColumnsOpen(!menu.current?.open)}>
             <ListFilter size={14} />
             {mobile ? "显示字段" : "列"}
             <ChevronDown size={12} />
@@ -960,16 +982,13 @@ export default function UsageRecords({
                 : "暂无记录"}
           </div>
         )}
-        {feed.cursor && (
-          <div className="records-pagination">
-            <button
-              disabled={!active || feed.loading}
-              onClick={() => void feed.more()}
-            >
-              {feed.loading ? "正在读取…" : "加载更多"}
-            </button>
-          </div>
-        )}
+        <div ref={sentinel} className="records-pagination" aria-live="polite">
+          {feed.pageError ? <>
+            <span role="alert">{feed.pageError}</span>
+            <button disabled={!paginationActive || feed.loading} onClick={() => void feed.retryMore()}>重试加载</button>
+          </> : feed.cursor ? (feed.loading ? "正在读取…" : null)
+            : feed.items.length > 0 && !feed.loading ? "已全部加载" : null}
+        </div>
       </div>
       {selected !== null && (
         <RecordDetail row={detail} error={detailError} close={closeDetail} />

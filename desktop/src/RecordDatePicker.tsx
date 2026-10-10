@@ -13,10 +13,12 @@ export default function RecordDatePicker({
   value,
   disabled,
   onChange,
+  onOpenChange,
 }: {
   value: RecordDateRange;
   disabled: boolean;
   onChange: (value: RecordDateRange) => void;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState(value),
@@ -28,6 +30,10 @@ export default function RecordDatePicker({
     trigger.current?.focus({ preventScroll: true });
   };
   useBackAction(open, close);
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => onOpenChange?.(false);
+  }, [open, onOpenChange]);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);

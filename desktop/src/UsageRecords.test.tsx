@@ -19,6 +19,54 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let container: HTMLDivElement, root: Root, unmounted: boolean;
 let visibility: DocumentVisibilityState;
 const focusListeners = new Set<(focused: boolean) => void>();
+type TestIntersectionObserver = {
+  callback: IntersectionObserverCallback;
+  options: IntersectionObserverInit;
+  root: Element | Document | null;
+  rootMargin: string;
+  observed: Element[];
+  disconnected: boolean;
+  trigger: (isIntersecting?: boolean) => void;
+};
+const observers: TestIntersectionObserver[] = [];
+class FakeIntersectionObserver implements TestIntersectionObserver {
+  readonly observed: Element[] = [];
+  readonly root: Element | Document | null;
+  readonly rootMargin: string;
+  disconnected = false;
+  constructor(
+    readonly callback: IntersectionObserverCallback,
+    readonly options: IntersectionObserverInit = {},
+  ) {
+    this.root = options.root ?? null;
+    this.rootMargin = options.rootMargin ?? "";
+    observers.push(this);
+  }
+  observe(target: Element) {
+    this.observed.push(target);
+  }
+  unobserve(target: Element) {
+    const index = this.observed.indexOf(target);
+    if (index >= 0) this.observed.splice(index, 1);
+  }
+  disconnect() {
+    this.disconnected = true;
+  }
+  takeRecords() {
+    return [] as IntersectionObserverEntry[];
+  }
+  trigger(isIntersecting = true) {
+    this.callback(
+      [
+        {
+          isIntersecting,
+          target: this.observed[0] ?? document.body,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
 let feed: ReturnType<typeof useRecordFeed>;
 const saveColumns = vi.fn<(columns: string[]) => Promise<void>>();
 const now = "2026-09-30T04:00:00.000Z";
@@ -268,6 +316,8 @@ function detailValue(label: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
+  observers.length = 0;
+  vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   vi.setSystemTime(new Date(now));
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
@@ -290,6 +340,7 @@ afterEach(async () => {
   if (!unmounted) await stop();
   container.remove();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -437,6 +488,95 @@ describe("record feed lifecycle", () => {
     expect(params(paths()[2]).has("include_summary")).toBe(false);
   });
 
+  it("deduplicates rapid same-cursor pagination and retries only the failed cursor", async () => {
+    const first = Array.from({ length: 50 }, (_, i) => record(100 - i));
+    const next = Array.from({ length: 50 }, (_, i) => record(50 - i));
+    const cursor = "page-a";
+    const retryCursor = "page-b";
+    const pending = deferred<RecordPage>();
+    let attempts = 0;
+    serve((path) => {
+      const search = params(path);
+      if (!search.has("cursor")) return page(first, { next_cursor: cursor });
+      if (++attempts === 1) return pending.promise;
+      if (attempts === 2) throw new Error("page-b unavailable");
+      return page([], { next_cursor: null });
+    });
+    await renderFeed();
+    const firstRequest = feed.more();
+    const secondRequest = feed.more();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      pending.resolve(page(next, { next_cursor: retryCursor }));
+      expect(await firstRequest).toBe(true);
+      expect(await secondRequest).toBe(false);
+    });
+    expect(feed.items).toHaveLength(100);
+    expect(feed.cursor).toBe(retryCursor);
+
+    let failed!: boolean;
+    await act(async () => {
+      failed = await feed.more();
+    });
+    expect(failed).toBe(false);
+    expect(feed.pageError).toBe("page-b unavailable");
+    expect(feed.items).toHaveLength(100);
+    expect(feed.totalCost).toBe(totalCost);
+    expect(feed.observed).toBe(now);
+    await expect(feed.more()).resolves.toBe(false);
+    expect(api).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      expect(await feed.retryMore()).toBe(true);
+    });
+    expect(params(paths().at(-1)!).get("cursor")).toBe(retryCursor);
+    expect(feed.pageError).toBe("");
+    expect(feed.items).toHaveLength(100);
+    expect(feed.cursor).toBeNull();
+  });
+
+  it("stops pagination after an empty page or a repeated cursor", async () => {
+    const cursor = "same-cursor";
+    serve((path) =>
+      params(path).has("cursor")
+        ? page([], { next_cursor: cursor })
+        : page([record(100)], { next_cursor: cursor }),
+    );
+    await renderFeed();
+    await act(async () => {
+      expect(await feed.more()).toBe(true);
+    });
+    expect(feed.cursor).toBe(cursor);
+    expect(feed.pageError).toBe("分页未返回后续记录，请重试");
+    expect(feed.items.map((row) => row.id)).toEqual([100]);
+    await act(async () => {
+      expect(await feed.more()).toBe(false);
+    });
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops an A to B to A cursor cycle for the current head revision", async () => {
+    const first = "cursor-a";
+    const second = "cursor-b";
+    serve((path) => {
+      const cursor = params(path).get("cursor");
+      if (cursor === first) return page([record(99)], { next_cursor: second });
+      if (cursor === second) return page([record(98)], { next_cursor: first });
+      return page([record(100)], { next_cursor: first });
+    });
+    await renderFeed();
+    await act(async () => expect(await feed.more()).toBe(true));
+    await act(async () => expect(await feed.more()).toBe(true));
+    expect(feed.cursor).toBe(second);
+    expect(feed.pageError).toBe("分页未返回后续记录，请重试");
+    expect(feed.items.map((row) => row.id)).toEqual([100, 99, 98]);
+    await act(async () => expect(await feed.more()).toBe(false));
+    expect(api).toHaveBeenCalledTimes(3);
+  });
+
   it("refreshes the head for new arrivals when no history or detail is held", async () => {
     let heads = 0;
     serve((path) =>
@@ -518,6 +658,135 @@ describe("record feed lifecycle", () => {
 });
 
 describe("record view", () => {
+  it("uses the records scroll container as the pagination observer and handles a short first page", async () => {
+    const cursor = "first-history-page";
+    serve((path) =>
+      params(path).has("cursor")
+        ? page([record(99)], { next_cursor: null })
+        : page([record(100)], { next_cursor: cursor }),
+    );
+    await renderView();
+    const observer = observers.at(-1)!;
+    const scrollNode = container.querySelector(".records-scroll");
+    const sentinel = container.querySelector(".records-pagination");
+    expect(observer.root).toBe(scrollNode);
+    expect(observer.rootMargin).toBe("0px 0px 200px 0px");
+    expect(observer.observed).toContain(sentinel);
+    expect(container.textContent).not.toContain("加载更多");
+    observer.trigger(false);
+    expect(api).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      observer.trigger(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(params(paths().at(-1)!).get("cursor")).toBe(cursor);
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    expect(container.querySelector(".records-pagination")?.textContent).toContain(
+      "已全部加载",
+    );
+  });
+
+  it("shows a cursor-scoped pagination error and retries that cursor from the bottom", async () => {
+    const cursor = "retry-page";
+    let failed = true;
+    serve((path) => {
+      if (!params(path).has("cursor"))
+        return page([record(100)], { next_cursor: cursor });
+      if (failed) {
+        failed = false;
+        throw new Error("history page unavailable");
+      }
+      return page([record(99)], { next_cursor: null });
+    });
+    await renderView();
+    const observer = observers.at(-1)!;
+    await scrollTo(240);
+    await act(async () => {
+      observer.trigger(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector(".records-pagination")?.textContent).toContain(
+      "history page unavailable",
+    );
+    expect(button("重试加载")).toBeDefined();
+    expect(summary()?.textContent).toBe("$12.345679");
+    expect(container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop).toBe(
+      240,
+    );
+    const beforeRetry = paths().length;
+    observer.trigger(true);
+    expect(paths()).toHaveLength(beforeRetry);
+    await click("重试加载");
+    expect(params(paths().at(-1)!).get("cursor")).toBe(cursor);
+    expect(tableIds()).toEqual(["查看记录 #100", "查看记录 #99"]);
+    expect(summary()?.textContent).toBe("$12.345679");
+    expect(container.querySelector<HTMLDivElement>(".records-scroll")?.scrollTop).toBe(
+      240,
+    );
+    expect(container.querySelector(".records-pagination")?.textContent).toContain(
+      "已全部加载",
+    );
+  });
+
+  it.each([
+    "background",
+    "offline",
+    "hidden",
+    "blur",
+    "date",
+    "columns",
+    "detail",
+    "mobile-filter",
+    "users",
+    "accounts",
+    "api_keys",
+  ] as const)("pauses pagination while %s is active", async (holding) => {
+    const cursor = "paused-page";
+    serve((path) => {
+      if (path.startsWith("/usage-record-options?"))
+        return { items: [], next_cursor: null };
+      return params(path).has("cursor")
+        ? page([record(99)], { next_cursor: null })
+        : page([record(100)], { next_cursor: cursor });
+    });
+    await renderView({
+      mobile: holding === "mobile-filter",
+      desktop: holding !== "mobile-filter",
+      accounts: holding === "accounts" ? [account(22, "East")] : [],
+    });
+    const observer = observers.at(-1)!;
+    if (holding === "background") await renderView({ foreground: false });
+    if (holding === "offline") await renderView({ online: false });
+    if (holding === "hidden") await setVisibility("hidden");
+    if (holding === "blur") await setFocus(false);
+    if (holding === "date") await click("时间范围");
+    if (holding === "columns")
+      await act(async () =>
+        container.querySelector<HTMLDetailsElement>(".records-column-menu")!
+          .querySelector("summary")!
+          .click(),
+      );
+    if (holding === "detail")
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
+          .click(),
+      );
+    if (holding === "mobile-filter") await click("筛选记录");
+    if (holding === "users") await click("用户筛选");
+    if (holding === "accounts") await click("账户筛选");
+    if (holding === "api_keys") await click("API 密钥筛选");
+    const before = paths().length;
+    observer.trigger(true);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(paths()).toHaveLength(before);
+  });
+
   it.each([false, true])(
     "only displays the six-decimal total without a precise tooltip or copy control, mobile=%s",
     async (mobile) => {
@@ -654,7 +923,14 @@ describe("record view", () => {
             .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
             .click(),
         );
-      if (holding === "history") await click("加载更多");
+      if (holding === "history") {
+        const observer = observers.at(-1)!;
+        await act(async () => {
+          observer.trigger(true);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+      }
       if (holding === "filters") await click("筛选记录");
       const before = paths().length;
       await advance(1000);
@@ -829,7 +1105,7 @@ describe("record view", () => {
     expect(card.querySelector('[title="账户费用"]')?.textContent).toBe(
       "A $0.000000",
     );
-    expect(card.querySelector(".record-tps")?.textContent).toBe("2.00 tok/s");
+    expect(card.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
     expect(card.querySelector(".mobile-record-latency")?.textContent).toContain(
       "10.00s",
     );
@@ -1305,7 +1581,7 @@ describe("record view", () => {
     },
   );
 
-  it("shows compact caches and latency bands while retaining exact cache counts and TPS in details", async () => {
+  it("shows compact caches and latency bands while retaining exact cache counts and output TPS in details", async () => {
     const row = record(100, {
       cache_read_tokens: 127100,
       cache_creation_tokens: 1250000,
@@ -1331,7 +1607,7 @@ describe("record view", () => {
         (node) => node.textContent,
       ),
     ).toEqual(["10.00s", "70.00s"]);
-    expect(body.querySelector(".record-tps")?.textContent).toBe("2.00 tok/s");
+    expect(body.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
     await act(async () =>
       container
         .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
@@ -1339,7 +1615,7 @@ describe("record view", () => {
     );
     expect(detailValue("缓存读取")).toBe("127,100");
     expect(detailValue("缓存写入")).toBe("1,250,000");
-    expect(detailValue("TPS")).toBe("2.00 tok/s");
+    expect(detailValue("输出 TPS")).toBe("1.7 tok/s");
   });
 
   it("stops for hidden, offline, and background states and resumes immediately without losing rows", async () => {

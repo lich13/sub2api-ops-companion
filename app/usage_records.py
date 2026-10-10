@@ -83,6 +83,9 @@ def project(row: dict[str, Any]) -> dict[str, Any]:
     if kind not in (1, 2, 3):
         kind = 3 if row.get("openai_ws_mode") else 2 if row.get("stream") else 1
     result["request_type"] = {1: "sync", 2: "stream", 3: "ws_v2"}[kind]
+    # Preserve the legacy public classification while exposing the native type
+    # for output-rate eligibility (notably live sessions, which have no TPS).
+    result["native_request_type"] = {4: "cyber", 5: "live"}.get(row.get("request_type"), result["request_type"])
     requested = row.get("requested_model") or row.get("model") or None
     forwarded = row.get("upstream_model") or requested
     response = row.get("upstream_response_model") or None

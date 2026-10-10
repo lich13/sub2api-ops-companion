@@ -3,6 +3,7 @@ from __future__ import annotations
 
 CONNECTION_IDS = "oauth_recovery_connection_account_ids"
 MODEL_IDS = "oauth_recovery_model_account_ids"
+SEEN_IDS = "oauth_recovery_seen_account_ids"
 
 
 def account_ids(value):
@@ -25,22 +26,35 @@ def recovery_method(settings, account_id):
     return None
 
 
-def migrate_recovery_selection(runtime):
+def eligible_ids(rows):
+    return {int(row["id"]) for row in rows
+            if row.get("platform") == "openai" and row.get("type") == "oauth"
+            and not row.get("deleted_at") and not row.get("parent_account_id")
+            and not (row.get("extra") or {}).get("parent_account_id")}
+
+
+def migrate_recovery_selection(runtime, rows=None):
+    """Reconcile under ConfigService's write lock, using only the saved inventory."""
     from . import account_ops
     config = runtime.oauth_config_file()
+    if rows is None:
+        rows = account_ops.current_oauth_accounts(runtime.db)
+    eligible = eligible_ids(rows)
     if CONNECTION_IDS in config or MODEL_IDS in config:
         connection = account_ids(config.get(CONNECTION_IDS, []))
         models = account_ids(config.get(MODEL_IDS, []))
         if set(connection) & set(models):
             raise ValueError("两类恢复账号不能重复")
-        runtime.apply_oauth_runtime_config({CONNECTION_IDS: connection, MODEL_IDS: models})
-        return False
-    rows = account_ops.current_oauth_accounts(runtime.db)
-    connection = sorted({int(row["id"]) for row in rows
-                         if row.get("platform") == "openai" and row.get("type") == "oauth"
-                         and not row.get("deleted_at") and not row.get("parent_account_id")
-                         and not (row.get("extra") or {}).get("parent_account_id")})
-    payload = {**config, CONNECTION_IDS: connection, MODEL_IDS: []}
-    runtime.save_oauth_runtime_config(payload)
-    runtime.apply_oauth_runtime_config(payload)
-    return True
+    else:
+        # Keep the original pre-selection migration for older installations.
+        connection, models = sorted(eligible), []
+    seen = set(account_ids(config[SEEN_IDS])) if SEEN_IDS in config else eligible
+    newcomers = eligible - seen - set(connection) - set(models)
+    payload = {**config, CONNECTION_IDS: sorted(set(connection) | newcomers), MODEL_IDS: models,
+               SEEN_IDS: sorted(seen | eligible | set(connection) | set(models))}
+    if payload != config:
+        runtime.save_oauth_runtime_config(payload)
+    if payload != config or any(getattr(runtime.settings, field, None) != payload[field]
+                                for field in (CONNECTION_IDS, MODEL_IDS)):
+        runtime.apply_oauth_runtime_config(payload)
+    return payload != config
