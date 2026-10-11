@@ -32,6 +32,7 @@ export type Account = {
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
   quality?: Quality;
+  recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null } | null;
   auto_reset_credit?: {
     evidence_source?: "upstream_error" | "account_rate_limit";
     evidence_at?: string | null;

@@ -108,12 +108,12 @@ export function AccountActionButton({ item, disabled = false, after }: { item: A
 export default function AccountActions({ items, label, mode = "panel", active = true, contextKey, disabled = false }: {
   items: AccountActionItem[]; label: string; mode?: "panel" | "group"; active?: boolean; contextKey?: string; disabled?: boolean;
 }) {
-  const primary = mode === "panel" ? items.filter(isPrimaryAction) : [];
-  const rest = mode === "panel" ? items.filter((item) => !isPrimaryAction(item)) : items;
-  return <div className={mode === "panel" ? "account-actions" : "group-account-menu"}>
-    {primary.map((item) => <AccountActionButton key={item.id} item={item} disabled={disabled}/>)}
+  if (mode === "panel") return <div className="account-actions" aria-label={label}>
+    {items.map((item) => <AccountActionButton key={item.id} item={item} disabled={disabled}/>)}
+  </div>;
+  return <div className="group-account-menu">
     <AccountActionMenu label={label} iconOnly={mode === "group"} active={active} contextKey={contextKey} disabled={disabled}>
-      {rest.map((item) => <AccountActionButton key={item.id} item={item} disabled={disabled}/>)}
+      {items.map((item) => <AccountActionButton key={item.id} item={item} disabled={disabled}/>)}
     </AccountActionMenu>
   </div>;
 }

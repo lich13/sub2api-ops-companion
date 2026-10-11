@@ -62,6 +62,7 @@ import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
+import ProxyBatchDialog from "./ProxyBatchDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
@@ -133,6 +134,7 @@ export default function App() {
     [templatesOpen, setTemplatesOpen] = useState(false),
     [templateAccount, setTemplateAccount] = useState<Account | null>(null),
     [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(undefined),
+    [proxyAccounts, setProxyAccounts] = useState<Account[] | null>(null),
     [quickTab, setQuickTab] = useState<"groups" | "errors">("groups"),
     [toast, setToast] = useState(""),
     [busy, setBusy] = useState<number | null>(null),
@@ -209,6 +211,7 @@ export default function App() {
     setModelTestAccount(null);
     setQualityAccount(null);
     setSettingsAccount(null);
+    setProxyAccounts(null);
     setConfirm(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
@@ -763,6 +766,7 @@ export default function App() {
                         <span>已选 {selected.size} 个账号</span>
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
+                        <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}>选择代理</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}>应用模板</button>
                         <button
                           className="danger-text"
@@ -1239,6 +1243,7 @@ export default function App() {
         />
       )}
       {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
+      {proxyAccounts && <ProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
       {qualityAccount && (

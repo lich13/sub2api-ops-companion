@@ -157,6 +157,8 @@ class ConfigService:
                         for aid in affected:
                             meta = data['scheduler'].setdefault(str(aid), {})
                             meta['recovery_method_generation'] = int(meta.get('recovery_method_generation', 0)) + 1
+                            if meta.get('recovery_intent'):
+                                meta['recovery_intent'].update(status='cancelled', next_retry_at='')
                     if affected:
                         monitor.store.transaction(invalidate)
                 r.save_oauth_runtime_config(payload)

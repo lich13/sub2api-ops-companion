@@ -54,9 +54,10 @@ class PassiveQuotaTests(unittest.TestCase):
 
     def test_passive_exhaustion_schedules_active_recovery_at_reset(self):
         row = account(codex_7d_used_percent=100, codex_7d_reset_at=NOW.isoformat())
-        self.assertEqual(build_monitor_candidates([row], {}, {}, NOW), [])
-        candidates = build_monitor_candidates([row], {}, {}, NOW + timedelta(seconds=60))
-        self.assertEqual([(c["account_id"], c["reason"]) for c in candidates], [(1, "exact_reset")])
+        before_reset = build_monitor_candidates([row], {}, {}, NOW - timedelta(seconds=1))
+        self.assertEqual(before_reset, [])
+        at_reset = build_monitor_candidates([row], {}, {}, NOW)
+        self.assertEqual([(c["account_id"], c["reason"]) for c in at_reset], [(1, "exact_reset")])
         self.assertEqual(build_monitor_candidates([account()], {}, {}, NOW), [])
 
     def test_grok_requests_and_tokens_use_observed_headers_only(self):

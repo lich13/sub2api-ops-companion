@@ -33,7 +33,7 @@ from .model_tests import ModelTests, ModelTestRequest
 from .error_evidence import ERROR_WHERE, error_category_sql
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
-from .account_operations import AccountOperations, OperationRequest, busy
+from .account_operations import AccountOperations, OperationRequest, ProxyBatchRequest, busy
 from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest, TemplateBatchRequest
 from .model_detection import ModelDetection, DetectionRequest
 from .account_settings import AccountSettings, capabilities as settings_capabilities
@@ -507,6 +507,8 @@ class DesktopService:
                 account["usage"] = project_usage(row, now, result)
                 from .auto_reset import project_state
                 account["auto_reset_credit"] = project_state((scheduler.get(str(row["id"])) or {}).get("auto_reset_credit"))
+                from .recovery_dispatch import project_recovery_state
+                account['recovery_monitor'] = project_recovery_state(scheduler.get(str(row['id'])) or {})
                 specs.extend(stats_specs(row["id"], account["usage"]))
                 accounts.append(account)
             # Rolling windows move continuously; cache the batch for 15 seconds.
@@ -963,6 +965,11 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def operation_list(request: Request, batch_id: str | None = None):
         await auth(request)
         return service.operations.listing(batch_id)
+
+    @router.post("/account-operations/batch", status_code=202)
+    async def operation_batch(payload: ProxyBatchRequest, request: Request):
+        key = await auth(request)
+        return await service.operations.submit_proxy_batch(payload, key)
 
     @router.get("/account-operations/{job_id}")
     async def operation_detail(job_id: str, request: Request, after_event: int = 0):

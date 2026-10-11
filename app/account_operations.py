@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 from .atomic_config import write_json
 from .audit import write_audit
@@ -40,6 +40,26 @@ class OperationRequest(BaseModel):
     client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     expected_version: str = Field(min_length=64, max_length=64)
     payload: dict = Field(default_factory=dict)
+
+
+class BatchAccount(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    account_id: StrictInt = Field(gt=0)
+    expected_version: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class ProxyPayload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    proxy_id: StrictInt | None = Field(ge=1, le=9223372036854775807)
+
+
+class ProxyBatchRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: Literal['proxy']
+    payload: ProxyPayload
+    accounts: list[BatchAccount] = Field(min_length=1, max_length=1000)
+    request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
+    client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
 
 
 class OperationStore:
@@ -214,6 +234,68 @@ class AccountOperations:
                 self.audit(job, 'accepted')
             return self.listing(bid)
 
+    async def submit_proxy_batch(self, request: ProxyBatchRequest, key: str):
+        from .account_settings import capabilities, target_reached
+        ids = [item.account_id for item in request.accounts]
+        if len(set(ids)) != len(ids):
+            raise HTTPException(422, '批量账号不能重复')
+        payload = request.payload.model_dump()
+        signature = digest({**request.model_dump(exclude={'request_id'}),
+                            'accounts': sorted([item.model_dump() for item in request.accounts], key=lambda x: x['account_id'])})
+        async with self.submit_lock:
+            data = self.store.read()
+            existing = data['batch_requests'].get(request.request_id)
+            if existing:
+                batch = data['batches'][existing]
+                if batch['request_hash'] != signature:
+                    raise HTTPException(409, {'code': 'idempotency_conflict', 'message': '请求 ID 已用于其他批量操作'})
+                for jid in batch['job_ids']:
+                    self.keys[jid] = key
+                return self.listing(existing)
+            if request.request_id in data['requests']:
+                raise HTTPException(409, {'code': 'idempotency_conflict', 'message': '请求 ID 已用于其他操作'})
+            choices = await self.s.account_settings.proxies(key) if payload['proxy_id'] is not None else []
+            available = payload['proxy_id'] is None or any(p['id'] == payload['proxy_id'] and p['status'] == 'active' for p in choices)
+            bid, created = uuid.uuid4().hex, stamp()
+            jobs = []
+            for item in request.accounts:
+                row = await self.read_account(item.account_id)
+                job = {'id': uuid.uuid4().hex, 'batch_id': bid, 'account_id': item.account_id,
+                       'account_name': str((row or {}).get('name') or f'#{item.account_id}'),
+                       'action': 'proxy', 'payload': dict(payload), 'expected_version': item.expected_version,
+                       'client_id': request.client_id, 'request_id': uuid.uuid4().hex,
+                       'request_hash': digest(['proxy', payload, item.expected_version]),
+                       'parent_account_id': (row or {}).get('parent_account_id') or ((row or {}).get('extra') or {}).get('parent_account_id'),
+                       'created_at': created, 'updated_at': created, 'status': 'queued', 'reason': '等待执行', 'result': None}
+                if not row or row.get('deleted_at'):
+                    job.update(status='failed', reason='账号已删除或不存在')
+                elif not capabilities(row)['proxy']['editable']:
+                    job.update(status='failed', reason=capabilities(row)['proxy']['reason'])
+                elif target_reached(row, 'proxy', payload):
+                    job.update(status='completed', reason='', result={'verified': True, 'unchanged': True, **payload})
+                elif not available:
+                    job.update(status='needs_confirmation', reason='所选代理已不可用，请重新选择')
+                elif versions(row)['proxy'] != item.expected_version:
+                    job.update(status='needs_confirmation', reason='代理或继承关系已变化，请重新预览', current={'proxy_id': row.get('proxy_id')})
+                jobs.append(job)
+            with self.store.transaction() as latest:
+                # Accept the entire batch before making any task executable.
+                latest['batches'][bid] = {'id': bid, 'request_hash': signature, 'client_id': request.client_id,
+                    'request_id': request.request_id, 'created_at': created, 'job_ids': [j['id'] for j in jobs]}
+                latest['batch_requests'][request.request_id] = bid
+                for job in jobs:
+                    if job['status'] == 'queued':
+                        for old in latest['jobs'].values():
+                            if (old['account_id'] == job['account_id'] and old['client_id'] == request.client_id
+                                    and old['action'] == 'proxy' and old['status'] in {'queued', 'needs_confirmation'}):
+                                old.update(status='superseded', reason='已由本客户端的新请求替代', updated_at=created)
+                    latest['jobs'][job['id']] = job
+                    latest['requests'][job['request_id']] = job['id']
+            for job in jobs:
+                self.keys[job['id']] = key
+                self.audit(job, 'accepted')
+            return self.listing(bid)
+
     @staticmethod
     def model_view(job):
         return {'id': job['id'], 'account_id': job['account_id'], 'account_name': job['account_name'],
@@ -271,6 +353,8 @@ class AccountOperations:
             raise HTTPException(422, '操作参数无效') from None
         async with self.submit_lock:
             data = self.store.read()
+            if request.request_id in data['batch_requests']:
+                raise HTTPException(409, {'code': 'idempotency_conflict', 'message': '请求 ID 已用于批量操作'})
             jid = data['requests'].get(request.request_id)
             if jid:
                 old = data['jobs'][jid]

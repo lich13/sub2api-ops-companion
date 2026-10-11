@@ -44,7 +44,9 @@ ERRORS = {"no_credit": "没有可用重置卡", "conflict": "Sub2API 自动用�
           "query_budget": "等待查询预算", "query_backoff": "等待查询退避",
           "credit_snapshot_unconfirmed": "重置卡查询结果尚未确认，等待重新核对",
           "quota_unavailable": "必要额度窗口尚未恢复", "recovery_failed": "恢复调度未确认",
-          "model_verification_pending": "等待模型验证", "model_verifier_unavailable": "模型验证服务尚未就绪"}
+          "model_verification_pending": "等待模型验证", "model_verifier_unavailable": "模型验证服务尚未就绪",
+          "query_slots": "等待额度查询执行槽", "test_slots": "等待验证执行槽",
+          "model_cooldown": "模型验证冷却中", "model_busy": "等待当前模型测试结束"}
 CREDIT_EVIDENCE_ERRORS = {"missing": "缺少可信卡观测", "content_changed": "卡快照内容已变化",
     "credentials_changed": "凭据已变化", "limit_changed": "限流事件已变化", "window_changed": "额度窗口已变化",
     "outside_window": "卡观测不在当前额度窗口内", "quota_missing": "缺少有效额度时间", "new_failure": "出现更新的查询失败证据"}
@@ -729,7 +731,7 @@ class AutoResetController:
                 return
             result = verifier(aid, kind='credit', fingerprint=task['episode'], attempt=int(task.get('test_attempts') or 0) + 1, consume=True)
             self._save(aid, self.state(aid), next_at=result.get('next_at') or (now + timedelta(minutes=1)).isoformat(),
-                       model_test_job_id=result.get('job_id'), error_code='model_verification_pending' if result.get('deferred') else result.get('error_code', ''))
+                       model_test_job_id=result.get('job_id'), error_code=(result.get('waiting_reason') or 'model_verification_pending') if result.get('deferred') else result.get('error_code', ''))
             return
         result = self._request(row, "reset", task, now)
         task = self.state(aid)
@@ -777,7 +779,7 @@ class AutoResetController:
         if test.get('deferred'):
             self._save(aid, task, stage='retry', test_attempts=attempts - 1,
                        next_at=test.get('next_at') or (now + timedelta(seconds=5)).isoformat(),
-                       model_test_job_id=test.get('job_id'), error_code='model_verification_pending')
+                       model_test_job_id=test.get('job_id'), error_code=test.get('waiting_reason') or test.get('error_code') or 'model_verification_pending')
             return
         model = test.get('model_id') or model
         self.m._cycle_tests[aid] = test

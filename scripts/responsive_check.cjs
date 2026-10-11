@@ -1028,9 +1028,160 @@ async function templateChecks(h) {
   await h.layout();
 }
 
+async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
+  const { page } = h;
+  if (navigate) await h.navigate("账号", "accounts");
+  h.phase = "accounts/batch-proxy-selection";
+  const surface = page.locator('.page-surface[data-page="accounts"]');
+  await h.visible(surface, "batch-proxy-account-surface");
+  const selectionBar = surface.locator(".selection-bar");
+  await h.state((await selectionBar.textContent() || "").includes("已选 0 个账号"), "batch-proxy-selection-not-empty-at-start", selectionBar);
+  const selectedAccounts = [101, 391].map((id) => fixture.accounts.find((account) => account.id === id));
+  await h.state(selectedAccounts.every(Boolean), "missing-batch-proxy-fixture", surface);
+  const accountNames = selectedAccounts.map((account) => account.name);
+  const select = async (account, index) => {
+    const checkbox = page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true });
+    if (h.scenario.mobile) {
+      const card = surface.locator(".mobile-account").filter({ has: checkbox });
+      await h.state(await card.count() === 1, "batch-proxy-mobile-account-not-unique", card);
+      await h.click(card.locator("label.account-check"), `batch-proxy-select-${index}`);
+    } else {
+      const row = surface.locator(".accounts-table tbody tr").filter({ has: checkbox });
+      await h.state(await row.count() === 1, "batch-proxy-desktop-account-not-unique", row);
+      await h.click(checkbox, `batch-proxy-select-${index}`, { touch: false, vertical: false });
+    }
+  };
+  for (let index = 0; index < selectedAccounts.length; index++) await select(selectedAccounts[index], index);
+
+  const actions = selectionBar.locator(".selection-actions");
+  const proxyEntry = actions.getByRole("button", { name: "选择代理", exact: true });
+  await h.state((await selectionBar.textContent() || "").includes("已选 2 个账号"), "batch-proxy-selection-count", selectionBar);
+  await h.state(await proxyEntry.isEnabled(), "batch-proxy-entry-disabled", proxyEntry);
+  await h.layout();
+  await h.click(proxyEntry, "batch-proxy-entry");
+
+  const dialog = page.getByRole("dialog", { name: "批量选择代理", exact: true });
+  await h.within(dialog, "batch-proxy-dialog", { touch: false, scroll: false });
+  await h.state((await dialog.textContent() || "").includes("已选择 2 个账号"), "batch-proxy-dialog-selection-count", dialog);
+  const options = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  await h.visible(options, "batch-proxy-options");
+  await h.allWithin(options.locator("label"), "batch-proxy-option");
+  await h.state(await options.getByRole("radio").count() === 3, "batch-proxy-option-count", options);
+  const unavailable = options.getByRole("radio", { name: /备用代理/ });
+  await h.state(await unavailable.isDisabled(), "inactive-proxy-option-enabled", unavailable);
+  const previews = dialog.locator(".proxy-batch-previews article");
+  await h.state(await previews.count() === 2, "batch-proxy-preview-count", previews);
+  for (const accountName of accountNames) {
+    const preview = previews.filter({ hasText: accountName });
+    await h.state(await preview.count() === 1, "batch-proxy-preview-not-unique", preview);
+    await h.state(await preview.locator("dt").allTextContents().then((labels) => isDeepStrictEqual(labels, ["当前", "目标"])),
+      "batch-proxy-preview-labels", preview);
+    await h.within(preview.locator("dd").first(), "batch-proxy-current-value", { touch: false, vertical: false });
+    await h.within(preview.locator("dd").last(), "batch-proxy-target-value", { touch: false, vertical: false });
+  }
+  const inherited = previews.filter({ hasText: selectedAccounts[1].name });
+  await h.state((await inherited.textContent() || "").includes("继承"), "batch-proxy-inheritance-limit-missing", inherited);
+  const previewTextLayout = await previews.evaluateAll((cards) => cards.map((card) => {
+    const dds = [...card.querySelectorAll("dd")];
+    const strong = card.querySelector("header strong");
+    return {
+      cardWidth: card.getBoundingClientRect().width,
+      textOverflow: dds.some((dd) => dd.scrollWidth > dd.clientWidth + 1),
+      strongWrap: strong ? getComputedStyle(strong).overflowWrap : "",
+    };
+  }));
+  await h.state(previewTextLayout.every((item) => item.cardWidth > 0 && !item.textOverflow && item.strongWrap === "anywhere"),
+    "batch-proxy-preview-text-overflow", previews);
+
+  const activeOption = options.locator("label").filter({ hasText: "演示代理" });
+  await h.click(activeOption, "batch-proxy-active-option");
+  await h.state(await activeOption.getByRole("radio").isChecked(), "batch-proxy-active-option-not-selected", activeOption);
+  await h.state(await dialog.getByRole("button", { name: "确认应用", exact: true }).isEnabled(), "batch-proxy-confirm-disabled-for-eligible-account", dialog);
+  await h.layout();
+
+  // Closing the preview cancels the draft and must leave the selected accounts intact.
+  await h.click(dialog.getByRole("button", { name: "关闭代理选择", exact: true }), "batch-proxy-close-draft");
+  await dialog.waitFor({ state: "hidden" });
+  await h.state((await selectionBar.textContent() || "").includes("已选 2 个账号"), "batch-proxy-close-cleared-selection", selectionBar);
+  await h.state(await page.locator('[role="dialog"][aria-label="批量选择代理"]').count() === 0, "batch-proxy-close-left-dialog", surface);
+
+  // Reopen and clear the proxy. Both accounts start without a proxy, so the
+  // eligible row must report no change while the inherited row is rejected.
+  await h.click(proxyEntry, "batch-proxy-reopen");
+  await h.within(dialog, "batch-proxy-dialog-reopened", { touch: false, scroll: false });
+  const reopenedOptions = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  await h.visible(reopenedOptions, "batch-proxy-options-reopened");
+  const clearOption = reopenedOptions.locator("label").filter({ hasText: "不使用代理" });
+  await h.click(clearOption, "batch-proxy-clear-option");
+  await h.state(await clearOption.getByRole("radio").isChecked(), "batch-proxy-clear-option-not-selected", clearOption);
+  await h.state((await dialog.textContent() || "").includes("目标不使用代理"), "batch-proxy-clear-preview-missing", dialog);
+  const confirm = dialog.getByRole("button", { name: "确认应用", exact: true });
+  await h.click(confirm, "batch-proxy-clear-submit");
+  const unchanged = previews.filter({ hasText: selectedAccounts[0].name }).filter({ hasText: "无变化" });
+  await h.visible(unchanged, "batch-proxy-no-change-result");
+  await h.state((await unchanged.textContent() || "").includes(selectedAccounts[0].name), "batch-proxy-no-change-account-missing", unchanged);
+  await h.state((await inherited.textContent() || "").includes("继承"), "batch-proxy-inherited-result-missing", inherited);
+  await h.layout();
+
+  // Start a second request with an active proxy and cancel the queued eligible
+  // account before the preview transport's bounded worker completes it.
+  await h.click(dialog.getByRole("button", { name: "重新预览", exact: true }), "batch-proxy-repreview");
+  await h.visible(dialog.getByRole("radiogroup", { name: "目标代理", exact: true }), "batch-proxy-options-after-repreview");
+  const nextOptions = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  const nextActive = nextOptions.locator("label").filter({ hasText: "演示代理" });
+  await h.click(nextActive, "batch-proxy-queued-option");
+  await h.click(dialog.getByRole("button", { name: "确认应用", exact: true }), "batch-proxy-queued-submit");
+  const queuedPreview = previews.filter({ hasText: selectedAccounts[0].name });
+  const cancel = queuedPreview.getByRole("button", { name: "取消", exact: true });
+  await h.visible(cancel, "batch-proxy-queued-cancel");
+  await h.click(cancel, "batch-proxy-cancel");
+  await cancel.waitFor({ state: "hidden" });
+  await h.state((await queuedPreview.textContent() || "").includes("已取消"), "batch-proxy-cancel-result-missing", queuedPreview);
+  await h.layout();
+  await h.click(dialog.getByRole("button", { name: "关闭", exact: true }), "batch-proxy-final-close");
+  await dialog.waitFor({ state: "hidden" });
+  for (let index = 0; index < selectedAccounts.length; index++) await select(selectedAccounts[index], index);
+  await h.state((await selectionBar.textContent() || "").includes("已选 0 个账号"), "batch-proxy-selection-not-cleared-at-end", selectionBar);
+  await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "batch-proxy-mutated-preview-accounts", surface);
+}
+
+async function desktopActionChecks(h, table, fixture) {
+  const { page } = h;
+  for (const account of fixture.accounts) {
+    const row = table.locator("tbody tr").filter({
+      has: page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true }),
+    });
+    await h.state(await row.count() === 1, "desktop-account-row-not-unique", row);
+    const panel = row.locator(".account-actions");
+    const actions = fixtureAccountActions(account);
+    await accountActionButtons(h, panel, [...actions.primary, ...actions.more], "desktop-account-action");
+    const grid = await panel.evaluate((element) => {
+      const panelRect = element.getBoundingClientRect();
+      const buttons = [...element.querySelectorAll("button")];
+      const rects = buttons.map((button) => button.getBoundingClientRect());
+      const style = getComputedStyle(element);
+      return {
+        width: panelRect.width,
+        right: panelRect.right,
+        minWidth: Math.min(...rects.map((rect) => rect.width)),
+        maxRight: Math.max(...rects.map((rect) => rect.right)),
+        columns: style.gridTemplateColumns.split(/\s+/).filter(Boolean).length,
+        gridTemplateColumns: style.gridTemplateColumns,
+        justify: buttons.map((button) => getComputedStyle(button).justifyContent),
+        whiteSpace: buttons.map((button) => getComputedStyle(button).whiteSpace),
+      };
+    });
+    await h.state(grid.width > 0 && grid.minWidth >= 95.5 && grid.maxRight <= grid.right + 1
+      && (h.scenario.viewport.width < 1440 || grid.columns >= 2)
+      && grid.gridTemplateColumns !== "none" && grid.justify.every((value) => value === "flex-start")
+      && grid.whiteSpace.every((value) => value === "normal"),
+    "desktop-account-action-grid-not-filled", panel);
+  }
+}
+
 async function desktopMenuChecks(h, fixture) {
   const { page } = h;
-  h.phase = "desktop/compact-more";
+  h.phase = "desktop/table";
   const table = page.locator(".accounts-table");
   await h.visible(table, "desktop-account-table");
   await h.layout();
@@ -1060,23 +1211,10 @@ async function desktopMenuChecks(h, fixture) {
   await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "false", "account-column-collapse-preference-not-saved", reloadedTable);
   await h.layout();
 
-  h.phase = "desktop/compact-more";
-  for (const id of [102, 391]) {
-    const account = fixture.accounts.find((item) => item.id === id);
-    await h.state(!!account, "missing-desktop-fixture");
-    const label = `${account.name}更多操作`;
-    const trigger = table.getByRole("button", { name: label, exact: true });
-    await h.click(trigger, "compact-more-trigger", { touch: false });
-    const popup = page.getByRole("group", { name: label, exact: true });
-    await h.within(popup, "compact-more-popup", { touch: false, scroll: false });
-    await h.state(await popup.evaluate((element) => element.parentElement === document.body), "more-popup-inside-clipped-table", popup);
-    await h.allWithin(popup.getByRole("button"), "compact-more-action", { touch: false, scroll: false, hit: true });
-    await h.layout();
-    await page.keyboard.press("Escape");
-    await popup.waitFor({ state: "hidden" });
-    await h.state(await trigger.getAttribute("aria-expanded") === "false", "more-trigger-still-expanded", trigger);
-    await h.state(await trigger.evaluate((element) => document.activeElement === element), "more-focus-not-restored", trigger);
-  }
+  h.phase = "desktop/expanded-actions";
+  await desktopActionChecks(h, reloadedTable, reloadedFixture);
+  await proxyBatchChecks(h, reloadedFixture);
+  await h.layout();
   await h.click(page.locator(".sidebar nav").getByRole("button", { name: "分组", exact: true }), "desktop-group-entry", { touch: false });
   const manager = page.locator(".group-manager");
   await h.visible(manager, "group-manager");
@@ -1131,6 +1269,7 @@ async function runScenario(scenario) {
       await recordChecks(h);
       await eventChecks(h, fixture);
       await featureChecks(h, fixture.config);
+      await proxyBatchChecks(h, fixture, { navigate: true });
       await templateChecks(h);
     } else {
       await desktopMenuChecks(h, fixture);
@@ -1167,7 +1306,7 @@ async function main() {
   ];
   let total = 0;
   for (const mobile of [true, false]) {
-    for (const viewport of mobile ? viewports : [{ width: 960, height: 540 }]) {
+    for (const viewport of mobile ? viewports : [{ width: 960, height: 540 }, { width: 1440, height: 900 }]) {
       for (const theme of ["light", "dark"]) {
         for (const largeFont of [false, true]) {
           const name = `${mobile ? "mobile" : "desktop"}-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;

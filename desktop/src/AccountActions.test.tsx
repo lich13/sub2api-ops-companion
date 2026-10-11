@@ -143,13 +143,14 @@ afterEach(async () => {
 });
 
 describe("shared account actions", () => {
-  it.each(["oauth", "apikey"])("gives an OpenAI %s account the same seven actions in the account panel and group menu", async (type) => {
+  it.each(["oauth", "apikey"])("expands every supported OpenAI %s action in the account table while retaining the group menu", async (type) => {
     await render(state([account(1, { type })]));
     const panel = container.querySelector<HTMLElement>(".accounts-table .account-actions")!;
-    const primary = labels(panel).filter((label) => label !== "更多");
-    await act(async () => panel.querySelector<HTMLButtonElement>(".account-more-trigger")!.click());
-    expect([...primary, ...labels(menu()!)]).toEqual(openAILabels);
-    await act(async () => panel.querySelector<HTMLButtonElement>(".account-more-trigger")!.click());
+    expect(labels(panel)).toEqual(openAILabels);
+    expect(panel.querySelector(".account-more-trigger")).toBeNull();
+    expect([...panel.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([
+      true, true, true, false, false, false, true, true, true, false,
+    ]);
 
     await openGroups();
     await openGroupMenu();

@@ -202,7 +202,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
             "GET" => path == "/account-operations"
                 || path.strip_prefix("/account-operations?batch_id=").is_some_and(|id| job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase()))
                 || query_ok && plain.strip_prefix("/account-operations/").is_some_and(job_id),
-            "POST" => !path.contains('?') && plain.strip_prefix("/account-operations/").and_then(|s| s.strip_suffix("/cancel")).is_some_and(job_id),
+            "POST" => path == "/account-operations/batch" || !path.contains('?') && plain.strip_prefix("/account-operations/").and_then(|s| s.strip_suffix("/cancel")).is_some_and(job_id),
             _ => false,
         };
     }
@@ -1324,6 +1324,17 @@ mod tests {
         assert!(!allowed_request("PUT", "/account-templates/apply"));
         assert!(!allowed_request("POST", "/account-templates/apply?unknown=1"));
         assert!(!allowed_request("POST", &format!("/account-operations?batch_id={id}")));
+    }
+    #[test]
+    fn proxy_batch_path_is_explicit() {
+        assert!(allowed_request("POST", "/account-operations/batch"));
+        for method in ["GET", "PUT", "DELETE"] {
+            assert!(!allowed_request(method, "/account-operations/batch"));
+        }
+        for path in ["/account-operations/batch/", "/account-operations/batch?x=1",
+                     "/account-operations/batch?batch_id=0123456789abcdef0123456789abcdef"] {
+            assert!(!allowed_request("POST", path));
+        }
     }
     #[test]
     fn transient_failure_keeps_last_data_and_recovers() {

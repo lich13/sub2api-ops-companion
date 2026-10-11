@@ -26,9 +26,10 @@ class RecoveryModels:
             # never replaced by a second consumption or model request.
             return self.recovery_wait("验证任务正在登记")
 
-    def recovery_wait(self, reason, *, until=None, job_id=None):
+    def recovery_wait(self, reason, *, until=None, job_id=None, waiting_reason='model_verification_pending'):
         return {"success": False, "deferred": True, "error_code": "model_verification_pending", "error": reason,
-                "next_at": until or (self.clock() + timedelta(seconds=5)).isoformat(), "job_id": job_id}
+                "next_at": until or (self.clock() + timedelta(seconds=5)).isoformat(), "job_id": job_id,
+                "waiting_reason": waiting_reason}
 
     def recovery_reason(self, row, context, *, before_reset=False):
         from .oauth_monitor import automatic_recovery_eligible, control_allows_recovery, recovery_quota_ready, recovery_block_signature
@@ -118,10 +119,10 @@ class RecoveryModels:
                     "model_id": job["requested_model"], "completed_at": job.get("completed_at"), "job_id": job["id"]}
         allowed = parse_iso_datetime(self.next_allowed_at(aid))
         if allowed and self.clock() < allowed:
-            return self.recovery_wait("等待自动检测冷却", until=allowed.isoformat())
+            return self.recovery_wait("等待自动检测冷却", until=allowed.isoformat(), waiting_reason='model_cooldown')
         current = self.s.model_tests.latest(aid)
         if current and current["status"] in {"queued", "running", "retrying"}:
-            return self.recovery_wait("等待当前模型测试结束", job_id=current["id"])
+            return self.recovery_wait("等待当前模型测试结束", job_id=current["id"], waiting_reason='model_busy')
         row = await self.s.actions.account(aid)
         from .oauth_monitor import recovery_block_signature
         context["block_signature"] = recovery_block_signature(row)

@@ -254,6 +254,7 @@ accounts.push({
   ...accounts[2],
   id: 391,
   name: "Grok · Free",
+  parent_account_id: 201,
   last_error_id: null,
   last_error_at: null,
   usage: {

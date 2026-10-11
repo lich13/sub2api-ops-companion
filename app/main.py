@@ -29,6 +29,7 @@ settings = load_settings()
 db = Database(settings.database_url)
 oauth_monitor: OAuthMonitor | None = None
 oauth_monitor_task: asyncio.Task[None] | None = None
+oauth_notification_task: asyncio.Task[None] | None = None
 key_fallback_controller: KeyFallbackController | None = None
 key_fallback_task: asyncio.Task[None] | None = None
 bark_notifier = BarkNotifier(settings)
@@ -86,14 +87,27 @@ async def deliver_oauth_monitor_events(events: list[dict[str, Any]]) -> None:
 
 async def oauth_monitor_loop() -> None:
     while True:
+        started = asyncio.get_running_loop().time()
         try:
             if oauth_monitor is not None:
-                events = await asyncio.to_thread(oauth_monitor.run_once)
-                await deliver_oauth_monitor_events(events)
+                await asyncio.to_thread(oauth_monitor.tick)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             write_audit(settings.audit_path, "oauth_monitor_loop_error", {"error": str(exc)})
+        await asyncio.sleep(max(0.05, 2 - (asyncio.get_running_loop().time() - started)))
+
+
+async def oauth_notification_loop() -> None:
+    while True:
+        try:
+            if oauth_monitor is not None:
+                events = await asyncio.to_thread(oauth_monitor.store.pending_events)
+                await deliver_oauth_monitor_events(events)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            write_audit(settings.audit_path, 'oauth_notification_loop_error', {'error_code': 'delivery_failed'})
         await asyncio.sleep(2)
 
 
@@ -152,7 +166,7 @@ async def fingerprint_bank_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global oauth_monitor, oauth_monitor_task
+    global oauth_monitor, oauth_monitor_task, oauth_notification_task
     global key_fallback_controller, key_fallback_task
     global capacity_alerts
     global fingerprint_bank_task
@@ -193,6 +207,7 @@ async def lifespan(_: FastAPI):
     desktop_service.model_detection.bind_recovery(oauth_monitor, asyncio.get_running_loop())
     await asyncio.to_thread(desktop_service.model_detection.migrate_dispatches)
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
+    oauth_notification_task = asyncio.create_task(oauth_notification_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     with capacity_alerts.store.transaction() as alert_state:
@@ -240,6 +255,13 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await oauth_monitor_task
             oauth_monitor_task = None
+        if oauth_notification_task:
+            oauth_notification_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await oauth_notification_task
+            oauth_notification_task = None
+        if oauth_monitor:
+            await asyncio.to_thread(oauth_monitor.close)
         await desktop_service.close()
         oauth_monitor = None
         key_fallback_controller = None

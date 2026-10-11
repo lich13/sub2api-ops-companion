@@ -117,6 +117,57 @@ describe("Sub2API usage cell", () => {
     },
   );
 
+  it("shows an active recovery monitor wait with its next time", () => {
+    const html = renderToStaticMarkup(
+      <UsageCell
+        account={
+          {
+            id: 1,
+            usage_windows: [],
+            recovery_monitor: {
+              status: "waiting",
+              label: "等待额度恢复时间",
+              reason: "waiting_reset",
+              next_at: "2026-09-30T16:05:02Z",
+            },
+          } as unknown as Account
+        }
+        online
+        refresh={async () => {}}
+        report={vi.fn()}
+      />,
+    );
+    expect(html).toContain('<details class="auto-reset-status"><summary>等待额度恢复时间</summary>');
+    expect(html).toContain("下次 10-01 00:05:02");
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it.each(["recovered", "cancelled"])("does not keep a terminal recovery monitor status visible (%s)", (status) => {
+    const html = renderToStaticMarkup(
+      <UsageCell
+        account={
+          {
+            id: 1,
+            usage_windows: [],
+            recovery_monitor: {
+              status,
+              label: "恢复已结束",
+              reason: "",
+              next_at: "2026-09-30T16:05:02Z",
+            },
+          } as unknown as Account
+        }
+        online
+        refresh={async () => {}}
+        report={vi.fn()}
+      />,
+    );
+    expect(html).not.toContain("auto-reset-status");
+    expect(html).not.toContain("恢复已结束");
+    expect(html).not.toContain("下次");
+    expect(api).not.toHaveBeenCalled();
+  });
+
   it("keeps failure and retry information in a closed disclosure with Beijing timestamps", () => {
     const html = renderToStaticMarkup(
       <UsageCell

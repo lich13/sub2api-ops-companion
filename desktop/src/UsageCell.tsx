@@ -213,6 +213,12 @@ export default function UsageCell({
           ))}
         </div>
       )}
+      {account.recovery_monitor && !["cancelled", "recovered"].includes(account.recovery_monitor.status) && !account.auto_reset_credit && (
+        <details className="auto-reset-status">
+          <summary>{account.recovery_monitor.label}</summary>
+          {account.recovery_monitor.next_at && <time>下次 {fullTime(account.recovery_monitor.next_at)}</time>}
+        </details>
+      )}
       {account.auto_reset_credit && !["manual", "recovered", "closed"].includes(account.auto_reset_credit.stage) && (
         <details className="auto-reset-status">
           <summary>{account.auto_reset_credit.label}</summary>

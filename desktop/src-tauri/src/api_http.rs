@@ -30,6 +30,9 @@ fn snapshot_valid(data: &Value) -> bool {
                 && (a["concurrency"].is_null() || a["concurrency"].as_u64().is_some())
                 && (a["load_factor"].is_null() || a["load_factor"].as_u64().is_some_and(|n| (1..=10000).contains(&n)))
                 && (a["usage"].is_null() || a["usage"]["windows"].is_array())
+                && (a["recovery_monitor"].is_null() ||
+                    ["status", "label", "reason"].iter().all(|k| a["recovery_monitor"][*k].is_string())
+                    && (a["recovery_monitor"]["next_at"].is_null() || a["recovery_monitor"]["next_at"].is_string()))
         }))
         && data.get("groups").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|g| {
             g["id"].as_i64().is_some() && g["name"].is_string() && g["recent_accounts"].is_array()
@@ -86,6 +89,15 @@ fn batch_valid(data: &Value) -> bool {
         && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| operation_valid(row) && row["batch_id"] == data["batch_id"]))
 }
 
+fn proxy_batch_valid(data: &Value) -> bool {
+    batch_valid(data) && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| {
+        row["action"].as_str() == Some("proxy")
+            && row["requested"].as_object().is_some_and(|fields| fields.len() == 1
+                && fields.get("proxy_id").is_some_and(|id| id.is_null()
+                    || id.as_u64().is_some_and(|value| value > 0)))
+    }))
+}
+
 fn settings_valid(data: &Value) -> bool {
     let actions = ["priority", "concurrency", "load_factor", "model_config", "proxy", "sync_models"];
     data["account_id"].as_u64().is_some_and(|n| n > 0)
@@ -125,6 +137,7 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/account-operations" => if path.contains("?batch_id=") { batch_valid(data) } else {
             data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid))
         },
+        "/account-operations/batch" => proxy_batch_valid(data),
         p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
         p if p.ends_with("/model-tests/latest") && data.is_null() => true,
         p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
@@ -432,5 +445,66 @@ mod tests {
         batch["items"][0]["batch_id"] = serde_json::json!("ffffffffffffffffffffffffffffffff");
         assert!(!shape_valid("/account-templates/apply", &batch));
         assert!(!shape_valid("/account-templates/apply", &empty));
+    }
+    #[test]
+    fn proxy_batch_response_requires_batch_not_single_operation() {
+        let id = "0123456789abcdef0123456789abcdef";
+        let job = serde_json::json!({"id":id,"batch_id":id,"account_id":1,"action":"proxy",
+            "status":"queued","requested":{"proxy_id":null}});
+        let batch = serde_json::json!({"batch_id":id,"pending":1,"items":[job.clone()]});
+        assert!(shape_valid("/account-operations/batch", &batch));
+        assert!(!shape_valid("/account-operations/batch", &job));
+        let mut bad = batch; bad["items"][0]["batch_id"] = serde_json::Value::Null;
+        assert!(!shape_valid("/account-operations/batch", &bad));
+    }
+
+    #[test]
+    fn proxy_batch_response_rejects_wrong_action_and_proxy_payload_shape() {
+        let id = "0123456789abcdef0123456789abcdef";
+        let job = serde_json::json!({"id":id,"batch_id":id,"account_id":1,"action":"proxy",
+            "status":"queued","requested":{"proxy_id":null}});
+        let batch = serde_json::json!({"batch_id":id,"pending":1,"items":[job]});
+
+        let mut wrong_action = batch.clone();
+        wrong_action["items"][0]["action"] = serde_json::json!("account_template");
+        assert!(!shape_valid("/account-operations/batch", &wrong_action));
+        for value in [serde_json::json!(-1), serde_json::json!(0), serde_json::json!("2")] {
+            let mut bad_proxy = batch.clone();
+            bad_proxy["items"][0]["requested"]["proxy_id"] = value;
+            assert!(!shape_valid("/account-operations/batch", &bad_proxy));
+        }
+        let mut missing_requested = batch.clone();
+        missing_requested["items"][0].as_object_mut().unwrap().remove("requested");
+        assert!(!shape_valid("/account-operations/batch", &missing_requested));
+        let mut missing_proxy_id = batch.clone();
+        missing_proxy_id["items"][0]["requested"] = serde_json::json!({});
+        assert!(!shape_valid("/account-operations/batch", &missing_proxy_id));
+        let mut extra_proxy_field = batch;
+        extra_proxy_field["items"][0]["requested"]["extra"] = serde_json::json!(true);
+        assert!(!shape_valid("/account-operations/batch", &extra_proxy_field));
+    }
+
+    #[test]
+    fn snapshot_recovery_monitor_is_optional_but_typed_when_present() {
+        let account = serde_json::json!({
+            "id": 1, "name": "fixture", "platform": "openai", "type": "oauth", "version": "v1",
+            "group_ids": [], "usage_windows": [], "blockers": [], "schedulable": true,
+            "available": true, "priority": 0
+        });
+        let mut snapshot = serde_json::json!({
+            "observed_at": "2026-10-11T00:00:00Z", "accounts": [account], "groups": [],
+            "errors": [], "recoveries": []
+        });
+        assert!(snapshot_valid(&snapshot));
+        snapshot["accounts"][0]["recovery_monitor"] = serde_json::Value::Null;
+        assert!(snapshot_valid(&snapshot));
+        snapshot["accounts"][0]["recovery_monitor"] = serde_json::json!({
+            "status": "scheduled", "label": "额度恢复监控", "reason": "等待下次检查", "next_at": null
+        });
+        assert!(snapshot_valid(&snapshot));
+        snapshot["accounts"][0]["recovery_monitor"]["next_at"] = serde_json::json!("2026-10-11T01:00:00Z");
+        assert!(snapshot_valid(&snapshot));
+        snapshot["accounts"][0]["recovery_monitor"]["next_at"] = serde_json::json!(3600);
+        assert!(!snapshot_valid(&snapshot));
     }
 }

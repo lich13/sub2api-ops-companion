@@ -8,6 +8,15 @@
 .account-settings-dialog header span { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-settings-dialog > footer, .numeric-editor > footer { justify-content: flex-end; border-top: 1px solid var(--line); }
 .account-settings-body { overflow: auto; padding: 12px 16px; min-height: 0; }
+.proxy-batch-previews { display: grid; gap: 8px; margin-top: 12px; }
+.proxy-batch-previews article { padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.proxy-batch-previews article > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.proxy-batch-previews article > header strong { overflow-wrap: anywhere; }
+.proxy-batch-previews article > header strong span { display: inline; }
+.proxy-batch-previews dl { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 8px; margin: 8px 0; }
+.proxy-batch-previews dt { color: var(--muted); }
+.proxy-batch-previews dd { margin: 0; overflow-wrap: anywhere; }
+.proxy-batch-previews p { margin: 6px 0 0; overflow-wrap: anywhere; }
 .account-settings-body button, .account-settings-dialog > footer button { min-height: 30px; padding: 5px 9px; font-size: 12px; gap: 5px; }
 .account-settings-body input:not([type="checkbox"]):not([type="radio"]) { width: 100%; min-height: 32px; padding: 6px 8px; font-size: 12px; }
 .settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; }

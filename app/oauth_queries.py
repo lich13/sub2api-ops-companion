@@ -105,8 +105,11 @@ def reset_not_before(row: dict[str, Any], result: dict[str, Any] | None) -> date
         used = percent_or_none(window.get("used_percent"))
         if used is not None and used >= 100:
             deadlines.append(parse_iso_datetime(window.get("reset_at")))
-    latest = max((t for t in deadlines if t), default=None)
-    return latest + timedelta(seconds=RESET_GRACE_SECONDS) if latest else None
+            # Only estimates need grace. An explicit account/window deadline is
+            # already the upstream admission boundary, including second precision.
+            if deadlines[-1] and window.get('reset_source') == 'estimated_from_remaining':
+                deadlines[-1] += timedelta(seconds=RESET_GRACE_SECONDS)
+    return max((t for t in deadlines if t), default=None)
 
 
 def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
@@ -149,6 +152,14 @@ class OAuthQueryCoordinator:
         self._inflight: dict[int, Future] = {}
         self._completed: dict[int, tuple[float, str, dict[str, Any]]] = {}
         self._deferred: dict[int, tuple[str, str | None]] = {}
+        self.capacity_provider: Callable[[], int] = lambda: 16
+
+    def _full(self) -> bool:
+        return len(self._inflight) >= max(1, min(16, int(self.capacity_provider())))
+
+    def _slot_wait(self, now: datetime) -> dict:
+        return {'success': False, 'skipped': True, 'error_code': 'query_slots',
+                'next_query_at': (now + timedelta(seconds=2)).isoformat()}
 
     def external_read(self, row: dict[str, Any], *, source: str, reason: str,
                       operation: Callable[[], dict[str, Any]],
@@ -168,6 +179,8 @@ class OAuthQueryCoordinator:
         with self._lock:
             if account_id in self._inflight:
                 return {"success": False, "skipped": True, "error_code": "query_busy"}
+            if self._full():
+                return self._slot_wait(current)
             future: Future = Future()
             self._inflight[account_id] = future
         admitted = False
@@ -302,6 +315,8 @@ class OAuthQueryCoordinator:
                 return {**previous[2], "coalesced": True}
             owner = future is None
             if owner:
+                if self._full():
+                    return self._slot_wait(now or self.clock())
                 future = Future()
                 self._inflight[account_id] = future
         if not owner:

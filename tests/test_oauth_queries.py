@@ -211,30 +211,30 @@ class OAuthQueryCoordinatorTests(OAuthQueryFixture, unittest.TestCase):
                 monitor.run_once(now=self.now)
                 self.assertEqual(self.server.requests, [])
 
-    def test_depleted_window_waits_until_exact_reset_plus_sixty_seconds(self):
+    def test_depleted_window_waits_until_exact_reset_without_grace(self):
         reset = NOW + timedelta(minutes=30)
         self.store.commit(results={7: saved_result(
             self.row, NOW - timedelta(hours=2), usage(NOW, five=100, five_reset=reset),
         )})
-        for moment in (NOW, reset, reset + timedelta(seconds=59)):
+        for moment in (NOW, reset - timedelta(seconds=1)):
             with self.subTest(moment=moment):
                 self.now = moment
                 result = self.assert_skipped_without_request(error_code="waiting_reset")
-                self.assertEqual(result["next_query_at"], (reset + timedelta(seconds=60)).isoformat())
-        self.now = reset + timedelta(seconds=60)
+                self.assertEqual(result["next_query_at"], reset.isoformat())
+        self.now = reset
         self.assertTrue(self.query()["success"])
         self.assertEqual(len(self.server.requests), 1)
 
-    def test_all_depleted_windows_must_reach_the_latest_reset_plus_grace(self):
+    def test_all_depleted_windows_must_reach_the_latest_exact_reset(self):
         earlier, later = NOW + timedelta(hours=1), NOW + timedelta(hours=2)
         self.store.commit(results={7: saved_result(
             self.row, NOW - timedelta(hours=2),
             usage(NOW, five=100, seven=100, five_reset=earlier, seven_reset=later),
         )})
-        self.now = earlier + timedelta(seconds=60)
+        self.now = earlier
         result = self.assert_skipped_without_request(error_code="waiting_reset")
-        self.assertEqual(result["next_query_at"], (later + timedelta(seconds=60)).isoformat())
-        self.now = later + timedelta(seconds=60)
+        self.assertEqual(result["next_query_at"], later.isoformat())
+        self.now = later
         self.assertTrue(self.query()["success"])
         self.assertEqual(len(self.server.requests), 1)
 

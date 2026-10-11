@@ -501,6 +501,9 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   const actionButtons = Array.from(
     actions.querySelectorAll<HTMLButtonElement>("button"),
   );
+  const selectProxy = actionButtons.find(
+    (element) => element.textContent?.trim() === "选择代理",
+  )!;
   const applyTemplate = actionButtons.find(
     (element) => element.textContent?.trim() === "应用模板",
   )!;
@@ -509,6 +512,12 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   )!;
 
   expect(summary.textContent).toContain("已选 0 个账号");
+  expect(actionButtons.map((element) => element.textContent?.trim())).toEqual([
+    "选择代理",
+    "应用模板",
+    "删除所选",
+  ]);
+  expect(selectProxy.disabled).toBe(true);
   expect(applyTemplate.disabled).toBe(true);
   expect(deleteSelected.disabled).toBe(true);
 
@@ -521,11 +530,14 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   expect(actions.contains(applyTemplate)).toBe(true);
   expect(actions.contains(deleteSelected)).toBe(true);
+  expect(selectProxy.nextElementSibling).toBe(applyTemplate);
   expect(applyTemplate.nextElementSibling).toBe(deleteSelected);
+  expect(selectProxy.disabled).toBe(false);
   expect(applyTemplate.disabled).toBe(false);
   expect(deleteSelected.disabled).toBe(false);
 
   await act(async () => receive({ ...state, online: false }));
+  expect(selectProxy.disabled).toBe(true);
   expect(applyTemplate.disabled).toBe(true);
   expect(deleteSelected.disabled).toBe(true);
   await act(async () => receive(state));
@@ -535,6 +547,7 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   if (!accountCheckbox.checked)
     await act(async () => accountCheckbox.click());
   expect(summary.textContent).toContain("已选 1 个账号");
+  expect(selectProxy.disabled).toBe(false);
   expect(deleteSelected.disabled).toBe(false);
 
   await act(async () => deleteSelected.click());

@@ -48,6 +48,10 @@ BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 _STORE_LOCK = threading.RLock()
 
 
+class VerificationStateError(RuntimeError):
+    """A dispatched request must not be replayed after losing its receipt."""
+
+
 def _utc(value: datetime | None = None) -> datetime:
     current = value or datetime.now(timezone.utc)
     if current.tzinfo is None:
@@ -127,6 +131,17 @@ class OAuthStateStore:
                 if (not isinstance(control, dict) or type(control.get("generation")) is not int or control["generation"] < 1
                         or type(control.get("enabled")) is not bool or not parse_iso_datetime(control.get("at"))):
                     raise ValueError("人工调度控制状态无效")
+            intent = metadata.get('recovery_intent') or {}
+            if isinstance(intent, dict):
+                if 'verification_dispatched' in intent and type(intent['verification_dispatched']) is not bool:
+                    raise ValueError('恢复验证派发状态无效')
+                receipt = intent.get('verification_receipt')
+                if receipt is not None and (not isinstance(receipt, dict)
+                        or not isinstance(receipt.get('result'), dict)
+                        or not isinstance(receipt.get('block_state'), dict)
+                        or not isinstance(receipt.get('credential_fingerprint'), str)
+                        or len(receipt['credential_fingerprint']) != 64):
+                    raise ValueError('恢复验证回执无效')
         self._has_state = True
         return data
 
@@ -342,12 +357,16 @@ class OAuthStateStore:
         daily_test: dict[str, Any] | None = None,
         recovery_history: dict[str, dict[str, Any]] | None = None,
         expected_generations: dict[int, int] | None = None,
+        expected_recovery_methods: dict[int, int] | None = None,
     ) -> None:
         with _STORE_LOCK, self.disk_lock():
             data = self._normalize(self._read_raw())
             def current_generation(account_id: int) -> bool:
-                return expected_generations is None or expected_generations.get(account_id, 0) == int(
-                    (data["scheduler"].get(str(account_id), {}).get("manual_control") or {}).get("generation") or 0)
+                meta = data['scheduler'].get(str(account_id), {})
+                return ((expected_generations is None or expected_generations.get(account_id, 0) == int(
+                    (meta.get('manual_control') or {}).get('generation') or 0)) and
+                    (expected_recovery_methods is None or expected_recovery_methods.get(account_id, 0) ==
+                     int(meta.get('recovery_method_generation', 0))))
             for account_id, value in (results or {}).items():
                 if not current_generation(account_id):
                     continue
@@ -774,6 +793,8 @@ def build_monitor_candidates(
             continue
         summary = oauth_quota_summary_from_result(row, result)
         intent = _normal_recovery_intent(metadata.get("recovery_intent"))
+        if intent.get('verification_dispatched') and (not intent.get('verification_receipt') or intent.get('status') == 'blocked'):
+            continue
         status = str(intent.get("status") or "")
         due = parse_iso_datetime(intent.get("next_retry_at") if status in {"retry", "waiting_quota", "testing"}
                                  else intent.get("due_at"))
@@ -782,6 +803,8 @@ def build_monitor_candidates(
         if reset_due and current < reset_due:
             continue
         reusable = recovery_quota_ready(row, result, metadata, current)
+        if status == 'waiting_quota' and reusable:
+            due = current
         reason, priority = "", 99
         if status in {"pending", "ready", "retry", "waiting_quota", "testing"} and (due is None or current >= due):
             reason, priority = "recovery_intent", 0
@@ -1009,6 +1032,9 @@ class OAuthEvaluationGuard:
     def __enter__(self) -> OAuthEvaluationGuard | None:
         if not self._monitor._run_lock.acquire(blocking=False):
             return None
+        if self._monitor.dispatcher.active():
+            self._monitor._run_lock.release()
+            return None
         self._held = True
         return self
 
@@ -1061,6 +1087,26 @@ class OAuthMonitor:
         self.daily_schedule = DailyTestSchedule(settings, self.store, _utc(clock()))
         self._cycle_usage: dict[int, dict[str, Any]] = {}
         self._cycle_tests: dict[int, dict[str, Any]] = {}
+        self._test_slot_lock = threading.Lock()
+        self._active_tests = 0
+        self.queries.capacity_provider = lambda: _positive_int(getattr(self.settings, 'oauth_usage_refresh_concurrency', 4), 4, 1, 16)
+        from .recovery_dispatch import RecoveryDispatcher
+        self.dispatcher = RecoveryDispatcher(self)
+        def interrupt_unknown(data: dict) -> None:
+            for meta in data['scheduler'].values():
+                intent = meta.get('recovery_intent') or {}
+                if (intent.get('verification_dispatched') and not intent.get('verification_receipt')
+                        and intent.get('status') != 'cancelled'):
+                    intent.update(status='blocked', last_error_code='verification_uncertain',
+                                  last_error='上次验证已派发但结果未保存，需人工复核', next_retry_at='',
+                                  waiting_reason='verification_uncertain', waiting_until=None)
+        self.store.transaction(interrupt_unknown)
+
+    def tick(self, now: datetime | None = None) -> None:
+        self.dispatcher.tick(now)
+
+    def close(self) -> None:
+        self.dispatcher.close()
 
     def _refresh_inventory(self, now: datetime, *, force: bool = False) -> None:
         if (
@@ -1111,6 +1157,8 @@ class OAuthMonitor:
                         required_oauth_window_keys(summary.get("plan_type"))), now=now):
                     continue
                 old = _normal_recovery_intent(metadata.get("recovery_intent"))
+                if old.get('verification_dispatched') and old.get('status') != 'cancelled':
+                    continue
                 descriptor = (_quota_recovery_descriptor(summary, now)
                               or _threshold_recovery_descriptor(row, summary))
                 if not descriptor and old.get("status") in {"pending", "ready", "retry", "waiting_quota", "testing"}:
@@ -1123,8 +1171,13 @@ class OAuthMonitor:
                 block = parse_iso_datetime(row.get("rate_limited_at"))
                 if recovered and block and block <= recovered and descriptor["kind"] == "rate_limit_block":
                     continue
-                metadata["recovery_intent"] = {**descriptor, "status": "pending", "attempt_count": 0,
-                    "next_retry_at": "", "last_error": "", "last_error_code": ""}
+                unfinished = old.get('status') in {'pending', 'ready', 'retry', 'waiting_quota'}
+                metadata["recovery_intent"] = {**(old if unfinished else {}), **descriptor,
+                    "status": old.get('status') if unfinished else 'pending',
+                    "attempt_count": old.get('attempt_count', 0) if unfinished else 0,
+                    "next_retry_at": old.get('next_retry_at', '') if unfinished else '',
+                    "last_error": old.get('last_error', '') if unfinished else '',
+                    "last_error_code": old.get('last_error_code', '') if unfinished else ''}
         previous = self.store.cached_snapshot()
         candidate = _json_copy(previous)
         discover(candidate)
@@ -1154,6 +1207,8 @@ class OAuthMonitor:
         if not self._run_lock.acquire(blocking=False):
             return None
         try:
+            if self.dispatcher.active():
+                return None
             return self.store.snapshot()
         finally:
             self._run_lock.release()
@@ -1186,14 +1241,17 @@ class OAuthMonitor:
         finally:
             self._run_lock.release()
 
-    def _run_daily_batch(self, current: datetime, batch: dict[str, Any], report: dict[str, Any]) -> None:
+    def _run_daily_batch(self, current: datetime, batch: dict[str, Any], report: dict[str, Any], *,
+                         rows=None, usage_results=None, test_results=None, generations=None) -> None:
         token = self.store.admin_token()
         base_url = str(self.base_url_provider() or "").rstrip("/")
         model = str(getattr(self.settings, "oauth_recovery_test_model_id", DEFAULT_TEST_MODEL_ID))
         accounts = batch.setdefault("accounts", {})
         jobs: list[dict[str, Any]] = []
         pending: dict[str, dict[str, Any]] = {}
-        generations = getattr(self, "_cycle_generations", {})
+        generations = generations if generations is not None else getattr(self, "_cycle_generations", {})
+        usage_results = self._cycle_usage if usage_results is None else usage_results
+        test_results = self._cycle_tests if test_results is None else test_results
 
         def finish(row: dict[str, Any], result: dict[str, Any], *, reused: bool = False) -> None:
             account_id = int(row["id"])
@@ -1228,7 +1286,7 @@ class OAuthMonitor:
             }
             self.daily_schedule.save_batch(batch, pending_events={key: pending[key]})
 
-        for row in self._accounts:
+        for row in self._accounts if rows is None else rows:
             account_id = int(row.get("id") or 0)
             if account_id <= 0 or str(account_id) in accounts:
                 continue
@@ -1239,7 +1297,7 @@ class OAuthMonitor:
                 if not daily_account_eligible(latest, current):
                     finish(row, {"skipped": True, "error_code": "daily_ineligible"})
                     continue
-                quota = self._cycle_usage.get(account_id) or {
+                quota = usage_results.get(account_id) or {
                     "success": False, "error": report.get("error") or "本轮额度检查无结果",
                     "error_code": report.get("error_code") or "daily_quota_missing",
                 }
@@ -1254,8 +1312,8 @@ class OAuthMonitor:
                     finish(row, {"skipped": not missing, "error_code": "incomplete_quota" if missing else "quota_insufficient",
                                  "error": "额度检查缺少必要窗口" if missing else ""})
                     continue
-                if account_id in self._cycle_tests:
-                    finish(latest, self._cycle_tests[account_id], reused=True)
+                if account_id in test_results:
+                    finish(latest, test_results[account_id], reused=True)
                     continue
                 jobs.append(latest)
             except Exception as exc:
@@ -1295,6 +1353,19 @@ class OAuthMonitor:
         })
 
     def _timed_test(self, account_id: int, model: str, **kwargs: Any) -> dict[str, Any]:
+        with self._test_slot_lock:
+            limit = _positive_int(getattr(self.settings, 'oauth_recovery_test_concurrency', 2), 2, 1, 8)
+            if self._active_tests >= limit:
+                return {'success': False, 'deferred': True, 'error_code': 'test_slots', 'error': '等待验证执行槽',
+                        'next_at': (_utc(self.clock()) + timedelta(seconds=2)).isoformat()}
+            self._active_tests += 1
+        try:
+            return self._timed_test_owned(account_id, model, **kwargs)
+        finally:
+            with self._test_slot_lock:
+                self._active_tests -= 1
+
+    def _timed_test_owned(self, account_id: int, model: str, **kwargs: Any) -> dict[str, Any]:
         generation = kwargs.pop("control_generation", None)
         if generation is not None and self.store.control_generation(account_id) != generation:
             return {"success": False, "skipped": True, "error_code": "manual_intervention"}
@@ -1323,11 +1394,56 @@ class OAuthMonitor:
         if method == 'model':
             verifier = getattr(self, 'model_verifier', None)
             if verifier is None:
-                return {'success': False, 'error_code': 'model_verifier_unavailable'}
-            result = verifier(account_id, kind='recovery', fingerprint=fingerprint, attempt=attempt)
+                result = {'success': False, 'error_code': 'model_verifier_unavailable'}
+            else:
+                result = verifier(account_id, kind='recovery', fingerprint=fingerprint, attempt=attempt)
         else:
             result = self._timed_test(account_id, model, **kwargs)
         return {**result, 'recovery_method_generation': selection, 'recovery_method': method}
+
+    def _recovery_test_recorded(self, account_id: int, model: str, **kwargs: Any) -> dict[str, Any]:
+        metadata = self.store.snapshot()['scheduler'].get(str(account_id), {})
+        intent = metadata.get('recovery_intent') or {}
+        if (intent.get('status') in {'cancelled', 'recovered'}
+                or intent.get('fingerprint') != kwargs['fingerprint']
+                or int(metadata.get('recovery_method_generation', 0)) != kwargs['verification_generation']
+                or int((metadata.get('manual_control') or {}).get('generation', 0)) != kwargs['control_generation']):
+            return {'state_unreliable': True}
+        receipt = intent.get('verification_receipt')
+        if receipt:
+            row = self._read_account(account_id)
+            if (intent.get('fingerprint') != kwargs['fingerprint'] or not row
+                    or receipt.get('credential_fingerprint') != credential_fingerprint(row)
+                    or not recovery_block_change_is_safe(receipt.get('block_state'), row)
+                    or receipt['result'].get('recovery_method_generation') != kwargs['verification_generation']):
+                raise VerificationStateError('验证凭据已变化，需重新核对')
+            return receipt['result']
+        row = self._read_account(account_id)
+        if not row:
+            raise VerificationStateError('账号状态无法核对')
+        result = self._recovery_test(account_id, model, **kwargs)
+        # Persist a minimal receipt before clearing upstream state. On restart
+        # it can be reconciled by reading the account, without another test.
+        safe = {key: result[key] for key in ('success', 'skipped', 'deferred', 'error_code',
+                'next_at', 'completed_at', 'model_id', 'recovery_method', 'recovery_method_generation', 'waiting_reason') if key in result}
+        safe['error'] = sanitize_error_text(str(result.get('error') or ''))
+        try:
+            def save(data: dict) -> None:
+                meta = data['scheduler'].get(str(account_id), {})
+                current = meta.get('recovery_intent') or {}
+                if (current.get('fingerprint') == kwargs['fingerprint'] and
+                        current.get('status') != 'cancelled' and
+                        int(meta.get('recovery_method_generation', 0)) == kwargs['verification_generation'] and
+                        int((meta.get('manual_control') or {}).get('generation', 0)) == kwargs['control_generation']):
+                    block = {key: _canonical_value(row.get(key)) for key in (
+                        'id', 'platform', 'type', 'status', 'schedulable', 'concurrency', 'rate_limited_at',
+                        'rate_limit_reset_at', 'overload_until', 'temp_unschedulable_until', 'temp_unschedulable_reason')}
+                    block['extra'] = {key: (row.get('extra') or {}).get(key) for key in ('model_rate_limits', 'antigravity_quota_scopes')}
+                    current['verification_receipt'] = {'result': safe, 'credential_fingerprint': credential_fingerprint(row), 'block_state': block}
+            self.store.transaction(save)
+        except Exception as exc:
+            raise VerificationStateError('验证结果保存失败，停止后续操作') from exc
+        return safe
 
     def force_refresh(
         self,
@@ -1395,17 +1511,21 @@ class OAuthMonitor:
         self, current: datetime, *, force: bool, recovery_enabled: bool | None = None,
         reuse_cycle_results: bool = False, daily: bool = False, live_clock: bool = False,
         leases: list[AccountLease],
+        account_rows: list[dict[str, Any]] | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         started = time.monotonic()
         prior_usage = dict(self._cycle_usage) if reuse_cycle_results else {}
         prior_tests = dict(self._cycle_tests) if reuse_cycle_results else {}
-        self._cycle_usage = {}
-        self._cycle_tests = {}
+        isolated = account_rows is not None
+        if not isolated:
+            self._cycle_usage = {}
+            self._cycle_tests = {}
         mode = "manual" if force else "daily" if daily else "scheduled"
         if recovery_enabled is None:
             recovery_enabled = bool(getattr(self.settings, "oauth_recovery_monitor_enabled", True))
         try:
-            self._refresh_inventory(current, force=force)
+            if not isolated:
+                self._refresh_inventory(current, force=force)
         except Exception as exc:
             report = {
                 "success": False,
@@ -1422,21 +1542,24 @@ class OAuthMonitor:
             write_audit(self.settings.audit_path, "oauth_monitor_inventory_failed", report)
             return self.store.cached_pending_events(), report
 
-        if not force and not daily:
-            self.auto_reset.run(self._accounts, current)
+        rows = list(account_rows if isolated else self._accounts)
+        if not force and not daily and not isolated:
+            self.auto_reset.run(rows, current)
             # The controller may have paused/recovered an account during this
             # cycle. Never feed the old inventory into ordinary recovery.
             held = {int(key) for key, value in self.store.cached_snapshot()["scheduler"].items()
                     if value.get("auto_reset_credit")}
-            self._accounts = [self._read_account(int(row["id"])) or row if int(row["id"]) in held else row
-                              for row in self._accounts]
+            rows = [self._read_account(int(row["id"])) or row if int(row["id"]) in held else row for row in rows]
+            self._accounts = rows
         if recovery_enabled and not force and not daily:
-            self._discover_recoveries(self._accounts, current)
+            self._discover_recoveries(rows, current)
         state = self.store.cached_snapshot()
         results = {int(key): value for key, value in (state.get("oauth_results") or {}).items()}
         scheduler = {int(key): value for key, value in (state.get("scheduler") or {}).items()}
         generations = {aid: int((meta.get("manual_control") or {}).get("generation") or 0) for aid, meta in scheduler.items()}
-        self._cycle_generations = generations
+        method_generations = {aid: int(meta.get('recovery_method_generation', 0)) for aid, meta in scheduler.items()}
+        if not isolated:
+            self._cycle_generations = generations
         if force or daily:
             candidates = [
                 {
@@ -1453,15 +1576,15 @@ class OAuthMonitor:
                         row, results.get(int(row.get("id") or 0)) or {}
                     ),
                 }
-                for row in self._accounts
+                for row in rows
                 if int(row.get("id") or 0) > 0
                 and (not daily or daily_account_eligible(row, current))
             ]
         else:
-            self.queries.observe_gates(self._accounts, results, scheduler, current)
+            self.queries.observe_gates(rows, results, scheduler, current)
             from .recovery_policy import recovery_method
             candidates = build_monitor_candidates(
-                [row for row in self._accounts if recovery_method(self.settings, int(row['id']))],
+                [row for row in rows if recovery_method(self.settings, int(row['id']))],
                 results,
                 scheduler,
                 current,
@@ -1479,6 +1602,13 @@ class OAuthMonitor:
                 leases.append(lease)
                 lease_by_account[item['account_id']] = lease
                 admitted.append(item)
+            elif isolated:
+                meta = scheduler.get(item['account_id'], {})
+                if meta.get('recovery_intent'):
+                    self.store.commit(scheduler_updates={item['account_id']: {'recovery_intent': {
+                        **meta['recovery_intent'], 'waiting_reason': 'account_busy',
+                        'waiting_until': (current + timedelta(seconds=2)).isoformat()}}},
+                        expected_generations=generations, expected_recovery_methods=method_generations)
         selected = admitted
         reused_quota = {item["account_id"]: item["reuse_quota"] for item in selected if item.get("reuse_quota")}
         prior_usage = {key: value for key, value in prior_usage.items()
@@ -1498,7 +1628,7 @@ class OAuthMonitor:
         empty_report = {
             "success": True,
             "refresh_at": current.isoformat(),
-            "total_count": len(self._accounts),
+            "total_count": len(rows),
             "queried_count": 0,
             "success_count": 0,
             "failure_count": 0,
@@ -1558,7 +1688,10 @@ class OAuthMonitor:
                         "error_code": "oauth_usage_query_error",
                     }
 
-        self._cycle_usage = usage_results
+        if live_clock:
+            current = _utc(self.clock())
+        if not isolated:
+            self._cycle_usage = usage_results
         successful_results: dict[int, dict[str, Any]] = {}
         scheduler_updates: dict[int, dict[str, Any]] = {}
         pending_updates: dict[str, dict[str, Any]] = {}
@@ -1570,7 +1703,14 @@ class OAuthMonitor:
         for account_id, refreshed_result in usage_results.items():
             if self.store.control_generation(account_id) != generations.get(account_id, 0):
                 continue
-            if refreshed_result.get("skipped") or account_id in prior_usage:
+            if refreshed_result.get('skipped'):
+                intent = dict(_scheduler_row(scheduler, account_id).get('recovery_intent') or {})
+                if intent:
+                    intent.update(waiting_reason=refreshed_result.get('error_code', ''),
+                                  waiting_until=refreshed_result.get('next_query_at'))
+                    scheduler_updates[account_id] = {'recovery_intent': intent}
+                continue
+            if account_id in prior_usage:
                 continue
             selected_item = selected_by_id[account_id]
             reason = str(selected_item["reason"])
@@ -1758,6 +1898,8 @@ class OAuthMonitor:
                 scheduler_updates[account_id] = update
                 continue
             intent["confirmed_at"] = current.isoformat()
+            if account_id in reused_quota and intent.get('status') == 'waiting_quota':
+                intent['next_retry_at'] = ''
             retry_at = parse_iso_datetime(intent.get("next_retry_at"))
             if retry_at is None or current >= retry_at:
                 intent["status"] = "ready"
@@ -1771,6 +1913,7 @@ class OAuthMonitor:
             pending_events=pending_updates,
             remove_pending_keys=remove_pending,
             expected_generations=generations,
+            expected_recovery_methods=method_generations,
         )
 
         runnable_jobs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
@@ -1780,7 +1923,7 @@ class OAuthMonitor:
             from .recovery_policy import recovery_method
             method = recovery_method(self.settings, account_id)
             selection = int(self.store.snapshot()['scheduler'].get(str(account_id), {}).get('recovery_method_generation', 0))
-            if not method:
+            if not method or selection != method_generations.get(account_id, 0):
                 continue
             if self.store.control_generation(account_id) != generations.get(account_id, 0):
                 continue
@@ -1801,7 +1944,23 @@ class OAuthMonitor:
                 pretest_updates[account_id] = {"recovery_intent": retry}
                 continue
             window_keys = [str(value) for value in intent.get("window_keys") or []]
-            if not automatic_recovery_eligible(row, exhausted_window_keys=window_keys, now=current):
+            latest_quota = latest_openai_result(row, self.store.result(account_id), current)
+            deadline = reset_not_before(row or {}, latest_quota)
+            if deadline and current < deadline:
+                pretest_updates[account_id] = {'recovery_intent': {**intent, 'status': 'pending',
+                    'due_at': deadline.isoformat(), 'waiting_reason': 'waiting_reset', 'waiting_until': deadline.isoformat()}}
+                continue
+            if isolated and not recovery_quota_ready(row or {}, latest_quota, self.store.scheduler().get(account_id, {}), current):
+                pretest_updates[account_id] = {'recovery_intent': {**intent, 'status': 'waiting_quota',
+                    'next_retry_at': (current + timedelta(seconds=2)).isoformat(), 'waiting_reason': 'incomplete_quota'}}
+                continue
+            receipt = intent.get('verification_receipt')
+            # A successful request can clear the upstream block before the
+            # final local commit. Resume that receipt by readback, not by
+            # requiring another block (or issuing another paid test).
+            receipt_can_finish = bool(receipt and receipt['result'].get('success')
+                                      and account_recovery_confirmed(row))
+            if not receipt_can_finish and not automatic_recovery_eligible(row, exhausted_window_keys=window_keys, now=current):
                 blocked = dict(intent)
                 blocked.update(
                     {
@@ -1826,6 +1985,9 @@ class OAuthMonitor:
                     "last_error_code": "",
                 }
             )
+            if receipt:
+                testing['attempt_count'] = int(intent.get('attempt_count') or 1)
+            testing['verification_dispatched'] = True
             pretest_updates[account_id] = {"recovery_intent": testing}
             # Lock ownership and dispatch must use the same selected method.
             # Re-reading it after releasing a model worker's lease could run a
@@ -1833,7 +1995,8 @@ class OAuthMonitor:
             frozen_item = {**item, 'verification_method': method, 'verification_generation': selection}
             runnable_jobs.append((frozen_item, testing, row or {}))
         if pretest_updates:
-            self.store.commit(scheduler_updates=pretest_updates, expected_generations=generations)
+            self.store.commit(scheduler_updates=pretest_updates, expected_generations=generations,
+                              expected_recovery_methods=method_generations)
 
         test_workers = min(
             len(runnable_jobs),
@@ -1853,7 +2016,7 @@ class OAuthMonitor:
             with ThreadPoolExecutor(max_workers=max(1, test_workers)) as executor:
                 futures = {
                     executor.submit(
-                        self._recovery_test,
+                        self._recovery_test_recorded,
                         int(item["account_id"]),
                         model_id,
                         base_url=base_url,
@@ -1870,6 +2033,13 @@ class OAuthMonitor:
                     account_id = int(item["account_id"])
                     try:
                         test_results[account_id] = future.result()
+                    except VerificationStateError:
+                        test_results[account_id] = {'state_unreliable': True}
+                        saved_intent = self.store.scheduler().get(account_id, {}).get('recovery_intent') or {}
+                        self.store.commit(scheduler_updates={account_id: {'recovery_intent': {
+                            **saved_intent, 'status': 'blocked', 'last_error_code': 'verification_uncertain',
+                            'waiting_reason': 'verification_uncertain', 'waiting_until': None, 'next_retry_at': ''}}},
+                            expected_generations=generations, expected_recovery_methods=method_generations)
                     except Exception as exc:
                         test_results[account_id] = {
                             "success": False,
@@ -1878,7 +2048,10 @@ class OAuthMonitor:
                             "model_id": model_id,
                         }
 
-        self._cycle_tests = {**prior_tests, **test_results}
+        if not isolated:
+            self._cycle_tests = {**prior_tests, **test_results}
+        if live_clock:
+            current = _utc(self.clock())
         final_updates: dict[int, dict[str, Any]] = {}
         history_updates: dict[str, dict[str, Any]] = {}
         recovered_count = 0
@@ -1887,14 +2060,21 @@ class OAuthMonitor:
             if self.store.control_generation(account_id) != generations.get(account_id, 0):
                 continue
             test_result = test_results[account_id]
+            if test_result.get('state_unreliable'):
+                continue
             final_intent = dict(intent)
+            final_intent.pop('verification_receipt', None)
+            final_intent.pop('verification_dispatched', None)
+            final_intent.pop('waiting_reason', None)
+            final_intent.pop('waiting_until', None)
             if (test_result.get('recovery_method') != recovery_method(self.settings, account_id)
                     or test_result.get('recovery_method_generation') != int(self.store.snapshot()['scheduler'].get(str(account_id), {}).get('recovery_method_generation', 0))):
                 continue
             if test_result.get('deferred'):
                 final_intent.update(status='retry', attempt_count=max(0, int(intent['attempt_count']) - 1),
                                     next_retry_at=test_result.get('next_at') or (current + timedelta(seconds=5)).isoformat(),
-                                    last_error=test_result.get('error', ''), last_error_code='model_verification_pending')
+                                    last_error=test_result.get('error', ''), last_error_code=test_result.get('error_code') or 'model_verification_pending',
+                                    waiting_reason=test_result.get('waiting_reason') or test_result.get('error_code') or 'model_verification_pending', waiting_until=test_result.get('next_at'))
                 final_updates[account_id] = {'recovery_intent': final_intent}
                 continue
             if test_result.get('recovery_method') == 'model' and not lease_by_account[account_id].acquire():
@@ -1925,7 +2105,17 @@ class OAuthMonitor:
                 )
             else:
                 window_keys = [str(value) for value in intent.get("window_keys") or []]
-                if not recovery_block_change_is_safe(frozen_row, post_test):
+                evidence = latest_openai_result(post_test, self.store.results().get(account_id), current)
+                if getattr(self, 'detection_gate', lambda _aid: False)(account_id):
+                    success = False
+                    error_code = 'detection_held'
+                    recovery_result = {'error': '账号已由模型检测接管'}
+                elif isolated and not recovery_quota_ready(post_test or {}, evidence,
+                        self.store.scheduler().get(account_id, {}), current):
+                    success = False
+                    error_code = 'incomplete_quota'
+                    recovery_result = {'error': '验证后额度证据已变化，等待重新核对'}
+                elif not recovery_block_change_is_safe(frozen_row, post_test):
                     success = False
                     error_code = "recovery_state_changed"
                     recovery_result = {"error": "账号阻断签名已变化，已停止自动恢复"}
@@ -1961,7 +2151,11 @@ class OAuthMonitor:
                             "error": str(exc) or "读取账号恢复状态失败",
                             "error_code": "account_read_failed",
                         }
-                    success = bool(recovery_result.get("success")) and account_recovery_confirmed(recovered_row)
+                    # A timeout can happen after the upstream write committed.
+                    # Readback is authoritative; do not repeat a successful
+                    # verification just because its subsequent write lost the response.
+                    success = (account_recovery_confirmed(recovered_row)
+                               and recovery_block_change_is_safe(frozen_row, recovered_row))
                     if not success:
                         error_code = str(recovery_result.get("error_code") or "recovery_not_confirmed")
             if success:
@@ -1998,6 +2192,15 @@ class OAuthMonitor:
                 else:
                     event_status = "test_failed" if not test_result.get("success") else "recovery_failed"
                 suffix = f"failure:{final_intent.get('last_error_code') or 'unknown'}"
+                if (test_result.get('success') and error_code in {
+                        'timeout', 'network_error', 'account_read_failed', 'recovery_not_confirmed',
+                        'recovery_request_error', 'http_502', 'http_504'}):
+                    # Keep confirmed verification while reconciling an uncertain
+                    # state write. The next cycle still rechecks its identity,
+                    # control generation, quota and current upstream block.
+                    receipt = (self.store.scheduler().get(account_id, {}).get('recovery_intent') or {}).get('verification_receipt')
+                    if receipt:
+                        final_intent.update(verification_dispatched=True, verification_receipt=receipt)
             final_updates[account_id] = {"recovery_intent": final_intent}
             if final_intent.get("status") == "auth_failed":
                 metadata = self.store.cached_snapshot()["scheduler"].get(str(account_id), {})
@@ -2041,7 +2244,7 @@ class OAuthMonitor:
                 }
         if final_updates or pending_updates:
             self.store.commit(scheduler_updates=final_updates, pending_events=pending_updates, recovery_history=history_updates,
-                              expected_generations=generations)
+                              expected_generations=generations, expected_recovery_methods=method_generations)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         success_count = sum(1 for value in usage_results.values() if value.get("success"))
@@ -2051,7 +2254,7 @@ class OAuthMonitor:
         report = {
             "success": success_count == len(selected),
             "refresh_at": current.isoformat(),
-            "total_count": len(self._accounts),
+            "total_count": len(rows),
             "queried_count": queried_count,
             "skipped_count": sum(bool(value.get("skipped")) for value in usage_results.values()),
             "reused_count": len(prior_usage) + len(reused_quota),
