@@ -1047,6 +1047,7 @@ async function desktopMenuChecks(h, fixture) {
   await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "true", "account-column-preference-not-saved", table);
   await page.reload({ waitUntil: "domcontentloaded" });
   await h.visible(page.locator('.page-surface[data-page="accounts"]'), "reloaded-account-surface");
+  const reloadedFixture = await fixtureData(page);
   await h.visible(page.locator(".accounts-table"), "reloaded-desktop-account-table");
   const reloadedTable = page.locator(".accounts-table");
   await h.state((await reloadedTable.getAttribute("class"))?.includes("name-expanded"), "account-column-preference-not-restored", reloadedTable);
@@ -1079,7 +1080,7 @@ async function desktopMenuChecks(h, fixture) {
   await h.click(page.locator(".sidebar nav").getByRole("button", { name: "分组", exact: true }), "desktop-group-entry", { touch: false });
   const manager = page.locator(".group-manager");
   await h.visible(manager, "group-manager");
-  await groupMenuChecks(h, fixture, manager);
+  await groupMenuChecks(h, reloadedFixture, manager);
 }
 
 async function runScenario(scenario) {
