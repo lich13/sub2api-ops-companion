@@ -103,7 +103,7 @@
   flex-wrap: wrap;
   gap: 8px 14px;
   flex-shrink: 0;
-  padding: 8px 0 16px;
+  padding: 4px 0 8px;
 }
 .records-summary > span {
   font-size: 12px;
@@ -434,14 +434,14 @@
 }
 .mobile-records {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 .mobile-record {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  padding: 12px;
+  padding: 8px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -451,7 +451,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 5px 12px;
-  padding-bottom: 10px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
 .app.mobile .mobile-record-open {
@@ -466,7 +466,7 @@
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 .mobile-record-user > span,
 .mobile-record-label {
@@ -486,7 +486,7 @@
 .mobile-record-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 .mobile-record-field {
   display: grid;
@@ -501,7 +501,7 @@
   grid-column: auto;
   display: flex;
   flex-direction: column;
-  padding: 12px 0;
+  padding: 8px 0;
   border-block: 1px solid var(--line);
 }
 .app.mobile .record-ellipsis {

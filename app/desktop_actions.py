@@ -179,25 +179,9 @@ class DesktopActions:
         return row
 
     async def set_priority(self, account_id: int, payload: PriorityRequest, key: str) -> dict[str, Any]:
-        lock = self.s.account_lock(account_id)
-        if not lock.acquire(blocking=False):
-            raise busy()
-        try:
-            row = await self.account(account_id, payload.expected_version)
-            with self.s.recovery_guard(row):
-                monitor = getattr(self.s.r, "oauth_monitor", None)
-                if row["platform"] == "openai" and monitor and hasattr(monitor, "auto_reset"):
-                    await asyncio.to_thread(monitor.auto_reset.cancel, account_id)
-                async with self.client(key, 10) as client:
-                    await self.json_request(client, "PUT", f"accounts/{account_id}", json={"priority": payload.priority})
-            live = await self.account(account_id)
-            if live.get("priority") != payload.priority or (live["platform"], live["type"]) != (row["platform"], row["type"]):
-                raise HTTPException(502, "优先级写入未确认，请刷新查看实际值")
-            write_audit(self.s.r.settings.audit_path, "desktop_priority", {"account_id": account_id, "priority": payload.priority})
-            return {"verified": True, "priority": payload.priority}
-        finally:
-            lock.release()
-            await asyncio.to_thread(self.s.invalidate)
+        from .operation_versions import versions
+        row = await self.account(account_id, payload.expected_version)
+        return await self.s.account_settings.apply(account_id, 'priority', {'priority': payload.priority}, versions(row)['priority'], key)
 
     async def models(self, account_id: int, key: str, purpose: Literal["legacy", "model_test"] = "legacy") -> list[dict[str, str]]:
         row = await self.account(account_id)

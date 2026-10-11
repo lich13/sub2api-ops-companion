@@ -49,7 +49,6 @@ import RecoveryAccounts from "./RecoveryAccounts";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import {
   MiniUsage,
-  PriorityEditor,
   QuotaRefresh,
   RecoveryHistory,
 } from "./AccountControls";
@@ -61,6 +60,8 @@ import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
+import SchedulingParameters from "./SchedulingParameters";
+import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
@@ -123,6 +124,8 @@ export default function App() {
     [ascending, setAscending] = useState(false),
     [sortBy, setSortBy] = useState<"recent" | "priority" | "quality">("recent"),
     [qualityFilter, setQualityFilter] = useState(""),
+    [settingsAccount, setSettingsAccount] = useState<{ account: Account; section: SettingsSection; connection: string } | null>(null),
+    [nameExpanded, setNameExpanded] = useState(() => { try { return localStorage.getItem("sub2ops-account-name-expanded") === "true"; } catch { return false; } }),
     [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
@@ -205,6 +208,7 @@ export default function App() {
     setTestAccount(null);
     setModelTestAccount(null);
     setQualityAccount(null);
+    setSettingsAccount(null);
     setConfirm(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
@@ -216,6 +220,7 @@ export default function App() {
     modelTest: setModelTestAccount, modelDetection: setModelDetectionAccount, test: setTestAccount,
     template: (account) => { setTemplateAccounts(undefined); setTemplateAccount(account); setTemplatesOpen(true); },
     remove: (account) => setDeleteAccounts([account]),
+    settings: (account, section) => setSettingsAccount({ account, section, connection: connectionKey }),
   });
   useEffect(() => {
     let disposed = false;
@@ -772,7 +777,7 @@ export default function App() {
                         </button>
                         </div>
                       </div>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className="accounts-table">
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -810,7 +815,7 @@ export default function App() {
                                 }
                               />
                             </th>
-                            <th>账号</th>
+                            <th><button className="account-column-toggle" aria-label={nameExpanded ? "收起账号列" : "展开账号列"} aria-expanded={nameExpanded} onClick={() => { const value = !nameExpanded; setNameExpanded(value); try { localStorage.setItem("sub2ops-account-name-expanded", String(value)); } catch { /* Preference is optional. */ } }}>账号{ nameExpanded ? <ChevronLeft size={13}/> : <ChevronRight size={13}/>}</button></th>
                             <th
                               aria-sort={
                                 sortBy === "priority"
@@ -829,7 +834,7 @@ export default function App() {
                                   );
                                 }}
                               >
-                                优先级{" "}
+                                调度参数{" "}
                                 {sortBy === "priority"
                                   ? ascending
                                     ? "↑"
@@ -890,7 +895,8 @@ export default function App() {
                                 />
                               </td>
                               <td className="account-name">
-                                <strong title={a.name}>{a.name}</strong>
+                                <strong title={a.name} tabIndex={0}>{a.name}</strong>
+                                <small className="account-id">#{a.id}</small>
                                 <small className="account-identity">
                                   {a.platform === "openai"
                                     ? "OpenAI"
@@ -912,7 +918,7 @@ export default function App() {
                                 <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
                               </td>
                               <td>
-                                <PriorityEditor
+                                <SchedulingParameters
                                   account={a}
                                   online={state.online}
                                   report={report}
@@ -1234,6 +1240,7 @@ export default function App() {
       )}
       {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
+      {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
       {qualityAccount && (
         <QualityDialog
           key={`${connectionKey}:${qualityAccount.id}`}

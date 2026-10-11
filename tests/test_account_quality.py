@@ -21,6 +21,7 @@ def usage(account=1, count=30, *, first=2000, tps=40, hours=2, **overrides):
     return [{"id": account * 10000 + n, "account_id": account, "created_at": NOW - timedelta(hours=hours, seconds=n),
         "model": "requested", "upstream_model": "gpt-6-sol", "stream": True, "first_token_ms": first,
         "duration_ms": first + 1000000 / tps, "output_tokens": 1000, "input_tokens": 4096,
+        "cache_read_tokens": 0, "cache_creation_tokens": 0,
         "reasoning_effort": "max", "service_tier": "default", **overrides} for n in range(count)]
 
 
@@ -66,16 +67,32 @@ class EvidenceTests(unittest.TestCase):
         found = failures([error(minutes=30,upstream_errors=[event])], {1:ACCOUNTS[0]}, NOW)
         self.assertEqual(found[0]["at"], NOW-timedelta(seconds=10))
 
-    def test_tps_uses_generation_duration_and_rejects_invalid_or_media(self):
+    def test_tps_uses_total_duration_and_rejects_invalid_or_media(self):
         row = usage()[0]
-        self.assertEqual(performance(row,ACCOUNTS[0])["tps"],40)
-        for change in ({"stream":False},{"first_token_ms":None},{"first_token_ms":-1},{"duration_ms":2000},
-                       {"duration_ms":float('nan')},{"input_tokens":None},{"image_count":1},{"video_count":1},
-                       {"inbound_endpoint":"/v1/audio/transcriptions"},{"upstream_model":"grok-tts"}):
+        expected_tps = row["output_tokens"] / (row["duration_ms"] / 1000)
+        self.assertAlmostEqual(performance(row,ACCOUNTS[0])["tps"],expected_tps)
+        missing_ttft = performance({**row,"first_token_ms":None},ACCOUNTS[0])
+        self.assertIsNotNone(missing_ttft)
+        self.assertIsNone(missing_ttft["ttft"])
+        self.assertAlmostEqual(missing_ttft["tps"],expected_tps)
+        for first in (0,-1,True,float('nan'),'invalid'):
+            with self.subTest(first_token_ms=first):
+                invalid_ttft=performance({**row,"first_token_ms":first},ACCOUNTS[0])
+                self.assertIsNotNone(invalid_ttft)
+                self.assertIsNone(invalid_ttft["ttft"])
+                self.assertAlmostEqual(invalid_ttft["tps"],expected_tps)
+        equal_timing=performance({**row,"duration_ms":row["first_token_ms"]},ACCOUNTS[0])
+        self.assertIsNotNone(equal_timing)
+        self.assertIsNone(equal_timing["ttft"])
+        self.assertAlmostEqual(equal_timing["tps"],row["output_tokens"]/(row["first_token_ms"]/1000))
+        for change in ({"stream":False},{"duration_ms":0},{"duration_ms":True},{"duration_ms":float('nan')},{"duration_ms":"invalid"},
+                       {"output_tokens":0},{"input_tokens":None},{"image_count":1},{"video_count":1},
+                       {"inbound_endpoint":"/v1/audio/transcriptions"},{"upstream_model":"grok-tts"},
+                       {"billing_mode":"image"}):
             with self.subTest(change=change): self.assertIsNone(performance({**row,**change},ACCOUNTS[0]))
-        for change in ({"output_tokens":31},{"duration_ms":2499}):
+        for change in ({"output_tokens":31},{"duration_ms":499}):
             self.assertIsNone(performance({**row,**change},ACCOUNTS[0])["tps"])
-        self.assertIsNotNone(performance({**row,"output_tokens":32,"duration_ms":2500},ACCOUNTS[0])["tps"])
+        self.assertIsNotNone(performance({**row,"output_tokens":32,"duration_ms":500},ACCOUNTS[0])["tps"])
 
     def test_duplicate_usage_ids_and_invalid_dates(self):
         rows = usage()
@@ -85,7 +102,27 @@ class EvidenceTests(unittest.TestCase):
     def test_context_buckets_include_cached_input(self):
         row=usage()[0]
         self.assertEqual(performance({**row,'cache_read_tokens':50000},ACCOUNTS[0])['cohort'][-1],'32–128K')
-        self.assertIsNone(performance({**row,'cache_creation_tokens':-1},ACCOUNTS[0]))
+        for invalid in (-1, "invalid", True, float("nan")):
+            with self.subTest(cache_creation_tokens=invalid):
+                self.assertIsNone(performance({**row,'cache_creation_tokens':invalid},ACCOUNTS[0]))
+
+    def test_missing_or_null_optional_cache_counts_keep_timing_and_mark_unknown_input(self):
+        row = usage()[0]
+        expected_tps = row["output_tokens"] / (row["duration_ms"] / 1000)
+        variants = [
+            {key: value for key, value in row.items() if key != "cache_read_tokens"},
+            {**row, "cache_read_tokens": None},
+            {key: value for key, value in row.items() if key != "cache_creation_tokens"},
+            {**row, "cache_creation_tokens": None},
+            {**row, "cache_read_tokens": None, "cache_creation_tokens": None},
+        ]
+        for variant in variants:
+            with self.subTest(cache_fields={key: variant.get(key) for key in ("cache_read_tokens", "cache_creation_tokens")}):
+                sample = performance(variant, ACCOUNTS[0])
+                self.assertIsNotNone(sample)
+                self.assertAlmostEqual(sample["ttft"], row["first_token_ms"] / 1000)
+                self.assertAlmostEqual(sample["tps"], expected_tps)
+                self.assertEqual(sample["cohort"][-1], "未知")
 
 
 class ScoringTests(unittest.TestCase):
@@ -132,8 +169,13 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result(rows)[1]['score'],79)
 
     def test_sample_gates_and_coverage(self):
-        self.assertEqual(result([])[1]['reasons'],['待积累'])
-        self.assertEqual(result(usage(count=19))[1]['sample_status'],'insufficient')
+        empty=result([])[1]
+        self.assertEqual(empty['reasons'],['调用不足'])
+        self.assertEqual(empty['reliability']['missing_reason'],'insufficient_calls')
+        insufficient=result(usage(count=19))[1]
+        self.assertEqual(insufficient['sample_status'],'insufficient')
+        self.assertIsNone(insufficient['score'])
+        self.assertEqual(insufficient['reliability']['missing_reason'],'insufficient_calls')
         rows=usage(1,count=9)+usage(2)+usage(3)
         self.assertIsNone(result(rows)[1]['score'])
         rows=usage(1,count=30)+usage(2)+usage(3)+usage(1,count=30,upstream_model='unique',id=999999)
@@ -188,10 +230,37 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(out['ttft']['mode'],'24h')
         self.assertEqual(out['coverage'],0)
         self.assertIsNone(out['score'])
+        self.assertEqual(out['ttft']['missing_reason'],'no_comparable_baseline')
+        self.assertEqual(out['throughput']['missing_reason'],'no_comparable_baseline')
+        self.assertEqual(out['reasons'],['暂无可比基准'])
 
-    def test_missing_performance_does_not_become_fast_zero(self):
+    def test_missing_ttft_does_not_become_fast_zero_or_drop_tps(self):
         out=result(sum((usage(i,first_token_ms=None) for i in (1,2,3)),[]))[1]
         self.assertIsNone(out['score']);self.assertIsNone(out['ttft']['p50'])
+        self.assertEqual(out['ttft']['samples'],0)
+        self.assertEqual(out['ttft']['missing_reason'],'first_token_missing')
+        self.assertEqual(out['throughput']['samples'],30)
+        self.assertGreater(out['throughput']['p50'],0)
+        self.assertIsNone(out['throughput']['missing_reason'])
+        self.assertEqual(out['reasons'],['首字未记录'])
+
+    def test_unavailable_throughput_is_reported_without_fabricating_a_score(self):
+        out=result(sum((usage(i,output_tokens=31) for i in (1,2,3)),[]))[1]
+        self.assertIsNone(out['score'])
+        self.assertEqual(out['ttft']['samples'],30)
+        self.assertEqual(out['throughput']['samples'],0)
+        self.assertEqual(out['throughput']['compared'],0)
+        self.assertEqual(out['throughput']['missing_reason'],'throughput_unavailable')
+
+    def test_quality_score_keeps_50_25_25_weights(self):
+        reliability_result={"total":20,"successes":20,"failures":0,"rate":0,"score":80,
+            "effective_rate":0,"causes":{},"recent":{},"history":{},"mode":"7d"}
+        metric_result_value={"samples":10,"compared":10,"coverage":1,"score":60,"p50":10,"tail":10,
+            "cohorts":[],"recent":{},"history":{},"all":{},"mode":"7d"}
+        with patch('app.account_quality.reliability',return_value=reliability_result), \
+             patch('app.account_quality.metric_result',side_effect=[metric_result_value, {**metric_result_value,'score':40}]):
+            out=calculate([ACCOUNTS[0]],usage(1,count=20),[],NOW,baselines={})[0][1]
+        self.assertEqual(out['score'],65)
 
 
 class CacheTests(unittest.TestCase):
@@ -220,23 +289,48 @@ class CacheTests(unittest.TestCase):
         cache=QualityCache(None,reader=read,clock=lambda:tick[0],utcnow=lambda:NOW)
         self.addCleanup(cache.close)
         cache.get([1]);cache._thread.join(2)
+        previous=cache.get([1],detail=True)[1]
         read.side_effect=TimeoutError('PRIVATE SQL marker')
         tick[0]=31;cache.get([1]);cache._thread.join(2)
-        out=cache.get([1])[1];self.assertEqual(out['score'],93);self.assertEqual(out['data_status'],'delayed')
+        out=cache.get([1],detail=True)[1]
+        self.assertEqual(out['score'],previous['score'])
+        self.assertEqual(out['computed_at'],previous['computed_at'])
+        self.assertEqual(out['reliability'],previous['reliability'])
+        self.assertEqual(out['ttft'],previous['ttft'])
+        self.assertEqual(out['throughput'],previous['throughput'])
+        self.assertEqual(out['data_status'],'delayed')
+        self.assertEqual(out['reasons'],['统计更新失败'])
+        self.assertEqual(out['diagnostic']['stage'],'usage')
+        self.assertEqual(out['diagnostic']['kind'],'query_timeout')
+        self.assertEqual(out['diagnostic']['checked_at'],NOW.isoformat())
         tick[0]=301
         out=cache.get([1])[1];cache._thread.join(2)
-        self.assertIsNone(out['score']);self.assertEqual(out['reasons'],['数据过期'])
+        self.assertEqual(out['score'],previous['score'])
+        self.assertEqual(out['computed_at'],previous['computed_at'])
+        self.assertEqual(out['data_status'],'stale')
+        self.assertEqual(out['reasons'],['统计更新失败'])
         read.side_effect=None;tick[0]=332;cache.get([1]);cache._thread.join(2)
         self.assertEqual(cache.get([1])[1]['score'],93)
 
     def test_read_transaction_is_readonly_bounded_and_whitelisted(self):
         db=MagicMock();conn=db.connection.return_value.__enter__.return_value
-        conn.execute.return_value.fetchall.return_value=[]
+        def execute(sql, params=None):
+            cursor=MagicMock()
+            cursor.fetchall.return_value=(
+                [{"attname": name} for name in ("upstream_model", "duration_ms")]
+                if "pg_attribute" in sql else [])
+            return cursor
+        conn.execute.side_effect=execute
         self.assertEqual(read_evidence(db,NOW),([],[],[]))
         sql='\n'.join(call.args[0] for call in conn.execute.call_args_list)
         self.assertIn('READ ONLY',sql);self.assertIn('statement_timeout',sql)
+        self.assertIn("pg_attribute",sql)
+        self.assertIn("u.upstream_model",sql)
+        self.assertIn("NULL AS cache_read_tokens",sql)
+        self.assertIn("NULL AS video_count",sql)
         for hidden in ('credentials','request_body','error_body','upstream_error_detail'):
             self.assertNotIn(hidden,sql)
+        self.assertNotIn('to_jsonb(u)',sql)
         for forbidden in ('UPDATE ','DELETE ','INSERT '):self.assertNotIn(forbidden,sql)
 
     def test_detail_auth_deleted_filter_and_no_upstream_scoring(self):

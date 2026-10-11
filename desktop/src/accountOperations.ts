@@ -35,7 +35,7 @@ export async function submitOperation(account: Account, action: string, payload:
   setOperations([job, ...rows.filter((row) => row.id !== job.id)]);
   return job;
 }
-export async function followOperation<T>(initial: Operation, onEvent?: (event: TestEvent) => void): Promise<T> {
+export async function followOperation<T>(initial: Operation, onEvent?: (event: TestEvent) => void, onUpdate?: (job: Operation) => void): Promise<T> {
   const current = epoch;
   let job = initial, after = 0;
   while (true) {
@@ -44,6 +44,7 @@ export async function followOperation<T>(initial: Operation, onEvent?: (event: T
       for (const event of job.events ?? []) onEvent(event);
       after = job.next_event ?? after;
     }
+    onUpdate?.(job);
     if (operationTerminal.has(job.status)) {
       // Drain all remaining connection-test events before presenting completion.
       if (onEvent && (job.events?.length ?? 0) === 100) {

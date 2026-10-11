@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
 import App from "./main";
+import { useAccountActions } from "./AccountActions";
 import { handleBack } from "./mobile";
 import type { Account, Group, ViewState } from "./types";
 
@@ -78,7 +79,7 @@ const state = (accounts: Account[] = [account(1)]): ViewState => ({
   },
 });
 
-const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "恢复状态", "应用模板", "删除"];
+const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "恢复状态", "应用模板", "模型白名单", "模型映射", "选择代理", "删除"];
 let container: HTMLDivElement;
 let root: Root;
 let receive: (next: ViewState) => void;
@@ -165,7 +166,9 @@ describe("shared account actions", () => {
     await act(async () => button("Grok", container.querySelector(".group-platforms")!).click());
     await openGroupMenu("Fixture 3");
 
-    expect(labels(menu()!)).toEqual(recoverable ? ["测试连接", "恢复状态", "删除"] : ["测试连接", "删除"]);
+    expect(labels(menu()!)).toEqual(recoverable
+      ? ["测试连接", "恢复状态", "模型白名单", "模型映射", "选择代理", "删除"]
+      : ["测试连接", "模型白名单", "模型映射", "选择代理", "删除"]);
   });
 
   it("provides the complete group menu on Android and gives it first ownership of Back", async () => {
@@ -308,5 +311,32 @@ describe("shared account actions", () => {
       ["DELETE", "/accounts/1", { expected_version: "account-version-1", detach_managed: false }],
       ["PUT", "/accounts/2/groups", { expected_version: "account-version-2", scope_group_ids: [1, 2], group_ids: [1] }],
     ]);
+  });
+
+  it.each(["openai", "grok"])("exposes settings entries for %s without adding ModelTrace actions", async (platform) => {
+    const settings = vi.fn();
+    function Probe() {
+      const items = useAccountActions({
+        online: true,
+        connectionKey: "fixture-connection",
+        report: vi.fn(),
+        modelTest: vi.fn(),
+        modelDetection: vi.fn(),
+        test: vi.fn(),
+        template: vi.fn(),
+        remove: vi.fn(),
+        settings,
+      })(account(1, { platform, group_ids: platform === "grok" ? [3] : [1] }));
+      return <div>{items.map((item) => <button key={item.id} data-action={item.id} onClick={item.run}>{item.label}</button>)}</div>;
+    }
+
+    await act(async () => root.render(<Probe />));
+    const actions = [...container.querySelectorAll<HTMLButtonElement>("[data-action]")];
+    expect(actions.map((item) => item.dataset.action)).toEqual(expect.arrayContaining(["model_whitelist", "model_mapping", "proxy"]));
+    expect(actions.some((item) => item.dataset.action?.toLowerCase().includes("modeltrace"))).toBe(false);
+    await act(async () => actions.find((item) => item.dataset.action === "model_whitelist")!.click());
+    await act(async () => actions.find((item) => item.dataset.action === "model_mapping")!.click());
+    await act(async () => actions.find((item) => item.dataset.action === "proxy")!.click());
+    expect(settings.mock.calls.map(([, section]) => section)).toEqual(["whitelist", "mappings", "proxy"]);
   });
 });

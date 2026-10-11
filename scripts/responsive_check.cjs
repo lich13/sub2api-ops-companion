@@ -263,6 +263,13 @@ async function fixtureData(page) {
   });
 }
 
+async function accountSettingsData(page, accountId) {
+  return page.evaluate(async (id) => {
+    const preview = await import("/src/preview.ts");
+    return preview.run("api_request", { method: "GET", path: `/accounts/${id}/settings` });
+  }, accountId);
+}
+
 function configForm(page, heading) {
   return page.locator('form.settings-card').filter({ has: page.getByRole("heading", { name: heading, exact: true }) });
 }
@@ -286,7 +293,7 @@ function fixtureAccountActions(account) {
   const openai = account.platform === "openai" && ["oauth", "apikey"].includes(account.type);
   return {
     primary: openai ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
-    more: ["测试连接", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "删除"],
+    more: ["测试连接", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
   };
 }
 
@@ -309,6 +316,93 @@ async function cancelDeleteAction(h, source, account) {
   // Opening and cancelling this confirmation exercises action dismissal without submitting an operation.
   await h.click(dialog.getByRole("button", { name: "取消", exact: true }), "account-delete-cancel");
   await dialog.waitFor({ state: "hidden" });
+}
+
+async function schedulingChecks(h, sheet, account) {
+  const { page } = h;
+  const fields = [["priority", "优先级"], ["concurrency", "并发"], ["load_factor", "负载因子"]];
+  for (const [field, label] of fields) {
+    h.phase = `accounts/scheduling/${field}`;
+    const trigger = sheet.getByRole("button", { name: `编辑${account.name}${label}`, exact: true });
+    await h.within(trigger, "scheduling-parameter-trigger", { vertical: false, hit: true });
+    const before = await geometry(sheet);
+    await h.click(trigger, "scheduling-parameter-trigger", { vertical: false });
+    const editor = page.getByRole("dialog", { name: `编辑${label}`, exact: true });
+    await h.within(editor, "numeric-editor", { touch: false, scroll: false });
+    const afterOpen = await geometry(sheet);
+    await h.state(Math.abs(afterOpen.width - before.width) < 1 && Math.abs(afterOpen.height - before.height) < 1,
+      "numeric-editor-squeezed-action-sheet", sheet);
+    const input = editor.getByRole("textbox", { name: label, exact: true });
+    await h.within(input, "numeric-editor-input", { vertical: false });
+    if (field === "load_factor") {
+      const automatic = editor.locator("label.numeric-auto");
+      await h.within(automatic, "numeric-auto-toggle", { vertical: false });
+      await h.click(automatic, "numeric-auto-toggle", { vertical: false });
+      await h.state(await input.isEnabled(), "numeric-auto-input-remains-disabled", input);
+    }
+    await input.fill("");
+    await h.state((await input.inputValue()) === "", "numeric-input-cannot-clear", input);
+    await input.press("Enter");
+    const alert = editor.getByRole("alert");
+    await h.visible(alert, "numeric-input-enter-validation");
+    await h.state((await alert.textContent())?.includes(label), "numeric-input-enter-validation-mismatch", alert);
+    await h.layout();
+    await page.keyboard.press("Escape");
+    await editor.waitFor({ state: "hidden" });
+    await h.state(await trigger.evaluate((element) => document.activeElement === element), "numeric-editor-focus-not-restored", trigger);
+  }
+}
+
+async function openMobileSettings(h, card, account, action, heading) {
+  const { page } = h;
+  await h.click(card.getByRole("button", { name: `${account.name}操作`, exact: true }), "account-settings-action-trigger");
+  const sheet = page.getByRole("dialog", { name: "账号操作", exact: true });
+  await h.visible(sheet, "account-actions-sheet");
+  await h.click(sheet.getByRole("button", { name: action, exact: true }), "account-settings-action");
+  await sheet.waitFor({ state: "hidden" });
+  const dialog = page.getByRole("dialog", { name: "账号设置", exact: true });
+  await h.within(dialog, "account-settings-dialog", { touch: false, scroll: false });
+  await h.visible(dialog.getByRole("heading", { name: heading, exact: true }), "account-settings-heading");
+  return dialog;
+}
+
+async function settingsDraftChecks(h, surface, account) {
+  const { page } = h;
+  const card = surface.locator(".mobile-account").filter({ has: page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true }) });
+  const original = await accountSettingsData(page, account.id);
+
+  h.phase = "accounts/settings-model-draft";
+  let dialog = await openMobileSettings(h, card, account, "模型白名单", "模型配置");
+  const whitelist = dialog.getByRole("textbox", { name: "白名单模型 1", exact: true });
+  await h.visible(whitelist, "account-settings-whitelist");
+  await whitelist.fill("draft-model");
+  await h.state(await dialog.getByRole("button", { name: "保存", exact: true }).isEnabled(), "model-settings-draft-not-dirty", dialog);
+  await h.click(dialog.getByRole("tab", { name: "模型映射", exact: true }), "account-settings-mapping-tab");
+  await h.click(dialog.getByRole("button", { name: "添加映射", exact: true }), "account-settings-add-mapping");
+  const source = dialog.getByRole("textbox", { name: "请求模型 1", exact: true });
+  const target = dialog.getByRole("textbox", { name: "转发模型 1", exact: true });
+  await source.fill("draft-source*");
+  await target.fill("draft-target");
+  await h.state(await dialog.getByRole("button", { name: "保存", exact: true }).isEnabled(), "model-mapping-draft-not-dirty", dialog);
+  await h.layout();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await h.state(isDeepStrictEqual(await accountSettingsData(page, account.id), original), "model-settings-draft-wrote-preview");
+
+  h.phase = "accounts/settings-proxy-draft";
+  dialog = await openMobileSettings(h, card, account, "选择代理", "选择代理");
+  const proxyOptions = dialog.locator(".proxy-options");
+  await h.visible(proxyOptions, "account-settings-proxy-options");
+  const proxyLabel = proxyOptions.locator("label").filter({ hasText: "演示代理" });
+  const proxyRadio = proxyLabel.getByRole("radio");
+  await h.within(proxyLabel, "account-settings-proxy-option", { vertical: false });
+  await h.click(proxyLabel, "account-settings-proxy-option", { vertical: false });
+  await h.state(await proxyRadio.isChecked(), "proxy-draft-not-selected", proxyLabel);
+  await h.state(await dialog.getByRole("button", { name: "保存", exact: true }).isEnabled(), "proxy-draft-not-dirty", dialog);
+  await h.layout();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await h.state(isDeepStrictEqual(await accountSettingsData(page, account.id), original), "proxy-settings-draft-wrote-preview");
 }
 
 async function groupMenuChecks(h, fixture, manager) {
@@ -461,6 +555,7 @@ async function accountChecks(h, fixture) {
   const more = sheet.locator("div.mobile-more-actions");
   await h.visible(more, "mobile-more-actions");
   await accountActionButtons(h, more, actions.more, "mobile-more-action");
+  await schedulingChecks(h, sheet, account);
   await h.layout();
   await h.click(sheet.getByRole("button", { name: "关闭账号操作", exact: true }), "account-actions-close");
   await sheet.waitFor({ state: "hidden" });
@@ -468,6 +563,7 @@ async function accountChecks(h, fixture) {
   await cancelDeleteAction(h, sheet, account);
   await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "account-sheet-mutated-preview-accounts");
   await search.fill("");
+  await settingsDraftChecks(h, surface, account);
 
   h.phase = "accounts/filters";
   await h.click(surface.getByRole("button", { name: "筛选账号", exact: true }), "account-filters-trigger");
@@ -938,6 +1034,32 @@ async function desktopMenuChecks(h, fixture) {
   const table = page.locator(".accounts-table");
   await h.visible(table, "desktop-account-table");
   await h.layout();
+  h.phase = "desktop/account-column-preference";
+  let columnToggle = table.getByRole("button", { name: "展开账号列", exact: true });
+  const nameColumn = table.locator("col.col-name");
+  const columnWidth = async () => nameColumn.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+  await h.within(columnToggle, "account-column-toggle", { touch: false, vertical: false, hit: true });
+  await h.state(Math.abs(await columnWidth() - 128) <= 1, "account-column-default-width", nameColumn);
+  await h.click(columnToggle, "account-column-toggle", { touch: false, vertical: false });
+  await h.state((await table.getAttribute("class"))?.includes("name-expanded"), "account-column-did-not-expand", table);
+  await h.state(await table.getByRole("button", { name: "收起账号列", exact: true }).getAttribute("aria-expanded") === "true", "account-column-expanded-state-mismatch", table);
+  await h.state(Math.abs(await columnWidth() - 240) <= 1, "account-column-expanded-width", nameColumn);
+  await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "true", "account-column-preference-not-saved", table);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await h.visible(page.locator('.page-surface[data-page="accounts"]'), "reloaded-account-surface");
+  await h.visible(page.locator(".accounts-table"), "reloaded-desktop-account-table");
+  const reloadedTable = page.locator(".accounts-table");
+  await h.state((await reloadedTable.getAttribute("class"))?.includes("name-expanded"), "account-column-preference-not-restored", reloadedTable);
+  columnToggle = reloadedTable.getByRole("button", { name: "收起账号列", exact: true });
+  await h.state(Math.abs(await reloadedTable.locator("col.col-name").evaluate((element) => Math.round(element.getBoundingClientRect().width)) - 240) <= 1,
+    "account-column-restored-width", reloadedTable.locator("col.col-name"));
+  await h.click(columnToggle, "account-column-toggle", { touch: false, vertical: false });
+  await h.state(Math.abs(await reloadedTable.locator("col.col-name").evaluate((element) => Math.round(element.getBoundingClientRect().width)) - 128) <= 1,
+    "account-column-collapse-width", reloadedTable.locator("col.col-name"));
+  await h.state(await page.evaluate(() => localStorage.getItem("sub2ops-account-name-expanded")) === "false", "account-column-collapse-preference-not-saved", reloadedTable);
+  await h.layout();
+
+  h.phase = "desktop/compact-more";
   for (const id of [102, 391]) {
     const account = fixture.accounts.find((item) => item.id === id);
     await h.state(!!account, "missing-desktop-fixture");

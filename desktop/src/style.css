@@ -1554,19 +1554,7 @@ td:last-child {
 .limit-until {
   white-space: nowrap;
 }
-.priority-edit {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.priority-edit input {
-  width: 54px;
-  padding: 5px 4px;
-  font-size: 12px;
-}
-.priority-edit button {
-  padding: 4px;
-}
+
 .sort-button {
   background: none;
   border: 0;
@@ -1712,6 +1700,7 @@ td:last-child {
   width: 100%;
   min-height: 28px;
   justify-content: flex-start;
+  gap: 6px;
   padding: 5px 9px;
   border: 0;
   border-radius: 4px;
@@ -1722,7 +1711,10 @@ td:last-child {
   overflow-wrap: anywhere;
 }
 .account-action-popup > button svg { flex-shrink: 0; }
+.account-action-spacer { display: none; }
+.account-action-popup .account-action-spacer, .mobile-more-actions .account-action-spacer { display: inline-block; width: 12px; flex: 0 0 12px; }
 .mobile-more-actions { display: grid; gap: 8px; }
+.mobile-more-actions > button { justify-content: flex-start; gap: 6px; }
 @media (pointer: coarse), (max-width: 760px) {
   .account-action-popup > button { min-height: 48px; }
 }

@@ -10,6 +10,8 @@ import {
   type QualityMetric,
 } from "./types";
 
+const missingLabels: Record<string, string> = { insufficient_calls: "调用不足", first_token_missing: "首字未记录", throughput_unavailable: "无有效输出样本", no_comparable_baseline: "暂无可比基准" };
+const diagnosticLabels: Record<string, string> = { query_timeout: "查询超时", query_failed: "查询失败", evidence_limit: "统计范围超限", calculation_failed: "计算失败" };
 const num = (value: number | null | undefined, suffix = "") =>
   value == null ? "—" : `${value.toFixed(1)}${suffix}`;
 const percent = (value: number | null | undefined) =>
@@ -30,11 +32,11 @@ export function QualityBadge({
 }) {
   return (
     <button
-      className={`quality-badge ${value?.grade ?? "yellow"}`}
+      className={`quality-badge ${value?.score == null && value?.grade !== "red" ? "neutral" : value?.grade ?? "neutral"}`}
       onClick={onClick}
       title={
-        value?.data_status === "delayed"
-          ? `计算延迟 · ${fullTime(value.computed_at)}`
+        value?.data_status !== undefined && value.data_status !== "fresh"
+          ? `${value.diagnostic ? "统计更新失败" : "等待统计更新"} · 上次计算 ${fullTime(value.computed_at)}`
           : `计算时间 ${fullTime(value?.computed_at)}`
       }
     >
@@ -94,6 +96,7 @@ function Metric({
         </div>
       </dl>
       <p className="quality-period">{mode(value.mode)}</p>
+      {value.missing_reason && <p className="quality-missing">{missingLabels[value.missing_reason] || "该维度证据不足"}</p>}
       <details>
         <summary>同类基准</summary>
         {(value.mode === "70/30"
@@ -220,7 +223,7 @@ export default function QualityDialog({
         </div>
         {quality && quality.data_status !== "fresh" && (
           <p>
-            {quality?.data_status === "stale" ? "数据过期" : "计算延迟"} ·{" "}
+            {quality.diagnostic ? diagnosticLabels[quality.diagnostic.kind] || "统计更新失败" : "等待统计更新"} · 上次计算{" "}
             {fullTime(quality?.computed_at)}
           </p>
         )}
@@ -258,6 +261,7 @@ export default function QualityDialog({
                   </div>
                 </dl>
                 <p className="quality-period">{mode(value.reliability.mode)}</p>
+                {value.reliability.missing_reason && <p className="quality-missing">{missingLabels[value.reliability.missing_reason]}</p>}
               </section>
               {value.ttft && (
                 <Metric
@@ -271,7 +275,7 @@ export default function QualityDialog({
                 <Metric
                   label="输出速率"
                   value={value.throughput}
-                  unit=" t/s"
+                  unit=" tok/s"
                   tail="P10"
                 />
               )}

@@ -35,7 +35,7 @@ def busy():
 
 class OperationRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'degradation_mark', 'account_template']
+    action: Literal['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'degradation_mark', 'account_template', 'concurrency', 'load_factor', 'model_config', 'proxy', 'sync_models']
     request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     expected_version: str = Field(min_length=64, max_length=64)
@@ -243,12 +243,17 @@ class AccountOperations:
         from .desktop_actions import PriorityRequest, GroupsRequest, TestRequest, DegradationMarkRequest
         from .desktop_api import ScheduleRequest, DeleteRequest, AccountVersionRequest, UsageActionRequest
         from .account_templates import TemplateApplication
-        models = {'account_template': TemplateApplication, 'priority': PriorityRequest, 'groups': GroupsRequest, 'test': TestRequest,
+        from .account_settings import ConcurrencyRequest, LoadFactorRequest, ProxyRequest, ModelConfigRequest, SettingsVersion
+        models = {'concurrency': ConcurrencyRequest, 'load_factor': LoadFactorRequest, 'proxy': ProxyRequest,
+                  'model_config': ModelConfigRequest, 'sync_models': SettingsVersion, 'account_template': TemplateApplication, 'priority': PriorityRequest, 'groups': GroupsRequest, 'test': TestRequest,
                   'schedulable': ScheduleRequest, 'delete': DeleteRequest, 'recover': AccountVersionRequest,
                   'usage': UsageActionRequest, 'reset_quota': UsageActionRequest, 'degradation_mark': DegradationMarkRequest}
         value = dict(payload)
         value['expected_mark_version' if action == 'degradation_mark' else 'expected_version'] = '0' * 64
         parsed = models[action].model_validate(value)
+        if action == 'model_config':
+            from .account_templates import combine
+            combine(parsed.model_dump())
         if action == 'reset_quota' and parsed.action != 'reset_quota':
             raise HTTPException(422, '用卡请求无效')
         if action == 'usage' and parsed.action == 'reset_quota':
@@ -294,7 +299,7 @@ class AccountOperations:
                 for old in data['jobs'].values():
                     if (old['account_id'] == aid and old['client_id'] == request.client_id
                             and old['action'] == request.action and old['status'] in {'queued', 'needs_confirmation'}
-                            and request.action in {'priority', 'groups', 'schedulable', 'degradation_mark'}):
+                            and request.action in {'priority', 'concurrency', 'load_factor', 'model_config', 'proxy', 'groups', 'schedulable', 'degradation_mark'}):
                         old.update(status='superseded', reason='已由本客户端的新请求替代', updated_at=stamp())
                 data['jobs'][jid] = job
                 data['requests'][request.request_id] = jid
@@ -307,7 +312,10 @@ class AccountOperations:
     @staticmethod
     def current(row, job):
         action = job['action']
-        if action in {'groups', 'priority', 'schedulable'}:
+        from .account_settings import EDIT_ACTIONS, current_value
+        if action in EDIT_ACTIONS:
+            return current_value(row, action)
+        if action in {'groups', 'schedulable'}:
             field = 'group_ids' if action == 'groups' else action
             return {field: row.get(field)}
         return {k: row.get(k) for k in ('id', 'name', 'platform', 'type', 'status')}
@@ -318,7 +326,10 @@ class AccountOperations:
             return row is None
         if not row:
             return False
-        if action in {'priority', 'schedulable'}:
+        from .account_settings import EDIT_ACTIONS, target_reached
+        if action in EDIT_ACTIONS:
+            return target_reached(row, action, p)
+        if action == 'schedulable':
             return row.get(action) == p[action] and (action != 'schedulable' or row['id'] not in self.managed())
         if action == 'groups':
             return set(row.get('group_ids') or []) & set(p['scope_group_ids']) == set(p['group_ids'])
@@ -393,6 +404,10 @@ class AccountOperations:
                 if row and job['action'] == 'degradation_mark':
                     from .capacity_alerts import mark_view
                     result['degradation_mark'] = mark_view(row['id'], self.s.r.capacity_alerts.store.snapshot()['marks'].get(str(row['id'])))
+                from .account_settings import EDIT_ACTIONS
+                if row and job['action'] in EDIT_ACTIONS:
+                    result['field_version'] = versions(row)[job['action']]
+                    result['settings_versions'] = {k: v for k, v in versions(row).items() if k in EDIT_ACTIONS}
                 if row:
                     result['version'] = account_dto(row, datetime.now(timezone.utc), self.managed())['version']
                 self.update(jid, status='completed', reason='', result=result)
@@ -450,8 +465,9 @@ class AccountOperations:
         p = {**job['payload'], 'expected_version': account_dto(row, datetime.now(timezone.utc), self.managed())['version']}
         if action == 'account_template':
             return await self.thread_write(self.s.account_templates.apply, aid, {**job['payload'], 'expected_version': job['expected_version']}, key)
-        if action == 'priority':
-            return await self.s.actions.set_priority(aid, PriorityRequest(**p), key)
+        from .account_settings import EDIT_ACTIONS
+        if action in EDIT_ACTIONS:
+            return await self.s.account_settings.apply(aid, action, job['payload'], job['expected_version'], key)
         if action == 'groups':
             return await self.s.actions.set_groups(aid, GroupsRequest(**p), key)
         if action in {'usage', 'reset_quota'}:

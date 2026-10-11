@@ -156,7 +156,8 @@ const stats = {
   user_cost: 76.8,
 };
 for (const account of accounts) {
-  account.operation_versions = Object.fromEntries(['priority', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'model_test'].map((key) => [key, account.version]));
+  account.concurrency = 2; account.load_factor = null;
+  account.operation_versions = Object.fromEntries(['priority', 'concurrency', 'load_factor', 'model_config', 'proxy', 'sync_models', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'model_test'].map((key) => [key, account.version]));
   if (account.platform === 'openai' && ['oauth', 'apikey'].includes(account.type)) account.degradation_mark = { marked: account.id === 102, version: 'f'.repeat(64) };
   account.quality = {
     score:
@@ -530,6 +531,12 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (args.path === "/proxies") return structuredClone((await import('./settingsPreview')).previewProxies);
+    if (/^\/accounts\/\d+\/settings$/.test(String(args.path))) {
+      const account = state.snapshot?.accounts.find(a => a.id === Number(String(args.path).split('/')[2]));
+      if (!account) throw new Error('账号不存在');
+      return (await import('./settingsPreview')).settingsPreview(account);
+    }
     if (args.path === "/connection-status") return { state: "ok", endpoint: "verify", http_status: 200, message: "Sub2API 管理权限已验证", retryable: false, checked_at: new Date().toISOString() };
     if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);

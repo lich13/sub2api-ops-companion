@@ -5,7 +5,7 @@ import { clientId, getOperations, operationEpoch, setOperations, type Operation 
 import { useBackAction } from "./mobile";
 import type { Account } from "./types";
 
-type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
+export type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
 type Config = { version: string; configured: boolean; templates: Record<string, Profile>; template_meta: Record<string, { name: string }>; template_order: string[]; template_versions?: Record<string, string> };
 type Draft = Profile & { name: string };
 type AccountConfig = { account?: { id: number; eligible: boolean; passthrough: boolean; version: string; config: Profile; reason?: string } };
@@ -17,7 +17,7 @@ const profileOf = (value: Profile): Profile => ({ whitelist: value.whitelist, ma
 const running = (batch: Batch | null) => batch?.items.some(item => ["queued", "running", "checking"].includes(item.status)) ?? false;
 const statusNames: Record<string, string> = { queued: "已排队", running: "执行中", checking: "核对中", completed: "已完成", needs_confirmation: "需确认", failed: "失败", cancelled: "已取消", superseded: "已替代" };
 
-function validate(profile: Profile) {
+export function validate(profile: Profile) {
   const seen = new Set<string>();
   for (const model of profile.whitelist) {
     if (!/^[A-Za-z0-9._:/-]{1,200}$/.test(model)) return "白名单必须是精确模型 ID";

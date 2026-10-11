@@ -139,6 +139,15 @@ def _signature(row: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(stable, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def _parameter_edit_guard(row: dict[str, Any]) -> str:
+    # A narrowly authorized scalar edit must not adopt concurrent manual
+    # scheduling, credential or blocking changes. Only hashes leave memory.
+    protected = [_signature(row), row.get("credentials"),
+                 {k: row.get(k) for k in ("status", "schedulable", "load_factor", "proxy_id", "rate_limited_at",
+                  "rate_limit_reset_at", "overload_until", "temp_unschedulable_until", "temp_unschedulable_reason")}]
+    return hashlib.sha256(json.dumps(protected, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def quota_result(data: dict[str, Any], row: dict[str, Any], now: datetime, *, requested_at: datetime | None = None) -> dict[str, Any]:
     payload = data.get("quota") if isinstance(data.get("quota"), dict) else data
     windows = payload.get("rate_limit") or {}
@@ -255,6 +264,47 @@ class AutoResetController:
             self._save(account_id, task, stage="manual", owns_pause=False, next_at=None, error_code="",
                        manual_at=self.m.clock().isoformat())
             self._audit(account_id, "manual_intervention")
+
+    def prepare_parameter_edit(self, account_id: int, field: str, value: int | None) -> None:
+        """Called under the account lease, durably before the scalar write."""
+        if field not in {"priority", "concurrency", "load_factor"}:
+            raise ValueError("不是普通调度参数")
+        row = self.m._read_account(account_id)
+        task = self._reconcile_parameter_edit(row, self.state(account_id))
+        if not task.get("owns_pause"):
+            return
+        if not self._owned(row, task):
+            raise ValueError("用卡暂停归属待核对，未修改参数")
+        desired = dict(row)
+        if field == "priority":
+            for key in ("account_priority", "priority"):
+                if key in desired:
+                    desired[key] = value
+        else:
+            desired[field] = value
+        self._save(account_id, task, parameter_edit={
+            "field": field, "target": value, "guard": _parameter_edit_guard(desired),
+            "generation": self.store.control_generation(account_id),
+        })
+
+    def _reconcile_parameter_edit(self, row: dict | None, task: dict) -> dict:
+        pending = task.get("parameter_edit")
+        if not row or not isinstance(pending, dict) or not task.get("owns_pause"):
+            return task
+        aid = int(row["id"])
+        if (pending.get("generation") != self.store.control_generation(aid)
+                or row.get("schedulable") is not False):
+            return task
+        if pending.get("guard") == _parameter_edit_guard(row):
+            return self._save(aid, task, signature=_signature(row),
+                              owned_version=str(row.get("updated_at")), parameter_edit=None)
+        if self._owned(row, task):
+            # The write was never dispatched (or was rejected); keep the old hold.
+            return self._save(aid, task, parameter_edit=None)
+        return task
+
+    def reconcile_parameter_edit(self, account_id: int) -> None:
+        self._reconcile_parameter_edit(self.m._read_account(account_id), self.state(account_id))
 
     def _saved_quota(self, row, now):
         saved = self.store.snapshot()["oauth_results"].get(str(row["id"]))
@@ -531,6 +581,7 @@ class AutoResetController:
         row, task = self.m._read_account(aid), self.state(aid)
         if not row:
             return
+        task = self._reconcile_parameter_edit(row, task)
         from .recovery_policy import recovery_method
         if not recovery_method(self.m.settings, aid) or not getattr(self.m.settings, 'oauth_recovery_monitor_enabled', True):
             return

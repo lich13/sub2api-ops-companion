@@ -4,7 +4,7 @@ import { MoreHorizontal, X } from "lucide-react";
 import { command } from "./bridge";
 import { fullTime, type Account } from "./types";
 import { QualityBadge } from "./AccountQuality";
-import { PriorityEditor } from "./AccountControls";
+import SchedulingParameters from "./SchedulingParameters";
 import { AccountActionButton, isPrimaryAction, type AccountActionItem } from "./AccountActions";
 import UsageCell from "./UsageCell";
 import { useBackAction } from "./mobile";
@@ -49,7 +49,7 @@ export default function MobileAccounts(props: Props) {
     </div>
     {active && <div className="modal-backdrop" onClick={() => setActiveId(null)}><section className="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="账号操作" onClick={(e) => e.stopPropagation()}>
       <header><h2>{active.name}</h2><button className="icon-button" aria-label="关闭账号操作" onClick={() => setActiveId(null)}><X size={20}/></button></header>
-      <div className="field"><span>优先级</span><PriorityEditor account={active} online={props.online} report={props.report}/></div>
+      <SchedulingParameters account={active} online={props.online}/>
       <div className="mobile-more-actions">{props.accountActions(active).filter((item) => !isPrimaryAction(item)).map((item) =>
         <AccountActionButton key={item.id} item={item} after={() => setActiveId(null)}/>)}</div>
     </section></div>}

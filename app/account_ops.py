@@ -19,6 +19,8 @@ def _account_select(where: str) -> str:
       schedulable,
       priority AS account_priority,
       concurrency,
+      load_factor,
+      proxy_id,
       temp_unschedulable_until,
       temp_unschedulable_reason,
       rate_limited_at,

@@ -6,9 +6,12 @@ import { useBackAction } from './mobile';
 import { getOperations, subscribeOperations, setOperations, operationEpoch, submitOperation, type Operation } from './accountOperations';
 
 const states: Record<string, string> = { queued: '已排队', running: '执行中', checking: '核对中', completed: '已完成', needs_confirmation: '需确认', failed: '失败', cancelled: '已取消', superseded: '已替代' };
-const labels: Record<string, string> = { priority: '优先级', groups: '分组', recover: '恢复状态', usage: '额度操作', reset_quota: '使用重置卡', delete: '删除账号', test: '连接测试', schedulable: '调度', degradation_mark: '降智标记', model_test: '模型测试', account_template: '应用模板' };
+const labels: Record<string, string> = { concurrency: '并发', load_factor: '负载因子', model_config: '模型配置', proxy: '选择代理', sync_models: '同步上游模型', priority: '优先级', groups: '分组', recover: '恢复状态', usage: '额度操作', reset_quota: '使用重置卡', delete: '删除账号', test: '连接测试', schedulable: '调度', degradation_mark: '降智标记', model_test: '模型测试', account_template: '应用模板' };
 function describe(value: Record<string, unknown>) {
   const names: Record<string, string> = { priority: '优先级', group_ids: '目标分组', scope_group_ids: '编辑分组', schedulable: '调度', marked: '降智标记', model_id: '模型', concurrency: '并发', status: '账号状态', name: '名称', type: '类型', action: '操作' };
+  if (Array.isArray(value.whitelist) && Array.isArray(value.mappings)) return [...value.whitelist.map(String), ...value.mappings.map(rule => { const row = rule as { source: string; target: string }; return `${row.source} → ${row.target}`; })].join('、') || '不限制模型';
+  if ('proxy_id' in value) return value.proxy_id == null ? '不使用代理' : `代理 #${value.proxy_id}`;
+  if ('load_factor' in value) return `负载因子：${value.load_factor ?? '自动'}`;
   return Object.entries(value).filter(([key]) => key in names).map(([key, v]) => `${names[key]}：${typeof v === 'boolean' ? v ? '开启' : '关闭' : Array.isArray(v) ? v.map((id) => '#' + id).join('、') || '无' : String(v)}`).join('；') || '核对账号状态';
 }
 export function AccountOperationStatus({ id }: { id: number }) {

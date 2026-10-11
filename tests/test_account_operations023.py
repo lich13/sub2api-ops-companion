@@ -14,6 +14,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 from app.account_locks import AccountLease, account_lock
 from app.account_operations import AccountOperations, OperationRequest, OperationStore, busy
+from app.account_settings import AccountSettings
 from app.desktop_actions import DesktopActions
 from app.operation_versions import versions
 
@@ -51,6 +52,7 @@ class Queue023Tests(unittest.IsolatedAsyncioTestCase):
             finally: lease.release()
         self.s.recovery_guard = guard
         self.s.actions = DesktopActions(self.s)
+        self.s.account_settings = AccountSettings(self.s)
         self.queue = AccountOperations(self.s)
         self.loop = asyncio.create_task(self.queue.loop())
         self.addAsyncCleanup(self.cleanup)

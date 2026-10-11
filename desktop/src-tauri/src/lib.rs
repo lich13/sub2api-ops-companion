@@ -232,6 +232,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
         }
         return !path.contains('?') && template_id(suffix) && matches!(method, "PUT" | "DELETE");
     }
+    if plain == "/proxies" || plain.ends_with("/settings") {
+        let settings_path = plain.strip_prefix("/accounts/").and_then(|s| s.strip_suffix("/settings"))
+            .is_some_and(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit()) && s.parse::<u64>().is_ok_and(|id| id > 0));
+        return method == "GET" && !path.contains('?') && (plain == "/proxies" || settings_path);
+    }
     if account_path(plain, "/model-detection") {
         return match method { "GET" | "PUT" => !path.contains('?'), _ => false };
     }
@@ -1232,6 +1237,22 @@ mod tests {
         state.foreground.store(true, Ordering::SeqCst);
         assert_eq!(active_read(&state, async { Ok::<i32, String>(7) }).await.unwrap(), 7);
     }
+    #[test]
+    fn account_settings_routes_are_exact_and_read_only() {
+        for path in ["/accounts/7/settings", "/proxies"] {
+            assert!(allowed_request("GET", path), "{path}");
+            for method in ["POST", "PUT", "DELETE"] {
+                assert!(!allowed_request(method, path), "{method} {path}");
+            }
+        }
+        for path in ["/accounts/0/settings", "/accounts/-1/settings", "/accounts/a/settings",
+            "/accounts/7/settings/", "/accounts/7/settings?", "/accounts/7/settings?key=fixture",
+            "/accounts/7/settings/../credentials", "/accounts/7%2fsettings", "/proxies/all",
+            "/proxies?include_credentials=true", "/accounts/18446744073709551616/settings"] {
+            assert!(!allowed_request("GET", path), "{path}");
+        }
+    }
+
     #[test]
     fn error_categories_have_exact_read_only_routes() {
         for path in ["/errors", "/errors?category=degradation", "/errors?category=other&before_id=25&limit=50", "/errors/25?category=other"] {

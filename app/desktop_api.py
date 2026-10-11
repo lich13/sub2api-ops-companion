@@ -36,6 +36,7 @@ from .operation_versions import versions as operation_versions, operation_contex
 from .account_operations import AccountOperations, OperationRequest, busy
 from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest, TemplateBatchRequest
 from .model_detection import ModelDetection, DetectionRequest
+from .account_settings import AccountSettings, capabilities as settings_capabilities
 
 PREFIX = "/api/desktop/v1"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
@@ -99,11 +100,12 @@ def error_dto(row: dict[str, Any], detail: bool = False) -> dict[str, Any]:
 
 
 def account_dto(row: dict[str, Any], now: datetime, managed: set[int], quota_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids", "priority",
+    fields = ("id", "name", "platform", "type", "status", "schedulable", "updated_at", "group_ids", "priority", "concurrency", "load_factor",
               "last_success_at", "last_called_at", "last_error_at", "last_error_id", "last_error_code", "last_error_status")
     value = {key: row.get(key) for key in fields}
     value["name"] = clean(row.get("name"), 160)
     value["priority"] = int(value["priority"] or 0)
+    value["settings_capabilities"] = settings_capabilities(row)
     value["group_ids"] = row.get("group_ids") or []
     value["usage_windows"] = usage_windows(row, now, quota_result)
     value["managed"] = row["id"] in managed
@@ -150,10 +152,13 @@ def recoverable_state(row: dict[str, Any], now: datetime) -> bool:
 
 
 ACCOUNT_SQL = f"""
-SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.error_message, a.extra,
+SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
  a.proxy_id, md5(a.credentials::text) AS credential_version,
+ md5((a.credentials - 'model_mapping')::text) AS credential_settings_version,
+ a.credentials->'model_mapping' AS model_mapping,
+ nullif(a.credentials->>'project_id','') IS NOT NULL AS model_sync_project,
  md5(coalesce(a.credentials->'model_mapping','{{{{}}}}'::jsonb)::text) AS model_mapping_version,
  (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)
   FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,
@@ -242,6 +247,7 @@ class DesktopService:
         self._usage_futures: dict[int, tuple[str, Future]] = {}
         self._uncertain_resets: set[int] = set()
         self.actions = DesktopActions(self)
+        self.account_settings = AccountSettings(self)
         self.quality = QualityCache(getattr(runtime, "db", None))
         self._model_tests: ModelTests | None = None
         self._operations = None
@@ -1007,6 +1013,16 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def degradation_mark(account_id: int, payload: DegradationMarkRequest, request: Request) -> Any:
         await auth(request)
         return await service.actions.set_degradation_mark(account_id, payload)
+
+    @router.get("/accounts/{account_id}/settings")
+    async def settings_read(account_id: int, request: Request):
+        await auth(request)
+        return await service.account_settings.view(account_id)
+
+    @router.get("/proxies")
+    async def proxies_read(request: Request):
+        key = await auth(request)
+        return await service.account_settings.proxies(key)
 
     @router.get("/accounts/{account_id}/models")
     async def models(account_id: int, request: Request, purpose: Literal["model_test"] | None = None) -> Any:

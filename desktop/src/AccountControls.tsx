@@ -1,6 +1,6 @@
 import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
-import { Check, LoaderCircle, RefreshCw } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { api, command } from "./bridge";
 import {
   fullTime,
@@ -45,80 +45,6 @@ export function MiniUsage({ account }: { account: Account }) {
   );
 }
 
-export function PriorityEditor({
-  account,
-  online,
-  report,
-}: {
-  account: Account;
-  online: boolean;
-  report: (e: unknown) => void;
-}) {
-  const [value, setValue] = useState(String(account.priority));
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
-  const version = useRef(account.operation_versions?.priority ?? account.version);
-  useEffect(() => {
-    setValue(String(account.priority));
-    version.current = account.operation_versions?.priority ?? account.version;
-  }, [account.priority, account.id]);
-  async function save() {
-    if (running.current || !online || value === String(account.priority))
-      return;
-    const priority = Number(value);
-    if (
-      !value ||
-      !Number.isSafeInteger(priority) ||
-      priority < 0 ||
-      priority > 2147483647
-    )
-      return report("优先级必须是 0–2147483647 的整数");
-    running.current = true;
-    setBusy(true);
-    try {
-      await accountOperation(account, "priority", { priority }, version.current);
-      await command("refresh");
-    } catch (e) {
-      report(e);
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="priority-edit">
-      <input
-        type="number"
-        min="0"
-        max="2147483647"
-        value={value}
-        aria-label={`${account.name}优先级`}
-        disabled={!online || busy}
-        onFocus={() => {
-          version.current = account.operation_versions?.priority ?? account.version;
-        }}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void save();
-          if (e.key === "Escape") setValue(String(account.priority));
-        }}
-      />
-      {value !== String(account.priority) && (
-        <button
-          title="保存优先级"
-          disabled={busy || !online}
-          onClick={() => void save()}
-        >
-          {busy ? (
-            <LoaderCircle size={12} className="spin" />
-          ) : (
-            <Check size={12} />
-          )}
-        </button>
-      )}
-    </div>
-  );
-}
 
 export function QuotaRefresh({
   online,

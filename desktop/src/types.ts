@@ -7,6 +7,9 @@ export type Account = {
   parent_account_id?: number | null;
   name: string;
   priority: number;
+  concurrency?: number | null;
+  load_factor?: number | null;
+  settings_capabilities?: Record<string, { editable: boolean; reason: string }>;
   platform: string;
   type: string;
   status: string;
@@ -49,6 +52,7 @@ export type Quality = {
   data_status: "fresh" | "delayed" | "stale";
   computed_at: string | null;
   warnings?: SlowTTFTWarning[];
+  diagnostic?: { stage: string; kind: string; checked_at: string } | null;
 };
 export type SlowTTFTWarning = {
   kind: "slow_ttft";
@@ -77,6 +81,7 @@ export type QualityCohort = {
   score: number;
 };
 export type QualityMetric = {
+  missing_reason?: string | null;
   score: number | null;
   samples: number;
   compared: number;
@@ -96,6 +101,7 @@ export type QualityDetail = Quality & {
   consecutive_failures?: number;
   period?: { start: string; end: string; recent_start: string };
   reliability?: {
+    missing_reason?: string | null;
     score: number | null;
     rate: number | null;
     effective_rate: number | null;

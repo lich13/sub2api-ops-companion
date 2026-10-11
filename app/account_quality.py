@@ -36,6 +36,8 @@ def timestamp(value: Any) -> datetime | None:
 
 
 def number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         result = float(value)
         return result if math.isfinite(result) else None
@@ -136,26 +138,36 @@ def performance(row: dict, account: dict) -> dict | None:
     # Explicit non-text evidence; missing/invalid timing is never synthesized.
     if any(number(row.get(k)) not in (None, 0) for k in ("image_count", "image_output_tokens", "video_count", "video_duration_seconds")):
         return None
+    if row.get("billing_mode") == "image":
+        return None
     if any(s in (endpoint + " " + model.lower()) for s in ("/audio", "/images", "/videos", "-image", "-video", "-tts", "-stt", "realtime", "whisper", "dall-e")):
         return None
     first, duration, output = (number(row.get(k)) for k in ("first_token_ms", "duration_ms", "output_tokens"))
     at = timestamp(row.get("created_at"))
-    if not model or not at or first is None or duration is None or first <= 0 or duration <= first or output is None or output <= 0:
+    if not model or not at or duration is None or duration <= 0 or output is None or output <= 0:
         return None
     input_size = number(row.get("input_tokens"))
     if input_size is None or input_size < 0:
         return None
     # Sub2API stores uncached input separately from cache read/creation tokens.
+    # Older schemas may omit either optional counter. Preserve timing evidence
+    # without inventing a known input-size bucket from incomplete token data.
+    input_known = True
     for key in ("cache_read_tokens", "cache_creation_tokens"):
-        cached = number(row.get(key, 0))
+        if row.get(key) is None:
+            input_known = False
+            continue
+        cached = number(row[key])
         if cached is None or cached < 0:
             return None
         input_size += cached
-    size = "≤8K" if input_size <= 8192 else "8–32K" if input_size <= 32768 else "32–128K" if input_size <= 131072 else ">128K"
+    size = "未知" if not input_known else "≤8K" if input_size <= 8192 else "8–32K" if input_size <= 32768 else "32–128K" if input_size <= 131072 else ">128K"
     cohort = (account["platform"], model, str(row.get("reasoning_effort") or "default"),
         str(row.get("service_tier") or "default"), "websocket" if row.get("openai_ws_mode") else "sse", size)
-    return {"account_id": account["id"], "at": at, "cohort": cohort, "ttft": first / 1000,
-        "tps": output / ((duration - first) / 1000) if output >= 32 and duration - first >= 500 else None}
+    return {"account_id": account["id"], "at": at, "cohort": cohort,
+        "ttft": first / 1000 if first is not None and 0 < first < duration else None,
+        # Sub2API latencyHealth uses total duration, including the initial wait.
+        "tps": output / (duration / 1000) if output >= 32 and duration >= 500 else None}
 
 
 def slow_ttft_sample(row: dict, account: dict) -> dict | None:
@@ -304,6 +316,12 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
         successes, failed, samples = success_by[account_id], failure_by[account_id], sample_by[account_id]
         rel = reliability(successes, failed, recent)
         ttft, tps = (metric_result(samples, metric, baselines, recent) for metric in ("ttft", "tps"))
+        rel["missing_reason"] = "insufficient_calls" if rel["total"] < 20 else None
+        for metric, absent in ((ttft, "first_token_missing"), (tps, "throughput_unavailable")):
+            metric["missing_reason"] = ("insufficient_calls" if rel["total"] < 20 else
+                absent if metric["samples"] == 0 else
+                "insufficient_calls" if metric["samples"] < 10 else
+                "no_comparable_baseline" if metric["coverage"] < .6 or metric["score"] is None else None)
         complete = rel["total"] >= 20 and all(m["samples"] >= 10 and m["coverage"] >= .6 and m["score"] is not None for m in (ttft, tps))
         score = .5 * rel["score"] + .25 * ttft["score"] + .25 * tps["score"] if complete else None
         cap, forced = 100, []
@@ -338,7 +356,10 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
         reasons = list(dict.fromkeys(forced))[:2]
         if not reasons:
             if status != "complete":
-                reasons = ["错误偏多"] if cap < 60 else ["待积累" if status == "empty" else "样本不足"]
+                missing_labels = {"insufficient_calls": "调用不足", "first_token_missing": "首字未记录",
+                    "throughput_unavailable": "无有效输出样本", "no_comparable_baseline": "暂无可比基准"}
+                reasons = ["错误偏多"] if cap < 60 else list(dict.fromkeys(
+                    missing_labels[m["missing_reason"]] for m in (rel, ttft, tps) if m["missing_reason"]))[:2]
             elif grade == "green":
                 reasons = ["表现良好"]
             else:
@@ -353,22 +374,40 @@ def calculate(accounts: list[dict], usage: list[dict], errors: list[dict], now: 
     return output, baselines
 
 
+class QualityEvidenceError(ValueError):
+    def __init__(self, stage: str, kind: str):
+        super().__init__(kind)
+        self.stage, self.kind = stage, kind
+
+
 def read_evidence(db: Any, now: datetime) -> tuple[list, list, list]:
     """Bounded, consistent snapshot on its own pooled connection, never writes."""
     params = {"start": now - timedelta(days=7), "end": now}
     with db.connection() as conn, conn.transaction():
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         conn.execute("SET LOCAL statement_timeout = '5s'")
-        accounts = conn.execute(f"SELECT id,platform,type FROM accounts WHERE {SUPPORTED}").fetchall()
-        usage = conn.execute("""SELECT u.id,u.account_id,u.created_at,u.model,u.upstream_model,u.input_tokens,u.output_tokens,
-            u.cache_read_tokens,u.cache_creation_tokens,
-            u.stream,u.duration_ms,u.first_token_ms,u.reasoning_effort,u.service_tier,u.openai_ws_mode,u.inbound_endpoint,
-            u.image_count,u.image_output_tokens,to_jsonb(u)->>'video_count' AS video_count,
-            to_jsonb(u)->>'video_duration_seconds' AS video_duration_seconds
+        def query(stage, sql, values=None):
+            try:
+                return conn.execute(sql, values).fetchall() if values is not None else conn.execute(sql).fetchall()
+            except Exception as exc:
+                kind = "query_timeout" if isinstance(exc, TimeoutError) or getattr(exc, "sqlstate", None) == "57014" or type(exc).__name__ == "QueryCanceled" else "query_failed"
+                raise QualityEvidenceError(stage, kind) from None
+        columns = {r["attname"] for r in query("schema", """SELECT attname FROM pg_attribute
+            WHERE attrelid=to_regclass('usage_logs') AND attnum>0 AND NOT attisdropped""")}
+        accounts = query("accounts", f"SELECT id,platform,type FROM accounts WHERE {SUPPORTED}")
+        required = ["id", "account_id", "created_at", "model", "input_tokens", "output_tokens"]
+        optional = ["upstream_model", "cache_read_tokens", "cache_creation_tokens", "stream", "duration_ms",
+            "first_token_ms", "reasoning_effort", "service_tier", "openai_ws_mode", "inbound_endpoint",
+            "image_count", "image_output_tokens", "video_count", "video_duration_seconds", "billing_mode"]
+        # Identifiers come only from these constants. Never serialize whole rows:
+        # doing so detoasts unrelated request metadata before applying the LIMIT.
+        projection = ",".join([f"u.{c}" for c in required] +
+            [f"u.{c}" if c in columns else f"NULL AS {c}" for c in optional])
+        usage = query("usage", f"""SELECT {projection}
             FROM usage_logs u JOIN accounts a ON a.id=u.account_id WHERE a.deleted_at IS NULL
             AND a.platform IN ('openai','grok') AND a.type IN ('oauth','apikey')
-            AND u.created_at >= %(start)s AND u.created_at <= %(end)s LIMIT 250001""", params).fetchall()
-        errors = conn.execute("""SELECT e.id,e.account_id,e.request_id,e.client_request_id,e.created_at,e.error_owner,e.error_phase,
+            AND u.created_at >= %(start)s AND u.created_at <= %(end)s LIMIT 250001""", params)
+        errors = query("errors", """SELECT e.id,e.account_id,e.request_id,e.client_request_id,e.created_at,e.error_owner,e.error_phase,
             e.upstream_status_code,e.status_code,e.provider_error_code,e.provider_error_type,e.error_type,e.network_error_type,
             left(e.error_message,2000) AS error_message,left(e.upstream_error_message,2000) AS upstream_error_message,
             (SELECT jsonb_agg(jsonb_build_object('account_id',x->'account_id','at_unix_ms',x->'at_unix_ms',
@@ -376,9 +415,9 @@ def read_evidence(db: Any, now: datetime) -> tuple[list, list, list]:
              FROM jsonb_array_elements(CASE WHEN jsonb_typeof(e.upstream_errors)='array' THEN e.upstream_errors ELSE '[]'::jsonb END) x) AS upstream_errors
             FROM ops_error_logs e WHERE e.created_at >= %(start)s AND e.created_at <= %(end)s
             AND (e.account_id IS NOT NULL OR jsonb_array_length(CASE WHEN jsonb_typeof(e.upstream_errors)='array' THEN e.upstream_errors ELSE '[]'::jsonb END)>0)
-            LIMIT 75001""", params).fetchall()
+            LIMIT 75001""", params)
         if len(usage) > 250000 or len(errors) > 75000:
-            raise ValueError("quality evidence limit exceeded")
+            raise QualityEvidenceError("usage" if len(usage) > 250000 else "errors", "evidence_limit")
     return accounts, usage, errors
 
 
@@ -395,6 +434,7 @@ class QualityCache:
         self._baselines = None
         self._signature = None
         self._failed = False
+        self._diagnostic: dict | None = None
         self._closed = False
         self._thread: threading.Thread | None = None
 
@@ -403,21 +443,27 @@ class QualityCache:
             self._closed = True
 
     def _refresh(self):
+        stage = "usage"
         try:
             now = self.utcnow()
             accounts, usage, errors = self.reader(self.db, now)
+            stage = "calculation"
             signature = sorted((a["id"], a["platform"], a["type"]) for a in accounts)
             rebuild = self.clock() - self._baseline_at >= 300 or signature != self._signature
             results, baselines = calculate(accounts, usage, errors, now, None if rebuild else self._baselines)
             with self._lock:
                 self._results, self._success, self._failed = results, self.clock(), False
+                self._diagnostic = None
                 if rebuild:
                     self._baselines, self._baseline_at, self._signature = baselines, self.clock(), signature
         except Exception as exc:
             # Exceptions can contain SQL data. Only log the exception class.
-            LOG.warning("account_quality_refresh_failed type=%s", type(exc).__name__)
+            diagnostic = {"stage": getattr(exc, "stage", stage), "kind": getattr(exc, "kind",
+                "calculation_failed" if stage == "calculation" else "query_timeout" if isinstance(exc, TimeoutError) else "query_failed"), "checked_at": self.utcnow().isoformat()}
+            LOG.warning("account_quality_refresh_failed stage=%s kind=%s type=%s", diagnostic["stage"], diagnostic["kind"], type(exc).__name__)
             with self._lock:
                 self._failed = True
+                self._diagnostic = diagnostic
 
     def get(self, account_ids: list[int], *, detail: bool = False) -> dict:
         with self._lock:
@@ -434,11 +480,14 @@ class QualityCache:
                 fields = ("score", "grade", "reasons", "sample_status", "computed_at", "data_status", "warnings")
                 value = copy.deepcopy(stored if detail else {k: stored.get(k) for k in fields})
                 value["data_status"] = status
-                if status == "stale" or self._failed and value["sample_status"] == "pending":
-                    value.update(score=None, grade="yellow", reasons=["数据过期" if status == "stale" else "计算延迟"])
+                value["diagnostic"] = copy.deepcopy(self._diagnostic)
+                if self._failed:
+                    value["reasons"] = ["统计更新失败"]
+                elif status == "stale":
+                    value["reasons"] = ["等待统计更新"]
                 if status != "fresh":
                     value["warnings"] = []
                 if not detail:
-                    value = {k: value.get(k) for k in ("score", "grade", "reasons", "sample_status", "computed_at", "data_status", "warnings")}
+                    value = {k: value.get(k) for k in ("score", "grade", "reasons", "sample_status", "computed_at", "data_status", "warnings", "diagnostic")}
                 result[account_id] = value
             return result

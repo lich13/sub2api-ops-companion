@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, BellOff, Clock3, LoaderCircle } from "lucide-react";
+import { Activity, BellOff, Clock3, LoaderCircle, ListFilter, Network, Route } from "lucide-react";
 import { accountOperation } from "./accountOperations";
 import { command } from "./bridge";
 import AccountActionMenu from "./AccountActionMenu";
@@ -23,6 +23,7 @@ type Options = {
   test: (account: Account) => void;
   template: (account: Account) => void;
   remove: (account: Account) => void;
+  settings?: (account: Account, section: "whitelist" | "mappings" | "proxy") => void;
 };
 
 // Owned by the main window, so closing a popup or changing pages does not
@@ -86,6 +87,11 @@ export function useAccountActions(options: Options): (account: Account) => Accou
     if (account.recoverable) items.push({ id: "recover", label: "恢复状态", disabled: !options.online || pending("recover"),
       icon: pending("recover") ? <LoaderCircle size={12} className="spin"/> : undefined, run: () => { void execute(account, "recover"); } });
     if (openai) items.push({ id: "template", label: "应用模板", disabled: !options.online, run: () => options.template(account) });
+    if (options.settings) items.push(
+      { id: "model_whitelist", label: "模型白名单", icon: <ListFilter size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "whitelist") },
+      { id: "model_mapping", label: "模型映射", icon: <Route size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "mappings") },
+      { id: "proxy", label: "选择代理", icon: <Network size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "proxy") },
+    );
     items.push({ id: "delete", label: "删除", className: "danger-text", disabled: !options.online, run: () => options.remove(account) });
     return items;
   };
@@ -96,7 +102,7 @@ export const isPrimaryAction = (item: AccountActionItem) => primaryActions.has(i
 
 export function AccountActionButton({ item, disabled = false, after }: { item: AccountActionItem; disabled?: boolean; after?: () => void }) {
   return <button type="button" className={item.className} title={item.title} disabled={disabled || item.disabled}
-    onClick={() => { item.run(); after?.(); }}>{item.icon}{item.label}</button>;
+    onClick={() => { item.run(); after?.(); }}>{item.icon || <span className="account-action-spacer" aria-hidden="true"/>}{item.label}</button>;
 }
 
 export default function AccountActions({ items, label, mode = "panel", active = true, contextKey, disabled = false }: {

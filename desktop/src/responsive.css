@@ -1,9 +1,13 @@
 /* Desktop columns keep the scheduling and action controls inside the viewport. */
 .filter-options { display: contents; }
 .account-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.accounts-table { --account-actions-width: 96px; table-layout: fixed; min-width: 1034px; }
+.accounts-table { --account-actions-width: 96px; --account-name-width: 128px; table-layout: fixed; width: calc(864px + var(--account-actions-width) + var(--account-name-width)); min-width: calc(864px + var(--account-actions-width) + var(--account-name-width)); }
+.accounts-table.name-expanded { --account-name-width: 240px; }
+.accounts-table .col-name { width: var(--account-name-width); }
+.account-column-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0; background: transparent; border: 0; color: inherit; font-size: inherit; font-weight: inherit; }
+.account-column-toggle svg { flex-shrink: 0; }
 .accounts-table .col-select { width: 30px; }
-.accounts-table .col-priority { width: 64px; }
+.accounts-table .col-priority { width: 120px; }
 .accounts-table .col-quality { width: 130px; }
 .accounts-table .col-status { width: 128px; }
 .accounts-table .col-usage { width: 262px; }
@@ -12,7 +16,9 @@
 .accounts-table .col-actions { width: var(--account-actions-width); }
 .accounts-table th, .accounts-table td { padding: 9px 7px; }
 .accounts-table .account-name { min-width: 0; max-width: none; }
-.accounts-table .account-name strong { display: block; }
+.accounts-table .account-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accounts-table .account-name strong:focus-visible { white-space: normal; overflow-wrap: anywhere; outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.accounts-table .account-name .account-id { display: block; color: var(--muted); font-size: 10px; margin: 2px 0; }
 .accounts-table .account-identity { white-space: normal; }
 .accounts-table .quality-cell { min-width: 0; }
 .accounts-table .quality-badge { min-width: 0; max-width: 100%; white-space: normal; text-align: left; align-items: flex-start; }

@@ -1,5 +1,6 @@
 import type { Account } from './types';
 import type { Operation } from './accountOperations';
+import { applySettingsPreview, isSettingsAction } from './settingsPreview';
 const jobs = new Map<string, Operation>();
 const requests = new Map<string, string>();
 const batches = new Map<string, string[]>();
@@ -21,7 +22,11 @@ export async function operationPreview(method: string, path: string, body: Recor
     jobs.set(job.id, job); requests.set(String(body.request_id), job.id);
     setTimeout(() => {
       if (job.status !== 'queued') return;
-      if (action === 'priority') account.priority = Number(payload.priority);
+      let settingsResult: Record<string, unknown> = {};
+      if (isSettingsAction(action)) {
+        try { settingsResult = applySettingsPreview(account, action, payload, String(body.expected_version)); }
+        catch (e) { job.status = 'needs_confirmation'; job.reason = String(e).replace(/^Error: /, ''); emit(); return; }
+      }
       if (action === 'schedulable') account.schedulable = Boolean(payload.schedulable);
       if (action === 'groups') {
         const scope = payload.scope_group_ids as number[], target = payload.group_ids as number[];
@@ -33,7 +38,7 @@ export async function operationPreview(method: string, path: string, body: Recor
         job.next_event = 1;
       }
       job.status = 'completed'; job.reason = '';
-      job.result = { verified: true, priority: account.priority, group_ids: account.group_ids, version: account.version, degradation_mark: account.degradation_mark, message: '操作已完成', deleted: action === 'delete', success: true };
+      job.result = { verified: true, priority: account.priority, group_ids: account.group_ids, version: account.version, degradation_mark: account.degradation_mark, message: '操作已完成', deleted: action === 'delete', success: true, ...settingsResult };
       emit();
     }, 1200);
     return structuredClone(job);

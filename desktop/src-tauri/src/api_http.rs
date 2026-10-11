@@ -27,6 +27,8 @@ fn snapshot_valid(data: &Value) -> bool {
                 && ["group_ids", "usage_windows", "blockers"].iter().all(|k| a[*k].is_array())
                 && a["schedulable"].is_boolean() && a["available"].is_boolean()
                 && a["priority"].as_i64().is_some()
+                && (a["concurrency"].is_null() || a["concurrency"].as_u64().is_some())
+                && (a["load_factor"].is_null() || a["load_factor"].as_u64().is_some_and(|n| (1..=10000).contains(&n)))
                 && (a["usage"].is_null() || a["usage"]["windows"].is_array())
         }))
         && data.get("groups").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|g| {
@@ -84,6 +86,31 @@ fn batch_valid(data: &Value) -> bool {
         && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| operation_valid(row) && row["batch_id"] == data["batch_id"]))
 }
 
+fn settings_valid(data: &Value) -> bool {
+    let actions = ["priority", "concurrency", "load_factor", "model_config", "proxy", "sync_models"];
+    data["account_id"].as_u64().is_some_and(|n| n > 0)
+        && data["priority"].as_u64().is_some()
+        && (data["concurrency"].is_null() || data["concurrency"].as_u64().is_some())
+        && (data["load_factor"].is_null() || data["load_factor"].as_u64().is_some_and(|n| (1..=10000).contains(&n)))
+        && data["effective_load_factor"].as_u64().is_some_and(|n| n > 0)
+        && (data["proxy_id"].is_null() || data["proxy_id"].as_u64().is_some_and(|n| n > 0))
+        && data["model_config"]["whitelist"].as_array().is_some_and(|v| v.len() <= 300 && v.iter().all(Value::is_string))
+        && data["model_config"]["mappings"].as_array().is_some_and(|v| v.len() <= 300 && v.iter().all(|r| r["source"].is_string() && r["target"].is_string()))
+        && actions.iter().all(|action| data["capabilities"][*action]["editable"].is_boolean()
+            && data["capabilities"][*action]["reason"].is_string()
+            && data["versions"][*action].as_str().is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())))
+        && data.as_object().is_some_and(|map| map.keys().all(|k| matches!(k.as_str(), "account_id" | "priority" | "concurrency" | "load_factor" | "effective_load_factor" | "proxy_id" | "model_config" | "capabilities" | "versions")))
+}
+
+fn proxies_valid(data: &Value) -> bool {
+    data.as_array().is_some_and(|rows| rows.len() <= 10000 && rows.iter().all(|row| {
+        row["id"].as_u64().is_some_and(|n| n > 0) && row["name"].is_string()
+            && matches!(row["protocol"].as_str(), Some("http" | "https" | "socks5" | "socks5h" | "unknown"))
+            && matches!(row["status"].as_str(), Some("active" | "inactive" | "error" | "unknown"))
+            && row.as_object().is_some_and(|map| map.keys().all(|k| matches!(k.as_str(), "id" | "name" | "protocol" | "status")))
+    }))
+}
+
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
@@ -91,6 +118,8 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/capabilities" => data["api_version"].as_u64() == Some(1)
             && (data["upstream_connection"].is_null() || connection_valid(&data["upstream_connection"])),
         "/connection-status" => connection_valid(data),
+        "/proxies" => proxies_valid(data),
+        p if p.ends_with("/settings") => settings_valid(data),
         "/errors" => data["items"].is_array(),
         "/recoveries" => recoveries_valid(&data["items"]),
         "/account-operations" => if path.contains("?batch_id=") { batch_valid(data) } else {
@@ -357,6 +386,35 @@ mod tests {
         wrong = job.clone(); wrong["account_id"] = serde_json::json!("421");
         assert!(!shape_valid("/accounts/421/operations", &wrong));
         assert!(!shape_valid("/account-operations", &serde_json::json!({"items":[job]})));
+    }
+
+    #[test]
+    fn account_settings_and_proxies_reject_unsafe_or_malformed_fields() {
+        let mut settings = serde_json::json!({"account_id":7,"priority":0,"concurrency":2,
+            "load_factor":null,"effective_load_factor":2,"proxy_id":null,
+            "model_config":{"whitelist":["fixture-text"],"mappings":[{"source":"fixture-*","target":"fixture-text"}]},
+            "capabilities":{},"versions":{}});
+        for action in ["priority", "concurrency", "load_factor", "model_config", "proxy", "sync_models"] {
+            settings["capabilities"][action] = serde_json::json!({"editable":true,"reason":""});
+            settings["versions"][action] = serde_json::json!("a".repeat(64));
+        }
+        assert!(shape_valid("/accounts/7/settings", &settings));
+        for (field, value) in [("load_factor", serde_json::json!(10001)), ("proxy_id", serde_json::json!(-1)),
+            ("priority", serde_json::json!("2")), ("credentials", serde_json::json!({"api_key":"fixture"}))] {
+            let mut bad = settings.clone(); bad[field] = value;
+            assert!(!shape_valid("/accounts/7/settings", &bad), "{field}");
+        }
+        let mut bad = settings.clone(); bad["versions"]["proxy"] = serde_json::json!("unverified");
+        assert!(!shape_valid("/accounts/7/settings", &bad));
+        bad = settings.clone(); bad["model_config"]["mappings"][0]["target"] = serde_json::json!(3);
+        assert!(!shape_valid("/accounts/7/settings", &bad));
+        let proxies = serde_json::json!([{"id":7,"name":"fixture proxy","protocol":"socks5","status":"active"}]);
+        assert!(shape_valid("/proxies", &proxies));
+        assert!(shape_valid("/proxies", &serde_json::json!([])));
+        for key in ["password", "username", "url", "host", "port"] {
+            let mut unsafe_proxy = proxies.clone(); unsafe_proxy[0][key] = serde_json::json!("fixture");
+            assert!(!shape_valid("/proxies", &unsafe_proxy), "{key}");
+        }
     }
 
     #[test]
