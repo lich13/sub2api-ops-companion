@@ -234,30 +234,28 @@ it("preserves the automatic card-use draft after a failed save and retries witho
   ).toEqual(["/config/oauth", "/config/oauth"]);
 });
 
-it("confirms names and IDs, bounds deletion to three, and keeps individual failures without retry", async () => {
-  const pending: {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-  }[] = [];
-  let active = 0,
-    maximum = 0;
-  vi.mocked(api).mockImplementation(async () => {
-    active++;
-    maximum = Math.max(maximum, active);
-    try {
-      return await new Promise((resolve, reject) =>
-        pending.push({ resolve, reject }),
-      );
-    } finally {
-      active--;
-    }
-  });
-  const removed = vi.fn(),
-    finished = vi.fn();
+it("submits one confirmed deletion batch, reports individual results, and removes affected children", async () => {
+  const selected = [1, 2, 3, 4, 5].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }));
+  const batchId = "d".repeat(32);
+  const items = selected.map((a, index) => ({
+    id: `job-${a.id}`,
+    batch_id: batchId,
+    account_id: a.id,
+    account_name: a.name,
+    action: "delete",
+    status: index === 1 ? "failed" : "completed",
+    reason: index === 1 ? "已解除托管；删除未确认" : "",
+    requested: { detach_managed: a.managed },
+    ...(index === 1 ? {} : { result: { deleted: true, verified: true, detached: a.managed } }),
+  }));
+  vi.mocked(api).mockResolvedValue({ batch_id: batchId, items, pending: 0 } as never);
+  const removed = vi.fn(), finished = vi.fn();
+  const child = { ...account(6), parent_account_id: 1 };
   await act(async () =>
     root.render(
       <DeleteAccountsDialog
-        accounts={[1, 2, 3, 4, 5].map(account)}
+        accounts={selected}
+        allAccounts={[...selected, child]}
         online
         removed={removed}
         finished={finished}
@@ -267,28 +265,21 @@ it("confirms names and IDs, bounds deletion to three, and keeps individual failu
   );
   expect(container.textContent).toContain("删除 5 个账号");
   expect(container.textContent).toContain("#1 · 回退托管");
+  expect(container.textContent).toContain("母账号关联的 1 个账号也会被删除");
   expect(api).not.toHaveBeenCalled();
-  await act(async () => {
-    button("确认删除").click();
-    button("确认删除")?.click();
+  await act(async () => button("确认删除").click());
+  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", {
+    action: "delete",
+    payload: { confirmed: true },
+    accounts: selected.map((a) => ({
+      account_id: a.id,
+      expected_version: `delete-version-${a.id}`,
+      payload: { detach_managed: a.managed },
+    })),
+    request_id: expect.any(String),
+    client_id: expect.any(String),
   });
-  expect(api).toHaveBeenCalledTimes(3);
-  expect(vi.mocked(api).mock.calls[0]).toEqual([
-    "DELETE",
-    "/accounts/1",
-    { expected_version: "a".repeat(64), detach_managed: true },
-  ]);
-  await act(async () => {
-    pending[0].resolve({ deleted: true, verified: true, detached: true });
-    pending[1].reject(new Error("已解除托管；删除未确认"));
-  });
-  expect(api).toHaveBeenCalledTimes(5);
-  await act(async () => {
-    for (const p of pending.slice(2))
-      p.resolve({ deleted: true, verified: true, detached: false });
-  });
-  expect(maximum).toBe(3);
-  expect(removed.mock.calls.flat()).toEqual([1, 3, 4, 5]);
+  expect(removed.mock.calls.flat()).toEqual([1, 6, 3, 4, 5]);
   expect(
     finished.mock.calls[0][0]
       .filter((r: { status: string }) => r.status === "failed")
@@ -296,18 +287,18 @@ it("confirms names and IDs, bounds deletion to three, and keeps individual failu
   ).toEqual([2]);
   expect(container.textContent).toContain("4 个已删除，1 个失败");
   expect(container.textContent).toContain("已解除托管；删除未确认");
-  expect(api).toHaveBeenCalledTimes(5);
+  expect(api).toHaveBeenCalledTimes(1);
 });
 
-it("stops undispatched deletions when the connection's dialog is removed", async () => {
-  const resolvers: ((value: unknown) => void)[] = [];
+it("does not poll a deletion batch after the dialog is removed", async () => {
+  let resolveBatch!: (value: unknown) => void;
   vi.mocked(api).mockImplementation(
-    () => new Promise((resolve) => resolvers.push(resolve)),
+    () => new Promise((resolve) => { resolveBatch = resolve; }),
   );
   await act(async () =>
     root.render(
       <DeleteAccountsDialog
-        accounts={[1, 2, 3, 4].map(account)}
+        accounts={[1, 2, 3, 4].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }))}
         online
         removed={vi.fn()}
         finished={vi.fn()}
@@ -316,11 +307,47 @@ it("stops undispatched deletions when the connection's dialog is removed", async
     ),
   );
   await act(async () => button("确认删除").click());
+  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", expect.objectContaining({ action: "delete" }));
   await act(async () => root.render(<div />));
+  await act(async () => resolveBatch({ batch_id: "e".repeat(32), items: [], pending: 0 }));
+  expect(api).toHaveBeenCalledTimes(1);
+});
+
+it("shows the server reason for queued, checking, and running batch jobs", async () => {
+  vi.useFakeTimers();
+  const selected = [1, 2, 3].map((id) => ({ ...account(id), operation_versions: { delete: `delete-version-${id}` } }));
+  const batchId = "h".repeat(32);
+  vi.mocked(api).mockResolvedValue({
+    batch_id: batchId,
+    pending: 3,
+    items: selected.map((a, index) => ({
+      id: `${index + 1}`.repeat(32),
+      batch_id: batchId,
+      account_id: a.id,
+      account_name: a.name,
+      action: "delete",
+      status: (["queued", "checking", "running"] as const)[index],
+      reason: ["等待账号空闲", "正在核对删除结果", "删除任务执行中"][index],
+      requested: { detach_managed: a.managed },
+    })),
+  } as never);
   await act(async () =>
-    resolvers.forEach((resolve) => resolve({ deleted: true, verified: true })),
+    root.render(
+      <DeleteAccountsDialog
+        accounts={selected}
+        online
+        removed={vi.fn()}
+        finished={vi.fn()}
+        close={vi.fn()}
+      />,
+    ),
   );
-  expect(api).toHaveBeenCalledTimes(3);
+  await act(async () => button("确认删除").click());
+  expect(container.textContent).toContain("等待账号空闲");
+  expect(container.textContent).toContain("正在核对删除结果");
+  expect(container.textContent).toContain("删除任务执行中");
+  expect(container.textContent).not.toContain("删除中等待账号空闲");
+  await act(async () => root.render(<div />));
 });
 
 it("restores directly once, without quota or test requests", async () => {

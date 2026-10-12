@@ -25,7 +25,7 @@ from .usage_query import (oauth_quota_from_usage_data, oauth_quota_summary_from_
                           oauth_windows_by_key, parse_iso_datetime, percent_or_none,
                           required_oauth_window_keys)
 from .error_evidence import is_local_throttle, local_throttle_sql
-from .reset_credit_observation import (create_observation, digest, limit_fingerprint,
+from .reset_credit_observation import (available_credits, create_observation, digest, limit_fingerprint,
                                        normalized_credits, receipt_diagnostics, validate_observation, consumption_result)
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
@@ -82,6 +82,12 @@ def validate_state(value: Any) -> None:
 def project_state(value: dict[str, Any] | None, notices: dict | None = None) -> dict[str, Any] | None:
     if not value:
         return None
+    if value.get('credit_gate_skipped') and not value.get('attempt_at'):
+        if not value.get('owns_pause'):
+            return None
+        return {'stage': 'blocked', 'label': '调度暂停待核对',
+                'error': '用卡已跳过；原临时暂停尚未确认解除', 'next_at': None,
+                'evidence_source': value.get('evidence_source'), 'evidence_at': value.get('evidence_at')}
     if (value.get('stage') == 'manual' and value.get('attempt_at') and not value.get('reset_completed_at')
             and value.get('consumed') is not True and value.get('consumption_outcome') != 'not_consumed'):
         value = {**value, 'stage': 'uncertain', 'error_code': 'result_uncertain', 'next_at': None}
@@ -269,7 +275,13 @@ class AutoResetController(BoundedCreditPolicy):
 
     def _begin_episode(self, aid: int, old: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
         row = self.m._read_account(aid) or {}
-        task = {"episode": uuid.uuid4().hex, "stage": "waiting", "account_name": str(row.get("name") or ""), **evidence}
+        now = self.m.clock()
+        evidence = self._admit_credit_episode(row, evidence, now)
+        if not evidence:
+            return {}
+        task = {"episode": uuid.uuid4().hex, "stage": "waiting", "account_name": str(row.get("name") or ""),
+                **evidence, 'credit_admitted_at': now.isoformat(),
+                'credit_admitted_count': available_credits((row.get('extra') or {}).get('codex_reset_credit_snapshot'), now)}
         def replace(data):
             meta = data["scheduler"].setdefault(str(aid), {})
             current = meta.get("auto_reset_credit") or {}
@@ -338,9 +350,13 @@ class AutoResetController(BoundedCreditPolicy):
 
     def _credit_reason(self, row, evidence, now):
         """Reuse a verified observation, never date an old native cache as now."""
+        if not parse_iso_datetime(evidence.get('reset_at')) or not evidence.get('window_minutes'):
+            return 'outside_window'
         meta = self.store.snapshot()["scheduler"].get(str(row["id"]), {})
         observation = meta.get("reset_credit_observation")
         raw = (row.get("extra") or {}).get("codex_reset_credit_snapshot") or {}
+        if normalized_credits(raw) is None:
+            return 'invalid_credit_snapshot'
         if observation is not None:
             validate_observation(observation)
             content = normalized_credits(raw)
@@ -494,12 +510,12 @@ class AutoResetController(BoundedCreditPolicy):
                     # Re-read all evidence after budget admission, immediately
                     # before pausing and issuing the one consumption request.
                     depletion = self._depletion(live, now)
-                    credits = reset_credits(live.get("extra") or {}, now)
                     if (not depletion or depletion["reset_at"] != task.get("reset_at")
-                            or depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
-                            or not self._credit_known(live, depletion, self.m.clock())
-                            or (credits["available"] or 0) <= 0):
+                            or depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")):
                         return {"success": False, "error_code": "reset_state_changed"}
+                    credit_reason = self._positive_credit_reason(live, depletion, self.m.clock())
+                    if credit_reason:
+                        return {"success": False, "error_code": credit_reason}
                     with control_lock(self.m.db, aid):
                         active_task = self._save(aid, task, stage="pausing", signature=_signature(live), next_at=None,
                                                 control_generation=self.store.control_generation(aid))
@@ -523,11 +539,13 @@ class AutoResetController(BoundedCreditPolicy):
                     final_depletion = self._depletion(final, self.m.clock(), held=True) if final else None
                     if (not self._owned(final, active_task) or not final_depletion
                             or final_depletion["reset_at"] != task.get("reset_at")
-                            or final_depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")
-                            or not self._credit_known(final, final_depletion, self.m.clock())
-                            or (reset_credits(final.get("extra") or {}, self.m.clock())["available"] or 0) <= 0):
+                            or final_depletion["evidence_fingerprint"] != task.get("evidence_fingerprint")):
                         self._save(aid, active_task, stage="blocked", error_code="ownership_changed")
                         return {"success": False, "error_code": "ownership_changed"}
+                    credit_reason = self._positive_credit_reason(final, final_depletion, self.m.clock())
+                    if credit_reason:
+                        self._save(aid, active_task, stage="blocked", error_code=credit_reason)
+                        return {"success": False, "error_code": credit_reason}
                 elif task.get("owns_pause") and not self._owned(live, task):
                     return {"success": False, "error_code": "ownership_changed"}
                 elif not task.get("owns_pause") and not self._depletion(live, now):
@@ -633,6 +651,8 @@ class AutoResetController(BoundedCreditPolicy):
             return
         try:
             with self.store.disk_lock(f"credit-operation-{aid}", blocking=False):
+                if not self.credit_candidate_ready(self.m._read_account(aid) or item, now):
+                    return
                 lease = AccountLease(self.m.db, item)
                 if not lease.acquire():
                     return

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
 import { command } from "./bridge";
-import { accountOperation } from "./accountOperations";
+import { accountOperation, followAccountBatch, operationEpoch, operationTerminal, submitAccountBatch } from "./accountOperations";
 import type { Account } from "./types";
 import { useBackAction } from "./mobile";
 
@@ -13,12 +13,14 @@ export type DeleteResult = {
 
 export function DeleteAccountsDialog({
   accounts,
+  allAccounts = accounts,
   online,
   removed,
   finished,
   close,
 }: {
   accounts: Account[];
+  allAccounts?: Account[];
   online: boolean;
   removed: (id: number) => void;
   finished: (results: DeleteResult[]) => void;
@@ -31,8 +33,11 @@ export function DeleteAccountsDialog({
   const running = useRef(false),
     alive = useRef(true),
     connected = useRef(online);
+  const requestId = useRef(crypto.randomUUID()), accepted = useRef(false);
+  const [error, setError] = useState("");
+  const affected = allAccounts.filter(a => a.parent_account_id && accounts.some(parent => parent.id === a.parent_account_id));
   connected.current = online;
-  useBackAction(true, () => { if (!running.current) close(); });
+  useBackAction(true, close);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -43,7 +48,7 @@ export function DeleteAccountsDialog({
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopImmediatePropagation();
-        if (!running.current) close();
+        close();
       }
     };
     window.addEventListener("keydown", escape, true);
@@ -52,55 +57,33 @@ export function DeleteAccountsDialog({
   async function start() {
     if (running.current || phase !== "confirm" || !connected.current) return;
     running.current = true;
+    const epoch = operationEpoch();
     setPhase("running");
-    const outcomes = accounts.map(
-      (a): DeleteResult => ({ id: a.id, status: "waiting" }),
-    );
-    let next = 0;
-    const update = (index: number, patch: Partial<DeleteResult>) => {
-      outcomes[index] = { ...outcomes[index], ...patch };
-      if (alive.current) setResults([...outcomes]);
-    };
-    async function worker() {
-      while (next < accounts.length && alive.current) {
-        const index = next++,
-          account = accounts[index];
-        if (!connected.current) {
-          update(index, { status: "failed", message: "连接中断，未执行" });
-          continue;
-        }
-        update(index, { status: "running" });
-        try {
-          const result = await accountOperation<{
-            deleted: boolean;
-            verified: boolean;
-            detached: boolean;
-          }>(account, "delete", {
-            detach_managed: account.managed,
-          });
-          if (!result.deleted || !result.verified)
-            throw new Error("删除未确认，请刷新核对实际状态");
-          update(index, {
-            status: "deleted",
-            message: result.detached ? "已解除托管并删除" : "已删除",
-          });
-          if (alive.current) removed(account.id);
-        } catch (error) {
-          update(index, {
-            status: "failed",
-            message: String(error).replace(/^Error: /, ""),
-          });
-        }
+    setError("");
+    try {
+      const batch = await submitAccountBatch("delete", accounts.map(a => {
+        if (!a.operation_versions?.delete) throw new Error("请刷新账号后重试");
+        return { account_id: a.id, expected_version: a.operation_versions.delete, payload: { detach_managed: a.managed } };
+      }), requestId.current);
+      accepted.current = true;
+      await followAccountBatch(batch, value => {
+        const outcomes = accounts.map((a): DeleteResult => {
+          const job = value.items.find(j => j.account_id === a.id);
+          const deleted = job?.status === 'completed' && job.result?.deleted === true;
+          if (deleted) { removed(a.id); affected.filter(child => child.parent_account_id === a.id).forEach(child => removed(child.id)); }
+          return { id: a.id, status: deleted ? 'deleted' : job && operationTerminal.has(job.status) ? 'failed' : job?.status === 'queued' ? 'waiting' : 'running',
+            message: deleted ? '已删除' : job?.reason || (job?.status === 'queued' ? '已排队' : job?.status === 'checking' ? '正在核对' : '删除中') };
+        });
+        setResults(outcomes);
+        if (value.items.every(j => operationTerminal.has(j.status))) { setPhase('done'); finished(outcomes); }
+      }, () => alive.current && operationEpoch() === epoch);
+    } catch (cause) {
+      if (alive.current && operationEpoch() === epoch) {
+        setError(`${String(cause).replace(/^Error: /, '')}。${accepted.current ? '任务已保留，可在账号待办查看。' : '重试将复用本次请求。'}`);
+        setPhase('confirm');
       }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(3, accounts.length) }, worker),
-    );
-    running.current = false;
-    if (alive.current) {
-      setPhase("done");
-      finished(outcomes);
-      void command("refresh");
+    } finally {
+      running.current = false;
     }
   }
   return (
@@ -122,7 +105,8 @@ export function DeleteAccountsDialog({
         {phase === "confirm" && (
           <p>
             删除后无法撤销。
-            {accounts.some((a) => a.managed) && "回退托管账号将先解除托管。"}
+            {[...accounts, ...affected].some((a) => a.managed) && "回退托管账号将先解除托管。"}
+            {!!affected.length && `母账号关联的 ${affected.length} 个账号也会被删除。`}
           </p>
         )}
         <ul className="delete-list">
@@ -148,7 +132,7 @@ export function DeleteAccountsDialog({
                   {results[i].status === "running" ? (
                     <>
                       <LoaderCircle size={12} className="spin" />
-                      删除中
+                      {results[i].message || '删除中'}
                     </>
                   ) : (
                     results[i].message || "等待中"
@@ -164,9 +148,10 @@ export function DeleteAccountsDialog({
             {results.filter((r) => r.status === "failed").length} 个失败
           </p>
         )}
+        {error && <p className="bad-text" role="alert">{error}</p>}
         <footer>
-          <button disabled={phase === "running"} onClick={close}>
-            {phase === "done" ? "关闭" : "取消"}
+          <button onClick={close}>
+            {phase === "confirm" ? "取消" : "关闭"}
           </button>
           {phase !== "done" && (
             <button

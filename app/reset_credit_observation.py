@@ -35,6 +35,15 @@ def normalized_credits(value: Any) -> dict[str, Any] | None:
     return {"available_count": count, "expires_at": sorted(expirations)}
 
 
+def available_credits(value: Any, now: datetime) -> int | None:
+    """Strict consumption evidence, including expiration (not spendable credits)."""
+    content = normalized_credits(value)
+    if content is None:
+        return None
+    expired = sum(parse_iso_datetime(expiry) <= now for expiry in content['expires_at'])
+    return max(0, content['available_count'] - expired)
+
+
 def limit_fingerprint(row: dict[str, Any]) -> str:
     return digest([str(row.get("id")), *[
         stamp.astimezone(timezone.utc).isoformat() if (stamp := parse_iso_datetime(row.get(key))) else None
@@ -71,6 +80,32 @@ def create_observation(row: dict[str, Any], content: dict[str, Any], observed: d
              "limit_fingerprint": limit_fingerprint(row)}
     validate_observation(value)
     return value
+
+
+def observation_from_usage(before: dict, after: dict | None, result: dict,
+                           started: datetime, completed: datetime) -> dict | None:
+    """Accept cards explicitly present in a fresh normal query, never its old cache."""
+    from datetime import timedelta
+    from .oauth_queries import credential_fingerprint
+    from .usage_query import oauth_quota_summary_from_result, oauth_windows_by_key
+    data = result.get('data') or {}
+    if not result.get('success') or not after or not isinstance(data, dict):
+        return None
+    content = normalized_credits(data.get('rate_limit_reset_credits'))
+    fetched = parse_iso_datetime(data.get('fetched_at'))
+    if (content is None or not fetched or fetched < started - timedelta(seconds=1) or fetched > completed
+            or data.get('cache_persisted') is False
+            or credential_fingerprint(before) != credential_fingerprint(after)
+            or limit_fingerprint(before) != limit_fingerprint(after)
+            or content != normalized_credits((after.get('extra') or {}).get('codex_reset_credit_snapshot'))):
+        return None
+    summary = oauth_quota_summary_from_result(after, result)
+    window = oauth_windows_by_key(summary.get('ui_windows')).get('codex_7d', {})
+    reset = parse_iso_datetime(window.get('reset_at'))
+    if not reset or reset <= fetched:
+        return None
+    return create_observation(after, content, fetched, credential_fingerprint(after), reset,
+                              window.get('window_minutes') or 10080)
 
 
 def receipt_diagnostics(status: int | None, data: Any) -> dict[str, Any]:

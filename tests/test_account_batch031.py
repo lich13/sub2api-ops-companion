@@ -21,6 +21,42 @@ REQUEST_ID = "a" * 32
 CLIENT_ID = "b" * 32
 
 
+class _Response:
+    def __init__(self, status_code: int, body: dict):
+        self.status_code = status_code
+        self._body = copy.deepcopy(body)
+        self.content = json.dumps(self._body).encode()
+        self.text = self.content.decode()
+
+    def json(self):
+        return copy.deepcopy(self._body)
+
+
+class _TemplateClient:
+    def __init__(self, fixture, key):
+        self.fixture = fixture
+        self.key = key
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def request(self, method, path, **kwargs):
+        # Exercise the native route probe, then run the existing per-account
+        # writer through the compatibility path for this legacy fixture.
+        if method == "POST" and path == "accounts/bulk-update":
+            return _Response(404, {"detail": "Not Found"})
+        if method != "PUT" or not path.startswith("accounts/"):
+            raise AssertionError(f"unexpected fixture request: {method} {path}")
+        account_id = int(path.rsplit("/", 1)[-1])
+        body = kwargs["json"]
+        mapping = body["credentials"]["model_mapping"]
+        self.fixture.templates.writer(account_id, mapping, self.key)
+        return _Response(200, {"code": 0, "data": {}})
+
+
 class BatchDB:
     def __init__(self, account_count: int = 40):
         self.rows = {
@@ -56,12 +92,20 @@ class BatchDB:
 class BatchActions:
     def __init__(self, db: BatchDB):
         self.db = db
+        self.fixture = None
 
     async def account(self, account_id: int):
         row = self.db.rows.get(account_id)
         if row is None:
             raise KeyError(account_id)
         return copy.deepcopy(row)
+
+    async def accounts(self, account_ids: list[int]):
+        return {account_id: copy.deepcopy(self.db.rows[account_id])
+                for account_id in account_ids if account_id in self.db.rows}
+
+    def client(self, key: str, _timeout: int = 10):
+        return _TemplateClient(self.fixture, key)
 
 
 class AccountTemplateBatch031Tests(unittest.IsolatedAsyncioTestCase):
@@ -83,6 +127,7 @@ class AccountTemplateBatch031Tests(unittest.IsolatedAsyncioTestCase):
             oauth_state_store=lambda: SimpleNamespace(admin_token=lambda: ADMIN_FIXTURE),
         )
         self.service.actions = BatchActions(self.db)
+        self.service.actions.fixture = self
         self.service.authenticate = lambda *_args, **_kwargs: None
         self.service.invalidate = lambda: None
         self.templates = AccountTemplates(self.service)

@@ -178,6 +178,12 @@ class DesktopActions:
             raise HTTPException(409, "账号已变化，请刷新后重试")
         return row
 
+    async def accounts(self, account_ids: list[int]) -> dict[int, dict[str, Any]]:
+        from .desktop_api import ACCOUNT_SQL
+        rows = await asyncio.to_thread(self.s.r.db.fetch_all,
+            ACCOUNT_SQL.format(filter='AND a.id=ANY(%(ids)s)'), {'ids': account_ids})
+        return {int(row['id']): row for row in rows}
+
     async def set_priority(self, account_id: int, payload: PriorityRequest, key: str) -> dict[str, Any]:
         from .operation_versions import versions
         row = await self.account(account_id, payload.expected_version)

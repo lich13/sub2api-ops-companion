@@ -1086,6 +1086,7 @@ export default function App() {
       {deleteAccounts && (
         <DeleteAccountsDialog
           accounts={deleteAccounts}
+          allAccounts={accounts}
           online={state.online}
           removed={(id) => {
             setRemovedIds((old) => new Set([...old, id]));

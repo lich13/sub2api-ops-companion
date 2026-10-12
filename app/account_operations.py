@@ -62,6 +62,19 @@ class ProxyBatchRequest(BaseModel):
     client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
 
 
+class BatchOperationAccount(BatchAccount):
+    payload: dict = Field(default_factory=dict)
+
+
+class AccountBatchRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: Literal['delete', 'groups']
+    payload: dict = Field(default_factory=dict)
+    accounts: list[BatchOperationAccount] = Field(min_length=1, max_length=1000)
+    request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
+    client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
+
+
 class OperationStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -118,10 +131,16 @@ class AccountOperations:
         self.events = {}
         self.closing = False
         self.submit_lock = asyncio.Lock()
+        from .native_batches import NativeBatches
+        self.native = NativeBatches(self)
         with self.store.transaction() as data:
             for job in data['jobs'].values():
                 if job['status'] == 'running':
                     job.update(status='checking', reason='服务重启，核对已派发请求')
+            for batch in data['batches'].values():
+                for chunk in batch.get('chunks', []):
+                    if chunk.get('status') == 'dispatched':
+                        chunk['status'] = 'checking'
 
     def update(self, jid, **changes):
         with self.store.transaction() as data:
@@ -175,6 +194,11 @@ class AccountOperations:
                     items.append(self.model_view(job))
         return {'items': items, 'pending': sum(j['status'] in PENDING for j in items)}
 
+    async def submit_batch(self, request, key):
+        if request.action == 'proxy':
+            return await self.submit_proxy_batch(request, key)
+        return await self.native.submit(request, key)
+
     async def submit_template_batch(self, request, key):
         from .account_templates import eligible, combine, account_version
         ids = [item.account_id for item in request.accounts]
@@ -202,8 +226,9 @@ class AccountOperations:
             content_version = config['template_versions'][request.template_id]
             bid, created = uuid.uuid4().hex, stamp()
             jobs = []
+            rows = await asyncio.to_thread(self.s.account_templates.accounts, ids)
             for item in request.accounts:
-                row = await asyncio.to_thread(self.s.account_templates.account, item.account_id)
+                row = rows.get(item.account_id)
                 jid = uuid.uuid4().hex
                 payload = {'template_id': request.template_id, 'template_version': content_version}
                 job = {'id': jid, 'batch_id': bid, 'account_id': item.account_id,
@@ -258,8 +283,9 @@ class AccountOperations:
             available = payload['proxy_id'] is None or any(p['id'] == payload['proxy_id'] and p['status'] == 'active' for p in choices)
             bid, created = uuid.uuid4().hex, stamp()
             jobs = []
+            rows = await self.s.actions.accounts(ids)
             for item in request.accounts:
-                row = await self.read_account(item.account_id)
+                row = rows.get(item.account_id)
                 job = {'id': uuid.uuid4().hex, 'batch_id': bid, 'account_id': item.account_id,
                        'account_name': str((row or {}).get('name') or f'#{item.account_id}'),
                        'action': 'proxy', 'payload': dict(payload), 'expected_version': item.expected_version,
@@ -458,8 +484,13 @@ class AccountOperations:
             try:
                 jobs = self.store.read()['jobs']
                 occupied = {jobs[jid]['account_id'] for jid in self.tasks if jid in jobs and jobs[jid]['action'] not in SHORT}
+                for bid in dict.fromkeys(j.get('batch_id') for j in jobs.values() if self.native.handles(j)):
+                    if bid not in self.tasks and len(self.tasks) < 8:
+                        self.native.launch(bid)
                 for job in jobs.values():
                     if job['status'] not in {'queued', 'checking'} or job['id'] in self.tasks:
+                        continue
+                    if self.native.handles(job):
                         continue
                     short = job['action'] in SHORT
                     if not short and job['status'] == 'queued':
@@ -478,6 +509,8 @@ class AccountOperations:
 
     async def run(self, jid):
         job = self.store.read()['jobs'][jid]
+        if self.native.handles(job):
+            return await self.native.run(job['batch_id'])
         if job['status'] not in {'queued', 'checking'}:
             return
         try:

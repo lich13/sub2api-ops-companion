@@ -135,6 +135,8 @@ class RecoveryDispatcher:
                     if len(self.credits) >= limit:
                         break
                     if aid not in self.credits:
+                        if not getattr(self.m.auto_reset, 'credit_candidate_ready', lambda *_: True)(row, current):
+                            continue
                         self.credits[aid] = self.executor.submit(self._credit, row, now)
                         self.credit_cursor = (index + 1) % len(rows)
             finally:

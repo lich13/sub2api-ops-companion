@@ -9,6 +9,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  RUSTFLAGS: --remap-path-prefix=/Users/runner=/build --remap-path-prefix=/home/runner=/build
 jobs:
   backend:
     runs-on: ubuntu-latest

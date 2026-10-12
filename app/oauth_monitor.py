@@ -138,6 +138,14 @@ class OAuthStateStore:
             if "reset_credit_observation" in metadata:
                 from .reset_credit_observation import validate_observation
                 validate_observation(metadata["reset_credit_observation"])
+            admission = metadata.get('credit_admission')
+            if admission is not None and (not isinstance(admission, dict)
+                    or not parse_iso_datetime(admission.get('trigger_at'))
+                    or not parse_iso_datetime(admission.get('checked_at'))
+                    or not isinstance(admission.get('reason'), str)
+                    or not isinstance(admission.get('evidence_fingerprint'), str)
+                    or admission.get('recovered_at') and not parse_iso_datetime(admission['recovered_at'])):
+                raise ValueError('重置卡准入状态无效')
             if "manual_control" in metadata:
                 control = metadata["manual_control"]
                 if (not isinstance(control, dict) or type(control.get("generation")) is not int or control["generation"] < 1

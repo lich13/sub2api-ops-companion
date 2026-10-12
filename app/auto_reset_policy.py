@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from .desktop_usage import reset_credits
 from .oauth_queries import AUTH_ERRORS, credential_fingerprint
 from .recovery_policy import recovery_method
 from .usage_query import parse_iso_datetime
+from .reset_credit_observation import available_credits
 
 WINDOW_SECONDS = 300
 TERMINAL = {'finished', 'recovered', 'closed', 'manual', 'blocked'}
@@ -37,6 +37,8 @@ REASONS = {
     'http_429': '验证受到上游限流', 'incomplete_response': '模型响应未完整结束',
     'model_unavailable': '验证模型不在当前分组白名单中', 'bank_unavailable': '指纹库缺少判定目标',
     'account_changed': '账号配置已变化', 'recovery_state_changed': '恢复状态已变化',
+    'credit_unconfirmed': '没有可信的可用重置卡观测',
+    'invalid_credit_snapshot': '重置卡余额或到期信息无效',
 }
 
 
@@ -53,6 +55,113 @@ def verification_retryable(result, method):
 
 
 class BoundedCreditPolicy:
+    def credit_candidate_ready(self, row, now):
+        try:
+            task = self.state(int(row['id']))
+            if task and not (task.get('credit_gate_skipped') and not task.get('owns_pause')):
+                return True  # Existing work may need reconciliation, never another card.
+            if not getattr(self.m.settings, 'oauth_auto_reset_credit_enabled', False):
+                return False
+            evidence = self._depletion(row, now)
+            if not evidence:
+                self._observe_credit_recovery(row, now)
+                return False
+            return bool(self._admit_credit_episode(row, evidence, now))
+        except (OSError, ValueError, TypeError):
+            # Admission must be durable before allocating even a worker slot.
+            # An unreadable state or failed save never falls back to execution.
+            return False
+
+    def _positive_credit_reason(self, row, evidence, now):
+        count = available_credits((row.get('extra') or {}).get('codex_reset_credit_snapshot'), now)
+        if count is None:
+            return 'credit_unconfirmed'
+        if count <= 0:
+            return 'no_credit'
+        return 'credit_unconfirmed' if self._credit_reason(row, evidence, now) else ''
+
+    def _admit_credit_episode(self, row, evidence, now):
+        """Remember the depletion clock without creating a task or doing I/O upstream."""
+        aid = int(row['id'])
+        reason = self._positive_credit_reason(row, evidence, now)
+        observed = parse_iso_datetime(evidence.get('evidence_at'))
+        if not observed:
+            return None
+        changed = False
+        def remember(data):
+            nonlocal changed
+            meta = data['scheduler'].setdefault(str(aid), {})
+            previous = meta.get('credit_admission') or {}
+            recovered = parse_iso_datetime(previous.get('recovered_at'))
+            is_new = not previous or recovered and observed > recovered
+            trigger = observed if is_new else parse_iso_datetime(previous['trigger_at'])
+            checked = max(now, parse_iso_datetime(previous.get('checked_at')) or now)
+            why = reason
+            if now < (parse_iso_datetime(previous.get('checked_at')) or now) - timedelta(seconds=1):
+                why = 'clock_untrusted'
+            elif not trigger or checked >= trigger + timedelta(seconds=WINDOW_SECONDS):
+                why = 'consume_deadline'
+            elif recovered and observed <= recovered:
+                why = 'block_cleared'
+            value = {'trigger_at': trigger.isoformat(), 'checked_at': checked.isoformat(),
+                     'reason': why, 'evidence_fingerprint': evidence['evidence_fingerprint'] if is_new else previous['evidence_fingerprint']}
+            if not is_new and recovered:
+                value['recovered_at'] = recovered.isoformat()
+            changed = {k: v for k, v in previous.items() if k != 'checked_at'} != {k: v for k, v in value.items() if k != 'checked_at'}
+            meta['credit_admission'] = value
+            return None if why else {**evidence, 'evidence_at': trigger.isoformat()}
+        result = self.store.transaction(remember)
+        if changed:
+            self._audit(aid, 'credit_admitted' if result else 'credit_skipped',
+                        reason=self.store.snapshot()['scheduler'][str(aid)]['credit_admission']['reason'])
+        return result
+
+    def _observe_credit_recovery(self, row, now):
+        from .oauth_monitor import account_recovery_confirmed
+        if not row or not account_recovery_confirmed(row) or not self._available(row, now, {}):
+            return
+        aid = int(row['id'])
+        value = self.store.snapshot()['scheduler'].get(str(aid), {}).get('credit_admission')
+        if value and not value.get('recovered_at'):
+            def save(data):
+                current = data['scheduler'][str(aid)].get('credit_admission')
+                if current == value:
+                    current['recovered_at'] = now.isoformat()
+            self.store.transaction(save)
+
+    def _migrate_credit_admission(self, aid, row, task, now):
+        # Never gate verification on a balance that the successful consumption
+        # just reduced to zero. Manual receipts and unknown writes are immutable.
+        if (not row or not task or task.get('attempt_at') or task.get('consumed')
+                or task.get('credit_admitted_at') or self._manual_task(task)
+                or task.get('stage') in {'recovered', 'closed'}):
+            return task
+        reason = self._positive_credit_reason(row, task, now)
+        if not reason:
+            return task
+        if task.get('credit_gate_skipped'):
+            return task
+        updated = {**task, 'revision': int(task.get('revision') or 0) + 1, 'credit_gate_skipped': True}
+        if task.get('stage') not in LEGACY_ENDED:
+            updated.update(stage='finished', outcome='not_executed', result_reason=reason,
+                           error_code=reason, completed_at=now.isoformat(), next_at=None)
+        def save(data):
+            meta = data['scheduler'].setdefault(str(aid), {})
+            current = meta.get('auto_reset_credit') or {}
+            if current.get('episode') != task['episode'] or current.get('revision') != task.get('revision'):
+                raise ValueError('用卡任务已变化')
+            meta['auto_reset_credit'] = updated
+            trigger = task.get('trigger_at') or task.get('evidence_at')
+            if parse_iso_datetime(trigger):
+                meta.setdefault('credit_admission', {'trigger_at': trigger, 'checked_at': now.isoformat(),
+                    'reason': reason, 'evidence_fingerprint': task.get('evidence_fingerprint', '')})
+            notice = meta.get('credit_result_notifications', {}).get(task['episode'])
+            if notice and notice.get('status') == 'pending' and notice.get('outcome') == 'not_executed':
+                notice.update(status='suppressed', next_at=None)
+        self.store.transaction(save)
+        self._audit(aid, 'credit_admission_migrated', reason=reason)
+        return updated
+
     def _manual_task(self, task):
         return bool(task.get('source') == 'manual' or (
             not task.get('policy_version') and task.get('stage') in {'manual', 'uncertain'}
@@ -170,6 +279,10 @@ class BoundedCreditPolicy:
         live = {int(r['id']): r for r in rows}
         for key, meta in self.store.snapshot()['scheduler'].items():
             task = meta.get('auto_reset_credit') or {}
+            aid = int(key)
+            if task and not task.get('attempt_at') and not task.get('credit_admitted_at'):
+                row = live.get(aid) or self.m._read_account(aid)
+                task = self._migrate_credit_admission(aid, row, task, now)
             if not task or self._manual_task(task) or (task.get('stage') in LEGACY_ENDED and not task.get('policy_version')) or task.get('stage') in {'finished', 'recovered', 'closed'}:
                 continue
             aid = int(key)
@@ -206,6 +319,14 @@ class BoundedCreditPolicy:
         from .oauth_monitor import account_recovery_confirmed
         row, task = self.m._read_account(aid), self.state(aid)
         task = self._reconcile_parameter_edit(row, task)
+        task = self._migrate_credit_admission(aid, row, task, now)
+        self._observe_credit_recovery(row, now)
+        if task.get('credit_gate_skipped') and not task.get('owns_pause') and enabled:
+            evidence = self._depletion(row, now) if row else None
+            if evidence:
+                task = self._begin_episode(aid, task, evidence)
+                if not task:
+                    return
         if ((self._manual_task(task) and task.get('stage') not in {'recovered', 'closed'})
                 or (task.get('stage') == 'manual' and not task.get('policy_version'))):
             # Preserve old/manual receipts without producing a new automatic
@@ -223,6 +344,8 @@ class BoundedCreditPolicy:
                     or evidence['evidence_fingerprint'] == task.get('evidence_fingerprint')):
                 return
             task = self._begin_episode(aid, task, evidence)
+            if not task:
+                return
         if task.get('stage') == 'finished':
             if task.get('owns_pause') and not task.get('attempt_at'):
                 self._undo_unissued_pause(aid, row, task, now)
@@ -239,6 +362,8 @@ class BoundedCreditPolicy:
             if not evidence or parse_iso_datetime(evidence['evidence_at']) <= recovered:
                 return
             task = self._begin_episode(aid, task, evidence)
+            if not task:
+                return
         if not task or task.get('stage') in {'recovered', 'closed'}:
             evidence = self._depletion(row, now) if row and enabled else None
             if not evidence:
@@ -249,6 +374,8 @@ class BoundedCreditPolicy:
             if any(t and parse_iso_datetime(evidence['evidence_at']) <= t for t in (boundary, changed)):
                 return
             task = self._begin_episode(aid, task, evidence)
+            if not task:
+                return
         # Old terminal history has no new notification or business execution.
         if task.get('stage') in LEGACY_ENDED and not task.get('policy_version'):
             return
@@ -291,27 +418,9 @@ class BoundedCreditPolicy:
         due = parse_iso_datetime(task.get('next_at'))
         if due and due > now:
             return
-        credit_reason = self._credit_reason(row, evidence, now)
-        credits = reset_credits(row.get('extra') or {}, now)
-        if not credit_reason and (credits['available'] or 0) <= 0:
-            self._finish(aid, task, 'no_credit', now, row); return
+        credit_reason = self._positive_credit_reason(row, evidence, now)
         if credit_reason:
-            if task.get('supplement_attempt_at'):
-                self._finish(aid, task, 'supplement_limit', now, row); return
-            result = self._request(row, 'query', task, now)
-            task = self.state(aid)
-            if task.get('stage') == 'finished':
-                return
-            if not result.get('success'):
-                self._bounded_wait(aid, task, result, self.m.clock()); return
-            row = self.m._read_account(aid)
-            evidence = self._depletion(row, self.m.clock()) if row else None
-            if not evidence or self._credit_reason(row, evidence, self.m.clock()):
-                self._finish(aid, task, 'credit_snapshot_unconfirmed', self.m.clock(), row); return
-            if (reset_credits(row.get('extra') or {}, self.m.clock())['available'] or 0) <= 0:
-                self._finish(aid, task, 'no_credit', self.m.clock(), row); return
-            # No forced one-hour wait: this unique consumption is separately admitted.
-            task = self.state(aid)
+            self._finish(aid, task, credit_reason, now, row); return
         now = self._policy_now(task, self.m.clock())
         if self._expired(task, now):
             self._finish(aid, task, 'consume_deadline', now, row); return
@@ -428,6 +537,10 @@ class BoundedCreditPolicy:
                     due = parse_iso_datetime(notice.get('next_at'))
                     if notice.get('status') != 'pending' or (due and due > now):
                         continue
+                    old_task = meta.get('auto_reset_credit') or {}
+                    if (old_task.get('episode') == episode and not old_task.get('attempt_at')
+                            and not old_task.get('credit_admitted_at')):
+                        self._migrate_credit_admission(int(aid), self.m._read_account(int(aid)), old_task, now)
                     def reserve(data):
                         item = data['scheduler'][aid]['credit_result_notifications'][episode]
                         if item != notice:

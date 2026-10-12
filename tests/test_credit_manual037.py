@@ -129,14 +129,31 @@ class ManualCredit037BoundaryTests(AutoResetFixture):
             ),
         })
 
+        old_episode = self.state()["episode"]
+        self.step()
+        no_card = self.state()
+        self.assertEqual(no_card["episode"], old_episode)
+        self.assertEqual(no_card["stage"], "recovered")
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "no_credit")
+        self.assertEqual(self.calls, [])
+
+        # A later, trusted positive card can start a new episode inside the
+        # original five-minute boundary. Occupy the test slot to inspect the
+        # durable waiting state without consuming it in this assertion.
+        self.row["extra"]["codex_reset_credit_snapshot"] = {
+            "available_count": 1,
+            "fetched_at": self.now.isoformat(),
+            "credits": [{"expires_at": (self.now + timedelta(days=2)).isoformat()}],
+        }
+        self.touch()
+        self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
         self.step()
         automatic = self.state()
         self.assertNotEqual(automatic["episode"], task["episode"])
         self.assertEqual(automatic.get("source"), None)
         self.assertEqual(automatic.get("policy_version"), 1)
-        self.assertEqual(automatic["stage"], "finished")
-        self.assertEqual(automatic["outcome"], "not_executed")
-        self.assertEqual(automatic["result_reason"], "no_credit")
+        self.assertEqual(automatic["stage"], "waiting")
+        self.assertEqual(automatic["error_code"], "test_slots")
         self.assertEqual(self.calls, [])
 
 

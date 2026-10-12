@@ -288,12 +288,30 @@ describe("shared account actions", () => {
 
   it("deletes from a group only after confirmation and preserves the other account's pending move", async () => {
     const original = vi.mocked(api).getMockImplementation()!;
+    const first = { ...account(1), operation_versions: { delete: "account-version-1" } };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "DELETE" && path === "/accounts/1") return { deleted: true, verified: true, detached: false } as never;
-      if (method === "PUT" && path === "/accounts/2/groups") return { verified: true } as never;
+      if (method === "POST" && path === "/account-operations/batch" && (body as { action?: string })?.action === "delete") {
+        return {
+          batch_id: "a".repeat(32), pending: 0,
+          items: [{
+            id: "1".repeat(32), batch_id: "a".repeat(32), account_id: 1, account_name: "Fixture 1", action: "delete",
+            status: "completed", reason: "", requested: { detach_managed: false }, result: { deleted: true, verified: true, detached: false },
+          }],
+        } as never;
+      }
+      if (method === "POST" && path === "/account-operations/batch" && (body as { action?: string })?.action === "groups") {
+        const request = body as { accounts: [{ account_id: number; expected_version: string; payload: Record<string, unknown> }] };
+        return {
+          batch_id: "b".repeat(32), pending: 0,
+          items: [{
+            id: "2".repeat(32), batch_id: "b".repeat(32), account_id: 2, account_name: "Fixture 2", action: "groups",
+            status: "completed", reason: "", requested: request.accounts[0].payload, result: { verified: true },
+          }],
+        } as never;
+      }
       return original(method, path, body);
     });
-    await render(state([account(1), account(2, { group_ids: [2] })]));
+    await render(state([first, account(2, { group_ids: [2] })]));
     await openGroups();
     await moveTo("Fixture 1", "右组");
     await moveTo("Fixture 2", "左组");
@@ -302,18 +320,23 @@ describe("shared account actions", () => {
 
     expect(menu()).toBeNull();
     expect(container.querySelector('[aria-labelledby="delete-title"]')?.textContent).toContain("Fixture 1");
-    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+    expect(vi.mocked(api).mock.calls.filter(([method]) => method !== "GET")).toHaveLength(0);
     await act(async () => button("确认删除").click());
-    await act(async () => button("关闭", container.querySelector('[aria-labelledby="delete-title"]')!).click());
 
     expect(groupCard("Fixture 1")).toBeUndefined();
     expect(container.querySelector(".group-draft-toolbar")?.textContent).toContain("1 个账号待应用");
     expect(groupCard("Fixture 2").classList.contains("dirty")).toBe(true);
     await act(async () => button("应用变更 1", container.querySelector(".group-draft-toolbar")!).click());
-    expect(vi.mocked(api).mock.calls.filter(([method]) => method !== "GET")).toEqual([
-      ["DELETE", "/accounts/1", { expected_version: "account-version-1", detach_managed: false }],
-      ["PUT", "/accounts/2/groups", { expected_version: "account-version-2", scope_group_ids: [1, 2], group_ids: [1] }],
-    ]);
+    const writes = vi.mocked(api).mock.calls.filter(([method, path]) => method === "POST" && path === "/account-operations/batch");
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
+      action: "delete", payload: { confirmed: true },
+      accounts: [{ account_id: 1, expected_version: "account-version-1", payload: { detach_managed: false } }],
+    })]);
+    expect(writes[1]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
+      action: "groups", payload: {},
+      accounts: [{ account_id: 2, expected_version: "account-version-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } }],
+    })]);
   });
 
   it.each(["openai", "grok"])("exposes settings entries for %s without adding ModelTrace actions", async (platform) => {

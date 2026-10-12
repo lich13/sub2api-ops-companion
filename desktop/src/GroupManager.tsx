@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, RefreshCw, Search, Undo2, X } from "lucide-react";
-import { accountOperation } from "./accountOperations";
+import { followAccountBatch, operationEpoch, operationTerminal, submitAccountBatch } from "./accountOperations";
 import type { Account, Group } from "./types";
 import { command } from "./bridge";
 import { DegradationBadge } from "./DegradationMark";
@@ -21,6 +21,7 @@ export default function GroupManager(props: Props) {
   const [busy, setBusy] = useState(false), [expanded, setExpanded] = useState(false), [message, setMessage] = useState("");
   const mounted = useRef(true), latest = useRef(props), draftRef = useRef(drafts), dragRef = useRef<Drag | null>(null);
   const pointer = useRef<{ id: number; x: number; y: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
+  const batchRequest = useRef<{ signature: string; id: string } | null>(null);
   latest.current = props; draftRef.current = drafts; dragRef.current = drag;
   const available = platformGroups(groups, platform);
   const valid = (pairs[platform] ?? []).filter((id) => available.some((g) => g.id === id));
@@ -95,21 +96,34 @@ export default function GroupManager(props: Props) {
   async function apply() {
     if (busy || !online || !pending.length) return;
     if (conflicts.length) { setMessage("账号或分组已变化，请先处理冲突"); setExpanded(true); return; }
-    setBusy(true); setMessage(""); let saved = 0;
+    const epoch = operationEpoch(), connection = props.connectionKey;
+    const current = () => mounted.current && operationEpoch() === epoch && latest.current.connectionKey === connection;
+    setBusy(true); setMessage("");
     try {
-      for (const draft of pending) {
-        if (!mounted.current || !latest.current.online) throw new Error("连接已变化，剩余修改未提交");
-        if (draftConflict(draft, latest.current.accounts, latest.current.groups)) throw new Error(`${draft.name} 已变化，请刷新后处理冲突`);
-        const result = await accountOperation<{ verified: boolean; group_ids: number[]; version: string }>(latest.current.accounts.find((a) => a.id === draft.id)!, "groups", { scope_group_ids: draft.scope, group_ids: draft.target.filter((id) => draft.scope.includes(id)) }, draft.operationVersion ?? draft.version);
-        if (!mounted.current) return;
-        if (!result.verified) throw new Error(`${draft.name} 写入未确认`);
-        saved++; setDrafts((all) => { const next = { ...all }; delete next[draft.id]; return next; }); setHistory([]);
-      }
-      setMessage(`已保存 ${saved} 个账号`); setExpanded(false);
+      const targets = pending.map(draft => ({ account_id: draft.id, expected_version: draft.operationVersion ?? draft.version,
+        payload: { scope_group_ids: draft.scope, group_ids: draft.target.filter(id => draft.scope.includes(id)) } }));
+      const signature = JSON.stringify(targets);
+      if (batchRequest.current?.signature !== signature) batchRequest.current = { signature, id: crypto.randomUUID() };
+      const batch = await submitAccountBatch('groups', targets, batchRequest.current.id);
+      await followAccountBatch(batch, value => {
+        const completed = value.items.filter(j => j.status === 'completed' && j.result?.verified);
+        setDrafts(all => {
+          const next = { ...all };
+          for (const job of completed) {
+            const original = pending.find(d => d.id === job.account_id);
+            if (original && JSON.stringify(next[job.account_id]) === JSON.stringify(original)) delete next[job.account_id];
+          }
+          return next;
+        });
+        if (completed.length) setHistory([]);
+        const failed = value.items.filter(j => operationTerminal.has(j.status) && j.status !== 'completed');
+        setMessage(`已保存 ${completed.length} 个账号${failed.length ? `；${failed.map(j => `${j.account_name}：${j.reason}`).join('；')}` : value.items.every(j => operationTerminal.has(j.status)) ? '' : '；其余已排队'}`);
+        if (completed.length === value.items.length) setExpanded(false);
+      }, current);
     } catch (error) {
-      if (mounted.current) setMessage(`${saved ? `已保存 ${saved} 个账号；` : ""}${String(error instanceof Error ? error.message : error)}`);
+      if (current()) setMessage(String(error instanceof Error ? error.message : error));
     } finally {
-      if (mounted.current) { setBusy(false); void command("refresh").catch(props.report); }
+      if (current()) { setBusy(false); void command("refresh").catch(props.report); }
     }
   }
   function card(a: Account) {

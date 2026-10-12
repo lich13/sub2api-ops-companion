@@ -25,12 +25,49 @@ CLIENT_ID = "fixture-client-id-036"
 VERSION = "a" * 64
 
 
+class _Response:
+    def __init__(self, status_code: int, body: dict):
+        self.status_code = status_code
+        self._body = copy.deepcopy(body)
+        self.content = json.dumps(self._body).encode()
+        self.text = self.content.decode()
+
+    def json(self):
+        return copy.deepcopy(self._body)
+
+
 class _Client:
+    def __init__(self, fixture: "ProxyBatch036Tests"):
+        self.fixture = fixture
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_args):
         return None
+
+    async def request(self, method: str, path: str, **kwargs):
+        """Exercise NativeBatches' actual client.request compatibility path."""
+        fixture = self.fixture
+        if method == "POST" and path == "accounts/bulk-update":
+            # This fixture represents an older native deployment. The explicit
+            # route response authorizes per-account compatibility, exactly once.
+            return _Response(404, {"detail": "Not Found"})
+        if method != "PUT" or not path.startswith("accounts/"):
+            raise AssertionError(f"unexpected fixture request: {method} {path}")
+        account_id = int(path.rsplit("/", 1)[-1])
+        fixture.put_calls.append(account_id)
+        if account_id in fixture.timeout_before_write:
+            return _Response(504, {"code": "fixture_timeout"})
+        if account_id in fixture.write_errors:
+            return _Response(500, {"code": "fixture_write_failed"})
+        body = copy.deepcopy(kwargs["json"])
+        fixture.writes.append((account_id, body))
+        if "proxy_id" in body:
+            fixture.rows[account_id]["proxy_id"] = None if body["proxy_id"] == 0 else body["proxy_id"]
+        if account_id in fixture.timeout_after_write:
+            return _Response(504, {"code": "fixture_timeout"})
+        return _Response(200, {"code": 0, "data": {}})
 
 
 def _row(account_id: int, *, platform: str = "openai", proxy_id: int | None = 11,
@@ -70,8 +107,12 @@ class _ProxyActions:
             raise HTTPException(404, "fixture account missing")
         return copy.deepcopy(row)
 
+    async def accounts(self, account_ids: list[int]) -> dict[int, dict]:
+        return {account_id: copy.deepcopy(self.fixture.rows[account_id])
+                for account_id in account_ids if account_id in self.fixture.rows}
+
     def client(self, _key: str, _timeout: int = 10) -> _Client:
-        return _Client()
+        return _Client(self.fixture)
 
     async def json_request(self, _client, method: str, path: str, **kwargs):
         self.fixture.calls.append((method, path, copy.deepcopy(kwargs)))
@@ -240,8 +281,10 @@ class ProxyBatch036Tests(unittest.IsolatedAsyncioTestCase):
         await self.queue.run(by_account[3]["id"])
         result = self.queue.listing(submitted["batch_id"])
         statuses = {item["account_id"]: item["status"] for item in result["items"]}
-        self.assertEqual(statuses, {1: "completed", 2: "cancelled", 3: "failed"})
-        self.assertEqual(result["pending"], 0)
+        self.assertEqual(statuses, {1: "completed", 2: "cancelled", 3: "needs_confirmation"})
+        # Native uncertain write remains visible as needs_confirmation until a
+        # fresh preview, so it is still counted as pending.
+        self.assertEqual(result["pending"], 1)
         self.assertEqual(self.put_calls, [1, 3])
         self.assertEqual([account_id for account_id, _body in self.writes], [1])
         self.assertEqual(self.rows[3]["proxy_id"], 11)
@@ -252,7 +295,7 @@ class ProxyBatch036Tests(unittest.IsolatedAsyncioTestCase):
         await self.queue.run(submitted["items"][0]["id"])
         result = self.queue.get(submitted["items"][0]["id"])
         self.assertEqual(result["status"], "needs_confirmation")
-        self.assertEqual(result["current"], {"proxy_id": 22})
+        self.assertIn("相关字段", result["reason"])
         self.assertEqual(self.put_calls, [])
 
     async def test_busy_queue_retries_once_after_account_becomes_free(self):
@@ -287,7 +330,7 @@ class ProxyBatch036Tests(unittest.IsolatedAsyncioTestCase):
         submitted = await self.submit([1], 21, "fixture-proxy-restart-036")
         child_id = submitted["items"][0]["id"]
         await self.queue.run(child_id)
-        self.assertEqual(self.queue.get(child_id)["status"], "checking")
+        self.assertEqual(self.queue.get(child_id)["status"], "needs_confirmation")
         self.assertEqual(self.put_calls, [1])
 
         await self.queue.close()
@@ -335,6 +378,7 @@ class ProxyBatchRoute036Tests(unittest.TestCase):
         result = {"batch_id": "b" * 32, "items": [], "pending": 0}
         operations = SimpleNamespace(
             submit_proxy_batch=AsyncMock(return_value=result),
+            submit_batch=AsyncMock(return_value=result),
             close=AsyncMock(),
         )
         service._operations = operations
@@ -354,8 +398,8 @@ class ProxyBatchRoute036Tests(unittest.TestCase):
                 )
             self.assertEqual(response.status_code, 202, response.text)
             self.assertEqual(response.json(), result)
-            operations.submit_proxy_batch.assert_awaited_once()
-            request, key = operations.submit_proxy_batch.await_args.args
+            operations.submit_batch.assert_awaited_once()
+            request, key = operations.submit_batch.await_args.args
             self.assertIsInstance(request, ProxyBatchRequest)
             self.assertEqual(request.payload.proxy_id, None)
             self.assertEqual(key, ADMIN_KEY)

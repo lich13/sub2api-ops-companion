@@ -5,7 +5,9 @@ export type Operation = {
   id: string; account_id: number; account_name: string; action: string; status: string; batch_id?: string;
   reason?: string; requested: Record<string, unknown>; current?: Record<string, unknown>;
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
+  execution_mode?: 'native' | 'compatibility';
 };
+export type OperationBatch = { batch_id: string; items: Operation[]; pending: number };
 export const operationTerminal = new Set(['completed', 'failed', 'cancelled', 'superseded', 'needs_confirmation']);
 const listeners = new Set<() => void>();
 let rows: Operation[] = [], epoch = 0, connection = '';
@@ -24,6 +26,33 @@ export const getOperations = () => rows;
 export function subscribeOperations(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function setOperations(next: Operation[]) { rows = next; listeners.forEach((listener) => listener()); }
 export const operationEpoch = () => epoch;
+export async function submitAccountBatch(action: 'delete' | 'groups', accounts: {
+  account_id: number; expected_version: string; payload: Record<string, unknown>;
+}[], requestId: string): Promise<OperationBatch> {
+  const current = epoch;
+  const batch = await api<OperationBatch>('POST', '/account-operations/batch', {
+    action, payload: action === 'delete' ? { confirmed: true } : {}, accounts,
+    request_id: requestId, client_id: clientId(),
+  });
+  if (current !== epoch) throw new Error('连接已切换；请求保留在原连接');
+  setOperations([...batch.items, ...rows.filter(r => !batch.items.some(j => j.id === r.id))]);
+  return batch;
+}
+export async function followAccountBatch(initial: OperationBatch, update: (batch: OperationBatch) => void,
+  alive: () => boolean = () => true): Promise<void> {
+  const current = epoch;
+  let batch = initial;
+  while (alive() && current === epoch) {
+    update(batch);
+    if (batch.items.every(j => operationTerminal.has(j.status))) { void command('refresh'); return; }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!alive() || current !== epoch) return;
+    const next = await api<OperationBatch>('GET', `/account-operations?batch_id=${batch.batch_id}`);
+    if (!alive() || current !== epoch) return;
+    batch = next;
+    setOperations([...batch.items, ...rows.filter(r => !batch.items.some(j => j.id === r.id))]);
+  }
+}
 export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string): Promise<Operation> {
   const current = epoch;
   const version = expected ?? (action === 'degradation_mark' ? account.degradation_mark?.version : account.operation_versions?.[action]);

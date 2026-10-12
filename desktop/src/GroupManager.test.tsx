@@ -173,15 +173,30 @@ describe("group manager drafts", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
-  it("keeps moves local until apply, submits each account, and stops after the first failure", async () => {
+  it("keeps moves local until apply, submits one groups batch, and preserves failed drafts", async () => {
     const accounts = [
       account(1, "Alpha", [1]),
       account(2, "Beta", [2]),
       account(3, "Gamma", [1]),
     ];
+    const batchId = "f".repeat(32);
     vi.mocked(api).mockImplementation(async (method, path) => {
-      if (method === "PUT" && path === "/accounts/1/groups") return { verified: true } as never;
-      if (method === "PUT" && path === "/accounts/2/groups") throw new Error("第二个账号写入失败");
+      if (method === "POST" && path === "/account-operations/batch") {
+        return {
+          batch_id: batchId,
+          pending: 0,
+          items: [
+            {
+              id: "1".repeat(32), batch_id: batchId, account_id: 1, account_name: "Alpha", action: "groups",
+              status: "completed", reason: "", requested: { scope_group_ids: [1, 2], group_ids: [2] }, result: { verified: true },
+            },
+            {
+              id: "2".repeat(32), batch_id: batchId, account_id: 2, account_name: "Beta", action: "groups",
+              status: "failed", reason: "第二个账号写入失败", requested: { scope_group_ids: [1, 2], group_ids: [1] },
+            },
+          ],
+        } as never;
+      }
       throw new Error(`Unexpected request: ${method} ${path}`);
     });
 
@@ -203,26 +218,16 @@ describe("group manager drafts", () => {
     expect(container.textContent).toContain("2 个账号待应用");
 
     await act(async () => draftApplyButton().click());
-    expect(vi.mocked(api).mock.calls).toEqual([
-      [
-        "PUT",
-        "/accounts/1/groups",
-        {
-          expected_version: "version-1",
-          scope_group_ids: [1, 2],
-          group_ids: [2],
-        },
+    expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", {
+      action: "groups",
+      payload: {},
+      accounts: [
+        { account_id: 1, expected_version: "version-1", payload: { scope_group_ids: [1, 2], group_ids: [2] } },
+        { account_id: 2, expected_version: "version-2", payload: { scope_group_ids: [1, 2], group_ids: [1] } },
       ],
-      [
-        "PUT",
-        "/accounts/2/groups",
-        {
-          expected_version: "version-2",
-          scope_group_ids: [1, 2],
-          group_ids: [1],
-        },
-      ],
-    ]);
+      request_id: expect.any(String),
+      client_id: expect.any(String),
+    });
     expect(container.textContent).toContain("已保存 1 个账号");
     expect(container.textContent).toContain("第二个账号写入失败");
     expect(container.textContent).toContain("1 个账号待应用");
@@ -379,13 +384,25 @@ describe("group manager drafts", () => {
       expect(container.textContent).not.toContain("Alpha");
       await moveTo("Beta", "左组");
     }
-    vi.mocked(api).mockResolvedValue({ verified: true } as never);
+    vi.mocked(api).mockResolvedValue({
+      batch_id: "g".repeat(32), pending: 0,
+      items: [{
+        id: "3".repeat(32), batch_id: "g".repeat(32), account_id: 2, account_name: "Beta", action: "groups",
+        status: "completed", reason: "", requested: { scope_group_ids: [1, 2], group_ids: [1] }, result: { verified: true },
+      }],
+    } as never);
     await act(async () => draftApplyButton().click());
 
-    expect(api).toHaveBeenCalledExactlyOnceWith("PUT", "/accounts/2/groups", {
-      expected_version: "version-2",
-      scope_group_ids: [1, 2],
-      group_ids: [1],
+    expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", {
+      action: "groups",
+      payload: {},
+      accounts: [{
+        account_id: 2,
+        expected_version: "version-2",
+        payload: { scope_group_ids: [1, 2], group_ids: [1] },
+      }],
+      request_id: expect.any(String),
+      client_id: expect.any(String),
     });
     expect(container.textContent).not.toContain("个账号待应用");
   });

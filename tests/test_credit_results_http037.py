@@ -101,10 +101,12 @@ class CreditResultHttp037Tests(AutoResetFixture):
             )
         })
         if outcome == "not_executed":
+            # Establish a trusted positive observation first; a later zero
+            # balance must finish the accepted task with one result notice.
             self.row["extra"]["codex_reset_credit_snapshot"] = {
-                "available_count": 0,
+                "available_count": 1,
                 "fetched_at": observed.isoformat(),
-                "credits": [],
+                "credits": [{"expires_at": (self.now + timedelta(days=2)).isoformat()}],
             }
         elif outcome == "consume_failed":
             # LocalCreditServer wraps this native receipt in the real admin
@@ -164,6 +166,20 @@ class CreditResultHttp037Tests(AutoResetFixture):
             with self.subTest(outcome=outcome):
                 notifier = self._fresh_real_http_case()
                 self._prepare_episode(outcome)
+
+                if outcome == "not_executed":
+                    self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
+                    self.run_once()
+                    self.assertEqual(self.state()["stage"], "waiting")
+                    self.assertEqual(self.calls, [])
+                    self.row["extra"]["codex_reset_credit_snapshot"] = {
+                        "available_count": 0,
+                        "fetched_at": self.now.isoformat(),
+                        "credits": [],
+                    }
+                    self.monitor._active_tests = 0
+                    self.now += timedelta(seconds=3)
+
                 self.run_once()
 
                 task = self.state()
@@ -205,6 +221,26 @@ class CreditResultHttp037Tests(AutoResetFixture):
                 persisted = self.store.snapshot()["scheduler"][str(ACCOUNT_ID)]["credit_result_notifications"][episode]
                 self.assertEqual(persisted["status"], "delivered")
                 self.assertEqual(persisted["attempts"], 1)
+
+    def test_zero_card_at_admission_has_no_task_or_bark(self):
+        notifier = self._fresh_real_http_case()
+        self._prepare_episode("restored")
+        self.row["extra"]["codex_reset_credit_snapshot"] = {
+            "available_count": 0,
+            "fetched_at": self.now.isoformat(),
+            "credits": [],
+        }
+
+        self.run_once()
+
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.credit_server.requests, [])
+        self.assertEqual(self.state(), {})
+        metadata = self.store.scheduler()[ACCOUNT_ID]
+        self.assertNotIn("auto_reset_credit", metadata)
+        self.assertEqual(metadata.get("credit_result_notifications", {}), {})
+        self.controller.deliver_results(notifier)
+        self.assertEqual(self.bark_server.requests, [])
 
 
 if __name__ == "__main__":

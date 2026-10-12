@@ -33,7 +33,7 @@ from .model_tests import ModelTests, ModelTestRequest
 from .error_evidence import ERROR_WHERE, error_category_sql
 from .account_locks import control_lock
 from .operation_versions import versions as operation_versions, operation_context
-from .account_operations import AccountOperations, OperationRequest, ProxyBatchRequest, busy
+from .account_operations import AccountOperations, OperationRequest, ProxyBatchRequest, AccountBatchRequest, busy
 from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest, TemplateBatchRequest
 from .model_detection import ModelDetection, DetectionRequest
 from .account_settings import AccountSettings, capabilities as settings_capabilities
@@ -969,9 +969,9 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
         return service.operations.listing(batch_id)
 
     @router.post("/account-operations/batch", status_code=202)
-    async def operation_batch(payload: ProxyBatchRequest, request: Request):
+    async def operation_batch(payload: ProxyBatchRequest | AccountBatchRequest, request: Request):
         key = await auth(request)
-        return await service.operations.submit_proxy_batch(payload, key)
+        return await service.operations.submit_batch(payload, key)
 
     @router.get("/account-operations/{job_id}")
     async def operation_detail(job_id: str, request: Request, after_event: int = 0):

@@ -97,8 +97,10 @@ class AutoReset037AdmissionBoundaryTests(AutoReset037BoundaryFixture):
 
                 self.assertEqual(self.calls.count("reset"), expected_reset)
                 if expected_reason:
-                    self.assertEqual(self.state()["stage"], "finished")
-                    self.assertEqual(self.state()["result_reason"], expected_reason)
+                    self.assertEqual(self.state(), {})
+                    self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], expected_reason)
+                    self.assertEqual(self.calls, [])
+                    self.assertEqual(self.server.requests, [])
                 else:
                     self.assertTrue(self.state().get("attempt_at"))
                     self.assertEqual(self.state()["stage"], "recovered")
@@ -138,8 +140,8 @@ class AutoReset037TerminationTests(AutoReset037BoundaryFixture):
 
         self.assertEqual(self.calls, [])
         self.assertEqual(self.server.requests, [])
-        self.assertEqual(self.state()["stage"], "finished")
-        self.assertEqual(self.state()["result_reason"], "no_credit")
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "no_credit")
         self.assertTrue(self.row["schedulable"])
 
     def test_manual_stop_disabled_account_and_deleted_account_finish_waiting_episode(self):
@@ -174,7 +176,7 @@ class AutoReset037TerminationTests(AutoReset037BoundaryFixture):
 
 
 class AutoReset037BudgetTests(AutoReset037BoundaryFixture):
-    def test_supplement_plus_unique_consumption_uses_exactly_six_query_budget_slots(self):
+    def test_missing_card_does_not_consume_any_query_budget_slot(self):
         self.move_evidence_inside_window()
         self.preload_quota(observed_age=timedelta(hours=2))
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
@@ -188,12 +190,14 @@ class AutoReset037BudgetTests(AutoReset037BoundaryFixture):
 
         self.run_once()
 
-        self.assertEqual(self.calls.count("query"), 1)
-        self.assertEqual(self.calls.count("reset"), 1)
-        self.assertEqual(len(self.query_state()["automatic_attempts"]), 6)
-        self.assertEqual(self.server.quota_reads, 2)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(self.query_state()["automatic_attempts"], attempts)
+        self.assertEqual(self.server.quota_reads, 0)
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
 
-    def test_second_supplement_is_budgeted_out_without_any_upstream_request(self):
+    def test_missing_card_remains_silent_even_when_query_budget_is_exhausted(self):
         self.move_evidence_inside_window()
         self.preload_quota(observed_age=timedelta(hours=2))
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
@@ -209,8 +213,8 @@ class AutoReset037BudgetTests(AutoReset037BoundaryFixture):
 
         self.assertEqual(self.calls, [])
         self.assertEqual(self.server.requests, [])
-        self.assertEqual(self.state()["stage"], "finished")
-        self.assertEqual(self.state()["result_reason"], "query_budget")
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
         self.assertEqual(self.query_state()["automatic_attempts"], attempts)
 
 

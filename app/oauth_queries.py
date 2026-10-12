@@ -365,12 +365,23 @@ class OAuthQueryCoordinator:
                 result = dict(result)
                 if result.get("success") and not quota_complete(row, result):
                     result.update(success=False, error_code="incomplete_quota", error="额度响应缺少必要窗口")
+                observation = None
+                if result.get('success') and self.account_reader and isinstance(result.get('data'), dict) and 'rate_limit_reset_credits' in result['data']:
+                    from .reset_credit_observation import observation_from_usage
+                    try:
+                        observation = observation_from_usage(row, self.account_reader(account_id), result, current, self.clock())
+                    except Exception:
+                        # Failure to verify an optional card cache must neither
+                        # mint card evidence nor discard a valid quota receipt.
+                        observation = None
                 def finish(data: dict[str, Any]) -> None:
                     metadata = data["scheduler"].setdefault(str(account_id), {})
                     query = dict(metadata.get("quota_query") or {})
                     code = str(result.get("error_code") or "")
                     if result.get("success"):
                         data["oauth_results"][str(account_id)] = dict(result)
+                        if observation is not None:
+                            metadata['reset_credit_observation'] = observation
                         metadata.update(last_success_at=current.isoformat(), last_error_code="")
                         query.pop("auth_fingerprint", None)
                         intent = dict(metadata.get("recovery_intent") or {})

@@ -415,10 +415,9 @@ class AutoResetEligibilityTests(AutoResetFixture):
                 self.query_credits = 0
                 self.run_once()
                 self.assertEqual(self.calls, [])
-                self.assertEqual(self.state()["stage"], "finished")
-                self.assertEqual(self.state()["error_code"], "no_credit")
-                self.assertEqual(self.state()["result_reason"], "no_credit")
-                self.assertEqual(self.state()["outcome"], "not_executed")
+                self.assertEqual(self.state(), {})
+                admission = self.store.scheduler()[ACCOUNT_ID]["credit_admission"]
+                self.assertEqual(admission["reason"], "no_credit")
                 self.assertTrue(self.row["schedulable"])
 
     def test_original_upstream_auto_switch_conflicts_without_any_action(self):
@@ -598,20 +597,16 @@ class AutoResetLifecycleTests(AutoResetFixture):
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
         self.request_results.append({"success": False, "error_code": "http_401"})
         self.run_once()
-        self.assertEqual(self.state()["stage"], "finished")
-        self.assertEqual(self.state()["error_code"], "http_401")
-        self.assertEqual(self.state()["result_reason"], "http_401")
-        self.assertEqual(self.state()["outcome"], "not_executed")
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
         self.assertTrue(self.row["schedulable"])
-        self.assertEqual(self.calls, ["query"])
+        self.assertEqual(self.calls, [])
         self.row["credentials"]["access_token"] = "fixture-access-v2"
         self.now += timedelta(seconds=30)
         self.touch()
         self.step()
-        self.assertEqual(self.calls, ["query"])
-        self.assertEqual(self.state()["stage"], "finished")
-        self.assertEqual(self.state()["error_code"], "http_401")
-        self.assertEqual(self.state()["outcome"], "not_executed")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state(), {})
         self.assertEqual(self.store.snapshot()["recovery_history"], {})
 
     def test_test_auth_error_status_finishes_and_keeps_scheduling_paused(self):
@@ -1175,8 +1170,45 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.native_credit_cache_persisted = cache_persisted
         self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(self.native_credit_db_snapshot)
 
+    def persist_usage_observation(self, snapshot):
+        """Persist card evidence through the normal usage-query coordinator."""
+        snapshot = copy.deepcopy(snapshot)
+        self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(snapshot)
+        original = self.monitor.usage_runner
+
+        def runner(_account_id, _base_url, _token, **_kwargs):
+            return {
+                "success": True,
+                "queried_at": self.now.isoformat(),
+                "data": {
+                    "five_hour": {"utilization": 20,
+                                   "resets_at": (self.now + timedelta(hours=5)).isoformat()},
+                    "seven_day": {"utilization": 100,
+                                   "resets_at": (self.now + timedelta(days=5)).isoformat()},
+                    "fetched_at": int(self.now.timestamp()),
+                    "rate_limit_reset_credits": copy.deepcopy(snapshot),
+                    "cache_persisted": True,
+                },
+            }
+
+        self.monitor.usage_runner = runner
+        try:
+            result = self.monitor.queries.query(
+                copy.deepcopy(self.row), ADMIN_TOKEN, source="manual",
+                reason="fixture-current-card", now=self.now,
+            )
+        finally:
+            self.monitor.usage_runner = original
+        self.assertTrue(result["success"], result)
+        self.calls.clear()
+        self.server.requests.clear()
+        self.server.quota_reads = 0
+        return result
+
     def test_native_reset_receipt_recovers_through_scheduled_monitor_with_one_merged_event(self):
-        self.use_native_credit_response(native_credit_snapshot(NOW))
+        snapshot = native_credit_snapshot(NOW)
+        self.persist_usage_observation(snapshot)
+        self.use_native_credit_response(snapshot)
         self.assertNotIn("fetched_at", self.row["extra"]["codex_reset_credit_snapshot"])
         request = self.request_runner
 
@@ -1200,16 +1232,15 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
 
         self.test_hook = persisted_before_test
         self.monitor.run_once(now=self.now)
-        self.assertEqual(self.calls, ["query", "schedule:False", "reset", "test", "recover", "schedule:True"])
+        self.assertEqual(self.calls, ["schedule:False", "reset", "test", "recover", "schedule:True"])
         self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
-            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh"),
             ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
             ("POST", "/api/v1/admin/accounts/7/test")])
         self.assertEqual(self.native_observation()["observed_at"], NOW.isoformat())
         self.assert_credit_recovery()
         self.assertEqual(self.state()["receipt"]["windows_reset"], 2)
-        self.assertEqual(self.server.quota_reads, 2)
-        self.assertEqual(len(self.query_state()["automatic_attempts"]), 2)
+        self.assertEqual(self.server.quota_reads, 1)
+        self.assertEqual(len(self.query_state()["automatic_attempts"]), 1)
         history = copy.deepcopy(self.store.snapshot()["recovery_history"])
         self.make_controller(real_http=True)
         self.monitor.auto_reset = self.controller
@@ -1218,7 +1249,7 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(self.store.snapshot()["recovery_history"], history)
         self.assertEqual(self.store.pending_events(), [])
         self.assertEqual(self.store.snapshot()["scheduler"][str(ACCOUNT_ID)]["credit_result_notifications"][self.state()["episode"]]["status"], "pending")
-        self.assertEqual(len(self.server.requests), 3)
+        self.assertEqual(len(self.server.requests), 2)
 
     def test_native_unknown_and_contradictory_receipts_are_not_replayed_after_restart(self):
         cases = (("already_redeemed", 0), ("already_redeemed", 1), ("unrecognized_fixture", 1),
@@ -1295,19 +1326,18 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(self.store.pending_events(), [])
         self.assertEqual(self.store.snapshot()["scheduler"][str(ACCOUNT_ID)]["credit_result_notifications"][self.state()["episode"]]["status"], "pending")
 
-    def test_credit_consumes_after_supplement_but_ordinary_queries_keep_cooldown_and_budget(self):
-        self.row["extra"]["codex_reset_credit_snapshot"] = {}
+    def test_credit_consumes_after_explicit_observation_and_queries_keep_cooldown_and_budget(self):
+        self.persist_usage_observation(native_credit_snapshot(NOW))
         self.run_once()
-        self.assertEqual(self.calls, ["query", "schedule:False", "reset", "test", "recover", "schedule:True"])
+        self.assertEqual(self.calls, ["schedule:False", "reset", "test", "recover", "schedule:True"])
         self.assert_credit_recovery()
         self.now += timedelta(seconds=3599)
         result = self.monitor.queries.query(copy.deepcopy(self.row), ADMIN_TOKEN, source="automatic", reason="fixture-other-entry")
         self.assertEqual(result["error_code"], "query_cooldown")
-        self.assertEqual(self.server.quota_reads, 2)
+        self.assertEqual(self.server.quota_reads, 1)
         self.assertEqual(self.calls.count("reset"), 1)
         self.assertEqual(self.calls.count("test"), 1)
-        self.assertEqual(self.server.quota_reads, 2)
-        for offset in range(2, 6):
+        for offset in range(1, 6):
             self.now = NOW + timedelta(hours=offset)
             result = self.monitor.queries.query(copy.deepcopy(self.row), ADMIN_TOKEN, source="automatic", reason="fixture-other-entry")
             self.assertTrue(result["success"], result)
@@ -1330,15 +1360,16 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         snapshot = native_credit_snapshot(NOW, count=3, expiries=expiries)
         for index, card in enumerate(snapshot["credits"]):
             card["id"] = f"fixture-card-{index}"
+        self.persist_usage_observation(snapshot)
         self.use_native_credit_response(snapshot)
 
-        self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
         self.run_once()
 
         self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
-            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh")])
-        self.assertEqual(self.calls.count("query"), 1)
-        self.assertEqual(self.calls.count("reset"), 0)
+            ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
+            ("POST", "/api/v1/admin/accounts/7/test")])
+        self.assertEqual(self.calls.count("query"), 0)
+        self.assertEqual(self.calls.count("reset"), 1)
         observation = self.native_observation()
         self.assertIsInstance(observation, dict)
         self.assertEqual(observation["version"], 1)
@@ -1361,11 +1392,10 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.make_controller(real_http=True)
         self.now += timedelta(seconds=2)
         self.step()
-        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("query"), 0)
         self.assertEqual(self.calls.count("reset"), 1)
         self.assertEqual(self.calls.count("test"), 1)
         self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
-            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh"),
             ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
             ("POST", "/api/v1/admin/accounts/7/test")])
         self.assertEqual(self.store.pending_events(), [])
@@ -1384,10 +1414,10 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.make_controller(real_http=True)
         self.now += timedelta(hours=1)
         self.run_once()
-        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("query"), 0)
         self.assertEqual(self.calls.count("reset"), 1)
         self.assertEqual(self.calls.count("test"), 1)
-        self.assertEqual(len(self.server.requests), 3)
+        self.assertEqual(len(self.server.requests), 2)
         self.assertEqual(self.store.pending_events(), [])
 
     def test_native_snapshot_refresh_preserves_both_429_evidence_paths(self):
@@ -1398,6 +1428,7 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
                 self.server.requests.clear()
                 self.base_url = self.server.base_url
                 self.make_controller(real_http=True)
+                self.persist_usage_observation(snapshot)
                 self.use_native_credit_response(snapshot)
                 if not has_upstream_error:
                     self.db.raw.execute("DELETE FROM ops_error_logs")
@@ -1406,48 +1437,53 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
 
                 expected = "upstream_error" if has_upstream_error else "account_rate_limit"
                 self.assertEqual(self.state()["evidence_source"], expected)
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 1)
                 self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
-                    ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh"),
                     ("POST", "/api/v1/admin/openai/accounts/7/reset-quota"),
                     ("POST", "/api/v1/admin/accounts/7/test")])
 
     def test_native_observation_change_does_not_repeat_supplement_or_consume_stale_evidence(self):
-        for change in ("snapshot", "credentials", "window"):
+        for change, expected_reason in (("snapshot", "credit_unconfirmed"),
+                                        ("credentials", "ownership_changed"),
+                                        ("window", "credit_unconfirmed"),
+                                        ("limit", "credit_unconfirmed")):
             with self.subTest(change=change):
                 self.fresh_case()
                 self.server.requests.clear()
                 self.base_url = self.server.base_url
                 self.make_controller(real_http=True)
-                self.use_native_credit_response(native_credit_snapshot(NOW))
+                snapshot = native_credit_snapshot(NOW)
+                self.persist_usage_observation(snapshot)
                 self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
                 self.run_once()
                 original = self.state()
-                self.assertEqual(self.calls, ["query"])
-                self.assertTrue(self.native_observation())
+                self.assertEqual(original["stage"], "waiting")
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.server.requests, [])
                 if change == "snapshot":
                     self.row["extra"]["codex_reset_credit_snapshot"] = native_credit_snapshot(
                         NOW, expiries=[NOW + timedelta(days=4)])
                 elif change == "credentials":
                     self.row["credentials"]["access_token"] = "fixture-access-v2"
-                else:
+                elif change == "window":
                     next_reset = NOW + timedelta(days=6)
                     self.row["rate_limit_reset_at"] = next_reset.isoformat()
                     self.row["extra"]["codex_7d_reset_at"] = next_reset.isoformat()
                     self.store.commit(results={ACCOUNT_ID: quota_result(wham(
                         self.now, five=20, seven=100, seven_reset_at=next_reset), self.row, self.now)})
+                else:
+                    limited_at = NOW - timedelta(seconds=30)
+                    self.row["rate_limited_at"] = limited_at.isoformat()
+                    self.db.event(record_id=38, at=limited_at)
                 self.touch()
                 self.monitor._active_tests = 0
                 self.now += timedelta(seconds=2)
                 self.run_once()
                 self.assertEqual(self.state()["stage"], "finished")
-                self.assertEqual(self.state()["outcome"], "not_executed")
-                self.assertEqual(self.state()["result_reason"],
-                                 "ownership_changed" if change == "credentials" else "supplement_limit")
-                self.assertEqual(self.state()["consume_deadline_at"], original["consume_deadline_at"])
-                self.assertEqual(self.calls, ["query"])
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(self.state()["result_reason"], expected_reason)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.server.requests, [])
 
     def test_zero_or_expired_native_credit_does_not_repeat_refresh_on_each_step(self):
         cases = (
@@ -1462,14 +1498,15 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
                 self.make_controller(real_http=True)
                 self.use_native_credit_response(snapshot)
                 self.run_once()
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
                 self.now += timedelta(seconds=30)
                 self.step()
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
+                self.assertEqual(self.state(), {})
 
     def test_native_observation_requires_matching_database_snapshot_and_cache_confirmation(self):
         good = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
@@ -1484,20 +1521,40 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
                 self.use_native_credit_response(good, database_snapshot=database_snapshot,
                                                 cache_persisted=cache_persisted)
                 self.run_once()
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(self.state()["error_code"], "credit_snapshot_unconfirmed")
+                self.assertEqual(self.state(), {})
+                self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
                 self.assertIsNone(self.native_observation())
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
                 self.now += timedelta(seconds=30)
                 self.step()
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
 
     def test_native_observation_write_failure_cannot_authorize_card_consumption(self):
         snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
-        self.use_native_credit_response(snapshot)
+        self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(snapshot)
+        original_runner = self.monitor.usage_runner
+
+        def runner(_account_id, _base_url, _token, **_kwargs):
+            self.row["extra"]["codex_reset_credit_snapshot"] = copy.deepcopy(snapshot)
+            return {
+                "success": True,
+                "queried_at": self.now.isoformat(),
+                "data": {
+                    "five_hour": {"utilization": 20,
+                                   "resets_at": (self.now + timedelta(hours=5)).isoformat()},
+                    "seven_day": {"utilization": 100,
+                                   "resets_at": (self.now + timedelta(days=5)).isoformat()},
+                    "fetched_at": int(self.now.timestamp()),
+                    "rate_limit_reset_credits": copy.deepcopy(snapshot),
+                    "cache_persisted": True,
+                },
+            }
+
+        self.monitor.usage_runner = runner
         write = self.store._write
         failed = []
 
@@ -1509,21 +1566,25 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
             return write(data)
 
         with patch.object(self.store, "_write", side_effect=fail_observation_once):
-            try:
-                self.run_once()
-            except OSError:
-                pass
+            result = self.monitor.queries.query(
+                copy.deepcopy(self.row), ADMIN_TOKEN, source="manual",
+                reason="fixture-observation-write-failure", now=self.now,
+            )
+        self.monitor.usage_runner = original_runner
 
         self.assertEqual(failed, [True])
-        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(result["error_code"], "query_state_unavailable")
+        self.assertEqual(self.calls.count("query"), 0)
         self.assertEqual(self.calls.count("reset"), 0)
         self.assertIsNone(self.native_observation())
-        self.assertEqual(len(self.server.requests), 1)
+        self.assertEqual(len(self.server.requests), 0)
+        self.run_once()
+        self.assertEqual(self.state(), {})
         self.make_controller(real_http=True)
         self.now += timedelta(seconds=30)
         self.step()
         self.assertEqual(self.calls.count("reset"), 0)
-        self.assertEqual(len(self.server.requests), 1)
+        self.assertEqual(len(self.server.requests), 0)
 
     def test_corrupt_observation_cannot_fall_back_to_legacy_timestamp_snapshot(self):
         snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
@@ -1533,6 +1594,7 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
                 self.server.requests.clear()
                 self.base_url = self.server.base_url
                 self.make_controller(real_http=True)
+                self.persist_usage_observation(snapshot)
                 self.use_native_credit_response(snapshot)
                 self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
                 self.run_once()
@@ -1549,9 +1611,9 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
                 with self.assertRaises(ValueError):
                     self.run_once()
 
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
 
     def test_refresh_timestamp_outside_read_interval_is_not_trusted(self):
         snapshot = native_credit_snapshot(NOW, count=1, expiries=[NOW + timedelta(days=2)])
@@ -1568,13 +1630,13 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
 
                 self.run_once()
 
-                self.assertEqual(self.calls.count("query"), 1)
+                self.assertEqual(self.calls.count("query"), 0)
                 self.assertEqual(self.calls.count("reset"), 0)
-                self.assertEqual(self.state()["error_code"], error_code)
+                self.assertEqual(self.state(), {})
+                self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
                 self.assertIsNone(self.native_observation())
                 self.assertFalse(self.state().get("consumed", False))
-                self.assertFalse(self.state().get("reset_completed_at"))
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 0)
 
     def test_confirmed_consumption_with_cache_warning_still_tests_immediately(self):
         self.request_results.append({"success": True, "consumed": True, "uncertain": False,
@@ -1604,10 +1666,11 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(self.calls.count("reset"), 1)
 
     def test_confirmed_reset_with_malformed_quota_finishes_without_repeating_query_or_consumption(self):
-        self.use_native_credit_response(native_credit_snapshot(NOW))
+        self.persist_usage_observation(native_credit_snapshot(NOW))
         self.monitor._active_tests = self.settings.oauth_recovery_test_concurrency
         self.run_once()
-        self.assertEqual(self.calls, ["query"])
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.server.requests, [])
         malformed = {"success": True, "consumed": True, "uncertain": False, "error_code": "",
             "data": {"code": "reset", "windows_reset": 1, "fetched_at": int((NOW + timedelta(seconds=2)).timestamp()),
                      "quota": {"rate_limit": {"primary_window": {"limit_window_seconds": "bad",
@@ -1626,14 +1689,14 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
         self.assertEqual(consumed["result_reason"], "incomplete_quota")
         self.assertTrue(consumed["reset_completed_at"])
         self.assertEqual(consumed["receipt"]["business_code"], "reset")
-        self.assertEqual(self.calls, ["query", "schedule:False", "reset", "test"])
+        self.assertEqual(self.calls, ["schedule:False", "reset", "test"])
         self.assertEqual(self.store.snapshot()["recovery_history"], {})
         self.assertEqual(self.store.pending_events(), [])
 
         self.now += timedelta(hours=1)
         self.run_once()
         self.assertEqual(self.calls.count("reset"), 1)
-        self.assertEqual(self.calls.count("query"), 1)
+        self.assertEqual(self.calls.count("query"), 0)
         self.assertEqual(self.calls.count("test"), 1)
         self.assertNotIn("recover", self.calls)
         self.assertNotIn("schedule:True", self.calls)
@@ -1651,11 +1714,9 @@ class AutoResetHttpBudgetTests(AutoResetFixture):
 
         self.run_once()
 
-        self.assertEqual([(method, path) for method, path, _key in self.server.requests], [
-            ("POST", "/api/v1/admin/openai/accounts/7/quota/refresh")])
+        self.assertEqual(self.server.requests, [])
         self.assertEqual(self.calls.count("reset"), 0)
         audit = Path(self.settings.audit_path).read_text()
-        self.assertIn('"http_status": 429', audit)
         self.assertNotIn("fixture-card-secret", audit)
         self.assertNotIn("fixture-access-v1", audit)
         self.assertNotIn("fixture-card-123", audit)

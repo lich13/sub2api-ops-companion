@@ -226,13 +226,22 @@ fn proxy_batch_valid(data: &Value) -> bool {
     batch_valid(data)
         && data["items"].as_array().is_some_and(|rows| {
             rows.iter().all(|row| {
-                row["action"].as_str() == Some("proxy")
-                    && row["requested"].as_object().is_some_and(|fields| {
-                        fields.len() == 1
-                            && fields.get("proxy_id").is_some_and(|id| {
-                                id.is_null() || id.as_u64().is_some_and(|value| value > 0)
-                            })
-                    })
+                row["requested"].as_object().is_some_and(|fields| match row["action"].as_str() {
+                    Some("proxy") => fields.len() == 1 && fields.get("proxy_id").is_some_and(|id| {
+                        id.is_null() || id.as_u64().is_some_and(|value| value > 0)
+                    }),
+                    Some("delete") => fields.len() == 1 && fields.get("detach_managed").is_some_and(Value::is_boolean),
+                    Some("groups") => {
+                        let valid_ids = |v: &Value| v.as_array().is_some_and(|ids| ids.len() <= 100
+                            && ids.iter().all(|id| id.as_u64().is_some_and(|n| n > 0)));
+                        fields.len() == 2 && fields.get("scope_group_ids").is_some_and(|v|
+                            valid_ids(v) && v.as_array().is_some_and(|ids| !ids.is_empty()))
+                            && fields.get("group_ids").is_some_and(valid_ids)
+                            && row["requested"]["group_ids"].as_array().is_some_and(|ids| ids.iter().all(|id|
+                                row["requested"]["scope_group_ids"].as_array().is_some_and(|scope| scope.contains(id))))
+                    },
+                    _ => false,
+                })
             })
         })
 }
@@ -1188,6 +1197,51 @@ mod tests {
             "/account-operations/batch",
             &extra_proxy_field
         ));
+    }
+
+    #[test]
+    fn account_batch_response_validates_delete_and_group_payloads() {
+        let id = "0123456789abcdef0123456789abcdef";
+        let item = |action: &str, requested: Value| {
+            serde_json::json!({
+                "id": "abcdefabcdefabcdefabcdefabcdefab",
+                "batch_id": id,
+                "account_id": 7,
+                "action": action,
+                "status": "completed",
+                "requested": requested,
+            })
+        };
+        let batch = |job: Value| serde_json::json!({"batch_id": id, "pending": 0, "items": [job]});
+
+        let delete = batch(item("delete", serde_json::json!({"detach_managed": true})));
+        assert!(shape_valid("/account-operations/batch", &delete));
+        let mut bad_delete = delete.clone();
+        bad_delete["items"][0]["requested"]["detach_managed"] = serde_json::json!("true");
+        assert!(!shape_valid("/account-operations/batch", &bad_delete));
+        let mut extra_delete = delete.clone();
+        extra_delete["items"][0]["requested"]["extra"] = serde_json::json!(false);
+        assert!(!shape_valid("/account-operations/batch", &extra_delete));
+
+        let groups = batch(item(
+            "groups",
+            serde_json::json!({"scope_group_ids": [1, 2, 9], "group_ids": [1, 9]}),
+        ));
+        assert!(shape_valid("/account-operations/batch", &groups));
+        let mut outside_scope = groups.clone();
+        outside_scope["items"][0]["requested"]["group_ids"] = serde_json::json!([3]);
+        assert!(!shape_valid("/account-operations/batch", &outside_scope));
+        let mut empty_scope = groups.clone();
+        empty_scope["items"][0]["requested"]["scope_group_ids"] = serde_json::json!([]);
+        assert!(!shape_valid("/account-operations/batch", &empty_scope));
+        let mut bad_id = groups.clone();
+        bad_id["items"][0]["requested"]["scope_group_ids"] = serde_json::json!([0, 1]);
+        assert!(!shape_valid("/account-operations/batch", &bad_id));
+        let mut too_many = groups.clone();
+        too_many["items"][0]["requested"]["scope_group_ids"] = serde_json::Value::Array(
+            (1..=101).map(|value| serde_json::json!(value)).collect(),
+        );
+        assert!(!shape_valid("/account-operations/batch", &too_many));
     }
 
     #[test]

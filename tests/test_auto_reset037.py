@@ -101,36 +101,33 @@ class AutoReset037BoundedWindowTests(AutoReset037Fixture):
         self.assertEqual(self.state()["consume_deadline_at"], deadline)
         self.assertEqual(self.calls.count("reset"), 1)
 
-    def test_card_supplement_is_one_request_and_unique_consumption_is_budgeted(self):
+    def test_missing_card_never_triggers_an_automatic_supplement_or_consumption(self):
         self.move_evidence_inside_window()
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
-        # A stale saved quota permits one explicit supplement before the
-        # bounded consumption request. The supplement itself still consumes
-        # the normal one-hour query interval.
+        # Missing card evidence is a hard admission boundary. A normal usage
+        # query must establish the observation before any reset request.
         self.preload_quota(observed_age=timedelta(hours=2))
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
 
         self.run_once()
 
-        # The missing card snapshot is repaired once, then the same run may
-        # consume it. The consume read bypasses only the hourly interval.
-        self.assertEqual(self.calls.count("query"), 1)
-        self.assertEqual(self.calls.count("reset"), 1)
-        query_state = self.query_state()
-        self.assertEqual(len(query_state["automatic_attempts"]), 2)
-        self.assertEqual(self.server.quota_reads, 2)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(self.server.quota_reads, 0)
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
 
-        # A second supplement is refused even after a restart and cannot emit
-        # another upstream read.
+        # A restart cannot turn the missing evidence into a new query.
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
         self.make_controller(real_http=True)
         self.now = NOW + timedelta(minutes=2)
         self.run_once()
-        self.assertEqual(self.calls.count("query"), 1)
-        self.assertEqual(self.calls.count("reset"), 1)
-        self.assertEqual(self.server.quota_reads, 2)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(self.server.quota_reads, 0)
+        self.assertEqual(self.state(), {})
 
-    def test_recent_quota_blocks_card_supplement_without_consumption(self):
+    def test_recent_quota_does_not_trigger_card_supplement_without_consumption(self):
         self.move_evidence_inside_window()
         self.preload_quota(observed_age=timedelta(minutes=2))
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
@@ -139,8 +136,8 @@ class AutoReset037BoundedWindowTests(AutoReset037Fixture):
 
         self.assertEqual(self.calls, [])
         self.assertEqual(self.server.quota_reads, 0)
-        self.assertEqual(self.state()["stage"], "finished")
-        self.assertEqual(self.state()["result_reason"], "query_cooldown")
+        self.assertEqual(self.state(), {})
+        self.assertEqual(self.store.scheduler()[ACCOUNT_ID]["credit_admission"]["reason"], "credit_unconfirmed")
 
     def test_failed_verification_retries_after_sixty_seconds_and_stops_at_two_rounds(self):
         self.move_evidence_inside_window()

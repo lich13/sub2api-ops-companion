@@ -120,6 +120,10 @@ class AccountTemplates:
     def account(self, aid):
         return self.r.db.fetch_one(SELECT + " WHERE id=%(id)s", {"id": aid})
 
+    def accounts(self, ids):
+        return {int(row['id']): row for row in self.r.db.fetch_all(
+            SELECT + ' WHERE id=ANY(%(ids)s) AND deleted_at IS NULL', {'ids': ids})}
+
     @staticmethod
     def _sync_custom(data: dict) -> list[dict]:
         items = []

@@ -328,6 +328,36 @@ class RecoveryDispatcherFixture(unittest.TestCase):
         self.assertEqual(server.gets, [])
         self.assertTrue(monitor.dispatcher.drain(timeout=4))
 
+    def test_unknown_or_zero_reset_credit_skips_before_any_worker_http(self) -> None:
+        for name, snapshot in (
+            ("unknown", {}),
+            ("zero", {"available_count": 0, "credits": []}),
+        ):
+            with self.subTest(name=name):
+                account = row(1, reset_at=NOW + timedelta(hours=1))
+                account["extra"] = {"codex_reset_credit_snapshot": snapshot}
+                # FixtureDb returns the account row for any evidence lookup;
+                # expose a bounded upstream event timestamp so depletion is
+                # eligible without adding a separate database double.
+                account["created_at"] = (NOW - timedelta(minutes=1)).isoformat()
+                monitor, server, _db = self.make_monitor([account])
+                monitor.settings.oauth_auto_reset_credit_enabled = True
+                self.seed(
+                    monitor,
+                    {1: saved_result(account, NOW, usage(
+                        NOW, five=100, seven=100, seven_reset=NOW + timedelta(days=5)
+                    ))},
+                )
+
+                monitor.dispatcher.tick(NOW)
+
+                self.assertTrue(monitor.dispatcher.drain(timeout=4))
+                self.assertEqual(server.gets, [])
+                self.assertEqual(server.posts, [])
+                self.assertEqual(monitor.dispatcher.credits, {})
+                admission = monitor.store.scheduler().get(1, {}).get("credit_admission") or {}
+                self.assertEqual(admission.get("reason"), "no_credit" if name == "zero" else "credit_unconfirmed")
+
     def test_slow_quota_does_not_block_cached_account_and_repeated_ticks_do_not_duplicate(self) -> None:
         slow = row(1)
         fast = row(2)

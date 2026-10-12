@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from app.auto_reset import quota_result
 from app.oauth_monitor import OAuthMonitor, recovery_quota_ready
-from tests.test_auto_reset import AutoResetFixture
+from tests.test_auto_reset import ACCOUNT_ID, AutoResetFixture
 
 
 NOW = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
@@ -284,14 +284,22 @@ class Recovery019AutoResetTests(AutoResetFixture):
         self.query_credits = 0
         self.row["extra"]["codex_reset_credit_snapshot"] = {}
         self.run_once()
-        self.assertEqual(self.calls, ["query"])
-        self.assertEqual(self.state()["error_code"], "no_credit")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state(), {})
+        metadata = self.store.scheduler().get(ACCOUNT_ID, {})
+        self.assertNotIn("auto_reset_credit", metadata)
+        if metadata.get("credit_admission"):
+            self.assertEqual(metadata["credit_admission"]["reason"], "credit_unconfirmed")
 
         self.now += timedelta(hours=1)
         self.run_once()
 
-        self.assertEqual(self.calls, ["query"])
-        self.assertEqual(self.state()["error_code"], "no_credit")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.state(), {})
+        metadata = self.store.scheduler().get(ACCOUNT_ID, {})
+        self.assertNotIn("auto_reset_credit", metadata)
+        if metadata.get("credit_admission"):
+            self.assertEqual(metadata["credit_admission"]["reason"], "consume_deadline")
 
 
 if __name__ == "__main__":
