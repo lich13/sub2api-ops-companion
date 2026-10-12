@@ -18,7 +18,8 @@ class RecoveryDispatcher:
         self.m, self.state_loader = monitor, state_loader
         self.lock = threading.Lock()
         self.jobs = {}
-        self.credit = None
+        self.credits = {}
+        self.credit_cursor = 0
         self.daily = None
         self.executor = ThreadPoolExecutor(max_workers=24, thread_name_prefix='oauth-recovery')
         self.closed = False
@@ -40,9 +41,10 @@ class RecoveryDispatcher:
                             intent.update(status='blocked', waiting_reason='verification_uncertain',
                                 last_error_code='verification_uncertain', next_retry_at='', waiting_until=None)
                     self.m.store.transaction(stop_unknown)
-            if self.credit is not None and self.credit.done():
-                self._result(self.credit, None)
-                self.credit = None
+            for aid, job in list(self.credits.items()):
+                if job.done():
+                    self._result(job, aid)
+                    del self.credits[aid]
             if self.daily is not None and self.daily.done():
                 self._result(self.daily, None)
                 self.daily = None
@@ -70,6 +72,7 @@ class RecoveryDispatcher:
                     if extra is not None:
                         patch['extra'] = {**(base.get('extra') or {}), **extra}
                     rows.append({**base, **patch})
+                self.m.auto_reset.sweep(rows, current)
                 idle = [row for row in rows if row['id'] not in self.jobs]
                 if self.m.settings.oauth_recovery_monitor_enabled:
                     self.m._discover_recoveries(idle, current)
@@ -82,7 +85,7 @@ class RecoveryDispatcher:
                 # unfinished consumption, including a lost-response restart.
                 def credit_held(aid):
                     task = scheduler.get(aid, {}).get('auto_reset_credit') or {}
-                    return bool((task.get('owns_pause') or task.get('attempt_at')) and
+                    return bool((task.get('owns_pause') or (task.get('attempt_at') and task.get('stage') != 'finished')) and
                                 task.get('stage') not in {'recovered', 'closed'})
                 candidates = [c for c in candidates if not credit_held(c['account_id'])]
                 limit = min(24, max(1, int(getattr(self.m.settings, 'oauth_usage_refresh_concurrency', 4))) +
@@ -124,8 +127,16 @@ class RecoveryDispatcher:
                         break
                     aid = candidate['account_id']
                     self.jobs[aid] = self.executor.submit(self._account, aid, now)
-                if self.credit is None:
-                    self.credit = self.executor.submit(self.m.auto_reset.run, rows, current)
+                indexes = list(range(len(rows)))
+                ordered = indexes[self.credit_cursor:] + indexes[:self.credit_cursor]
+                for index in ordered:
+                    row = rows[index]
+                    aid = int(row['id'])
+                    if len(self.credits) >= limit:
+                        break
+                    if aid not in self.credits:
+                        self.credits[aid] = self.executor.submit(self._credit, row, now)
+                        self.credit_cursor = (index + 1) % len(rows)
             finally:
                 self.m._run_lock.release()
         finally:
@@ -137,6 +148,10 @@ class RecoveryDispatcher:
             return
         started = self.m.clock() if fixed_now is None else fixed_now
         self.m._run_cycle(started, force=False, live_clock=fixed_now is None, account_rows=[row])
+
+    def _credit(self, row, fixed_now):
+        if not self.closed:
+            self.m.auto_reset.run_account(row, self.m.clock() if fixed_now is None else fixed_now)
 
     def _result(self, future, aid):
         try:
@@ -166,13 +181,13 @@ class RecoveryDispatcher:
             raise
 
     def active(self):
-        return (any(not f.done() for f in tuple(self.jobs.values())) or
-                any(f is not None and not f.done() for f in (self.credit, self.daily)))
+        return (any(not f.done() for f in (*tuple(self.jobs.values()), *tuple(self.credits.values()))) or
+                self.daily is not None and not self.daily.done())
 
     def drain(self, timeout=40):
         """Bounded join for shutdown/tests; does not submit or replay a task."""
         with self.lock:
-            jobs = list(self.jobs.values()) + [f for f in (self.credit, self.daily) if f is not None]
+            jobs = list(self.jobs.values()) + list(self.credits.values()) + ([self.daily] if self.daily else [])
         done, pending = wait(jobs, timeout=timeout)
         return not pending
 

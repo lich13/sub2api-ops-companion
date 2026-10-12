@@ -34,6 +34,13 @@ export type Account = {
   quality?: Quality;
   recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null } | null;
   auto_reset_credit?: {
+    trigger_at?: string | null;
+    consume_deadline_at?: string | null;
+    verification_deadline_at?: string | null;
+    completed_at?: string | null;
+    outcome?: string | null;
+    notification_status?: string | null;
+    notification_attempts?: number;
     evidence_source?: "upstream_error" | "account_rate_limit";
     evidence_at?: string | null;
     stage: string;

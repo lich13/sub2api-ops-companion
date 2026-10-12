@@ -1711,8 +1711,6 @@ td:last-child {
   overflow-wrap: anywhere;
 }
 .account-action-popup > button svg { flex-shrink: 0; }
-.account-action-spacer { display: none; }
-.account-action-popup .account-action-spacer, .mobile-more-actions .account-action-spacer { display: inline-block; width: 12px; flex: 0 0 12px; }
 .mobile-more-actions { display: grid; gap: 8px; }
 .mobile-more-actions > button { justify-content: flex-start; gap: 6px; }
 @media (pointer: coarse), (max-width: 760px) {

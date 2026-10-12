@@ -119,6 +119,14 @@ beforeEach(() => {
   vi.mocked(operationEpoch).mockReturnValue(1);
   vi.mocked(command).mockResolvedValue(undefined as never);
   vi.mocked(api).mockImplementation(async (method, path) => {
+    if (method === "POST" && path === "/proxies/2/test") return {
+      success: true, message: "代理连接正常", latency_ms: 31, ip_address: "203.0.113.7",
+      city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
+    } as never;
+    if (method === "POST" && path === "/proxies/2/quality-check") return {
+      score: 88, grade: "yellow", summary: "一个目标需要关注", exit_ip: "203.0.113.8",
+      country: "Taiwan", base_latency_ms: 20, items: [],
+    } as never;
     if (method !== "GET") throw new Error(`Unexpected fixture write: ${method} ${path}`);
     if (path === "/proxies") return structuredClone(proxies) as never;
     if (path.startsWith("/accounts/") && path.endsWith("/settings")) return structuredClone(settings()) as never;
@@ -232,6 +240,43 @@ describe("account settings dialog", () => {
     const save = vi.mocked(submitOperation).mock.calls.find(([, action]) => action === "proxy");
     expect(save?.[2]).toEqual({ proxy_id: null });
     expect(JSON.stringify(save?.[2])).not.toMatch(/token|password|username|secret/i);
+  });
+
+  it("runs proxy diagnostics without changing the draft or submitting a save", async () => {
+    await renderDialog("proxy");
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+
+    expect(vi.mocked(api)).toHaveBeenCalledWith("POST", "/proxies/2/test");
+    expect(vi.mocked(submitOperation).mock.calls.some(([, action]) => action === "proxy")).toBe(false);
+    expect(button("保存").disabled).toBe(true);
+    expect(container.textContent).toContain("203.0.113.7");
+    expect([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter((input) => input.checked)).toHaveLength(1);
+  });
+
+  it("keeps diagnostics available for an inherited read-only proxy while blocking selection", async () => {
+    const inherited = settings({
+      capabilities: {
+        model_config: { editable: true, reason: "" },
+        proxy: { editable: false, reason: "代理继承自父账号，不能单独修改" },
+        sync_models: { editable: true, reason: "" },
+      },
+    });
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/proxies/2/test") return {
+        success: true, message: "代理连接正常", latency_ms: 31, ip_address: "203.0.113.7",
+        city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
+      } as never;
+      if (method === "GET" && path === "/accounts/101/settings") return inherited as never;
+      if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderDialog("proxy");
+
+    expect(container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')?.disabled).toBe(false);
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+    expect(container.textContent).toContain("连接成功");
+    expect(vi.mocked(submitOperation).mock.calls).toHaveLength(0);
   });
 
   it("ignores a late settings response from an older account", async () => {

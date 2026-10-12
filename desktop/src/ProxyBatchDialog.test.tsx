@@ -128,6 +128,14 @@ beforeEach(() => {
   root = createRoot(container);
   vi.mocked(command).mockResolvedValue(undefined as never);
   vi.mocked(api).mockImplementation(async (method, path) => {
+    if (method === "POST" && path === "/proxies/2/test") return {
+      success: true, message: "代理连接正常", latency_ms: 31, ip_address: "203.0.113.7",
+      city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
+    } as never;
+    if (method === "POST" && path === "/proxies/2/quality-check") return {
+      score: 88, grade: "yellow", summary: "一个目标需要关注", exit_ip: "203.0.113.8",
+      country: "Taiwan", base_latency_ms: 20, items: [],
+    } as never;
     if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
     const match = path.match(/^\/accounts\/(\d+)\/settings$/);
     if (method === "GET" && match) return settings(Number(match[1])) as never;
@@ -169,6 +177,14 @@ describe("proxy batch dialog", () => {
     expect(container.querySelectorAll(".proxy-batch-previews article")).toHaveLength(2);
     expect(vi.mocked(api).mock.calls.some(([method]) => method !== "GET")).toBe(false);
 
+    const selectedBefore = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+      .filter((input) => input.checked).map((input) => input.value);
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+    expect(vi.mocked(api).mock.calls).toContainEqual(["POST", "/proxies/2/test"]);
+    expect([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+      .filter((input) => input.checked).map((input) => input.value)).toEqual(selectedBefore);
+    expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "POST" && path === "/account-operations/batch")).toBe(false);
+
     await input('[aria-label="搜索代理"]', "香港");
     expect(container.querySelector(".proxy-options")?.textContent).toContain("香港代理");
     expect(container.querySelector(".proxy-options")?.textContent).not.toContain("东京代理");
@@ -177,7 +193,8 @@ describe("proxy batch dialog", () => {
       ?? [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((node) => node.parentElement?.textContent?.includes("香港代理"))!);
     expect(container.textContent).toContain("目标香港代理 #4");
     expect(container.textContent).toContain("当前东京代理 #2");
-    expect(vi.mocked(api).mock.calls.some(([method]) => method !== "GET")).toBe(false);
+    expect(vi.mocked(api).mock.calls.filter(([method]) => method !== "GET")
+      .map(([method, path]) => [method, path])).toEqual([["POST", "/proxies/2/test"]]);
   });
 
   it("keeps clearing a target local until confirmation, then sends only the proxy batch contract", async () => {
@@ -333,5 +350,32 @@ describe("proxy batch dialog", () => {
     expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late")).toBe(false);
     expect(container.textContent).not.toContain("已排队，等待账号空闲");
     expect(container.textContent).not.toContain("已确认生效");
+  });
+
+  it("drops a late proxy diagnostic after the batch connection changes", async () => {
+    let resolveDiagnostic!: (value: unknown) => void;
+    const lateDiagnostic = new Promise<unknown>((resolve) => { resolveDiagnostic = resolve; });
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
+      if (method === "GET" && path === "/accounts/1/settings") return settings(1) as never;
+      if (method === "POST" && path === "/proxies/2/test") return lateDiagnostic as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderDialog([account(1)], true, "connection-before");
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="检测代理 2"]')!);
+    expect(vi.mocked(api).mock.calls).toContainEqual(["POST", "/proxies/2/test"]);
+
+    await act(async () => {
+      root.render(<ProxyBatchDialog accounts={[account(1)]} online connectionKey="connection-after" close={vi.fn()} report={vi.fn()} />);
+      await Promise.resolve();
+    });
+    await act(async () => resolveDiagnostic({
+      success: true, message: "late fixture result", latency_ms: 31, ip_address: "198.51.100.99",
+      city: "Taipei", region: "Taiwan", country: "Taiwan", country_code: "TW",
+    }));
+    await flush();
+
+    expect(container.textContent).not.toContain("198.51.100.99");
+    expect(container.textContent).not.toContain("late fixture result");
   });
 });

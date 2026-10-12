@@ -114,7 +114,8 @@ def reset_not_before(row: dict[str, Any], result: dict[str, Any] | None) -> date
 
 def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
                    metadata: dict[str, Any], now: datetime, *,
-                   wait_for_reset: bool = True) -> tuple[str, datetime | None]:
+                   wait_for_reset: bool = True, bypass_interval: bool = False,
+                   required_budget: int = 1) -> tuple[str, datetime | None]:
     if not automatic_eligible(row, now):
         return "account_ineligible", None
     query = query_metadata(metadata, saved)
@@ -125,7 +126,7 @@ def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
         return "auth_paused", None
     bounds: list[tuple[datetime, str]] = []
     last = parse_iso_datetime(query.get("last_query_at"))
-    if last:
+    if last and not bypass_interval:
         bounds.append((last + timedelta(seconds=MIN_QUERY_SECONDS), "query_cooldown"))
     for value, reason in ((query.get("retry_at"), "query_backoff"),
                           (reset_not_before(row, saved) if wait_for_reset else None, "waiting_reset")):
@@ -135,8 +136,8 @@ def automatic_gate(row: dict[str, Any], saved: dict[str, Any] | None,
     attempts = sorted(t for value in query.get("automatic_attempts", [])
                       if (t := parse_iso_datetime(value)) is not None
                       and t > now - timedelta(seconds=AUTO_WINDOW_SECONDS))
-    if len(attempts) >= AUTO_QUERY_LIMIT:
-        bounds.append((attempts[-AUTO_QUERY_LIMIT] + timedelta(seconds=AUTO_WINDOW_SECONDS), "query_budget"))
+    if len(attempts) + required_budget > AUTO_QUERY_LIMIT:
+        bounds.append((attempts[max(0, len(attempts) + required_budget - AUTO_QUERY_LIMIT - 1)] + timedelta(seconds=AUTO_WINDOW_SECONDS), "query_budget"))
     deadline, reason = max(bounds, default=(now, ""))
     return (reason, deadline) if deadline > now else ("", None)
 
@@ -164,7 +165,8 @@ class OAuthQueryCoordinator:
     def external_read(self, row: dict[str, Any], *, source: str, reason: str,
                       operation: Callable[[], dict[str, Any]],
                       validate: Callable[[dict[str, Any]], bool],
-                      now: datetime | None = None) -> dict[str, Any]:
+                      now: datetime | None = None, bypass_interval: bool = False,
+                      required_budget: int = 1) -> dict[str, Any]:
         """Account for quota reads bundled into credit refresh/consumption.
 
         The caller holds the monitor operation lock. Unlike a pure read, a
@@ -173,6 +175,8 @@ class OAuthQueryCoordinator:
         """
         if source not in {"automatic", "manual"}:
             raise ValueError("Invalid quota query source")
+        if bypass_interval and (source != 'automatic' or reason != 'reset_credit_consume'):
+            raise ValueError('只有本轮自动消费可豁免查询间隔')
         account_id = int(row["id"])
         current = now or self.clock()
         reservation = current + timedelta(seconds=180)
@@ -196,7 +200,8 @@ class OAuthQueryCoordinator:
                     # Only the validated credit workflow may operate before the
                     # natural reset, or while it owns a temporary scheduling hold.
                     gate_row = {**row, "schedulable": True}
-                    blocked, deadline = automatic_gate(gate_row, saved, meta, current, wait_for_reset=False)
+                    blocked, deadline = automatic_gate(gate_row, saved, meta, current, wait_for_reset=False,
+                        bypass_interval=bypass_interval, required_budget=required_budget)
                     if blocked:
                         return {"success": False, "skipped": True, "error_code": blocked,
                                 "next_query_at": deadline.isoformat() if deadline else None}

@@ -4,153 +4,470 @@ use std::{io::Write, path::Path, time::Duration};
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 
 fn recoveries_valid(data: &Value) -> bool {
-    data.as_array().is_some_and(|rows| rows.iter().all(|row| {
-        let kind = &row["kind"];
-        let receipt = &row["reset_credit"];
-        (kind.is_null() || matches!(kind.as_str(), Some("quota_recovery" | "reset_credit")))
-            && (receipt.is_null() || receipt.is_object()
-                && receipt["completed_at"].as_str().is_some_and(|time| !time.is_empty())
-                && matches!(receipt["verification_method"].as_str(), Some("connection" | "model"))
-                && (receipt["consumed"].is_null() || receipt["consumed"].as_bool() == Some(true)))
-            && (kind.as_str() != Some("reset_credit") || !receipt.is_null()
-                && row["legacy"].as_bool() == Some(false)
-                && ["test_completed_at", "recovered_at"].iter().all(|key|
-                    row[*key].as_str().is_some_and(|time| !time.is_empty())))
-    }))
+    data.as_array().is_some_and(|rows| {
+        rows.iter().all(|row| {
+            let kind = &row["kind"];
+            let receipt = &row["reset_credit"];
+            (kind.is_null() || matches!(kind.as_str(), Some("quota_recovery" | "reset_credit")))
+                && (receipt.is_null()
+                    || receipt.is_object()
+                        && receipt["completed_at"]
+                            .as_str()
+                            .is_some_and(|time| !time.is_empty())
+                        && matches!(
+                            receipt["verification_method"].as_str(),
+                            Some("connection" | "model")
+                        )
+                        && (receipt["consumed"].is_null()
+                            || receipt["consumed"].as_bool() == Some(true)))
+                && (kind.as_str() != Some("reset_credit")
+                    || !receipt.is_null()
+                        && row["legacy"].as_bool() == Some(false)
+                        && ["test_completed_at", "recovered_at"]
+                            .iter()
+                            .all(|key| row[*key].as_str().is_some_and(|time| !time.is_empty())))
+        })
+    })
+}
+
+fn credit_state_valid(data: &Value) -> bool {
+    data.is_null()
+        || ["stage", "label", "error"]
+            .iter()
+            .all(|k| data[*k].is_string())
+            && [
+                "trigger_at",
+                "consume_deadline_at",
+                "verification_deadline_at",
+                "completed_at",
+                "attempt_at",
+                "next_at",
+            ]
+            .iter()
+            .all(|k| data[*k].is_null() || data[*k].is_string())
+            && (data["outcome"].is_null()
+                || matches!(
+                    data["outcome"].as_str(),
+                    Some(
+                        "restored" | "not_executed" | "consume_failed" | "unrecovered" | "unknown"
+                    )
+                ))
+            && (data["notification_status"].is_null()
+                || matches!(
+                    data["notification_status"].as_str(),
+                    Some("pending" | "delivered" | "failed" | "suppressed")
+                ))
+            && (data["notification_attempts"].is_null()
+                || data["notification_attempts"]
+                    .as_u64()
+                    .is_some_and(|n| n <= 5))
 }
 
 fn snapshot_valid(data: &Value) -> bool {
-    data.get("observed_at").and_then(Value::as_str).is_some_and(|s| !s.is_empty())
-        && data.get("accounts").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|a| {
-            a["id"].as_i64().is_some()
-                && ["name", "platform", "type", "version"].iter().all(|k| a[*k].is_string())
-                && ["group_ids", "usage_windows", "blockers"].iter().all(|k| a[*k].is_array())
-                && a["schedulable"].is_boolean() && a["available"].is_boolean()
-                && a["priority"].as_i64().is_some()
-                && (a["concurrency"].is_null() || a["concurrency"].as_u64().is_some())
-                && (a["load_factor"].is_null() || a["load_factor"].as_u64().is_some_and(|n| (1..=10000).contains(&n)))
-                && (a["usage"].is_null() || a["usage"]["windows"].is_array())
-                && (a["recovery_monitor"].is_null() ||
-                    ["status", "label", "reason"].iter().all(|k| a["recovery_monitor"][*k].is_string())
-                    && (a["recovery_monitor"]["next_at"].is_null() || a["recovery_monitor"]["next_at"].is_string()))
-        }))
-        && data.get("groups").and_then(Value::as_array).is_some_and(|rows| rows.iter().all(|g| {
-            g["id"].as_i64().is_some() && g["name"].is_string() && g["recent_accounts"].is_array()
-        }))
-        && data["errors"].is_array() && recoveries_valid(&data["recoveries"])
+    data.get("observed_at")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
+        && data
+            .get("accounts")
+            .and_then(Value::as_array)
+            .is_some_and(|rows| {
+                rows.iter().all(|a| {
+                    a["id"].as_i64().is_some()
+                        && ["name", "platform", "type", "version"]
+                            .iter()
+                            .all(|k| a[*k].is_string())
+                        && ["group_ids", "usage_windows", "blockers"]
+                            .iter()
+                            .all(|k| a[*k].is_array())
+                        && a["schedulable"].is_boolean()
+                        && a["available"].is_boolean()
+                        && a["priority"].as_i64().is_some()
+                        && credit_state_valid(&a["auto_reset_credit"])
+                        && (a["concurrency"].is_null() || a["concurrency"].as_u64().is_some())
+                        && (a["load_factor"].is_null()
+                            || a["load_factor"]
+                                .as_u64()
+                                .is_some_and(|n| (1..=10000).contains(&n)))
+                        && (a["usage"].is_null() || a["usage"]["windows"].is_array())
+                        && (a["recovery_monitor"].is_null()
+                            || ["status", "label", "reason"]
+                                .iter()
+                                .all(|k| a["recovery_monitor"][*k].is_string())
+                                && (a["recovery_monitor"]["next_at"].is_null()
+                                    || a["recovery_monitor"]["next_at"].is_string()))
+                })
+            })
+        && data
+            .get("groups")
+            .and_then(Value::as_array)
+            .is_some_and(|rows| {
+                rows.iter().all(|g| {
+                    g["id"].as_i64().is_some()
+                        && g["name"].is_string()
+                        && g["recent_accounts"].is_array()
+                })
+            })
+        && data["errors"].is_array()
+        && recoveries_valid(&data["recoveries"])
 }
 
 fn operation_valid(data: &Value) -> bool {
-    data["id"].as_str().is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit()))
+    data["id"]
+        .as_str()
+        .is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit()))
         && data["account_id"].as_u64().is_some_and(|id| id > 0)
         && data["action"].is_string()
-        && data["status"].as_str().is_some_and(|s| matches!(s, "queued" | "running" | "checking" | "completed" | "needs_confirmation" | "failed" | "cancelled" | "superseded"))
+        && data["status"].as_str().is_some_and(|s| {
+            matches!(
+                s,
+                "queued"
+                    | "running"
+                    | "checking"
+                    | "completed"
+                    | "needs_confirmation"
+                    | "failed"
+                    | "cancelled"
+                    | "superseded"
+            )
+        })
         && data["requested"].is_object()
 }
 
 fn connection_valid(data: &Value) -> bool {
-    ["ok", "network_unreachable", "auth_rejected", "route_not_found", "protocol_mismatch", "upstream_error"]
-        .contains(&data["state"].as_str().unwrap_or(""))
+    [
+        "ok",
+        "network_unreachable",
+        "auth_rejected",
+        "route_not_found",
+        "protocol_mismatch",
+        "upstream_error",
+    ]
+    .contains(&data["state"].as_str().unwrap_or(""))
         && ["verify", "public", "none"].contains(&data["endpoint"].as_str().unwrap_or(""))
-        && (data["http_status"].is_null() || data["http_status"].as_u64().is_some_and(|n| (100..=599).contains(&n)))
+        && (data["http_status"].is_null()
+            || data["http_status"]
+                .as_u64()
+                .is_some_and(|n| (100..=599).contains(&n)))
         && data["message"].is_string()
         && data["retryable"].is_boolean()
         && (data["checked_at"].is_null() || data["checked_at"].is_string())
 }
 
 fn templates_valid(data: &Value) -> bool {
-    let Some(templates) = data["templates"].as_object() else { return false; };
-    data["configured"].is_boolean() && data["version"].is_string()
+    let Some(templates) = data["templates"].as_object() else {
+        return false;
+    };
+    data["configured"].is_boolean()
+        && data["version"].is_string()
         && templates.len() <= 32
         && templates.iter().all(|(id, value)| {
             let builtin = matches!(id.as_str(), "full" | "degraded" | "takeover");
-            let custom = id.strip_prefix("custom-").is_some_and(|v| v.len() == 24 && v.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
-            (builtin || custom) && value["whitelist"].as_array().is_some_and(|v| v.iter().all(Value::is_string))
-                && value["mappings"].as_array().is_some_and(|v| v.iter().all(|m| m["source"].is_string() && m["target"].is_string()))
+            let custom = id.strip_prefix("custom-").is_some_and(|v| {
+                v.len() == 24
+                    && v.bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            });
+            (builtin || custom)
+                && value["whitelist"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().all(Value::is_string))
+                && value["mappings"].as_array().is_some_and(|v| {
+                    v.iter()
+                        .all(|m| m["source"].is_string() && m["target"].is_string())
+                })
         })
-        && (data["template_order"].is_null() || data["template_order"].as_array().is_some_and(|values| {
-            let ids = values.iter().filter_map(Value::as_str).collect::<std::collections::HashSet<_>>();
-            ids.len() == values.len() && ids.len() == templates.len() && ids.iter().all(|id| templates.contains_key(*id))
-        }))
-        && (data["template_meta"].is_null() || data["template_meta"].as_object().is_some_and(|meta| {
-            meta.len() == templates.len() && templates.keys().all(|id| meta.get(id).is_some_and(|value| {
-                value["name"].as_str().is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 40)
+        && (data["template_order"].is_null()
+            || data["template_order"].as_array().is_some_and(|values| {
+                let ids = values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<std::collections::HashSet<_>>();
+                ids.len() == values.len()
+                    && ids.len() == templates.len()
+                    && ids.iter().all(|id| templates.contains_key(*id))
             }))
-        }))
-        && (data["template_versions"].is_null() || data["template_versions"].as_object().is_some_and(|versions| {
-            versions.len() == templates.len() && templates.keys().all(|id| versions.get(id).and_then(Value::as_str)
-                .is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())))
-        }))
+        && (data["template_meta"].is_null()
+            || data["template_meta"].as_object().is_some_and(|meta| {
+                meta.len() == templates.len()
+                    && templates.keys().all(|id| {
+                        meta.get(id).is_some_and(|value| {
+                            value["name"]
+                                .as_str()
+                                .is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 40)
+                        })
+                    })
+            }))
+        && (data["template_versions"].is_null()
+            || data["template_versions"]
+                .as_object()
+                .is_some_and(|versions| {
+                    versions.len() == templates.len()
+                        && templates.keys().all(|id| {
+                            versions.get(id).and_then(Value::as_str).is_some_and(|s| {
+                                s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())
+                            })
+                        })
+                }))
 }
 
 fn batch_valid(data: &Value) -> bool {
-    data["batch_id"].as_str().is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))
-        && data["pending"].is_u64()
-        && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| operation_valid(row) && row["batch_id"] == data["batch_id"]))
+    data["batch_id"].as_str().is_some_and(|s| {
+        s.len() == 32
+            && s.bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    }) && data["pending"].is_u64()
+        && data["items"].as_array().is_some_and(|rows| {
+            rows.iter()
+                .all(|row| operation_valid(row) && row["batch_id"] == data["batch_id"])
+        })
 }
 
 fn proxy_batch_valid(data: &Value) -> bool {
-    batch_valid(data) && data["items"].as_array().is_some_and(|rows| rows.iter().all(|row| {
-        row["action"].as_str() == Some("proxy")
-            && row["requested"].as_object().is_some_and(|fields| fields.len() == 1
-                && fields.get("proxy_id").is_some_and(|id| id.is_null()
-                    || id.as_u64().is_some_and(|value| value > 0)))
-    }))
+    batch_valid(data)
+        && data["items"].as_array().is_some_and(|rows| {
+            rows.iter().all(|row| {
+                row["action"].as_str() == Some("proxy")
+                    && row["requested"].as_object().is_some_and(|fields| {
+                        fields.len() == 1
+                            && fields.get("proxy_id").is_some_and(|id| {
+                                id.is_null() || id.as_u64().is_some_and(|value| value > 0)
+                            })
+                    })
+            })
+        })
 }
 
 fn settings_valid(data: &Value) -> bool {
-    let actions = ["priority", "concurrency", "load_factor", "model_config", "proxy", "sync_models"];
+    let actions = [
+        "priority",
+        "concurrency",
+        "load_factor",
+        "model_config",
+        "proxy",
+        "sync_models",
+    ];
     data["account_id"].as_u64().is_some_and(|n| n > 0)
         && data["priority"].as_u64().is_some()
         && (data["concurrency"].is_null() || data["concurrency"].as_u64().is_some())
-        && (data["load_factor"].is_null() || data["load_factor"].as_u64().is_some_and(|n| (1..=10000).contains(&n)))
-        && data["effective_load_factor"].as_u64().is_some_and(|n| n > 0)
+        && (data["load_factor"].is_null()
+            || data["load_factor"]
+                .as_u64()
+                .is_some_and(|n| (1..=10000).contains(&n)))
+        && data["effective_load_factor"]
+            .as_u64()
+            .is_some_and(|n| n > 0)
         && (data["proxy_id"].is_null() || data["proxy_id"].as_u64().is_some_and(|n| n > 0))
-        && data["model_config"]["whitelist"].as_array().is_some_and(|v| v.len() <= 300 && v.iter().all(Value::is_string))
-        && data["model_config"]["mappings"].as_array().is_some_and(|v| v.len() <= 300 && v.iter().all(|r| r["source"].is_string() && r["target"].is_string()))
-        && actions.iter().all(|action| data["capabilities"][*action]["editable"].is_boolean()
-            && data["capabilities"][*action]["reason"].is_string()
-            && data["versions"][*action].as_str().is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())))
-        && data.as_object().is_some_and(|map| map.keys().all(|k| matches!(k.as_str(), "account_id" | "priority" | "concurrency" | "load_factor" | "effective_load_factor" | "proxy_id" | "model_config" | "capabilities" | "versions")))
+        && data["model_config"]["whitelist"]
+            .as_array()
+            .is_some_and(|v| v.len() <= 300 && v.iter().all(Value::is_string))
+        && data["model_config"]["mappings"]
+            .as_array()
+            .is_some_and(|v| {
+                v.len() <= 300
+                    && v.iter()
+                        .all(|r| r["source"].is_string() && r["target"].is_string())
+            })
+        && actions.iter().all(|action| {
+            data["capabilities"][*action]["editable"].is_boolean()
+                && data["capabilities"][*action]["reason"].is_string()
+                && data["versions"][*action]
+                    .as_str()
+                    .is_some_and(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()))
+        })
+        && data.as_object().is_some_and(|map| {
+            map.keys().all(|k| {
+                matches!(
+                    k.as_str(),
+                    "account_id"
+                        | "priority"
+                        | "concurrency"
+                        | "load_factor"
+                        | "effective_load_factor"
+                        | "proxy_id"
+                        | "model_config"
+                        | "capabilities"
+                        | "versions"
+                )
+            })
+        })
 }
 
 fn proxies_valid(data: &Value) -> bool {
-    data.as_array().is_some_and(|rows| rows.len() <= 10000 && rows.iter().all(|row| {
-        row["id"].as_u64().is_some_and(|n| n > 0) && row["name"].is_string()
-            && matches!(row["protocol"].as_str(), Some("http" | "https" | "socks5" | "socks5h" | "unknown"))
-            && matches!(row["status"].as_str(), Some("active" | "inactive" | "error" | "unknown"))
-            && row.as_object().is_some_and(|map| map.keys().all(|k| matches!(k.as_str(), "id" | "name" | "protocol" | "status")))
-    }))
+    data.as_array().is_some_and(|rows| {
+        rows.len() <= 10000
+            && rows.iter().all(|row| {
+                row["id"].as_u64().is_some_and(|n| n > 0)
+                    && row["name"].is_string()
+                    && matches!(
+                        row["protocol"].as_str(),
+                        Some("http" | "https" | "socks5" | "socks5h" | "unknown")
+                    )
+                    && matches!(
+                        row["status"].as_str(),
+                        Some("active" | "inactive" | "error" | "unknown")
+                    )
+                    && row.as_object().is_some_and(|map| {
+                        map.keys()
+                            .all(|k| matches!(k.as_str(), "id" | "name" | "protocol" | "status"))
+                    })
+            })
+    })
+}
+
+fn proxy_diagnostic_valid(path: &str, data: &Value) -> bool {
+    let text = |key: &str| data[key].as_str().is_some_and(|s| s.len() <= 1000);
+    let number = |key: &str| {
+        data[key].is_null()
+            || data[key]
+                .as_f64()
+                .is_some_and(|n| n.is_finite() && n >= 0.0)
+    };
+    let keys = if path.ends_with("/test") {
+        &[
+            "success",
+            "message",
+            "latency_ms",
+            "ip_address",
+            "city",
+            "region",
+            "country",
+            "country_code",
+        ][..]
+    } else {
+        &[
+            "score",
+            "grade",
+            "summary",
+            "exit_ip",
+            "country",
+            "country_code",
+            "base_latency_ms",
+            "passed_count",
+            "warn_count",
+            "failed_count",
+            "challenge_count",
+            "checked_at",
+            "items",
+        ][..]
+    };
+    if !data
+        .as_object()
+        .is_some_and(|map| map.keys().all(|k| keys.contains(&k.as_str())))
+    {
+        return false;
+    }
+    if path.ends_with("/test") {
+        return data["success"].is_boolean()
+            && text("message")
+            && text("ip_address")
+            && number("latency_ms")
+            && ["city", "region", "country", "country_code"]
+                .iter()
+                .all(|k| text(k));
+    }
+    data["score"]
+        .as_f64()
+        .is_some_and(|n| (0.0..=100.0).contains(&n))
+        && text("grade")
+        && text("summary")
+        && text("exit_ip")
+        && text("country")
+        && text("country_code")
+        && [
+            "base_latency_ms",
+            "passed_count",
+            "warn_count",
+            "failed_count",
+            "challenge_count",
+            "checked_at",
+        ]
+        .iter()
+        .all(|k| number(k))
+        && data["items"].as_array().is_some_and(|items| {
+            items.len() <= 32
+                && items.iter().all(|item| {
+                    matches!(
+                        item["status"].as_str(),
+                        Some("pass" | "warn" | "fail" | "challenge")
+                    ) && item["target"].is_string()
+                        && item["message"].is_string()
+                        && ["latency_ms", "http_status"].iter().all(|k| {
+                            item[*k].is_null()
+                                || item[*k].as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)
+                        })
+                        && item.as_object().is_some_and(|m| {
+                            m.keys().all(|k| {
+                                matches!(
+                                    k.as_str(),
+                                    "target" | "status" | "http_status" | "latency_ms" | "message"
+                                )
+                            })
+                        })
+                })
+        })
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
-        "/config" => ["oauth", "bark", "key_fallback"].iter().all(|k| data[*k]["revision"].is_string()),
-        "/capabilities" => data["api_version"].as_u64() == Some(1)
-            && (data["upstream_connection"].is_null() || connection_valid(&data["upstream_connection"])),
+        "/config" => ["oauth", "bark", "key_fallback"]
+            .iter()
+            .all(|k| data[*k]["revision"].is_string()),
+        "/capabilities" => {
+            data["api_version"].as_u64() == Some(1)
+                && (data["upstream_connection"].is_null()
+                    || connection_valid(&data["upstream_connection"]))
+        }
         "/connection-status" => connection_valid(data),
         "/proxies" => proxies_valid(data),
+        p if p.starts_with("/proxies/") => proxy_diagnostic_valid(p, data),
         p if p.ends_with("/settings") => settings_valid(data),
         "/errors" => data["items"].is_array(),
         "/recoveries" => recoveries_valid(&data["items"]),
-        "/account-operations" => if path.contains("?batch_id=") { batch_valid(data) } else {
-            data["pending"].is_u64() && data["items"].as_array().is_some_and(|rows| rows.iter().all(operation_valid))
-        },
+        "/account-operations" => {
+            if path.contains("?batch_id=") {
+                batch_valid(data)
+            } else {
+                data["pending"].is_u64()
+                    && data["items"]
+                        .as_array()
+                        .is_some_and(|rows| rows.iter().all(operation_valid))
+            }
+        }
         "/account-operations/batch" => proxy_batch_valid(data),
-        p if p.starts_with("/account-operations/") || p.ends_with("/operations") => operation_valid(data),
+        p if p.starts_with("/account-operations/") || p.ends_with("/operations") => {
+            operation_valid(data)
+        }
         p if p.ends_with("/model-tests/latest") && data.is_null() => true,
-        p if p.starts_with("/model-tests/") || p.ends_with("/model-tests") || p.ends_with("/model-tests/latest") => data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64(),
+        p if p.starts_with("/model-tests/")
+            || p.ends_with("/model-tests")
+            || p.ends_with("/model-tests/latest") =>
+        {
+            data["id"].is_string() && data["status"].is_string() && data["account_id"].is_u64()
+        }
         "/account-templates/apply" => batch_valid(data),
-        p if p == "/account-templates" || p.starts_with("/account-templates/") => templates_valid(data),
-        p if p.ends_with("/model-detection") => data["account_id"].is_u64() && data["version"].is_string()
-            && data["enabled"].is_boolean() && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
-            && data["model_id"].is_string() && data["status"].is_string(),
-        "/modeltrace/fingerprint-bank" | "/modeltrace/fingerprint-bank/sync" => data["version"]["revision"].is_string()
-            && data["version"]["sha256"].is_string() && data["version"]["analyzer_version"].is_u64()
-            && data["source"].is_string() && data["status"].is_string(),
+        p if p == "/account-templates" || p.starts_with("/account-templates/") => {
+            templates_valid(data)
+        }
+        p if p.ends_with("/model-detection") => {
+            data["account_id"].is_u64()
+                && data["version"].is_string()
+                && data["enabled"].is_boolean()
+                && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
+                && data["model_id"].is_string()
+                && data["status"].is_string()
+        }
+        "/modeltrace/fingerprint-bank" | "/modeltrace/fingerprint-bank/sync" => {
+            data["version"]["revision"].is_string()
+                && data["version"]["sha256"].is_string()
+                && data["version"]["analyzer_version"].is_u64()
+                && data["source"].is_string()
+                && data["status"].is_string()
+        }
         "/quota-refresh" => data["status"].is_string() && data["items"].is_array(),
-        p if p.ends_with("/models") => data.as_array().is_some_and(|m| m.iter().all(|v| v["id"].is_string())),
+        p if p.ends_with("/models") => data
+            .as_array()
+            .is_some_and(|m| m.iter().all(|v| v["id"].is_string())),
         _ => data.is_object(),
     }
 }
@@ -165,16 +482,54 @@ fn response_kind(value: &str) -> &'static str {
     }
 }
 
-fn diagnostic(file: &Path, method: &str, path: &str, status: u16, kind: &str, stage: &str, request_id: &str) {
+fn diagnostic(
+    file: &Path,
+    method: &str,
+    path: &str,
+    status: u16,
+    kind: &str,
+    stage: &str,
+    request_id: &str,
+) {
     use std::os::unix::fs::OpenOptionsExt;
-    let Some(parent) = file.parent() else { return; };
-    if std::fs::create_dir_all(parent).is_err() { return; }
+    let Some(parent) = file.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
     let truncate = std::fs::metadata(file).is_ok_and(|m| m.len() > 64 * 1024);
-    let route = path.split('?').next().unwrap_or("").split('/').map(|s| {
-        if s.parse::<u64>().is_ok() { ":id" } else if s.bytes().all(|c| c.is_ascii_lowercase() || c == b'-' || c == b'_') { s } else { "unknown" }
-    }).collect::<Vec<_>>().join("/");
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).write(true).append(!truncate).truncate(truncate).mode(0o600).open(file) {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let route = path
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .split('/')
+        .map(|s| {
+            if s.parse::<u64>().is_ok() {
+                ":id"
+            } else if s
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c == b'-' || c == b'_')
+            {
+                s
+            } else {
+                "unknown"
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(!truncate)
+        .truncate(truncate)
+        .mode(0o600)
+        .open(file)
+    {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
         let _ = writeln!(f, "{stamp} method={method} path={route} status={status} type={kind} stage={stage} request_id={request_id}");
     }
 }
@@ -185,70 +540,181 @@ pub(crate) struct HttpFailure {
     pub connection: Option<Value>,
 }
 impl From<String> for HttpFailure {
-    fn from(message: String) -> Self { Self { message, connection: None } }
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            connection: None,
+        }
+    }
 }
 impl From<&str> for HttpFailure {
-    fn from(message: &str) -> Self { message.to_string().into() }
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
 }
 impl From<HttpFailure> for String {
-    fn from(error: HttpFailure) -> Self { error.message }
+    fn from(error: HttpFailure) -> Self {
+        error.message
+    }
 }
 
 pub(crate) async fn http(
-    client: &reqwest::Client, base: &str, key: &str, method: &str, path: &str,
-    body: Option<Value>, log: &Path,
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+    log: &Path,
 ) -> Result<Value, String> {
-    http_detailed(client, base, key, method, path, body, log).await.map_err(String::from)
+    http_detailed(client, base, key, method, path, body, log)
+        .await
+        .map_err(String::from)
 }
 
 pub(crate) async fn http_detailed(
-    client: &reqwest::Client, base: &str, key: &str, method: &str, path: &str,
-    body: Option<Value>, log: &Path,
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+    log: &Path,
 ) -> Result<Value, HttpFailure> {
-    let parsed_method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "请求方式无效")?;
-    let mut req = client.request(parsed_method, format!("{base}/api/desktop/v1{path}"))
-        .header("x-api-key", key).header("Accept", "application/json");
-    if path.ends_with("/usage-action") { req = req.timeout(Duration::from_secs(105)); }
-    if method == "DELETE" || path.ends_with("/recover-state") { req = req.timeout(Duration::from_secs(20)); }
-    if path.starts_with("/model-groups/") { req = req.timeout(Duration::from_secs(65)); }
-    if let Some(body) = body { req = req.json(&body); }
+    let parsed_method =
+        reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "请求方式无效")?;
+    let mut req = client
+        .request(parsed_method, format!("{base}/api/desktop/v1{path}"))
+        .header("x-api-key", key)
+        .header("Accept", "application/json");
+    if path.starts_with("/proxies/") {
+        req = req.timeout(Duration::from_secs(105));
+    }
+    if path.ends_with("/usage-action") {
+        req = req.timeout(Duration::from_secs(105));
+    }
+    if method == "DELETE" || path.ends_with("/recover-state") {
+        req = req.timeout(Duration::from_secs(20));
+    }
+    if path.starts_with("/model-groups/") {
+        req = req.timeout(Duration::from_secs(65));
+    }
+    if let Some(body) = body {
+        req = req.json(&body);
+    }
     let mut response = req.send().await.map_err(|e| {
-        diagnostic(log, method, path, 0, "missing", if e.is_timeout() { "headers_timeout" } else { "connect" }, "-");
-        if e.is_timeout() { "连接超时，未重放操作" } else { "连接暂时中断" }.to_string()
+        diagnostic(
+            log,
+            method,
+            path,
+            0,
+            "missing",
+            if e.is_timeout() {
+                "headers_timeout"
+            } else {
+                "connect"
+            },
+            "-",
+        );
+        if e.is_timeout() {
+            "连接超时，未重放操作"
+        } else {
+            "连接暂时中断"
+        }
+        .to_string()
     })?;
     let status = response.status().as_u16();
-    let kind = response_kind(response.headers().get("content-type").and_then(|h| h.to_str().ok()).unwrap_or(""));
-    let request_id = response.headers().get("x-request-id").and_then(|h| h.to_str().ok())
+    let kind = response_kind(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or(""),
+    );
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
         .filter(|s| s.len() <= 64 && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-'))
-        .unwrap_or("-").to_string();
+        .unwrap_or("-")
+        .to_string();
     let fail = |stage: &str, message: &str| {
         diagnostic(log, method, path, status, kind, stage, &request_id);
         HttpFailure::from(message)
     };
-    let limit = if path.starts_with("/account-operations/") { 134_217_728 } else { MAX_JSON_BYTES };
+    let limit = if path.starts_with("/account-operations/") {
+        134_217_728
+    } else {
+        MAX_JSON_BYTES
+    };
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| fail(
-        if e.is_timeout() { "body_timeout" } else { "body_interrupted" },
-        if e.is_timeout() { "响应读取超时，未重放操作" } else { "响应读取中断" },
-    ))? {
-        if bytes.len() + chunk.len() > limit { return Err(fail("size", "服务响应超过大小限制")); }
+    while let Some(chunk) = response.chunk().await.map_err(|e| {
+        fail(
+            if e.is_timeout() {
+                "body_timeout"
+            } else {
+                "body_interrupted"
+            },
+            if e.is_timeout() {
+                "响应读取超时，未重放操作"
+            } else {
+                "响应读取中断"
+            },
+        )
+    })? {
+        if bytes.len() + chunk.len() > limit {
+            return Err(fail("size", "服务响应超过大小限制"));
+        }
         bytes.extend_from_slice(&chunk);
     }
     let parsed = serde_json::from_slice::<Value>(&bytes);
     if !(200..300).contains(&status) {
-        let fallback = match status { 401 | 403 => "管理员 API Key 被拒绝，请重新连接", 429 => "请求过于频繁", 502..=504 => "网关暂不可用", 500..=599 => "服务暂不可用", _ => "请求失败" };
+        let fallback = match status {
+            401 | 403 => "管理员 API Key 被拒绝，请重新连接",
+            429 => "请求过于频繁",
+            502..=504 => "网关暂不可用",
+            500..=599 => "服务暂不可用",
+            _ => "请求失败",
+        };
         let detail = parsed.as_ref().ok().and_then(|d| d.get("detail"));
-        let message = detail.and_then(Value::as_str).or_else(|| detail.and_then(|d| d["message"].as_str())).unwrap_or(fallback);
-        let suffix = if detail.is_some_and(|d| d["detached"].as_bool() == Some(true)) { "（该账号已解除托管）" } else { "" };
-        let mut error = fail(if status == 401 || status == 403 { "auth" } else { "http" },
-            &format!("{}{} [{}]", message.chars().take(240).collect::<String>(), suffix, status));
-        error.connection = detail.and_then(|d| d.get("connection")).filter(|v| connection_valid(v)).cloned();
+        let message = detail
+            .and_then(Value::as_str)
+            .or_else(|| detail.and_then(|d| d["message"].as_str()))
+            .unwrap_or(fallback);
+        let suffix = if detail.is_some_and(|d| d["detached"].as_bool() == Some(true)) {
+            "（该账号已解除托管）"
+        } else {
+            ""
+        };
+        let mut error = fail(
+            if status == 401 || status == 403 {
+                "auth"
+            } else {
+                "http"
+            },
+            &format!(
+                "{}{} [{}]",
+                message.chars().take(240).collect::<String>(),
+                suffix,
+                status
+            ),
+        );
+        error.connection = detail
+            .and_then(|d| d.get("connection"))
+            .filter(|v| connection_valid(v))
+            .cloned();
         return Err(error);
     }
-    if bytes.iter().all(u8::is_ascii_whitespace) { return Err(fail("empty", "服务返回空响应")); }
-    if kind != "json" { return Err(fail("content_type", "服务返回了非 JSON 响应")); }
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Err(fail("empty", "服务返回空响应"));
+    }
+    if kind != "json" {
+        return Err(fail("content_type", "服务返回了非 JSON 响应"));
+    }
     let data = parsed.map_err(|_| fail("json", "服务 JSON 响应不完整或格式无效"))?;
-    if !shape_valid(path, &data) { return Err(fail("schema", "服务数据结构不兼容，请检查客户端与服务版本")); }
+    if !shape_valid(path, &data) {
+        return Err(fail("schema", "服务数据结构不兼容，请检查客户端与服务版本"));
+    }
     Ok(data)
 }
 
@@ -257,19 +723,41 @@ mod tests {
     use super::*;
     use std::{io::Read, net::TcpListener};
 
-    async fn serve(status: &str, headers: &str, body: &str, delay: bool) -> (Result<Value, String>, String) {
+    async fn serve(
+        status: &str,
+        headers: &str,
+        body: &str,
+        delay: bool,
+    ) -> (Result<Value, String>, String) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let reply = format!("HTTP/1.1 {status}\r\n{headers}\r\nx-request-id: test-request\r\nConnection: close\r\n\r\n{body}");
         let thread = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 4096]; let _ = stream.read(&mut request);
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
             let _ = stream.write_all(reply.as_bytes());
-            if delay { std::thread::sleep(Duration::from_millis(200)); }
+            if delay {
+                std::thread::sleep(Duration::from_millis(200));
+            }
         });
-        let temp = tempfile::tempdir().unwrap(); let log = temp.path().join("network.log");
-        let client = reqwest::Client::builder().no_proxy().timeout(Duration::from_millis(100)).build().unwrap();
-        let result = http(&client, &base, "secret-admin-key", "GET", "/snapshot", None, &log).await;
+        let temp = tempfile::tempdir().unwrap();
+        let log = temp.path().join("network.log");
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let result = http(
+            &client,
+            &base,
+            "secret-admin-key",
+            "GET",
+            "/snapshot",
+            None,
+            &log,
+        )
+        .await;
         thread.join().unwrap();
         (result, std::fs::read_to_string(log).unwrap_or_default())
     }
@@ -277,14 +765,70 @@ mod tests {
     #[tokio::test]
     async fn classifies_failures_without_leaking_body_or_key() {
         for (status, headers, body, expected, stage, delay) in [
-            ("502 Bad Gateway", "Content-Type: text/html", "<html>secret-body</html>", "网关暂不可用 [502]", "http", false),
-            ("200 OK", "Content-Type: application/json", "", "空响应", "empty", false),
-            ("200 OK", "Content-Type: text/html", "secret-body", "非 JSON", "content_type", false),
-            ("200 OK", "Content-Type: application/json", "{", "JSON 响应不完整", "json", false),
-            ("200 OK", "Content-Type: application/json", "{}", "数据结构不兼容", "schema", false),
-            ("401 Unauthorized", "Content-Type: text/html", "secret-body", "API Key 被拒绝", "auth", false),
-            ("200 OK", "Content-Type: application/json\r\nContent-Length: 1000", "{", "读取中断", "body_interrupted", false),
-            ("200 OK", "Content-Type: application/json\r\nContent-Length: 1000", "{", "读取超时", "body_timeout", true),
+            (
+                "502 Bad Gateway",
+                "Content-Type: text/html",
+                "<html>secret-body</html>",
+                "网关暂不可用 [502]",
+                "http",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: application/json",
+                "",
+                "空响应",
+                "empty",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: text/html",
+                "secret-body",
+                "非 JSON",
+                "content_type",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: application/json",
+                "{",
+                "JSON 响应不完整",
+                "json",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: application/json",
+                "{}",
+                "数据结构不兼容",
+                "schema",
+                false,
+            ),
+            (
+                "401 Unauthorized",
+                "Content-Type: text/html",
+                "secret-body",
+                "API Key 被拒绝",
+                "auth",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: application/json\r\nContent-Length: 1000",
+                "{",
+                "读取中断",
+                "body_interrupted",
+                false,
+            ),
+            (
+                "200 OK",
+                "Content-Type: application/json\r\nContent-Length: 1000",
+                "{",
+                "读取超时",
+                "body_timeout",
+                true,
+            ),
         ] {
             let (result, log) = serve(status, headers, body, delay).await;
             assert!(result.unwrap_err().contains(expected));
@@ -303,30 +847,126 @@ mod tests {
         let reply = format!("HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
         let thread = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 4096]; let _ = stream.read(&mut request);
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
             let _ = stream.write_all(reply.as_bytes());
         });
         let temp = tempfile::tempdir().unwrap();
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
-        let error = http_detailed(&client, &base, "fixture-key", "GET", "/snapshot", None, &temp.path().join("network.log")).await.unwrap_err();
+        let error = http_detailed(
+            &client,
+            &base,
+            "fixture-key",
+            "GET",
+            "/snapshot",
+            None,
+            &temp.path().join("network.log"),
+        )
+        .await
+        .unwrap_err();
         thread.join().unwrap();
         assert_eq!(error.connection, Some(connection));
         assert!(error.message.contains("管理员 Key 被拒绝"));
-        assert!(!std::fs::read_to_string(temp.path().join("network.log")).unwrap().contains("fixture-key"));
+        assert!(!std::fs::read_to_string(temp.path().join("network.log"))
+            .unwrap()
+            .contains("fixture-key"));
     }
 
     #[tokio::test]
     async fn valid_snapshot_and_structure_guard() {
         let body = r#"{"observed_at":"2026-09-25T00:00:00Z","accounts":[],"groups":[],"errors":[],"recoveries":[]}"#;
         let (result, log) = serve("200 OK", "Content-Type: application/json", body, false).await;
-        assert!(result.is_ok()); assert!(log.is_empty());
+        assert!(result.is_ok());
+        assert!(log.is_empty());
         assert!(!snapshot_valid(&serde_json::json!({"accounts":null})));
+    }
+
+    #[tokio::test]
+    async fn proxy_diagnostics_use_the_extended_request_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let body = serde_json::json!({
+            "success": true, "message": "fixture ok", "latency_ms": 31,
+            "ip_address": "203.0.113.7", "city": "Taipei", "region": "Taiwan",
+            "country": "Taiwan", "country_code": "TW"
+        })
+        .to_string();
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
+            std::thread::sleep(Duration::from_millis(200));
+            let _ = stream.write_all(reply.as_bytes());
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let result = http_detailed(
+            &client,
+            &base,
+            "fixture-key",
+            "POST",
+            "/proxies/7/test",
+            Some(serde_json::json!({})),
+            &temp.path().join("network.log"),
+        )
+        .await;
+        thread.join().unwrap();
+        assert!(result.is_ok(), "{result:?}");
+        assert!(!temp.path().join("network.log").exists());
+    }
+
+    #[test]
+    fn proxy_diagnostic_responses_require_safe_known_shapes() {
+        let test = serde_json::json!({
+            "success": true, "message": "fixture ok", "latency_ms": 31,
+            "ip_address": "203.0.113.7", "city": "Taipei", "region": "Taiwan",
+            "country": "Taiwan", "country_code": "TW"
+        });
+        assert!(shape_valid("/proxies/7/test", &test));
+        for (key, value) in [
+            ("success", serde_json::json!("true")),
+            ("latency_ms", serde_json::json!(-1)),
+            ("ip_address", serde_json::json!(7)),
+            ("api_key", serde_json::json!("fixture-secret")),
+        ] {
+            let mut bad = test.clone();
+            bad[key] = value;
+            assert!(!shape_valid("/proxies/7/test", &bad), "{key}");
+        }
+
+        let quality = serde_json::json!({
+            "score": 88, "grade": "yellow", "summary": "fixture summary",
+            "exit_ip": "203.0.113.8", "country": "Taiwan", "country_code": "TW",
+            "base_latency_ms": 20, "passed_count": 1, "warn_count": 0,
+            "failed_count": 0, "challenge_count": 0, "checked_at": null,
+            "items": [{"target": "https://example.invalid", "status": "pass",
+                "http_status": 200, "latency_ms": 20, "message": "ok"}]
+        });
+        assert!(shape_valid("/proxies/7/quality-check", &quality));
+        let mut bad = quality.clone();
+        bad["score"] = serde_json::json!(101);
+        assert!(!shape_valid("/proxies/7/quality-check", &bad));
+        let mut bad = quality.clone();
+        bad["items"][0]["status"] = serde_json::json!("unknown");
+        assert!(!shape_valid("/proxies/7/quality-check", &bad));
+        let mut bad = quality;
+        bad["items"][0]["password"] = serde_json::json!("fixture-secret");
+        assert!(!shape_valid("/proxies/7/quality-check", &bad));
     }
 
     #[test]
     fn recovery_response_accepts_legacy_and_complete_card_recovery_metadata() {
         let legacy = serde_json::json!([{"id":1,"account_id":1,"legacy":true}]);
-        let ordinary = serde_json::json!([{"id":2,"account_id":1,"kind":"quota_recovery","legacy":false}]);
+        let ordinary =
+            serde_json::json!([{"id":2,"account_id":1,"kind":"quota_recovery","legacy":false}]);
         let card = serde_json::json!([{"id":3,"account_id":1,"kind":"reset_credit","legacy":false,
             "test_completed_at":"2026-10-01T01:11:00Z","recovered_at":"2026-10-01T01:12:00Z",
             "reset_credit":{"completed_at":"2026-10-01T01:10:00Z","verification_method":"connection"}}]);
@@ -334,7 +974,10 @@ mod tests {
         assert!(recoveries_valid(&legacy));
         assert!(recoveries_valid(&ordinary));
         assert!(recoveries_valid(&card));
-        assert!(shape_valid("/recoveries", &serde_json::json!({"items":card})));
+        assert!(shape_valid(
+            "/recoveries",
+            &serde_json::json!({"items":card})
+        ));
     }
 
     #[test]
@@ -343,15 +986,33 @@ mod tests {
             "test_completed_at":"2026-10-01T01:11:00Z","recovered_at":"2026-10-01T01:12:00Z",
             "reset_credit":{"completed_at":"2026-10-01T01:10:00Z","verification_method":"model"}});
         let mut invalid = Vec::new();
-        let mut row = valid.clone(); row["reset_credit"] = serde_json::Value::Null; invalid.push(row);
-        let mut row = valid.clone(); row["reset_credit"]["completed_at"] = serde_json::json!(""); invalid.push(row);
-        let mut row = valid.clone(); row["reset_credit"]["verification_method"] = serde_json::json!("unknown"); invalid.push(row);
-        let mut row = valid.clone(); row["reset_credit"]["consumed"] = serde_json::json!(false); invalid.push(row);
-        let mut row = valid.clone(); row["legacy"] = serde_json::json!(true); invalid.push(row);
-        let mut row = valid.clone(); row["legacy"] = serde_json::Value::Null; invalid.push(row);
-        let mut row = valid.clone(); row["test_completed_at"] = serde_json::json!(""); invalid.push(row);
-        let mut row = valid.clone(); row["recovered_at"] = serde_json::Value::Null; invalid.push(row);
-        let mut row = valid; row["kind"] = serde_json::json!("unknown"); invalid.push(row);
+        let mut row = valid.clone();
+        row["reset_credit"] = serde_json::Value::Null;
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["reset_credit"]["completed_at"] = serde_json::json!("");
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["reset_credit"]["verification_method"] = serde_json::json!("unknown");
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["reset_credit"]["consumed"] = serde_json::json!(false);
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["legacy"] = serde_json::json!(true);
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["legacy"] = serde_json::Value::Null;
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["test_completed_at"] = serde_json::json!("");
+        invalid.push(row);
+        let mut row = valid.clone();
+        row["recovered_at"] = serde_json::Value::Null;
+        invalid.push(row);
+        let mut row = valid;
+        row["kind"] = serde_json::json!("unknown");
+        invalid.push(row);
 
         for row in invalid {
             assert!(!recoveries_valid(&serde_json::json!([row])));
@@ -363,7 +1024,8 @@ mod tests {
     fn detection_templates_and_bank_response_guards() {
         let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
-        let mut bad = detection.clone(); bad["interval_minutes"] = serde_json::json!(0);
+        let mut bad = detection.clone();
+        bad["interval_minutes"] = serde_json::json!(0);
         assert!(!shape_valid("/accounts/1/model-detection", &bad));
         let profile = serde_json::json!({"whitelist":[],"mappings":[]});
         let templates = serde_json::json!({"version":"fixture","configured":false,"templates":{"full":profile,"degraded":profile,"takeover":profile}});
@@ -371,7 +1033,10 @@ mod tests {
         assert!(!shape_valid("/account-templates", &serde_json::json!({})));
         let bank = serde_json::json!({"version":{"revision":"fixture","sha256":"fixture","analyzer_version":1},"source":"bundled","status":"idle"});
         assert!(shape_valid("/modeltrace/fingerprint-bank", &bank));
-        assert!(!shape_valid("/modeltrace/fingerprint-bank/sync", &serde_json::json!({})));
+        assert!(!shape_valid(
+            "/modeltrace/fingerprint-bank/sync",
+            &serde_json::json!({})
+        ));
     }
 
     #[test]
@@ -393,12 +1058,20 @@ mod tests {
         let job = serde_json::json!({"id":"0123456789abcdef0123456789abcdef", "account_id":421,
             "action":"priority", "status":"queued", "requested":{"priority":2}});
         assert!(shape_valid("/accounts/421/operations", &job));
-        assert!(shape_valid("/account-operations", &serde_json::json!({"pending":1,"items":[job.clone()]})));
-        let mut wrong = job.clone(); wrong["status"] = serde_json::json!("unknown");
+        assert!(shape_valid(
+            "/account-operations",
+            &serde_json::json!({"pending":1,"items":[job.clone()]})
+        ));
+        let mut wrong = job.clone();
+        wrong["status"] = serde_json::json!("unknown");
         assert!(!shape_valid("/accounts/421/operations", &wrong));
-        wrong = job.clone(); wrong["account_id"] = serde_json::json!("421");
+        wrong = job.clone();
+        wrong["account_id"] = serde_json::json!("421");
         assert!(!shape_valid("/accounts/421/operations", &wrong));
-        assert!(!shape_valid("/account-operations", &serde_json::json!({"items":[job]})));
+        assert!(!shape_valid(
+            "/account-operations",
+            &serde_json::json!({"items":[job]})
+        ));
     }
 
     #[test]
@@ -407,25 +1080,40 @@ mod tests {
             "load_factor":null,"effective_load_factor":2,"proxy_id":null,
             "model_config":{"whitelist":["fixture-text"],"mappings":[{"source":"fixture-*","target":"fixture-text"}]},
             "capabilities":{},"versions":{}});
-        for action in ["priority", "concurrency", "load_factor", "model_config", "proxy", "sync_models"] {
+        for action in [
+            "priority",
+            "concurrency",
+            "load_factor",
+            "model_config",
+            "proxy",
+            "sync_models",
+        ] {
             settings["capabilities"][action] = serde_json::json!({"editable":true,"reason":""});
             settings["versions"][action] = serde_json::json!("a".repeat(64));
         }
         assert!(shape_valid("/accounts/7/settings", &settings));
-        for (field, value) in [("load_factor", serde_json::json!(10001)), ("proxy_id", serde_json::json!(-1)),
-            ("priority", serde_json::json!("2")), ("credentials", serde_json::json!({"api_key":"fixture"}))] {
-            let mut bad = settings.clone(); bad[field] = value;
+        for (field, value) in [
+            ("load_factor", serde_json::json!(10001)),
+            ("proxy_id", serde_json::json!(-1)),
+            ("priority", serde_json::json!("2")),
+            ("credentials", serde_json::json!({"api_key":"fixture"})),
+        ] {
+            let mut bad = settings.clone();
+            bad[field] = value;
             assert!(!shape_valid("/accounts/7/settings", &bad), "{field}");
         }
-        let mut bad = settings.clone(); bad["versions"]["proxy"] = serde_json::json!("unverified");
+        let mut bad = settings.clone();
+        bad["versions"]["proxy"] = serde_json::json!("unverified");
         assert!(!shape_valid("/accounts/7/settings", &bad));
-        bad = settings.clone(); bad["model_config"]["mappings"][0]["target"] = serde_json::json!(3);
+        bad = settings.clone();
+        bad["model_config"]["mappings"][0]["target"] = serde_json::json!(3);
         assert!(!shape_valid("/accounts/7/settings", &bad));
         let proxies = serde_json::json!([{"id":7,"name":"fixture proxy","protocol":"socks5","status":"active"}]);
         assert!(shape_valid("/proxies", &proxies));
         assert!(shape_valid("/proxies", &serde_json::json!([])));
         for key in ["password", "username", "url", "host", "port"] {
-            let mut unsafe_proxy = proxies.clone(); unsafe_proxy[0][key] = serde_json::json!("fixture");
+            let mut unsafe_proxy = proxies.clone();
+            unsafe_proxy[0][key] = serde_json::json!("fixture");
             assert!(!shape_valid("/proxies", &unsafe_proxy), "{key}");
         }
     }
@@ -435,13 +1123,17 @@ mod tests {
         let empty = serde_json::json!({"version":"fixture", "configured":true, "templates":{},
             "template_order":[],"template_meta":{},"template_versions":{}});
         assert!(shape_valid("/account-templates/full", &empty));
-        let mut bad = empty.clone(); bad["template_order"] = serde_json::json!(["full"]);
+        let mut bad = empty.clone();
+        bad["template_order"] = serde_json::json!(["full"]);
         assert!(!shape_valid("/account-templates", &bad));
         let id = "0123456789abcdef0123456789abcdef";
         let job = serde_json::json!({"id":id,"batch_id":id,"account_id":1,"action":"account_template","status":"completed","requested":{}});
         let mut batch = serde_json::json!({"batch_id":id,"pending":0,"items":vec![job; 40]});
         assert!(shape_valid("/account-templates/apply", &batch));
-        assert!(shape_valid(&format!("/account-operations?batch_id={id}"), &batch));
+        assert!(shape_valid(
+            &format!("/account-operations?batch_id={id}"),
+            &batch
+        ));
         batch["items"][0]["batch_id"] = serde_json::json!("ffffffffffffffffffffffffffffffff");
         assert!(!shape_valid("/account-templates/apply", &batch));
         assert!(!shape_valid("/account-templates/apply", &empty));
@@ -454,7 +1146,8 @@ mod tests {
         let batch = serde_json::json!({"batch_id":id,"pending":1,"items":[job.clone()]});
         assert!(shape_valid("/account-operations/batch", &batch));
         assert!(!shape_valid("/account-operations/batch", &job));
-        let mut bad = batch; bad["items"][0]["batch_id"] = serde_json::Value::Null;
+        let mut bad = batch;
+        bad["items"][0]["batch_id"] = serde_json::Value::Null;
         assert!(!shape_valid("/account-operations/batch", &bad));
     }
 
@@ -468,20 +1161,33 @@ mod tests {
         let mut wrong_action = batch.clone();
         wrong_action["items"][0]["action"] = serde_json::json!("account_template");
         assert!(!shape_valid("/account-operations/batch", &wrong_action));
-        for value in [serde_json::json!(-1), serde_json::json!(0), serde_json::json!("2")] {
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(0),
+            serde_json::json!("2"),
+        ] {
             let mut bad_proxy = batch.clone();
             bad_proxy["items"][0]["requested"]["proxy_id"] = value;
             assert!(!shape_valid("/account-operations/batch", &bad_proxy));
         }
         let mut missing_requested = batch.clone();
-        missing_requested["items"][0].as_object_mut().unwrap().remove("requested");
-        assert!(!shape_valid("/account-operations/batch", &missing_requested));
+        missing_requested["items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("requested");
+        assert!(!shape_valid(
+            "/account-operations/batch",
+            &missing_requested
+        ));
         let mut missing_proxy_id = batch.clone();
         missing_proxy_id["items"][0]["requested"] = serde_json::json!({});
         assert!(!shape_valid("/account-operations/batch", &missing_proxy_id));
         let mut extra_proxy_field = batch;
         extra_proxy_field["items"][0]["requested"]["extra"] = serde_json::json!(true);
-        assert!(!shape_valid("/account-operations/batch", &extra_proxy_field));
+        assert!(!shape_valid(
+            "/account-operations/batch",
+            &extra_proxy_field
+        ));
     }
 
     #[test]
@@ -502,7 +1208,8 @@ mod tests {
             "status": "scheduled", "label": "额度恢复监控", "reason": "等待下次检查", "next_at": null
         });
         assert!(snapshot_valid(&snapshot));
-        snapshot["accounts"][0]["recovery_monitor"]["next_at"] = serde_json::json!("2026-10-11T01:00:00Z");
+        snapshot["accounts"][0]["recovery_monitor"]["next_at"] =
+            serde_json::json!("2026-10-11T01:00:00Z");
         assert!(snapshot_valid(&snapshot));
         snapshot["accounts"][0]["recovery_monitor"]["next_at"] = serde_json::json!(3600);
         assert!(!snapshot_valid(&snapshot));

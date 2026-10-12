@@ -37,6 +37,7 @@ from .account_operations import AccountOperations, OperationRequest, ProxyBatchR
 from .account_templates import AccountTemplates, TemplatesRequest, CustomTemplateDeleteRequest, CustomTemplateRequest, TemplateBatchRequest
 from .model_detection import ModelDetection, DetectionRequest
 from .account_settings import AccountSettings, capabilities as settings_capabilities
+from .proxy_diagnostics import ProxyDiagnostics
 
 PREFIX = "/api/desktop/v1"
 ERROR_FIELDS = """e.id, e.account_id, e.group_id, e.created_at, e.platform, e.model,
@@ -248,6 +249,7 @@ class DesktopService:
         self._uncertain_resets: set[int] = set()
         self.actions = DesktopActions(self)
         self.account_settings = AccountSettings(self)
+        self.proxy_diagnostics = ProxyDiagnostics(self.actions)
         self.quality = QualityCache(getattr(runtime, "db", None))
         self._model_tests: ModelTests | None = None
         self._operations = None
@@ -506,7 +508,7 @@ class DesktopService:
                 account = account_dto(row, now, managed, result)
                 account["usage"] = project_usage(row, now, result)
                 from .auto_reset import project_state
-                account["auto_reset_credit"] = project_state((scheduler.get(str(row["id"])) or {}).get("auto_reset_credit"))
+                account["auto_reset_credit"] = project_state((scheduler.get(str(row["id"])) or {}).get("auto_reset_credit"), (scheduler.get(str(row["id"])) or {}).get("credit_result_notifications"))
                 from .recovery_dispatch import project_recovery_state
                 account['recovery_monitor'] = project_recovery_state(scheduler.get(str(row['id'])) or {})
                 specs.extend(stats_specs(row["id"], account["usage"]))
@@ -1030,6 +1032,16 @@ def install_desktop_api(app: Any, runtime: Any) -> DesktopService:
     async def proxies_read(request: Request):
         key = await auth(request)
         return await service.account_settings.proxies(key)
+
+    @router.post("/proxies/{proxy_id}/test")
+    async def proxy_test(proxy_id: int, request: Request):
+        key = await auth(request)
+        return await service.proxy_diagnostics.run(key, proxy_id, "test")
+
+    @router.post("/proxies/{proxy_id}/quality-check")
+    async def proxy_quality(proxy_id: int, request: Request):
+        key = await auth(request)
+        return await service.proxy_diagnostics.run(key, proxy_id, "quality-check")
 
     @router.get("/accounts/{account_id}/models")
     async def models(account_id: int, request: Request, purpose: Literal["model_test"] | None = None) -> Any:

@@ -300,6 +300,31 @@ function fixtureAccountActions(account) {
 async function accountActionButtons(h, container, expected, kind) {
   const buttons = container.getByRole("button");
   await h.state(isDeepStrictEqual((await buttons.allTextContents()).map((label) => label.trim()), expected), "account-action-set-mismatch", container);
+  const iconLayout = await buttons.evaluateAll((nodes) => nodes.map((button) => {
+    const icon = button.querySelector(".account-action-icon");
+    const text = icon?.nextElementSibling;
+    const buttonRect = button.getBoundingClientRect();
+    const iconRect = icon?.getBoundingClientRect();
+    const textRect = text?.getBoundingClientRect();
+    const style = icon ? getComputedStyle(icon) : null;
+    return {
+      iconCount: button.querySelectorAll(":scope > .account-action-icon").length,
+      width: iconRect?.width ?? 0,
+      minWidth: style?.minWidth ?? "",
+      flexBasis: style?.flexBasis ?? "",
+      textLeft: textRect ? textRect.left - buttonRect.left : -1,
+      textWidth: textRect?.width ?? 0,
+    };
+  }));
+  const firstTextLeft = iconLayout[0]?.textLeft ?? -1;
+  await h.state(iconLayout.length === expected.length
+    && iconLayout.every((item) => item.iconCount === 1
+      && Math.abs(item.width - 12) <= 1
+      && item.minWidth === "12px"
+      && item.flexBasis === "12px"
+      && item.textWidth > 0
+      && Math.abs(item.textLeft - firstTextLeft) <= 1),
+  "account-action-icon-slot-misaligned", container);
   for (const label of expected) {
     const button = container.getByRole("button", { name: label, exact: true });
     await h.state(await button.isEnabled(), "available-account-action-disabled", button);
@@ -393,6 +418,9 @@ async function settingsDraftChecks(h, surface, account) {
   dialog = await openMobileSettings(h, card, account, "选择代理", "选择代理");
   const proxyOptions = dialog.locator(".proxy-options");
   await h.visible(proxyOptions, "account-settings-proxy-options");
+  await proxyDiagnosticChecks(h, proxyOptions, "account-settings-proxy", {
+    confirmation: dialog.getByRole("button", { name: "保存", exact: true }),
+  });
   const proxyLabel = proxyOptions.locator("label").filter({ hasText: "演示代理" });
   const proxyRadio = proxyLabel.getByRole("radio");
   await h.within(proxyLabel, "account-settings-proxy-option", { vertical: false });
@@ -403,6 +431,41 @@ async function settingsDraftChecks(h, surface, account) {
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "hidden" });
   await h.state(isDeepStrictEqual(await accountSettingsData(page, account.id), original), "proxy-settings-draft-wrote-preview");
+}
+
+async function proxyDiagnosticChecks(h, options, scope, { confirmation } = {}) {
+  const proxyCards = options.locator(".proxy-option");
+  const diagnosticButtons = options.locator(".proxy-diagnostic-actions button");
+  await h.state(await proxyCards.count() > 0, `${scope}-proxy-card-missing`, options);
+  await h.state(await diagnosticButtons.count() === await proxyCards.count() * 2,
+    `${scope}-diagnostic-action-count-mismatch`, options);
+  await h.allWithin(diagnosticButtons, `${scope}-diagnostic-action`, { vertical: false });
+  const actionLabels = await diagnosticButtons.allTextContents();
+  await h.state(actionLabels.every((label) => ["测试连接", "质量检测"].includes(label.trim())),
+    `${scope}-diagnostic-action-label-mismatch`, diagnosticButtons);
+
+  const article = proxyCards.filter({ hasText: "演示代理" });
+  await h.state(await article.count() === 1, `${scope}-active-proxy-not-unique`, article);
+  const test = article.getByRole("button", { name: "检测代理 1", exact: true });
+  const quality = article.getByRole("button", { name: "质量检查代理 1", exact: true });
+  await h.state(await test.isEnabled() && await quality.isEnabled(), `${scope}-diagnostic-action-disabled`, article);
+  const selectedBefore = await options.locator('input[type="radio"]').evaluateAll((nodes) => nodes.map((node) => node.checked));
+
+  await h.click(test, `${scope}-test-action`, { vertical: false });
+  await h.visible(article.getByRole("status").first(), `${scope}-test-result`);
+  await h.state((await article.textContent() || "").includes("连接成功")
+    && (await article.textContent() || "").includes("192.0.2.1"), `${scope}-test-result-missing`, article);
+  await h.state(isDeepStrictEqual(await options.locator('input[type="radio"]').evaluateAll((nodes) => nodes.map((node) => node.checked)), selectedBefore),
+    `${scope}-test-changed-selection`, options);
+  if (confirmation) await h.state(await confirmation.isDisabled(), `${scope}-test-enabled-save`, confirmation);
+
+  await h.click(quality, `${scope}-quality-action`, { vertical: false });
+  await h.visible(article.locator(".proxy-diagnostic-result").filter({ hasText: "90 分 · A" }), `${scope}-quality-result`);
+  await h.state((await article.textContent() || "").includes("原生质量检测通过")
+    && await article.locator("[role=\"status\"]").count() === 2, `${scope}-quality-result-missing-or-duplicated`, article);
+  await h.state(isDeepStrictEqual(await options.locator('input[type="radio"]').evaluateAll((nodes) => nodes.map((node) => node.checked)), selectedBefore),
+    `${scope}-quality-changed-selection`, options);
+  if (confirmation) await h.state(await confirmation.isDisabled(), `${scope}-quality-enabled-save`, confirmation);
 }
 
 async function groupMenuChecks(h, fixture, manager) {
@@ -1065,12 +1128,16 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   const dialog = page.getByRole("dialog", { name: "批量选择代理", exact: true });
   await h.within(dialog, "batch-proxy-dialog", { touch: false, scroll: false });
   await h.state((await dialog.textContent() || "").includes("已选择 2 个账号"), "batch-proxy-dialog-selection-count", dialog);
-  const options = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  const options = dialog.getByRole("radiogroup", { name: "账号代理", exact: true });
   await h.visible(options, "batch-proxy-options");
   await h.allWithin(options.locator("label"), "batch-proxy-option");
   await h.state(await options.getByRole("radio").count() === 3, "batch-proxy-option-count", options);
   const unavailable = options.getByRole("radio", { name: /备用代理/ });
   await h.state(await unavailable.isDisabled(), "inactive-proxy-option-enabled", unavailable);
+  await proxyDiagnosticChecks(h, options, "batch-proxy", {
+    confirmation: dialog.getByRole("button", { name: "确认应用", exact: true }),
+  });
+
   const previews = dialog.locator(".proxy-batch-previews article");
   await h.state(await previews.count() === 2, "batch-proxy-preview-count", previews);
   for (const accountName of accountNames) {
@@ -1111,8 +1178,10 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   // eligible row must report no change while the inherited row is rejected.
   await h.click(proxyEntry, "batch-proxy-reopen");
   await h.within(dialog, "batch-proxy-dialog-reopened", { touch: false, scroll: false });
-  const reopenedOptions = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  const reopenedOptions = dialog.getByRole("radiogroup", { name: "账号代理", exact: true });
   await h.visible(reopenedOptions, "batch-proxy-options-reopened");
+  await h.state(await reopenedOptions.locator(".proxy-diagnostic-result").count() === 0,
+    "batch-proxy-close-kept-diagnostic-result", reopenedOptions);
   const clearOption = reopenedOptions.locator("label").filter({ hasText: "不使用代理" });
   await h.click(clearOption, "batch-proxy-clear-option");
   await h.state(await clearOption.getByRole("radio").isChecked(), "batch-proxy-clear-option-not-selected", clearOption);
@@ -1128,8 +1197,8 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   // Start a second request with an active proxy and cancel the queued eligible
   // account before the preview transport's bounded worker completes it.
   await h.click(dialog.getByRole("button", { name: "重新预览", exact: true }), "batch-proxy-repreview");
-  await h.visible(dialog.getByRole("radiogroup", { name: "目标代理", exact: true }), "batch-proxy-options-after-repreview");
-  const nextOptions = dialog.getByRole("radiogroup", { name: "目标代理", exact: true });
+  await h.visible(dialog.getByRole("radiogroup", { name: "账号代理", exact: true }), "batch-proxy-options-after-repreview");
+  const nextOptions = dialog.getByRole("radiogroup", { name: "账号代理", exact: true });
   const nextActive = nextOptions.locator("label").filter({ hasText: "演示代理" });
   await h.click(nextActive, "batch-proxy-queued-option");
   await h.click(dialog.getByRole("button", { name: "确认应用", exact: true }), "batch-proxy-queued-submit");

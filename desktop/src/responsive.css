@@ -189,3 +189,7 @@
   .mobile .account-template-row.mapping > svg { grid-column: 1; justify-self: center; margin: 0; }
   .mobile .account-template-row.mapping > button { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 }
+
+.account-action-icon { display: inline-flex; align-items: center; justify-content: center; width: 12px; min-width: 12px; flex: 0 0 12px; }
+.selection-actions button { display: inline-flex; align-items: center; gap: 4px; }
+.selection-actions button svg { width: 12px; height: 12px; flex: 0 0 12px; }

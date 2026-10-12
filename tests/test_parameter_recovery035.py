@@ -249,12 +249,13 @@ class ParameterRecovery035Tests(AutoResetFixture):
                 self.assertEqual(task.get("owned_version"), owned_before)
                 self.assertEqual(self.calls.count("reset"), 1)
                 self.assertEqual(self.calls.count("test"), 1)
-                if change == "generation":
-                    self.assertEqual(task["stage"], "manual")
-                    self.assertFalse(task["owns_pause"])
-                else:
-                    self.assertEqual(task["stage"], "blocked")
-                    self.assertFalse(task["owns_pause"])
+                self.assertEqual(task["stage"], "finished")
+                self.assertEqual(task["outcome"], "unrecovered")
+                self.assertTrue(task["consumed"])
+                self.assertTrue(task["receipt"])
+                self.assertFalse(task["owns_pause"])
+                self.assertFalse(self.row["schedulable"])
+                self.assertEqual(self.store.snapshot()["recovery_history"], {})
 
 
 if __name__ == "__main__":

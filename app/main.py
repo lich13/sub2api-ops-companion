@@ -111,6 +111,18 @@ async def oauth_notification_loop() -> None:
         await asyncio.sleep(2)
 
 
+async def credit_notification_loop() -> None:
+    while True:
+        try:
+            if oauth_monitor is not None:
+                await asyncio.to_thread(oauth_monitor.auto_reset.deliver_results, bark_notifier)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            write_audit(settings.audit_path, 'credit_notification_error', {'error_code': 'delivery_failed'})
+        await asyncio.sleep(2)
+
+
 async def daily_schedule_loop() -> None:
     # This clock keeps ticking while a monitor cycle holds its lock during network I/O.
     while True:
@@ -202,12 +214,12 @@ async def lifespan(_: FastAPI):
     upstream_task = asyncio.create_task(upstream_route_loop())
     capacity_alerts = CapacityAlerts(settings, db, bark_notifier)
     await asyncio.to_thread(capacity_alerts.retire_legacy_warnings)
-    oauth_monitor.detection_gate = desktop_service.model_detection.held
-    key_fallback_controller.detection_gate = desktop_service.model_detection.held
+    key_fallback_controller.detection_gate = desktop_service.model_detection.recovery_held
     desktop_service.model_detection.bind_recovery(oauth_monitor, asyncio.get_running_loop())
     await asyncio.to_thread(desktop_service.model_detection.migrate_dispatches)
     oauth_monitor_task = asyncio.create_task(oauth_monitor_loop())
     oauth_notification_task = asyncio.create_task(oauth_notification_loop())
+    credit_notification_task = asyncio.create_task(credit_notification_loop())
     daily_schedule_task = asyncio.create_task(daily_schedule_loop())
     key_fallback_task = asyncio.create_task(key_fallback_loop())
     with capacity_alerts.store.transaction() as alert_state:
@@ -222,6 +234,9 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        credit_notification_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await credit_notification_task
         upstream_task.cancel()
         with suppress(asyncio.CancelledError):
             await upstream_task

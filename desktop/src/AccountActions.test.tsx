@@ -149,8 +149,10 @@ describe("shared account actions", () => {
     expect(labels(panel)).toEqual(openAILabels);
     expect(panel.querySelector(".account-more-trigger")).toBeNull();
     expect([...panel.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([
-      true, true, true, false, false, false, true, true, true, false,
+      true, true, true, true, true, true, true, true, true, true,
     ]);
+    const bulk = container.querySelector<HTMLElement>('[role="group"][aria-label="批量账号操作"]')!;
+    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true]);
 
     await openGroups();
     await openGroupMenu();
@@ -328,12 +330,13 @@ describe("shared account actions", () => {
         remove: vi.fn(),
         settings,
       })(account(1, { platform, group_ids: platform === "grok" ? [3] : [1] }));
-      return <div>{items.map((item) => <button key={item.id} data-action={item.id} onClick={item.run}>{item.label}</button>)}</div>;
+      return <div>{items.map((item) => <button key={item.id} data-action={item.id} data-has-icon={item.icon ? "true" : "false"} onClick={item.run}>{item.label}</button>)}</div>;
     }
 
     await act(async () => root.render(<Probe />));
     const actions = [...container.querySelectorAll<HTMLButtonElement>("[data-action]")];
     expect(actions.map((item) => item.dataset.action)).toEqual(expect.arrayContaining(["model_whitelist", "model_mapping", "proxy"]));
+    expect(actions.every((item) => item.dataset.hasIcon === "true")).toBe(true);
     expect(actions.some((item) => item.dataset.action?.toLowerCase().includes("modeltrace"))).toBe(false);
     await act(async () => actions.find((item) => item.dataset.action === "model_whitelist")!.click());
     await act(async () => actions.find((item) => item.dataset.action === "model_mapping")!.click());

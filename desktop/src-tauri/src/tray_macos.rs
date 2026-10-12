@@ -30,10 +30,12 @@ pub fn show_menu(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
         let item = inner
             .ns_status_item()
             .ok_or_else(|| anyhow::anyhow!("status item missing"))?;
-        let button = item.button(mtm)
+        let button = item
+            .button(mtm)
             .ok_or_else(|| anyhow::anyhow!("status button missing"))?;
         // AppKit runs a nested loop here. Do not hold the RefCell borrow.
-        let menu = MENU.with(|saved| saved.borrow().clone())
+        let menu = MENU
+            .with(|saved| saved.borrow().clone())
             .ok_or_else(|| anyhow::anyhow!("tray menu missing"))?;
         unsafe {
             item.setMenu(Some(&menu));

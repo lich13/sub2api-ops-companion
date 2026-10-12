@@ -265,6 +265,33 @@ class BarkNotifier:
                 continue
         return delivered
 
+    def notify_credit_result(self, event: dict, *, config: BarkRuntimeConfig | None = None) -> bool:
+        from .auto_reset_policy import RESULT_LABELS
+        runtime = config or self.runtime_config()
+        if not runtime.config_valid or not runtime.enabled:
+            return False
+        outcome = event.get('outcome')
+        title = ('✅ OAuth 用卡成功，已恢复调度' if outcome == 'restored' else
+                 '⚠️ OAuth ' + RESULT_LABELS.get(outcome, '用卡结果待确认'))
+        lines = [f"账号：{sanitize_error_text(event.get('account_name'), 120)} #{int(event.get('account_id') or 0)}",
+                 f"触发时间：{_beijing_time(event.get('trigger_at'))}",
+                 f"执行时间：{_beijing_time(event.get('attempt_at')) if event.get('attempt_at') else '未执行'}",
+                 f"验证方式：{'模型测试' if event.get('verification_method') == 'model' else '测试连接'}",
+                 f"结果：{RESULT_LABELS.get(outcome, '待确认')}"]
+        if event.get('reason') and outcome != 'restored':
+            lines.append(f"原因：{sanitize_error_text(event['reason'], 240)}")
+        if event.get('degradation_confirmed'):
+            lines.append('模型验证已判定降智，降智标记与停止调度均已确认')
+            if event.get('prediction'):
+                lines.append(f"首组指纹推测：{sanitize_error_text(event['prediction'], 120)}")
+        if event.get('model_id'):
+            lines.append(f"模型：{sanitize_error_text(event['model_id'], 120)}")
+        if event.get('reset_completed_at'):
+            lines.append(f"用卡完成时间：{_beijing_time(event['reset_completed_at'])}")
+        lines.append(f"结束时间：{_beijing_time(event.get('completed_at'))}")
+        return self._push_with_config(title, '\n'.join(lines), runtime, timeout=3,
+            options={'level': 'critical', 'sound': 'alarm', 'group': 'oauth-reset-credit'}).success
+
     def push_test(self) -> BarkPushResult:
         return self.push(
             "Sub2API Ops Companion",

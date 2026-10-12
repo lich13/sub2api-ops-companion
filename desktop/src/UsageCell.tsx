@@ -213,15 +213,18 @@ export default function UsageCell({
           ))}
         </div>
       )}
-      {account.recovery_monitor && !["cancelled", "recovered"].includes(account.recovery_monitor.status) && !account.auto_reset_credit && (
+      {account.recovery_monitor && !["cancelled", "recovered"].includes(account.recovery_monitor.status) && (!account.auto_reset_credit || !!account.auto_reset_credit.outcome) && (
         <details className="auto-reset-status">
           <summary>{account.recovery_monitor.label}</summary>
           {account.recovery_monitor.next_at && <time>下次 {fullTime(account.recovery_monitor.next_at)}</time>}
         </details>
       )}
-      {account.auto_reset_credit && !["manual", "recovered", "closed"].includes(account.auto_reset_credit.stage) && (
+      {account.auto_reset_credit && (!["manual", "recovered", "closed"].includes(account.auto_reset_credit.stage) || !!account.auto_reset_credit.outcome) && (
         <details className="auto-reset-status">
-          <summary>{account.auto_reset_credit.label}</summary>
+          <summary>{account.auto_reset_credit.outcome ? "最近用卡结果" : account.auto_reset_credit.label}</summary>
+          {account.auto_reset_credit.outcome && <span>{account.auto_reset_credit.label}</span>}
+          {!account.auto_reset_credit.outcome && (account.auto_reset_credit.verification_deadline_at || account.auto_reset_credit.consume_deadline_at) && <time>截止 {fullTime(account.auto_reset_credit.verification_deadline_at || account.auto_reset_credit.consume_deadline_at || "")}</time>}
+          {account.auto_reset_credit.notification_status && <span>{{ pending: "结果通知待发送", delivered: "结果通知已发送", failed: "通知发送失败", suppressed: "Bark 已关闭" }[account.auto_reset_credit.notification_status] || ""}</span>}
           {account.auto_reset_credit.evidence_source && <span>依据：{account.auto_reset_credit.evidence_source === "account_rate_limit" ? "账号限流状态" : "上游 429 记录"}</span>}
           {account.auto_reset_credit.error && <span role="status">{account.auto_reset_credit.error}</span>}
           {account.auto_reset_credit.next_at && <time>下次 {fullTime(account.auto_reset_credit.next_at)}</time>}

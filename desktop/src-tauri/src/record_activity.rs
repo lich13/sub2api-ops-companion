@@ -29,7 +29,9 @@ impl RecordActivity {
 
     pub(crate) fn set_active(&self, active: bool) -> bool {
         self.0.send_if_modified(|current| {
-            if *current == active { return false; }
+            if *current == active {
+                return false;
+            }
             *current = active;
             true
         })
@@ -40,7 +42,9 @@ impl RecordActivity {
         request: impl Future<Output = Result<T, String>>,
     ) -> Result<T, String> {
         let mut activity = self.0.subscribe();
-        if !*activity.borrow_and_update() { return Err(BACKGROUND.into()); }
+        if !*activity.borrow_and_update() {
+            return Err(BACKGROUND.into());
+        }
         tokio::select! {
             biased;
             _ = activity.changed() => Err(BACKGROUND.into()),
@@ -58,7 +62,10 @@ mod tests {
     async fn inactive_application_never_starts_a_record_request() {
         let activity = RecordActivity::default();
         let requests = AtomicUsize::new(0);
-        let request = || async { requests.fetch_add(1, Ordering::SeqCst); Ok(42) };
+        let request = || async {
+            requests.fetch_add(1, Ordering::SeqCst);
+            Ok(42)
+        };
         assert!(activity.read(request()).await.is_err());
         assert_eq!(requests.load(Ordering::SeqCst), 0);
         assert!(activity.set_active(true));
@@ -92,10 +99,21 @@ mod tests {
 
     #[test]
     fn record_gate_does_not_include_background_snapshot_or_account_operations() {
-        for path in ["/usage-records", "/usage-records?after_id=42", "/usage-records/42", "/usage-record-options?kind=api_keys"] {
+        for path in [
+            "/usage-records",
+            "/usage-records?after_id=42",
+            "/usage-records/42",
+            "/usage-record-options?kind=api_keys",
+        ] {
             assert!(record_path(path));
         }
-        for path in ["/snapshot", "/accounts/42/usage", "/quota-refresh", "/model-groups/1", "/usage-record-options-other"] {
+        for path in [
+            "/snapshot",
+            "/accounts/42/usage",
+            "/quota-refresh",
+            "/model-groups/1",
+            "/usage-record-options-other",
+        ] {
             assert!(!record_path(path));
         }
     }

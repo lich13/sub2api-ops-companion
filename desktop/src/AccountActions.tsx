@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, BellOff, Clock3, LoaderCircle, ListFilter, Network, Route } from "lucide-react";
+import { Activity, BellOff, Clock3, LoaderCircle, ListFilter, Network, Route, CircleCheck, RotateCcw, LayoutTemplate, Trash2 } from "lucide-react";
 import { accountOperation } from "./accountOperations";
 import { command } from "./bridge";
 import AccountActionMenu from "./AccountActionMenu";
@@ -83,16 +83,16 @@ export function useAccountActions(options: Options): (account: Account) => Accou
         run: () => { void execute(account, "degradation_mark", mark); } },
       { id: "model_detection", label: "定时检测", icon: <Clock3 size={12}/>, className: "detection-action", disabled: !options.online, run: () => options.modelDetection(account) },
     );
-    items.push({ id: "test", label: "测试连接", className: "test-button", disabled: !options.online || !testable, run: () => options.test(account) });
+    items.push({ id: "test", label: "测试连接", icon: <CircleCheck size={12}/>, className: "test-button", disabled: !options.online || !testable, run: () => options.test(account) });
     if (account.recoverable) items.push({ id: "recover", label: "恢复状态", disabled: !options.online || pending("recover"),
-      icon: pending("recover") ? <LoaderCircle size={12} className="spin"/> : undefined, run: () => { void execute(account, "recover"); } });
-    if (openai) items.push({ id: "template", label: "应用模板", disabled: !options.online, run: () => options.template(account) });
+      icon: pending("recover") ? <LoaderCircle size={12} className="spin"/> : <RotateCcw size={12}/>, run: () => { void execute(account, "recover"); } });
+    if (openai) items.push({ id: "template", label: "应用模板", icon: <LayoutTemplate size={12}/>, disabled: !options.online, run: () => options.template(account) });
     if (options.settings) items.push(
       { id: "model_whitelist", label: "模型白名单", icon: <ListFilter size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "whitelist") },
       { id: "model_mapping", label: "模型映射", icon: <Route size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "mappings") },
       { id: "proxy", label: "选择代理", icon: <Network size={12}/>, disabled: !options.online, run: () => options.settings?.(account, "proxy") },
     );
-    items.push({ id: "delete", label: "删除", className: "danger-text", disabled: !options.online, run: () => options.remove(account) });
+    items.push({ id: "delete", label: "删除", icon: <Trash2 size={12}/>, className: "danger-text", disabled: !options.online, run: () => options.remove(account) });
     return items;
   };
 }
@@ -102,7 +102,7 @@ export const isPrimaryAction = (item: AccountActionItem) => primaryActions.has(i
 
 export function AccountActionButton({ item, disabled = false, after }: { item: AccountActionItem; disabled?: boolean; after?: () => void }) {
   return <button type="button" className={item.className} title={item.title} disabled={disabled || item.disabled}
-    onClick={() => { item.run(); after?.(); }}>{item.icon || <span className="account-action-spacer" aria-hidden="true"/>}{item.label}</button>;
+    onClick={() => { item.run(); after?.(); }}><span className="account-action-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>;
 }
 
 export default function AccountActions({ items, label, mode = "panel", active = true, contextKey, disabled = false }: {

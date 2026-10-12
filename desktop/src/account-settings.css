@@ -79,3 +79,12 @@
   .mobile-action-sheet .scheduling-parameters > div { grid-template-columns: 1fr 110px; }
   .mobile-action-sheet .scheduling-parameters button { min-height: 48px; }
 }
+.proxy-picker { min-width: 0; }
+.proxy-option { border-bottom: 1px solid var(--line); padding: 6px 0; min-width: 0; }
+.proxy-diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 24px; }
+.proxy-diagnostic-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.proxy-diagnostic-actions svg { flex: 0 0 14px; }
+.proxy-diagnostic-result { display: grid; gap: 4px; padding: 8px 0 4px 24px; overflow-wrap: anywhere; }
+.proxy-quality-item { display: grid; grid-template-columns: minmax(0,1fr) 3em 5em; gap: 6px; align-items: baseline; }
+.proxy-quality-item small { grid-column: 1 / -1; }
+@media (max-width: 700px) { .proxy-diagnostic-actions button { min-height: 48px; } }

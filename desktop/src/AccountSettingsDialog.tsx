@@ -7,6 +7,7 @@ import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import { validate as validateProfile, type Profile } from "./AccountTemplates";
 import "./account-settings.css";
+import ProxyOptions, { type ProxyOption } from "./ProxyOptions";
 
 export type SettingsSection = "whitelist" | "mappings" | "proxy";
 export type AccountSettings = {
@@ -15,7 +16,6 @@ export type AccountSettings = {
   capabilities: Record<string, { editable: boolean; reason: string }>;
   versions: Record<string, string>;
 };
-type ProxyOption = { id: number; name: string; protocol: string; status: string };
 type SyncResult = { models: string[]; warnings: string[]; synced_at: string };
 export const operationLabel = (job: Operation) => ({ queued: "已排队，等待账号空闲", running: "正在保存", checking: "正在核对实际值", completed: "已确认生效", needs_confirmation: "相关字段已变化，请在待办中核对", failed: "保存失败", cancelled: "已取消", superseded: "已由新请求替代" } as Record<string, string>)[job.status] || job.status;
 
@@ -96,7 +96,6 @@ export default function AccountSettingsDialog({ account, initialSection, online,
     if (profile.whitelist.length + additions.length > 300) { setError("白名单最多 300 项"); return; }
     setProfile({ ...profile, whitelist: [...profile.whitelist, ...additions] }); setSelected(new Set());
   }
-  const proxyRows = proxies.filter(p => `${p.name} ${p.id} ${p.protocol}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <div className="modal-backdrop" onClick={close}><section ref={dialog} className="account-settings-dialog" role="dialog" aria-modal="true" aria-label="账号设置" onClick={e => e.stopPropagation()}>
     <header><div><h2>{isProxy ? "选择代理" : "模型配置"}</h2><span title={account.name}>{account.name} · #{account.id}</span></div><button className="icon-button" aria-label="关闭账号设置" onClick={close}><X size={18}/></button></header>
     <div className="account-settings-body">
@@ -106,12 +105,8 @@ export default function AccountSettingsDialog({ account, initialSection, online,
       {loading ? <p role="status"><LoaderCircle className="spin" size={16}/>正在读取</p> : !settings ? <button onClick={() => void read()}>重新读取</button> : <>
         {!writable && <p className="settings-notice">{settings.capabilities[action]?.reason || "该账号不支持此项修改"}</p>}
         {isProxy ? <>
-          <div className="settings-proxy-search"><input className="settings-search" type="search" aria-label="搜索代理" placeholder="搜索代理名称或 ID" value={query} onChange={e => setQuery(e.target.value)}/><button aria-label="刷新代理" disabled={busy || !online} onClick={() => { setError(""); setProxyRefresh(n => n + 1); }}><RefreshCw size={15}/></button></div>
-          <div className="proxy-options" role="radiogroup" aria-label="账号代理">
-            <label><input type="radio" name="proxy" checked={proxyId === null} disabled={!writable || busy} onChange={() => setProxyId(null)}/><span>不使用代理</span></label>
-            {proxyId !== null && !proxies.some(p => p.id === proxyId) && <p className="muted">当前代理 #{proxyId} · 不在可用列表中</p>}
-            {proxyRows.map(p => <label key={p.id}><input type="radio" name="proxy" checked={proxyId === p.id} disabled={!writable || busy || p.status !== "active"} onChange={() => setProxyId(p.id)}/><span><b>{p.name}</b><small>#{p.id} · {p.protocol} · {p.status === "active" ? "可用" : "不可用"}</small></span></label>)}
-          </div>
+          <button aria-label="刷新代理" disabled={busy || !online} onClick={() => { setError(""); setProxyRefresh(n => n + 1); }}><RefreshCw size={15}/>刷新代理</button>
+          <ProxyOptions proxies={proxies} value={proxyId} onChange={setProxyId} online={online} disabled={!writable || busy}/>
           {!proxyReady && <p className="muted">代理列表尚未读取完成</p>}
         </> : <>
           {!profile.whitelist.length && !profile.mappings.length && <p className="settings-notice">不限制模型</p>}

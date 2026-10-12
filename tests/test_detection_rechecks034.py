@@ -32,7 +32,7 @@ class Clock:
         self.value += timedelta(seconds=seconds)
 
 
-def account(*, schedulable: bool = False, status: str = "active", account_id: int = 1, **changes) -> dict:
+def account(*, schedulable: bool = True, status: str = "active", account_id: int = 1, **changes) -> dict:
     return {
         "id": account_id,
         "name": "fixture-recheck-account",
@@ -253,7 +253,7 @@ class RecheckAdmissionTests(RecheckFixture):
     async def test_recheck_keeps_manual_close_status_auth_and_quota_precedence(self):
         cases = (
             ({"status": "disabled"}, "账号停用或认证异常", False),
-            ({"schedulable": False, "rate_limit_reset_at": (NOW + timedelta(minutes=5)).isoformat()}, "账号仍在上游限流中", False),
+            ({"rate_limit_reset_at": (NOW + timedelta(minutes=5)).isoformat()}, "账号仍在上游限流中", False),
             ({"schedulable": False}, "调度已关闭", True),
         )
         baseline = account()
@@ -284,7 +284,7 @@ class RecheckCompletionTests(RecheckFixture):
         self.assertTrue(result["mark_cleared"])
         self.assertFalse(self.detection.mark(1)["marked"])
         self.assertTrue(self.detection.held(1))
-        self.assertFalse(self.row["schedulable"])
+        self.assertTrue(self.row["schedulable"])
         schedule_write.assert_not_called()
         mark = self.capacity.store.snapshot()["marks"]["1"]
         self.assertEqual(mark["detection_job_id"], job["id"])
@@ -571,7 +571,7 @@ class RecheckStaleResultTests(RecheckFixture):
         self.assertTrue(all(group["status"] in {"completed", "skipped"} for group in saved["groups"]))
         self.assertFalse(self.detection.mark(1)["marked"])
         self.assertTrue(self.detection.held(1))
-        self.assertFalse(self.row["schedulable"])
+        self.assertTrue(self.row["schedulable"])
         self.assertEqual(self.detection.data()["disposition_notifications"][job_id]["kind"], "recovered")
 
 

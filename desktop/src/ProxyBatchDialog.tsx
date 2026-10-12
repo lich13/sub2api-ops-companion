@@ -7,6 +7,7 @@ import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import "./account-settings.css";
+import ProxyOptions from "./ProxyOptions";
 
 type Proxy = { id: number; name: string; protocol: string; status: string };
 type Batch = { batch_id: string; items: Operation[]; pending: number };
@@ -17,7 +18,7 @@ export default function ProxyBatchDialog({ accounts, online, connectionKey, clos
 }) {
   const [settings, setSettings] = useState<Record<number, AccountSettings>>({}), [errors, setErrors] = useState<Record<number, string>>({});
   const [proxies, setProxies] = useState<Proxy[]>([]), [proxyId, setProxyId] = useState<number | null | undefined>(undefined);
-  const [query, setQuery] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [batch, setBatch] = useState<Batch | null>(null), [batchError, setBatchError] = useState("");
   const dialog = useRef<HTMLElement>(null), generation = useRef(0), guard = useRef(false);
   const request = useRef<{ signature: string; request_id: string } | null>(null);
@@ -35,7 +36,7 @@ export default function ProxyBatchDialog({ accounts, online, connectionKey, clos
     setSettings(next); setErrors(failed); setLoading(false);
   }
   useEffect(() => {
-    guard.current = false; setBusy(false); setProxyId(undefined); setQuery("");
+    guard.current = false; setBusy(false); setProxyId(undefined);
     void read(); return () => { ++generation.current; };
   }, [connectionKey, accounts]);
   function accept(value: Batch) {
@@ -78,12 +79,9 @@ export default function ProxyBatchDialog({ accounts, online, connectionKey, clos
   return <div className="modal-backdrop" onClick={close}><section ref={dialog} className="account-settings-dialog proxy-batch-dialog" role="dialog" aria-modal="true" aria-label="批量选择代理" onClick={e => e.stopPropagation()}>
     <header><div><h2>选择代理</h2><span>已选择 {accounts.length} 个账号</span></div><button className="icon-button" aria-label="关闭代理选择" onClick={close}><X size={18}/></button></header>
     <div className="account-settings-body">
-      <div className="settings-proxy-search"><input type="search" aria-label="搜索代理" placeholder="搜索代理名称或 ID" value={query} onChange={e => setQuery(e.target.value)}/><button aria-label="刷新代理预览" disabled={busy || loading || pending(batch) || !online} onClick={() => void read()}><RefreshCw size={15}/></button></div>
+      <button aria-label="刷新代理预览" disabled={busy || loading || pending(batch) || !online} onClick={() => void read()}><RefreshCw size={15}/>刷新预览</button>
       {loading ? <p role="status"><LoaderCircle className="spin" size={15}/>正在读取</p> : <>
-        <div className="proxy-options" role="radiogroup" aria-label="目标代理">
-          <label><input type="radio" name="batch-proxy" checked={proxyId === null} disabled={locked} onChange={() => setProxyId(null)}/><span>不使用代理</span></label>
-          {proxies.filter(p => `${p.name} ${p.id} ${p.protocol}`.toLowerCase().includes(query.trim().toLowerCase())).map(p => <label key={p.id}><input type="radio" name="batch-proxy" checked={proxyId === p.id} disabled={locked || p.status !== "active"} onChange={() => setProxyId(p.id)}/><span><b>{p.name}</b><small>#{p.id} · {p.protocol} · {p.status === "active" ? "可用" : "不可用"}</small></span></label>)}
-        </div>
+        <ProxyOptions proxies={proxies} value={proxyId} onChange={setProxyId} online={online} disabled={locked} connectionKey={connectionKey}/>
         <p className="settings-notice muted">母账号的代理变更同时影响继承其代理的子账号。</p>
         <div className="proxy-batch-previews">{accounts.map(account => {
           const value = settings[account.id], job = batch?.items.find(j => j.account_id === account.id);

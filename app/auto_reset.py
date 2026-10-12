@@ -11,9 +11,11 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timedelta
+from threading import Lock
 from typing import Any, Callable
 
 from .audit import write_audit
+from .auto_reset_policy import BoundedCreditPolicy, RESULT_LABELS, REASONS, verification_retryable
 from .desktop_usage import reset_credits
 from .key_fallback import execute_sub2api_set_schedulable
 from .account_locks import AccountLease, control_lock
@@ -27,7 +29,7 @@ from .reset_credit_observation import (create_observation, digest, limit_fingerp
                                        normalized_credits, receipt_diagnostics, validate_observation, consumption_result)
 
 STAGES = {"waiting", "pausing", "resetting", "uncertain", "testing", "retry", "confirming",
-          "releasing", "recovered", "manual", "blocked", "closed"}
+          "releasing", "recovered", "manual", "blocked", "closed", "finished"}
 RETRY_SECONDS = (60, 300, 900, 1800)
 STATE_LABELS = {"waiting": "等待用卡", "pausing": "暂停调度中", "resetting": "重置中",
                 "uncertain": "重置待确认", "testing": "测活中", "retry": "等待重试测活",
@@ -56,31 +58,44 @@ def validate_state(value: Any) -> None:
     if not isinstance(value, dict) or value.get("stage") not in STAGES or not value.get("episode"):
         raise ValueError("自动用卡状态无效")
     for key in ("attempt_at", "reset_at", "next_at", "test_completed_at", "recovered_at", "evidence_at",
-                "reset_completed_at", "release_requested_at", "manual_at"):
+                "reset_completed_at", "release_requested_at", "manual_at", "trigger_at", "consume_deadline_at",
+                "verification_deadline_at", "completed_at", "policy_checked_at", "supplement_attempt_at",
+                "clear_requested_at", "pause_undo_requested_at", "pause_undo_confirmed_at", "recovered_evidence_at"):
         if value.get(key) and parse_iso_datetime(value[key]) is None:
             raise ValueError("自动用卡时间无效")
     if value.get("owns_pause") not in (True, False, None):
         raise ValueError("自动用卡暂停归属无效")
+    if value.get('policy_version') is not None:
+        if type(value['policy_version']) is not int or value['policy_version'] != 1:
+            raise ValueError('自动用卡策略版本无效')
+        for key in ('test_attempts', 'policy_control_generation', 'policy_method_generation'):
+            if key in value and (type(value[key]) is not int or value[key] < 0):
+                raise ValueError('自动用卡控制状态无效')
+        if value.get('outcome') is not None and value['outcome'] not in RESULT_LABELS:
+            raise ValueError('自动用卡结果无效')
+        version = value.get('policy_detection_version')
+        if version is not None and (not isinstance(version, str) or len(version) != 64
+                                    or any(char not in '0123456789abcdef' for char in version)):
+            raise ValueError('自动用卡检测控制版本无效')
 
 
-def project_state(value: dict[str, Any] | None) -> dict[str, Any] | None:
+def project_state(value: dict[str, Any] | None, notices: dict | None = None) -> dict[str, Any] | None:
     if not value:
         return None
     if (value.get('stage') == 'manual' and value.get('attempt_at') and not value.get('reset_completed_at')
             and value.get('consumed') is not True and value.get('consumption_outcome') != 'not_consumed'):
         value = {**value, 'stage': 'uncertain', 'error_code': 'result_uncertain', 'next_at': None}
-    elif value.get('stage') in {'manual', 'recovered', 'closed'}:
+    if not value.get('policy_version') and value.get('stage') in {'manual', 'recovered', 'closed'}:
         return None
-    code = str(value.get("error_code") or "")
-    error = ERRORS.get(code, "操作未确认" if code else "")
-    evidence_error = CREDIT_EVIDENCE_ERRORS.get(value.get("credit_evidence_error"))
-    if value.get("stage") == "waiting" and evidence_error:
-        error = "；".join(part for part in (error, evidence_error) if part)
-    return {"stage": value["stage"], "label": {"conflict": "自动用卡冲突", "auth_paused": "等待凭据更新", "no_credit": "等待重置卡"}.get(code, STATE_LABELS[value["stage"]]),
-            "error": error,
-            "next_at": value.get("next_at"), "attempt_at": value.get("attempt_at"),
-            "evidence_source": value.get("evidence_source"), "evidence_at": value.get("evidence_at"),
-            "test_completed_at": value.get("test_completed_at"), "recovered_at": value.get("recovered_at")}
+    code = str(value.get('result_reason') or value.get('error_code') or '')
+    finished = value.get('stage') in {'finished', 'recovered'}
+    notice = (notices or {}).get(value.get('episode'), {})
+    return {'stage': value['stage'], 'label': RESULT_LABELS.get(value.get('outcome'), '最近用卡结果') if finished else STATE_LABELS.get(value['stage'], '用卡处理中'),
+            'error': REASONS.get(code, ERRORS.get(code, '操作未确认' if code else '')),
+            **{key: value.get(key) for key in ('trigger_at', 'consume_deadline_at', 'verification_deadline_at',
+                'outcome', 'completed_at', 'next_at', 'attempt_at', 'evidence_source', 'evidence_at',
+                'test_completed_at', 'recovered_at')},
+            'notification_status': notice.get('status'), 'notification_attempts': notice.get('attempts', 0)}
 
 
 def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
@@ -106,7 +121,7 @@ def upstream_evidence(db: Any, row: dict[str, Any], now: datetime) -> dict[str, 
           AND e.created_at >= %(start)s AND e.created_at <= %(now)s
           AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id
             AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
-        ORDER BY e.created_at DESC,e.id DESC LIMIT 1
+        ORDER BY e.created_at ASC,e.id ASC LIMIT 1
     """
     try:
         candidate = db.fetch_one(enriched, params)
@@ -219,14 +234,14 @@ def execute_credit_request(action: str, account_id: int, *, base_url: str, admin
                 "diagnostics": diagnostics}
 
 
-class AutoResetController:
+class AutoResetController(BoundedCreditPolicy):
     def __init__(self, monitor: Any, *, request_runner: Callable = execute_credit_request,
                  schedule_runner: Callable = execute_sub2api_set_schedulable,
                  evidence_reader: Callable = upstream_evidence) -> None:
         self.m = monitor
         self.store = monitor.store
         self.request_runner, self.schedule_runner, self.evidence_reader = request_runner, schedule_runner, evidence_reader
-        self._last_scan: datetime | None = None
+        self._notice_lock = Lock()
 
     def state(self, account_id: int) -> dict[str, Any]:
         return dict(self.store.snapshot()["scheduler"].get(str(account_id), {}).get("auto_reset_credit") or {})
@@ -240,6 +255,11 @@ class AutoResetController:
             if (current.get("episode") not in (None, task.get("episode"))
                     or int(current.get("revision") or 0) != int(task.get("revision") or 0)):
                 raise ValueError("自动用卡任务已变化")
+            checked = max(filter(None, (parse_iso_datetime(current.get('policy_checked_at')), parse_iso_datetime(updated.get('policy_checked_at')))), default=None)
+            if checked:
+                updated['policy_checked_at'] = checked.isoformat()
+            if 'model_test_job_id' not in changes and current.get('model_test_job_id'):
+                updated['model_test_job_id'] = current['model_test_job_id']
             meta["auto_reset_credit"] = updated
         self.store.transaction(save)
         return updated
@@ -248,7 +268,8 @@ class AutoResetController:
         write_audit(self.m.settings.audit_path, "oauth_auto_reset_credit", {"account_id": account_id, "action": action, **fields})
 
     def _begin_episode(self, aid: int, old: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
-        task = {"episode": uuid.uuid4().hex, "stage": "waiting", **evidence}
+        row = self.m._read_account(aid) or {}
+        task = {"episode": uuid.uuid4().hex, "stage": "waiting", "account_name": str(row.get("name") or ""), **evidence}
         def replace(data):
             meta = data["scheduler"].setdefault(str(aid), {})
             current = meta.get("auto_reset_credit") or {}
@@ -456,6 +477,16 @@ class AutoResetController:
             if not live:
                 return {"success": False, "error_code": "reset_state_changed"}
             active_task = task
+            if source == 'automatic' and task.get('policy_version'):
+                reason = self._guard_reason(aid, live, task, self.m.clock())
+                if reason:
+                    return {'success': False, 'error_code': reason}
+                if self._expired(task, self.m.clock()) or task.get('stage') == 'finished':
+                    return {'success': False, 'error_code': 'consume_deadline'}
+                if action == 'query':
+                    if task.get('supplement_attempt_at'):
+                        return {'success': False, 'error_code': 'supplement_limit'}
+                    active_task = self._save(aid, task, supplement_attempt_at=self.m.clock().isoformat())
             if source == "automatic":
                 if (live.get("extra") or {}).get("auto_reset_credit_enabled") is not False and (live.get("extra") or {}).get("auto_reset_credit_enabled") is not None:
                     return {"success": False, "error_code": "conflict"}
@@ -474,12 +505,19 @@ class AutoResetController:
                                                 control_generation=self.store.control_generation(aid))
                         paused = self.schedule_runner(aid, False, **connection)
                         after = self.m._read_account(aid)
+                        latest = self.state(aid)
+                        if latest.get('stage') == 'finished' and latest.get('episode') == active_task['episode']:
+                            if (after and after.get('schedulable') is False
+                                    and _signature(after) == active_task['signature']
+                                    and self.store.control_generation(aid) == active_task.get('control_generation')):
+                                self._save(aid, latest, owns_pause=True, owned_version=str(after.get('updated_at')))
+                            return {'success': False, 'error_code': 'consume_deadline'}
                         if (not paused.get("success") or not after or after.get("schedulable") is not False
                                 or _signature(after) != active_task["signature"]):
                             self._save(aid, active_task, stage="blocked", error_code="pause_uncertain")
                             return {"success": False, "error_code": "pause_uncertain"}
                         active_task = self._save(aid, active_task, stage="resetting", owns_pause=True,
-                                                owned_version=str(after.get("updated_at")), attempt_at=self.m.clock().isoformat())
+                                                owned_version=str(after.get("updated_at")))
                     # A second live read protects changes made during the pause.
                     final = self.m._read_account(aid)
                     final_depletion = self._depletion(final, self.m.clock(), held=True) if final else None
@@ -499,6 +537,15 @@ class AutoResetController:
             if self.state(aid).get("revision") != active_task.get("revision"):
                 return {"success": False, "error_code": "manual_intervention"}
             requested_at = self.m.clock()
+            if source == 'automatic' and action == 'reset':
+                with control_lock(self.m.db, aid):
+                    requested_at = self.m.clock()
+                    reason = self._guard_reason(aid, self.m._read_account(aid), active_task, requested_at)
+                    if reason:
+                        return {'success': False, 'error_code': reason}
+                    if self._expired(active_task, requested_at):
+                        return {'success': False, 'error_code': 'consume_deadline'}
+                    active_task = self._save(aid, active_task, attempt_at=requested_at.isoformat())
             result = (request_runner or self.request_runner)(action, aid, **connection)
             completed = self.m.clock()
             diagnostics = result.get("diagnostics") or receipt_diagnostics(None, result.get("data"))
@@ -508,18 +555,28 @@ class AutoResetController:
                 outcome = result.get("consumption_outcome") or ("consumed" if result.get("consumed") else "unknown")
                 receipt_code = "" if result.get("consumed") else str(result.get("error_code") or "result_uncertain")
                 latest = self.state(aid)
-                if latest.get("episode") == active_task.get("episode") and latest.get("stage") == "manual":
+                if latest.get("episode") == active_task.get("episode") and latest.get("stage") in {"manual", "finished"}:
                     # A scheduling intervention revokes recovery authority, not
                     # the irreversible consumption receipt from an in-flight call.
                     self._save(aid, latest, consumed=bool(result.get("consumed")),
                                reset_completed_at=completed.isoformat() if result.get("consumed") else None,
-                               error_code=receipt_code, consumption_outcome=outcome, receipt=diagnostics)
+                               error_code=receipt_code if latest.get('stage') != 'finished' else latest.get('error_code', ''),
+                               consumption_outcome=outcome, receipt=diagnostics)
+                    if latest.get('stage') == 'finished':
+                        def amend(data):
+                            value = data['scheduler'][str(aid)]['auto_reset_credit']
+                            value['outcome'] = self._result(value)
+                            notice = data['scheduler'][str(aid)].get('credit_result_notifications', {}).get(value['episode'])
+                            if notice and notice.get('status') == 'pending' and not notice.get('attempts'):
+                                notice.update(outcome=value['outcome'], reset_completed_at=value.get('reset_completed_at'))
+                        self.store.transaction(amend)
                     return result
                 stage = ("manual" if source != "automatic" and outcome != "unknown" else
                          "testing" if result.get("consumed") else "confirming" if outcome == "not_consumed" else "uncertain")
                 active_task = self._save(aid, active_task, stage=stage,
                     consumed=bool(result.get("consumed")), reset_completed_at=completed.isoformat() if result.get("consumed") else None,
-                    consumption_outcome=outcome, error_code=receipt_code, receipt=diagnostics)
+                    consumption_outcome=outcome, error_code=receipt_code, receipt=diagnostics,
+                    verification_deadline_at=(completed + timedelta(seconds=300)).isoformat() if result.get("consumed") and source == "automatic" else None)
             if isinstance(result.get("data"), dict):
                 try:
                     result["quota_result"] = quota_result(result["data"], live, completed, requested_at=requested_at)
@@ -545,221 +602,73 @@ class AutoResetController:
                 self._save(aid, active_task, owned_version=str(after.get("updated_at")))
             return result
         result = self.m.queries.external_read(row, source=source, reason="reset_credit_consume" if action == "reset" else "reset_credit_check",
-                                             operation=operation, validate=valid, now=now)
+                                             operation=operation, validate=valid, now=now,
+                                             bypass_interval=source == "automatic" and action == "reset",
+                                             required_budget=2 if source == "automatic" and action == "query" else 1)
+        if source == 'automatic' and action == 'reset' and result.get('error_code') == 'result_uncertain':
+            latest = self.state(aid)
+            # Consumption cannot leave the process before its durable attempt.
+            # A failure while saving the preceding pause is not an unknown debit.
+            if latest.get('episode') == task.get('episode') and not latest.get('attempt_at'):
+                result = {**result, 'uncertain': False, 'error_code':
+                          'pause_uncertain' if latest.get('stage') == 'pausing' else 'query_state_unavailable'}
         self._audit(aid, action, source=source, success=bool(result.get("success")),
                     error_code=result.get("error_code", ""), next_at=result.get("next_query_at"),
                     diagnostics=result.get("diagnostics", {}))
         return result
 
     def run(self, rows: list[dict[str, Any]], now: datetime) -> None:
-        if self._last_scan and (now - self._last_scan).total_seconds() < 30:
+        if (not getattr(self.m.settings, 'oauth_auto_reset_credit_enabled', False)
+                and not any(meta.get('auto_reset_credit') for meta in self.store.cached_snapshot()['scheduler'].values())):
             return
-        self._last_scan = now
+        self.sweep(rows, now)
+        for item in rows:
+            self.run_account(item, now)
+
+    def run_account(self, item: dict[str, Any], now: datetime) -> None:
+        """One bounded account step; waits never serialize unrelated accounts."""
         enabled = bool(getattr(self.m.settings, "oauth_auto_reset_credit_enabled", False))
-        state = self.store.snapshot()
-        existing = state["scheduler"]
-        if not enabled and not any((v.get("auto_reset_credit") or {}).get("owns_pause") for v in existing.values()):
+        aid = int(item['id'])
+        if not enabled and not self.state(aid).get('policy_version'):
             return
         try:
-            with self.store.disk_lock("credit-operation", blocking=False):
-                for item in rows:
-                    aid = int(item["id"])
-                    lease = AccountLease(self.m.db, item)
-                    if not lease.acquire():
-                        continue
-                    try:
-                        self._step(aid, now, enabled)
-                    except (OSError, ValueError, TypeError):
-                        self._audit(aid, "paused", error_code="query_state_unavailable")
-                    except Exception:
-                        self._audit(aid, "paused", error_code="state_check_failed")
-                    finally:
-                        lease.release()
+            with self.store.disk_lock(f"credit-operation-{aid}", blocking=False):
+                lease = AccountLease(self.m.db, item)
+                if not lease.acquire():
+                    return
+                try:
+                    self._step(aid, now, enabled)
+                except (OSError, ValueError, TypeError):
+                    self._audit(aid, "paused", error_code="query_state_unavailable")
+                except Exception:
+                    self._audit(aid, "paused", error_code="state_check_failed")
+                finally:
+                    lease.release()
         except BlockingIOError:
             return
 
-    def _step(self, aid: int, now: datetime, enabled: bool) -> None:
-        from .oauth_monitor import account_recovery_confirmed
-        row, task = self.m._read_account(aid), self.state(aid)
-        if not row:
-            return
-        task = self._reconcile_parameter_edit(row, task)
-        from .recovery_policy import recovery_method
-        if not recovery_method(self.m.settings, aid) or not getattr(self.m.settings, 'oauth_recovery_monitor_enabled', True):
-            return
-        if (row.get("extra") or {}).get("auto_reset_credit_enabled"):
-            if task or enabled:
-                task = task or {"episode": uuid.uuid4().hex, "stage": "waiting"}
-                if task.get("error_code") != "conflict":
-                    self._save(aid, task, error_code="conflict")
-                    self._audit(aid, "conflict")
-            return
-        if task.get("error_code") == "conflict":
-            task = self._save(aid, task, error_code="")
-        if task.get("stage") in {"manual", "blocked"}:
-            if self._eligible(row, now) and self._available(row, now, task):
-                if account_recovery_confirmed(row):
-                    self._save(aid, task, stage="recovered", recovered_at=now.isoformat(), error_code="", next_at=None)
-                return
-            # Manual control revokes this task, not every future depletion. An
-            # unissued task can be replaced only after an explicit re-enable and
-            # a new upstream event. Any issued consumption must recover first.
-            control = self.store.snapshot()["scheduler"].get(str(aid), {}).get("manual_control") or {}
-            changed = parse_iso_datetime(control.get("at"))
-            terminal = parse_iso_datetime(task.get("manual_at"))
-            evidence = self._depletion(row, now) if enabled and not task.get("attempt_at") else None
-            boundary = max((t for t in (changed, terminal) if t), default=None)
-            if (not evidence or control.get("enabled") is not True or not changed or not boundary
-                    or parse_iso_datetime(evidence["evidence_at"]) <= boundary
-                    or evidence["evidence_fingerprint"] == task.get("evidence_fingerprint")):
-                return
-            task = self._begin_episode(aid, task, evidence)
-        if task.get("auth_fingerprint"):
-            if task["auth_fingerprint"] == credential_fingerprint(row):
-                return
-            # Credential changes release the auth pause only when the account
-            # still belongs to this recovery hold and its other config matches.
-            if task.get("owns_pause") and not self._owned(row, task, same_version=False):
-                return
-            task = self._save(aid, task, auth_fingerprint=None, auth_recheck=True,
-                              owned_version=str(row.get("updated_at")), next_at=None, error_code="")
-        if task.get("stage") in {"pausing", "resetting", "testing", "releasing"}:
-            if task["stage"] == "pausing":
-                self._save(aid, task, stage="blocked", error_code="pause_uncertain")
-                return
-            if task["stage"] == "testing":
-                task = self._save(aid, task, stage="retry")
-            if task["stage"] == "resetting":
-                task = self._save(aid, task, stage="uncertain", error_code="result_uncertain")
-            if task["stage"] == "releasing":
-                self._reconcile_release(aid, task, now)
-                return
-        if task.get("owns_pause"):
-            if not self._owned(row, task) or not self._processing_eligible(row, task, now):
-                self._save(aid, task, stage="blocked", error_code="ownership_changed", owns_pause=False)
-                return
-            deadline = parse_iso_datetime(task.get("next_at"))
-            if deadline and deadline > now:
-                return
-            if task.get("stage") in {"testing", "retry"}:
-                self._test(row, task, now)
-                return
-            if task.get("stage") in {"uncertain", "confirming"}:
-                if not self._available(row, now, task):
-                    result = self._request(row, "query", task, now)
-                    task = self.state(aid)
-                    if not result.get("success"):
-                        self._defer(aid, task, result, now)
-                        return
-                    row = self.m._read_account(aid)
-                    task = self.state(aid)
-                if row and self._available(row, now, task):
-                    # The observable recovery is sufficient for a safe test;
-                    # an uncertain consumption is never reclassified as certain.
-                    self._test(row, task, now)
-                else:
-                    self._defer(aid, task, {"error_code": "quota_unavailable"}, now)
-                return
-            return
-        if not enabled:
-            return
-        if task.get("attempt_at") and task.get("stage") != "recovered":
-            # Manual/uncertain attempts can close only after observed availability.
-            if self._eligible(row, now) and account_recovery_confirmed(row) and self._available(row, now, task):
-                self._save(aid, task, stage="recovered", recovered_at=now.isoformat(), error_code="", next_at=None)
-            return
-        evidence = self._depletion(row, now)
-        control = self.store.snapshot()["scheduler"].get(str(aid), {}).get("manual_control") or {}
-        changed = parse_iso_datetime(control.get("at"))
-        if evidence and changed and (parse_iso_datetime(evidence.get("evidence_at")) or changed) <= changed:
-            return
-        if not evidence:
-            if task.get("stage") == "waiting" and not task.get("attempt_at") and (
-                    self._available(row, now, task) or not row.get("rate_limited_at")):
-                self._save(aid, task, stage="closed", recovered_at=now.isoformat(), error_code="", next_at=None)
-            return
-        if task.get("stage") in {"recovered", "closed"}:
-            recovered = parse_iso_datetime(task.get("recovered_at"))
-            if not recovered or parse_iso_datetime(evidence["evidence_at"]) <= recovered:
-                return
-            # Retain the previous episode until a genuinely new 429 after recovery.
-            task = self._begin_episode(aid, task, evidence)
-        elif not task:
-            task = self._save(aid, {"episode": uuid.uuid4().hex, "stage": "waiting", **evidence})
-        elif any(task.get(key) != evidence[key] for key in ("reset_at", "evidence_source", "evidence_fingerprint")):
-            task = self._save(aid, task, **evidence, evidence_audited=False, next_at=None, error_code="")
-        if not task.get("evidence_audited"):
-            task = self._save(aid, task, evidence_audited=True)
-            self._audit(aid, "evidence", source=task.get("evidence_source"),
-                        evidence_fingerprint=task.get("evidence_fingerprint"))
-        deadline = parse_iso_datetime(task.get("next_at"))
-        if deadline and deadline > now:
-            return
-        connection = self._connection()
-        if not connection["base_url"] or not connection["admin_token"]:
-            return
-        credits = reset_credits(row.get("extra") or {}, now)
-        if task.get("error_code") == "no_credit" and (credits["available"] or 0) <= 0:
-            return
-        quota = self._saved_quota(row, now)
-        quota_at = parse_iso_datetime((quota or {}).get("queried_at"))
-        # Card evidence must describe this depletion window. A positive card
-        # snapshot may be reused after the mandatory one-hour query cooldown.
-        credit_reason = self._credit_reason(row, evidence, now)
-        known = not credit_reason
-        meta = self.store.snapshot()["scheduler"].get(str(aid), {})
-        failed = parse_iso_datetime(meta.get("last_error_at"))
-        invalidated = bool(failed and quota_at and failed >= quota_at and meta.get("last_error_code"))
-        credit_reason = credit_reason or ("new_failure" if invalidated else "")
-        if task.get("credit_evidence_error", "") != credit_reason:
-            task = self._save(aid, task, credit_evidence_error=credit_reason)
-            if credit_reason:
-                self._audit(aid, "credit_evidence_invalidated", reason=credit_reason)
-        if not known or invalidated or (credits["available"] or 0) <= 0:
-            result = self._request(row, "query", task, now)
-            if not result.get("success"):
-                self._defer(aid, self.state(aid), result, now)
-                return
-            live = self.m._read_account(aid)
-            no_credit = not live or (reset_credits(live.get("extra") or {}, now)["available"] or 0) <= 0
-            self._defer(aid, self.state(aid), {"error_code": "no_credit" if no_credit else "query_cooldown"}, now)
-            return
-        if recovery_method(self.m.settings, aid) == 'model':
-            verifier = getattr(self.m, 'model_verifier', None)
-            if verifier is None:
-                self._save(aid, task, error_code='model_verifier_unavailable')
-                return
-            result = verifier(aid, kind='credit', fingerprint=task['episode'], attempt=int(task.get('test_attempts') or 0) + 1, consume=True)
-            self._save(aid, self.state(aid), next_at=result.get('next_at') or (now + timedelta(minutes=1)).isoformat(),
-                       model_test_job_id=result.get('job_id'), error_code=(result.get('waiting_reason') or 'model_verification_pending') if result.get('deferred') else result.get('error_code', ''))
-            return
-        result = self._request(row, "reset", task, now)
-        task = self.state(aid)
-        if result.get("consumed") and task.get("stage") == "testing" and not result.get("uncertain"):
-            live = self.m._read_account(aid)
-            if self._owned(live, task):
-                self._test(live, task, self.m.clock())
-        elif task.get("stage") not in {"blocked", "manual"}:
-            self._defer(aid, task, result, now)
+    def _step(self, aid, now, enabled):
+        self._bounded_step(aid, now, enabled)
 
     def _defer(self, aid, task, result, now):
-        code = str(result.get("error_code") or "incomplete_quota")
-        changes: dict[str, Any] = {"error_code": code, "next_at": result.get("next_query_at") or (now + timedelta(hours=1)).isoformat()}
-        if code in AUTH_ERRORS:
-            row = self.m._read_account(aid)
-            changes.update(auth_fingerprint=credential_fingerprint(row or {}), error_code="auth_paused", next_at=None)
-        if code == "no_credit":
-            changes.update(next_at=None)
-        self._save(aid, task, **changes)
+        self._bounded_wait(aid, task, result, now)
 
-    def _test(self, row, task, now):
+    def _test(self, row, task, now, *, reserved_slot=False):
         aid = int(row["id"])
+        if task.get('policy_version'):
+            reason = self._guard_reason(aid, row, task, now)
+            if reason:
+                self._finish(aid, task, reason, now, row)
+                return
+        if task.get('policy_version') and (task.get('stage') == 'finished' or self._expired(task, now)):
+            self._finish(aid, task, 'verification_deadline', now, row)
+            return
         if not self._owned(row, task) or not self._processing_eligible(row, task, now):
             self._save(aid, task, stage="blocked", error_code="ownership_changed", owns_pause=False)
             return
         model = str(getattr(self.m.settings, "oauth_recovery_test_model_id", "gpt-5.6-luna"))
         attempts = int(task.get("test_attempts") or 0) + 1
-        task = self._save(aid, task, stage="testing", test_attempts=attempts,
+        task = self._save(aid, task, stage="testing", verification_dispatched=True, test_attempts=attempts,
                           next_at=(now + timedelta(seconds=RETRY_SECONDS[min(attempts - 1, 3)])).isoformat())
         generation = self.store.control_generation(aid)
         from .recovery_policy import recovery_method
@@ -770,16 +679,22 @@ class AutoResetController:
             test = (verifier(aid, kind='credit', fingerprint=task['episode'], attempt=attempts) if verifier else
                     {'success': False, 'error_code': 'model_verifier_unavailable'})
         elif method == 'connection':
-            test = self.m._timed_test(aid, model, control_generation=generation, **self._connection())
+            remaining = max(1, (parse_iso_datetime(task.get('verification_deadline_at')) - now).total_seconds()) if task.get('policy_version') else 30
+            runner = self.m._timed_test_owned if reserved_slot else self.m._timed_test
+            test = runner(aid, model, control_generation=generation, timeout_seconds=min(30, remaining), **self._connection())
         else:
             return
         if (self.store.control_generation(aid) != generation or method != recovery_method(self.m.settings, aid)
                 or selection != int(self.store.snapshot()['scheduler'].get(str(aid), {}).get('recovery_method_generation', 0))):
             return
+        current = self.state(aid)
+        if current.get('stage') == 'finished' or current.get('revision') != task.get('revision'):
+            return
         if test.get('deferred'):
-            self._save(aid, task, stage='retry', test_attempts=attempts - 1,
+            task = self._save(aid, task, stage='retry', verification_dispatched=False, test_attempts=attempts - 1,
                        next_at=test.get('next_at') or (now + timedelta(seconds=5)).isoformat(),
                        model_test_job_id=test.get('job_id'), error_code=test.get('waiting_reason') or test.get('error_code') or 'model_verification_pending')
+            self._bounded_wait(aid, task, test, self.m.clock())
             return
         model = test.get('model_id') or model
         self.m._cycle_tests[aid] = test
@@ -789,23 +704,33 @@ class AutoResetController:
             return
         live = self.m._read_account(aid)
         code = str(test.get("error_code") or "test_failed")
-        auth_error = code in AUTH_ERRORS and not test.get("success")
+        auth_error = code in AUTH_ERRORS | {'http_403'} and not test.get("success")
         candidate = {**live, "status": "active"} if live and auth_error and live.get("status") == "error" else live
         if not self._owned(live, task, same_version=False) or not self._processing_eligible(candidate, task, completed):
             self._save(aid, task, stage="blocked", owns_pause=False, error_code="ownership_changed")
             return
         task = self._save(aid, task, owned_version=str(live.get("updated_at")), test_completed_at=completed.isoformat(),
-                          test_success=bool(test.get("success")), model_id=model,
+                          test_success=bool(test.get("success")), verification_dispatched=False, model_id=model,
                           verification_method=method, verification_generation=selection)
+        if task.get('policy_version') and self._expired(task, completed):
+            self._finish(aid, task, 'verification_deadline', completed, live)
+            return
         if not test.get("success"):
+            if task.get('policy_version') and (attempts >= 2 or not verification_retryable(test, method)):
+                self._finish(aid, task, code if attempts < 2 else 'verification_limit', completed, live)
+                return
+            retry_at = completed + timedelta(seconds=60)
+            if task.get('policy_version') and retry_at >= parse_iso_datetime(task['verification_deadline_at']):
+                self._finish(aid, task, 'verification_deadline', completed, live)
+                return
             self._save(aid, task, stage="retry", error_code="auth_paused" if code in AUTH_ERRORS else "test_failed",
                        auth_fingerprint=credential_fingerprint(live) if code in AUTH_ERRORS else None,
                        auth_recheck=False,
                        auth_error=hashlib.sha256(str(live.get("error_message") or "").encode()).hexdigest() if code in AUTH_ERRORS else None,
-                       next_at=None if code in AUTH_ERRORS else (completed + timedelta(seconds=RETRY_SECONDS[min(attempts - 1, 3)])).isoformat())
+                       next_at=None if code in AUTH_ERRORS else retry_at.isoformat())
             return
         if not self._available(live, completed, task):
-            self._save(aid, task, stage="confirming", error_code="incomplete_quota", next_at=(completed + timedelta(hours=1)).isoformat())
+            self._finish(aid, task, "incomplete_quota", completed, live)
             return
         self._release(live, task, completed)
 
@@ -819,12 +744,21 @@ class AutoResetController:
     def _release_locked(self, row, task, now):
         from .oauth_monitor import account_recovery_confirmed
         aid = int(row["id"])
+        if task.get('policy_version'):
+            reason = self._guard_reason(aid, row, task, now)
+            if reason:
+                self._finish(aid, task, reason, now, row)
+                return
         from .recovery_policy import recovery_method
         if (task.get('verification_method') and task['verification_method'] != recovery_method(self.m.settings, aid)
                 or task.get('verification_generation', 0) != int(self.store.snapshot()['scheduler'].get(str(aid), {}).get('recovery_method_generation', 0))):
             return
+        if task.get('policy_version') and self._expired(task, now):
+            self._finish(aid, task, 'verification_deadline', now, row)
+            return
         fresh = self.m._read_account(aid)
-        if (not self._owned(fresh, task) or not self._processing_eligible(fresh, task, now)
+        if (not self._owned(fresh, task, same_version=not bool(task.get('clear_requested_at')))
+                or not self._processing_eligible(fresh, task, now)
                 or not self._available(fresh, now, task)):
             self._save(aid, task, stage="blocked", error_code="ownership_changed", owns_pause=False)
             return
@@ -833,13 +767,17 @@ class AutoResetController:
         for key in ("rate_limited_at", "temp_unschedulable_until", "overload_until"):
             stamp = parse_iso_datetime(fresh.get(key))
             if stamp and stamp > (parse_iso_datetime(task.get("attempt_at")) or now):
-                self._save(aid, task, stage="confirming", error_code="quota_unavailable", next_at=(now + timedelta(hours=1)).isoformat())
+                self._finish(aid, task, 'quota_unavailable', now, fresh)
                 return
-        recovered = self.m.recovery_runner(aid, **self._connection())
+        if not task.get('clear_requested_at'):
+            task = self._save(aid, task, clear_requested_at=self.m.clock().isoformat())
+            self.m.recovery_runner(aid, **self._connection())
         cleared = self.m._read_account(aid)
-        if (not recovered.get("success") or not self._owned(cleared, task, same_version=False)
+        if (not self._owned(cleared, task, same_version=False)
                 or not account_recovery_confirmed({**(cleared or {}), "schedulable": True})):
-            self._save(aid, task, stage="confirming", error_code="recovery_failed", next_at=(now + timedelta(minutes=30)).isoformat())
+            # An uncertain administrative write is reconciled from account
+            # state. It is never dispatched a second time for this episode.
+            self._save(aid, task, stage="confirming", error_code="recovery_failed", next_at=(now + timedelta(seconds=2)).isoformat())
             return
         task = self._save(aid, task, stage="releasing", owned_version=str(cleared.get("updated_at")), next_at=None,
                           release_requested_at=self.m.clock().isoformat(),
@@ -850,8 +788,10 @@ class AutoResetController:
             self._save(aid, task, stage="blocked", error_code="ownership_changed", owns_pause=False)
             return
         if not self._available(verified, self.m.clock(), task):
-            self._save(aid, task, stage="confirming", error_code="incomplete_quota",
-                       next_at=(self.m.clock() + timedelta(hours=1)).isoformat())
+            self._finish(aid, task, 'incomplete_quota', self.m.clock(), verified)
+            return
+        if task.get('policy_version') and self._expired(task, self.m.clock()):
+            self._finish(aid, task, 'verification_deadline', self.m.clock(), verified)
             return
         self.schedule_runner(aid, True, **self._connection())
         final = self.m._read_account(aid)
@@ -895,7 +835,7 @@ class AutoResetController:
     def _finish_release(self, final, task):
         aid = int(final["id"])
         completed = self.m.clock().isoformat()
-        finished = {**task, "stage": "recovered", "owns_pause": False, "recovered_at": completed, "error_code": "", "next_at": None}
+        finished = {**task, "revision": int(task.get("revision") or 0) + 1, "stage": "recovered", "owns_pause": False, "recovered_at": completed, "error_code": "", "next_at": None, "outcome": "restored", "completed_at": completed, "result_reason": ""}
         key = f"reset-credit:{aid}:{task['episode']}"
         history = {"account_id": aid, "account_name": str(final.get("name") or ""), "model_id": task["model_id"],
                    "legacy": False, "kind": "quota_recovery", "test_completed_at": task["test_completed_at"], "recovered_at": completed}
@@ -915,7 +855,11 @@ class AutoResetController:
             if key not in data["recovery_history"]:
                 sequence = max([int(v.get("id") or 0) for v in data["recovery_history"].values()] + [0]) + 1
                 data["recovery_history"][key] = {**history, "id": sequence, "dedupe_key": key}
-                data["pending_events"][key] = event
+                if task.get('policy_version'):
+                    data['scheduler'][str(aid)].setdefault('credit_result_notifications', {}).setdefault(task['episode'],
+                        self._notice(aid, finished, parse_iso_datetime(completed), final))
+                else:
+                    data["pending_events"][key] = event
         self.store.transaction(finish)
         self._audit(aid, "recovered", consumed=bool(task.get("consumed")))
 
@@ -923,12 +867,13 @@ class AutoResetController:
         """Called under the existing account + monitor locks, after confirmation."""
         from .oauth_monitor import account_recovery_confirmed
         aid, now = int(row["id"]), self.m.clock()
-        with self.store.disk_lock("credit-operation", blocking=False):
+        with self.store.disk_lock(f"credit-operation-{aid}", blocking=False):
             task = self.state(aid)
             if action == "reset" and task.get("attempt_at") and task.get("stage") != "recovered":
                 return {"success": False, "error_code": "result_uncertain"}
             if action == "reset" or not task:
-                next_task = {"episode": uuid.uuid4().hex, "stage": "manual" if action == "reset" else "waiting"}
+                next_task = {"episode": uuid.uuid4().hex, "stage": "manual" if action == "reset" else "closed",
+                             "source": "manual"}
                 def replace(data):
                     data["scheduler"].setdefault(str(aid), {})["auto_reset_credit"] = next_task
                 self.store.transaction(replace)

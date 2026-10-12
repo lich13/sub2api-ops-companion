@@ -12,6 +12,9 @@ import {
   ExternalLink,
   Layers3,
   ListOrdered,
+  LayoutTemplate,
+  Network,
+  Trash2,
   LayoutDashboard,
   LoaderCircle,
   Pin,
@@ -766,8 +769,8 @@ export default function App() {
                         <span>已选 {selected.size} 个账号</span>
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
-                        <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}>选择代理</button>
-                        <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}>应用模板</button>
+                        <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
+                        <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
                         <button
                           className="danger-text"
                           disabled={!state.online || selected.size === 0}
@@ -777,7 +780,7 @@ export default function App() {
                             )
                           }
                         >
-                          删除所选
+                          <Trash2 size={12}/>删除所选
                         </button>
                         </div>
                       </div>

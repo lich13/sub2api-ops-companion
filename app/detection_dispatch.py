@@ -60,13 +60,22 @@ class DetectionDispatch:
 
     def commit_disposition(self, aid, disposition, row):
         """The successful receipt and outbox entry share one atomic commit."""
+        merged_credit = False
+        if disposition.get('marked') and disposition.get('schedule_verified') and disposition.get('status') == 'completed':
+            controller = getattr(getattr(self.r, 'oauth_monitor', None), 'auto_reset', None)
+            # The durable credit intent is the authority, including after the
+            # corresponding ModelTrace summary has aged out of its history.
+            task = controller.state(aid) if controller else {}
+            if (controller and disposition.get('credit_episode') == task.get('episode')
+                    and task.get('model_test_job_id') == disposition['job_id']):
+                merged_credit = controller.merge_disposition(aid, disposition['job_id'], disposition, row)
         with self.store.transaction() as data:
             value = data["accounts"][str(aid)]
             if value["generation"] != disposition["generation"]:
                 raise HTTPException(409, "人工操作已替代自动处置")
             value.update(disposition=disposition, status="paused",
                          reason="已标记降智" if disposition["schedule_verified"] else disposition.get("reason", "停调度待核对"))
-            if disposition["marked"] and disposition["schedule_verified"] and disposition["status"] == "completed":
+            if not merged_credit and disposition["marked"] and disposition["schedule_verified"] and disposition["status"] == "completed":
                 now = self.clock().isoformat()
                 data.setdefault("disposition_notifications", {}).setdefault(disposition["job_id"], {
                     "job_id": disposition["job_id"], "account_id": aid,

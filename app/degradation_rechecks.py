@@ -37,6 +37,7 @@ class DegradationRechecks:
 
     def recheck_target_changed(self, row, value, context):
         return (not row or not value.get("enabled")
+                or row.get("schedulable") is not True
                 or versions(row)["model_test"] != context.get("recheck_account_version")
                 or row.get("schedulable") is not context.get("recheck_schedulable"))
 

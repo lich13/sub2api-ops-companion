@@ -78,6 +78,16 @@ class ModelDetection(DetectionDispatch, DegradationRechecks, RecoveryModels):
         except (OSError, ValueError):
             return True  # Unknown ownership cannot authorize automatic scheduling.
 
+    def recovery_held(self, aid):
+        """Recovery cannot override either a manual mark or a detection hold."""
+        try:
+            return self.held(aid) or self.mark(aid)['marked']
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return True
+
+    def credit_control_version(self, aid):
+        return digest([self.control(aid)['generation'], self.mark(aid)['version']])
+
     def update(self, aid, **changes):
         with self.store.transaction() as data:
             value = data['accounts'].setdefault(str(aid), self.default())
@@ -125,7 +135,7 @@ class ModelDetection(DetectionDispatch, DegradationRechecks, RecoveryModels):
             return '已标记降智'
         if row.get('status') != 'active':
             return '账号停用或认证异常'
-        if row.get('schedulable') is not True and not (recheck and self.owns_degradation_pause(value)):
+        if row.get('schedulable') is not True:
             return '调度已关闭'
         monitor = getattr(self.r, 'oauth_monitor', None)
         result = None
@@ -249,6 +259,12 @@ class ModelDetection(DetectionDispatch, DegradationRechecks, RecoveryModels):
                                'created_at':self.clock().isoformat(), 'model_id': job['requested_model'],
                                'prediction': report['prediction'], 'probability': report.get('probability'),
                                'triggers': job.get('triggers', [])}
+                if (job.get('recovery_context') or {}).get('kind') == 'credit':
+                    disposition['credit_episode'] = job['recovery_context']['fingerprint']
+                    controller = self.r.oauth_monitor.auto_reset
+                    task = controller.state(aid)
+                    if task.get('policy_version'):
+                        controller._save(aid, task, degradation_pending=job['id'])
                 self.update(aid, hold=True, disposition=disposition, recheck_recovery=None,
                             status='handling', reason='正在标记并停止调度')
         await asyncio.to_thread(prepare)
@@ -286,7 +302,7 @@ class ModelDetection(DetectionDispatch, DegradationRechecks, RecoveryModels):
                 self.update(aid, disposition=d)
             monitor = getattr(self.r, 'oauth_monitor', None)
             if row['type'] == 'oauth' and monitor and not d.get('recovery_revoked'):
-                monitor.store.manual_control(row, False, self.clock())
+                monitor.store.manual_control(row, False, self.clock(), origin="model_detection")
                 monitor._inventory_loaded_at = None
                 d['recovery_revoked'] = True
                 self.update(aid, disposition=d)

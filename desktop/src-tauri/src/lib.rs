@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(desktop)]
+use std::sync::Mutex as StdMutex;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -9,15 +11,13 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{Emitter, Manager, State, WindowEvent};
-#[cfg(desktop)]
-use std::sync::Mutex as StdMutex;
 #[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WebviewUrl, WebviewWindowBuilder,
 };
+use tauri::{Emitter, Manager, State, WindowEvent};
 #[cfg(desktop)]
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
@@ -30,9 +30,9 @@ use api_http::{http, http_detailed, HttpFailure};
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
 
 #[cfg(target_os = "macos")]
-mod tray_macos;
-#[cfg(target_os = "macos")]
 mod record_activity;
+#[cfg(target_os = "macos")]
+mod tray_macos;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -46,7 +46,9 @@ struct Preferences {
     model_test_concurrency: Option<u8>,
 }
 
-fn read_record_columns<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Vec<String>>, D::Error> {
+fn read_record_columns<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
     let columns = Option::<Vec<String>>::deserialize(deserializer)?;
     Ok(columns.map(|values| values.into_iter().filter(|value| value != "type").collect()))
 }
@@ -99,7 +101,13 @@ struct PanelLifecycle {
 #[cfg(desktop)]
 impl Default for PanelLifecycle {
     fn default() -> Self {
-        Self { generation: 0, focused: false, showing: false, height: 520., anchor: None }
+        Self {
+            generation: 0,
+            focused: false,
+            showing: false,
+            height: 520.,
+            anchor: None,
+        }
     }
 }
 
@@ -177,106 +185,213 @@ fn allowed_request(method: &str, path: &str) -> bool {
     }
     let plain = path.split('?').next().unwrap_or("");
     if plain == "/errors" || plain.starts_with("/errors/") {
-        if method != "GET" { return false; }
+        if method != "GET" {
+            return false;
+        }
         let list = plain == "/errors";
-        if !list && !plain.strip_prefix("/errors/").is_some_and(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit()) && s.parse::<u64>().is_ok_and(|id| id > 0)) { return false; }
+        if !list
+            && !plain.strip_prefix("/errors/").is_some_and(|s| {
+                !s.is_empty()
+                    && s.bytes().all(|c| c.is_ascii_digit())
+                    && s.parse::<u64>().is_ok_and(|id| id > 0)
+            })
+        {
+            return false;
+        }
         return path.split_once('?').is_none_or(|(_, query)| {
-            if query.is_empty() { return false; }
+            if query.is_empty() {
+                return false;
+            }
             let mut seen = std::collections::HashSet::new();
             query.split('&').all(|pair| {
-                let Some((key, value)) = pair.split_once('=') else { return false; };
-                if !seen.insert(key) { return false; }
-                if key == "category" { return matches!(value, "degradation" | "other"); }
+                let Some((key, value)) = pair.split_once('=') else {
+                    return false;
+                };
+                if !seen.insert(key) {
+                    return false;
+                }
+                if key == "category" {
+                    return matches!(value, "degradation" | "other");
+                }
                 list && matches!(key, "account_id" | "before_id" | "limit")
-                    && !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit())
-                    && value.parse::<u64>().is_ok_and(|id| id > 0 && (key != "limit" || id <= 200))
+                    && !value.is_empty()
+                    && value.bytes().all(|c| c.is_ascii_digit())
+                    && value
+                        .parse::<u64>()
+                        .is_ok_and(|id| id > 0 && (key != "limit" || id <= 200))
             })
         });
     }
-    if plain == "/connection-status" { return method == "GET" && path == plain; }
+    if plain == "/connection-status" {
+        return method == "GET" && path == plain;
+    }
     let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
     if plain.starts_with("/account-operations") {
-        let query_ok = path.split_once('?').is_none_or(|(_, q)| q.strip_prefix("after_event=")
-            .is_some_and(|v| !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u64>().is_ok()));
+        let query_ok = path.split_once('?').is_none_or(|(_, q)| {
+            q.strip_prefix("after_event=").is_some_and(|v| {
+                !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u64>().is_ok()
+            })
+        });
         return match method {
-            "GET" => path == "/account-operations"
-                || path.strip_prefix("/account-operations?batch_id=").is_some_and(|id| job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase()))
-                || query_ok && plain.strip_prefix("/account-operations/").is_some_and(job_id),
-            "POST" => path == "/account-operations/batch" || !path.contains('?') && plain.strip_prefix("/account-operations/").and_then(|s| s.strip_suffix("/cancel")).is_some_and(job_id),
+            "GET" => {
+                path == "/account-operations"
+                    || path
+                        .strip_prefix("/account-operations?batch_id=")
+                        .is_some_and(|id| job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase()))
+                    || query_ok
+                        && plain
+                            .strip_prefix("/account-operations/")
+                            .is_some_and(job_id)
+            }
+            "POST" => {
+                path == "/account-operations/batch"
+                    || !path.contains('?')
+                        && plain
+                            .strip_prefix("/account-operations/")
+                            .and_then(|s| s.strip_suffix("/cancel"))
+                            .is_some_and(job_id)
+            }
             _ => false,
         };
     }
-    if account_path(plain, "/operations") { return method == "POST" && !path.contains('?'); }
+    if account_path(plain, "/operations") {
+        return method == "POST" && !path.contains('?');
+    }
     if plain.starts_with("/model-tests/") {
-        if path.contains('?') { return false; }
+        if path.contains('?') {
+            return false;
+        }
         let suffix = plain.strip_prefix("/model-tests/").unwrap_or("");
         return match method {
             "GET" => job_id(suffix),
-            "POST" => suffix.strip_suffix("/cancel").or_else(|| suffix.strip_suffix("/retry")).is_some_and(job_id),
+            "POST" => suffix
+                .strip_suffix("/cancel")
+                .or_else(|| suffix.strip_suffix("/retry"))
+                .is_some_and(job_id),
             _ => false,
         };
     }
     if plain == "/account-templates" {
         return match method {
-            "GET" => path == "/account-templates" || path.strip_prefix("/account-templates?account_id=").is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0)),
+            "GET" => {
+                path == "/account-templates"
+                    || path
+                        .strip_prefix("/account-templates?account_id=")
+                        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+            }
             "PUT" => path == "/account-templates",
             "POST" => path == "/account-templates" || path == "/account-templates/custom",
             _ => false,
         };
     }
-    let template_id = |s: &str| matches!(s, "full" | "degraded" | "takeover") || s.strip_prefix("custom-").is_some_and(|id| id.len() == 24 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+    let template_id = |s: &str| {
+        matches!(s, "full" | "degraded" | "takeover")
+            || s.strip_prefix("custom-").is_some_and(|id| {
+                id.len() == 24
+                    && id
+                        .bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            })
+    };
     if let Some(suffix) = plain.strip_prefix("/account-templates/") {
-        if matches!(suffix, "custom" | "apply") { return method == "POST" && !path.contains('?'); }
+        if matches!(suffix, "custom" | "apply") {
+            return method == "POST" && !path.contains('?');
+        }
         if let Some(id) = suffix.strip_prefix("custom/") {
             return !path.contains('?') && template_id(id) && matches!(method, "PUT" | "DELETE");
         }
         return !path.contains('?') && template_id(suffix) && matches!(method, "PUT" | "DELETE");
     }
+    if let Some(suffix) = plain.strip_prefix("/proxies/") {
+        let parts: Vec<_> = suffix.split('/').collect();
+        return method == "POST"
+            && !path.contains('?')
+            && parts.len() == 2
+            && !parts[0].is_empty()
+            && parts[0].bytes().all(|c| c.is_ascii_digit())
+            && parts[0].parse::<u64>().is_ok_and(|id| id > 0)
+            && matches!(parts[1], "test" | "quality-check");
+    }
     if plain == "/proxies" || plain.ends_with("/settings") {
-        let settings_path = plain.strip_prefix("/accounts/").and_then(|s| s.strip_suffix("/settings"))
-            .is_some_and(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit()) && s.parse::<u64>().is_ok_and(|id| id > 0));
+        let settings_path = plain
+            .strip_prefix("/accounts/")
+            .and_then(|s| s.strip_suffix("/settings"))
+            .is_some_and(|s| {
+                !s.is_empty()
+                    && s.bytes().all(|c| c.is_ascii_digit())
+                    && s.parse::<u64>().is_ok_and(|id| id > 0)
+            });
         return method == "GET" && !path.contains('?') && (plain == "/proxies" || settings_path);
     }
     if account_path(plain, "/model-detection") {
-        return match method { "GET" | "PUT" => !path.contains('?'), _ => false };
+        return match method {
+            "GET" | "PUT" => !path.contains('?'),
+            _ => false,
+        };
     }
-    if plain == "/modeltrace/fingerprint-bank" { return method == "GET" && !path.contains('?'); }
-    if plain == "/modeltrace/fingerprint-bank/sync" { return method == "POST" && !path.contains('?'); }
-    let group_path = |suffix: &str| plain.strip_prefix("/model-groups/").and_then(|s| s.strip_suffix(suffix))
-        .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0));
-    if !path.contains('?') && match method {
-        "GET" => plain == "/model-groups" || group_path("/reasoning"),
-        "PUT" | "DELETE" => group_path("/reasoning"),
-        "POST" => group_path("/reasoning/resolve"),
-        _ => false,
-    } { return true; }
+    if plain == "/modeltrace/fingerprint-bank" {
+        return method == "GET" && !path.contains('?');
+    }
+    if plain == "/modeltrace/fingerprint-bank/sync" {
+        return method == "POST" && !path.contains('?');
+    }
+    let group_path = |suffix: &str| {
+        plain
+            .strip_prefix("/model-groups/")
+            .and_then(|s| s.strip_suffix(suffix))
+            .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+    };
+    if !path.contains('?')
+        && match method {
+            "GET" => plain == "/model-groups" || group_path("/reasoning"),
+            "PUT" | "DELETE" => group_path("/reasoning"),
+            "POST" => group_path("/reasoning/resolve"),
+            _ => false,
+        }
+    {
+        return true;
+    }
     match method {
         "GET" => {
-            matches!(plain, "/config" | "/errors" | "/recoveries" | "/quota-refresh" | "/capabilities" | "/connection-status" | "/usage-records" | "/usage-record-options")
-                || plain.strip_prefix("/usage-records/")
-                    .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
+            matches!(
+                plain,
+                "/config"
+                    | "/errors"
+                    | "/recoveries"
+                    | "/quota-refresh"
+                    | "/capabilities"
+                    | "/connection-status"
+                    | "/usage-records"
+                    | "/usage-record-options"
+            ) || plain
+                .strip_prefix("/usage-records/")
+                .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
                 || plain
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
                 || model_options_path(path)
                 || account_path(plain, "/quality")
-                || plain.strip_prefix("/accounts/")
+                || plain
+                    .strip_prefix("/accounts/")
                     .and_then(|s| s.strip_suffix("/model-tests/latest"))
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || plain.strip_prefix("/model-tests/")
+                || plain
+                    .strip_prefix("/model-tests/")
                     .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "PUT" => {
             (["oauth", "bark", "key_fallback"]
                 .iter()
                 .any(|s| plain == format!("/config/{s}"))
-                || account_path(plain, "/groups") || account_path(plain, "/degradation-mark"))
+                || account_path(plain, "/groups")
+                || account_path(plain, "/degradation-mark"))
                 && !path.contains('?')
         }
         "POST" => {
-            path == "/quota-refresh" || ["bark-test"]
-                .iter()
-                .any(|s| path == format!("/actions/{s}"))
+            path == "/quota-refresh"
+                || ["bark-test"]
+                    .iter()
+                    .any(|s| path == format!("/actions/{s}"))
                 || path
                     .strip_prefix("/accounts/")
                     .and_then(|s| {
@@ -287,7 +402,8 @@ fn allowed_request(method: &str, path: &str) -> bool {
                             .or_else(|| s.strip_suffix("/model-tests"))
                     })
                     .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
-                || plain.strip_prefix("/model-tests/")
+                || plain
+                    .strip_prefix("/model-tests/")
                     .and_then(|s| s.strip_suffix("/cancel"))
                     .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
@@ -297,7 +413,8 @@ fn allowed_request(method: &str, path: &str) -> bool {
 }
 
 fn account_path(path: &str, suffix: &str) -> bool {
-    path.strip_prefix("/accounts/").and_then(|s| s.strip_suffix(suffix))
+    path.strip_prefix("/accounts/")
+        .and_then(|s| s.strip_suffix(suffix))
         .is_some_and(|s| s.parse::<u64>().is_ok_and(|id| id > 0))
 }
 
@@ -316,34 +433,57 @@ fn publish(app: &tauri::AppHandle, value: &ViewState) {
 
 fn apply_refresh(view: &mut ViewState, result: Result<Value, HttpFailure>) {
     match result {
-        Ok(data) => { view.snapshot = Some(data); view.online = true; view.error.clear(); view.upstream_connection = None; }
-        Err(error) => { view.online = false; view.error = error.message; view.upstream_connection = error.connection; }
+        Ok(data) => {
+            view.snapshot = Some(data);
+            view.online = true;
+            view.error.clear();
+            view.upstream_connection = None;
+        }
+        Err(error) => {
+            view.online = false;
+            view.error = error.message;
+            view.upstream_connection = error.connection;
+        }
     }
 }
 
 async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
-    if !state.foreground.load(Ordering::SeqCst) { return; }
-    let Ok(_gate) = state.snapshot_gate.try_lock() else { return; };
+    if !state.foreground.load(Ordering::SeqCst) {
+        return;
+    }
+    let Ok(_gate) = state.snapshot_gate.try_lock() else {
+        return;
+    };
     let (base, key, generation) = {
         let _connection = state.network.lock().await;
-        (state.view.lock().await.preferences.base_url.clone(), state.key.lock().await.clone(),
-         state.generation.load(Ordering::SeqCst))
+        (
+            state.view.lock().await.preferences.base_url.clone(),
+            state.key.lock().await.clone(),
+            state.generation.load(Ordering::SeqCst),
+        )
     };
     if base.is_empty() || key.is_none() {
         return;
     }
-    let result = active_read(state, http_detailed(
-        &state.client,
-        &base,
-        key.as_deref().unwrap_or(""),
-        "GET",
-        "/snapshot",
-        None,
-        &state.path.with_file_name("network-diagnostics.log"),
-    ))
+    let result = active_read(
+        state,
+        http_detailed(
+            &state.client,
+            &base,
+            key.as_deref().unwrap_or(""),
+            "GET",
+            "/snapshot",
+            None,
+            &state.path.with_file_name("network-diagnostics.log"),
+        ),
+    )
     .await;
     let _connection = state.network.lock().await;
-    if generation != state.generation.load(Ordering::SeqCst) || !state.foreground.load(Ordering::SeqCst) { return; }
+    if generation != state.generation.load(Ordering::SeqCst)
+        || !state.foreground.load(Ordering::SeqCst)
+    {
+        return;
+    }
     let mut view = state.view.lock().await;
     apply_refresh(&mut view, result);
     #[cfg(desktop)]
@@ -351,7 +491,11 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
         let text = if view.online {
             "Sub2Ops · 已连接"
         } else {
-            match view.upstream_connection.as_ref().and_then(|c| c["state"].as_str()) {
+            match view
+                .upstream_connection
+                .as_ref()
+                .and_then(|c| c["state"].as_str())
+            {
                 Some("auth_rejected") => "Sub2Ops · 管理员 Key 被拒绝",
                 Some("network_unreachable") => "Sub2Ops · 上游不可达",
                 Some("route_not_found") => "Sub2Ops · 管理接口路径不兼容",
@@ -364,9 +508,14 @@ async fn refresh_inner(app: &tauri::AppHandle, state: &Runtime) {
     publish(app, &view);
 }
 
-async fn active_read<T, E: From<&'static str>>(state: &Runtime, request: impl std::future::Future<Output = Result<T, E>>) -> Result<T, E> {
+async fn active_read<T, E: From<&'static str>>(
+    state: &Runtime,
+    request: impl std::future::Future<Output = Result<T, E>>,
+) -> Result<T, E> {
     let mut changed = state.read_epoch.subscribe();
-    if !state.foreground.load(Ordering::SeqCst) { return Err("应用已转入后台".into()); }
+    if !state.foreground.load(Ordering::SeqCst) {
+        return Err("应用已转入后台".into());
+    }
     tokio::select! {
         biased;
         _ = changed.changed() => Err("应用已转入后台，已停止读取".into()),
@@ -396,8 +545,10 @@ fn sync_record_activity(app: &tauri::AppHandle) -> bool {
 async fn check_record_activity(app: &tauri::AppHandle) -> Result<(), String> {
     let (send, receive) = oneshot::channel();
     let handle = app.clone();
-    app.run_on_main_thread(move || { let _ = send.send(sync_record_activity(&handle)); })
-        .map_err(|_| "无法读取应用状态".to_string())?;
+    app.run_on_main_thread(move || {
+        let _ = send.send(sync_record_activity(&handle));
+    })
+    .map_err(|_| "无法读取应用状态".to_string())?;
     match receive.await {
         Ok(true) => Ok(()),
         Ok(false) => Err("应用已转入后台，已停止读取".into()),
@@ -423,15 +574,18 @@ async fn connect(
     }
     {
         let _gate = state.network.lock().await;
-        let data = active_read(&state, http(
-            &state.client,
-            &base,
-            api_key.trim(),
-            "GET",
-            "/capabilities",
-            None,
-            &state.path.with_file_name("network-diagnostics.log"),
-        ))
+        let data = active_read(
+            &state,
+            http(
+                &state.client,
+                &base,
+                api_key.trim(),
+                "GET",
+                "/capabilities",
+                None,
+                &state.path.with_file_name("network-diagnostics.log"),
+            ),
+        )
         .await?;
         if data.get("api_version").and_then(Value::as_u64) != Some(1) {
             return Err("云端接口版本不兼容".into());
@@ -496,7 +650,9 @@ async fn api_request(
     #[cfg(target_os = "macos")]
     let record_read = method == "GET" && record_activity::record_path(&path);
     #[cfg(target_os = "macos")]
-    if record_read { check_record_activity(&_app).await?; }
+    if record_read {
+        check_record_activity(&_app).await?;
+    }
     let (view, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await.clone();
@@ -509,17 +665,27 @@ async fn api_request(
     };
     let log = state.path.with_file_name("network-diagnostics.log");
     let request = http(
-            &state.client,
-            &view.preferences.base_url,
-            &key,
-            &method,
-            &path,
-            body,
-            &log,
-        );
-    let request = async { if method == "GET" { active_read(&state, request).await } else { request.await } };
+        &state.client,
+        &view.preferences.base_url,
+        &key,
+        &method,
+        &path,
+        body,
+        &log,
+    );
+    let request = async {
+        if method == "GET" {
+            active_read(&state, request).await
+        } else {
+            request.await
+        }
+    };
     #[cfg(target_os = "macos")]
-    let result = if record_read { state.record_activity.read(request).await } else { request.await };
+    let result = if record_read {
+        state.record_activity.read(request).await
+    } else {
+        request.await
+    };
     #[cfg(not(target_os = "macos"))]
     let result = request.await;
     if generation != state.generation.load(Ordering::SeqCst) {
@@ -532,71 +698,138 @@ async fn api_request(
 }
 
 #[tauri::command]
-async fn cancel_test(window: tauri::WebviewWindow, state: State<'_, Arc<Runtime>>) -> Result<(), String> {
-    if let Some(cancel) = state.tests.lock().await.remove(window.label()) { let _ = cancel.send(()); }
+async fn cancel_test(
+    window: tauri::WebviewWindow,
+    state: State<'_, Arc<Runtime>>,
+) -> Result<(), String> {
+    if let Some(cancel) = state.tests.lock().await.remove(window.label()) {
+        let _ = cancel.send(());
+    }
     Ok(())
 }
 
 async fn media_data(client: &reqwest::Client, value: &str, kind: &str) -> Result<String, String> {
     use base64::Engine;
-    if value.starts_with(&format!("data:{kind}/")) { return Ok(value.into()); }
+    if value.starts_with(&format!("data:{kind}/")) {
+        return Ok(value.into());
+    }
     let url = url::Url::parse(value).map_err(|_| "媒体地址无效")?;
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return Err("媒体地址必须使用 HTTPS".into());
     }
     // This request intentionally carries no admin headers or cookies.
-    let mut response = client.get(url).timeout(Duration::from_secs(90)).send().await.map_err(|_| "无法读取测试媒体")?;
-    if !response.status().is_success() { return Err("测试媒体请求失败".into()); }
-    let mime = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|h| h.to_str().ok())
-        .unwrap_or("").split(';').next().unwrap_or("").to_owned();
-    if !mime.starts_with(&format!("{kind}/")) { return Err("测试媒体类型无效".into()); }
+    let mut response = client
+        .get(url)
+        .timeout(Duration::from_secs(90))
+        .send()
+        .await
+        .map_err(|_| "无法读取测试媒体")?;
+    if !response.status().is_success() {
+        return Err("测试媒体请求失败".into());
+    }
+    let mime = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    if !mime.starts_with(&format!("{kind}/")) {
+        return Err("测试媒体类型无效".into());
+    }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| "测试媒体连接中断")? {
-        if bytes.len() + chunk.len() > 64 * 1024 * 1024 { return Err("测试媒体超过 64 MiB".into()); }
+        if bytes.len() + chunk.len() > 64 * 1024 * 1024 {
+            return Err("测试媒体超过 64 MiB".into());
+        }
         bytes.extend_from_slice(&chunk);
     }
-    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 #[tauri::command]
-async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: State<'_, Arc<Runtime>>,
-    account_id: u64, body: Value, on_event: tauri::ipc::Channel<Value>) -> Result<(), String> {
-    if account_id == 0 { return Err("账号无效".into()); }
+async fn run_test(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: State<'_, Arc<Runtime>>,
+    account_id: u64,
+    body: Value,
+    on_event: tauri::ipc::Channel<Value>,
+) -> Result<(), String> {
+    if account_id == 0 {
+        return Err("账号无效".into());
+    }
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
-        if !view.online || !state.foreground.load(Ordering::SeqCst) { return Err("当前离线".into()); }
-        (view.preferences.base_url.clone(), state.key.lock().await.clone().ok_or("尚未连接")?, state.generation.load(Ordering::SeqCst))
+        if !view.online || !state.foreground.load(Ordering::SeqCst) {
+            return Err("当前离线".into());
+        }
+        (
+            view.preferences.base_url.clone(),
+            state.key.lock().await.clone().ok_or("尚未连接")?,
+            state.generation.load(Ordering::SeqCst),
+        )
     };
     let (tx, rx) = oneshot::channel();
     {
         let mut tests = state.tests.lock().await;
-        if tests.contains_key(window.label()) { return Err("测试正在进行".into()); }
+        if tests.contains_key(window.label()) {
+            return Err("测试正在进行".into());
+        }
         tests.insert(window.label().to_string(), tx);
     }
     let work = async {
-        let mut response = state.client.post(format!("{base}/api/desktop/v1/accounts/{account_id}/test"))
-            .header("x-api-key", key).header("Accept", "text/event-stream")
-            .timeout(Duration::from_secs(310)).json(&body).send().await.map_err(|_| "测试连接失败")?;
+        let mut response = state
+            .client
+            .post(format!("{base}/api/desktop/v1/accounts/{account_id}/test"))
+            .header("x-api-key", key)
+            .header("Accept", "text/event-stream")
+            .timeout(Duration::from_secs(310))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|_| "测试连接失败")?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let data: Value = response.json().await.unwrap_or(Value::Null);
-            return Err(format!("{} [{status}]", data.get("detail").and_then(Value::as_str).unwrap_or("测试请求被拒绝")));
+            return Err(format!(
+                "{} [{status}]",
+                data.get("detail")
+                    .and_then(Value::as_str)
+                    .unwrap_or("测试请求被拒绝")
+            ));
         }
         let mut buffer = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|_| "测试连接中断")? {
-            if generation != state.generation.load(Ordering::SeqCst) { return Err("连接已切换".into()); }
+            if generation != state.generation.load(Ordering::SeqCst) {
+                return Err("连接已切换".into());
+            }
             buffer.extend_from_slice(&chunk);
-            if buffer.len() > 128 * 1024 * 1024 { return Err("测试输出过大".into()); }
+            if buffer.len() > 128 * 1024 * 1024 {
+                return Err("测试输出过大".into());
+            }
             while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
                 let line: Vec<u8> = buffer.drain(..=end).collect();
-                if !line.starts_with(b"data:") { continue; }
+                if !line.starts_with(b"data:") {
+                    continue;
+                }
                 if let Ok(mut event) = serde_json::from_slice::<Value>(&line[5..]) {
-                    let kind = event.get("type").and_then(Value::as_str).unwrap_or("").to_string();
+                    let kind = event
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
                     if ["image", "audio", "video"].contains(&kind.as_str()) {
                         let field = format!("{kind}_url");
                         if let Some(raw) = event.get(&field).and_then(Value::as_str) {
-                            event[&field] = Value::String(media_data(&state.client, raw, &kind).await?);
+                            event[&field] =
+                                Value::String(media_data(&state.client, raw, &kind).await?);
                         }
                     }
                     on_event.send(event).map_err(|_| "测试窗口已关闭")?;
@@ -607,7 +840,10 @@ async fn run_test(app: tauri::AppHandle, window: tauri::WebviewWindow, state: St
     };
     let result = tokio::select! { result=active_read(&state, work)=>result, _=rx=>Err("测试已取消，未重放请求".into()) };
     let mut tests = state.tests.lock().await;
-    if tests.get(window.label()).is_some_and(|sender| sender.is_closed()) {
+    if tests
+        .get(window.label())
+        .is_some_and(|sender| sender.is_closed())
+    {
         tests.remove(window.label());
     }
     drop(tests);
@@ -639,7 +875,9 @@ async fn preferences(
     }
     let mut prefs = view.preferences.clone();
     if let Some(concurrency) = model_test_concurrency {
-        if !(1..=3).contains(&concurrency) { return Err("测试并发必须为 1、2 或 3".into()); }
+        if !(1..=3).contains(&concurrency) {
+            return Err("测试并发必须为 1、2 或 3".into());
+        }
         prefs.model_test_concurrency = Some(concurrency);
     }
     prefs.favorites = favorites
@@ -652,8 +890,29 @@ async fn preferences(
     prefs.pinned = cfg!(desktop) && pinned;
     prefs.launch_at_login = cfg!(desktop) && launch_at_login;
     if let Some(columns) = record_columns {
-        let allowed = ["api_key", "account", "model", "reasoning", "tokens", "cost", "latency", "user_agent", "ip", "endpoint", "group", "billing", "request_id", "upstream_id"];
-        prefs.record_columns = Some(allowed.iter().filter(|c| columns.iter().any(|v| v == **c)).map(|c| c.to_string()).collect());
+        let allowed = [
+            "api_key",
+            "account",
+            "model",
+            "reasoning",
+            "tokens",
+            "cost",
+            "latency",
+            "user_agent",
+            "ip",
+            "endpoint",
+            "group",
+            "billing",
+            "request_id",
+            "upstream_id",
+        ];
+        prefs.record_columns = Some(
+            allowed
+                .iter()
+                .filter(|c| columns.iter().any(|v| v == **c))
+                .map(|c| c.to_string())
+                .collect(),
+        );
     }
     save_preferences(&state.path, &prefs)?;
     #[cfg(desktop)]
@@ -672,13 +931,23 @@ fn show_main(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(desktop)]
 fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
-    if !visible { window.hide().map_err(|_| "无法关闭主窗口")?; }
+    if !visible {
+        window.hide().map_err(|_| "无法关闭主窗口")?;
+    }
     #[cfg(target_os = "macos")]
     {
-        let policy = if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
-        app.set_activation_policy(policy).map_err(|_| "无法切换 Dock 状态")?;
-        app.set_dock_visibility(visible).map_err(|_| "无法更新 Dock 图标")?;
-        if visible { app.show().map_err(|_| "无法显示客户端")?; }
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        app.set_activation_policy(policy)
+            .map_err(|_| "无法切换 Dock 状态")?;
+        app.set_dock_visibility(visible)
+            .map_err(|_| "无法更新 Dock 图标")?;
+        if visible {
+            app.show().map_err(|_| "无法显示客户端")?;
+        }
     }
     if visible {
         window.show().map_err(|_| "无法打开窗口")?;
@@ -686,7 +955,15 @@ fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> 
         window.set_focus().map_err(|_| "无法聚焦主窗口")?;
     }
     app.state::<Arc<Runtime>>().wake.notify_one();
-    panel_trace(app, "main_visibility", if visible { "open_dock_visible" } else { "closed_dock_hidden" });
+    panel_trace(
+        app,
+        "main_visibility",
+        if visible {
+            "open_dock_visible"
+        } else {
+            "closed_dock_hidden"
+        },
+    );
     Ok(())
 }
 
@@ -694,8 +971,11 @@ fn main_visibility(app: &tauri::AppHandle, visible: bool) -> Result<(), String> 
 fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
-        if let Err(error) = main_visibility(&handle, visible) { panel_trace(&handle, "main_failed", &error); }
-    }).map_err(|_| "无法调度主窗口操作".to_string())
+        if let Err(error) = main_visibility(&handle, visible) {
+            panel_trace(&handle, "main_failed", &error);
+        }
+    })
+    .map_err(|_| "无法调度主窗口操作".to_string())
 }
 
 #[tauri::command]
@@ -704,70 +984,122 @@ async fn check_updates(
     state: State<'_, Arc<Runtime>>,
 ) -> Result<String, String> {
     let releases = active_read(&state, async {
-    let response = state
-        .client
-        .get("https://api.github.com/repos/lich13/sub2api-ops-companion/releases?per_page=20")
-        .header("User-Agent", "Sub2Ops")
-        .send()
-        .await
-        .map_err(|_| "无法检查版本")?;
-    if !response.status().is_success() {
-        return Err("版本服务暂不可用".into());
-    }
-    response.json::<Value>().await.map_err(|_| "版本信息无效".to_string())
-    }).await?;
+        let response = state
+            .client
+            .get("https://api.github.com/repos/lich13/sub2api-ops-companion/releases?per_page=20")
+            .header("User-Agent", "Sub2Ops")
+            .send()
+            .await
+            .map_err(|_| "无法检查版本")?;
+        if !response.status().is_success() {
+            return Err("版本服务暂不可用".into());
+        }
+        response
+            .json::<Value>()
+            .await
+            .map_err(|_| "版本信息无效".to_string())
+    })
+    .await?;
     if let Some((tag, url)) = release_update(&releases, env!("CARGO_PKG_VERSION"), cfg!(mobile)) {
-            app.opener()
-                .open_url(&url, None::<&str>)
-                .map_err(|_| "无法打开发布页")?;
-            return Ok(if cfg!(mobile) { format!("发现 {tag}，已打开发布页") }
-                else { format!("发现 {tag}，已打开安装包") });
+        app.opener()
+            .open_url(&url, None::<&str>)
+            .map_err(|_| "无法打开发布页")?;
+        return Ok(if cfg!(mobile) {
+            format!("发现 {tag}，已打开发布页")
+        } else {
+            format!("发现 {tag}，已打开安装包")
+        });
     }
     if cfg!(mobile) {
         let page = latest_release_page(&releases).unwrap_or_else(|| format!("{RELEASES}/latest"));
-        app.opener().open_url(&page, None::<&str>).map_err(|_| "无法打开发布页")?;
-        return Ok(format!("当前版本 {}，已打开发布页", env!("CARGO_PKG_VERSION")));
+        app.opener()
+            .open_url(&page, None::<&str>)
+            .map_err(|_| "无法打开发布页")?;
+        return Ok(format!(
+            "当前版本 {}，已打开发布页",
+            env!("CARGO_PKG_VERSION")
+        ));
     }
     Ok(format!("当前版本 {}，已是最新", env!("CARGO_PKG_VERSION")))
 }
 
 fn parsed_release_version(tag: &str) -> Option<(u64, u64, u64)> {
     let raw = tag.strip_prefix("desktop-v")?;
-    if !raw.bytes().all(|c| c.is_ascii_digit() || c == b'.') { return None; }
-    let parts = raw.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
-    if parts.len() != 3 { return None; }
+    if !raw.bytes().all(|c| c.is_ascii_digit() || c == b'.') {
+        return None;
+    }
+    let parts = raw
+        .split('.')
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if parts.len() != 3 {
+        return None;
+    }
     Some((parts[0], parts[1], parts[2]))
 }
 
 fn latest_release_page(releases: &Value) -> Option<String> {
-    releases.as_array()?.iter().filter_map(|release| {
-        if release["draft"].as_bool().unwrap_or(false) || release["prerelease"].as_bool().unwrap_or(false) { return None; }
-        let tag = release["tag_name"].as_str()?;
-        parsed_release_version(tag)?;
-        Some((parsed_release_version(tag)?, tag))
-    }).max_by_key(|r| r.0).map(|(_, tag)| format!("{RELEASES}/tag/{tag}"))
+    releases
+        .as_array()?
+        .iter()
+        .filter_map(|release| {
+            if release["draft"].as_bool().unwrap_or(false)
+                || release["prerelease"].as_bool().unwrap_or(false)
+            {
+                return None;
+            }
+            let tag = release["tag_name"].as_str()?;
+            parsed_release_version(tag)?;
+            Some((parsed_release_version(tag)?, tag))
+        })
+        .max_by_key(|r| r.0)
+        .map(|(_, tag)| format!("{RELEASES}/tag/{tag}"))
 }
 
 fn release_update(releases: &Value, current: &str, android: bool) -> Option<(String, String)> {
     let version = |value: &str| -> Option<(u64, u64, u64)> {
-        let parts = value.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
-        if parts.len() != 3 { return None; }
+        let parts = value
+            .split('.')
+            .map(str::parse::<u64>)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        if parts.len() != 3 {
+            return None;
+        }
         Some((parts[0], parts[1], parts[2]))
     };
     let current = version(current)?;
-    releases.as_array()?.iter().filter_map(|release| {
-        if release["draft"].as_bool().unwrap_or(false) || release["prerelease"].as_bool().unwrap_or(false) { return None; }
-        let tag = release["tag_name"].as_str()?;
-        let newer = parsed_release_version(tag)?;
-        if newer <= current { return None; }
-        if android { return Some((newer, tag.to_string(), format!("{RELEASES}/tag/{tag}"))); }
-        let asset = release["assets"].as_array()?.iter().find(|asset| asset["name"].as_str().is_some_and(|name| {
-            name.ends_with("_aarch64.dmg")
-        }))?;
-        let url = asset["browser_download_url"].as_str()?;
-        if !url.starts_with(&format!("{RELEASES}/download/{tag}/")) { return None; }
-        Some((newer, tag.to_string(), url.to_string()))
-    }).max_by_key(|r| r.0).map(|(_, tag, url)| (tag, url))
+    releases
+        .as_array()?
+        .iter()
+        .filter_map(|release| {
+            if release["draft"].as_bool().unwrap_or(false)
+                || release["prerelease"].as_bool().unwrap_or(false)
+            {
+                return None;
+            }
+            let tag = release["tag_name"].as_str()?;
+            let newer = parsed_release_version(tag)?;
+            if newer <= current {
+                return None;
+            }
+            if android {
+                return Some((newer, tag.to_string(), format!("{RELEASES}/tag/{tag}")));
+            }
+            let asset = release["assets"].as_array()?.iter().find(|asset| {
+                asset["name"]
+                    .as_str()
+                    .is_some_and(|name| name.ends_with("_aarch64.dmg"))
+            })?;
+            let url = asset["browser_download_url"].as_str()?;
+            if !url.starts_with(&format!("{RELEASES}/download/{tag}/")) {
+                return None;
+            }
+            Some((newer, tag.to_string(), url.to_string()))
+        })
+        .max_by_key(|r| r.0)
+        .map(|(_, tag, url)| (tag, url))
 }
 
 #[cfg(desktop)]
@@ -870,14 +1202,22 @@ fn quick_panel(
         panel.showing = false;
         panel.focused = focused;
     }
-    panel_trace(app, "focus_requested", if focused { "focused" } else { "awaiting_event" });
+    panel_trace(
+        app,
+        "focus_requested",
+        if focused { "focused" } else { "awaiting_event" },
+    );
     app.state::<Arc<Runtime>>().wake.notify_one();
     Ok(())
 }
 
 #[cfg(desktop)]
-fn position_quick(app: &tauri::AppHandle, window: &tauri::WebviewWindow, rect: tauri::Rect, height: f64)
-    -> Result<(), Box<dyn std::error::Error>> {
+fn position_quick(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    rect: tauri::Rect,
+    height: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
     let position = rect.position.to_physical::<f64>(1.0);
     let size = rect.size.to_physical::<f64>(1.0);
     let anchor = tauri::PhysicalPosition::new(position.x + size.width, position.y + size.height);
@@ -921,25 +1261,38 @@ fn position_quick(app: &tauri::AppHandle, window: &tauri::WebviewWindow, rect: t
 
 #[tauri::command]
 #[cfg(desktop)]
-fn resize_quick(app: tauri::AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
-    if window.label() != "quick" || !height.is_finite() { return Err("快捷窗口尺寸无效".into()); }
+fn resize_quick(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    height: f64,
+) -> Result<(), String> {
+    if window.label() != "quick" || !height.is_finite() {
+        return Err("快捷窗口尺寸无效".into());
+    }
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let state = handle.state::<Arc<Runtime>>();
         let height = height.ceil().clamp(128., 520.);
         let anchor = {
             let mut panel = state.panel.lock().unwrap();
-            if panel.height == height { return; }
+            if panel.height == height {
+                return;
+            }
             panel.height = height;
             panel.anchor
         };
         let result = if let Some(rect) = anchor {
             position_quick(&handle, &window, rect, height).map_err(|e| e.to_string())
         } else {
-            window.set_size(tauri::LogicalSize::new(420., height)).map_err(|e| e.to_string())
+            window
+                .set_size(tauri::LogicalSize::new(420., height))
+                .map_err(|e| e.to_string())
         };
-        if let Err(error) = result { panel_trace(&handle, "resize_failed", &error); }
-    }).map_err(|_| "无法调整快捷窗口尺寸".into())
+        if let Err(error) = result {
+            panel_trace(&handle, "resize_failed", &error);
+        }
+    })
+    .map_err(|_| "无法调整快捷窗口尺寸".into())
 }
 
 #[tauri::command]
@@ -1029,7 +1382,9 @@ fn defer_panel_blur(app: &tauri::AppHandle) {
 }
 
 #[cfg(desktop)]
-fn silent_launch(args: &[String]) -> bool { args.iter().any(|arg| arg == "--autostart") }
+fn silent_launch(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--autostart")
+}
 
 #[cfg(desktop)]
 fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -1039,7 +1394,10 @@ fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         let scale = monitor.scale_factor();
         let width = (1440. * scale).min((area.size.width as f64 - 24. * scale).max(1.));
         let height = (860. * scale).min((area.size.height as f64 - 24. * scale).max(1.));
-        window.set_min_size(Some(tauri::PhysicalSize::new((900. * scale).min(width) as u32, (620. * scale).min(height) as u32)))?;
+        window.set_min_size(Some(tauri::PhysicalSize::new(
+            (900. * scale).min(width) as u32,
+            (620. * scale).min(height) as u32,
+        )))?;
         window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
         window.set_position(tauri::PhysicalPosition::new(
             area.position.x + ((area.size.width as f64 - width) / 2.) as i32,
@@ -1053,9 +1411,14 @@ fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[tauri::command]
 async fn background(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<credentials::SecureStore>().0.run_mobile_plugin::<Value>("background", serde_json::json!({}))
-            .map(|_| ()).map_err(|_| "无法返回后台".to_string())
-    }).await.map_err(|_| "无法返回后台".to_string())?
+        app.state::<credentials::SecureStore>()
+            .0
+            .run_mobile_plugin::<Value>("background", serde_json::json!({}))
+            .map(|_| ())
+            .map_err(|_| "无法返回后台".to_string())
+    })
+    .await
+    .map_err(|_| "无法返回后台".to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1063,8 +1426,17 @@ pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(desktop)]
     let builder = builder
-        .plugin(tauri_plugin_single_instance::init(|app, args, _| { if !silent_launch(&args) { let _ = show_main(app.clone()); } }))
-        .plugin(tauri_plugin_autostart::Builder::new().macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent).args(["--autostart"]).build());
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !silent_launch(&args) {
+                let _ = show_main(app.clone());
+            }
+        }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
+                .args(["--autostart"])
+                .build(),
+        );
     #[cfg(mobile)]
     let builder = builder.plugin(credentials::plugin());
     let builder = builder
@@ -1192,17 +1564,49 @@ pub fn run() {
             }
         });
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,show_main,show_quick,hide_quick,resize_quick,check_updates]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        get_state,
+        connect,
+        disconnect,
+        refresh,
+        api_request,
+        run_test,
+        cancel_test,
+        preferences,
+        show_main,
+        show_quick,
+        hide_quick,
+        resize_quick,
+        check_updates
+    ]);
     #[cfg(mobile)]
-    let builder = builder.invoke_handler(tauri::generate_handler![get_state,connect,disconnect,refresh,api_request,run_test,cancel_test,preferences,background,check_updates]);
-    builder.build(tauri::generate_context!()).expect("Sub2Ops failed to start")
-        .run(|_app,_event| {
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        get_state,
+        connect,
+        disconnect,
+        refresh,
+        api_request,
+        run_test,
+        cancel_test,
+        preferences,
+        background,
+        check_updates
+    ]);
+    builder
+        .build(tauri::generate_context!())
+        .expect("Sub2Ops failed to start")
+        .run(|_app, _event| {
             #[cfg(target_os = "macos")]
-            if matches!(&_event, tauri::RunEvent::Ready | tauri::RunEvent::MainEventsCleared) {
+            if matches!(
+                &_event,
+                tauri::RunEvent::Ready | tauri::RunEvent::MainEventsCleared
+            ) {
                 sync_record_activity(_app);
             }
             #[cfg(desktop)]
-            if let tauri::RunEvent::Reopen {..}=_event {let _=show_main(_app.clone());}
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                let _ = show_main(_app.clone());
+            }
         });
 }
 
@@ -1211,21 +1615,35 @@ mod tests {
     use super::*;
     fn runtime() -> Runtime {
         Runtime {
-            client: reqwest::Client::new(), view: Mutex::new(ViewState::default()),
-            key: Mutex::new(None), network: Mutex::new(()), snapshot_gate: Mutex::new(()),
-            generation: AtomicU64::new(0), tests: Mutex::new(HashMap::new()), wake: Notify::new(),
-            path: PathBuf::new(), foreground: AtomicBool::new(true), read_epoch: watch::channel(0).0,
-            #[cfg(target_os = "macos")] record_activity: record_activity::RecordActivity::default(),
-            #[cfg(desktop)] pinned: AtomicBool::new(false),
-            #[cfg(desktop)] quitting: AtomicBool::new(false),
-            #[cfg(desktop)] panel: StdMutex::new(PanelLifecycle::default()),
+            client: reqwest::Client::new(),
+            view: Mutex::new(ViewState::default()),
+            key: Mutex::new(None),
+            network: Mutex::new(()),
+            snapshot_gate: Mutex::new(()),
+            generation: AtomicU64::new(0),
+            tests: Mutex::new(HashMap::new()),
+            wake: Notify::new(),
+            path: PathBuf::new(),
+            foreground: AtomicBool::new(true),
+            read_epoch: watch::channel(0).0,
+            #[cfg(target_os = "macos")]
+            record_activity: record_activity::RecordActivity::default(),
+            #[cfg(desktop)]
+            pinned: AtomicBool::new(false),
+            #[cfg(desktop)]
+            quitting: AtomicBool::new(false),
+            #[cfg(desktop)]
+            panel: StdMutex::new(PanelLifecycle::default()),
         }
     }
     #[tokio::test]
     async fn background_cancels_inflight_reads_and_does_not_start_new_reads() {
         let state = runtime();
         let started = AtomicBool::new(false);
-        let request = async { started.store(true, Ordering::SeqCst); std::future::pending::<Result<(), String>>().await };
+        let request = async {
+            started.store(true, Ordering::SeqCst);
+            std::future::pending::<Result<(), String>>().await
+        };
         let (result, ()) = tokio::join!(active_read(&state, request), async {
             tokio::time::sleep(Duration::from_millis(10)).await;
             state.foreground.store(false, Ordering::SeqCst);
@@ -1233,9 +1651,20 @@ mod tests {
         });
         assert!(started.load(Ordering::SeqCst));
         assert!(result.unwrap_err().contains("后台"));
-        assert!(active_read(&state, async { panic!("background request must not be polled"); #[allow(unreachable_code)] Ok::<(), String>(()) }).await.is_err());
+        assert!(active_read(&state, async {
+            panic!("background request must not be polled");
+            #[allow(unreachable_code)]
+            Ok::<(), String>(())
+        })
+        .await
+        .is_err());
         state.foreground.store(true, Ordering::SeqCst);
-        assert_eq!(active_read(&state, async { Ok::<i32, String>(7) }).await.unwrap(), 7);
+        assert_eq!(
+            active_read(&state, async { Ok::<i32, String>(7) })
+                .await
+                .unwrap(),
+            7
+        );
     }
     #[test]
     fn account_settings_routes_are_exact_and_read_only() {
@@ -1245,21 +1674,67 @@ mod tests {
                 assert!(!allowed_request(method, path), "{method} {path}");
             }
         }
-        for path in ["/accounts/0/settings", "/accounts/-1/settings", "/accounts/a/settings",
-            "/accounts/7/settings/", "/accounts/7/settings?", "/accounts/7/settings?key=fixture",
-            "/accounts/7/settings/../credentials", "/accounts/7%2fsettings", "/proxies/all",
-            "/proxies?include_credentials=true", "/accounts/18446744073709551616/settings"] {
+        for path in [
+            "/accounts/0/settings",
+            "/accounts/-1/settings",
+            "/accounts/a/settings",
+            "/accounts/7/settings/",
+            "/accounts/7/settings?",
+            "/accounts/7/settings?key=fixture",
+            "/accounts/7/settings/../credentials",
+            "/accounts/7%2fsettings",
+            "/proxies/all",
+            "/proxies?include_credentials=true",
+            "/accounts/18446744073709551616/settings",
+        ] {
             assert!(!allowed_request("GET", path), "{path}");
         }
     }
 
     #[test]
+    fn proxy_diagnostic_routes_are_exact_post_only() {
+        for suffix in ["test", "quality-check"] {
+            let path = format!("/proxies/7/{suffix}");
+            assert!(allowed_request("POST", &path), "{path}");
+            for method in ["GET", "PUT", "DELETE"] {
+                assert!(!allowed_request(method, &path), "{method} {path}");
+            }
+        }
+        for path in [
+            "/proxies/0/test",
+            "/proxies/-1/test",
+            "/proxies/7/unknown",
+            "/proxies/7/test/extra",
+            "/proxies/7/test?fixture=1",
+            "/proxies/7/quality-check?fixture=1",
+            "/proxies/7/test/../credentials",
+            "/proxies/18446744073709551616/quality-check",
+        ] {
+            assert!(!allowed_request("POST", path), "{path}");
+        }
+    }
+
+    #[test]
     fn error_categories_have_exact_read_only_routes() {
-        for path in ["/errors", "/errors?category=degradation", "/errors?category=other&before_id=25&limit=50", "/errors/25?category=other"] {
+        for path in [
+            "/errors",
+            "/errors?category=degradation",
+            "/errors?category=other&before_id=25&limit=50",
+            "/errors/25?category=other",
+        ] {
             assert!(allowed_request("GET", path), "{path}");
             assert!(!allowed_request("POST", path), "{path}");
         }
-        for path in ["/errors?category=all", "/errors?category=other&category=degradation", "/errors?url=example.invalid", "/errors/25?before_id=2", "/errors/0?category=other", "/errors?limit=201", "/errors?category=other&", "/errors/25?category=other#fragment"] {
+        for path in [
+            "/errors?category=all",
+            "/errors?category=other&category=degradation",
+            "/errors?url=example.invalid",
+            "/errors/25?before_id=2",
+            "/errors/0?category=other",
+            "/errors?limit=201",
+            "/errors?category=other&",
+            "/errors/25?category=other#fragment",
+        ] {
             assert!(!allowed_request("GET", path), "{path}");
         }
     }
@@ -1273,10 +1748,19 @@ mod tests {
             {"tag_name":"desktop-v0.2.0","draft":true,"assets":[]},
             {"tag_name":"desktop-v9.0.0","assets":[{"name":"unsafe_arm64-v8a.apk","browser_download_url":"https://other.example/file.apk"}]}
         ]);
-        assert_eq!(release_update(&data, "0.1.9", true).unwrap().1, format!("{RELEASES}/tag/desktop-v9.0.0"));
-        assert!(release_update(&data, "0.1.9", false).unwrap().1.ends_with("_aarch64.dmg"));
+        assert_eq!(
+            release_update(&data, "0.1.9", true).unwrap().1,
+            format!("{RELEASES}/tag/desktop-v9.0.0")
+        );
+        assert!(release_update(&data, "0.1.9", false)
+            .unwrap()
+            .1
+            .ends_with("_aarch64.dmg"));
         assert!(release_update(&data, "9.0.0", true).is_none());
-        assert_eq!(latest_release_page(&data).as_deref(), Some("https://github.com/lich13/sub2api-ops-companion/releases/tag/desktop-v9.0.0"));
+        assert_eq!(
+            latest_release_page(&data).as_deref(),
+            Some("https://github.com/lich13/sub2api-ops-companion/releases/tag/desktop-v9.0.0")
+        );
     }
     #[test]
     fn release_pages_reject_untrusted_tags_and_nonstable_releases() {
@@ -1287,8 +1771,14 @@ mod tests {
             {"tag_name":"desktop-v99.1.2","draft":true},
             {"tag_name":"desktop-v1.2.3","html_url":"https://other.invalid"}
         ]);
-        assert_eq!(latest_release_page(&data), Some(format!("{RELEASES}/tag/desktop-v1.2.3")));
-        assert_eq!(release_update(&data, "1.2.2", true).unwrap().1, format!("{RELEASES}/tag/desktop-v1.2.3"));
+        assert_eq!(
+            latest_release_page(&data),
+            Some(format!("{RELEASES}/tag/desktop-v1.2.3"))
+        );
+        assert_eq!(
+            release_update(&data, "1.2.2", true).unwrap().1,
+            format!("{RELEASES}/tag/desktop-v1.2.3")
+        );
         assert!(latest_release_page(&serde_json::json!([])).is_none());
     }
     #[test]
@@ -1298,14 +1788,30 @@ mod tests {
         assert!(allowed_request("POST", "/account-templates/custom"));
         for method in ["PUT", "DELETE"] {
             assert!(allowed_request(method, &format!("/account-templates/{id}")));
-            assert!(allowed_request(method, &format!("/account-templates/custom/{id}")));
+            assert!(allowed_request(
+                method,
+                &format!("/account-templates/custom/{id}")
+            ));
             for legacy in ["full", "degraded", "takeover"] {
-                assert!(allowed_request(method, &format!("/account-templates/{legacy}")));
+                assert!(allowed_request(
+                    method,
+                    &format!("/account-templates/{legacy}")
+                ));
             }
-            for suffix in ["unknown", "custom-not-an-id", "custom-0123456789ABCDEF01234567"] {
-                assert!(!allowed_request(method, &format!("/account-templates/{suffix}")));
+            for suffix in [
+                "unknown",
+                "custom-not-an-id",
+                "custom-0123456789ABCDEF01234567",
+            ] {
+                assert!(!allowed_request(
+                    method,
+                    &format!("/account-templates/{suffix}")
+                ));
             }
-            assert!(!allowed_request(method, &format!("/account-templates/{id}?x=1")));
+            assert!(!allowed_request(
+                method,
+                &format!("/account-templates/{id}?x=1")
+            ));
         }
         assert!(!allowed_request("GET", &format!("/account-templates/{id}")));
     }
@@ -1313,17 +1819,28 @@ mod tests {
     fn template_batch_paths_reject_extra_parameters_and_methods() {
         let id = "0123456789abcdef0123456789abcdef";
         assert!(allowed_request("POST", "/account-templates/apply"));
-        assert!(allowed_request("GET", &format!("/account-operations?batch_id={id}")));
-        for path in [format!("/account-operations?batch_id={id}&limit=30"),
-                     format!("/account-operations?batch_id={id}&batch_id={id}"),
-                     format!("/account-operations/{id}?batch_id={id}"),
-                     "/account-operations?batch_id=invalid".into(),
-                     "/account-operations?batch_id=".into()] {
+        assert!(allowed_request(
+            "GET",
+            &format!("/account-operations?batch_id={id}")
+        ));
+        for path in [
+            format!("/account-operations?batch_id={id}&limit=30"),
+            format!("/account-operations?batch_id={id}&batch_id={id}"),
+            format!("/account-operations/{id}?batch_id={id}"),
+            "/account-operations?batch_id=invalid".into(),
+            "/account-operations?batch_id=".into(),
+        ] {
             assert!(!allowed_request("GET", &path));
         }
         assert!(!allowed_request("PUT", "/account-templates/apply"));
-        assert!(!allowed_request("POST", "/account-templates/apply?unknown=1"));
-        assert!(!allowed_request("POST", &format!("/account-operations?batch_id={id}")));
+        assert!(!allowed_request(
+            "POST",
+            "/account-templates/apply?unknown=1"
+        ));
+        assert!(!allowed_request(
+            "POST",
+            &format!("/account-operations?batch_id={id}")
+        ));
     }
     #[test]
     fn proxy_batch_path_is_explicit() {
@@ -1331,8 +1848,11 @@ mod tests {
         for method in ["GET", "PUT", "DELETE"] {
             assert!(!allowed_request(method, "/account-operations/batch"));
         }
-        for path in ["/account-operations/batch/", "/account-operations/batch?x=1",
-                     "/account-operations/batch?batch_id=0123456789abcdef0123456789abcdef"] {
+        for path in [
+            "/account-operations/batch/",
+            "/account-operations/batch?x=1",
+            "/account-operations/batch?batch_id=0123456789abcdef0123456789abcdef",
+        ] {
             assert!(!allowed_request("POST", path));
         }
     }
@@ -1345,7 +1865,13 @@ mod tests {
         assert!(!view.online);
         assert_eq!(view.snapshot, Some(first));
         let connection = serde_json::json!({"state":"auth_rejected"});
-        apply_refresh(&mut view, Err(HttpFailure { message: "管理员 Key 被拒绝".into(), connection: Some(connection.clone()) }));
+        apply_refresh(
+            &mut view,
+            Err(HttpFailure {
+                message: "管理员 Key 被拒绝".into(),
+                connection: Some(connection.clone()),
+            }),
+        );
         assert_eq!(view.upstream_connection, Some(connection));
         let next = serde_json::json!({"observed_at":"2026-09-25T10:00:02Z","accounts":[{"id":2}]});
         apply_refresh(&mut view, Ok(next.clone()));
@@ -1376,7 +1902,15 @@ mod tests {
             (0, 50, 2560, 1614, 2., 2540., 20.),
             (0, -900, 800, 850, 2., 200., -900.),
         ] {
-            let (p, s) = panel_bounds(tauri::PhysicalPosition::new(ax, ay), x, y, w, h, scale, 520.);
+            let (p, s) = panel_bounds(
+                tauri::PhysicalPosition::new(ax, ay),
+                x,
+                y,
+                w,
+                h,
+                scale,
+                520.,
+            );
             assert!(p.x >= x && p.y >= y);
             assert!(p.x + s.width as i32 <= x + w as i32);
             assert!(p.y + s.height as i32 <= y + h as i32);
@@ -1405,17 +1939,36 @@ mod tests {
             for method in ["GET", "POST", "DELETE"] {
                 assert!(!allowed_request(method, &format!("/accounts/7/{suffix}")));
             }
-            for path in [format!("/accounts/0/{suffix}"), format!("/accounts/7/{suffix}?all=true"), format!("/accounts/7/{suffix}/credentials")] {
+            for path in [
+                format!("/accounts/0/{suffix}"),
+                format!("/accounts/7/{suffix}?all=true"),
+                format!("/accounts/7/{suffix}/credentials"),
+            ] {
                 assert!(!allowed_request("PUT", &path));
             }
         }
-        assert!(allowed_request("GET", "/usage-records?limit=50&after_id=12"));
+        assert!(allowed_request(
+            "GET",
+            "/usage-records?limit=50&after_id=12"
+        ));
         assert!(allowed_request("GET", "/connection-status"));
         assert!(!allowed_request("POST", "/connection-status"));
-        assert!(!allowed_request("GET", "/connection-status?url=https://other.invalid"));
+        assert!(!allowed_request(
+            "GET",
+            "/connection-status?url=https://other.invalid"
+        ));
         assert!(allowed_request("GET", "/usage-records/12"));
-        assert!(allowed_request("GET", "/usage-record-options?kind=api_keys&user_id=7"));
-        for path in ["/usage-records/0", "/usage-records/12/credentials", "/usage-records/../config", "/usage-record-options/keys", "/usage-record-options/../config"] {
+        assert!(allowed_request(
+            "GET",
+            "/usage-record-options?kind=api_keys&user_id=7"
+        ));
+        for path in [
+            "/usage-records/0",
+            "/usage-records/12/credentials",
+            "/usage-records/../config",
+            "/usage-record-options/keys",
+            "/usage-record-options/../config",
+        ] {
             assert!(!allowed_request("GET", path));
         }
         for method in ["POST", "PUT", "DELETE"] {
@@ -1428,17 +1981,32 @@ mod tests {
         assert!(allowed_request("POST", "/model-groups/7/reasoning/resolve"));
         assert!(allowed_request("PUT", "/model-groups/7/reasoning"));
         assert!(allowed_request("DELETE", "/model-groups/7/reasoning"));
-        for (method, path) in [("GET", "/model-catalog"), ("GET", "/model-groups/7"), ("POST", "/model-groups/7/preview"), ("POST", "/model-groups/7/upstream-import"), ("PUT", "/model-groups/7/allowlist"), ("PUT", "/model-groups/7/overrides")] {
+        for (method, path) in [
+            ("GET", "/model-catalog"),
+            ("GET", "/model-groups/7"),
+            ("POST", "/model-groups/7/preview"),
+            ("POST", "/model-groups/7/upstream-import"),
+            ("PUT", "/model-groups/7/allowlist"),
+            ("PUT", "/model-groups/7/overrides"),
+        ] {
             assert!(!allowed_request(method, path));
         }
-        for path in ["/model-groups/0", "/model-groups/7/credentials", "/model-groups/7?key=secret", "/model-groups/7/../accounts"] {
+        for path in [
+            "/model-groups/0",
+            "/model-groups/7/credentials",
+            "/model-groups/7?key=secret",
+            "/model-groups/7/../accounts",
+        ] {
             assert!(!allowed_request("GET", path));
         }
         assert!(!allowed_request("DELETE", "/model-groups/7"));
         assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
         assert!(allowed_request("GET", "/accounts/7/models"));
-        assert!(allowed_request("GET", "/accounts/7/models?purpose=model_test"));
+        assert!(allowed_request(
+            "GET",
+            "/accounts/7/models?purpose=model_test"
+        ));
         for path in [
             "/accounts/7/models?purpose=legacy",
             "/accounts/7/models?purpose=model_test&x=1",
@@ -1453,14 +2021,28 @@ mod tests {
         assert!(allowed_request("GET", "/accounts/7/quality"));
         assert!(allowed_request("POST", "/accounts/7/model-tests"));
         assert!(allowed_request("GET", "/accounts/7/model-tests/latest"));
-        assert!(allowed_request("GET", "/model-tests/0123456789abcdef0123456789abcdef"));
-        assert!(allowed_request("POST", "/model-tests/0123456789abcdef0123456789abcdef/cancel"));
+        assert!(allowed_request(
+            "GET",
+            "/model-tests/0123456789abcdef0123456789abcdef"
+        ));
+        assert!(allowed_request(
+            "POST",
+            "/model-tests/0123456789abcdef0123456789abcdef/cancel"
+        ));
         assert!(!allowed_request("POST", "/model-tests/invalid/cancel"));
         assert!(!allowed_request("GET", "/model-tests/0"));
         assert!(!allowed_request("POST", "/accounts/7/quality"));
         assert!(!allowed_request("GET", "/accounts/0/quality"));
-        assert!(!allowed_request("GET", "/accounts/7/quality/../credentials"));
-        for p in ["/accounts/0", "/accounts/7/", "/accounts/7?all=true", "/accounts"] {
+        assert!(!allowed_request(
+            "GET",
+            "/accounts/7/quality/../credentials"
+        ));
+        for p in [
+            "/accounts/0",
+            "/accounts/7/",
+            "/accounts/7?all=true",
+            "/accounts",
+        ] {
             assert!(!allowed_request("DELETE", p));
         }
         for p in ["/accounts/7/test", "https://evil.test", "/config/../token"] {
@@ -1470,17 +2052,27 @@ mod tests {
     #[test]
     fn queued_operations_and_retry_have_explicit_paths() {
         let id = "0123456789abcdef0123456789abcdef";
-        for (method, path) in [("POST", "/accounts/421/operations".to_owned()),
-            ("GET", "/account-operations".to_owned()), ("GET", format!("/account-operations/{id}")),
+        for (method, path) in [
+            ("POST", "/accounts/421/operations".to_owned()),
+            ("GET", "/account-operations".to_owned()),
+            ("GET", format!("/account-operations/{id}")),
             ("GET", format!("/account-operations/{id}?after_event=100")),
-            ("POST", format!("/account-operations/{id}/cancel")), ("POST", format!("/model-tests/{id}/retry"))] {
+            ("POST", format!("/account-operations/{id}/cancel")),
+            ("POST", format!("/model-tests/{id}/retry")),
+        ] {
             assert!(allowed_request(method, &path), "{method} {path}");
         }
-        for (method, path) in [("POST", format!("/model-tests/{id}/retry?force=true")),
-            ("GET", format!("/account-operations/{id}?after_event=1&after_event=2")),
+        for (method, path) in [
+            ("POST", format!("/model-tests/{id}/retry?force=true")),
+            (
+                "GET",
+                format!("/account-operations/{id}?after_event=1&after_event=2"),
+            ),
             ("GET", format!("/account-operations/{id}?other=1")),
             ("POST", "/accounts/421/operations?force=true".to_owned()),
-            ("DELETE", format!("/account-operations/{id}")), ("GET", "/account-operations/invalid".to_owned())] {
+            ("DELETE", format!("/account-operations/{id}")),
+            ("GET", "/account-operations/invalid".to_owned()),
+        ] {
             assert!(!allowed_request(method, &path), "{method} {path}");
         }
     }
@@ -1489,13 +2081,24 @@ mod tests {
     fn login_launch_is_silent_but_manual_and_second_instances_open() {
         assert!(silent_launch(&["sub2ops".into(), "--autostart".into()]));
         assert!(!silent_launch(&["sub2ops".into()]));
-        assert!(!silent_launch(&["sub2ops".into(), "--autostart=false".into()]));
+        assert!(!silent_launch(&[
+            "sub2ops".into(),
+            "--autostart=false".into()
+        ]));
     }
     #[cfg(desktop)]
     #[test]
     fn compact_panel_height_is_content_bounded() {
         for (height, expected) in [(100., 128), (386., 386), (800., 520)] {
-            let (_, size) = panel_bounds(tauri::PhysicalPosition::new(800., 24.), 0, 24, 1400, 900, 1., height);
+            let (_, size) = panel_bounds(
+                tauri::PhysicalPosition::new(800., 24.),
+                0,
+                24,
+                1400,
+                900,
+                1.,
+                height,
+            );
             assert_eq!(size.width, 420);
             assert_eq!(size.height, expected);
         }
@@ -1523,22 +2126,35 @@ mod tests {
 
     #[test]
     fn account_templates_and_detection_have_explicit_method_and_path_allowlist() {
-        for (method, path) in [("GET", "/account-templates"), ("PUT", "/account-templates"),
-            ("GET", "/account-templates?account_id=421"), ("GET", "/accounts/421/model-detection"),
-            ("PUT", "/accounts/421/model-detection"), ("GET", "/modeltrace/fingerprint-bank"),
-            ("POST", "/modeltrace/fingerprint-bank/sync")] {
+        for (method, path) in [
+            ("GET", "/account-templates"),
+            ("PUT", "/account-templates"),
+            ("GET", "/account-templates?account_id=421"),
+            ("GET", "/accounts/421/model-detection"),
+            ("PUT", "/accounts/421/model-detection"),
+            ("GET", "/modeltrace/fingerprint-bank"),
+            ("POST", "/modeltrace/fingerprint-bank/sync"),
+        ] {
             assert!(allowed_request(method, path));
         }
-        for path in ["/account-templates?unknown=1", "/account-templates?account_id=0",
-                     "/accounts/421/model-detection?x=1", "/modeltrace/fingerprint-bank?x=1"] {
+        for path in [
+            "/account-templates?unknown=1",
+            "/account-templates?account_id=0",
+            "/accounts/421/model-detection?x=1",
+            "/modeltrace/fingerprint-bank?x=1",
+        ] {
             assert!(!allowed_request("GET", path));
         }
         assert!(!allowed_request("DELETE", "/account-templates"));
         assert!(!allowed_request("PUT", "/modeltrace/fingerprint-bank"));
         let old: Preferences = serde_json::from_str("{}").unwrap();
         assert!(old.model_test_concurrency.is_none());
-        let changed = Preferences { model_test_concurrency: Some(3), ..old };
-        let restored: Preferences = serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
+        let changed = Preferences {
+            model_test_concurrency: Some(3),
+            ..old
+        };
+        let restored: Preferences =
+            serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
         assert_eq!(restored.model_test_concurrency, Some(3));
     }
 
@@ -1550,7 +2166,10 @@ mod tests {
         assert!(old.pinned && old.launch_at_login);
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("prefs.json");
-        let changed = Preferences { record_columns: Some(vec!["model".into(), "cost".into()]), ..old };
+        let changed = Preferences {
+            record_columns: Some(vec!["model".into(), "cost".into()]),
+            ..old
+        };
         save_preferences(&p, &changed).unwrap();
         let restored: Preferences = serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap();
         assert_eq!(restored.record_columns, changed.record_columns);
@@ -1562,7 +2181,10 @@ mod tests {
     #[test]
     fn retired_type_column_is_removed_without_resetting_preferences() {
         let prefs: Preferences = serde_json::from_str(r#"{"base_url":"https://example.com","favorites":[7],"pinned":true,"launch_at_login":true,"record_columns":["ip","type","model"]}"#).unwrap();
-        assert_eq!(prefs.record_columns, Some(vec!["ip".into(), "model".into()]));
+        assert_eq!(
+            prefs.record_columns,
+            Some(vec!["ip".into(), "model".into()])
+        );
         assert_eq!(prefs.favorites, vec![7]);
         assert!(prefs.pinned && prefs.launch_at_login);
         let empty: Preferences = serde_json::from_str(r#"{"record_columns":["type"]}"#).unwrap();

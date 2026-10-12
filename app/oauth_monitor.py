@@ -123,6 +123,18 @@ class OAuthStateStore:
             if "auto_reset_credit" in metadata:
                 from .auto_reset import validate_state
                 validate_state(metadata["auto_reset_credit"])
+            notices = metadata.get('credit_result_notifications', {})
+            if not isinstance(notices, dict):
+                raise ValueError('用卡通知状态无效')
+            for episode, notice in notices.items():
+                if (not isinstance(notice, dict) or notice.get('status') not in {'pending', 'delivered', 'failed', 'suppressed'}
+                        or notice.get('episode') != episode or notice.get('outcome') not in {'restored', 'not_executed', 'consume_failed', 'unrecovered', 'unknown'}
+                        or type(notice.get('account_id')) is not int or notice['account_id'] <= 0
+                        or type(notice.get('attempts')) is not int or not 0 <= notice['attempts'] <= 5
+                        or not parse_iso_datetime(notice.get('completed_at'))
+                        or notice.get('status') == 'pending' and not parse_iso_datetime(notice.get('next_at'))
+                        or (notice.get('next_at') and not parse_iso_datetime(notice['next_at']))):
+                    raise ValueError('用卡通知状态无效')
             if "reset_credit_observation" in metadata:
                 from .reset_credit_observation import validate_observation
                 validate_observation(metadata["reset_credit_observation"])
@@ -324,7 +336,7 @@ class OAuthStateStore:
     def update_scheduler(self, updates: dict[int, dict[str, Any]]) -> None:
         self.commit(scheduler_updates=updates)
 
-    def manual_control(self, row: dict[str, Any], enabled: bool, now: datetime) -> int:
+    def manual_control(self, row: dict[str, Any], enabled: bool, now: datetime, *, origin: str = "manual") -> int:
         """Durably revoke automatic authority before sending a manual mutation."""
         aid = str(row["id"])
         def change(data: dict) -> int:
@@ -332,13 +344,19 @@ class OAuthStateStore:
             generation = int((meta.get("manual_control") or {}).get("generation") or 0) + 1
             evidence = latest_openai_result(row, data["oauth_results"].get(aid), now) or {}
             meta["manual_control"] = {"generation": generation, "at": now.isoformat(), "enabled": enabled,
-                "event_fingerprint": recovery_block_signature(row), "evidence_at": evidence.get("queried_at")}
+                "event_fingerprint": recovery_block_signature(row), "evidence_at": evidence.get("queried_at"),
+                "origin": "model_detection" if origin == "model_detection" else "manual"}
             if meta.get("recovery_intent"):
                 meta["recovery_intent"] = {**meta["recovery_intent"], "status": "cancelled", "next_retry_at": ""}
             card = meta.get("auto_reset_credit")
-            if card and card.get("stage") not in {"recovered", "closed"}:
+            if card and card.get("stage") not in {"recovered", "closed", "finished"}:
                 meta["auto_reset_credit"] = {**card, "stage": "manual", "owns_pause": False, "next_at": None,
                     "manual_at": now.isoformat(), "revision": int(card.get("revision") or 0) + 1}
+            elif card and card.get('stage') == 'finished' and card.get('owns_pause'):
+                # A terminal receipt stays immutable as history; an explicit
+                # manual scheduling decision still revokes its remaining hold.
+                meta['auto_reset_credit'] = {**card, 'owns_pause': False, 'manual_at': now.isoformat(),
+                    'revision': int(card.get('revision') or 0) + 1}
             data["pending_events"] = {key: event for key, event in data["pending_events"].items()
                                       if int(event.get("account_id") or 0) != int(aid) or event.get("stage") == "active_usage"}
             return generation

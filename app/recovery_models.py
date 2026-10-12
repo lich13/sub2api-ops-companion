@@ -15,6 +15,17 @@ class RecoveryModels:
     def bind_recovery(self, monitor, loop):
         self.recovery_loop = loop
         monitor.model_verifier = self.poll_recovery
+        monitor.detection_gate = self.recovery_held
+        monitor.credit_control_version = self.credit_control_version
+        def cancel_credit(job_id, episode):
+            async def cancel():
+                job = self.s.model_tests.get(job_id)
+                context = job.get('recovery_context') or {}
+                if context.get('kind') == 'credit' and context.get('fingerprint') == episode:
+                    await self.s.model_tests.cancel(job_id)
+            future = asyncio.run_coroutine_threadsafe(cancel(), loop)
+            future.add_done_callback(lambda value: value.exception() if not value.cancelled() else None)
+        monitor.cancel_credit_verification = cancel_credit
 
     def poll_recovery(self, aid, *, kind, fingerprint, attempt, consume=False):
         future = asyncio.run_coroutine_threadsafe(
@@ -49,6 +60,8 @@ class RecoveryModels:
         if context["kind"] == "credit":
             controller = monitor.auto_reset
             task = controller.state(aid)
+            if (task.get('stage') == 'finished' or (task.get('policy_version') and controller._expired(task, now))):
+                return '用卡执行期限已结束'
             if task.get("episode") != context["fingerprint"]:
                 return "用卡任务已变化"
             if before_reset and not task.get("attempt_at"):
@@ -108,7 +121,8 @@ class RecoveryModels:
                     await self.guard(job)
                 except HTTPException as exc:
                     return {'success': False, 'error_code': 'recovery_state_changed', 'error': str(exc.detail)}
-            failure = job.get('error_code') or 'model_analysis_insufficient'
+            retryable = job.get('status') == 'failed' and job.get('can_retry') is True
+            failure = job.get('error_code') or ('model_request_failed' if retryable else 'model_analysis_insufficient')
             if failure == 'auth_or_quota':
                 status = next((g.get('diagnostics', {}).get('http_status') for g in job.get('groups', [])
                                if g.get('diagnostics', {}).get('http_status') in {401, 402}), 401)
@@ -116,13 +130,16 @@ class RecoveryModels:
             return {"success": valid and report.get("prediction") != "gpt-5.6-luna",
                     "error_code": "detection_held" if report.get("prediction") == "gpt-5.6-luna" else "" if valid else failure,
                     "error": job.get("error") or ("账号已判定降智" if report.get("prediction") == "gpt-5.6-luna" else "" if valid else "模型验证未获得有效样本"),
-                    "model_id": job["requested_model"], "completed_at": job.get("completed_at"), "job_id": job["id"]}
+                    "model_id": job["requested_model"], "completed_at": job.get("completed_at"), "job_id": job["id"],
+                    "retryable": retryable}
         allowed = parse_iso_datetime(self.next_allowed_at(aid))
         if allowed and self.clock() < allowed:
             return self.recovery_wait("等待自动检测冷却", until=allowed.isoformat(), waiting_reason='model_cooldown')
         current = self.s.model_tests.latest(aid)
         if current and current["status"] in {"queued", "running", "retrying"}:
-            return self.recovery_wait("等待当前模型测试结束", job_id=current["id"], waiting_reason='model_busy')
+            # This is not our verification job. Never attach it to a credit
+            # episode, cancel it on our deadline, or merge its disposition.
+            return self.recovery_wait("等待当前模型测试结束", waiting_reason='model_busy')
         row = await self.s.actions.account(aid)
         from .oauth_monitor import recovery_block_signature
         context["block_signature"] = recovery_block_signature(row)
@@ -161,6 +178,7 @@ class RecoveryModels:
             reason = self.recovery_reason(row, context, before_reset=True)
             if reason:
                 return {"success": False, "error_code": "recovery_ineligible", "error": reason}
+            task = controller._save(aid, task, model_test_job_id=job['id'])
             result = controller._request(row, "reset", task, self.clock())
             if result.get("consumed") and not result.get("uncertain") and controller.state(aid).get("stage") == "testing":
                 return None
