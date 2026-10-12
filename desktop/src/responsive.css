@@ -182,7 +182,7 @@
 }
 
 .mobile-primary-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
-.mobile-primary-actions > button { flex: 1 1 90px; min-height: 48px; justify-content: center; }
+.mobile-primary-actions > button { flex: 1 1 90px; min-height: 48px; min-width: 0; padding: 8px 10px; gap: 6px; justify-content: flex-start; white-space: normal; text-align: left; }
 @media (max-width: 680px) {
   .mobile .account-template-row.mapping { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 4px 8px; }
   .mobile .account-template-row.mapping input { grid-column: 1; width: 100%; }

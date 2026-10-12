@@ -1712,7 +1712,7 @@ td:last-child {
 }
 .account-action-popup > button svg { flex-shrink: 0; }
 .mobile-more-actions { display: grid; gap: 8px; }
-.mobile-more-actions > button { justify-content: flex-start; gap: 6px; }
+.mobile-more-actions > button { justify-content: flex-start; gap: 6px; padding: 8px 12px; font-size: inherit; }
 @media (pointer: coarse), (max-width: 760px) {
   .account-action-popup > button { min-height: 48px; }
 }
