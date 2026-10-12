@@ -922,6 +922,7 @@ async function templateChecks(h) {
   const selectionBar = surface.locator(".selection-bar");
   const selectionSummary = selectionBar.locator(".selection-summary");
   const selectionActions = selectionBar.locator(".selection-actions");
+  const proxyAction = selectionActions.getByRole("button", { name: "选择代理", exact: true });
   const applyTemplateAction = selectionActions.getByRole("button", { name: "应用模板", exact: true });
   const deleteSelectedAction = selectionActions.getByRole("button", { name: "删除所选", exact: true });
   await h.state(await selectionActions.getAttribute("role") === "group"
@@ -935,24 +936,25 @@ async function templateChecks(h) {
   }), "batch-summary-not-before-actions", selectionBar);
   await h.state((await selectionSummary.textContent())?.includes("已选 2 个账号"),
     "batch-selection-summary-count", selectionSummary);
+  await selectionActions.scrollIntoViewIfNeeded();
   const actionLayout = await selectionActions.evaluate((element) => {
     const buttons = Array.from(element.querySelectorAll("button"));
-    const first = buttons[0]?.getBoundingClientRect();
-    const second = buttons[1]?.getBoundingClientRect();
+    const rects = buttons.map((button) => button.getBoundingClientRect());
+    const gaps = rects.slice(1).map((rect, index) => rect.left - rects[index].right);
     return {
       count: buttons.length,
-      adjacent: buttons[0]?.nextElementSibling === buttons[1],
-      sameRow: !!first && !!second && Math.abs(first.top - second.top) < 1,
+      labels: buttons.map((button) => button.textContent?.trim()),
+      adjacent: buttons.length === 3 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
+      sameRow: rects.length === 3 && rects.every((rect) => Math.abs(rect.top - rects[0].top) < 1),
       gap: getComputedStyle(element).columnGap,
-      wrap: getComputedStyle(element).flexWrap,
-      actualGap: first && second ? second.left - first.right : null,
+      actualGaps: gaps,
     };
   });
-  const selectionWrap = await selectionBar.evaluate((element) => getComputedStyle(element).flexWrap);
-  await h.state(selectionWrap === "wrap" && actionLayout.count === 2 && actionLayout.adjacent
-    && actionLayout.sameRow && actionLayout.wrap === "nowrap" && actionLayout.gap === "8px"
-    && actionLayout.actualGap !== null && Math.abs(actionLayout.actualGap - 8) < 1,
+  await h.state(isDeepStrictEqual(actionLayout.labels, ["选择代理", "应用模板", "删除所选"])
+    && actionLayout.adjacent && actionLayout.sameRow && actionLayout.gap === "8px"
+    && actionLayout.actualGaps.length === 2 && actionLayout.actualGaps.every((gap) => Math.abs(gap - 8) < 1),
   "batch-actions-not-adjacent-at-eight-pixels", selectionActions);
+  await h.within(proxyAction, "batch-proxy-entry", { vertical: false });
   await h.within(applyTemplateAction, "batch-template-entry", { vertical: false });
   await h.within(deleteSelectedAction, "batch-delete-entry", { vertical: false });
   await h.layout();
