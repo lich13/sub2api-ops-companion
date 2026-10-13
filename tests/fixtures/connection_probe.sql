@@ -43,6 +43,13 @@ CREATE TABLE account_groups (
     PRIMARY KEY (account_id, group_id)
 );
 
+CREATE TABLE scheduled_test_plans (
+    id bigint PRIMARY KEY,
+    account_id bigint REFERENCES accounts(id),
+    cron_expression text NOT NULL,
+    auto_recover boolean NOT NULL DEFAULT false
+);
+
 CREATE TABLE usage_logs (
     id bigint PRIMARY KEY,
     account_id bigint REFERENCES accounts(id),

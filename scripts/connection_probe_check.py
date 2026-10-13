@@ -217,7 +217,7 @@ class FixtureDatabase:
     def full_schema(self):
         with self.pg.connect(self.url) as connection:
             connection.execute((ROOT / "tests/fixtures/connection_probe.sql").read_text())
-            for table in ("accounts", "groups", "account_groups", "usage_logs", "ops_error_logs"):
+            for table in ("accounts", "groups", "account_groups", "usage_logs", "ops_error_logs", "scheduled_test_plans"):
                 count = connection.execute(self.sql.SQL("SELECT count(*) FROM {}").format(self.sql.Identifier(table))).fetchone()[0]
                 require(count == 0, "full runtime reference must have empty fixture tables")
 
@@ -956,6 +956,8 @@ def full_baseline(args, database, temp_root):
                     except (ValueError, TypeError):
                         categories["unreadable_audit_record"] = categories.get("unreadable_audit_record", 0) + 1
             result["audit_error_categories"] = categories
+            if categories:
+                result.update(status="failed", reason="full runtime initialization recorded audit failures")
 
 
 def run_benchmark(args, database, temp_root):
@@ -1019,6 +1021,8 @@ def run_benchmark(args, database, temp_root):
         try:
             with FixtureDatabase(database.admin_url) as reference:
                 result["full_python_reference"] = full_baseline(args, reference, temp_root)
+            if result["full_python_reference"]["status"] != "measured":
+                result["status"] = "failed"
         except Exception as exc:
             result["full_python_reference"] = {"status": "failed", "error": safe_error(exc),
                 "image": image_info(args.full_image), "scope": "full app.main empty fixture idle reference only"}

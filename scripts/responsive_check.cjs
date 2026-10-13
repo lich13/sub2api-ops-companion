@@ -985,6 +985,7 @@ async function templateChecks(h) {
   const selectionBar = surface.locator(".selection-bar");
   const selectionSummary = selectionBar.locator(".selection-summary");
   const selectionActions = selectionBar.locator(".selection-actions");
+  const testConnectionAction = selectionActions.getByRole("button", { name: "测试连接", exact: true });
   const proxyAction = selectionActions.getByRole("button", { name: "选择代理", exact: true });
   const applyTemplateAction = selectionActions.getByRole("button", { name: "应用模板", exact: true });
   const deleteSelectedAction = selectionActions.getByRole("button", { name: "删除所选", exact: true });
@@ -1003,20 +1004,32 @@ async function templateChecks(h) {
   const actionLayout = await selectionActions.evaluate((element) => {
     const buttons = Array.from(element.querySelectorAll("button"));
     const rects = buttons.map((button) => button.getBoundingClientRect());
-    const gaps = rects.slice(1).map((rect, index) => rect.left - rects[index].right);
+    const style = getComputedStyle(element);
+    const rows = [[0, 1], [2, 3]];
+    const columns = [[0, 2], [1, 3]];
     return {
       count: buttons.length,
       labels: buttons.map((button) => button.textContent?.trim()),
-      adjacent: buttons.length === 3 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
-      sameRow: rects.length === 3 && rects.every((rect) => Math.abs(rect.top - rects[0].top) < 1),
-      gap: getComputedStyle(element).columnGap,
-      actualGaps: gaps,
+      adjacent: buttons.length === 4 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
+      sameRows: rects.length === 4 && rows.every(([left, right]) => Math.abs(rects[left].top - rects[right].top) < 1
+        && Math.abs(rects[left].bottom - rects[right].bottom) < 1),
+      sameColumns: rects.length === 4 && columns.every(([top, bottom]) => Math.abs(rects[top].left - rects[bottom].left) < 1
+        && Math.abs(rects[top].right - rects[bottom].right) < 1),
+      display: style.display,
+      columnGap: style.columnGap,
+      rowGap: style.rowGap,
+      actualColumnGaps: rects.length === 4 ? rows.map(([left, right]) => rects[right].left - rects[left].right) : [],
+      actualRowGaps: rects.length === 4 ? columns.map(([top, bottom]) => rects[bottom].top - rects[top].bottom) : [],
     };
   });
-  await h.state(isDeepStrictEqual(actionLayout.labels, ["选择代理", "应用模板", "删除所选"])
-    && actionLayout.adjacent && actionLayout.sameRow && actionLayout.gap === "8px"
-    && actionLayout.actualGaps.length === 2 && actionLayout.actualGaps.every((gap) => Math.abs(gap - 8) < 1),
+  await h.state(actionLayout.count === 4
+    && isDeepStrictEqual(actionLayout.labels, ["测试连接", "选择代理", "应用模板", "删除所选"])
+    && actionLayout.adjacent && actionLayout.sameRows && actionLayout.sameColumns && actionLayout.display === "grid"
+    && actionLayout.columnGap === "8px" && actionLayout.rowGap === "8px"
+    && actionLayout.actualColumnGaps.length === 2 && actionLayout.actualColumnGaps.every((gap) => Math.abs(gap - 8) < 1)
+    && actionLayout.actualRowGaps.length === 2 && actionLayout.actualRowGaps.every((gap) => Math.abs(gap - 8) < 1),
   "batch-actions-not-adjacent-at-eight-pixels", selectionActions);
+  await h.within(testConnectionAction, "batch-connection-entry", { vertical: false });
   await h.within(proxyAction, "batch-proxy-entry", { vertical: false });
   await h.within(applyTemplateAction, "batch-template-entry", { vertical: false });
   await h.within(deleteSelectedAction, "batch-delete-entry", { vertical: false });
@@ -1113,12 +1126,13 @@ async function connectionBatchChecks(h, fixture) {
   });
   const beforeJobs = await readJobs();
   for (const account of selectedAccounts) {
-    const checkbox = surface.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true });
+    const checkboxOptions = { name: `选择 ${account.name}`, exact: true };
+    const checkbox = page.getByRole("checkbox", checkboxOptions);
     if (h.scenario.mobile) {
       const card = accountRows.filter({ has: checkbox });
       await h.click(card.locator("label.account-check"), "batch-connection-select-account");
     } else {
-      await h.click(checkbox, "batch-connection-select-account", { touch: false, vertical: false });
+      await h.click(surface.getByRole("checkbox", checkboxOptions), "batch-connection-select-account", { touch: false, vertical: false });
     }
   }
   await h.state((await selection.textContent() || "").includes("已选 3 个账号"), "batch-connection-selection-count", selection);
