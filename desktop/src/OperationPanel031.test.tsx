@@ -123,6 +123,63 @@ async function renderPanel(connectionKey: string) {
 }
 
 describe("operation panel batch history", () => {
+  it.each(["running", "needs_confirmation"])(
+    "keeps cancellation for single tests and queued batches while a dispatched batch is %s",
+    async (status) => {
+      const jobs = [
+        operation({
+          id: "batch-dispatched",
+          account_name: "Dispatched batch account",
+          action: "test",
+          batch_id: "connection-batch",
+          status,
+          started_at: "2026-10-13T02:00:00Z",
+          requested: { confirmed: true },
+        }),
+        operation({
+          id: "single-dispatched",
+          account_name: "Single test account",
+          action: "test",
+          status,
+          started_at: "2026-10-13T02:00:00Z",
+          requested: { confirmed: true },
+        }),
+        operation({
+          id: "batch-queued",
+          account_name: "Queued batch account",
+          action: "test",
+          batch_id: "connection-batch",
+          status: "queued",
+          requested: { confirmed: true },
+        }),
+      ];
+      vi.mocked(api).mockImplementation(async (method, path) => {
+        if (method === "GET" && path === "/account-operations") return { items: jobs } as never;
+        if (method === "POST" && path === "/account-operations/single-dispatched/cancel") {
+          return { ...jobs[1], status: "cancelled" } as never;
+        }
+        throw new Error("unexpected " + method + " " + path);
+      });
+
+      await renderPanel("panel-test-cancellation");
+      await act(async () => entryButton().click());
+      await flush();
+      const articles = [...container.querySelectorAll('[role="dialog"] .operation-list article')];
+      expect(articles).toHaveLength(3);
+      const cancelButtons = articles.map((article) => [...article.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "取消"));
+      expect(cancelButtons[0]).toBeUndefined();
+      expect(cancelButtons[1]).toBeDefined();
+      expect(cancelButtons[2]).toBeDefined();
+
+      await act(async () => cancelButtons[1]!.click());
+      await flush();
+      expect(api).toHaveBeenCalledWith("POST", "/account-operations/single-dispatched/cancel", {});
+      expect(getOperations().find((job) => job.id === "single-dispatched")?.status).toBe("cancelled");
+      expect(getOperations().find((job) => job.id === "batch-dispatched")?.status).toBe(status);
+    },
+  );
+
   it("shows every item in a batch larger than thirty and returns to all operations", async () => {
     const sourceOperation = operation({
       id: "operation-summary",

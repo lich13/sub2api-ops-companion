@@ -70,7 +70,7 @@ export default function AccountOperations({ accounts, online, connectionKey, rep
       <div className="operation-list">{(batchId ? batchItems : jobs).map((job) => <article key={job.id}><div><strong>{job.account_name} <span>#{job.account_id}</span></strong><span>{labels[job.action] || job.action} · {states[job.status] || job.status}</span></div>{job.reason && <p className={job.status === 'needs_confirmation' || job.status === 'failed' ? 'bad-text' : 'muted'}>{job.reason}</p>}
         {!batchId && job.batch_id && <button onClick={() => { setBatchItems([]); setBatchId(job.batch_id!); }}>查看整批</button>}
         {job.status === 'needs_confirmation' && <><dl><div><dt>请求</dt><dd>{describe(job.requested)}</dd></div>{job.current && <div><dt>当前</dt><dd>{describe(job.current)}</dd></div>}</dl><button disabled={!online} onClick={() => void retry(job)}>{job.action === "account_template" ? "重新预览模板" : "确认后重新提交"}</button></>}
-        {['queued', 'needs_confirmation'].includes(job.status) || job.status === 'running' && ['test', 'model_test'].includes(job.action) ? <button disabled={!online} onClick={() => void cancel(job)}>取消</button> : null}
+        {!(job.action === 'test' && job.batch_id && job.started_at) && (['queued', 'needs_confirmation'].includes(job.status) || job.status === 'running' && ['test', 'model_test'].includes(job.action)) ? <button disabled={!online} onClick={() => void cancel(job)}>取消</button> : null}
       </article>)}</div></section></div>}
   </>;
 }

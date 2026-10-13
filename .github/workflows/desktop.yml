@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     tags: ['desktop-v*']
-    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
+    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', 'experiments/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   pull_request:
-    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
+    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', 'experiments/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,41 @@ jobs:
       - run: python -m unittest discover -s tests -q
       - run: python -m compileall -q app tests
       - run: docker build -t sub2ops-desktop-check .
+  prototype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: probe_fixture
+          POSTGRES_PASSWORD: fixture-postgres
+          POSTGRES_DB: probe_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U probe_fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PROBE_QA_DATABASE_URL: postgresql://probe_fixture:fixture-postgres@127.0.0.1:5432/probe_fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Build isolated implementations
+        run: |
+          docker build -f experiments/connection_probe/Dockerfile.python -t sub2ops-probe-python .
+          docker build -f experiments/connection_probe/Dockerfile.rust -t sub2ops-probe-rust .
+          docker build -t sub2ops-probe-full .
+      - name: Shared HTTP contracts
+        run: |
+          python scripts/connection_probe_check.py --mode contract --implementation python --image sub2ops-probe-python --database-url "$PROBE_QA_DATABASE_URL"
+          python scripts/connection_probe_check.py --mode contract --implementation rust --image sub2ops-probe-rust --database-url "$PROBE_QA_DATABASE_URL"
+      - name: Compare resources on the same runner
+        run: |
+          python scripts/connection_probe_check.py --mode benchmark --implementation python --image sub2ops-probe-python --database-url "$PROBE_QA_DATABASE_URL" --full-image sub2ops-probe-full
+          python scripts/connection_probe_check.py --mode benchmark --implementation rust --image sub2ops-probe-rust --database-url "$PROBE_QA_DATABASE_URL" --binary-path /usr/local/bin/sub2ops-probe
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -150,7 +185,7 @@ jobs:
         run: rm -f -- /tmp/sub2ops-android-release.p12 /tmp/sub2ops-android-release.properties
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: [backend, browser, macos, android]
+    needs: [backend, prototype, browser, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -259,7 +259,7 @@ async function fixtureData(page) {
     const preview = await import("/src/preview.ts");
     const state = await preview.run("get_state", {});
     const config = await preview.run("api_request", { method: "GET", path: "/config" });
-    return { accounts: state.snapshot.accounts, recoveries: state.snapshot.recoveries, config, platform: state.platform };
+    return { accounts: state.snapshot.accounts, recoveries: state.snapshot.recoveries, config, platform: state.platform, baseUrl: state.preferences.base_url };
   });
 }
 
@@ -1093,6 +1093,136 @@ async function templateChecks(h) {
   await h.layout();
 }
 
+async function connectionBatchChecks(h, fixture) {
+  const { page } = h;
+  h.phase = "accounts/batch-connection-selection";
+  const surface = page.locator('.page-surface[data-page="accounts"]');
+  const selection = surface.locator(".selection-bar");
+  const entry = selection.getByRole("button", { name: "测试连接", exact: true });
+  const results = surface.getByRole("region", { name: "批量测试连接", exact: true });
+  const accountRows = surface.locator(h.scenario.mobile ? ".mobile-account" : ".accounts-table tbody tr");
+  const selectedAccounts = [101, 102, 201].map((id) => fixture.accounts.find((account) => account.id === id));
+  await h.state(selectedAccounts.every(Boolean), "missing-batch-connection-fixture", surface);
+  await h.state(await entry.isDisabled(), "batch-connection-empty-selection-enabled", entry);
+  await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-account-list-incomplete", accountRows);
+
+  const readJobs = () => page.evaluate(async () => {
+    const preview = await import("/src/preview.ts");
+    const response = await preview.run("api_request", { method: "GET", path: "/account-operations" });
+    return response.items.filter((item) => item.action === "test");
+  });
+  const beforeJobs = await readJobs();
+  for (const account of selectedAccounts) {
+    const checkbox = surface.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true });
+    if (h.scenario.mobile) {
+      const card = accountRows.filter({ has: checkbox });
+      await h.click(card.locator("label.account-check"), "batch-connection-select-account");
+    } else {
+      await h.click(checkbox, "batch-connection-select-account", { touch: false, vertical: false });
+    }
+  }
+  await h.state((await selection.textContent() || "").includes("已选 3 个账号"), "batch-connection-selection-count", selection);
+  await h.allWithin(selection.locator(".selection-actions button"), "batch-connection-selection-action");
+  await h.layout();
+
+  h.phase = "accounts/batch-connection-stop";
+  await h.click(entry, "batch-connection-start");
+  await h.state(await entry.isDisabled(), "batch-connection-running-entry-enabled", entry);
+  // Stop immediately while the synthetic worker is queued, before its 1200ms dispatch.
+  await h.click(results.getByRole("button", { name: "停止未开始", exact: true }), "batch-connection-stop");
+  await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 0" }), "batch-connection-stopped-summary");
+  const stoppedRows = results.locator("tbody tr");
+  await h.state(await stoppedRows.count() === 3
+    && (await stoppedRows.allTextContents()).every((text) => text.includes("已停止") && text.includes("未派发测试")),
+  "batch-connection-stop-result-mismatch", results);
+  const stoppedJobs = await readJobs();
+  const stoppedIds = new Set(beforeJobs.map((job) => job.id));
+  await h.state(stoppedJobs.filter((job) => !stoppedIds.has(job.id)).length === 3
+    && stoppedJobs.filter((job) => !stoppedIds.has(job.id)).every((job) => job.status === "cancelled" && !job.started_at),
+  "batch-connection-stop-dispatched-or-duplicated", results);
+
+  h.phase = "accounts/batch-connection-results";
+  await h.click(entry, "batch-connection-restart");
+  await h.state(await entry.isDisabled(), "batch-connection-repeat-entry-enabled", entry);
+  await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 2" }), "batch-connection-finished-summary");
+  await h.within(results, "batch-connection-inline-results", { touch: false, vertical: false });
+  await h.state(await page.getByRole("dialog").count() === 0, "batch-connection-opened-dialog", results);
+  await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-replaced-account-list", accountRows);
+  await h.state((await selection.textContent() || "").includes("已选 3 个账号"), "batch-connection-result-cleared-selection", selection);
+  for (const account of selectedAccounts) {
+    await h.state(await surface.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true }).isChecked(),
+      "batch-connection-result-unchecked-account", selection);
+    const row = results.locator("tbody tr").filter({ has: page.getByRole("cell", { name: account.name, exact: true }) });
+    const expected = account.platform === "grok"
+      ? [account.name, "测试通过", "原生默认 → grok", "0.36 s", "—"]
+      : [account.name, account.status === "error" ? "测试失败" : "测试通过", "gpt-6-luna", "0.36 s",
+        account.status === "error" ? "测试请求失败 [http_401]" : "—"];
+    await h.state(isDeepStrictEqual((await row.getByRole("cell").allTextContents()).map((text) => text.trim()), expected),
+      "batch-connection-result-fields-mismatch", row);
+    await h.allWithin(row.getByRole("cell"), "batch-connection-result-cell", { touch: false, vertical: false });
+  }
+  await h.state(await results.locator("td.good-text").count() === 2 && await results.locator("td.bad-text").count() === 1,
+    "batch-connection-result-color-state-mismatch", results);
+  await h.state(await results.getByRole("button", { name: "停止未开始", exact: true }).count() === 0
+    && await entry.isEnabled(), "batch-connection-finished-controls-mismatch", results);
+  const finishedJobs = await readJobs();
+  await h.state(finishedJobs.length === beforeJobs.length + 6, "batch-connection-submitted-duplicate-jobs", results);
+  const resultCells = () => results.locator("tbody tr").evaluateAll((rows) => rows.map((row) =>
+    [...row.querySelectorAll("td")].map((cell) => cell.textContent)));
+  const completedCells = await resultCells();
+  await h.layout();
+
+  h.phase = "accounts/batch-connection-filter";
+  async function platform(value) {
+    if (h.scenario.mobile) await h.click(surface.getByRole("button", { name: "筛选账号", exact: true }), "batch-connection-filter-entry");
+    const select = surface.getByRole("combobox", { name: "平台筛选", exact: true });
+    await h.within(select, "batch-connection-platform-filter");
+    await select.selectOption(value);
+    if (h.scenario.mobile) await h.click(page.getByRole("dialog", { name: "账号筛选", exact: true })
+      .getByRole("button", { name: "关闭筛选", exact: true }), "batch-connection-filter-close");
+  }
+  await platform("grok");
+  await h.state((await selection.textContent() || "").includes("已选 0 个账号") && await entry.isDisabled(),
+    "batch-connection-filter-kept-stale-selection", selection);
+  await h.state(await accountRows.count() === fixture.accounts.filter((account) => account.platform === "grok").length,
+    "batch-connection-filter-did-not-change-account-list", accountRows);
+  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-filter-changed-results", results);
+  await h.layout();
+  await platform("");
+
+  h.phase = "accounts/batch-connection-page-return";
+  async function navigate(label, id) {
+    if (h.scenario.mobile) await h.navigate(label, id);
+    else {
+      await h.click(page.locator(".sidebar nav").getByRole("button", { name: label, exact: true }), "batch-connection-navigation");
+      await h.visible(page.locator(`.page-surface[data-page="${id}"]`), "batch-connection-return-surface");
+    }
+  }
+  await navigate("事件", "events");
+  await h.state(await page.getByRole("region", { name: "批量测试连接", exact: true }).count() === 0,
+    "batch-connection-results-leaked-to-other-page");
+  await navigate("账号", "accounts");
+  await h.visible(results, "batch-connection-results-after-return");
+  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-return-lost-results", results);
+
+  h.phase = "accounts/batch-connection-recovery";
+  // The synthetic transport changes connection scope without making a network request.
+  const connect = (baseUrl) => page.evaluate(async (url) => {
+    const preview = await import("/src/preview.ts");
+    await preview.run("connect", { baseUrl: url });
+  }, baseUrl);
+  await connect(`${ORIGIN}/alternate-connection-fixture`);
+  await results.waitFor({ state: "hidden" });
+  await h.state(await results.count() === 0, "batch-connection-results-leaked-to-other-connection", surface);
+  await connect(fixture.baseUrl);
+  await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 2" }), "batch-connection-restored-summary");
+  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-same-server-not-restored", results);
+  await h.state(isDeepStrictEqual(await readJobs(), finishedJobs), "batch-connection-recovery-resubmitted-or-changed-jobs", results);
+  await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "batch-connection-mutated-preview-accounts", surface);
+  await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-return-account-list-incomplete", accountRows);
+  await h.layout();
+}
+
 async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   const { page } = h;
   if (navigate) await h.navigate("账号", "accounts");
@@ -1284,6 +1414,7 @@ async function desktopMenuChecks(h, fixture) {
 
   h.phase = "desktop/expanded-actions";
   await desktopActionChecks(h, reloadedTable, reloadedFixture);
+  await connectionBatchChecks(h, reloadedFixture);
   await proxyBatchChecks(h, reloadedFixture);
   await h.layout();
   await h.click(page.locator(".sidebar nav").getByRole("button", { name: "分组", exact: true }), "desktop-group-entry", { touch: false });
@@ -1337,6 +1468,7 @@ async function runScenario(scenario) {
     await h.state(fixture.platform === (scenario.mobile ? "android" : "macos"), "unexpected-preview-platform");
     if (scenario.mobile) {
       await accountChecks(h, fixture);
+      await connectionBatchChecks(h, fixture);
       await recordChecks(h);
       await eventChecks(h, fixture);
       await featureChecks(h, fixture.config);

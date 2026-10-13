@@ -540,6 +540,7 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
 
   expect(summary.textContent).toContain("已选 0 个账号");
   expect(actionButtons.map((element) => element.textContent?.trim())).toEqual([
+    "测试连接",
     "选择代理",
     "应用模板",
     "删除所选",

@@ -152,7 +152,7 @@ describe("shared account actions", () => {
       true, true, true, true, true, true, true, true, true, true,
     ]);
     const bulk = container.querySelector<HTMLElement>('[role="group"][aria-label="批量账号操作"]')!;
-    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true]);
+    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true, true]);
 
     await openGroups();
     await openGroupMenu();

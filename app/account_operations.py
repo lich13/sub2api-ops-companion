@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, ValidationError
 
 from .atomic_config import write_json
 from .audit import write_audit
@@ -71,6 +71,20 @@ class AccountBatchRequest(BaseModel):
     action: Literal['delete', 'groups']
     payload: dict = Field(default_factory=dict)
     accounts: list[BatchOperationAccount] = Field(min_length=1, max_length=1000)
+    request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
+    client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
+
+
+class TestBatchPayload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirmed: StrictBool
+
+
+class TestBatchRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: Literal['test']
+    payload: TestBatchPayload
+    accounts: list[BatchAccount] = Field(min_length=1, max_length=1000)
     request_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
     client_id: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9-]+$')
 
@@ -133,6 +147,8 @@ class AccountOperations:
         self.submit_lock = asyncio.Lock()
         from .native_batches import NativeBatches
         self.native = NativeBatches(self)
+        from .connection_batches import ConnectionBatches
+        self.connection_tests = ConnectionBatches(self)
         with self.store.transaction() as data:
             for job in data['jobs'].values():
                 if job['status'] == 'running':
@@ -145,6 +161,8 @@ class AccountOperations:
     def update(self, jid, **changes):
         with self.store.transaction() as data:
             job = data['jobs'][jid]
+            if self.connection_tests.handles(job) and job['status'] == 'cancelled':
+                return copy.deepcopy(job)
             job.update(changes, updated_at=stamp())
             if job['status'] not in PENDING:
                 # Uploaded test inputs are needed only while a request is pending.
@@ -195,9 +213,14 @@ class AccountOperations:
         return {'items': items, 'pending': sum(j['status'] in PENDING for j in items)}
 
     async def submit_batch(self, request, key):
+        if request.action == 'test':
+            return await self.connection_tests.submit(request, key)
         if request.action == 'proxy':
             return await self.submit_proxy_batch(request, key)
         return await self.native.submit(request, key)
+
+    async def cancel_batch(self, batch_id):
+        return await self.connection_tests.cancel(batch_id)
 
     async def submit_template_batch(self, request, key):
         from .account_templates import eligible, combine, account_version
@@ -492,6 +515,9 @@ class AccountOperations:
                         continue
                     if self.native.handles(job):
                         continue
+                    if (self.connection_tests.handles(job) and job['status'] == 'queued'
+                            and not self.connection_tests.has_slot(jobs)):
+                        continue
                     short = job['action'] in SHORT
                     if not short and job['status'] == 'queued':
                         from .account_locks import AccountLease
@@ -544,20 +570,26 @@ class AccountOperations:
                 return
             # State is committed before any upstream request is dispatched.
             job = self.update(jid, status='running', reason='', started_at=stamp())
+            if job['status'] != 'running':
+                return
             from .operation_versions import operation_context
             token = operation_context.set(job)
             try:
                 result = await self.dispatch(row, job, key)
             finally:
                 operation_context.reset(token)
-            self.update(jid, status='completed', reason='', result=result)
+            uncertain = self.connection_tests.handles(job) and result.get('uncertain')
+            self.update(jid, status='needs_confirmation' if uncertain else 'completed',
+                        reason=result.get('error', '') if uncertain else '', result=result)
             self.audit(job, 'completed')
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {'message': str(exc.detail)}
             if detail.get('code') == 'account_busy':
-                self.update(jid, status='queued', reason='等待账号空闲')
+                self.update(jid, status='queued', reason='等待账号空闲',
+                            **({'started_at': None} if self.connection_tests.handles(job) else {}))
             elif exc.status_code == 409:
-                self.update(jid, status='needs_confirmation', reason=detail.get('message', '相关状态已变化'))
+                self.update(jid, status='needs_confirmation', reason=detail.get('message', '相关状态已变化'),
+                            **({'started_at': None} if self.connection_tests.handles(job) else {}))
             elif exc.status_code in {502, 504}:
                 # Never replay a write or billable operation after an ambiguous response.
                 self.update(jid, status='checking', reason=detail.get('message', '核对请求结果'))
@@ -599,6 +631,8 @@ class AccountOperations:
             p.pop('expected_version')
             return await self.s.actions.set_degradation_mark(aid, DegradationMarkRequest(**p, expected_mark_version=job['expected_version']))
         if action == 'test':
+            if self.connection_tests.handles(job):
+                return await self.connection_tests.dispatch(row, job, key)
             request = TestRequest(**p)
             locks = await self.s.actions.prepare_test(aid, request)
             self.events[job['id']] = []
@@ -629,6 +663,9 @@ class AccountOperations:
             if models:
                 return self.model_view(await models.cancel(jid))
             raise HTTPException(404, '操作不存在')
+        if self.connection_tests.handles(job) and job.get('started_at'):
+            # The generic operation panel must obey the same boundary as a batch.
+            return self.get(jid)
         if job['status'] in {'queued', 'needs_confirmation'}:
             self.update(jid, status='cancelled', reason='已取消')
             task = self.tasks.get(jid)

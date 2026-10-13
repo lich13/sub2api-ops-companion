@@ -56,6 +56,7 @@ import {
   RecoveryHistory,
 } from "./AccountControls";
 import TestDialog from "./TestDialog";
+import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import { DeleteAccountsDialog } from "./AccountManagement";
@@ -192,6 +193,8 @@ export default function App() {
   const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
+  const connectionBatch = useConnectionBatch({ connectionKey, storageKey: state.preferences.base_url,
+    online: state.online, active: !quick && page === "accounts" && state.foreground !== false });
   const filterKey = JSON.stringify([
     query,
     group,
@@ -769,6 +772,7 @@ export default function App() {
                         <span>已选 {selected.size} 个账号</span>
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
+                        <button disabled={!state.online || selected.size === 0 || connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
                         <button
@@ -784,6 +788,7 @@ export default function App() {
                         </button>
                         </div>
                       </div>
+                      <ConnectionBatchResults control={connectionBatch}/>
                       {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>

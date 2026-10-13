@@ -7,8 +7,9 @@ const batches = new Map<string, string[]>();
 const batchRequests = new Map<string, { id: string; signature: string }>();
 export async function operationPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], emit: () => void) {
   if (method === 'POST' && path === '/account-operations/batch') {
-    if (!['proxy', 'delete', 'groups'].includes(String(body.action))) throw new Error('批量操作类型无效');
+    if (!['proxy', 'delete', 'groups', 'test'].includes(String(body.action))) throw new Error('批量操作类型无效');
     if (body.action === 'delete' && (body.payload as Record<string, unknown>)?.confirmed !== true) throw new Error('请先确认删除');
+    if (body.action === 'test' && (body.payload as Record<string, unknown>)?.confirmed !== true) throw new Error('请先确认连接测试');
     const signature = JSON.stringify(body), old = batchRequests.get(String(body.request_id));
     if (old && old.signature !== signature) throw new Error('请求 ID 已用于其他操作');
     const bid = old?.id ?? crypto.randomUUID().replaceAll('-', '');
@@ -16,10 +17,14 @@ export async function operationPreview(method: string, path: string, body: Recor
       const targets = body.accounts as { account_id: number; expected_version: string; payload?: Record<string, unknown> }[];
       if (!targets?.length || targets.length > 1000 || new Set(targets.map(t => t.account_id)).size !== targets.length) throw new Error('批量账号无效');
       const ids = targets.map(target => {
-        const action = String(body.action), payload = (action === 'proxy' ? body.payload : target.payload) as Record<string, unknown>;
+        const account = accounts.find(a => a.id === target.account_id);
+        const action = String(body.action), payload = (action === 'test'
+          ? { confirmed: true, mode: account?.platform === 'grok' ? 'text' : 'default', model_id: account?.platform === 'grok' ? '' : 'gpt-6-luna' }
+          : action === 'proxy' ? body.payload : target.payload) as Record<string, unknown>;
         const available = action !== 'proxy' || payload.proxy_id === null || previewProxies.some(p => p.id === payload.proxy_id && p.status === 'active');
-        const account = accounts.find(a => a.id === target.account_id), settings = account ? settingsPreview(account) : null;
-        const eligible = action === 'proxy' ? !!settings?.capabilities.proxy.editable : !!account;
+        const settings = account ? settingsPreview(account) : null;
+        const eligible = action === 'proxy' ? !!settings?.capabilities.proxy.editable : action === 'test'
+          ? !!account && ['openai', 'grok'].includes(account.platform) && ['oauth', 'apikey'].includes(account.type) : !!account;
         const unchanged = action === 'proxy' && eligible && settings?.proxy_id === payload.proxy_id;
         const conflict = (action === 'proxy' ? settings?.versions.proxy : account?.operation_versions?.[action] ?? account?.version) !== target.expected_version;
         const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), batch_id: bid, account_id: target.account_id,
@@ -31,7 +36,10 @@ export async function operationPreview(method: string, path: string, body: Recor
         if (job.status === 'queued') setTimeout(() => {
           if (job.status !== 'queued' || !account) return;
           try {
-            if (action === 'proxy') job.result = applySettingsPreview(account, 'proxy', payload, target.expected_version);
+            if (action === 'test') job.result = { requested_model: payload.model_id,
+              actual_model: account.platform === 'grok' ? 'grok' : 'gpt-6-luna', success: account.status !== 'error',
+              duration_ms: 360, completed_at: new Date().toISOString(), ...(account.status === 'error' ? { error: '测试请求失败 [http_401]' } : {}) };
+            else if (action === 'proxy') job.result = applySettingsPreview(account, 'proxy', payload, target.expected_version);
             else if (action === 'groups') {
               const scope = payload.scope_group_ids as number[], targetGroups = payload.group_ids as number[];
               account.group_ids = [...new Set([...account.group_ids.filter(id => !scope.includes(id)), ...targetGroups])].sort((a, b) => a - b);
@@ -48,6 +56,15 @@ export async function operationPreview(method: string, path: string, body: Recor
         return job.id;
       });
       batches.set(bid, ids); batchRequests.set(String(body.request_id), { id: bid, signature });
+    }
+    return operationPreview('GET', `/account-operations?batch_id=${bid}`, {}, accounts, emit);
+  }
+  if (method === 'POST' && /^\/account-operations\/batches\/[a-f0-9]{32}\/cancel$/.test(path)) {
+    const bid = path.split('/')[3], ids = batches.get(bid);
+    if (!ids || ids.some(id => jobs.get(id)?.action !== 'test')) throw new Error('批量测试不存在');
+    for (const id of ids) {
+      const job = jobs.get(id)!;
+      if (['queued', 'needs_confirmation'].includes(job.status) && !job.started_at) { job.status = 'cancelled'; job.reason = '已停止，未派发测试'; }
     }
     return operationPreview('GET', `/account-operations?batch_id=${bid}`, {}, accounts, emit);
   }

@@ -247,6 +247,13 @@ fn allowed_request(method: &str, path: &str) -> bool {
                 path == "/account-operations/batch"
                     || !path.contains('?')
                         && plain
+                            .strip_prefix("/account-operations/batches/")
+                            .and_then(|s| s.strip_suffix("/cancel"))
+                            .is_some_and(|id| {
+                                job_id(id) && id.bytes().all(|c| !c.is_ascii_uppercase())
+                            })
+                    || !path.contains('?')
+                        && plain
                             .strip_prefix("/account-operations/")
                             .and_then(|s| s.strip_suffix("/cancel"))
                             .is_some_and(job_id)
@@ -1856,6 +1863,39 @@ mod tests {
             assert!(!allowed_request("POST", path));
         }
     }
+    #[test]
+    fn connection_batch_cancel_requires_post_and_one_lowercase_batch_id() {
+        let id = "0123456789abcdef0123456789abcdef";
+        let path = format!("/account-operations/batches/{id}/cancel");
+        assert!(allowed_request("POST", &path));
+        for method in ["GET", "PUT", "PATCH", "DELETE", "HEAD"] {
+            assert!(!allowed_request(method, &path), "{method}");
+        }
+        for invalid_id in [
+            "",
+            "invalid",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "0123456789abcdef0123456789abcde",
+            "0123456789abcdef0123456789abcdef0",
+            "0123456789abcdef0123456789abcdeg",
+        ] {
+            assert!(!allowed_request(
+                "POST",
+                &format!("/account-operations/batches/{invalid_id}/cancel")
+            ));
+        }
+        for invalid_path in [
+            format!("{path}/"),
+            format!("{path}?x=1"),
+            format!("{path}?batch_id={id}"),
+            format!("/account-operations/batches/{id}"),
+            format!("/account-operations/batches/{id}/cancel/extra"),
+            format!("/account-operations/batches/{id}/{id}/cancel"),
+        ] {
+            assert!(!allowed_request("POST", &invalid_path), "{invalid_path}");
+        }
+    }
+
     #[test]
     fn transient_failure_keeps_last_data_and_recovers() {
         let mut view = ViewState::default();

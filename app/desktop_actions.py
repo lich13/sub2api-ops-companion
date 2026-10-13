@@ -357,7 +357,7 @@ class DesktopActions:
             lock.release()
             raise
 
-    async def test_stream(self, account_id: int, payload: TestRequest, key: str, locks: tuple[Any, Any]):
+    async def test_stream(self, account_id: int, payload: TestRequest, key: str, locks: tuple[Any, Any], *, summary: bool = False):
         from .desktop_api import safe_error_text
         started = time.monotonic()
         completed = False
@@ -377,7 +377,7 @@ class DesktopActions:
                     async for line in response.aiter_lines():
                         total += len(line)
                         if total > 134_217_728:
-                            yield encode({"type": "error", "error": "测试输出超过大小限制"})
+                            yield encode({"type": "error", "error": "测试输出超过大小限制", **({'uncertain': True} if summary else {})})
                             return
                         if not line.startswith("data:"):
                             continue
@@ -388,6 +388,8 @@ class DesktopActions:
                         if not isinstance(event, dict):
                             continue
                         kind = event.get("type")
+                        if summary and kind not in {"test_start", "test_complete", "error"}:
+                            continue
                         if kind not in {"test_start", "status", "content", "image", "audio", "video", "test_complete", "error"}:
                             continue
                         value: dict[str, Any] = {"type": kind}
@@ -416,11 +418,11 @@ class DesktopActions:
                             value.update(completed_at=stamp(), duration_ms=round((time.monotonic()-started)*1000))
                         yield encode(value)
                     if not completed:
-                        yield encode({"type": "error", "error": "连接结束，未收到测试完成结果"})
+                        yield encode({"type": "error", "error": "连接结束，未收到测试完成结果", **({'uncertain': True} if summary else {})})
         except (TimeoutError, httpx.TimeoutException):
-            yield encode({"type": "error", "error": "测试超时，未重放请求"})
+            yield encode({"type": "error", "error": "测试超时，未重放请求", **({'uncertain': True} if summary else {})})
         except httpx.HTTPError:
-            yield encode({"type": "error", "error": "测试连接中断，未重放请求"})
+            yield encode({"type": "error", "error": "测试连接中断，未重放请求", **({'uncertain': True} if summary else {})})
         finally:
             for lock in reversed(locks):
                 if lock:

@@ -86,7 +86,7 @@
 .mobile-sort select { background: transparent; border-color: transparent; font-size: 12px; }
 .mobile .table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .mobile .selection-bar { padding: 0; gap: 8px; border-bottom: 0; }
-.mobile .selection-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 8px; }
+.mobile .selection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
 .mobile .selection-actions button { min-width: 0; white-space: normal; }
 .mobile-select-all { display: flex; align-items: center; gap: 8px; min-height: 48px; }
 .mobile-accounts { display: grid; gap: 10px; }

@@ -6,6 +6,7 @@ export type Operation = {
   reason?: string; requested: Record<string, unknown>; current?: Record<string, unknown>;
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
   execution_mode?: 'native' | 'compatibility';
+  started_at?: string;
 };
 export type OperationBatch = { batch_id: string; items: Operation[]; pending: number };
 export const operationTerminal = new Set(['completed', 'failed', 'cancelled', 'superseded', 'needs_confirmation']);

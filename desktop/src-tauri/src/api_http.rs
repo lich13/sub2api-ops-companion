@@ -226,24 +226,73 @@ fn proxy_batch_valid(data: &Value) -> bool {
     batch_valid(data)
         && data["items"].as_array().is_some_and(|rows| {
             rows.iter().all(|row| {
-                row["requested"].as_object().is_some_and(|fields| match row["action"].as_str() {
-                    Some("proxy") => fields.len() == 1 && fields.get("proxy_id").is_some_and(|id| {
-                        id.is_null() || id.as_u64().is_some_and(|value| value > 0)
-                    }),
-                    Some("delete") => fields.len() == 1 && fields.get("detach_managed").is_some_and(Value::is_boolean),
-                    Some("groups") => {
-                        let valid_ids = |v: &Value| v.as_array().is_some_and(|ids| ids.len() <= 100
-                            && ids.iter().all(|id| id.as_u64().is_some_and(|n| n > 0)));
-                        fields.len() == 2 && fields.get("scope_group_ids").is_some_and(|v|
-                            valid_ids(v) && v.as_array().is_some_and(|ids| !ids.is_empty()))
-                            && fields.get("group_ids").is_some_and(valid_ids)
-                            && row["requested"]["group_ids"].as_array().is_some_and(|ids| ids.iter().all(|id|
-                                row["requested"]["scope_group_ids"].as_array().is_some_and(|scope| scope.contains(id))))
-                    },
-                    _ => false,
-                })
+                row["requested"]
+                    .as_object()
+                    .is_some_and(|fields| match row["action"].as_str() {
+                        Some("proxy") => {
+                            fields.len() == 1
+                                && fields.get("proxy_id").is_some_and(|id| {
+                                    id.is_null() || id.as_u64().is_some_and(|value| value > 0)
+                                })
+                        }
+                        Some("delete") => {
+                            fields.len() == 1
+                                && fields.get("detach_managed").is_some_and(Value::is_boolean)
+                        }
+                        Some("test") => {
+                            fields.len() == 3
+                                && fields.get("confirmed").and_then(Value::as_bool) == Some(true)
+                                && fields
+                                    .get("mode")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|mode| matches!(mode, "default" | "text"))
+                                && fields
+                                    .get("model_id")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|id| id.len() <= 200)
+                                && (row["result"].is_null()
+                                    || connection_test_result_valid(&row["result"]))
+                        }
+                        Some("groups") => {
+                            let valid_ids = |v: &Value| {
+                                v.as_array().is_some_and(|ids| {
+                                    ids.len() <= 100
+                                        && ids.iter().all(|id| id.as_u64().is_some_and(|n| n > 0))
+                                })
+                            };
+                            fields.len() == 2
+                                && fields.get("scope_group_ids").is_some_and(|v| {
+                                    valid_ids(v) && v.as_array().is_some_and(|ids| !ids.is_empty())
+                                })
+                                && fields.get("group_ids").is_some_and(valid_ids)
+                                && row["requested"]["group_ids"].as_array().is_some_and(|ids| {
+                                    ids.iter().all(|id| {
+                                        row["requested"]["scope_group_ids"]
+                                            .as_array()
+                                            .is_some_and(|scope| scope.contains(id))
+                                    })
+                                })
+                        }
+                        _ => false,
+                    })
             })
         })
+}
+
+fn connection_test_result_valid(data: &Value) -> bool {
+    data.is_object()
+        && data["success"].is_boolean()
+        && data["requested_model"]
+            .as_str()
+            .is_some_and(|s| s.len() <= 200)
+        && (data["actual_model"].is_null()
+            || data["actual_model"]
+                .as_str()
+                .is_some_and(|s| s.len() <= 200))
+        && data["duration_ms"].as_u64().is_some()
+        && data["completed_at"].is_string()
+        && (data["error"].is_null() || data["error"].as_str().is_some_and(|s| s.len() <= 1024))
+        && (data["uncertain"].is_null() || data["uncertain"].is_boolean())
 }
 
 fn settings_valid(data: &Value) -> bool {
@@ -436,6 +485,13 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/account-operations" => {
             if path.contains("?batch_id=") {
                 batch_valid(data)
+                    && data["items"].as_array().is_some_and(|items| {
+                        items.iter().all(|item| {
+                            item["action"] != "test"
+                                || item["result"].is_null()
+                                || connection_test_result_valid(&item["result"])
+                        })
+                    })
             } else {
                 data["pending"].is_u64()
                     && data["items"]
@@ -444,6 +500,7 @@ fn shape_valid(path: &str, data: &Value) -> bool {
             }
         }
         "/account-operations/batch" => proxy_batch_valid(data),
+        p if p.starts_with("/account-operations/batches/") => proxy_batch_valid(data),
         p if p.starts_with("/account-operations/") || p.ends_with("/operations") => {
             operation_valid(data)
         }
@@ -1238,10 +1295,130 @@ mod tests {
         bad_id["items"][0]["requested"]["scope_group_ids"] = serde_json::json!([0, 1]);
         assert!(!shape_valid("/account-operations/batch", &bad_id));
         let mut too_many = groups.clone();
-        too_many["items"][0]["requested"]["scope_group_ids"] = serde_json::Value::Array(
-            (1..=101).map(|value| serde_json::json!(value)).collect(),
-        );
+        too_many["items"][0]["requested"]["scope_group_ids"] =
+            serde_json::Value::Array((1..=101).map(|value| serde_json::json!(value)).collect());
         assert!(!shape_valid("/account-operations/batch", &too_many));
+    }
+
+    fn connection_test_batch_fixture() -> Value {
+        serde_json::json!({
+            "batch_id": "0123456789abcdef0123456789abcdef",
+            "pending": 0,
+            "items": [{
+                "id": "abcdefabcdefabcdefabcdefabcdefab",
+                "batch_id": "0123456789abcdef0123456789abcdef",
+                "account_id": 7,
+                "action": "test",
+                "status": "completed",
+                "requested": {"confirmed": true, "mode": "text", "model_id": "fixture-model"},
+                "result": {
+                    "success": true,
+                    "requested_model": "fixture-model",
+                    "actual_model": "fixture-mapped-model",
+                    "duration_ms": 12,
+                    "completed_at": "2026-10-13T00:00:00Z",
+                    "error": null,
+                    "uncertain": false
+                }
+            }]
+        })
+    }
+
+    #[test]
+    fn connection_batch_responses_accept_queue_results_and_cancellation() {
+        let batch = connection_test_batch_fixture();
+        for path in [
+            "/account-operations/batch",
+            "/account-operations?batch_id=0123456789abcdef0123456789abcdef",
+            "/account-operations/batches/0123456789abcdef0123456789abcdef/cancel",
+        ] {
+            assert!(shape_valid(path, &batch), "{path}");
+            for status in ["queued", "running", "cancelled"] {
+                let mut pending = batch.clone();
+                pending["items"][0]["status"] = serde_json::json!(status);
+                pending["items"][0]["result"] = Value::Null;
+                assert!(shape_valid(path, &pending), "{path} {status}");
+            }
+            let mut failed = batch.clone();
+            failed["items"][0]["status"] = serde_json::json!("failed");
+            failed["items"][0]["result"]["success"] = serde_json::json!(false);
+            failed["items"][0]["result"]["actual_model"] = Value::Null;
+            failed["items"][0]["result"]["error"] = serde_json::json!("fixture failure");
+            failed["items"][0]["result"]["uncertain"] = serde_json::json!(true);
+            assert!(shape_valid(path, &failed), "{path}");
+        }
+        let mut default_mode = batch;
+        default_mode["items"][0]["requested"]["mode"] = serde_json::json!("default");
+        default_mode["items"][0]["requested"]["model_id"] = serde_json::json!("");
+        default_mode["items"][0]["result"]["requested_model"] = serde_json::json!("");
+        assert!(shape_valid("/account-operations/batch", &default_mode));
+    }
+
+    #[test]
+    fn connection_batch_responses_reject_invalid_request_and_batch_shapes() {
+        let batch = connection_test_batch_fixture();
+        for path in [
+            "/account-operations/batch",
+            "/account-operations/batches/0123456789abcdef0123456789abcdef/cancel",
+        ] {
+            assert!(!shape_valid(path, &batch["items"][0]), "{path}");
+            for requested in [
+                serde_json::json!({"confirmed": false, "mode": "text", "model_id": "fixture-model"}),
+                serde_json::json!({"confirmed": "true", "mode": "text", "model_id": "fixture-model"}),
+                serde_json::json!({"confirmed": true, "mode": "image", "model_id": "fixture-model"}),
+                serde_json::json!({"confirmed": true, "mode": "text", "model_id": 7}),
+                serde_json::json!({"confirmed": true, "mode": "text", "model_id": "x".repeat(201)}),
+                serde_json::json!({"confirmed": true, "mode": "text"}),
+                serde_json::json!({"confirmed": true, "mode": "text", "model_id": "fixture-model", "extra": true}),
+            ] {
+                let mut bad = batch.clone();
+                bad["items"][0]["requested"] = requested;
+                assert!(!shape_valid(path, &bad), "{path}");
+            }
+            let mut wrong_batch = batch.clone();
+            wrong_batch["items"][0]["batch_id"] =
+                serde_json::json!("ffffffffffffffffffffffffffffffff");
+            assert!(!shape_valid(path, &wrong_batch), "{path}");
+        }
+    }
+
+    #[test]
+    fn connection_batch_responses_reject_malformed_result_fields() {
+        let batch = connection_test_batch_fixture();
+        for path in [
+            "/account-operations/batch",
+            "/account-operations?batch_id=0123456789abcdef0123456789abcdef",
+            "/account-operations/batches/0123456789abcdef0123456789abcdef/cancel",
+        ] {
+            for (field, value) in [
+                ("success", serde_json::json!("true")),
+                ("requested_model", serde_json::json!(7)),
+                ("requested_model", serde_json::json!("x".repeat(201))),
+                ("actual_model", serde_json::json!(7)),
+                ("actual_model", serde_json::json!("x".repeat(201))),
+                ("duration_ms", serde_json::json!(-1)),
+                ("duration_ms", serde_json::json!(1.5)),
+                ("completed_at", Value::Null),
+                ("error", serde_json::json!({"message": "fixture failure"})),
+                ("error", serde_json::json!("x".repeat(1025))),
+                ("uncertain", serde_json::json!("true")),
+            ] {
+                let mut bad = batch.clone();
+                bad["items"][0]["result"][field] = value;
+                assert!(!shape_valid(path, &bad), "{path} {field}");
+            }
+            for field in ["success", "requested_model", "duration_ms", "completed_at"] {
+                let mut missing = batch.clone();
+                missing["items"][0]["result"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(field);
+                assert!(!shape_valid(path, &missing), "{path} {field}");
+            }
+            let mut wrong_result = batch.clone();
+            wrong_result["items"][0]["result"] = serde_json::json!([]);
+            assert!(!shape_valid(path, &wrong_result), "{path}");
+        }
     }
 
     #[test]
