@@ -796,7 +796,7 @@ def contract_auth_revalidation(session):
     session.mock.authorized = True
     final = session.settle(batch["batch_id"])
     items = {item["account_id"]: item for item in final["items"]}
-    require(all(items[aid]["status"] == "needs_confirmation" for aid in (12, 13)), "dispatch reused stale administrator authorization")
+    require(all(items[aid]["status"] == "failed" for aid in (12, 13)), "dispatch did not retain the explicit administrator rejection")
     require(sorted(session.mock.called()) == [10, 11] and session.mock.auth_denied >= 1, "revoked authorization did not prevent native dispatch")
     session.privacy()
     return {"native_calls": 2, "revoked_dispatches_blocked": 2}
