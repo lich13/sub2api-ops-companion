@@ -44,6 +44,8 @@ python scripts/server_mutation_contract.py --command-json '["server/target/debug
 
 CI 在同一 Linux x86_64 主机构建两个完整服务镜像，使用相同账号、开关、并发及模拟延迟运行 20／100 账号批次和 1000 账号接受边界。结果保存在 `Companion-validation` 中，包含镜像与二进制体积、空闲／峰值内存、CPU、耗时和请求延迟。这里的自动任务开关关闭，所有运行时模块仍加载；结果不等同于生产业务负载。
 
+`scripts/server_history_memory.py` 另用十万条合成用量、三千条错误和已完成操作历史，对比两个完整服务连续刷新质量统计时的资源开销。检查统计确实完成、没有额外业务请求，并限制 Rust 的内存峰值及刷新后的持续增长；结果保存在同一成品的 `history-memory.json`。
+
 镜像体积统一读取同一 CI 主机的 `docker image inspect Size`；不同 Docker 存储后端的这个值可能与 `docker system df` 不同，不能用它推算主机实际磁盘占用。部署后的磁盘统计需单独测量，共享层也不能重复相加。
 
 ## 部署和回退

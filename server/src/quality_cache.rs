@@ -5,6 +5,7 @@ use crate::{
     sql::QUALITY_SUPPORTED,
 };
 use chrono::{Duration, Utc};
+use futures_util::TryStreamExt;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -56,7 +57,7 @@ impl EvidenceError {
 async fn read_evidence(
     db: &Database,
     now: chrono::DateTime<Utc>,
-) -> std::result::Result<(Vec<Value>, Vec<Value>, Vec<Value>), EvidenceError> {
+) -> std::result::Result<(Vec<Value>, quality::Evidence, Vec<Value>), EvidenceError> {
     let mut transaction = db
         .pool
         .begin()
@@ -76,18 +77,19 @@ async fn read_evidence(
         sql: &str,
         params: &[Param],
     ) -> std::result::Result<Vec<Value>, EvidenceError> {
-        bind(sql, params)
-            .fetch_all(&mut **transaction)
+        let mut rows = bind(sql, params).fetch(&mut **transaction);
+        let mut values = Vec::new();
+        while let Some(row) = rows
+            .try_next()
             .await
             .map_err(|e| EvidenceError::query(stage, e))?
-            .into_iter()
-            .map(|v| {
-                row_value(v).map_err(|_| EvidenceError {
-                    stage,
-                    kind: "query_failed",
-                })
-            })
-            .collect()
+        {
+            values.push(row_value(row).map_err(|_| EvidenceError {
+                stage,
+                kind: "query_failed",
+            })?);
+        }
+        Ok(values)
     }
     let columns = query(&mut transaction,"schema","SELECT attname FROM pg_attribute WHERE attrelid=to_regclass('usage_logs') AND attnum>0 AND NOT attisdropped",&[]).await?;
     let columns: HashSet<&str> = columns.iter().map(|v| string(&v["attname"])).collect();
@@ -133,7 +135,33 @@ async fn read_evidence(
         });
     }
     let params = [Param::from(now - Duration::days(7)), Param::from(now)];
-    let usage = query(&mut transaction,"usage",&format!("SELECT {} FROM usage_logs u JOIN accounts a ON a.id=u.account_id WHERE a.deleted_at IS NULL AND a.platform IN ('openai','grok') AND a.type IN ('oauth','apikey') AND u.created_at >= $1 AND u.created_at <= $2 LIMIT 250001",projection.join(",")),&params).await?;
+    let mut usage = quality::Evidence::new(&accounts, now);
+    {
+        let sql = format!("SELECT {} FROM usage_logs u JOIN accounts a ON a.id=u.account_id WHERE a.deleted_at IS NULL AND a.platform IN ('openai','grok') AND a.type IN ('oauth','apikey') AND u.created_at >= $1 AND u.created_at <= $2 LIMIT 250001",projection.join(","));
+        let mut rows = bind(&sql, &params).fetch(&mut *transaction);
+        let mut count = 0;
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(|e| EvidenceError::query("usage", e))?
+        {
+            count += 1;
+            if count > 250_000 {
+                return Err(EvidenceError {
+                    stage: "usage",
+                    kind: "evidence_limit",
+                });
+            }
+            let row = row_value(row).map_err(|_| EvidenceError {
+                stage: "usage",
+                kind: "query_failed",
+            })?;
+            usage.push_usage(&row);
+            if count % 256 == 0 {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
     let errors = query(&mut transaction,"errors",r#"SELECT e.id,e.account_id,e.request_id,e.client_request_id,e.created_at,e.error_owner,e.error_phase,
         e.upstream_status_code,e.status_code,e.provider_error_code,e.provider_error_type,e.error_type,e.network_error_type,
         left(e.error_message,2000) AS error_message,left(e.upstream_error_message,2000) AS upstream_error_message,
@@ -142,13 +170,9 @@ async fn read_evidence(
          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(e.upstream_errors)='array' THEN e.upstream_errors ELSE '[]'::jsonb END) x) AS upstream_errors
         FROM ops_error_logs e WHERE e.created_at >= $1 AND e.created_at <= $2
         AND (e.account_id IS NOT NULL OR jsonb_array_length(CASE WHEN jsonb_typeof(e.upstream_errors)='array' THEN e.upstream_errors ELSE '[]'::jsonb END)>0) LIMIT 75001"#,&params).await?;
-    if usage.len() > 250_000 || errors.len() > 75_000 {
+    if errors.len() > 75_000 {
         return Err(EvidenceError {
-            stage: if usage.len() > 250_000 {
-                "usage"
-            } else {
-                "errors"
-            },
+            stage: "errors",
             kind: "evidence_limit",
         });
     }
@@ -207,7 +231,7 @@ impl QualityCache {
                     )
                 };
                 let computed = tokio::task::spawn_blocking(move || {
-                    quality::calculate(&accounts, &usage, &errors, now, baselines.as_ref())
+                    quality::calculate_evidence(usage, &errors, baselines.as_ref())
                 })
                 .await;
                 let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());

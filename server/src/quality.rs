@@ -590,6 +590,63 @@ pub fn reliability(
     all
 }
 
+/// Retain scoring inputs, not the entire database/JSON representation of the
+/// seven-day history. The reader feeds one row at a time into this accumulator.
+pub(crate) struct Evidence {
+    at: DateTime<Utc>,
+    live: BTreeMap<i64, Value>,
+    success_by: BTreeMap<i64, Vec<DateTime<Utc>>>,
+    samples_by: BTreeMap<i64, Vec<Sample>>,
+    slow_by: BTreeMap<i64, Vec<SlowSample>>,
+    seen: HashSet<String>,
+}
+
+impl Evidence {
+    pub(crate) fn new(accounts: &[Value], at: DateTime<Utc>) -> Self {
+        let live = accounts
+            .iter()
+            .filter(|a| {
+                matches!(string(&a["platform"]), "openai" | "grok")
+                    && matches!(string(&a["type"]), "oauth" | "apikey")
+                    && !truthy(&a["deleted_at"])
+            })
+            .filter_map(|v| integer(&v["id"]).map(|id| (id, v.clone())))
+            .collect();
+        Self {
+            at,
+            live,
+            success_by: BTreeMap::new(),
+            samples_by: BTreeMap::new(),
+            slow_by: BTreeMap::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    pub(crate) fn push_usage(&mut self, row: &Value) {
+        let Some(id) = integer(&row["account_id"]) else {
+            return;
+        };
+        let Some(account) = self.live.get(&id) else {
+            return;
+        };
+        let Some(time) = parse_datetime(&row["created_at"])
+            .filter(|v| *v >= self.at - Duration::days(7) && *v <= self.at)
+        else {
+            return;
+        };
+        if !self.seen.insert(row["id"].to_string()) {
+            return;
+        }
+        self.success_by.entry(id).or_default().push(time);
+        if let Some(sample) = performance(row, account) {
+            self.samples_by.entry(id).or_default().push(sample);
+        }
+        if let Some(sample) = slow_sample(row, account) {
+            self.slow_by.entry(id).or_default().push(sample);
+        }
+    }
+}
+
 pub fn calculate(
     accounts: &[Value],
     usage: &[Value],
@@ -597,43 +654,29 @@ pub fn calculate(
     at: DateTime<Utc>,
     baselines: Option<&Baselines>,
 ) -> (BTreeMap<i64, Value>, Baselines) {
-    let live: BTreeMap<i64, Value> = accounts
-        .iter()
-        .filter(|a| {
-            matches!(string(&a["platform"]), "openai" | "grok")
-                && matches!(string(&a["type"]), "oauth" | "apikey")
-                && !truthy(&a["deleted_at"])
-        })
-        .filter_map(|v| integer(&v["id"]).map(|id| (id, v.clone())))
-        .collect();
+    let mut evidence = Evidence::new(accounts, at);
+    for row in usage {
+        evidence.push_usage(row);
+    }
+    calculate_evidence(evidence, errors, baselines)
+}
+
+pub(crate) fn calculate_evidence(
+    evidence: Evidence,
+    errors: &[Value],
+    baselines: Option<&Baselines>,
+) -> (BTreeMap<i64, Value>, Baselines) {
+    let Evidence {
+        at,
+        live,
+        success_by,
+        samples_by,
+        slow_by,
+        seen,
+    } = evidence;
+    drop(seen);
     let start = at - Duration::days(7);
     let recent = at - Duration::days(1);
-    let mut success_by: BTreeMap<i64, Vec<DateTime<Utc>>> = BTreeMap::new();
-    let mut samples_by: BTreeMap<i64, Vec<Sample>> = BTreeMap::new();
-    let mut slow_by: BTreeMap<i64, Vec<SlowSample>> = BTreeMap::new();
-    let mut seen = HashSet::new();
-    for row in usage {
-        let Some(id) = integer(&row["account_id"]) else {
-            continue;
-        };
-        let Some(account) = live.get(&id) else {
-            continue;
-        };
-        let Some(time) = parse_datetime(&row["created_at"]).filter(|v| *v >= start && *v <= at)
-        else {
-            continue;
-        };
-        if !seen.insert(row["id"].to_string()) {
-            continue;
-        }
-        success_by.entry(id).or_default().push(time);
-        if let Some(sample) = performance(row, account) {
-            samples_by.entry(id).or_default().push(sample);
-        }
-        if let Some(sample) = slow_sample(row, account) {
-            slow_by.entry(id).or_default().push(sample);
-        }
-    }
     let mut failure_by: BTreeMap<i64, Vec<Failure>> = BTreeMap::new();
     for e in failures(errors, &live, at) {
         failure_by.entry(e.account_id).or_default().push(e);
