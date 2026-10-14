@@ -2,7 +2,7 @@
 name = "sub2ops-server"
 version = "0.1.41"
 edition = "2021"
-rust-version = "1.94"
+rust-version = "1.99"
 publish = false
 
 [features]

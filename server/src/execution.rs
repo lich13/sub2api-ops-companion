@@ -30,7 +30,7 @@ impl TestSlots {
     pub fn acquire(&self) -> Option<TestPermit> {
         let limit = (self.limit)().clamp(1, 8);
         self.active
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 if n < limit {
                     Some(n + 1)
                 } else {

@@ -134,7 +134,7 @@ pub fn py_json(value: &Value, ascii: bool, compact: bool) -> String {
             // when model mappings are projected into arrays. Version digests
             // still follow Python's recursive sort_keys=True contract.
             let mut entries = v.iter().collect::<Vec<_>>();
-            entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+            entries.sort_unstable_by_key(|(key, _)| *key);
             format!(
                 "{{{}}}",
                 entries
