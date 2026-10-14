@@ -325,7 +325,7 @@ class Suite:
                                "actual": safe_result(exc.actual)})
         except BaseException as exc:
             self.cases.append({"name": name, "status": "failed",
-                               "error": type(exc).__name__})
+                               "error": http.safe_failure(exc)})
         else:
             self.cases.append({"name": name, "status": "passed", "detail": safe_result(detail)})
         after = self.mocks.snapshot()
