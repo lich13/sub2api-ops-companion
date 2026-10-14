@@ -201,7 +201,12 @@ class TemporaryPostgres:
             "--auth-local=trust", "--auth-host=trust", "--encoding=UTF8", "--no-instructions",
         ], timeout=60)
         require(init.returncode == 0, f"temporary PostgreSQL initdb exited {init.returncode}")
-        options = f"-h 127.0.0.1 -p {self.port} -F -c listen_addresses=127.0.0.1 -c log_min_messages=warning -c timezone=UTC"
+        # All fixture clients use TCP. Avoid the distribution's default Unix
+        # socket directory, which may require a system PostgreSQL account.
+        options = (
+            f"-h 127.0.0.1 -p {self.port} -F -c listen_addresses=127.0.0.1 "
+            "-c unix_socket_directories='' -c log_min_messages=warning -c timezone=UTC"
+        )
         start = command_result([
             self.pg_ctl, "-D", str(self.data_dir), "-l", str(self.log_path),
             "-o", options, "-w", "-t", "30", "start",
