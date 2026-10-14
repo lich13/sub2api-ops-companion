@@ -163,6 +163,14 @@ impl Database {
         Ok(bind(sql, params).execute(&self.pool).await?.rows_affected())
     }
     pub async fn close(&self) {
-        self.pool.close().await;
+        loop {
+            self.pool.close().await;
+            // SQLx 0.8 can finish close while an in-flight release returns its
+            // connection to the idle queue. Drain that final return as well.
+            // The closed pool cannot admit another acquisition or connection.
+            if self.pool.size() == 0 {
+                break;
+            }
+        }
     }
 }

@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
-use sqlx::{types::Json as SqlJson, PgPool};
+use sqlx::{postgres::PgPoolOptions, types::Json as SqlJson, Connection, PgConnection, PgPool};
 use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -662,6 +662,8 @@ impl std::ops::Deref for RuntimeHandle {
 
 struct Harness {
     _temp: tempfile::TempDir,
+    admin_connection: Option<PgConnection>,
+    database_name: String,
     runtime: RuntimeHandle,
     upstream: MockUpstream,
     client: reqwest::Client,
@@ -678,8 +680,42 @@ impl Harness {
     async fn with_model_setting(model: Option<&str>) -> Self {
         let fixture = fixtures();
         assert_eq!(fixture["reference"]["sha"], REFERENCE_SHA);
-        let database_url =
+        let runner_database_url =
             std::env::var("DATABASE_URL").expect("runner must provide temporary DATABASE_URL");
+        let mut database_url = reqwest::Url::parse(&runner_database_url)
+            .expect("runner DATABASE_URL must be a PostgreSQL URL");
+        assert_eq!(
+            database_url.host_str(),
+            Some("127.0.0.1"),
+            "runner DATABASE_URL must point to loopback PostgreSQL"
+        );
+        let mut admin_connection = PgConnection::connect(&runner_database_url)
+            .await
+            .expect("connect to runner-owned temporary PostgreSQL");
+        let database_name = format!("account_mutation_{}", uuid::Uuid::new_v4().simple());
+        sqlx::raw_sql(&format!("CREATE DATABASE {database_name}"))
+            .execute(&mut admin_connection)
+            .await
+            .expect("create isolated account-mutation fixture database");
+        database_url.set_path(&format!("/{database_name}"));
+        let mut seed_database_url = database_url.clone();
+        seed_database_url
+            .query_pairs_mut()
+            .append_pair("application_name", "account_mutation_seed");
+        let mut seed_connection = PgConnection::connect(seed_database_url.as_str())
+            .await
+            .expect("connect to isolated account-mutation fixture database");
+        sqlx::raw_sql(include_str!("../../tests/contracts/http/schema.sql"))
+            .execute(&mut seed_connection)
+            .await
+            .expect("initialize complete HTTP-contract schema and seed rows");
+        seed_connection.close().await.expect("close schema writer");
+        let mut runtime_database_url = database_url;
+        runtime_database_url
+            .query_pairs_mut()
+            .append_pair("application_name", "account_mutation_runtime");
+        let database_url = runtime_database_url.to_string();
+
         let temp = tempfile::tempdir().expect("create test state directory");
         let (_, mut bank_version) = sub2ops_server::modeltrace::bundled().unwrap();
         let manifest = sub2ops_server::modeltrace::manifest();
@@ -770,6 +806,8 @@ impl Harness {
             .expect("construct no-proxy fixture client");
         Self {
             _temp: temp,
+            admin_connection: Some(admin_connection),
+            database_name,
             runtime: RuntimeHandle(Some(runtime)),
             upstream,
             client,
@@ -928,15 +966,56 @@ impl Harness {
     }
 
     async fn finish(&mut self) {
-        self.runtime.close().await;
         if let Some(task) = self.app_task.take() {
             task.abort();
             let _ = task.await;
         }
+        self.runtime.close().await;
         if let Some(task) = self.upstream_task.take() {
             task.abort();
             let _ = task.await;
         }
+        self.upstream.pool.close().await;
+        let admin = self
+            .admin_connection
+            .as_mut()
+            .expect("fixture administration connection is open until finish");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let remaining_sessions: Vec<(String, String, i64)> = loop {
+            let sessions = sqlx::query_as(
+                "SELECT COALESCE(application_name, 'unknown'), COALESCE(state, 'unknown'), COUNT(*) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid() AND backend_type = 'client backend' GROUP BY COALESCE(application_name, 'unknown'), COALESCE(state, 'unknown') ORDER BY 1, 2",
+            )
+            .bind(&self.database_name)
+            .fetch_all(&mut *admin)
+            .await
+            .expect("inspect isolated fixture database sessions before removal");
+            if sessions.is_empty() || tokio::time::Instant::now() >= deadline {
+                break sessions;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        let remaining_count: i64 = remaining_sessions.iter().map(|(_, _, count)| count).sum();
+        assert_eq!(
+            remaining_count, 0,
+            "isolated fixture database still has {remaining_count} session(s) after pool closure (application/state counts: {remaining_sessions:?})"
+        );
+        sqlx::raw_sql(&format!("DROP DATABASE {}", self.database_name))
+            .execute(&mut *admin)
+            .await
+            .expect("drop isolated account-mutation fixture database");
+        let database_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)")
+                .bind(&self.database_name)
+                .fetch_one(&mut *admin)
+                .await
+                .expect("verify isolated fixture database removal");
+        assert!(!database_exists, "fixture database should be removed");
+        self.admin_connection
+            .take()
+            .unwrap()
+            .close()
+            .await
+            .expect("close fixture administration connection");
     }
 
     async fn restart_api(&mut self) {
@@ -1091,6 +1170,57 @@ fn profile_in_pg_order(mapping: &Value) -> Value {
         }
     }
     json!({"whitelist":whitelist,"mappings":mappings})
+}
+
+#[tokio::test]
+async fn database_close_waits_for_a_connection_returning_after_release() {
+    let mut h = Harness::new().await;
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let callback_entered = Arc::clone(&entered);
+    let callback_release = Arc::clone(&release);
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .after_release(move |_connection, _metadata| {
+            let entered = Arc::clone(&callback_entered);
+            let release = Arc::clone(&callback_release);
+            Box::pin(async move {
+                entered.notify_one();
+                release.notified().await;
+                Ok(true)
+            })
+        })
+        .connect(&h.runtime.settings.database_url)
+        .await
+        .expect("connect controlled pool to the Harness database");
+
+    let mut database = h.runtime.db.clone();
+    database.pool = pool.clone();
+    drop(pool.acquire().await.expect("acquire controlled connection"));
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .expect("connection return should enter after_release");
+
+    let close_task = tokio::spawn(async move { database.close().await });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !pool.is_closed() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Database::close should mark the controlled pool closed");
+    release.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), close_task)
+        .await
+        .expect("Database::close should finish after the connection returns")
+        .expect("Database::close task should not panic");
+
+    assert_eq!(
+        pool.size(),
+        0,
+        "Database::close must close a connection returned after the pool closes"
+    );
+    h.finish().await;
 }
 
 fn obstruct_operation_store_lock(

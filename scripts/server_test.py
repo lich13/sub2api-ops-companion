@@ -3,14 +3,43 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import psycopg
+from psycopg import sql
 
 from server_credit_contract import safe_environment
-from server_http_contract import ROOT, TemporaryPostgres
+from server_http_contract import ROOT, SCHEMA_PATH, TemporaryPostgres
+
+
+@contextmanager
+def suite_database(postgres: TemporaryPostgres, index: int):
+    """Give each test binary a fresh database inside this runner's owned cluster."""
+    name = f"server_test_{index}"
+    database_url = urlsplit(postgres.url)._replace(path=f"/{name}").geturl()
+    with psycopg.connect(postgres.url, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        try:
+            with psycopg.connect(database_url, autocommit=True) as database:
+                database.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+            yield database_url
+        finally:
+            admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def run_cargo(command: list[str], database_url: str, scratch: Path) -> int:
+    result = subprocess.run(command, cwd=ROOT, env=safe_environment(database_url, scratch),
+                            capture_output=True, text=True)
+    output = (result.stdout + result.stderr).replace(str(ROOT), "<repository>").replace(str(scratch), "<temporary>")
+    output = re.sub(r"/(?:Users|home)/[^/\s]+", "/build", output)
+    print(output, end="", flush=True)
+    return result.returncode
 
 
 def main() -> int:
@@ -45,22 +74,27 @@ def main() -> int:
         try:
             postgres.start()
             command = ["cargo", "test", "--locked", "--offline", "--features", "test-fixtures", "--manifest-path", "server/Cargo.toml"]
+            suites: list[list[str]] = []
             if args.lib:
-                command.append("--lib")
+                suites.append(["--lib"])
             elif not args.test:
-                command.extend(["--lib", "--bins"])
+                suites.append(["--lib", "--bins"])
             for test in ordinary:
-                command.extend(["--test", test])
-            command.extend(["--", "--test-threads=1"])
-            if args.filter:
-                command.append(args.filter)
-            if ordinary or not args.test:
-                result = subprocess.run(command, cwd=ROOT, env=safe_environment(postgres.url, scratch),
-                                        capture_output=True, text=True)
-                output = (result.stdout + result.stderr).replace(str(ROOT), "<repository>").replace(directory, "<temporary>")
-                output = re.sub(r"/(?:Users|home)/[^/\s]+", "/build", output)
-                print(output, end="")
-                exit_code = result.returncode
+                suites.append(["--test", test])
+            if len(suites) > 1:
+                # Compile all selected binaries together with Cargo's normal
+                # build concurrency, then isolate their database mutations.
+                selectors = [argument for suite in suites for argument in suite]
+                exit_code = run_cargo(command + selectors + ["--no-run"], postgres.url, scratch)
+            if not exit_code:
+                for index, suite in enumerate(suites):
+                    arguments = command + suite + ["--", "--test-threads=1"]
+                    if args.filter:
+                        arguments.append(args.filter)
+                    with suite_database(postgres, index) as database_url:
+                        exit_code = run_cargo(arguments, database_url, scratch)
+                    if exit_code:
+                        break
         finally:
             postgres.close()
     if exit_code:
