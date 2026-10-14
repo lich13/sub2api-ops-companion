@@ -1226,6 +1226,26 @@ td:last-child {
 .compact .switch-cell > svg {
   display: none;
 }
+.quick-account-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 40px;
+}
+.quick-recover {
+  width: 24px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--warn);
+  flex-shrink: 0;
+}
+.quick .quick-account-restricted { color: var(--warn); }
+.quick-restriction { margin-left: 4px; vertical-align: -1px; }
 .compact .group-call {
   gap: 6px;
 }
@@ -1268,6 +1288,26 @@ td:last-child {
 .quick .error-row div > span {
   font-size: 11px;
 }
+.quick .quick-error-row {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+}
+.quick-error-open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  text-align: left;
+  align-items: start;
+}
+.quick-error-open > div { min-width: 0; display: grid; gap: 5px; }
+.quick-error-open strong { overflow: hidden; text-overflow: ellipsis; }
+.quick-error-open > time { grid-column: 2; font-size: 11px; }
+.quick .quick-error-row > svg,
+.quick .quick-error-row > .quick-recover { grid-column: 2; grid-row: 1; justify-self: center; }
 .quick-bottom {
   display: flex;
   justify-content: space-between;

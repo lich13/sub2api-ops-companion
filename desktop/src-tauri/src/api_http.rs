@@ -522,6 +522,8 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
                 && data["model_id"].is_string()
                 && data["status"].is_string()
+                && (data["last_automatic_started_at"].is_null()
+                    || data["last_automatic_started_at"].is_string())
         }
         "/modeltrace/fingerprint-bank" | "/modeltrace/fingerprint-bank/sync" => {
             data["version"]["revision"].is_string()
@@ -1090,6 +1092,17 @@ mod tests {
     fn detection_templates_and_bank_response_guards() {
         let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
+        for at in [
+            serde_json::Value::Null,
+            serde_json::json!("2026-10-01T02:30:00Z"),
+        ] {
+            let mut timed = detection.clone();
+            timed["last_automatic_started_at"] = at;
+            assert!(shape_valid("/accounts/1/model-detection", &timed));
+        }
+        let mut bad = detection.clone();
+        bad["last_automatic_started_at"] = serde_json::json!(123);
+        assert!(!shape_valid("/accounts/1/model-detection", &bad));
         let mut bad = detection.clone();
         bad["interval_minutes"] = serde_json::json!(0);
         assert!(!shape_valid("/accounts/1/model-detection", &bad));

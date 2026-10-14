@@ -2,7 +2,7 @@ export type DegradationMark = { marked?: boolean; marked_at?: string | null; ver
 export type Account = {
   degradation_mark?: DegradationMark;
   recovery_selectable?: boolean;
-  model_detection?: { enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
+  model_detection?: { last_automatic_started_at?: string | null; enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
   id: number;
   parent_account_id?: number | null;
   name: string;

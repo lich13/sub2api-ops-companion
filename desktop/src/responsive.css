@@ -82,7 +82,7 @@
 .mobile .filter-options header, .mobile-action-sheet header, .mobile-groups-surface > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mobile .filter-options h2, .mobile-action-sheet h2, .mobile-groups-surface h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
 .filter-shade { position: fixed; inset: 0; z-index: 40; background: #0007; }
-.mobile-sort { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.mobile-sort { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 .mobile-sort select { background: transparent; border-color: transparent; font-size: 12px; }
 .mobile .table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .mobile .selection-bar { padding: 0; gap: 8px; border-bottom: 0; }

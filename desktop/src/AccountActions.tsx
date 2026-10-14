@@ -10,6 +10,7 @@ export type AccountActionItem = {
   label: string;
   icon?: ReactNode;
   disabled?: boolean;
+  pending?: boolean;
   className?: string;
   title?: string;
   run: () => void;
@@ -84,7 +85,7 @@ export function useAccountActions(options: Options): (account: Account) => Accou
       { id: "model_detection", label: "定时检测", icon: <Clock3 size={12}/>, className: "detection-action", disabled: !options.online, run: () => options.modelDetection(account) },
     );
     items.push({ id: "test", label: "测试连接", icon: <CircleCheck size={12}/>, className: "test-button", disabled: !options.online || !testable, run: () => options.test(account) });
-    if (account.recoverable) items.push({ id: "recover", label: "恢复状态", disabled: !options.online || pending("recover"),
+    if (account.recoverable) items.push({ id: "recover", label: "恢复状态", disabled: !options.online || pending("recover"), pending: pending("recover"),
       icon: pending("recover") ? <LoaderCircle size={12} className="spin"/> : <RotateCcw size={12}/>, run: () => { void execute(account, "recover"); } });
     if (openai) items.push({ id: "template", label: "应用模板", icon: <LayoutTemplate size={12}/>, disabled: !options.online, run: () => options.template(account) });
     if (options.settings) items.push(

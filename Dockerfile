@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.94.1-slim-bookworm AS build
+FROM rust:1.99.0-slim-bookworm AS build
 WORKDIR /build/server
 COPY server/Cargo.toml server/Cargo.lock ./
 COPY server/src ./src
@@ -26,7 +26,7 @@ COPY server/resources/modeltrace/LICENSE.txt /usr/share/doc/sub2ops/ModelTrace-L
 ARG BUILD_REVISION=development
 LABEL org.opencontainers.image.title="Sub2Ops Companion" \
       org.opencontainers.image.revision=$BUILD_REVISION \
-      org.opencontainers.image.version="0.1.40"
+      org.opencontainers.image.version="0.1.41"
 ENV APP_PORT=18081
 USER 10001:10001
 EXPOSE 18081

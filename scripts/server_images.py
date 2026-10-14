@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 
 from server_http_contract import REFERENCE_SHA, ROOT, require
 
@@ -27,6 +28,7 @@ def main():
     parser.add_argument("--python-image", default="sub2ops-companion:python-reference")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
+    release_version = tomllib.loads((ROOT / "server/Cargo.toml").read_text())["package"]["version"]
     head = run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     require(head == args.revision, "image build revision must match the checkout")
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,7 +46,7 @@ def main():
         info = json.loads(run(["docker", "image", "inspect", args.rust_image], capture_output=True, text=True).stdout)[0]
         require(info["Config"]["Labels"]["org.opencontainers.image.revision"] == args.revision, "image revision label differs")
         version = run(["docker", "run", "--rm", args.rust_image, "--version"], capture_output=True, text=True).stdout.strip()
-        require(version == "Sub2Ops 0.1.40 rust " + args.revision, "executable build revision differs")
+        require(version == "Sub2Ops " + release_version + " rust " + args.revision, "executable build revision differs")
         container = run(["docker", "create", args.rust_image], capture_output=True, text=True).stdout.strip()
         exported = scratch / "runtime.tar"
         try:
@@ -77,7 +79,7 @@ def main():
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
         (args.output_dir / "SHA256SUMS").write_text(digest.hexdigest() + "  " + bundle.name + "\n")
-        (args.output_dir / "manifest.json").write_text(json.dumps({"version": "0.1.40", "revision": args.revision,
+        (args.output_dir / "manifest.json").write_text(json.dumps({"version": release_version, "revision": args.revision,
             "image_id": info["Id"], "image_tag": args.rust_image, "image_bytes": info["Size"],
             "image_size_method": "docker image inspect Size; storage-backend metadata, not host disk allocation",
             "binary_sha256": binary_hash, "binary_bytes": len(raw), "python_reference_sha": REFERENCE_SHA,

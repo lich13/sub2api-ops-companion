@@ -2,8 +2,11 @@
 .connection-batch header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
 .connection-batch header > span { color: var(--muted); }
 .connection-batch-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-.connection-batch-collapsed { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.connection-batch-collapsed > span { color: var(--muted); }
+.connection-batch-entry { gap: 5px; }
+.connection-batch-entry > span { color: var(--muted); font-size: 11px; }
+.connection-batch-entry svg { flex-shrink: 0; }
+.mobile .connection-batch-entry { flex-wrap: wrap; gap: 3px 5px; }
+.mobile .connection-batch-entry > span { flex-basis: 100%; }
 .connection-batch button { display: inline-flex; align-items: center; gap: 4px; }
 .connection-batch-error { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--bad); }
 .connection-batch-error span { flex: 1; overflow-wrap: anywhere; }

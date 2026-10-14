@@ -467,7 +467,7 @@ it("selects current filters, preserves live selections on polling and clears on 
     filter.value = "grok";
     filter.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(container.textContent).toContain("已选 0 个账号");
+  expect(container.querySelector(".selection-bar")).toBeNull();
   await act(async () =>
     (
       container.querySelector(
@@ -477,7 +477,7 @@ it("selects current filters, preserves live selections on polling and clears on 
   );
   expect(container.textContent).toContain("已选 1 个账号");
   await act(async () => receive({ ...state, connection_revision: 1 }));
-  expect(container.textContent).toContain("已选 0 个账号");
+  expect(container.querySelector(".selection-bar")).toBeNull();
   await act(async () => button("事件").click());
   expect(container.querySelector("#degradation-panel")).not.toBeNull();
   await act(async () => button("恢复历史").click());
@@ -522,6 +522,13 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
 
   await act(async () => root.render(<App />));
 
+  expect(container.querySelector(".selection-bar")).toBeNull();
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('[aria-label="选择 Account 1"]')!
+      .click(),
+  );
+
   const selectionBar = container.querySelector<HTMLElement>(".selection-bar")!;
   const summary = selectionBar.querySelector<HTMLElement>(".selection-summary")!;
   const actions = selectionBar.querySelector<HTMLElement>(".selection-actions")!;
@@ -538,22 +545,13 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
     (element) => element.textContent?.trim() === "删除所选",
   )!;
 
-  expect(summary.textContent).toContain("已选 0 个账号");
+  expect(summary.textContent).toContain("已选 1 个账号");
   expect(actionButtons.map((element) => element.textContent?.trim())).toEqual([
     "测试连接",
     "选择代理",
     "应用模板",
     "删除所选",
   ]);
-  expect(selectProxy.disabled).toBe(true);
-  expect(applyTemplate.disabled).toBe(true);
-  expect(deleteSelected.disabled).toBe(true);
-
-  await act(async () =>
-    container
-      .querySelector<HTMLInputElement>('[aria-label="选择 Account 1"]')!
-      .click(),
-  );
   expect(summary.textContent).toContain("已选 1 个账号");
   expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   expect(actions.contains(applyTemplate)).toBe(true);

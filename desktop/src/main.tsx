@@ -56,7 +56,8 @@ import {
   RecoveryHistory,
 } from "./AccountControls";
 import TestDialog from "./TestDialog";
-import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
+import { useConnectionBatch, ConnectionBatchEntry, ConnectionBatchResults } from "./ConnectionBatch";
+import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import { DeleteAccountsDialog } from "./AccountManagement";
@@ -403,13 +404,16 @@ export default function App() {
         <div className="recent-accounts">
           {recent.map((call) => {
             const a = accounts.find((item) => item.id === call.account_id);
+            const restriction = quick ? accountRestriction(a) : '';
+            const recover = quick && a ? accountActions(a).find(item => item.id === 'recover') : undefined;
             return (
               <div className="recent-account" key={call.account_id}>
                 {compact ? (
                   <>
                     <div className="compact-identity">
-                      <strong title={call.account_name}>
+                      <strong className={restriction ? 'quick-account-restricted' : undefined} title={[call.account_name, restriction].filter(Boolean).join(' · ')}>
                         {call.account_name}
+                        <QuickRestriction reason={restriction}/>
                         {a && <><DegradationBadge account={a} compact /><SlowWarningBadge value={a.quality} compact /></>}
                       </strong>
                       {a && <MiniUsage account={a} />}
@@ -433,7 +437,7 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    {a && schedule(a)}
+                    {a && (quick ? <div className="quick-account-controls"><QuickRecover account={a} action={recover}/>{schedule(a)}</div> : schedule(a))}
                   </>
                 ) : (
                   <>
@@ -487,20 +491,18 @@ export default function App() {
   function errorRow(e: OpsError, compact = false, category?: ErrorCategory) {
     const stateLabel = errorState(e);
     const account = accounts.find((item) => item.id === e.account_id);
-    return (
-      <button
-        key={e.id}
-        className="error-row"
-        onClick={() => void openError(e.id, category)}
-      >
+    const restriction = compact && quick ? accountRestriction(account) : '';
+    const recover = compact && quick && account ? accountActions(account).find(item => item.id === 'recover') : undefined;
+    const contents = <>
         <span
           className={`code ${e.upstream_status_code === 429 ? "warning" : ""}`}
         >
           {e.upstream_status_code || e.status_code || "ERR"}
         </span>
         <div>
-          <strong>
+          <strong className={restriction ? 'quick-account-restricted' : undefined} title={restriction || undefined}>
             {e.account_name || (e.account_id ? `账号 #${e.account_id}` : "未关联账号")}
+            <QuickRestriction reason={restriction}/>
             {compact && account && <DegradationBadge account={account} compact />}
           </strong>
           <span>
@@ -511,9 +513,12 @@ export default function App() {
           </span>
         </div>
         <Time at={e.created_at} />
-        <ChevronRight size={15} />
-      </button>
-    );
+    </>;
+    if (compact && quick) return <div key={e.id} className="error-row quick-error-row">
+      <button type="button" className="quick-error-open" onClick={() => void openError(e.id, category)}>{contents}</button>
+      {account && recover ? <QuickRecover account={account} action={recover}/> : <ChevronRight size={15} aria-hidden="true"/>}
+    </div>;
+    return <button key={e.id} className="error-row" onClick={() => void openError(e.id, category)}>{contents}<ChevronRight size={15}/></button>;
   }
   function status() {
     return (
@@ -690,7 +695,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -763,12 +768,11 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
-                    {mobile && <div className="mobile-sort"><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
+                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
                     <div className="table-wrap">
-                      <div className="selection-bar">
+                      {selected.size > 0 && <div className="selection-bar">
                         <div className="selection-summary">
-                        {mobile && <label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label>}
                         <span>已选 {selected.size} 个账号</span>
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
@@ -787,7 +791,7 @@ export default function App() {
                           <Trash2 size={12}/>删除所选
                         </button>
                         </div>
-                      </div>
+                      </div>}
                       <ConnectionBatchResults control={connectionBatch}/>
                       {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>

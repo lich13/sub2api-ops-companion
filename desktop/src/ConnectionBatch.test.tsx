@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ConnectionBatchResults, useConnectionBatch } from "./ConnectionBatch";
+import { ConnectionBatchEntry, ConnectionBatchResults, useConnectionBatch } from "./ConnectionBatch";
 import { api, command } from "./bridge";
 import { bindOperationConnection, setOperations, type Operation, type OperationBatch } from "./accountOperations";
 import type { Account } from "./types";
@@ -100,6 +100,7 @@ function Harness({
     <output data-testid="busy">{String(control.busy)}</output>
     <output data-testid="starting">{String(control.starting)}</output>
     <output data-testid="error">{control.error}</output>
+    <div className="account-toolbar"><ConnectionBatchEntry control={control} /></div>
     <ConnectionBatchResults control={control} />
   </>;
 }
@@ -154,11 +155,19 @@ async function clickResultButton(label: string) {
   await flush();
 }
 
-async function clickSummaryButton(label: string) {
-  const button = [...container.querySelectorAll<HTMLButtonElement>('section[aria-label="批量测试连接摘要"] button')]
-    .find((node) => node.textContent?.trim() === label);
-  if (!button) throw new Error(`missing summary button: ${label}`);
-  await act(async () => button.click());
+function entryButton() {
+  const button = container.querySelector<HTMLButtonElement>('.account-toolbar button[aria-label="查看测活结果"]');
+  if (!button) throw new Error("missing batch result entry");
+  return button;
+}
+
+function expectHiddenResult() {
+  expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+  expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
+}
+
+async function clickEntry() {
+  await act(async () => entryButton().click());
   await flush();
 }
 
@@ -339,20 +348,25 @@ describe("connection batch tests", () => {
     expect(submissions()).toHaveLength(1);
     const originalRequest = submissions()[0]?.[2];
     await clickResultButton("关闭结果");
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("提交结果待确认");
+    expectHiddenResult();
+    expect(entryButton().textContent).toContain("测活结果");
+    expect(entryButton().getAttribute("title")).toBe("提交结果待确认");
+    expect(entryButton().querySelector('[role="status"]')?.textContent).toBe("提交结果待确认");
+    expect(document.activeElement).toBe(entryButton());
     expect(output("busy")).toBe("true");
     expect(persistedStates()[0]?.value).toEqual({ request: originalRequest, visible: false });
 
     await act(async () => root.unmount());
     root = createRoot(container);
     await renderHarness({ storageKey, connectionKey: "timeout:2", accounts: [account(2)] });
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("提交结果待确认");
+    expectHiddenResult();
+    expect(entryButton().getAttribute("title")).toBe("提交结果待确认");
     expect(output("busy")).toBe("true");
     expect(submissions()).toHaveLength(1);
 
-    await clickSummaryButton("查看测活结果");
+    await clickEntry();
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
+    expect(document.activeElement).toBe(container.querySelector('section[aria-label="批量测试连接"]'));
     expect(submissions()).toHaveLength(1);
     await clickResultButton("恢复提交结果");
     expect(submissions()).toHaveLength(2);
@@ -375,8 +389,11 @@ describe("connection batch tests", () => {
     await advance();
     expect(resultRow(account(1).name).textContent).toContain("通过");
     await clickResultButton("关闭结果");
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("已结束 1/1 · 通过 1");
+    expectHiddenResult();
+    expect(entryButton().getAttribute("aria-label")).toBe("查看测活结果");
+    expect(entryButton().textContent?.trim()).toBe("测活结果");
+    expect(entryButton().getAttribute("title")).toBe("已结束 1/1 · 通过 1");
+    expect(document.activeElement).toBe(entryButton());
 
     const saved = persistedStates().find(({ value }) => value.batchId === savedBatchId);
     expect(saved?.value).toEqual({ batchId: savedBatchId, visible: false });
@@ -393,11 +410,13 @@ describe("connection batch tests", () => {
     expect(api).toHaveBeenCalledWith("GET", `/account-operations?batch_id=${savedBatchId}`);
     expect(reads().length).toBeGreaterThan(initialReads);
     expect(output("batch-id")).toBe(savedBatchId);
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("查看测活结果");
+    expectHiddenResult();
+    expect(entryButton().getAttribute("title")).toBe("已结束 1/1 · 通过 1");
     expect(container.textContent).not.toContain(account(1).name);
 
-    await clickSummaryButton("查看测活结果");
+    await clickEntry();
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
+    expect(document.activeElement).toBe(container.querySelector('section[aria-label="批量测试连接"]'));
     expect(resultRow(account(1).name).textContent).toContain("通过");
     expect(submissions()).toHaveLength(1);
   });
@@ -445,7 +464,8 @@ describe("connection batch tests", () => {
     await renderHarness({ accounts: [account(1)] });
     await click("start");
     await clickResultButton("关闭结果");
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+    expectHiddenResult();
+    expect(entryButton()).toBeTruthy();
 
     await renderHarness({ accounts: [account(2)] });
     await click("start");
@@ -454,6 +474,7 @@ describe("connection batch tests", () => {
     expect(output("batch-id")).toBe(secondBatchId);
     expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
     expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
+    expect(container.querySelector('.account-toolbar button[aria-label="查看测活结果"]')).toBeNull();
     expect(resultRow(account(2).name).textContent).toContain("通过");
     expect(container.textContent).not.toContain(account(1).name);
   });
@@ -472,13 +493,13 @@ describe("connection batch tests", () => {
     expect(resultRow(account(1).name).textContent).toContain("测试中");
     await clickResultButton("关闭结果");
 
-    const summary = container.querySelector('section[aria-label="批量测试连接摘要"]');
-    expect(summary?.textContent).toContain("查看测活结果");
-    expect(summary?.textContent).toContain("已完成 0/1 · 通过 0");
+    expectHiddenResult();
+    expect(entryButton().getAttribute("aria-label")).toBe("查看测活结果");
+    expect(entryButton().querySelector('[role="status"]')?.textContent).toBe("已完成 0/1 · 通过 0");
     expect(output("busy")).toBe("true");
     await click("start");
     expect(submissions()).toHaveLength(1);
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+    expectHiddenResult();
   });
 
   it("keeps a closed result hidden when a pending submission responds late", async () => {
@@ -495,8 +516,10 @@ describe("connection batch tests", () => {
     expect(output("starting")).toBe("true");
     expect(output("busy")).toBe("true");
     await clickResultButton("关闭结果");
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("正在提交");
+    expectHiddenResult();
+    expect(entryButton().getAttribute("title")).toBe("正在提交");
+    expect(entryButton().querySelector('[role="status"]')?.textContent).toBe("正在提交");
+    expect(document.activeElement).toBe(entryButton());
     expect(output("busy")).toBe("true");
     expect(persistedStates()[0]?.value).toMatchObject({ visible: false, request: { request_id: expect.any(String) } });
 
@@ -508,8 +531,8 @@ describe("connection batch tests", () => {
     expect(output("batch-id")).toBe("batch-late-after-close");
     expect(output("starting")).toBe("false");
     expect(output("busy")).toBe("true");
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("已完成 0/1 · 通过 0");
+    expectHiddenResult();
+    expect(entryButton().querySelector('[role="status"]')?.textContent).toBe("已完成 0/1 · 通过 0");
     expect(persistedStates()[0]?.value).toEqual({ batchId: "batch-late-after-close", visible: false });
     expect(submissions()).toHaveLength(1);
   });
@@ -536,7 +559,7 @@ describe("connection batch tests", () => {
     });
     await click("start");
     await clickResultButton("关闭结果");
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expectHiddenResult();
 
     await renderHarness({
       connectionKey: "connection-b:1",
@@ -551,8 +574,8 @@ describe("connection batch tests", () => {
       storageKey: "https://connection-a.example.invalid",
       accounts: [account(1)],
     });
-    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+    expectHiddenResult();
+    expect(entryButton().getAttribute("title")).toBe("已结束 1/1 · 通过 1");
 
     await renderHarness({
       connectionKey: "connection-b:2",

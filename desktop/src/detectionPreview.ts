@@ -51,7 +51,9 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     return structuredClone(bank);
   }
   const aid = Number(path.split('/')[2]);
-  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, model_id: 'gpt-6-luna', status: 'disabled', next_at: null };
+  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
+    last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
+    last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
   if (method === 'PUT') {
     if (body.expected_version !== value.version) throw new Error('检测设置已变化');
     value = { ...value, ...body, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };

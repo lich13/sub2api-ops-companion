@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LoaderCircle, RefreshCw, Square, X } from 'lucide-react';
+import { Activity, LoaderCircle, RefreshCw, Square, X } from 'lucide-react';
 import { api, command } from './bridge';
 import { clientId, getOperations, setOperations, type Operation, type OperationBatch } from './accountOperations';
 import type { Account } from './types';
@@ -37,16 +37,22 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   const [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [visible, setVisible] = useState(true);
   const visibility = useRef(true);
+  const focusTarget = useRef<string | null>(null);
   const generation = useRef(0), revision = useRef(0), guard = useRef(false), submission = useRef<Submission | null>(null);
   const batch = view.scope === connectionKey ? view.batch : null;
   useEffect(() => {
     ++generation.current; ++revision.current; guard.current = false;
+    focusTarget.current = null;
     const saved = readSaved(key); submission.current = saved.request ?? null;
     visibility.current = saved.visible !== false; setVisible(visibility.current);
     setView({ scope: connectionKey, batch: null }); setBatchId(saved.batchId ?? null); setStarting(false); setStopping(false);
     setError(saved.request ? '上次提交结果未确认，请恢复提交结果' : '');
     return () => { ++generation.current; ++revision.current; };
   }, [connectionKey, key]);
+  useEffect(() => {
+    if (focusTarget.current) document.getElementById(focusTarget.current)?.focus({ preventScroll: true });
+    focusTarget.current = null;
+  }, [visible]);
 
   useEffect(() => {
     if (!online || !active || !batchId || view.scope !== connectionKey) return;
@@ -99,6 +105,7 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
     else setRefresh(value => value + 1);
   }
   function changeVisibility(next: boolean) {
+    focusTarget.current = next ? 'connection-batch-results' : 'connection-batch-entry';
     visibility.current = next; setVisible(next);
     try {
       remember(key, { ...(submission.current ? { request: submission.current } : batchId ? { batchId } : {}), visible: next });
@@ -121,6 +128,24 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
 }
 export type ConnectionBatchControl = ReturnType<typeof useConnectionBatch>;
 
+function progress(control: ConnectionBatchControl) {
+  if (control.starting) return '正在提交';
+  if (!control.batch) return control.recoverSubmission ? '提交结果待确认' : '等待读取结果';
+  const items = control.batch.items;
+  const unfinished = items.filter(j => ['queued', 'running', 'checking'].includes(j.status)).length;
+  const passed = items.filter(j => j.status === 'completed' && j.result?.success === true).length;
+  return `${unfinished ? '已完成' : '已结束'} ${items.length - unfinished}/${items.length} · 通过 ${passed}`;
+}
+
+export function ConnectionBatchEntry({ control }: { control: ConnectionBatchControl }) {
+  if (!control.hasResult || control.visible) return null;
+  return <button id="connection-batch-entry" type="button" className="connection-batch-entry" onClick={control.show}
+    aria-label="查看测活结果" aria-expanded={false} aria-controls="connection-batch-results" title={progress(control)}>
+    {control.busy ? <LoaderCircle size={13} className="spin"/> : <Activity size={13}/>}测活结果
+    {control.busy && <span role="status">{progress(control)}</span>}
+  </button>;
+}
+
 function status(job: Operation) {
   if (job.status === 'completed') return job.result?.success === true ? '测试通过' : '测试失败';
   return ({ queued: '等待执行', running: '测试中', checking: '核对结果', needs_confirmation: '待核对',
@@ -128,17 +153,11 @@ function status(job: Operation) {
 }
 export function ConnectionBatchResults({ control }: { control: ConnectionBatchControl }) {
   const { batch, starting, stopping, error, online } = control;
-  if (!control.hasResult) return null;
-  const items = batch?.items ?? [], unfinished = items.filter(j => ['queued', 'running', 'checking'].includes(j.status)).length;
-  const passed = items.filter(j => j.status === 'completed' && j.result?.success === true).length;
+  if (!control.hasResult || !control.visible) return null;
+  const items = batch?.items ?? [];
   const canStop = items.some(j => ['queued', 'needs_confirmation'].includes(j.status) && !j.started_at);
-  const progress = starting ? '正在提交' : !batch ? control.recoverSubmission ? '提交结果待确认' : '等待读取结果'
-    : `${unfinished ? '已完成' : '已结束'} ${items.length - unfinished}/${items.length} · 通过 ${passed}`;
-  if (!control.visible) return <section className="connection-batch connection-batch-collapsed" aria-label="批量测试连接摘要">
-    <button onClick={control.show}>查看测活结果</button><span role="status">{progress}</span>
-  </section>;
-  return <section className="connection-batch" aria-label="批量测试连接">
-    <header><strong>测试连接</strong><span role="status">{progress}</span><div className="connection-batch-actions">
+  return <section id="connection-batch-results" tabIndex={-1} className="connection-batch" aria-label="批量测试连接">
+    <header><strong>测试连接</strong><span role="status">{progress(control)}</span><div className="connection-batch-actions">
       {canStop && <button disabled={!online || stopping} onClick={() => void control.stop()}>{stopping ? <LoaderCircle size={12} className="spin"/> : <Square size={12}/>}停止未开始</button>}
       <button onClick={control.close}><X size={12}/>关闭结果</button></div>
     </header>

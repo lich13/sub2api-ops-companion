@@ -983,6 +983,12 @@ async function templateChecks(h) {
   await h.click(account102.locator("label.account-check"), "batch-select-long-name-account");
   await h.layout();
   const selectionBar = surface.locator(".selection-bar");
+  if (h.scenario.mobile) {
+    const mobileSort = surface.locator(".mobile-sort");
+    await h.state(await mobileSort.getByRole("checkbox", { name: "全选当前筛选账号", exact: true }).count() === 1
+      && await selectionBar.locator('input[type="checkbox"]').count() === 0,
+    "mobile-select-all-not-in-sort-row", mobileSort);
+  }
   const selectionSummary = selectionBar.locator(".selection-summary");
   const selectionActions = selectionBar.locator(".selection-actions");
   const testConnectionAction = selectionActions.getByRole("button", { name: "测试连接", exact: true });
@@ -1111,12 +1117,11 @@ async function connectionBatchChecks(h, fixture) {
   h.phase = "accounts/batch-connection-selection";
   const surface = page.locator('.page-surface[data-page="accounts"]');
   const selection = surface.locator(".selection-bar");
-  const entry = selection.getByRole("button", { name: "测试连接", exact: true });
   const results = surface.getByRole("region", { name: "批量测试连接", exact: true });
   const accountRows = surface.locator(h.scenario.mobile ? ".mobile-account" : ".accounts-table tbody tr");
   const selectedAccounts = [101, 102, 201].map((id) => fixture.accounts.find((account) => account.id === id));
   await h.state(selectedAccounts.every(Boolean), "missing-batch-connection-fixture", surface);
-  await h.state(await entry.isDisabled(), "batch-connection-empty-selection-enabled", entry);
+  await h.state(await selection.count() === 0, "batch-connection-selection-bar-rendered-with-no-selection", surface);
   await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-account-list-incomplete", accountRows);
 
   const readJobs = () => page.evaluate(async () => {
@@ -1135,7 +1140,9 @@ async function connectionBatchChecks(h, fixture) {
       await h.click(surface.getByRole("checkbox", checkboxOptions), "batch-connection-select-account", { touch: false, vertical: false });
     }
   }
+  const entry = selection.getByRole("button", { name: "测试连接", exact: true });
   await h.state((await selection.textContent() || "").includes("已选 3 个账号"), "batch-connection-selection-count", selection);
+  await h.state(await entry.isEnabled(), "batch-connection-selected-entry-disabled", entry);
   await h.allWithin(selection.locator(".selection-actions button"), "batch-connection-selection-action");
   await h.layout();
 
@@ -1196,8 +1203,8 @@ async function connectionBatchChecks(h, fixture) {
       .getByRole("button", { name: "关闭筛选", exact: true }), "batch-connection-filter-close");
   }
   await platform("grok");
-  await h.state((await selection.textContent() || "").includes("已选 0 个账号") && await entry.isDisabled(),
-    "batch-connection-filter-kept-stale-selection", selection);
+  await h.state(await selection.count() === 0,
+    "batch-connection-filter-kept-stale-selection", surface);
   await h.state(await accountRows.count() === fixture.accounts.filter((account) => account.platform === "grok").length,
     "batch-connection-filter-did-not-change-account-list", accountRows);
   await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-filter-changed-results", results);
@@ -1244,7 +1251,7 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   const surface = page.locator('.page-surface[data-page="accounts"]');
   await h.visible(surface, "batch-proxy-account-surface");
   const selectionBar = surface.locator(".selection-bar");
-  await h.state((await selectionBar.textContent() || "").includes("已选 0 个账号"), "batch-proxy-selection-not-empty-at-start", selectionBar);
+  await h.state(await selectionBar.count() === 0, "batch-proxy-selection-bar-rendered-with-no-selection", surface);
   const selectedAccounts = [101, 391].map((id) => fixture.accounts.find((account) => account.id === id));
   await h.state(selectedAccounts.every(Boolean), "missing-batch-proxy-fixture", surface);
   const accountNames = selectedAccounts.map((account) => account.name);
@@ -1356,7 +1363,7 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
   await h.click(dialog.getByRole("button", { name: "关闭", exact: true }), "batch-proxy-final-close");
   await dialog.waitFor({ state: "hidden" });
   for (let index = 0; index < selectedAccounts.length; index++) await select(selectedAccounts[index], index);
-  await h.state((await selectionBar.textContent() || "").includes("已选 0 个账号"), "batch-proxy-selection-not-cleared-at-end", selectionBar);
+  await h.state(await selectionBar.count() === 0, "batch-proxy-selection-bar-still-rendered-after-clearing", surface);
   await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "batch-proxy-mutated-preview-accounts", surface);
 }
 

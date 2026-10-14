@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelDetectionDialog from "./ModelDetectionDialog";
 import { api, command } from "./bridge";
-import type { Account } from "./types";
+import { fullTime, type Account } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn() }));
 vi.mock("./mobile", () => ({ useBackAction: vi.fn() }));
@@ -35,6 +35,7 @@ const account: Account = {
 };
 
 type Detection = {
+  last_automatic_started_at?: string | null;
   enabled: boolean;
   interval_minutes: number;
   model_id: string;
@@ -93,6 +94,12 @@ function button(text: string) {
   return result;
 }
 
+function lastDetectionTime() {
+  return [...container.querySelectorAll(".detection-meta dt")]
+    .find((node) => node.textContent === "上次检测（开始）")
+    ?.nextElementSibling?.textContent;
+}
+
 async function renderDialog(
   detection: Detection = baseDetection,
   candidates = models,
@@ -118,6 +125,29 @@ async function renderDialog(
 }
 
 describe("scheduled model detection", () => {
+  it("shows the last automatic start with the shared full time format", async () => {
+    const startedAt = "2026-10-08T00:00:00Z";
+    await renderDialog({ ...baseDetection, last_automatic_started_at: startedAt });
+
+    expect(lastDetectionTime()).toBe(fullTime(startedAt));
+  });
+
+  it("shows no record when neither a start time nor a result exists", async () => {
+    await renderDialog({ ...baseDetection, last_automatic_started_at: null, last_result: null });
+
+    expect(lastDetectionTime()).toBe("暂无记录");
+  });
+
+  it("shows an unknown time when history exists without a valid start time", async () => {
+    await renderDialog({
+      ...baseDetection,
+      last_automatic_started_at: "",
+      last_result: { status: "failed" },
+    });
+
+    expect(lastDetectionTime()).toBe("时间未知");
+  });
+
   it("loads the default settings and saves the selected values with the current version", async () => {
     await renderDialog();
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
