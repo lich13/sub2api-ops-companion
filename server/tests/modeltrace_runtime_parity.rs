@@ -2017,24 +2017,31 @@ async fn cancellation_aborts_a_pending_retry_timer_without_late_dispatch() {
         responses_sse("1,2,3"),
     ];
     let replies = (0..3).map(|_| retries.clone()).collect::<Vec<_>>();
+    let gate = RequestGate::new(3);
     harness
         .state
-        .set_scenario(Scenario::with_replies(replies, None));
+        .set_scenario(Scenario::with_replies(replies, Some(gate.clone())));
     let account_id = harness.seed_account("apikey", None, json!({})).await;
-    let started = harness.start_manual(account_id, 1).await;
+    let started = harness.start_manual(account_id, 3).await;
     let job_id = started["id"].as_str().unwrap().to_owned();
-    harness.wait_for_requests(1).await;
+    harness.wait_for_requests(3).await;
+    assert_eq!(
+        harness.state.active(),
+        3,
+        "all first attempts are held at the gate"
+    );
+    gate.release_all(1);
     let waiting = harness.wait_for_group_status(&job_id, "retrying").await;
-    assert_eq!(waiting["attempts"], 1);
-    assert_eq!(harness.state.count(), 1);
+    assert_eq!(waiting["attempts"], 3);
+    assert_eq!(harness.state.count(), 3);
 
     let cancelled = harness.runtime.tests.cancel(&job_id).await.unwrap();
     assert_eq!(cancelled["status"], "cancelled");
     tokio::time::sleep(Duration::from_millis(1_100)).await;
     assert_eq!(
         harness.state.count(),
-        1,
-        "the cancelled one-second retry timer cannot issue a second POST"
+        3,
+        "the cancelled one-second retry timers cannot issue a second wave of POSTs"
     );
     assert_eq!(
         harness.runtime.tests.get(&job_id).unwrap()["status"],
