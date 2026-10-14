@@ -30845,7 +30845,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_contract.rs",
-          "rust_source_line": 524,
+          "rust_source_line": 526,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_contract"
         },
         "gap": null,
@@ -30926,7 +30926,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_contract.rs",
-          "rust_source_line": 524,
+          "rust_source_line": 526,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_contract"
         },
         "gap": null,
@@ -31063,7 +31063,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_contract.rs",
-          "rust_source_line": 524,
+          "rust_source_line": 526,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_contract"
         },
         "gap": null,
@@ -32268,7 +32268,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_contract.rs",
-          "rust_source_line": 524,
+          "rust_source_line": 526,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_contract"
         },
         "gap": null,
