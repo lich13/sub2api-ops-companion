@@ -31266,7 +31266,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2120,
+          "rust_source_line": 2127,
           "supporting_targets": [
             {
               "assertions": [
@@ -31280,7 +31280,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2045,
+              "line": 2052,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "cancellation_waits_for_pending_progress_write_before_terminal_state",
@@ -31326,14 +31326,14 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2250,
+          "rust_source_line": 2257,
           "supporting_targets": [
             {
               "assertions": [
-                "assert_eq!(waiting[\"attempts\"], 1)",
-                "assert_eq!(harness.state.count(), 1)",
+                "assert_eq!(waiting[\"attempts\"], 3)",
+                "assert_eq!(harness.state.count(), 3)",
                 "assert_eq!(cancelled[\"status\"], \"cancelled\")",
-                "assert_eq!(\n        harness.state.count(),\n        1,\n        \"the cancelled one-second retry timer cannot issue a second POST\"\n    )",
+                "assert_eq!(\n        harness.state.count(),\n        3,\n        \"the cancelled one-second retry timers cannot issue a second wave of POSTs\"\n    )",
                 "assert_eq!(\n        harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n        \"cancelled\"\n    )"
               ],
               "execution_status": "mapping_only",
@@ -31491,7 +31491,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2397,
+          "rust_source_line": 2404,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31536,7 +31536,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2357,
+          "rust_source_line": 2364,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31575,7 +31575,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2193,
+          "rust_source_line": 2200,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31774,7 +31774,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2444,
+          "rust_source_line": 2451,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31862,7 +31862,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2304,
+          "rust_source_line": 2311,
           "supporting_targets": [
             {
               "assertions": [
@@ -31877,7 +31877,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2250,
+              "line": 2257,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "cancellation_drains_streams_releases_shared_credential_lock_and_prevents_late_writes",

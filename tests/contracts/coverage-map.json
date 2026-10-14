@@ -18173,10 +18173,10 @@
           "path": "server/tests/modeltrace_runtime_parity.rs",
           "test_name": "cancellation_aborts_a_pending_retry_timer_without_late_dispatch",
           "assertions": [
-            "assert_eq!(waiting[\"attempts\"], 1)",
-            "assert_eq!(harness.state.count(), 1)",
+            "assert_eq!(waiting[\"attempts\"], 3)",
+            "assert_eq!(harness.state.count(), 3)",
             "assert_eq!(cancelled[\"status\"], \"cancelled\")",
-            "assert_eq!(\n        harness.state.count(),\n        1,\n        \"the cancelled one-second retry timer cannot issue a second POST\"\n    )",
+            "assert_eq!(\n        harness.state.count(),\n        3,\n        \"the cancelled one-second retry timers cannot issue a second wave of POSTs\"\n    )",
             "assert_eq!(\n        harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n        \"cancelled\"\n    )"
           ]
         }
