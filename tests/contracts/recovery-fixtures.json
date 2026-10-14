@@ -1,0 +1,3988 @@
+{
+  "at": "2031-04-05T06:07:08+00:00",
+  "bark": {
+    "chunks": {
+      "body_expected": [
+        "第 1/8 段\n额度恢复🙂状态更新额度",
+        "第 2/8 段\n恢复🙂状态更新额度恢复",
+        "第 3/8 段\n🙂状态更新额度恢复🙂状",
+        "第 4/8 段\n态更新额度恢复🙂状态更",
+        "第 5/8 段\n新额度恢复🙂状态更新额",
+        "第 6/8 段\n度恢复🙂状态更新额度恢",
+        "第 7/8 段\n复🙂状态更新额度恢复🙂",
+        "第 8/8 段\n状态更新"
+      ],
+      "empty_expected": [
+        ""
+      ],
+      "max_bytes": 48,
+      "split_expected": [
+        "额度恢复🙂状态更新额度恢复🙂状",
+        "态更新额度恢复🙂状态更新额度恢",
+        "复🙂状态更新额度恢复🙂状态更新",
+        "额度恢复🙂状态更新额度恢复🙂状",
+        "态更新额度恢复🙂状态更新额度恢",
+        "复🙂状态更新"
+      ],
+      "text": "额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新额度恢复🙂状态更新"
+    },
+    "credit_message": {
+      "event": {
+        "account_id": 75,
+        "account_name": "fixture-uncertain",
+        "attempt_at": "2031-04-05T06:08:08+00:00",
+        "completed_at": "2031-04-05T06:09:08+00:00",
+        "outcome": "unknown",
+        "reason": "receipt unavailable",
+        "trigger_at": "2031-04-05T06:07:08+00:00",
+        "verification_method": "connection"
+      },
+      "expected": [
+        "⚠️ OAuth 消费结果不确定，禁止重复用卡",
+        "账号：fixture-uncertain #75\n触发时间：2031-04-05 14:07\n执行时间：2031-04-05 14:08\n验证方式：测试连接\n结果：消费结果不确定，禁止重复用卡\n原因：receipt unavailable\n结束时间：2031-04-05 14:09"
+      ]
+    },
+    "oauth_messages": [
+      {
+        "event": {
+          "account_id": 73,
+          "account_name": "fixture-account",
+          "error": "synthetic quota report",
+          "error_code": "quota_wait",
+          "model_id": "example/model",
+          "plan_type": "plus",
+          "status": "test_failed",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号额度恢复后测试失败",
+          "账号 ID：73\n名称：fixture-account\n套餐：plus\n窗口：5h / 7d\n模型：example/model\n错误码：quota_wait\n错误：synthetic quota report"
+        ],
+        "name": "failure_format"
+      },
+      {
+        "event": {
+          "account_id": 74,
+          "account_name": "fixture-recovered",
+          "model_id": "example/model",
+          "recovered_at": "2031-04-05T06:17:08+00:00",
+          "reset_credit": {
+            "completed_at": "2031-04-05T06:16:08+00:00",
+            "consumed": true,
+            "verification_method": "model"
+          },
+          "status": "recovered",
+          "test_success": true
+        },
+        "expected": [
+          "✅ OAuth 用卡成功，已恢复调度",
+          "账号：fixture-recovered #74\n验证方式：模型测试\n模型：example/model\n用卡时间：2031-04-05 14:16\n恢复时间：2031-04-05 14:17"
+        ],
+        "name": "recovered_with_receipt"
+      }
+    ],
+    "urls": [
+      {
+        "expected": "https://push.example.invalid/base",
+        "name": "https_service",
+        "push_url": "https://push.example.invalid/base/push",
+        "value": "https://push.example.invalid/base/"
+      },
+      {
+        "expected": "http://127.0.0.1:8787/notify",
+        "name": "loopback_http",
+        "push_url": "http://127.0.0.1:8787/notify/push",
+        "value": "http://127.0.0.1:8787/notify/"
+      },
+      {
+        "expected_error": true,
+        "name": "external_http_rejected",
+        "value": "http://push.example.invalid/"
+      },
+      {
+        "expected_error": true,
+        "name": "query_rejected",
+        "value": "https://push.example.invalid/?fixture=1"
+      }
+    ]
+  },
+  "daily_test": {
+    "eligibility": [
+      {
+        "expected": true,
+        "name": "eligible",
+        "now": "2031-04-05T06:07:08+00:00",
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "manual_reason",
+        "now": "2031-04-05T06:07:08+00:00",
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": "人工手动暂停",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "future_reset",
+        "now": "2031-04-05T06:07:08+00:00",
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T06:07:09+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "expired_auto_pause",
+        "now": "2031-04-05T06:07:08+00:00",
+        "row": {
+          "auto_pause_on_expired": true,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": "2031-04-05T06:07:08+00:00",
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "rate_limited_without_reset",
+        "now": "2031-04-05T06:07:08+00:00",
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": "2031-04-05T06:06:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      }
+    ],
+    "schedule": {
+      "claim": {
+        "at": "2031-04-05T21:00:50+00:00",
+        "expected_batch": {
+          "accounts": {},
+          "date": "2031-04-06",
+          "scheduled_at": "2031-04-05T21:00:00+00:00",
+          "started_at": "2031-04-05T21:00:50+00:00",
+          "status": "running"
+        },
+        "expected_state": {
+          "batches": {
+            "2031-04-06": {
+              "accounts": {},
+              "date": "2031-04-06",
+              "scheduled_at": "2031-04-05T21:00:00+00:00",
+              "started_at": "2031-04-05T21:00:50+00:00",
+              "status": "running"
+            }
+          },
+          "enabled": true,
+          "next_run_at": "2031-04-05T22:30:00+00:00",
+          "time": "06:30"
+        }
+      },
+      "configuration_change": {
+        "at": "2031-04-05T21:00:45+00:00",
+        "expected": {
+          "batches": {
+            "2031-04-06": {
+              "accounts": {},
+              "date": "2031-04-06",
+              "scheduled_at": "2031-04-05T21:00:00+00:00",
+              "status": "queued"
+            }
+          },
+          "enabled": true,
+          "next_run_at": "2031-04-05T22:30:00+00:00",
+          "time": "06:30"
+        },
+        "time": "06:30"
+      },
+      "initial": {
+        "batches": {},
+        "enabled": true,
+        "next_run_at": "2031-04-05T21:00:00+00:00",
+        "time": "05:00"
+      },
+      "late_missed": {
+        "at": "2031-04-05T21:01:00+00:00",
+        "expected_state": {
+          "batches": {
+            "2031-04-06": {
+              "accounts": {},
+              "date": "2031-04-06",
+              "scheduled_at": "2031-04-05T21:00:00+00:00",
+              "status": "missed"
+            }
+          },
+          "enabled": true,
+          "next_run_at": "2031-04-06T21:00:00+00:00",
+          "time": "05:00"
+        }
+      },
+      "on_time_tick": {
+        "at": "2031-04-05T21:00:30+00:00",
+        "expected": {
+          "batches": {
+            "2031-04-06": {
+              "accounts": {},
+              "date": "2031-04-06",
+              "scheduled_at": "2031-04-05T21:00:00+00:00",
+              "status": "queued"
+            }
+          },
+          "enabled": true,
+          "next_run_at": "2031-04-06T21:00:00+00:00",
+          "time": "05:00"
+        }
+      },
+      "restart": {
+        "at": "2031-04-05T21:10:00+00:00",
+        "expected_state": {
+          "batches": {
+            "2031-04-06": {
+              "accounts": {},
+              "completed_at": "2031-04-05T21:10:00+00:00",
+              "date": "2031-04-06",
+              "scheduled_at": "2031-04-05T21:00:00+00:00",
+              "started_at": "2031-04-05T21:00:50+00:00",
+              "status": "interrupted"
+            }
+          },
+          "enabled": true,
+          "next_run_at": "2031-04-05T22:30:00+00:00",
+          "time": "06:30"
+        }
+      }
+    },
+    "times": [
+      {
+        "expected": "2031-04-05T21:00:00+00:00",
+        "name": "one_minute_before",
+        "now": "2031-04-05T20:59:00+00:00",
+        "time": "05:00"
+      },
+      {
+        "expected": "2031-04-06T21:00:00+00:00",
+        "name": "exactly_due_moves_to_tomorrow",
+        "now": "2031-04-05T21:00:00+00:00",
+        "time": "05:00"
+      }
+    ]
+  },
+  "key_fallback": {
+    "desired": [
+      {
+        "expected": null,
+        "name": "empty",
+        "states": []
+      },
+      {
+        "expected": false,
+        "name": "available_wins",
+        "states": [
+          "unknown",
+          "unavailable",
+          "available"
+        ]
+      },
+      {
+        "expected": true,
+        "name": "all_unavailable",
+        "states": [
+          "unavailable",
+          "unavailable"
+        ]
+      },
+      {
+        "expected": null,
+        "name": "unknown_only",
+        "states": [
+          "unknown"
+        ]
+      }
+    ],
+    "grok": [
+      {
+        "expected": "available",
+        "name": "available",
+        "row": {
+          "extra": {
+            "grok_needs_reauth": false
+          },
+          "schedulable": true,
+          "status": "active"
+        }
+      },
+      {
+        "expected": "unavailable",
+        "name": "reauth_needed",
+        "row": {
+          "extra": {
+            "grok_needs_reauth": true
+          },
+          "schedulable": true,
+          "status": "active"
+        }
+      },
+      {
+        "expected": "unknown",
+        "name": "malformed_status",
+        "row": {
+          "extra": "invalid fixture",
+          "schedulable": true,
+          "status": "active"
+        }
+      },
+      {
+        "expected": "unavailable",
+        "name": "future_rate_reset",
+        "row": {
+          "rate_limit_reset_at": "2031-04-05T06:07:09+00:00",
+          "schedulable": true,
+          "status": "active"
+        }
+      }
+    ],
+    "oauth": [
+      {
+        "expected": "available",
+        "freshness_seconds": 3600,
+        "name": "available",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": "unavailable",
+        "freshness_seconds": 3600,
+        "name": "quota_exhausted",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 100,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": "unknown",
+        "freshness_seconds": 3600,
+        "name": "incomplete_windows",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "used_percent": 20
+              }
+            ]
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": "unknown",
+        "freshness_seconds": 3600,
+        "name": "stale_result",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T04:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T04:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T04:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      }
+    ]
+  },
+  "manual_generation": {
+    "at": "2031-04-05T06:07:08+00:00",
+    "expected_control": {
+      "at": "2031-04-05T06:07:08+00:00",
+      "enabled": false,
+      "event_fingerprint": "8a261f223957171921a19a34c3ee3d6bd5f733e650ed70269d84bb7f49e286b0",
+      "evidence_at": null,
+      "generation": 1,
+      "origin": "manual"
+    },
+    "expected_generation": 1,
+    "expected_result": null,
+    "expected_stale_marker": null,
+    "row": {
+      "auto_pause_on_expired": false,
+      "concurrency": 1,
+      "credentials": {
+        "access_token": "example.invalid",
+        "id_token": null,
+        "plan_type": "plus",
+        "refresh_token": "refresh.example.invalid"
+      },
+      "deleted_at": null,
+      "expires_at": null,
+      "extra": {},
+      "id": 73,
+      "overload_until": null,
+      "parent_account_id": null,
+      "platform": "openai",
+      "rate_limit_reset_at": null,
+      "rate_limited_at": null,
+      "schedulable": true,
+      "status": "active",
+      "temp_unschedulable_reason": null,
+      "temp_unschedulable_until": null,
+      "type": "oauth"
+    }
+  },
+  "oauth_admission": {
+    "constants": {
+      "automatic_query_limit": 6,
+      "automatic_window_seconds": 86400,
+      "min_query_seconds": 3600
+    },
+    "fingerprint": {
+      "expected": "cff550af478d9105cdb2b0910cdd53250700aec444da316c1f5988c11e838e31",
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      }
+    },
+    "fresh_quota": [
+      {
+        "expected": true,
+        "name": "now",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": true,
+        "name": "exactly_one_hour",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T05:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T05:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "one_second_too_old",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T05:07:07+00:00"
+          },
+          "queried_at": "2031-04-05T05:07:07+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "future_observation",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:09+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:09+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "name": "reset_boundary_now",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      }
+    ],
+    "gates": [
+      {
+        "bypass_interval": false,
+        "expected_deadline": "2031-04-05T06:07:09+00:00",
+        "expected_reason": "query_cooldown",
+        "metadata": {
+          "quota_query": {
+            "last_query_at": "2031-04-05T05:07:09+00:00"
+          }
+        },
+        "name": "cooldown_one_second_remaining",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": false,
+        "expected_deadline": null,
+        "expected_reason": "",
+        "metadata": {
+          "quota_query": {
+            "last_query_at": "2031-04-05T05:07:08+00:00"
+          }
+        },
+        "name": "cooldown_exact_boundary",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": "2031-04-05T07:07:08+00:00",
+        "expected_reason": "query_budget",
+        "metadata": {
+          "quota_query": {
+            "automatic_attempts": [
+              "2031-04-04T07:07:08+00:00",
+              "2031-04-04T08:07:08+00:00",
+              "2031-04-04T09:07:08+00:00",
+              "2031-04-04T10:07:08+00:00",
+              "2031-04-04T11:07:08+00:00"
+            ]
+          }
+        },
+        "name": "automatic_budget_six_plus_two",
+        "required_budget": 2,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": null,
+        "expected_reason": "",
+        "metadata": {
+          "quota_query": {
+            "automatic_attempts": [
+              "2031-04-04T07:07:08+00:00",
+              "2031-04-04T08:07:08+00:00",
+              "2031-04-04T09:07:08+00:00",
+              "2031-04-04T10:07:08+00:00"
+            ]
+          }
+        },
+        "name": "automatic_budget_exactly_six",
+        "required_budget": 2,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": null,
+        "expected_reason": "",
+        "metadata": {
+          "quota_query": {
+            "automatic_attempts": [
+              "2031-04-04T06:07:08+00:00",
+              "2031-04-04T07:07:08+00:00",
+              "2031-04-04T08:07:08+00:00",
+              "2031-04-04T09:07:08+00:00",
+              "2031-04-04T10:07:08+00:00"
+            ]
+          }
+        },
+        "name": "attempt_at_24_hour_boundary_is_expired",
+        "required_budget": 2,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": "2031-04-05T06:08:38+00:00",
+        "expected_reason": "query_backoff",
+        "metadata": {
+          "quota_query": {
+            "retry_at": "2031-04-05T06:08:38+00:00"
+          }
+        },
+        "name": "query_backoff",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": "2031-04-05T06:07:09+00:00",
+        "expected_reason": "waiting_reset",
+        "metadata": {},
+        "name": "natural_reset_wait",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T06:07:09+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": true
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": null,
+        "expected_reason": "auth_paused",
+        "metadata": {
+          "quota_query": {
+            "auth_fingerprint": "cff550af478d9105cdb2b0910cdd53250700aec444da316c1f5988c11e838e31"
+          }
+        },
+        "name": "same_credential_auth_error_pauses",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      },
+      {
+        "bypass_interval": true,
+        "expected_deadline": null,
+        "expected_reason": "",
+        "metadata": {
+          "quota_query": {
+            "auth_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "name": "updated_credential_clears_auth_pause",
+        "required_budget": 1,
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "saved": null,
+        "wait_for_reset": false
+      }
+    ],
+    "query_metadata": {
+      "expected": {
+        "automatic_attempts": [],
+        "last_query_at": "2031-04-05T06:02:08+00:00"
+      },
+      "metadata": {
+        "last_attempt_at": "2031-04-05T05:57:08+00:00",
+        "quota_query": {
+          "automatic_attempts": []
+        }
+      },
+      "saved": {
+        "oauth_quota": {
+          "plan_type": "plus",
+          "ui_windows": [
+            {
+              "key": "codex_5h",
+              "label": "5h",
+              "reset_at": "2031-04-05T08:02:08+00:00",
+              "reset_source": "server_exact",
+              "used_percent": 10,
+              "window_minutes": 300
+            },
+            {
+              "key": "codex_7d",
+              "label": "7d",
+              "reset_at": "2031-04-08T06:02:08+00:00",
+              "reset_source": "server_exact",
+              "used_percent": 20,
+              "window_minutes": 10080
+            }
+          ],
+          "updated_at": "2031-04-05T06:02:08+00:00"
+        },
+        "queried_at": "2031-04-05T06:02:08+00:00",
+        "source": "sub2api_admin_usage",
+        "success": true
+      }
+    }
+  },
+  "recovery_policy": {
+    "account_ids_expected": [
+      2,
+      7,
+      10
+    ],
+    "account_ids_input": [
+      7,
+      2,
+      7,
+      10
+    ],
+    "eligible_expected": [
+      73
+    ],
+    "eligible_rows": [
+      {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 74,
+        "overload_until": null,
+        "parent_account_id": 73,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {
+          "parent_account_id": 73
+        },
+        "id": 75,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": "2031-04-05T06:07:08+00:00",
+        "expires_at": null,
+        "extra": {},
+        "id": 76,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 77,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "grok",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      }
+    ],
+    "methods": [
+      {
+        "config": {},
+        "expected_method": "connection",
+        "id": 99,
+        "name": "legacy_selection"
+      },
+      {
+        "config": {
+          "oauth_recovery_connection_account_ids": [
+            74,
+            73
+          ],
+          "oauth_recovery_model_account_ids": [
+            75
+          ]
+        },
+        "expected_method": "model",
+        "id": 75,
+        "name": "explicit_model"
+      },
+      {
+        "config": {
+          "oauth_recovery_connection_account_ids": [
+            74,
+            73
+          ],
+          "oauth_recovery_model_account_ids": [
+            75
+          ]
+        },
+        "expected_method": "connection",
+        "id": 73,
+        "name": "explicit_connection"
+      },
+      {
+        "config": {
+          "oauth_recovery_connection_account_ids": [],
+          "oauth_recovery_model_account_ids": []
+        },
+        "expected_method": null,
+        "id": 73,
+        "name": "explicit_empty"
+      },
+      {
+        "config": {
+          "oauth_recovery_connection_account_ids": [
+            73
+          ],
+          "oauth_recovery_model_account_ids": [
+            73
+          ]
+        },
+        "expected_method": "model",
+        "id": 73,
+        "name": "model_precedes_connection"
+      }
+    ]
+  },
+  "recovery_rules": {
+    "candidates": {
+      "expected": [
+        {
+          "account_id": 76,
+          "exact_fingerprint": "codex_5h@2031-04-05T06:06:38+00:00",
+          "priority": 0,
+          "reason": "exact_reset",
+          "reuse_quota": false
+        },
+        {
+          "account_id": 77,
+          "exact_fingerprint": "fixture-reset-boundary",
+          "priority": 0,
+          "reason": "recovery_intent",
+          "reuse_quota": false
+        },
+        {
+          "account_id": 73,
+          "exact_fingerprint": "fixture-reset-boundary",
+          "priority": 0,
+          "reason": "recovery_intent",
+          "reuse_quota": true
+        }
+      ],
+      "now": "2031-04-05T06:07:08+00:00",
+      "results": {
+        "73": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T08:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "74": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T08:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "75": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T08:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:02:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "76": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T06:06:38+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 100,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-07T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-04T06:05:28+00:00"
+          },
+          "queried_at": "2031-04-04T06:05:28+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "77": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-04T08:05:28+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-07T06:05:28+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-04T06:05:28+00:00"
+          },
+          "queried_at": "2031-04-04T06:05:28+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        }
+      },
+      "rows": [
+        {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 74,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 75,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 76,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 77,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "scheduler": {
+        "73": {
+          "recovery_intent": {
+            "due_at": "2031-04-05T06:02:08+00:00",
+            "fingerprint": "fixture-reset-boundary",
+            "status": "pending"
+          }
+        },
+        "74": {
+          "recovery_intent": {
+            "due_at": "2031-04-05T06:02:08+00:00",
+            "fingerprint": "fixture-reset-boundary",
+            "status": "pending",
+            "verification_dispatched": true
+          }
+        },
+        "75": {
+          "recovery_intent": {
+            "due_at": "2031-04-05T06:02:08+00:00",
+            "fingerprint": "fixture-reset-boundary",
+            "status": "blocked",
+            "verification_dispatched": true,
+            "verification_receipt": {
+              "block_state": {},
+              "credential_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+              "result": {}
+            }
+          }
+        },
+        "76": {
+          "quota_query": {
+            "auth_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "77": {
+          "recovery_intent": {
+            "due_at": "2031-04-05T06:06:08+00:00",
+            "fingerprint": "fixture-reset-boundary",
+            "status": "ready",
+            "verification_dispatched": true,
+            "verification_receipt": {
+              "block_state": {},
+              "credential_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+              "result": {}
+            }
+          }
+        }
+      }
+    },
+    "change_safety": [
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "model_rate_limits": {}
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "model_rate_limits": {
+              "fixture/model": {
+                "remaining": 0
+              }
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:07:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "expected": true,
+        "name": "cleared_block_is_safe"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "model_rate_limits": {
+              "fixture/model": {
+                "remaining": 0
+              }
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:07:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "disabled",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "model_rate_limits": {
+              "fixture/model": {
+                "remaining": 0
+              }
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:07:08+00:00",
+          "rate_limited_at": "2031-04-05T04:07:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "expected": false,
+        "name": "status_change_is_unsafe"
+      }
+    ],
+    "confirmed": {
+      "expected": true,
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      }
+    },
+    "manual_control": [
+      {
+        "expected": true,
+        "metadata": {},
+        "name": "no_manual_control",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "metadata": {
+          "manual_control": {
+            "at": "2031-04-05T05:57:08+00:00",
+            "enabled": false,
+            "generation": 3
+          }
+        },
+        "name": "manual_disabled",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": false,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "metadata": {
+          "manual_control": {
+            "at": "2031-04-05T05:57:08+00:00",
+            "enabled": true,
+            "generation": 4
+          }
+        },
+        "name": "observation_at_manual_change",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:57:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T05:57:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T05:57:08+00:00"
+          },
+          "queried_at": "2031-04-05T05:57:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": true,
+        "metadata": {
+          "manual_control": {
+            "at": "2031-04-05T05:57:08+00:00",
+            "enabled": true,
+            "evidence_at": "2031-04-05T05:58:08+00:00",
+            "generation": 5
+          }
+        },
+        "name": "fresh_observation_after_manual_change",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": true,
+        "metadata": {
+          "manual_control": {
+            "at": "2031-04-05T05:57:08+00:00",
+            "enabled": true,
+            "generation": 6
+          }
+        },
+        "name": "new_rate_block_after_manual_change",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T04:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T04:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T04:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": "2031-04-05T06:02:08+00:00",
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      }
+    ],
+    "quota_descriptor": {
+      "at": "2031-04-05T06:07:08+00:00",
+      "expected": {
+        "due_at": "2031-04-08T06:07:08+00:00",
+        "fingerprint": "codex_5h@2031-04-05T08:07:08+00:00|codex_7d@2031-04-08T06:07:08+00:00",
+        "kind": "quota_exhausted",
+        "source": "estimated_from_remaining",
+        "window_keys": [
+          "codex_5h",
+          "codex_7d"
+        ]
+      },
+      "summary": {
+        "plan_type": "plus",
+        "ui_windows": [
+          {
+            "key": "codex_5h",
+            "label": "5h",
+            "reset_at": "2031-04-05T08:07:08+00:00",
+            "reset_source": "server_exact",
+            "used_percent": 100,
+            "window_minutes": 300
+          },
+          {
+            "key": "codex_7d",
+            "label": "7d",
+            "reset_at": "2031-04-08T06:07:08+00:00",
+            "reset_source": "estimated_from_remaining",
+            "used_percent": 100,
+            "window_minutes": 10080
+          }
+        ],
+        "updated_at": "2031-04-05T06:07:08+00:00"
+      }
+    },
+    "quota_readiness": [
+      {
+        "expected": true,
+        "metadata": {
+          "last_error_at": "2031-04-05T05:37:08+00:00",
+          "last_error_code": "synthetic_failure",
+          "recovery_intent": {
+            "due_at": "2031-04-05T05:47:08+00:00"
+          }
+        },
+        "name": "after_natural_reset",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "metadata": {
+          "last_error_at": "2031-04-05T05:37:08+00:00",
+          "last_error_code": "synthetic_failure",
+          "recovery_intent": {
+            "due_at": "2031-04-05T05:47:08+00:00"
+          }
+        },
+        "name": "before_natural_reset",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T06:03:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "metadata": {
+          "last_error_at": "2031-04-05T05:37:08+00:00",
+          "last_error_code": "synthetic_failure",
+          "recovery_intent": {
+            "due_at": "2031-04-05T05:47:08+00:00"
+          }
+        },
+        "name": "stale_observation",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:07+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T05:07:07+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T05:07:07+00:00"
+          },
+          "queried_at": "2031-04-05T05:07:07+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      },
+      {
+        "expected": false,
+        "metadata": {
+          "last_error_at": "2031-04-05T06:03:08+00:00",
+          "last_error_code": "synthetic_failure",
+          "recovery_intent": {
+            "due_at": "2031-04-05T05:47:08+00:00"
+          }
+        },
+        "name": "error_after_observation",
+        "now": "2031-04-05T06:07:08+00:00",
+        "result": {
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-08T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:02:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:02:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "row": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T05:57:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      }
+    ],
+    "rate_descriptor": {
+      "at": "2031-04-05T06:07:08+00:00",
+      "expected": {
+        "due_at": "2031-04-05T05:07:08+00:00",
+        "fingerprint": "codex_5h@2031-04-05T04:07:08+00:00:2031-04-05T05:07:08+00:00|codex_7d@2031-04-05T04:07:08+00:00:2031-04-05T05:07:08+00:00",
+        "kind": "rate_limit_block",
+        "source": "server_exact",
+        "window_keys": [
+          "codex_5h",
+          "codex_7d"
+        ]
+      },
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": "2031-04-05T05:07:08+00:00",
+        "rate_limited_at": "2031-04-05T04:07:08+00:00",
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      "summary": {
+        "plan_type": "plus",
+        "ui_windows": [
+          {
+            "key": "codex_5h",
+            "label": "5h",
+            "reset_at": "2031-04-05T08:07:08+00:00",
+            "reset_source": "server_exact",
+            "used_percent": 79,
+            "window_minutes": 300
+          },
+          {
+            "key": "codex_7d",
+            "label": "7d",
+            "reset_at": "2031-04-08T06:07:08+00:00",
+            "reset_source": "server_exact",
+            "used_percent": 20,
+            "window_minutes": 10080
+          }
+        ],
+        "updated_at": "2031-04-05T06:07:08+00:00"
+      }
+    },
+    "retry_at": [
+      {
+        "attempt": 0,
+        "expected": "2031-04-05T06:08:08+00:00"
+      },
+      {
+        "attempt": 1,
+        "expected": "2031-04-05T06:08:08+00:00"
+      },
+      {
+        "attempt": 2,
+        "expected": "2031-04-05T06:12:08+00:00"
+      },
+      {
+        "attempt": 4,
+        "expected": "2031-04-05T06:37:08+00:00"
+      },
+      {
+        "attempt": 5,
+        "expected": "2031-04-05T06:37:08+00:00"
+      }
+    ],
+    "signature": {
+      "expected": "378c0b046d9fe25640ac47f8413628aa020303cbe7bc91f6a679a9fbdb0001b9",
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {
+          "model_rate_limits": {
+            "fixture/model": {
+              "remaining": 0
+            }
+          }
+        },
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": "2031-04-05T05:07:08+00:00",
+        "rate_limited_at": "2031-04-05T04:07:08+00:00",
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      }
+    },
+    "threshold": {
+      "descriptor_expected": null,
+      "descriptor_summary": {
+        "plan_type": "plus",
+        "ui_windows": [
+          {
+            "key": "codex_5h",
+            "label": "5h",
+            "reset_at": "2031-04-05T08:07:08+00:00",
+            "reset_source": "server_exact",
+            "used_percent": 79,
+            "window_minutes": 300
+          },
+          {
+            "key": "codex_7d",
+            "label": "7d",
+            "reset_at": "2031-04-08T06:07:08+00:00",
+            "reset_source": "server_exact",
+            "used_percent": 20,
+            "window_minutes": 10080
+          }
+        ],
+        "updated_at": "2031-04-05T06:07:08+00:00"
+      },
+      "eligibility_expected": false,
+      "expected": {},
+      "quota_available_expected": false,
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": "{\"source\":\"account_scheduling_threshold\",\"platform\":\"openai\",\"window\":\"codex_5h\",\"threshold_percent\":80,\"until_unix\":\"2031-04-05T08:07:08+00:00\"}",
+        "temp_unschedulable_until": "2031-04-05T08:07:08+00:00",
+        "type": "oauth"
+      },
+      "unobserved_window_expected": false,
+      "value": "{\"source\":\"account_scheduling_threshold\",\"platform\":\"openai\",\"window\":\"codex_5h\",\"threshold_percent\":80,\"until_unix\":\"2031-04-05T08:07:08+00:00\"}",
+      "windows": [
+        "codex_5h"
+      ]
+    }
+  },
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "reset_credit": {
+    "available_at_now": 1,
+    "consumption": [
+      {
+        "data": {
+          "code": "reset",
+          "credit": {
+            "status": "redeemed"
+          },
+          "windows_reset": 1
+        },
+        "expected": {
+          "consumed": true,
+          "consumption_outcome": "consumed",
+          "error_code": "",
+          "success": true,
+          "uncertain": false
+        },
+        "name": "consumed"
+      },
+      {
+        "data": {
+          "code": "no_credit",
+          "credit": {
+            "status": "available"
+          },
+          "windows_reset": 0
+        },
+        "expected": {
+          "consumed": false,
+          "consumption_outcome": "not_consumed",
+          "error_code": "no_credit",
+          "success": false,
+          "uncertain": false
+        },
+        "name": "available_no_credit"
+      },
+      {
+        "data": {
+          "code": "nothing_to_reset",
+          "credit": {
+            "status": "expired"
+          },
+          "windows_reset": 0
+        },
+        "expected": {
+          "consumed": false,
+          "consumption_outcome": "not_consumed",
+          "error_code": "nothing_to_reset",
+          "success": false,
+          "uncertain": false
+        },
+        "name": "expired_no_credit"
+      },
+      {
+        "data": {
+          "code": "already_redeemed",
+          "windows_reset": 0
+        },
+        "expected": {
+          "consumed": false,
+          "consumption_outcome": "unknown",
+          "error_code": "already_redeemed",
+          "success": false,
+          "uncertain": true
+        },
+        "name": "already_redeemed_is_uncertain"
+      },
+      {
+        "data": {
+          "code": "fixture_pending",
+          "windows_reset": 0
+        },
+        "expected": {
+          "consumed": false,
+          "consumption_outcome": "unknown",
+          "error_code": "result_uncertain",
+          "success": false,
+          "uncertain": true
+        },
+        "name": "unknown_receipt_is_uncertain"
+      }
+    ],
+    "diagnostics": [
+      {
+        "data": {
+          "cache_persisted": true,
+          "code": " SUCCESS ",
+          "windows_reset": 1
+        },
+        "expected": {
+          "business_code": "success",
+          "cache_persisted": true,
+          "http_status": 200,
+          "windows_reset": 1
+        },
+        "name": "generic_success",
+        "status": 200
+      },
+      {
+        "data": {
+          "code": "unrecognized fixture code",
+          "windows_reset": 0
+        },
+        "expected": {
+          "business_code": "unrecognized",
+          "http_status": 200,
+          "windows_reset": 0
+        },
+        "name": "unknown_code_is_redacted",
+        "status": 200
+      },
+      {
+        "data": {
+          "account_state_recovered": false,
+          "code": "OPENAI_RATE_LIMIT"
+        },
+        "expected": {
+          "account_state_recovered": false,
+          "business_code": "OPENAI_RATE_LIMIT",
+          "http_status": 429
+        },
+        "name": "namespaced_code",
+        "status": 429
+      }
+    ],
+    "digest": "d3007ba60ebc9dae1e88d5a57664d316a88a3aeb0aa4b7f7779b95995ff18f99",
+    "limit_fingerprint": "6abd73f4fab37c8ebff7cbe5b3943c591b3aa75008c044179bfa4ef8397d531f",
+    "limit_fingerprint_row": {
+      "auto_pause_on_expired": false,
+      "concurrency": 1,
+      "credentials": {
+        "access_token": "example.invalid",
+        "id_token": null,
+        "plan_type": "plus",
+        "refresh_token": "refresh.example.invalid"
+      },
+      "deleted_at": null,
+      "expires_at": null,
+      "extra": {},
+      "id": 73,
+      "overload_until": null,
+      "parent_account_id": null,
+      "platform": "openai",
+      "rate_limit_reset_at": "2031-04-05T06:37:08+00:00",
+      "rate_limited_at": "2031-04-05T05:37:08+00:00",
+      "schedulable": true,
+      "status": "active",
+      "temp_unschedulable_reason": null,
+      "temp_unschedulable_until": null,
+      "type": "oauth"
+    },
+    "normalized": {
+      "available_count": 3,
+      "expires_at": [
+        "2031-04-05T06:06:08+00:00",
+        "2031-04-05T06:07:08+00:00",
+        "2031-04-05T07:07:08+00:00"
+      ]
+    },
+    "normalized_expected": {
+      "available_count": 3,
+      "expires_at": [
+        "2031-04-05T06:06:08+00:00",
+        "2031-04-05T06:07:08+00:00",
+        "2031-04-05T07:07:08+00:00"
+      ]
+    },
+    "observation": {
+      "content": {
+        "available_count": 3,
+        "expires_at": [
+          "2031-04-05T06:06:08+00:00",
+          "2031-04-05T06:07:08+00:00",
+          "2031-04-05T07:07:08+00:00"
+        ]
+      },
+      "credential_fingerprint": "cff550af478d9105cdb2b0910cdd53250700aec444da316c1f5988c11e838e31",
+      "expected": {
+        "available_count": 3,
+        "credential_fingerprint": "cff550af478d9105cdb2b0910cdd53250700aec444da316c1f5988c11e838e31",
+        "expires_at": [
+          "2031-04-05T06:06:08+00:00",
+          "2031-04-05T06:07:08+00:00",
+          "2031-04-05T07:07:08+00:00"
+        ],
+        "limit_fingerprint": "13bee2fccb91c28a57068bdf62e39d2007fed272319a959012a87bebaa68efc2",
+        "observed_at": "2031-04-05T06:07:08+00:00",
+        "snapshot_sha256": "d3007ba60ebc9dae1e88d5a57664d316a88a3aeb0aa4b7f7779b95995ff18f99",
+        "version": 1,
+        "window_minutes": 10080,
+        "window_reset_at": "2031-04-12T06:07:08+00:00"
+      },
+      "observed_at": "2031-04-05T06:07:08+00:00",
+      "reset_at": "2031-04-12T06:07:08+00:00",
+      "row": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {
+          "codex_reset_credit_snapshot": {
+            "available_count": 3,
+            "credits": [
+              {
+                "expires_at": "2031-04-05T06:06:08+00:00",
+                "id": "fixture-expired"
+              },
+              {
+                "expires_at": "2031-04-05T06:07:08+00:00",
+                "id": "fixture-boundary"
+              },
+              {
+                "expires_at": "2031-04-05T07:07:08+00:00",
+                "id": "fixture-future"
+              }
+            ],
+            "upstream_note": "ignored synthetic field"
+          }
+        },
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      "window_minutes": 10080
+    },
+    "observation_from_usage": {
+      "after": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {
+          "codex_reset_credit_snapshot": {
+            "available_count": 3,
+            "credits": [
+              {
+                "expires_at": "2031-04-05T06:06:08+00:00",
+                "id": "fixture-expired"
+              },
+              {
+                "expires_at": "2031-04-05T06:07:08+00:00",
+                "id": "fixture-boundary"
+              },
+              {
+                "expires_at": "2031-04-05T07:07:08+00:00",
+                "id": "fixture-future"
+              }
+            ],
+            "upstream_note": "ignored synthetic field"
+          }
+        },
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      "before": {
+        "auto_pause_on_expired": false,
+        "concurrency": 1,
+        "credentials": {
+          "access_token": "example.invalid",
+          "id_token": null,
+          "plan_type": "plus",
+          "refresh_token": "refresh.example.invalid"
+        },
+        "deleted_at": null,
+        "expires_at": null,
+        "extra": {},
+        "id": 73,
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "rate_limit_reset_at": null,
+        "rate_limited_at": null,
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_reason": null,
+        "temp_unschedulable_until": null,
+        "type": "oauth"
+      },
+      "completed": "2031-04-05T06:07:09+00:00",
+      "expected": {
+        "available_count": 3,
+        "credential_fingerprint": "cff550af478d9105cdb2b0910cdd53250700aec444da316c1f5988c11e838e31",
+        "expires_at": [
+          "2031-04-05T06:06:08+00:00",
+          "2031-04-05T06:07:08+00:00",
+          "2031-04-05T07:07:08+00:00"
+        ],
+        "limit_fingerprint": "13bee2fccb91c28a57068bdf62e39d2007fed272319a959012a87bebaa68efc2",
+        "observed_at": "2031-04-05T06:07:08+00:00",
+        "snapshot_sha256": "d3007ba60ebc9dae1e88d5a57664d316a88a3aeb0aa4b7f7779b95995ff18f99",
+        "version": 1,
+        "window_minutes": 10080,
+        "window_reset_at": "2031-04-12T06:07:08+00:00"
+      },
+      "result": {
+        "data": {
+          "cache_persisted": true,
+          "fetched_at": "2031-04-05T06:07:08+00:00",
+          "rate_limit_reset_credits": {
+            "available_count": 3,
+            "credits": [
+              {
+                "expires_at": "2031-04-05T06:06:08+00:00",
+                "id": "fixture-expired"
+              },
+              {
+                "expires_at": "2031-04-05T06:07:08+00:00",
+                "id": "fixture-boundary"
+              },
+              {
+                "expires_at": "2031-04-05T07:07:08+00:00",
+                "id": "fixture-future"
+              }
+            ],
+            "upstream_note": "ignored synthetic field"
+          }
+        },
+        "oauth_quota": {
+          "plan_type": "plus",
+          "ui_windows": [
+            {
+              "key": "codex_5h",
+              "label": "5h",
+              "reset_at": "2031-04-05T07:07:08+00:00",
+              "reset_source": "server_exact",
+              "used_percent": 10,
+              "window_minutes": 300
+            },
+            {
+              "key": "codex_7d",
+              "label": "7d",
+              "reset_at": "2031-04-12T06:07:08+00:00",
+              "reset_source": "server_exact",
+              "used_percent": 20,
+              "window_minutes": 10080
+            }
+          ],
+          "updated_at": "2031-04-05T06:07:08+00:00"
+        },
+        "queried_at": "2031-04-05T06:07:08+00:00",
+        "source": "sub2api_admin_usage",
+        "success": true
+      },
+      "started": "2031-04-05T06:07:07+00:00"
+    },
+    "observation_rejections": [
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "cache_not_persisted",
+        "result": {
+          "data": {
+            "cache_persisted": false,
+            "fetched_at": "2031-04-05T06:07:08+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-12T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "changed.example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "credential_changed",
+        "result": {
+          "data": {
+            "cache_persisted": true,
+            "fetched_at": "2031-04-05T06:07:08+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-12T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": "2031-04-05T06:08:08+00:00",
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "limit_changed",
+        "result": {
+          "data": {
+            "cache_persisted": true,
+            "fetched_at": "2031-04-05T06:07:08+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-12T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 0,
+              "credits": []
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "snapshot_mismatch",
+        "result": {
+          "data": {
+            "cache_persisted": true,
+            "fetched_at": "2031-04-05T06:07:08+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-12T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "fetched_before_start_window",
+        "result": {
+          "data": {
+            "cache_persisted": true,
+            "fetched_at": "2031-04-05T06:07:05+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-12T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      },
+      {
+        "after": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {
+            "codex_reset_credit_snapshot": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "before": {
+          "auto_pause_on_expired": false,
+          "concurrency": 1,
+          "credentials": {
+            "access_token": "example.invalid",
+            "id_token": null,
+            "plan_type": "plus",
+            "refresh_token": "refresh.example.invalid"
+          },
+          "deleted_at": null,
+          "expires_at": null,
+          "extra": {},
+          "id": 73,
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_reason": null,
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        "completed": "2031-04-05T06:07:09+00:00",
+        "expected": null,
+        "name": "reset_not_after_fetch",
+        "result": {
+          "data": {
+            "cache_persisted": true,
+            "fetched_at": "2031-04-05T06:07:08+00:00",
+            "rate_limit_reset_credits": {
+              "available_count": 3,
+              "credits": [
+                {
+                  "expires_at": "2031-04-05T06:06:08+00:00",
+                  "id": "fixture-expired"
+                },
+                {
+                  "expires_at": "2031-04-05T06:07:08+00:00",
+                  "id": "fixture-boundary"
+                },
+                {
+                  "expires_at": "2031-04-05T07:07:08+00:00",
+                  "id": "fixture-future"
+                }
+              ],
+              "upstream_note": "ignored synthetic field"
+            }
+          },
+          "oauth_quota": {
+            "plan_type": "plus",
+            "ui_windows": [
+              {
+                "key": "codex_5h",
+                "label": "5h",
+                "reset_at": "2031-04-05T07:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 10,
+                "window_minutes": 300
+              },
+              {
+                "key": "codex_7d",
+                "label": "7d",
+                "reset_at": "2031-04-05T06:07:08+00:00",
+                "reset_source": "server_exact",
+                "used_percent": 20,
+                "window_minutes": 10080
+              }
+            ],
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          },
+          "queried_at": "2031-04-05T06:07:08+00:00",
+          "source": "sub2api_admin_usage",
+          "success": true
+        },
+        "started": "2031-04-05T06:07:07+00:00"
+      }
+    ],
+    "raw_credits": {
+      "available_count": 3,
+      "credits": [
+        {
+          "expires_at": "2031-04-05T06:06:08+00:00",
+          "id": "fixture-expired"
+        },
+        {
+          "expires_at": "2031-04-05T06:07:08+00:00",
+          "id": "fixture-boundary"
+        },
+        {
+          "expires_at": "2031-04-05T07:07:08+00:00",
+          "id": "fixture-future"
+        }
+      ],
+      "upstream_note": "ignored synthetic field"
+    }
+  }
+}

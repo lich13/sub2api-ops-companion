@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     tags: ['desktop-v*']
-    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', 'experiments/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
+    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   pull_request:
-    paths: ['desktop/**', 'app/**', 'tests/**', 'scripts/**', 'experiments/**', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
+    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,63 +14,56 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: sub2ops_qa
-          POSTGRES_PASSWORD: fixture-postgres
-          POSTGRES_DB: sub2ops_qa
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U sub2ops_qa"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      SUB2OPS_TEST_DATABASE_URL: postgresql://sub2ops_qa:fixture-postgres@127.0.0.1:5432/sub2ops_qa
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python -m unittest discover -s tests -q
-      - run: python -m compileall -q app tests
-      - run: docker build -t sub2ops-desktop-check .
-  prototype:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: probe_fixture
-          POSTGRES_PASSWORD: fixture-postgres
-          POSTGRES_DB: probe_fixture
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U probe_fixture"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      PROBE_QA_DATABASE_URL: postgresql://probe_fixture:fixture-postgres@127.0.0.1:5432/probe_fixture
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Prepare Rust and disposable PostgreSQL
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal --component clippy,rustfmt
+          rustup override set 1.94.1
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - name: Build isolated implementations
+          workspaces: server -> target
+      - run: cargo fetch --locked --manifest-path server/Cargo.toml
+      - name: Fixed Python regression and complete Rust regression
         run: |
-          docker build -f experiments/connection_probe/Dockerfile.python -t sub2ops-probe-python .
-          docker build -f experiments/connection_probe/Dockerfile.rust -t sub2ops-probe-rust .
-          docker build -t sub2ops-probe-full .
-      - name: Shared HTTP contracts
+          python scripts/server_reference_tests.py
+          python scripts/server_request_fixtures.py
+          python scripts/server_contract_inventory.py --check --require-complete
+          cargo fmt --check --manifest-path server/Cargo.toml
+          python scripts/server_test.py
+          cargo clippy --locked --offline --manifest-path server/Cargo.toml --all-targets --features test-fixtures -- -D warnings
+          cargo build --locked --offline --manifest-path server/Cargo.toml
+      - name: Shared full-service HTTP and mutation contracts
         run: |
-          python scripts/connection_probe_check.py --mode contract --implementation python --image sub2ops-probe-python --database-url "$PROBE_QA_DATABASE_URL"
-          python scripts/connection_probe_check.py --mode contract --implementation rust --image sub2ops-probe-rust --database-url "$PROBE_QA_DATABASE_URL"
-      - name: Compare resources on the same runner
-        run: |
-          python scripts/connection_probe_check.py --mode benchmark --implementation python --image sub2ops-probe-python --database-url "$PROBE_QA_DATABASE_URL" --full-image sub2ops-probe-full
-          python scripts/connection_probe_check.py --mode benchmark --implementation rust --image sub2ops-probe-rust --database-url "$PROBE_QA_DATABASE_URL" --binary-path /usr/local/bin/sub2ops-probe
+          mkdir -p ci-results
+          python scripts/server_http_contract.py > ci-results/python-http.json
+          python scripts/server_http_contract.py --command-json '["server/target/debug/sub2ops-server"]' > ci-results/rust-http.json
+          python scripts/server_mutation_contract.py > ci-results/python-mutations.json
+          python scripts/server_mutation_contract.py --command-json '["server/target/debug/sub2ops-server"]' > ci-results/rust-mutations.json
+      - name: Build and inspect the exact Linux runtime
+        run: python scripts/server_images.py --revision "$GITHUB_SHA" --output-dir companion-artifact
+      - name: Compare two complete runtimes on the same x86_64 host
+        run: python scripts/server_benchmark.py --python-image sub2ops-companion:python-reference --rust-image sub2ops-companion:ci > ci-results/full-runtime-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Companion-validation
+          path: ci-results/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Companion-linux-amd64
+          path: companion-artifact/
+          if-no-files-found: error
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -185,7 +178,7 @@ jobs:
         run: rm -f -- /tmp/sub2ops-android-release.p12 /tmp/sub2ops-android-release.properties
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: [backend, prototype, browser, macos, android]
+    needs: [backend, browser, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_next_future_time_and_beijing_cross_day",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "pinned_reference_fixture_and_beijing_time_contract_are_fixed",
+        "assertions": [
+          "daily_test::next_time(reference_time(), \"14:08\").unwrap()",
+          "parse_datetime(&reference[\"daily_test\"][\"scheduled_at\"]).unwrap()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "reference.daily_time_beijing",
+              "daily_test.scheduled_at"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "只比较一个固定有效的北京时区时间与固定 Python 输出；不覆盖旧测试完整的跨日边界和输入校验矩阵。",
+      "uncovered_assertions": [
+        "旧测试断言 05:00 从 2026-09-21 20:59:50 UTC 得到当日目标，并在恰好到点后滚到次日；Rust 只检查 2031-04-05 的 14:08 单个同日时刻。",
+        "旧测试断言 00:00 对应跨北京日期目标；Rust 未覆盖午夜边界。",
+        "旧测试要求 5:00、24:00、00:60、12:30:00、空串和 abc 均抛 ValueError；Rust 未覆盖非法时间输入。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_missed_restart_and_interrupted_batches_do_not_catch_up",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "daily_worker_runs_once_in_window_and_persists_missed_work_without_replay",
+        "assertions": [
+          "assert_eq!(after_startup[\"batches\"][\"2031-04-03\"][\"status\"], \"interrupted\");",
+          "assert_eq!(after_startup[\"batches\"][\"2031-04-04\"][\"status\"], \"interrupted\");",
+          "assert_eq!(late[\"batches\"][\"2031-04-06\"][\"status\"], reference[\"daily_test\"][\"late_status\"]);",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1,",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "daily_test.startup_at",
+              "daily_test.scheduled_at",
+              "daily_test.on_time_tick_at",
+              "daily_test.late_tick_at",
+              "daily_test.late_status"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust 调度器恢复旧 running/queued 批次为 interrupted，在时窗内领取一次，并把晚到批次记为 missed；GET usage 和 POST test 计数保持不增长。",
+      "uncovered_assertions": [
+        "旧测试先在同一日期把 due 批次标成 missed，再热更新到 06:00 并验证后续未来时间可执行；Rust 使用跨日期的固定窗口，没有热更新设置时间。",
+        "旧测试在批次被 claim 后重建 schedule 并断言该同日批次为 interrupted；Rust 单独用预置的 stale 状态验证 startup 恢复，未在 claim 后重建调度器。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_success_records_without_notification_or_recovery_and_no_repeat",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "daily_worker_runs_once_in_window_and_persists_missed_work_without_replay",
+        "assertions": [
+          "assert_eq!(completed[\"batches\"][date][\"status\"], \"completed\");",
+          "assert_eq!(completed[\"batches\"][date][\"accounts\"][id.to_string()][\"status\"], \"success\");",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "daily_test.on_time_status",
+              "daily_test.claimed_status"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust 直接运行一次真实 Monitor daily worker，核对成功状态和 loopback quota/model 请求各一次；之后的晚到 tick 仍核对两类请求各一次。",
+      "uncovered_assertions": [
+        "旧测试在同一 due date 第二次调用 run_once 并断言没有重复 worker；Rust 用次日 missed tick 验证不 catch-up，没有重放同日 run_once。",
+        "旧测试明确断言 recovery_runner 未调用、pending_events 为空；Rust 未直接断言这两项。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "recovery_unknown_test_is_blocked_and_never_replayed",
+        "assertions": [
+          "assert_eq!(result[\"error_code\"], \"verification_uncertain\");",
+          "assert_eq!(saved[\"status\"], \"blocked\");",
+          "assert_eq!(saved[\"last_error_code\"], \"verification_uncertain\");",
+          "assert_eq!(saved[\"verification_receipt\"][\"result\"][\"uncertain\"], true);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1,",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "recovery_receipt.unknown_verification_error",
+              "recovery_receipt.unknown_max_test_dispatches"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "不完整 SSE 产生 verification_uncertain；状态被持久化为 blocked，连续 reconcile/verify 不增加 test 请求，也不发送 recovery write。",
+      "uncovered_assertions": [
+        "旧测试通过 receipt 文件写入失败制造回执未知；Rust 使用不完整 SSE 并成功保存 uncertain 回执，没有注入本地回执写入错误。",
+        "旧测试重建 Monitor 后验证无 POST；Rust 在同一个 Monitor 上多次 reconcile/verify，没有完整 Monitor 进程重启。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_confirmed_receipt_resumes_after_final_commit_failure_without_retest",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "successful_recovery_receipt_survives_interrupted_write_and_old_reader_restart",
+        "assertions": [
+          "assert!(required_keys.is_subset(&actual_keys));",
+          "assert_eq!(actual_keys, allowed_keys);",
+          "assert_eq!(receipt[\"manual_generation\"], generation);",
+          "assert_eq!(reopened[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"verification_receipt\"], *receipt);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1,",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "recovery_receipt.required_keys",
+              "recovery_receipt.required_result_fields",
+              "recovery_receipt.recovery_write_dispatches_after_crash"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust 在 loopback recovery 已清除临时 PostgreSQL 限流字段、HTTP 响应仍被 gate 阻塞时持久化成功回执；重开 OAuthState 并 reconcile 后验证 history/event 仅一条、外部 test/write 各一次。runner 另调用固定旧 Python OAuthStateStore reader，校验必需 envelope 键及 manual_generation 扩展均可保留。",
+      "uncovered_assertions": [
+        "旧测试通过 recovery_history 最终 commit 失败触发续跑；Rust 模拟远端已写入但客户端等待响应时中断，故故障点不同。",
+        "旧测试关闭并重新构建 Monitor，再验证恢复历史恰一条；Rust 重开 OAuthState 并在原 Monitor 上 reconcile，没有完整 Monitor 重启。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_manual_generation_overrides_an_older_automatic_job",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "manual_close_after_detection_worker_terminal_does_not_rearm_or_redispatch",
+        "assertions": [
+          "assert_eq!(final_control[\"generation\"], generation + 1);",
+          "assert_eq!(final_control[\"status\"], reference[\"detection\"][\"manual_close\"][\"terminal_status\"]);",
+          "assert_eq!(final_control[\"next_at\"], reference[\"detection\"][\"manual_close\"][\"terminal_next_at\"]);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "detection.manual_close.generation_delta",
+              "detection.manual_close.terminal_status",
+              "detection.manual_close.terminal_next_at"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 Runtime.set_schedulable(false) 更新临时 PostgreSQL 后，再 tick 已完成的 ModelTests worker；核对 generation 保持人工版本、scheduler paused/next_at=null 且只发出原有一次模型请求。",
+      "uncovered_assertions": [
+        "旧测试调用 Detection.human_control(release_hold=True)，验证 hold 被清除、disposition 设为 overridden，并验证旧 job guard 返回 409；Rust 测试关闭 schedulable，不执行 disposition 或 stale-verdict guard。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_pause_and_resume_starts_a_fresh_wait_without_replaying_missed_time",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "manual_reopen_rearms_detection_from_saved_interval_after_terminal_worker",
+        "assertions": [
+          "assert_eq!(paused[\"status\"], \"paused\");",
+          "assert!(paused[\"next_at\"].is_null());",
+          "assert_eq!(rearmed[\"status\"], \"waiting\");",
+          "assert_eq!(rearmed[\"interval_minutes\"], fixture()[\"detection\"][\"manual_reopen\"][\"saved_interval_minutes\"]);",
+          "assert_eq!(rearmed[\"next_at\"], fixture()[\"detection\"][\"manual_reopen\"][\"next_at\"]);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "detection.manual_close.terminal_status",
+              "detection.manual_close.terminal_next_at",
+              "detection.manual_reopen.saved_interval_minutes",
+              "detection.manual_reopen.automatic_started_at",
+              "detection.manual_reopen.next_allowed_at",
+              "detection.manual_reopen.next_at"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust 使用真实 set_schedulable close/open 路径，保留一分钟保存间隔并核对旧 Python 生成的 rearm 时间。固定旧 runtime 记录了先前真实自动 dispatch，COOLDOWN_SECONDS=300，因此 next_at=max(now+1 minute,next_allowed_at)=06:12:08；无二次模型 dispatch。",
+      "uncovered_assertions": [
+        "旧测试通过 capacity mark 和 account status 暂停，再在四小时后清除 mark；Rust 通过 schedulable 手动关闭/重新开启，不覆盖 capacity 状态路径。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_confirmed_reset_credit_event_is_pushed_once_with_specific_title",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "manual_revoke_filters_daily_event_and_bark_delivery_is_deduplicated",
+        "assertions": [
+          "harness.runtime.monitor.deliver().await.unwrap();",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), reference[\"manual_control\"][\"bark_posts_after_two_deliver_ticks\"]);",
+          ".contains(&json!(retained_key))"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "manual_control.bark_posts_after_two_deliver_ticks"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "两次真实 Monitor deliver tick 对同一保留 OAuth 告警仅发送一次 loopback Bark 请求，并把 dedupe key 写入 notified_keys。",
+      "uncovered_assertions": [
+        "旧测试投递 confirmed reset-credit 成功事件并断言 Bark title 为“✅ OAuth 用卡成功，已恢复调度”；Rust 使用 active_usage HTTP 401 事件，没有构造 reset_credit/test_success 字段，也未比较 title/body。",
+        "旧测试重载 OAuthStateStore 后检查成功事件的通知 key；Rust 在同一 Monitor 状态中检查 notified_keys，没有重新加载器断言。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_manual_control_revokes_already_copied_recovery_notification",
+      "status": "partial",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/automation_runtime_contract.rs",
+        "test_name": "manual_revoke_filters_daily_event_and_bark_delivery_is_deduplicated",
+        "assertions": [
+          "assert!(after_revoke[\"pending_events\"].get(&removed_key).is_none());",
+          ".get(&removed_recovery_key)\n        .is_none()",
+          "assert!(!after_delivery[\"scheduler\"][id.to_string()][\"notified_keys\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/automation/automation-fixtures.json",
+            "json_paths": [
+              "manual_control.removed_stages"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 Runtime.set_schedulable(false) 后 daily_test/recovery 事件从临时状态移除，保留 active_usage 告警继续投递；撤销 key 不进入 notified_keys。",
+      "uncovered_assertions": [
+        "旧测试把人工控制前已复制的 recovery event 列表传给 notifier，并要求 notifier 完全不被调用；Rust 先从持久状态移除事件，再调用 monitor.deliver 读取最新队列，没有覆盖陈旧列表并发交付场景。"
+      ]
+    }
+  ],
+  "uncovered_notes": [
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_interruption_after_test_does_not_retry_on_restart",
+      "reason": "本块恢复的是遗留 running/queued scheduler batch；没有在 connection test 已派发后模拟进程中断并重启 daily worker。",
+      "missing_assertions": [
+        "旧测试在 claim 后重建 schedule，再验证中断批次没有派发任何 test 请求。"
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_manual_intervention_cancels_dispatched_verification",
+      "reason": "本块测试 manual schedulable close 撤销 Bark pending recovery event；没有在 recovery verification POST /test 仍进行时执行人工干预。",
+      "missing_assertions": [
+        "旧测试在 recovery POST 阻塞时人工关闭 account，释放请求后验证 intent cancelled 且 recovery server POST 仅一次。"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_apply_priority_concurrency_and_load_factor_keep_hold_and_retry_verification",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_scalar_edits_keep_pause_until_one_retry_verifies",
+        "assertions": [
+          "assert_eq!(\n            apply_parameter(&h, id, field, target).await.unwrap()[\"verified\"],\n            true\n        )",
+          "assert_eq!(held[\"owns_pause\"], true)",
+          "assert_eq!(held[\"parameter_edit\"], Value::Null)",
+          "assert_eq!(held[\"owned_version\"], row[\"updated_at\"])",
+          "assert_eq!(h.mock.count(Method::PUT, &format!(\"accounts/{id}\")), 1)",
+          "assert_eq!(task[\"stage\"], \"recovered\", \"field={field}; task={task}\")",
+          "assert_eq!(task[\"owns_pause\"], false)",
+          "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(Method::POST, \"/test\"), 2)",
+          "assert_eq!(h.controller.row(id).await.unwrap()[\"schedulable\"], true)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    },
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_intent_save_failure_stops_before_upstream_write",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_intent_persistence_failure_stops_before_write",
+        "assertions": [
+          "assert!(result.is_err())",
+          "assert_eq!(h.mock.count(Method::PUT, &format!(\"accounts/{id}\")), 0)",
+          "assert_eq!(fs::read(&h.settings.oauth_path).unwrap(), bytes)",
+          "assert_eq!(h.controller.state(id).unwrap(), original)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    },
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_written_value_is_reconciled_after_restart_without_second_consumption",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_restart_reconciles_applied_value_after_interrupted_request",
+        "assertions": [
+          "assert_eq!(pending[\"owns_pause\"], true);",
+          "assert_eq!(pending[\"consumed\"], true);"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          },
+          {
+            "name": "assert_reconciled_without_replay",
+            "assertions": [
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"parameter_edit\"], Value::Null)",
+              "assert_eq!(\n        task[\"owned_version\"],\n        restored.row(id).await.unwrap()[\"updated_at\"]\n    )",
+              "assert_ne!(task[\"owned_version\"], old[\"owned_version\"])",
+              "assert_eq!(h.mock.count(Method::PUT, &format!(\"accounts/{id}\")), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(restored.row(id).await.unwrap()[\"schedulable\"], false)"
+            ]
+          },
+          {
+            "name": "interrupted_parameter_write",
+            "assertions": [
+              "assert!(worker.await.unwrap_err().is_cancelled())",
+              "assert_eq!(pending[\"parameter_edit\"][\"target\"], 4)",
+              "assert_ne!(\n        pending[\"owned_version\"],\n        h.controller.row(id).await.unwrap()[\"updated_at\"]\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    },
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_reconcile_save_failure_is_recovered_from_actual_value_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_postwrite_persistence_failure_reads_actual_value_after_restart",
+        "assertions": [
+          "assert!(result.is_err())",
+          "assert_eq!(h.controller.row(id).await.unwrap()[\"load_factor\"], 9)",
+          "assert!(h.controller.state(id).unwrap()[\"parameter_edit\"].is_object())"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          },
+          {
+            "name": "assert_reconciled_without_replay",
+            "assertions": [
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"parameter_edit\"], Value::Null)",
+              "assert_eq!(\n        task[\"owned_version\"],\n        restored.row(id).await.unwrap()[\"updated_at\"]\n    )",
+              "assert_ne!(task[\"owned_version\"], old[\"owned_version\"])",
+              "assert_eq!(h.mock.count(Method::PUT, &format!(\"accounts/{id}\")), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(restored.row(id).await.unwrap()[\"schedulable\"], false)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    },
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_rejected_or_undispatched_write_clears_intent_and_keeps_owned_version",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_rejected_write_clears_intent_and_keeps_owned_version",
+        "assertions": [
+          "assert!(apply_parameter(&h, id, \"concurrency\", 4).await.is_err())",
+          "assert!(h.controller.state(id).unwrap()[\"parameter_edit\"].is_object())",
+          "assert_eq!(task[\"owns_pause\"], true)",
+          "assert_eq!(task[\"parameter_edit\"], Value::Null)",
+          "assert_eq!(task[\"owned_version\"], original[\"owned_version\"])",
+          "assert_eq!(h.mock.count(Method::PUT, &format!(\"accounts/{id}\")), 1)",
+          "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    },
+    {
+      "legacy_test_id": "py:tests.test_parameter_recovery035:ParameterRecovery035Tests.test_concurrent_generation_credentials_mapping_proxy_and_limit_do_not_resume_hold",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/credit_runtime_contract.rs",
+        "test_name": "parameter_recovery_conflicting_manual_or_account_changes_never_resume_hold",
+        "assertions": [
+          "assert_eq!(task[\"stage\"], \"finished\", \"change={change}; task={task}\")",
+          "assert_eq!(task[\"outcome\"], \"unrecovered\")",
+          "assert_eq!(task[\"consumed\"], true)",
+          "assert!(task[\"receipt\"].is_object())",
+          "assert_eq!(task[\"owns_pause\"], false)",
+          "assert_eq!(task[\"owned_version\"], pending[\"owned_version\"])",
+          "assert_ne!(task[\"owned_version\"], row[\"updated_at\"])",
+          "assert_eq!(restored.row(id).await.unwrap()[\"schedulable\"], false)",
+          "assert_eq!(\n            restored.store.snapshot().unwrap()[\"recovery_history\"],\n            json!({})\n        )",
+          "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+          "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "seed_parameter_retry",
+            "assertions": [
+              "assert_eq!(task[\"stage\"], \"retry\", \"{task}\")",
+              "assert_eq!(task[\"owns_pause\"], true)",
+              "assert_eq!(task[\"consumed\"], true)",
+              "assert!(task[\"receipt\"].is_object())",
+              "assert_eq!(h.mock.count(Method::POST, \"/reset-quota\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/test\"), 1)",
+              "assert_eq!(h.mock.count(Method::POST, \"/schedulable\"), 1)"
+            ]
+          },
+          {
+            "name": "interrupted_parameter_write",
+            "assertions": [
+              "assert!(worker.await.unwrap_err().is_cancelled())",
+              "assert_eq!(pending[\"parameter_edit\"][\"target\"], 4)",
+              "assert_ne!(\n        pending[\"owned_version\"],\n        h.controller.row(id).await.unwrap()[\"updated_at\"]\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Uses actual temporary PostgreSQL, scalar PUT, native SSE, state-file permissions, interrupted response, and a newly constructed controller; verifies pause ownership and exact one consumption without replay."
+    }
+  ]
+}

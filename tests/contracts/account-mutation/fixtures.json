@@ -1,0 +1,482 @@
+{
+  "legacy_sources": [
+    {
+      "module": "tests.test_account_batch031",
+      "path": "tests/test_account_batch031.py",
+      "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb",
+      "test_count": 9
+    },
+    {
+      "module": "tests.test_account_operations023",
+      "path": "tests/test_account_operations023.py",
+      "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db",
+      "test_count": 7
+    },
+    {
+      "module": "tests.test_account_settings035",
+      "path": "tests/test_account_settings035.py",
+      "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a",
+      "test_count": 10
+    },
+    {
+      "module": "tests.test_account_templates027",
+      "path": "tests/test_account_templates027.py",
+      "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2",
+      "test_count": 13
+    },
+    {
+      "module": "tests.test_group_management",
+      "path": "tests/test_group_management.py",
+      "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9",
+      "test_count": 7
+    },
+    {
+      "module": "tests.test_native_batch038",
+      "path": "tests/test_native_batch038.py",
+      "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8",
+      "test_count": 21
+    },
+    {
+      "module": "tests.test_proxy_batch036",
+      "path": "tests/test_proxy_batch036.py",
+      "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358",
+      "test_count": 11
+    },
+    {
+      "module": "tests.test_proxy_diagnostics037",
+      "path": "tests/test_proxy_diagnostics037.py",
+      "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6",
+      "test_count": 6
+    },
+    {
+      "module": "tests.test_proxy_native_http037",
+      "path": "tests/test_proxy_native_http037.py",
+      "sha256": "ae462c0b00fe74c6d43e217e09f554bd541ccafc8a31a930be7e3dc8a41c5242",
+      "test_count": 2
+    },
+    {
+      "module": "tests.test_desktop_actions",
+      "path": "tests/test_desktop_actions.py",
+      "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4",
+      "test_count": 10
+    }
+  ],
+  "python_oracle": {
+    "desktop_actions": {
+      "allowlists": [
+        {
+          "enabled": true,
+          "models": [
+            "fixture-model-a",
+            "fixture-not-in-catalog",
+            "fixture-model-*",
+            "fixture-image-model",
+            ""
+          ]
+        },
+        {
+          "enabled": true,
+          "models": [
+            "fixture-model-b",
+            "fixture-model-a"
+          ]
+        }
+      ],
+      "catalog": [
+        {
+          "display_name": "fixture-model-a",
+          "id": "fixture-model-a",
+          "type": "text"
+        },
+        {
+          "display_name": "fixture-model-b",
+          "id": "fixture-model-b",
+          "type": "text"
+        },
+        {
+          "display_name": "fixture-image-model",
+          "id": "fixture-image-model",
+          "type": "image"
+        }
+      ],
+      "exact_candidates": [
+        {
+          "display_name": "fixture-model-a",
+          "id": "fixture-model-a",
+          "type": "model"
+        },
+        {
+          "display_name": "fixture-not-in-catalog",
+          "id": "fixture-not-in-catalog",
+          "type": "model"
+        },
+        {
+          "display_name": "fixture-model-b",
+          "id": "fixture-model-b",
+          "type": "model"
+        }
+      ],
+      "filtered_model_options": [
+        {
+          "display_name": "fixture-model-a",
+          "id": "fixture-model-a",
+          "type": "text"
+        },
+        {
+          "display_name": "fixture-model-b",
+          "id": "fixture-model-b",
+          "type": "text"
+        },
+        {
+          "display_name": "fixture-image-model",
+          "id": "fixture-image-model",
+          "type": "image"
+        }
+      ],
+      "sse_chunks": [
+        "Hello",
+        " ",
+        "world",
+        "!\n",
+        "\t",
+        "  code = 1\n\n",
+        "中文 👋",
+        " "
+      ],
+      "unrestricted_text_catalog": [
+        {
+          "display_name": "fixture-model-a",
+          "id": "fixture-model-a",
+          "type": "text"
+        },
+        {
+          "display_name": "fixture-model-b",
+          "id": "fixture-model-b",
+          "type": "text"
+        }
+      ]
+    },
+    "desktop_grok_billing": {
+      "cases": {
+        "fresh": {
+          "accepted": true,
+          "age_seconds": 0,
+          "grok_billing": {
+            "fetched_at": "2026-09-25T08:00:00+00:00",
+            "partial": false
+          }
+        },
+        "partial": {
+          "accepted": false,
+          "age_seconds": 0,
+          "grok_billing": {
+            "fetched_at": "2026-09-25T08:00:00+00:00",
+            "partial": true
+          }
+        },
+        "stale": {
+          "accepted": false,
+          "age_seconds": -1,
+          "grok_billing": {
+            "fetched_at": "2026-09-25T07:59:59+00:00"
+          }
+        }
+      },
+      "queried_at": "2026-09-25T08:00:00+00:00"
+    },
+    "proxy_diagnostics": {
+      "quality_input": {
+        "address": "secret-address.example.invalid",
+        "base_latency_ms": 8,
+        "challenge_count": 0,
+        "checked_at": 1735689600,
+        "city": "Fixture City",
+        "country": "Fixture Country",
+        "country_code": "ZZ",
+        "exit_ip": "203.0.113.7",
+        "failed_count": 0,
+        "grade": "A",
+        "ip_address": "203.0.113.7",
+        "items": [
+          {
+            "http_status": 200,
+            "latency_ms": 12,
+            "message": "fixture pass",
+            "status": "pass",
+            "target": "https://example.invalid",
+            "token": "fixture-private-token"
+          }
+        ],
+        "latency_ms": 12,
+        "message": "fixture diagnostic ok",
+        "passed_count": 1,
+        "password": "fixture-private-password",
+        "region": "Fixture Region",
+        "score": 91,
+        "success": true,
+        "summary": "fixture quality",
+        "token": "fixture-private-token",
+        "username": "fixture-private-user",
+        "warn_count": 0
+      },
+      "quality_result": {
+        "base_latency_ms": 8,
+        "challenge_count": 0,
+        "checked_at": 1735689600,
+        "country": "Fixture Country",
+        "country_code": "ZZ",
+        "exit_ip": "203.0.113.7",
+        "failed_count": 0,
+        "grade": "A",
+        "items": [
+          {
+            "http_status": 200,
+            "latency_ms": 12,
+            "message": "fixture pass",
+            "status": "pass",
+            "target": "检测详情含敏感信息，已隐藏"
+          }
+        ],
+        "passed_count": 1,
+        "score": 91,
+        "summary": "fixture quality",
+        "warn_count": 0
+      },
+      "test_input": {
+        "address": "secret-address.example.invalid",
+        "city": "Fixture City",
+        "country": "Fixture Country",
+        "country_code": "ZZ",
+        "ip_address": "203.0.113.7",
+        "latency_ms": 12,
+        "message": "fixture diagnostic ok",
+        "password": "fixture-private-password",
+        "region": "Fixture Region",
+        "success": true,
+        "token": "fixture-private-token",
+        "username": "fixture-private-user"
+      },
+      "test_result": {
+        "city": "Fixture City",
+        "country": "Fixture Country",
+        "country_code": "ZZ",
+        "ip_address": "203.0.113.7",
+        "latency_ms": 12,
+        "message": "fixture diagnostic ok",
+        "region": "Fixture Region",
+        "success": true
+      }
+    },
+    "proxy_native_http": {
+      "quality_input": {
+        "checked_at": 1791774000,
+        "grade": "yellow",
+        "items": [
+          {
+            "http_status": 403,
+            "latency_ms": 21,
+            "message": "challenge",
+            "status": "challenge",
+            "target": "OpenAI"
+          }
+        ],
+        "score": 80
+      },
+      "quality_result": {
+        "base_latency_ms": null,
+        "challenge_count": null,
+        "checked_at": 1791774000,
+        "country": "",
+        "country_code": "",
+        "exit_ip": "",
+        "failed_count": null,
+        "grade": "yellow",
+        "items": [
+          {
+            "http_status": 403,
+            "latency_ms": 21,
+            "message": "challenge",
+            "status": "challenge",
+            "target": "OpenAI"
+          }
+        ],
+        "passed_count": null,
+        "score": 80,
+        "summary": "",
+        "warn_count": null
+      },
+      "test_input": {
+        "ip_address": "192.0.2.8",
+        "latency_ms": 13,
+        "message": "proxy https://fixture-user:fixture-pass@example.invalid",
+        "success": true
+      },
+      "test_result": {
+        "city": "",
+        "country": "",
+        "country_code": "",
+        "ip_address": "192.0.2.8",
+        "latency_ms": 13,
+        "message": "检测详情含敏感信息，已隐藏",
+        "region": "",
+        "success": true
+      }
+    },
+    "templates": {
+      "combined": {
+        "fixture-input-*": "fixture-model",
+        "fixture-model": "fixture-model"
+      },
+      "default_view": {
+        "configured": false,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "full": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "14c292a7b6b4ab8504bb814242e7a644a065d74e7ae78bc78323e2687288f3ca"
+      },
+      "degraded_source_mapping": {
+        "fixture-input-*": "fixture-model",
+        "fixture-model": "fixture-model",
+        "fixture-terra-*": "fixture-model"
+      },
+      "full_source_mapping": {
+        "fixture-full-alt": "fixture-full-alt",
+        "fixture-full-model": "fixture-full-model",
+        "fixture-full-third": "fixture-full-third"
+      },
+      "idempotent_repeat_version": "39275dcf8f28320aaff402b5324b3631e1a246077abf53ca983f38834201fdde",
+      "initialized_view": {
+        "configured": true,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "a5701d8d77f9f28a581c341a234363c9a0dca3a8683c23bf755d6674c86e6f61",
+          "full": "732221968a84e6aa3af717105742bb9769087b8cf11ee68a2865fb5305bfa8a4",
+          "takeover": "a5701d8d77f9f28a581c341a234363c9a0dca3a8683c23bf755d6674c86e6f61"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-model"
+              },
+              {
+                "source": "fixture-terra-*",
+                "target": "fixture-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model",
+              "fixture-full-alt",
+              "fixture-full-third"
+            ]
+          },
+          "takeover": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-model"
+              },
+              {
+                "source": "fixture-terra-*",
+                "target": "fixture-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-model"
+            ]
+          }
+        },
+        "version": "39275dcf8f28320aaff402b5324b3631e1a246077abf53ca983f38834201fdde"
+      },
+      "profile": {
+        "mappings": [
+          {
+            "source": "fixture-input-*",
+            "target": "fixture-model"
+          }
+        ],
+        "whitelist": [
+          "fixture-model"
+        ]
+      },
+      "split_combined": {
+        "mappings": [
+          {
+            "source": "fixture-input-*",
+            "target": "fixture-model"
+          }
+        ],
+        "whitelist": [
+          "fixture-model"
+        ]
+      }
+    }
+  },
+  "reference": {
+    "kind": "pinned Git commit",
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+  },
+  "schema_version": 1
+}

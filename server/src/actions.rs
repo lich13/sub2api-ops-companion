@@ -1,0 +1,883 @@
+use crate::{
+    account_locks::{AccountLocks, Lease},
+    account_templates::{self, Templates},
+    audit,
+    compat::{account_version, integer, now, operation_versions, string, truthy},
+    credit_ownership,
+    db::Param,
+    error::{Error, Result},
+    model_rules::admitted,
+    queries::{settings_capabilities, Queries},
+    security::{clean, safe_error},
+    settings::Settings,
+    upstream::{read_limited, Upstream},
+};
+use base64::Engine;
+use serde_json::{json, Value};
+use std::{
+    collections::BTreeSet,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::{sync::mpsc, task::JoinHandle};
+
+pub const EDIT_ACTIONS: &[&str] = &[
+    "priority",
+    "concurrency",
+    "load_factor",
+    "model_config",
+    "proxy",
+    "sync_models",
+];
+pub const TEST_MODES: &[&str] = &[
+    "default", "compact", "text", "image", "video", "search", "tts", "stt", "realtime",
+];
+pub struct OperationContext {
+    pub action: String,
+    pub expected: String,
+    pub managed: bool,
+}
+tokio::task_local! {pub static OPERATION: OperationContext;}
+pub fn version_matches(row: &Value, expected: &str) -> bool {
+    OPERATION
+        .try_with(|context| {
+            operation_versions(row, context.managed)[&context.action] == context.expected
+        })
+        .unwrap_or_else(|_| account_version(row) == expected)
+}
+#[derive(Clone)]
+pub struct Actions {
+    pub queries: Queries,
+    pub upstream: Upstream,
+    pub locks: AccountLocks,
+    pub templates: Templates,
+    pub settings: Arc<Settings>,
+    client: reqwest::Client,
+}
+pub struct TestRun {
+    receiver: mpsc::Receiver<Value>,
+    task: JoinHandle<()>,
+}
+impl TestRun {
+    pub async fn recv(&mut self) -> Option<Value> {
+        self.receiver.recv().await
+    }
+}
+impl Drop for TestRun {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+pub fn current_value(row: &Value, action: &str) -> Result<Value> {
+    match action {
+        "model_config" => account_templates::split(&row["model_mapping"]),
+        "proxy" => Ok(json!({"proxy_id":row["proxy_id"]})),
+        "sync_models" => Ok(json!({})),
+        _ => Ok(json!({action:row[action]})),
+    }
+}
+pub fn target_reached(row: &Value, action: &str, payload: &Value) -> bool {
+    if action == "sync_models" || settings_capabilities(row)[action]["editable"] != true {
+        return false;
+    }
+    if action == "model_config" {
+        return account_templates::combine(payload).is_ok_and(|v| {
+            v == if row["model_mapping"].is_null() {
+                json!({})
+            } else {
+                row["model_mapping"].clone()
+            }
+        });
+    }
+    let field = if action == "proxy" {
+        "proxy_id"
+    } else {
+        action
+    };
+    row[field] == payload[field]
+}
+pub fn text_model(id: &str) -> bool {
+    account_templates::MODEL_ID.is_match(id)
+        && ![
+            "image",
+            "audio",
+            "video",
+            "tts",
+            "whisper",
+            "realtime",
+            "search",
+            "embedding",
+        ]
+        .iter()
+        .any(|s| id.to_lowercase().contains(s))
+}
+pub fn exact_models(allowlists: &[Value]) -> Vec<Value> {
+    let mut seen = BTreeSet::new();
+    allowlists
+        .iter()
+        .flat_map(|v| v["models"].as_array().into_iter().flatten())
+        .filter_map(|v| {
+            let id = v.as_str()?.trim();
+            if !text_model(id) || !seen.insert(id.to_owned()) {
+                return None;
+            }
+            Some(json!({"id":id,"display_name":id,"type":"model"}))
+        })
+        .collect()
+}
+pub fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
+    let mut seen = BTreeSet::new();
+    let unrestricted = allowlists.is_empty() || allowlists.iter().any(|v| !truthy(&v["enabled"]));
+    items.iter().filter_map(|item| {
+        item["id"].as_str()?;let id=clean(&item["id"],200).trim().to_owned();if id.is_empty() || !seen.insert(id.clone()) {return None;}
+        if !unrestricted && !allowlists.iter().any(|v|admitted(v,&id)) {return None;}
+        Some(json!({"id":clean(&item["id"],200),"display_name":clean(&item["display_name"],200),"type":clean(&item["type"],200)}))
+    }).collect()
+}
+pub fn validate_media(value: &str, kind: &str) -> Result<()> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    let (header, encoded) = value
+        .split_once(',')
+        .ok_or_else(|| Error::new(422, "素材必须是有效的图片或音频文件"))?;
+    if !header.starts_with(&format!("data:{kind}/")) || !header.contains(";base64") {
+        return Err(Error::new(422, "素材必须是有效的图片或音频文件"));
+    }
+    let mime = header[5..].split(';').next().unwrap_or("").to_lowercase();
+    if kind == "image"
+        && !["image/png", "image/jpeg", "image/webp", "image/gif"].contains(&mime.as_str())
+    {
+        return Err(Error::new(422, "图片格式仅支持 PNG、JPEG、WebP 或 GIF"));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| Error::new(422, "素材编码无效"))?;
+    if bytes.len()
+        > if kind == "image" {
+            4 * 1024 * 1024
+        } else {
+            8 * 1024 * 1024
+        }
+    {
+        return Err(Error::new(422, "素材超过大小限制"));
+    }
+    Ok(())
+}
+impl Actions {
+    pub fn new(
+        queries: Queries,
+        upstream: Upstream,
+        locks: AccountLocks,
+        templates: Templates,
+        settings: Arc<Settings>,
+    ) -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(5))
+            .build()?;
+        Ok(Self {
+            queries,
+            upstream,
+            locks,
+            templates,
+            settings,
+            client,
+        })
+    }
+    pub async fn request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        key: &str,
+        body: Option<&Value>,
+        timeout: Duration,
+        stream: bool,
+    ) -> Result<reqwest::Response> {
+        if self.settings.read_only && method != reqwest::Method::GET {
+            return Err(Error::read_only());
+        }
+        let base = self.upstream.active_url();
+        if base.is_empty() {
+            return Err(Error::new(502, "未配置 Sub2API 服务地址"));
+        }
+        let mut request = self
+            .client
+            .request(
+                method,
+                format!("{base}/api/v1/admin/{}", path.trim_start_matches('/')),
+            )
+            .header("x-api-key", key)
+            .header("X-Admin-UI-Request", "1")
+            .header(
+                "Accept",
+                if stream {
+                    "text/event-stream"
+                } else {
+                    "application/json"
+                },
+            )
+            .timeout(timeout);
+        if let Some(value) = body {
+            request = request.json(value);
+        }
+        request.send().await.map_err(|error| {
+            if error.is_timeout() {
+                Error::new(504, "请求超时，未重放操作")
+            } else {
+                Error::new(502, "无法读取 Sub2API 响应")
+            }
+        })
+    }
+    pub async fn json(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        key: &str,
+        body: Option<&Value>,
+        seconds: u64,
+    ) -> Result<Value> {
+        let response = self
+            .request(method, path, key, body, Duration::from_secs(seconds), false)
+            .await?;
+        if !response.status().is_success() {
+            return Err(Error::new(
+                502,
+                format!("Sub2API 请求失败 [http_{}]", response.status().as_u16()),
+            ));
+        }
+        let bytes = read_limited(response, 8_000_000).await?;
+        let body: Value =
+            serde_json::from_slice(&bytes).map_err(|_| Error::new(502, "无法读取 Sub2API 响应"))?;
+        if !body.is_object() || body["code"] != 0 {
+            return Err(Error::new(502, "Sub2API 未确认操作成功"));
+        }
+        Ok(body["data"].clone())
+    }
+    pub async fn account(&self, id: i64, version: Option<&str>) -> Result<Value> {
+        let row = self.queries.account(id).await?;
+        if version.is_some_and(|v| !version_matches(&row, v)) {
+            return Err(Error::new(409, "账号已变化，请刷新后重试"));
+        }
+        Ok(row)
+    }
+    pub async fn accounts(&self, ids: &[i64]) -> Result<Vec<Value>> {
+        self.queries
+            .db
+            .all(
+                &crate::sql::DESKTOP_ACCOUNT_SQL.replace("{filter}", "AND a.id=ANY($1)"),
+                &[Param::Ints(ids.to_vec())],
+            )
+            .await
+    }
+    pub async fn settings_view(&self, id: i64) -> Result<Value> {
+        if id < 1 {
+            return Err(Error::new(422, "账号编号无效"));
+        }
+        let row = self.account(id, None).await?;
+        Ok(
+            json!({"account_id":id,"priority":integer(&row["priority"]).unwrap_or(0),"concurrency":row["concurrency"],"load_factor":row["load_factor"],"effective_load_factor":if truthy(&row["load_factor"]) {row["load_factor"].clone()} else if truthy(&row["concurrency"]) {row["concurrency"].clone()} else {json!(1)},"proxy_id":row["proxy_id"],"model_config":account_templates::split(&row["model_mapping"])? ,"capabilities":settings_capabilities(&row),"versions":crate::compat::pick(&operation_versions(&row,false),EDIT_ACTIONS)}),
+        )
+    }
+    pub async fn proxies(&self, key: &str) -> Result<Vec<Value>> {
+        let data = self
+            .json(reqwest::Method::GET, "proxies/all", key, None, 10)
+            .await?;
+        let items = data
+            .as_array()
+            .filter(|v| v.len() <= 10000)
+            .ok_or_else(|| Error::new(502, "代理列表格式无效"))?;
+        items.iter().map(|item| {
+            if !item.is_object() || item["id"].as_i64().is_none_or(|v| v <= 0) {return Err(Error::new(502,"代理列表格式无效"));}
+            let protocol=string(&item["protocol"]);let status=string(&item["status"]);
+            Ok(json!({"id":item["id"],"name":clean(&item["name"],160),"protocol":if ["http","https","socks5","socks5h"].contains(&protocol) {protocol} else {"unknown"},"status":if ["active","inactive","error"].contains(&status) {status} else {"unknown"}}))
+        }).collect()
+    }
+    pub async fn apply_setting(
+        &self,
+        id: i64,
+        action: &str,
+        payload: &Value,
+        expected: &str,
+        key: &str,
+    ) -> Result<Value> {
+        if self.settings.read_only {
+            return Err(Error::read_only());
+        }
+        let mut row = self.account(id, None).await?;
+        let original_parent = row["parent_account_id"].clone();
+        if !truthy(&row["parent_account_id"]) {
+            row["parent_account_id"] = row["extra"]["parent_account_id"].clone();
+        }
+        let _lease = self.locks.try_account(&row)?;
+        let live = self.account(id, None).await?;
+        if live["parent_account_id"] != original_parent
+            || operation_versions(&live, false)[action] != expected
+        {
+            return Err(Error::new(
+                409,
+                "相关字段或账号资格已变化，请核对后重新提交",
+            ));
+        }
+        let capability = settings_capabilities(&live)[action].clone();
+        if capability["editable"] != true {
+            return Err(Error::new(409, capability["reason"].clone()));
+        }
+        if action == "proxy"
+            && !payload["proxy_id"].is_null()
+            && !self
+                .proxies(key)
+                .await?
+                .iter()
+                .any(|v| v["id"] == payload["proxy_id"] && v["status"] == "active")
+        {
+            return Err(Error::new(409, "所选代理已不可用，请重新选择"));
+        }
+        if operation_versions(&self.account(id, None).await?, false)[action] != expected {
+            return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
+        }
+        let scalar = matches!(action, "priority" | "concurrency" | "load_factor");
+        if scalar {
+            credit_ownership::prepare(
+                &self.queries.oauth,
+                &credit_ownership::account(&self.queries.db, id).await?,
+                action,
+                &payload[action],
+            )?;
+        }
+        let result = if action == "sync_models" {
+            let data = self
+                .json(
+                    reqwest::Method::POST,
+                    &format!("accounts/{id}/models/sync-upstream"),
+                    key,
+                    None,
+                    60,
+                )
+                .await?;
+            let list = data["models"]
+                .as_array()
+                .filter(|v| v.len() <= 10000)
+                .ok_or_else(|| Error::new(502, "上游模型同步响应格式无效"))?;
+            let mut seen = BTreeSet::new();
+            let models: Vec<_> = list
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|id| {
+                    account_templates::MODEL_ID.is_match(id) && seen.insert((*id).to_owned())
+                })
+                .collect();
+            if models.is_empty() {
+                return Err(Error::new(422, "上游未返回可用模型，已有草稿已保留"));
+            }
+            json!({"models":models,"warnings":if truthy(&data["warnings"]) {vec!["模型能力信息不完整"]} else {vec![]},"synced_at":now()})
+        } else {
+            let (method, path, body) = if action == "model_config" {
+                (
+                    reqwest::Method::POST,
+                    "accounts/bulk-update".to_owned(),
+                    json!({"account_ids":[id],"credentials":{"model_mapping":account_templates::combine(payload)?}}),
+                )
+            } else {
+                let field = if action == "proxy" {
+                    "proxy_id"
+                } else {
+                    action
+                };
+                (
+                    reqwest::Method::PUT,
+                    format!("accounts/{id}"),
+                    json!({field:if action == "proxy" && payload[field].is_null() {json!(0)} else {payload[field].clone()}}),
+                )
+            };
+            if let Err(error) = self.json(method, &path, key, Some(&body), 10).await {
+                if !matches!(error.status.as_u16(), 502 | 504)
+                    || !target_reached(&self.account(id, None).await?, action, payload)
+                {
+                    return Err(error);
+                }
+            }
+            let actual = self.account(id, None).await?;
+            if !target_reached(&actual, action, payload) {
+                return Err(Error::new(502, "字段写入尚未确认，正在核对实际值"));
+            }
+            if scalar {
+                credit_ownership::reconcile(
+                    &self.queries.oauth,
+                    &credit_ownership::account(&self.queries.db, id).await?,
+                )?;
+            }
+            let mut result = current_value(&actual, action)?;
+            result["verified"] = true.into();
+            let versions = operation_versions(&actual, false);
+            result["field_version"] = versions[action].clone();
+            result["settings_versions"] = crate::compat::pick(&versions, EDIT_ACTIONS);
+            result
+        };
+        audit::write(
+            &self.settings.audit_path,
+            "desktop_account_settings",
+            json!({"account_id":id,"action":action,"result":"completed"}),
+            false,
+        );
+        Ok(result)
+    }
+    pub async fn allowlists(&self, row: &Value, model_test: bool) -> Result<Vec<Value>> {
+        let ids: Vec<_> = row["group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let query = if model_test {
+            "SELECT model_allowlist FROM groups WHERE deleted_at IS NULL AND id=ANY($1) AND platform=$2 ORDER BY sort_order,id"
+        } else {
+            "SELECT model_allowlist FROM groups WHERE deleted_at IS NULL AND id=ANY($1) ORDER BY id"
+        };
+        let mut params = vec![Param::Ints(ids)];
+        if model_test {
+            params.push(string(&row["platform"]).into());
+        }
+        Ok(self
+            .queries
+            .db
+            .all(query, &params)
+            .await?
+            .into_iter()
+            .map(|v| {
+                if truthy(&v["model_allowlist"]) {
+                    v["model_allowlist"].clone()
+                } else {
+                    json!({"enabled":false,"models":[]})
+                }
+            })
+            .collect())
+    }
+    pub async fn models(&self, id: i64, key: &str, model_test: bool) -> Result<Vec<Value>> {
+        let row = self.account(id, None).await?;
+        if model_test && row["platform"] != "openai" {
+            return Err(Error::new(422, "仅支持 Codex 模型测试"));
+        }
+        let allowlists = self.allowlists(&row, model_test).await?;
+        if model_test && !allowlists.is_empty() && allowlists.iter().all(|v| truthy(&v["enabled"]))
+        {
+            return Ok(exact_models(&allowlists));
+        }
+        let data = self
+            .json(
+                reqwest::Method::GET,
+                &format!("accounts/{id}/models"),
+                key,
+                None,
+                30,
+            )
+            .await?;
+        let list = data
+            .as_array()
+            .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
+        let mut values = filter_models(
+            &list[..list.len().min(1000)],
+            if model_test { &[] } else { &allowlists },
+        );
+        if model_test {
+            values.retain(|v| text_model(string(&v["id"])));
+        }
+        Ok(values)
+    }
+    pub async fn model_allowed(
+        &self,
+        row: &Value,
+        model: &str,
+        candidate_required: bool,
+    ) -> Result<bool> {
+        if !text_model(model) {
+            return Ok(false);
+        }
+        let allowlists = self.allowlists(row, true).await?;
+        if !allowlists.is_empty() && allowlists.iter().all(|v| truthy(&v["enabled"])) {
+            return Ok(exact_models(&allowlists).iter().any(|v| v["id"] == model));
+        }
+        if !candidate_required {
+            return Ok(true);
+        }
+        let key = self.queries.oauth.admin_token()?;
+        if key.is_empty() {
+            return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
+        }
+        Ok(self
+            .models(integer(&row["id"]).ok_or_else(Error::invalid)?, &key, true)
+            .await?
+            .iter()
+            .any(|v| v["id"] == model))
+    }
+    pub async fn apply_template(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
+        if self.settings.read_only {
+            return Err(Error::read_only());
+        }
+        let _lease = self.locks.try_account(&self.account(id, None).await?)?;
+        let row = self.account(id, None).await?;
+        if !account_templates::eligible(&row) {
+            return Err(Error::new(409, "仅可应用到独立 OpenAI OAuth 或 Key 账号"));
+        }
+        if account_templates::passthrough(&row) {
+            return Err(Error::new(409, "透传模式会绕过模型限制，请先处理透传设置"));
+        }
+        let mapping = self.templates.desired(payload)?;
+        if row["model_mapping"] == mapping {
+            return Ok(json!({"verified":true,"account_id":id,"unchanged":true}));
+        }
+        if account_templates::account_version(&row) != payload["expected_version"] {
+            return Err(Error::new(409, "账号模型配置或凭据已变化，请重新选择模板"));
+        }
+        let result = self
+            .json(
+                reqwest::Method::POST,
+                "accounts/bulk-update",
+                key,
+                Some(&json!({"account_ids":[id],"credentials":{"model_mapping":mapping}})),
+                5,
+            )
+            .await;
+        let live = self.account(id, None).await?;
+        let verified = account_templates::eligible(&live)
+            && !account_templates::passthrough(&live)
+            && live["model_mapping"] == mapping;
+        audit::write(
+            &self.settings.audit_path,
+            "account_template_applied",
+            json!({"account_id":id,"template_id":payload["template_id"],"verified":verified,"code":if result.is_ok() {"ok"} else {"uncertain"}}),
+            false,
+        );
+        if !verified {
+            return Err(Error::new(
+                502,
+                json!({"code":"template_unconfirmed","message":"模板应用未确认，请核对实际配置"}),
+            ));
+        }
+        Ok(json!({"verified":true,"account_id":id,"template_id":payload["template_id"]}))
+    }
+    pub async fn set_groups(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
+        if self.settings.read_only {
+            return Err(Error::read_only());
+        }
+        let scope: BTreeSet<_> = payload["scope_group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        let target: BTreeSet<_> = payload["group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        if id < 1 || scope.iter().chain(&target).any(|v| *v < 1) || !target.is_subset(&scope) {
+            return Err(Error::new(422, "分组范围无效"));
+        }
+        let _lease = self.locks.try_account(&self.account(id, None).await?)?;
+        let row = self
+            .account(id, Some(string(&payload["expected_version"])))
+            .await?;
+        if !matches!(string(&row["platform"]), "openai" | "grok") {
+            return Err(Error::new(422, "仅支持 OpenAI 与 Grok 分组"));
+        }
+        let groups = self
+            .queries
+            .db
+            .all(
+                "SELECT id,platform FROM groups WHERE deleted_at IS NULL AND id=ANY($1)",
+                &[Param::Ints(scope.iter().copied().collect())],
+            )
+            .await?;
+        if groups
+            .iter()
+            .filter_map(|v| integer(&v["id"]))
+            .collect::<BTreeSet<_>>()
+            != scope
+            || groups.iter().any(|v| v["platform"] != row["platform"])
+        {
+            return Err(Error::new(409, "分组已变化或平台不匹配，请刷新"));
+        }
+        let original: BTreeSet<_> = row["group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect();
+        let desired: Vec<_> = original
+            .difference(&scope)
+            .copied()
+            .chain(target)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let failure = self
+            .json(
+                reqwest::Method::PUT,
+                &format!("accounts/{id}"),
+                key,
+                Some(&json!({"group_ids":desired})),
+                10,
+            )
+            .await
+            .err();
+        let live = self.account(id, None).await?;
+        let mut actual = live["group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(integer)
+            .collect::<Vec<_>>();
+        actual.sort_unstable();
+        if actual != desired {
+            return Err(
+                failure.unwrap_or_else(|| Error::new(502, "分组写入未确认，请刷新查看实际归属"))
+            );
+        }
+        audit::write(
+            &self.settings.audit_path,
+            "desktop_groups",
+            json!({"account_id":id,"before":original,"after":desired}),
+            false,
+        );
+        Ok(
+            json!({"verified":true,"account_id":id,"group_ids":desired,"version":account_version(&live)}),
+        )
+    }
+    pub async fn prepare_test(&self, id: i64, payload: &Value) -> Result<Lease> {
+        if self.settings.read_only {
+            return Err(Error::read_only());
+        }
+        let row = self
+            .account(id, Some(string(&payload["expected_version"])))
+            .await?;
+        let lease = self.locks.try_account(&row)?;
+        let row = self
+            .account(id, Some(string(&payload["expected_version"])))
+            .await?;
+        let platform = string(&row["platform"]);
+        let mode = string(&payload["mode"]);
+        if !matches!(platform, "openai" | "grok")
+            || !matches!(string(&row["type"]), "oauth" | "apikey")
+        {
+            return Err(Error::new(422, "此账号不支持连接测试"));
+        }
+        if platform == "openai" && !matches!(mode, "default" | "compact") {
+            return Err(Error::new(422, "OpenAI 测试模式无效"));
+        }
+        if platform == "grok"
+            && !matches!(
+                mode,
+                "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime"
+            )
+        {
+            return Err(Error::new(422, "Grok 测试模式无效"));
+        }
+        let image = string(&payload["image_data_url"]);
+        let audio = string(&payload["audio_data_url"]);
+        validate_media(image, "image")?;
+        validate_media(audio, "audio")?;
+        if !(image.is_empty()
+            || platform == "openai"
+                && mode == "default"
+                && string(&payload["model_id"]).starts_with("gpt-image-")
+            || platform == "grok" && matches!(mode, "image" | "video"))
+        {
+            return Err(Error::new(422, "当前模式不接受图片素材"));
+        }
+        if !(audio.is_empty() || platform == "grok" && mode == "stt") {
+            return Err(Error::new(422, "当前模式不接受音频素材"));
+        }
+        Ok(lease)
+    }
+    pub fn test_stream(
+        &self,
+        id: i64,
+        payload: Value,
+        key: String,
+        lease: Lease,
+        summary: bool,
+    ) -> TestRun {
+        let (sender, receiver) = mpsc::channel(16);
+        let actions = self.clone();
+        let task = tokio::spawn(async move {
+            let _lease = lease;
+            let started = Instant::now();
+            let run = actions.consume_test(id, &payload, &key, &sender, summary, started);
+            let result = tokio::time::timeout(Duration::from_secs(300), run).await;
+            let message = match result {
+                Ok(Ok(())) => return,
+                Ok(Err(error)) if error.status.as_u16() == 504 => "测试超时，未重放请求",
+                Ok(Err(_)) => "测试连接中断，未重放请求",
+                Err(_) => "测试超时，未重放请求",
+            };
+            let mut event = json!({"type":"error","error":message});
+            if summary {
+                event["uncertain"] = true.into();
+            }
+            let _ = sender.send(event).await;
+        });
+        TestRun { receiver, task }
+    }
+    async fn consume_test(
+        &self,
+        id: i64,
+        payload: &Value,
+        key: &str,
+        sender: &mpsc::Sender<Value>,
+        summary: bool,
+        started: Instant,
+    ) -> Result<()> {
+        let mut body = crate::compat::pick(
+            payload,
+            &[
+                "model_id",
+                "mode",
+                "prompt",
+                "image_data_url",
+                "audio_data_url",
+            ],
+        );
+        for field in ["model_id", "prompt", "image_data_url", "audio_data_url"] {
+            if body[field].is_null() {
+                body[field] = "".into();
+            }
+        }
+        if matches!(string(&body["mode"]), "search" | "tts" | "stt" | "realtime") {
+            body["model_id"] = "".into();
+        }
+        let mut response = self
+            .request(
+                reqwest::Method::POST,
+                &format!("accounts/{id}/test"),
+                key,
+                Some(&body),
+                Duration::from_secs(90),
+                true,
+            )
+            .await?;
+        if response.status().as_u16() != 200 {
+            let _=sender.send(json!({"type":"error","error":format!("测试请求失败 [http_{}]",response.status().as_u16())})).await;
+            return Ok(());
+        }
+        let mut pending = Vec::new();
+        let mut total = 0usize;
+        let mut completed = false;
+        loop {
+            let chunk = tokio::select! {result=response.chunk()=>result.map_err(|e|if e.is_timeout() {Error::new(504,"测试超时")} else {Error::new(502,"测试连接中断")})?,_ = sender.closed()=>return Ok(())};
+            if let Some(bytes) = chunk.as_ref() {
+                total = total.saturating_add(bytes.len());
+                pending.extend_from_slice(bytes);
+            }
+            if total > 134_217_728 {
+                let mut event = json!({"type":"error","error":"测试输出超过大小限制"});
+                if summary {
+                    event["uncertain"] = true.into();
+                }
+                let _ = sender.send(event).await;
+                return Ok(());
+            }
+            let mut offset = 0;
+            while let Some(end) = pending[offset..]
+                .iter()
+                .position(|v| *v == b'\n')
+                .map(|v| v + offset)
+                .or_else(|| {
+                    if chunk.is_none() && offset < pending.len() {
+                        Some(pending.len())
+                    } else {
+                        None
+                    }
+                })
+            {
+                let line = String::from_utf8_lossy(&pending[offset..end]);
+                offset = (end + 1).min(pending.len());
+                let Some(raw) = line.strip_prefix("data:") else {
+                    continue;
+                };
+                let Ok(event) = serde_json::from_str::<Value>(raw.trim()) else {
+                    continue;
+                };
+                let kind = string(&event["type"]);
+                if summary && !matches!(kind, "test_start" | "test_complete" | "error")
+                    || !matches!(
+                        kind,
+                        "test_start"
+                            | "status"
+                            | "content"
+                            | "image"
+                            | "audio"
+                            | "video"
+                            | "test_complete"
+                            | "error"
+                    )
+                {
+                    continue;
+                }
+                let mut value = json!({"type":kind});
+                for field in ["text", "model", "error"] {
+                    if let Some(entry) = event.get(field) {
+                        if kind == "content" && field == "text" {
+                            if entry.is_string() {
+                                value[field] = entry.clone();
+                            }
+                        } else {
+                            value[field] = safe_error(entry, 16000).into();
+                        }
+                    }
+                }
+                if matches!(kind, "image" | "audio" | "video") {
+                    let field = format!("{kind}_url");
+                    let media = string(&event[&field]);
+                    let valid = media.starts_with(&format!("data:{kind}/"))
+                        || reqwest::Url::parse(media).is_ok_and(|v| {
+                            v.scheme() == "https"
+                                && v.host_str().is_some()
+                                && v.username().is_empty()
+                                && v.password().is_none()
+                        });
+                    if !valid || media.len() > 90_000_000 {
+                        let _ = sender
+                            .send(json!({"type":"error","error":"上游返回了不支持的媒体格式"}))
+                            .await;
+                        return Ok(());
+                    }
+                    value[&field] = media.into();
+                    value["mime_type"] = clean(&event["mime_type"], 80).into();
+                }
+                if kind == "test_complete" {
+                    value["success"] = (event["success"] == true).into();
+                }
+                if matches!(kind, "test_complete" | "error") {
+                    completed = true;
+                    value["completed_at"] = now().into();
+                    value["duration_ms"] =
+                        json!((started.elapsed().as_secs_f64() * 1000.0).round_ties_even() as u64);
+                }
+                if sender.send(value).await.is_err() {
+                    return Ok(());
+                }
+            }
+            pending.drain(..offset);
+            if chunk.is_none() {
+                break;
+            }
+        }
+        if !completed {
+            let mut value = json!({"type":"error","error":"连接结束，未收到测试完成结果"});
+            if summary {
+                value["uncertain"] = true.into();
+            }
+            let _ = sender.send(value).await;
+        }
+        Ok(())
+    }
+}

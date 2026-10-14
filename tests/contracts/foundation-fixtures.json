@@ -1,0 +1,1491 @@
+{
+  "at": "2031-04-05T06:07:08+00:00",
+  "credit_state": {
+    "invalid_states": [
+      {
+        "expected_error": "自动用卡状态无效",
+        "name": "stage",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": true,
+          "policy_control_generation": 2,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "unrecognized",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡时间无效",
+        "name": "timestamp",
+        "state": {
+          "attempt_at": "not-a-time",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": true,
+          "policy_control_generation": 2,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡暂停归属无效",
+        "name": "pause_ownership",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": "true",
+          "policy_control_generation": 2,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡策略版本无效",
+        "name": "policy_version",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": true,
+          "policy_control_generation": 2,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 2,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡控制状态无效",
+        "name": "control_generation",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": true,
+          "policy_control_generation": -1,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡结果无效",
+        "name": "outcome",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "surprised",
+          "owns_pause": true,
+          "policy_control_generation": 2,
+          "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      },
+      {
+        "expected_error": "自动用卡检测控制版本无效",
+        "name": "detection_revision",
+        "state": {
+          "attempt_at": "2031-04-05T06:07:08+00:00",
+          "episode": "synthetic-credit-episode",
+          "outcome": "restored",
+          "owns_pause": true,
+          "policy_control_generation": 2,
+          "policy_detection_version": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+          "policy_method_generation": 1,
+          "policy_version": 1,
+          "stage": "waiting",
+          "test_attempts": 0
+        }
+      }
+    ],
+    "manual_generation": {
+      "expected_control": {
+        "at": "2031-04-05T06:07:08+00:00",
+        "enabled": false,
+        "event_fingerprint": "90a73cc58a87c6089fbbfa1cad698289bef279909526e20f8b105b56f8d18759",
+        "evidence_at": null,
+        "generation": 1,
+        "origin": "manual"
+      },
+      "expected_generation": 1,
+      "expected_oauth_result": null,
+      "expected_pending_stages": {
+        "keep-active": "active_usage",
+        "keep-other": "ready"
+      },
+      "expected_stale_marker": null,
+      "generation": 1,
+      "row": {
+        "concurrency": 4,
+        "extra": {},
+        "id": 73,
+        "platform": "openai",
+        "schedulable": true,
+        "status": "active",
+        "type": "oauth"
+      }
+    },
+    "valid_expected_error": null,
+    "valid_state": {
+      "attempt_at": "2031-04-05T06:07:08+00:00",
+      "episode": "synthetic-credit-episode",
+      "outcome": "restored",
+      "owns_pause": true,
+      "policy_control_generation": 2,
+      "policy_detection_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "policy_method_generation": 1,
+      "policy_version": 1,
+      "stage": "waiting",
+      "test_attempts": 0
+    }
+  },
+  "persistence": {
+    "atomic_write_failure": {
+      "marker_after": "synthetic-preserved",
+      "reference_exception": "IsADirectoryError",
+      "target_is_directory": true,
+      "temporary_artifacts_after": []
+    },
+    "lost_update_expected_scheduler": {
+      "first": true,
+      "second": true
+    },
+    "read_only_absent_state_expectation": {
+      "initial_path_exists": false,
+      "snapshot_must_not_create_parent": true,
+      "transaction_error_code": "read_only"
+    }
+  },
+  "quality": {
+    "accounts": [
+      {
+        "deleted_at": null,
+        "id": 73,
+        "platform": "openai",
+        "type": "oauth"
+      },
+      {
+        "deleted_at": null,
+        "id": 74,
+        "platform": "openai",
+        "type": "apikey"
+      },
+      {
+        "deleted_at": null,
+        "id": 75,
+        "platform": "anthropic",
+        "type": "oauth"
+      },
+      {
+        "deleted_at": "2031-04-05T06:07:08+00:00",
+        "id": 76,
+        "platform": "openai",
+        "type": "oauth"
+      }
+    ],
+    "excluded_account_ids": [
+      75,
+      76
+    ],
+    "expected_failures": [
+      {
+        "account_id": 73,
+        "at": "2031-04-05T06:02:08+00:00",
+        "cause": "auth",
+        "request_known": true
+      },
+      {
+        "account_id": 73,
+        "at": "2031-04-05T06:03:08+00:00",
+        "cause": "rate",
+        "request_known": true
+      }
+    ],
+    "expected_summaries": {
+      "73": {
+        "account_id": 73,
+        "cap": 84,
+        "consecutive_failures": 2,
+        "coverage": 1.0,
+        "grade": "yellow",
+        "reasons": [
+          "认证失败"
+        ],
+        "reliability": {
+          "causes": {
+            "auth": 1,
+            "rate": 1
+          },
+          "effective_rate": 0.07407407407407407,
+          "failures": 2,
+          "mode": "24h",
+          "score": 47.96296296296297,
+          "successes": 25,
+          "total": 27
+        },
+        "sample_status": "complete",
+        "score": 66,
+        "throughput": {
+          "compared": 25,
+          "coverage": 1.0,
+          "missing_reason": null,
+          "p50": 80.0,
+          "samples": 25,
+          "score": 85.0,
+          "tail": 80.0
+        },
+        "ttft": {
+          "compared": 25,
+          "coverage": 1.0,
+          "missing_reason": null,
+          "p50": 0.45,
+          "samples": 25,
+          "score": 85.0,
+          "tail": 0.45
+        }
+      },
+      "74": {
+        "account_id": 74,
+        "cap": 100,
+        "consecutive_failures": 0,
+        "coverage": 1.0,
+        "grade": "green",
+        "reasons": [
+          "表现良好"
+        ],
+        "reliability": {
+          "causes": {},
+          "effective_rate": 0.0,
+          "failures": 0,
+          "mode": "24h",
+          "score": 100,
+          "successes": 25,
+          "total": 25
+        },
+        "sample_status": "complete",
+        "score": 93,
+        "throughput": {
+          "compared": 25,
+          "coverage": 1.0,
+          "missing_reason": null,
+          "p50": 80.0,
+          "samples": 25,
+          "score": 85.0,
+          "tail": 80.0
+        },
+        "ttft": {
+          "compared": 25,
+          "coverage": 1.0,
+          "missing_reason": null,
+          "p50": 0.45,
+          "samples": 25,
+          "score": 85.0,
+          "tail": 0.45
+        }
+      }
+    },
+    "failure_cases": [
+      {
+        "expected_cause": "auth",
+        "name": "auth",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:02:08+00:00",
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9101,
+          "message": "invalid_api_key",
+          "request_id": "synthetic-auth-1",
+          "upstream_status_code": 401
+        }
+      },
+      {
+        "expected_cause": "rate",
+        "name": "generic_rate_limit",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:03:08+00:00",
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9102,
+          "message": "gateway temporarily overloaded",
+          "request_id": "synthetic-rate-1",
+          "upstream_status_code": 429
+        }
+      },
+      {
+        "expected_cause": null,
+        "name": "quota_excluded",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:04:08+00:00",
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9103,
+          "message": "usage_limit_reached",
+          "request_id": "synthetic-quota-1",
+          "upstream_status_code": 429
+        }
+      },
+      {
+        "expected_cause": null,
+        "name": "local_concurrency_excluded",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:05:08+00:00",
+          "error_owner": "client",
+          "error_phase": "concurrency",
+          "id": 9104,
+          "message": "Too many concurrent requests for API key",
+          "request_id": "synthetic-local-1",
+          "upstream_status_code": 429
+        }
+      },
+      {
+        "expected_cause": null,
+        "name": "client_cancelled_excluded",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:06:08+00:00",
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9105,
+          "message": "client cancelled request",
+          "request_id": "synthetic-cancel-1",
+          "upstream_status_code": 499
+        }
+      },
+      {
+        "expected_cause": null,
+        "name": "content_policy_excluded",
+        "row": {
+          "account_id": 73,
+          "created_at": "2031-04-05T06:06:38+00:00",
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9106,
+          "message": "content policy violation",
+          "request_id": "synthetic-policy-1",
+          "upstream_status_code": 400
+        }
+      }
+    ],
+    "performance_cases": [
+      {
+        "expected": {
+          "account_id": 73,
+          "at": "2031-04-05T05:37:08+00:00",
+          "cohort": [
+            "openai",
+            "gpt-5.6-luna",
+            "default",
+            "default",
+            "sse",
+            "≤8K"
+          ],
+          "tps": 80.0,
+          "ttft": 0.45
+        },
+        "name": "valid",
+        "row": {
+          "account_id": 73,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "created_at": "2031-04-05T05:37:08+00:00",
+          "duration_ms": 1250,
+          "first_token_ms": 450,
+          "id": 73000,
+          "inbound_endpoint": "/v1/responses",
+          "input_tokens": 1200,
+          "model": "gpt-5.6-luna",
+          "openai_ws_mode": false,
+          "output_tokens": 100,
+          "stream": true,
+          "upstream_model": "gpt-5.6-luna"
+        }
+      },
+      {
+        "expected": {
+          "account_id": 73,
+          "at": "2031-04-05T05:37:08+00:00",
+          "cohort": [
+            "openai",
+            "gpt-5.6-luna",
+            "default",
+            "default",
+            "sse",
+            "未知"
+          ],
+          "tps": 80.0,
+          "ttft": 0.45
+        },
+        "name": "missing_cache_counter",
+        "row": {
+          "account_id": 73,
+          "cache_creation_tokens": 0,
+          "created_at": "2031-04-05T05:37:08+00:00",
+          "duration_ms": 1250,
+          "first_token_ms": 450,
+          "id": 73000,
+          "inbound_endpoint": "/v1/responses",
+          "input_tokens": 1200,
+          "model": "gpt-5.6-luna",
+          "openai_ws_mode": false,
+          "output_tokens": 100,
+          "stream": true,
+          "upstream_model": "gpt-5.6-luna"
+        }
+      },
+      {
+        "expected": null,
+        "name": "image_excluded",
+        "row": {
+          "account_id": 73,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "created_at": "2031-04-05T05:37:08+00:00",
+          "duration_ms": 1250,
+          "first_token_ms": 450,
+          "id": 73000,
+          "image_count": 1,
+          "inbound_endpoint": "/v1/responses",
+          "input_tokens": 1200,
+          "model": "gpt-5.6-luna",
+          "openai_ws_mode": false,
+          "output_tokens": 100,
+          "stream": true,
+          "upstream_model": "gpt-5.6-luna"
+        }
+      }
+    ],
+    "usage_rows": [
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:08+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73000,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:07+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73001,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:06+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73002,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:05+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73003,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:04+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73004,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:03+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73005,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:02+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73006,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:01+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73007,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:00+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73008,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:59+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73009,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:58+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73010,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:57+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73011,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:56+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73012,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:55+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73013,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:54+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73014,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:53+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73015,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:52+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73016,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:51+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73017,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:50+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73018,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:49+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73019,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:48+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73020,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:47+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73021,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:46+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73022,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:45+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73023,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:44+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73024,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 73,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:08+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 73000,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:08+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74000,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:07+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74001,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:06+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74002,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:05+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74003,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:04+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74004,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:03+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74005,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:02+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74006,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:01+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74007,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:37:00+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74008,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:59+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74009,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:58+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74010,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:57+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74011,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:56+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74012,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:55+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74013,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:54+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74014,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:53+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74015,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:52+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74016,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:51+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74017,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:50+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74018,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:49+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74019,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:48+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74020,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:47+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74021,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:46+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74022,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:45+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74023,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 74,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T05:36:44+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 74024,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 75,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T06:05:08+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 75000,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      },
+      {
+        "account_id": 76,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "created_at": "2031-04-05T06:05:08+00:00",
+        "duration_ms": 1250,
+        "first_token_ms": 450,
+        "id": 76000,
+        "inbound_endpoint": "/v1/responses",
+        "input_tokens": 1200,
+        "model": "gpt-5.6-luna",
+        "openai_ws_mode": false,
+        "output_tokens": 100,
+        "stream": true,
+        "upstream_model": "gpt-5.6-luna"
+      }
+    ]
+  },
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "schema_version": 1,
+  "synthetic_only": true,
+  "usage": {
+    "apikey_expected_projection": {
+      "actions": [],
+      "branch": "apikey",
+      "reset_credits": null,
+      "today": null,
+      "today_start": "2031-04-05T00:00:00+08:00",
+      "windows": [
+        {
+          "color": "indigo",
+          "key": "daily",
+          "label": "1d",
+          "limit": 10.0,
+          "observed_at": "2031-04-05T06:07:08+00:00",
+          "reset_at": "2031-04-06T06:07:08+00:00",
+          "source": "configured_quota",
+          "status": "known",
+          "used": 0,
+          "used_percent": 0.0
+        },
+        {
+          "color": "emerald",
+          "key": "weekly",
+          "label": "7d",
+          "limit": 100.0,
+          "observed_at": "2031-04-05T06:07:08+00:00",
+          "reset_at": "2031-04-11T06:07:08+00:00",
+          "source": "configured_quota",
+          "status": "known",
+          "used": 25.0,
+          "used_percent": 25.0
+        }
+      ]
+    },
+    "apikey_row": {
+      "extra": {
+        "quota_daily_limit": 10,
+        "quota_daily_reset_at": "2031-04-06T06:07:08+00:00",
+        "quota_daily_reset_mode": "fixed",
+        "quota_weekly_limit": 100,
+        "quota_weekly_start": "2031-04-04T06:07:08+00:00",
+        "quota_weekly_used": 25
+      },
+      "id": 74,
+      "platform": "openai",
+      "type": "apikey"
+    },
+    "oauth_expected_projection": {
+      "actions": [
+        "query_usage",
+        "query_reset_credits",
+        "reset_quota"
+      ],
+      "branch": "openai_oauth",
+      "reset_credits": {
+        "available": 3,
+        "expires_at": [
+          "2031-04-06T06:07:08+00:00",
+          "2031-04-07T06:07:08+00:00"
+        ],
+        "observed_at": "2031-04-05T06:07:08+00:00"
+      },
+      "today": null,
+      "windows": [
+        {
+          "color": "indigo",
+          "key": "codex_5h",
+          "label": "5h",
+          "observed_at": "2031-04-05T06:07:08+00:00",
+          "reset_at": "2031-04-05T08:07:08+00:00",
+          "source": "passive",
+          "stats_start": "2031-04-05T03:07:08+00:00",
+          "status": "known",
+          "used_percent": 100.0
+        },
+        {
+          "color": "emerald",
+          "key": "codex_7d",
+          "label": "7d",
+          "observed_at": "2031-04-05T06:07:08+00:00",
+          "reset_at": "2031-04-09T06:07:08+00:00",
+          "source": "passive",
+          "stats_start": "2031-04-02T06:07:08+00:00",
+          "status": "known",
+          "used_percent": 40.0
+        }
+      ]
+    },
+    "oauth_expected_windows": [
+      {
+        "key": "codex_5h",
+        "label": "5h",
+        "observed_at": "2031-04-05T06:07:08+00:00",
+        "reset_at": "2031-04-05T08:07:08+00:00",
+        "source": "passive",
+        "status": "known",
+        "used_percent": 100.0
+      },
+      {
+        "key": "codex_7d",
+        "label": "7d",
+        "observed_at": "2031-04-05T06:07:08+00:00",
+        "reset_at": "2031-04-09T06:07:08+00:00",
+        "source": "passive",
+        "status": "known",
+        "used_percent": 40.0
+      }
+    ],
+    "oauth_row": {
+      "credentials": {
+        "plan_type": "plus"
+      },
+      "extra": {
+        "codex_5h_reset_at": "2031-04-05T08:07:08+00:00",
+        "codex_5h_used_percent": 105,
+        "codex_7d_reset_at": "2031-04-09T06:07:08+00:00",
+        "codex_7d_used_percent": 40,
+        "codex_reset_credit_snapshot": {
+          "available_count": 4,
+          "credits": [
+            {
+              "expires_at": "2031-04-06T06:07:08+00:00"
+            },
+            {
+              "expires_at": "2031-04-05T06:06:08+00:00"
+            },
+            {
+              "expires_at": "2031-04-07T06:07:08+00:00"
+            },
+            {
+              "expires_at": "2031-04-07T06:07:08+00:00"
+            }
+          ],
+          "fetched_at": "2031-04-05T06:07:08+00:00"
+        },
+        "codex_usage_updated_at": "2031-04-05T06:07:08+00:00"
+      },
+      "id": 73,
+      "parent_account_id": null,
+      "platform": "openai",
+      "type": "oauth"
+    }
+  },
+  "version_vector_ids": [
+    "account_template_version_from_operation_version",
+    "account_versions_parent_child_identity",
+    "config_revision_unicode_null_number_datetime",
+    "desktop_account_dto_version_group_order_invariance",
+    "model_catalog_account_cache_identity",
+    "model_catalog_accounts_routes_revision",
+    "model_catalog_final_response_etag",
+    "model_catalog_group_version",
+    "model_catalog_native_body_revision",
+    "model_rules_revision_compact_unicode_null_number",
+    "operation_digest_unicode_null_number_datetime",
+    "operation_versions_full_synthetic_account",
+    "operation_versions_group_order_invariance",
+    "operation_versions_model_config_sensitivity"
+  ]
+}

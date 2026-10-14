@@ -1,0 +1,3831 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_available_requires_gates_fresh_success_and_required_windows",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.0",
+              "cases.0",
+              "cases.1"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.1",
+              "cases.2",
+              "cases.3",
+              "cases.4",
+              "cases.5",
+              "cases.6",
+              "cases.7",
+              "cases.8"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_desired_state_matrix",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.2",
+              "cases.9",
+              "cases.10",
+              "cases.11",
+              "cases.12",
+              "cases.13"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_fresh_usage_data_windows_still_classify_available",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_fresh_usage_data_windows_still_classify_available",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_fresh_usage_data_windows_still_classify_available\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.3",
+              "cases.14"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_freshness_and_ordinary_errors_are_unknown",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.4",
+              "cases.15",
+              "cases.16",
+              "cases.17",
+              "cases.18",
+              "cases.19",
+              "cases.20",
+              "cases.21",
+              "cases.22"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_latest_completed_attempt_prefers_newer_success_over_leftover_error",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.5",
+              "cases.23",
+              "cases.24",
+              "cases.25",
+              "cases.26",
+              "cases.27",
+              "cases.28",
+              "cases.29",
+              "cases.30",
+              "cases.31",
+              "cases.32"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_quota_exhaustion_auth_errors_and_incomplete_windows",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.6",
+              "cases.33",
+              "cases.34",
+              "cases.35",
+              "cases.36"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_oauthclassificationtests_test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.7",
+              "cases.37",
+              "cases.38",
+              "cases.39",
+              "cases.40"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "key_fallback_grokfallbacktests_test_grok_blocking_states_and_unknown_values",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.8",
+              "cases.41",
+              "cases.42",
+              "cases.43",
+              "cases.44",
+              "cases.45",
+              "cases.46",
+              "cases.47",
+              "cases.48",
+              "cases.49",
+              "cases.50",
+              "cases.51",
+              "cases.52",
+              "cases.53",
+              "cases.54",
+              "cases.55",
+              "cases.56",
+              "cases.57",
+              "cases.58",
+              "cases.59"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_billing_and_money_budgets_are_not_usage_windows",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_billing_and_money_budgets_are_not_usage_windows",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_billing_and_money_budgets_are_not_usage_windows\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.9",
+              "cases.60",
+              "cases.61"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_free_plan_has_only_seven_day_window_and_no_raw_data",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_free_plan_has_only_seven_day_window_and_no_raw_data",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_free_plan_has_only_seven_day_window_and_no_raw_data\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.10",
+              "cases.62"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_grok_error_stale_and_incomplete_are_not_fresh",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_grok_error_stale_and_incomplete_are_not_fresh",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_grok_error_stale_and_incomplete_are_not_fresh\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.11",
+              "cases.63",
+              "cases.64",
+              "cases.65",
+              "cases.66",
+              "cases.67",
+              "cases.68"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_grok_requests_and_tokens_use_observed_headers_only",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_grok_requests_and_tokens_use_observed_headers_only",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_grok_requests_and_tokens_use_observed_headers_only\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.12",
+              "cases.69",
+              "cases.70"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_new_passive_snapshot_replaces_old_active_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_new_passive_snapshot_replaces_old_active_result",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_new_passive_snapshot_replaces_old_active_result\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.13",
+              "cases.71",
+              "cases.72"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_newer_error_wins_over_old_success_and_passive_snapshot",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_newer_error_wins_over_old_success_and_passive_snapshot",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_newer_error_wins_over_old_success_and_passive_snapshot\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.14",
+              "cases.73",
+              "cases.74",
+              "cases.75",
+              "cases.76",
+              "cases.77"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_passive_exhaustion_schedules_active_recovery_at_reset",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_passive_exhaustion_schedules_active_recovery_at_reset",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_passive_exhaustion_schedules_active_recovery_at_reset\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.15",
+              "cases.78",
+              "cases.79",
+              "cases.80"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.16",
+              "cases.81",
+              "cases.82",
+              "cases.83",
+              "cases.84",
+              "cases.85",
+              "cases.86",
+              "cases.87"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_unknown_and_zero_are_distinct",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "quota_snapshot_passivequotatests_test_unknown_and_zero_are_distinct",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_quota_snapshot:PassiveQuotaTests.test_unknown_and_zero_are_distinct\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.17",
+              "cases.88"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:RuleTests.test_composite_exact_endpoint_priority_mapping_and_fixed_accounts",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "model_catalog_ruletests_test_composite_exact_endpoint_priority_mapping_and_fixed_accounts",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_model_catalog:RuleTests.test_composite_exact_endpoint_priority_mapping_and_fixed_accounts\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.18",
+              "cases.89",
+              "cases.90",
+              "cases.91",
+              "cases.92",
+              "cases.93",
+              "cases.94"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:RuleTests.test_recursive_merge_arrays_explicit_null_false_and_identity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "model_catalog_ruletests_test_recursive_merge_arrays_explicit_null_false_and_identity",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_model_catalog:RuleTests.test_recursive_merge_arrays_explicit_null_false_and_identity\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.19",
+              "cases.95",
+              "cases.96",
+              "cases.97",
+              "cases.98"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:RuleTests.test_transform_filters_drafts_and_preserves_envelope_and_native_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "model_catalog_ruletests_test_transform_filters_drafts_and_preserves_envelope_and_native_fields",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_model_catalog:RuleTests.test_transform_filters_drafts_and_preserves_envelope_and_native_fields\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.20",
+              "cases.99",
+              "cases.100",
+              "cases.101"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:RuleTests.test_type_context_and_effort_validation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "model_catalog_ruletests_test_type_context_and_effort_validation",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_model_catalog:RuleTests.test_type_context_and_effort_validation\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.21",
+              "cases.102",
+              "cases.103",
+              "cases.104",
+              "cases.105",
+              "cases.106",
+              "cases.107",
+              "cases.108",
+              "cases.109",
+              "cases.110",
+              "cases.111",
+              "cases.112",
+              "cases.113",
+              "cases.114",
+              "cases.115",
+              "cases.116"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:RuleTests.test_upstream_import_does_not_infer_capabilities_or_default",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "model_catalog_ruletests_test_upstream_import_does_not_infer_capabilities_or_default",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_model_catalog:RuleTests.test_upstream_import_does_not_infer_capabilities_or_default\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.22",
+              "cases.117",
+              "cases.118",
+              "cases.119",
+              "cases.120"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_codex_identity:CodexIdentityTests.test_empty_user_agent_uses_synced_version_in_standard_shape",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "codex_identity_codexidentitytests_test_empty_user_agent_uses_synced_version_in_standard_shape",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_codex_identity:CodexIdentityTests.test_empty_user_agent_uses_synced_version_in_standard_shape\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.23",
+              "cases.121",
+              "cases.122"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_codex_identity:CodexIdentityTests.test_invalid_versions_fall_back_without_accepting_newlines",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "codex_identity_codexidentitytests_test_invalid_versions_fall_back_without_accepting_newlines",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_codex_identity:CodexIdentityTests.test_invalid_versions_fall_back_without_accepting_newlines\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.24",
+              "cases.123"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_codex_identity:CodexIdentityTests.test_manual_version_rewrites_custom_leading_and_trailing_versions",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "codex_identity_codexidentitytests_test_manual_version_rewrites_custom_leading_and_trailing_versions",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_codex_identity:CodexIdentityTests.test_manual_version_rewrites_custom_leading_and_trailing_versions\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.25",
+              "cases.124"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "recovery_config030_autoresetprojection030tests_test_active_recovery_steps_remain_visible",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_active_recovery_steps_remain_visible\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          },
+          {
+            "name": "execute",
+            "assertions": [
+              "assert_eq!(std::fs::read(&path).unwrap(), before);",
+              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.26",
+              "cases.125",
+              "cases.126",
+              "cases.127",
+              "cases.128",
+              "cases.129",
+              "cases.130",
+              "cases.131",
+              "cases.132"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "recovery_config030_autoresetprojection030tests_test_completed_or_relinquished_states_are_hidden_without_deleting_history",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_completed_or_relinquished_states_are_hidden_without_deleting_history\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          },
+          {
+            "name": "execute",
+            "assertions": [
+              "assert_eq!(std::fs::read(&path).unwrap(), before);",
+              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.27",
+              "cases.133",
+              "cases.134",
+              "cases.135"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "recovery_config030_autoresetprojection030tests_test_manual_state_without_any_consumption_attempt_is_hidden",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_manual_state_without_any_consumption_attempt_is_hidden\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          },
+          {
+            "name": "execute",
+            "assertions": [
+              "assert_eq!(std::fs::read(&path).unwrap(), before);",
+              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.28",
+              "cases.136"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:AutoResetProjection030Tests.test_unknown_consumption_remains_visible_after_manual_control",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "recovery_config030_autoresetprojection030tests_test_unknown_consumption_remains_visible_after_manual_control",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_recovery_config030:AutoResetProjection030Tests.test_unknown_consumption_remains_visible_after_manual_control\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          },
+          {
+            "name": "execute",
+            "assertions": [
+              "assert_eq!(std::fs::read(&path).unwrap(), before);",
+              "OAuthState::new(path, false).snapshot()?[\"scheduler\"][\"31\"][\"auto_reset_credit\"],"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.29",
+              "cases.137",
+              "cases.138"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_native_business_codes_are_preserved_without_extra_response_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "auto_reset_resetcreditdiagnostictests_test_native_business_codes_are_preserved_without_extra_response_fields",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_native_business_codes_are_preserved_without_extra_response_fields\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.30",
+              "cases.139",
+              "cases.140",
+              "cases.141",
+              "cases.142"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_only_whitelisted_status_business_code_and_boolean_fields_are_retained",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "auto_reset_resetcreditdiagnostictests_test_only_whitelisted_status_business_code_and_boolean_fields_are_retained",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_only_whitelisted_status_business_code_and_boolean_fields_are_retained\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.31",
+              "cases.143"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "auto_reset_resetcreditdiagnostictests_test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_auto_reset:ResetCreditDiagnosticTests.test_unknown_business_code_is_replaced_and_boolean_reset_count_is_omitted\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.32",
+              "cases.144"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "auto_reset038_autoreset038observationtests_test_observation_from_usage_requires_fresh_explicit_matching_card_data",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_auto_reset038:AutoReset038ObservationTests.test_observation_from_usage_requires_fresh_explicit_matching_card_data\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.33",
+              "cases.145",
+              "cases.146",
+              "cases.147",
+              "cases.148"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_active_usage_does_not_infer_plus_from_five_hour_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_active_usage_does_not_infer_plus_from_five_hour_window",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_active_usage_does_not_infer_plus_from_five_hour_window\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.34",
+              "cases.149"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_available_fresh_windows_remove_stale_recovery_metadata",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_available_fresh_windows_remove_stale_recovery_metadata",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_available_fresh_windows_remove_stale_recovery_metadata\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.35",
+              "cases.150"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_cached_free_summary_filters_label_only_five_hour_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_cached_free_summary_filters_label_only_five_hour_window",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_cached_free_summary_filters_label_only_five_hour_window\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.36",
+              "cases.151"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_cached_invalid_reset_falls_back_to_remaining_and_updated_at",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_cached_invalid_reset_falls_back_to_remaining_and_updated_at",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_cached_invalid_reset_falls_back_to_remaining_and_updated_at\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.37",
+              "cases.152",
+              "cases.153"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_current_account_plan_overrides_stale_cached_plan",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_current_account_plan_overrides_stale_cached_plan",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_current_account_plan_overrides_stale_cached_plan\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.38",
+              "cases.154"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_exact_server_reset_accepts_epoch_and_exposes_source",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_exact_server_reset_accepts_epoch_and_exposes_source",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_exact_server_reset_accepts_epoch_and_exposes_source\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.39",
+              "cases.155",
+              "cases.156"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_free_recovery_metadata_ignores_depleted_five_hour_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_free_recovery_metadata_ignores_depleted_five_hour_window",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_free_recovery_metadata_ignores_depleted_five_hour_window\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.40",
+              "cases.157"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_free_recovery_only_requires_seven_day",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_free_recovery_only_requires_seven_day",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_free_recovery_only_requires_seven_day\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.41",
+              "cases.158",
+              "cases.159",
+              "cases.160"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_fresh_response_does_not_inherit_an_entire_missing_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_fresh_response_does_not_inherit_an_entire_missing_window",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_fresh_response_does_not_inherit_an_entire_missing_window\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.42",
+              "cases.161",
+              "cases.162"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_fresh_window_clears_stale_reset_and_window_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_fresh_window_clears_stale_reset_and_window_fields",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_fresh_window_clears_stale_reset_and_window_fields\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.43",
+              "cases.163",
+              "cases.164"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_invalid_explicit_reset_uses_remaining_seconds_from_query_time",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_invalid_explicit_reset_uses_remaining_seconds_from_query_time",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_invalid_explicit_reset_uses_remaining_seconds_from_query_time\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.44",
+              "cases.165",
+              "cases.166"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_invalid_remaining_seconds_uses_reset_after_seconds_alias",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_invalid_remaining_seconds_uses_reset_after_seconds_alias",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_invalid_remaining_seconds_uses_reset_after_seconds_alias\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.45",
+              "cases.167",
+              "cases.168"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_nonfree_recovery_requires_both_windows_and_seven_day_balance",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_nonfree_recovery_requires_both_windows_and_seven_day_balance",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_nonfree_recovery_requires_both_windows_and_seven_day_balance\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.46",
+              "cases.169",
+              "cases.170",
+              "cases.171",
+              "cases.172",
+              "cases.173"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_oauth_reset_at_keeps_legacy_interface_and_falls_back_from_invalid_explicit",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_oauth_reset_at_keeps_legacy_interface_and_falls_back_from_invalid_explicit",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_oauth_reset_at_keeps_legacy_interface_and_falls_back_from_invalid_explicit\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.47",
+              "cases.174"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_recovery_metadata_uses_depleted_required_keys_and_datetime_max",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_recovery_metadata_uses_depleted_required_keys_and_datetime_max",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_recovery_metadata_uses_depleted_required_keys_and_datetime_max\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.48",
+              "cases.175"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_recovery_transition_fingerprint_is_keyed_canonical_and_uses_time_max",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_recovery_transition_fingerprint_is_keyed_canonical_and_uses_time_max",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_recovery_transition_fingerprint_is_keyed_canonical_and_uses_time_max\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.49",
+              "cases.176",
+              "cases.177",
+              "cases.178"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_reset_time_parser_normalizes_rfc3339_and_epoch_to_utc",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_reset_time_parser_normalizes_rfc3339_and_epoch_to_utc",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_reset_time_parser_normalizes_rfc3339_and_epoch_to_utc\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.50",
+              "cases.179",
+              "cases.180",
+              "cases.181",
+              "cases.182",
+              "cases.183"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_reset_time_parser_rejects_non_finite_and_out_of_range_epoch",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "usage_query_oauthusagetests_test_reset_time_parser_rejects_non_finite_and_out_of_range_epoch",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_usage_query:OAuthUsageTests.test_reset_time_parser_rejects_non_finite_and_out_of_range_epoch\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.51",
+              "cases.184",
+              "cases.185",
+              "cases.186",
+              "cases.187",
+              "cases.188",
+              "cases.189"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_available_accounts_never_trigger_periodic_refresh",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthmonitorschedulingtests_test_available_accounts_never_trigger_periodic_refresh",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_available_accounts_never_trigger_periodic_refresh\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.52",
+              "cases.190",
+              "cases.191",
+              "cases.192"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_candidates_are_ordered_by_recovery_priority",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthmonitorschedulingtests_test_candidates_are_ordered_by_recovery_priority",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_candidates_are_ordered_by_recovery_priority\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.53",
+              "cases.193"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_exact_reset_uses_latest_full_required_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthmonitorschedulingtests_test_exact_reset_uses_latest_full_required_window",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_exact_reset_uses_latest_full_required_window\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.54",
+              "cases.194",
+              "cases.195"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_one_account_is_only_scheduled_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthmonitorschedulingtests_test_one_account_is_only_scheduled_once",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_one_account_is_only_scheduled_once\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.55",
+              "cases.196"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_seven_day_probe_is_retired",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthmonitorschedulingtests_test_seven_day_probe_is_retired",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthMonitorSchedulingTests.test_seven_day_probe_is_retired\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.56",
+              "cases.197",
+              "cases.198"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_automatic_recovery_is_strict_and_fail_closed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthrecoverygatetests_test_automatic_recovery_is_strict_and_fail_closed",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_automatic_recovery_is_strict_and_fail_closed\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.57",
+              "cases.199",
+              "cases.200",
+              "cases.201",
+              "cases.202",
+              "cases.203",
+              "cases.204",
+              "cases.205",
+              "cases.206",
+              "cases.207",
+              "cases.208",
+              "cases.209",
+              "cases.210",
+              "cases.211",
+              "cases.212",
+              "cases.213",
+              "cases.214",
+              "cases.215",
+              "cases.216",
+              "cases.217",
+              "cases.218",
+              "cases.219",
+              "cases.220",
+              "cases.221",
+              "cases.222",
+              "cases.223",
+              "cases.224"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthrecoverygatetests_test_block_signature_detects_concurrency_change",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_block_signature_detects_concurrency_change\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.58",
+              "cases.225",
+              "cases.226",
+              "cases.227",
+              "cases.228",
+              "cases.229",
+              "cases.230",
+              "cases.231",
+              "cases.232"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_recovery_backoff_schedule_caps_at_30_minutes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "oauth_monitor_oauthrecoverygatetests_test_recovery_backoff_schedule_caps_at_30_minutes",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_oauth_monitor:OAuthRecoveryGateTests.test_recovery_backoff_schedule_caps_at_30_minutes\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.59",
+              "cases.233",
+              "cases.234",
+              "cases.235",
+              "cases.236",
+              "cases.237"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_deleted_account_history_keeps_known_upstream_identity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_deleted_account_history_keeps_known_upstream_identity",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_deleted_account_history_keeps_known_upstream_identity\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.60",
+              "cases.238",
+              "cases.239"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_explicit_client_concurrency_limit_is_local",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_explicit_client_concurrency_limit_is_local",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_explicit_client_concurrency_limit_is_local\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.61",
+              "cases.240",
+              "cases.241",
+              "cases.242",
+              "cases.243",
+              "cases.244",
+              "cases.245",
+              "cases.246",
+              "cases.247"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_explicit_local_request_limit_is_recognized_in_recorded_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_explicit_local_request_limit_is_recognized_in_recorded_fields",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_explicit_local_request_limit_is_recognized_in_recorded_fields\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.62",
+              "cases.248",
+              "cases.249",
+              "cases.250",
+              "cases.251",
+              "cases.252",
+              "cases.253"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_gateway_wrapped_capacity_keeps_structured_upstream_evidence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_gateway_wrapped_capacity_keeps_structured_upstream_evidence",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_gateway_wrapped_capacity_keeps_structured_upstream_evidence\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.63",
+              "cases.254",
+              "cases.255",
+              "cases.256",
+              "cases.257",
+              "cases.258",
+              "cases.259",
+              "cases.260",
+              "cases.261",
+              "cases.262",
+              "cases.263",
+              "cases.264",
+              "cases.265",
+              "cases.266",
+              "cases.267",
+              "cases.268",
+              "cases.269",
+              "cases.270",
+              "cases.271",
+              "cases.272",
+              "cases.273",
+              "cases.274",
+              "cases.275",
+              "cases.276",
+              "cases.277",
+              "cases.278",
+              "cases.279",
+              "cases.280",
+              "cases.281",
+              "cases.282",
+              "cases.283",
+              "cases.284",
+              "cases.285",
+              "cases.286",
+              "cases.287",
+              "cases.288",
+              "cases.289"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_local_event_does_not_hide_independent_capacity_evidence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_local_event_does_not_hide_independent_capacity_evidence",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_local_event_does_not_hide_independent_capacity_evidence\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.64",
+              "cases.290",
+              "cases.291",
+              "cases.292",
+              "cases.293",
+              "cases.294",
+              "cases.295",
+              "cases.296"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_only_complete_capacity_messages_on_supported_upstream_accounts_match",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_only_complete_capacity_messages_on_supported_upstream_accounts_match",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_only_complete_capacity_messages_on_supported_upstream_accounts_match\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.65",
+              "cases.297",
+              "cases.298",
+              "cases.299",
+              "cases.300",
+              "cases.301",
+              "cases.302",
+              "cases.303",
+              "cases.304",
+              "cases.305",
+              "cases.306",
+              "cases.307",
+              "cases.308",
+              "cases.309",
+              "cases.310",
+              "cases.311",
+              "cases.312",
+              "cases.313",
+              "cases.314",
+              "cases.315",
+              "cases.316",
+              "cases.317",
+              "cases.318",
+              "cases.319",
+              "cases.320",
+              "cases.321",
+              "cases.322",
+              "cases.323",
+              "cases.324",
+              "cases.325",
+              "cases.326",
+              "cases.327",
+              "cases.328",
+              "cases.329",
+              "cases.330",
+              "cases.331",
+              "cases.332",
+              "cases.333",
+              "cases.334",
+              "cases.335",
+              "cases.336",
+              "cases.337",
+              "cases.338",
+              "cases.339",
+              "cases.340",
+              "cases.341",
+              "cases.342",
+              "cases.343",
+              "cases.344",
+              "cases.345",
+              "cases.346",
+              "cases.347",
+              "cases.348",
+              "cases.349",
+              "cases.350",
+              "cases.351",
+              "cases.352",
+              "cases.353",
+              "cases.354",
+              "cases.355",
+              "cases.356",
+              "cases.357",
+              "cases.358",
+              "cases.359",
+              "cases.360",
+              "cases.361",
+              "cases.362",
+              "cases.363",
+              "cases.364",
+              "cases.365",
+              "cases.366",
+              "cases.367",
+              "cases.368",
+              "cases.369",
+              "cases.370",
+              "cases.371",
+              "cases.372",
+              "cases.373",
+              "cases.374",
+              "cases.375",
+              "cases.376",
+              "cases.377",
+              "cases.378",
+              "cases.379",
+              "cases.380",
+              "cases.381",
+              "cases.382",
+              "cases.383",
+              "cases.384",
+              "cases.385",
+              "cases.386"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_other_platforms_local_errors_and_partial_phrases_are_not_degradation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_other_platforms_local_errors_and_partial_phrases_are_not_degradation",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_other_platforms_local_errors_and_partial_phrases_are_not_degradation\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.66",
+              "cases.387",
+              "cases.388",
+              "cases.389",
+              "cases.390",
+              "cases.391",
+              "cases.392",
+              "cases.393",
+              "cases.394",
+              "cases.395",
+              "cases.396",
+              "cases.397",
+              "cases.398",
+              "cases.399",
+              "cases.400",
+              "cases.401",
+              "cases.402",
+              "cases.403",
+              "cases.404",
+              "cases.405",
+              "cases.406",
+              "cases.407"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_request_payload_cannot_supply_capacity_or_local_limiter_evidence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_request_payload_cannot_supply_capacity_or_local_limiter_evidence",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_request_payload_cannot_supply_capacity_or_local_limiter_evidence\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.67",
+              "cases.408",
+              "cases.409",
+              "cases.410",
+              "cases.411",
+              "cases.412",
+              "cases.413",
+              "cases.414",
+              "cases.415",
+              "cases.416",
+              "cases.417",
+              "cases.418",
+              "cases.419"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_upstream_429_and_all_capacity_messages_are_not_local_concurrency_limits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "events030_eventevidence030tests_test_upstream_429_and_all_capacity_messages_are_not_local_concurrency_limits",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_events030:EventEvidence030Tests.test_upstream_429_and_all_capacity_messages_are_not_local_concurrency_limits\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.68",
+              "cases.420",
+              "cases.421",
+              "cases.422",
+              "cases.423"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_account_dto_never_returns_credentials",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_account_dto_never_returns_credentials",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_account_dto_never_returns_credentials\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.69",
+              "cases.424"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_empty_error_body",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_empty_error_body",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_empty_error_body\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.70",
+              "cases.425"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_error_body_excludes_request_and_credentials",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_error_body_excludes_request_and_credentials",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_error_body_excludes_request_and_credentials\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.71",
+              "cases.426"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_error_detail_is_bounded_and_does_not_return_raw_columns",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_error_detail_is_bounded_and_does_not_return_raw_columns",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_error_detail_is_bounded_and_does_not_return_raw_columns\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.72",
+              "cases.427"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_expired_blockers_and_success_after_error",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_expired_blockers_and_success_after_error",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_expired_blockers_and_success_after_error\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.73",
+              "cases.428"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_group_with_only_removed_or_deleted_candidates_clears_legacy_summary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_group_with_only_removed_or_deleted_candidates_clears_legacy_summary",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_group_with_only_removed_or_deleted_candidates_clears_legacy_summary\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.74",
+              "cases.429"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_new_error_is_not_hidden_by_older_success",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_new_error_is_not_hidden_by_older_success",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_new_error_is_not_hidden_by_older_success\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.75",
+              "cases.430"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_no_error_time_is_invented",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_no_error_time_is_invented",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_no_error_time_is_invented\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.76",
+              "cases.431"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_recent_accounts_are_distinct_and_group_scoped",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_recent_accounts_are_distinct_and_group_scoped",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_recent_accounts_are_distinct_and_group_scoped\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.77",
+              "cases.432"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_stringified_request_dump_is_hidden_in_detail_and_summary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_stringified_request_dump_is_hidden_in_detail_and_summary",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_stringified_request_dump_is_hidden_in_detail_and_summary\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.78",
+              "cases.433",
+              "cases.434",
+              "cases.435"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_switch_on_is_not_availability",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/pinned_rule_traces.rs",
+        "test_name": "desktop_api_desktopevidencetests_test_switch_on_is_not_availability",
+        "assertions": [
+          "check(",
+          "\"py:tests.test_desktop_api:DesktopEvidenceTests.test_switch_on_is_not_availability\""
+        ],
+        "helper_assertions": [
+          {
+            "name": "check",
+            "assertions": [
+              "assert!(!cases.is_empty(),",
+              "assert_same(",
+              "assert!(actual.is_err(),",
+              "assert_eq!(args, case[\"arguments\"]);"
+            ]
+          },
+          {
+            "name": "assert_same",
+            "assertions": [
+              "assert_eq!(a.len(), b.len(),",
+              "assert!(a.contains_key(key),",
+              "_ => assert_eq!(actual, expected,",
+              "(a - b).abs() <= 1e-10 * b.abs().max(1.0)"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/rule-traces/fixtures.json",
+            "json_paths": [
+              "legacy_tests.79",
+              "cases.436"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在固定 0.1.39 Git 源码中运行该旧测试并逐次捕获真实规则输入与结果；Rust 对全部捕获调用比较完整对象、数组顺序、数值及非法值拒绝，保持输入不变。非有限数在 JSON 输入边界拒绝；用卡投影额外验证落盘历史与旧状态重读不变。"
+    }
+  ]
+}

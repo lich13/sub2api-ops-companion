@@ -1,0 +1,1032 @@
+{
+  "key_fallback": {
+    "expected": {
+      "coexist_account_ids": [
+        7
+      ],
+      "config_version": 3,
+      "enabled": true,
+      "grok_enabled": true,
+      "managed_account_ids": [
+        7,
+        9
+      ],
+      "openai_enabled": true,
+      "panel": {
+        "coexist_account_ids": [
+          7
+        ],
+        "config_updated_at": "2031-04-05T06:07:08+00:00",
+        "config_valid": true,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          7,
+          9
+        ],
+        "openai_enabled": true
+      },
+      "updated_at": "2031-04-05T06:07:08+00:00",
+      "updated_by": "fixture-admin",
+      "valid": true
+    },
+    "invalid_expected": {
+      "panel": {
+        "coexist_account_ids": [],
+        "config_updated_at": null,
+        "config_valid": false,
+        "enabled": false,
+        "grok_enabled": false,
+        "managed_account_ids": [],
+        "openai_enabled": false
+      },
+      "valid": false
+    },
+    "invalid_input": {
+      "enabled": "fixture-invalid",
+      "managed_account_ids": [
+        7
+      ]
+    },
+    "legacy_input": {
+      "coexist_account_ids": [
+        7
+      ],
+      "config_version": 3,
+      "enabled": true,
+      "managed_account_ids": [
+        7,
+        7,
+        9
+      ],
+      "updated_at": "2031-04-05T06:07:08+00:00",
+      "updated_by": "fixture-admin"
+    },
+    "managed_id_cases": [
+      {
+        "accepted": true,
+        "expected": [
+          7,
+          9
+        ],
+        "id": "numeric_ids_deduplicated",
+        "input": [
+          7,
+          "9",
+          7
+        ]
+      },
+      {
+        "accepted": false,
+        "id": "zero_rejected",
+        "input": [
+          0
+        ]
+      },
+      {
+        "accepted": false,
+        "id": "boolean_rejected",
+        "input": [
+          true
+        ]
+      }
+    ]
+  },
+  "model": {
+    "field_validation": [
+      {
+        "accepted": true,
+        "base": {
+          "context_window": 1024,
+          "max_context_window": 2048
+        },
+        "fields": {
+          "display_name": "fixture",
+          "model_messages": {
+            "instructions_template": "fixture"
+          }
+        },
+        "id": "valid_nested_patch"
+      },
+      {
+        "accepted": false,
+        "base": {},
+        "fields": {
+          "slug": "fixture-model"
+        },
+        "id": "identity_field_is_read_only"
+      },
+      {
+        "accepted": false,
+        "base": {},
+        "fields": {
+          "support_verbosity": 1
+        },
+        "id": "boolean_field_rejects_integer"
+      },
+      {
+        "accepted": false,
+        "base": {
+          "max_context_window": 2048
+        },
+        "fields": {
+          "context_window": 4096
+        },
+        "id": "effective_window_relationship"
+      }
+    ],
+    "model_config": {
+      "corrupt_json": "{\"schema\":2,\"groups\":{\"17\":{\"overrides\":{}}}}",
+      "corrupt_rejected": true,
+      "corrupt_unchanged": true,
+      "expected_group": {
+        "overrides": {
+          "fixture-model": {
+            "context_window": 1024,
+            "display_name": "合成模型",
+            "future": {
+              "enabled": false,
+              "unset": null
+            },
+            "max_context_window": 2048
+          }
+        },
+        "reasoning": {
+          "fixture-model": {
+            "default_effort": "high",
+            "efforts": [
+              "low",
+              "high"
+            ],
+            "mode": "draft"
+          }
+        },
+        "revision": "1db1939d7e179203dfb6766845949651497b50b4118f055722a752916c7b68a8",
+        "updated_at": "2031-04-05T06:07:08+00:00"
+      },
+      "group_id": 17,
+      "read_unchanged": true,
+      "state": {
+        "groups": {
+          "17": {
+            "overrides": {
+              "fixture-model": {
+                "context_window": 1024,
+                "display_name": "合成模型",
+                "future": {
+                  "enabled": false,
+                  "unset": null
+                },
+                "max_context_window": 2048
+              }
+            },
+            "reasoning": {
+              "fixture-model": {
+                "default_effort": "high",
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "mode": "draft"
+              }
+            },
+            "updated_at": "2031-04-05T06:07:08+00:00"
+          }
+        },
+        "schema": 1
+      }
+    },
+    "override_validation": [
+      {
+        "accepted": true,
+        "id": "valid_exact_model",
+        "input": {
+          "fixture-model": {
+            "display_name": "fixture"
+          }
+        }
+      },
+      {
+        "accepted": false,
+        "id": "wildcard_model_id_rejected",
+        "input": {
+          "fixture-*": {
+            "display_name": "fixture"
+          }
+        }
+      },
+      {
+        "accepted": false,
+        "id": "invalid_field_type_rejected",
+        "input": {
+          "fixture-model": {
+            "support_verbosity": 1
+          }
+        }
+      }
+    ],
+    "reasoning_import": [
+      {
+        "expected": {
+          "default_reasoning_level": "high",
+          "supported_reasoning_levels": [
+            {
+              "description": "",
+              "effort": "low"
+            },
+            {
+              "description": "深度",
+              "effort": "high"
+            }
+          ]
+        },
+        "id": "explicit_reasoning_levels",
+        "input": {
+          "default_reasoning_level": "high",
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "none"
+              ]
+            }
+          ],
+          "slug": "fixture-model",
+          "supported_reasoning_levels": [
+            "low",
+            {
+              "description": "深度",
+              "effort": "high"
+            }
+          ]
+        }
+      },
+      {
+        "expected": {
+          "default_reasoning_level": "none",
+          "supported_reasoning_levels": [
+            {
+              "description": "",
+              "effort": "none"
+            }
+          ]
+        },
+        "id": "reasoning_disabled_synthesizes_none",
+        "input": {
+          "display_name": "ignore",
+          "reasoning": false
+        }
+      },
+      {
+        "expected": {
+          "supported_reasoning_levels": [
+            {
+              "description": "",
+              "effort": "low"
+            },
+            {
+              "description": "",
+              "effort": "high"
+            },
+            {
+              "description": "",
+              "effort": "max"
+            }
+          ]
+        },
+        "id": "reasoning_options_deduplicated",
+        "input": {
+          "reasoning_options": [
+            {
+              "type": "EFFORT",
+              "values": [
+                "low",
+                "high",
+                "low",
+                3
+              ]
+            },
+            {
+              "type": "budget",
+              "values": [
+                "max"
+              ]
+            },
+            {
+              "type": "effort",
+              "values": [
+                "max"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "expected": {
+          "supported_reasoning_levels": []
+        },
+        "id": "present_empty_levels_win_over_options",
+        "input": {
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "low"
+              ]
+            }
+          ],
+          "supported_reasoning_levels": []
+        }
+      }
+    ],
+    "revision": {
+      "expected": "e6c518b6d7cf455100e841a4100595fe47e40a63255f9c70bb2931d04bf4f6eb",
+      "input": {
+        "fraction": 1.25,
+        "nested": {
+          "a": [
+            "fixture",
+            null
+          ],
+          "z": false
+        },
+        "null": null,
+        "whole": 4,
+        "中文": "思考档位"
+      }
+    },
+    "transform": {
+      "aliases": {
+        "fixture-alias": {
+          "context_window": 4096,
+          "display_name": "合成别名",
+          "input_modalities": [
+            "text"
+          ],
+          "model_messages": {
+            "instructions_template": "alias"
+          },
+          "slug": "ignored-source-slug"
+        }
+      },
+      "allowlist": {
+        "enabled": true,
+        "models": [
+          "fixture-*"
+        ]
+      },
+      "body": {
+        "future_metadata": {
+          "enabled": false
+        },
+        "models": [
+          {
+            "display_name": "原生名称",
+            "model_messages": {
+              "instructions_template": "native",
+              "kept": true
+            },
+            "slug": "fixture-model"
+          },
+          {
+            "display_name": "blocked",
+            "slug": "blocked-model"
+          }
+        ]
+      },
+      "expected": {
+        "future_metadata": {
+          "enabled": false
+        },
+        "models": [
+          {
+            "display_name": "配置名称优先",
+            "model_messages": {
+              "added": false,
+              "instructions_template": "configured",
+              "kept": true
+            },
+            "slug": "fixture-model"
+          },
+          {
+            "context_window": 4096,
+            "description": "合成别名描述",
+            "display_name": "合成别名",
+            "input_modalities": [
+              "text"
+            ],
+            "model_messages": {
+              "instructions_template": "alias"
+            },
+            "slug": "fixture-alias"
+          }
+        ]
+      },
+      "overrides": {
+        "fixture-alias": {
+          "description": "合成别名描述"
+        },
+        "fixture-model": {
+          "display_name": "配置名称优先",
+          "model_messages": {
+            "added": false,
+            "instructions_template": "configured"
+          }
+        }
+      }
+    }
+  },
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "settings_priority": {
+    "bark_config": {
+      "device_key": "",
+      "enabled": false,
+      "server_url": "http://127.0.0.1:8090"
+    },
+    "env": {
+      "BASE_PATH": "/fixture-sub2ops",
+      "DATABASE_URL": "postgresql://example.invalid/fixture",
+      "OAUTH_AUTO_RESET_CREDIT_ENABLED": "true",
+      "OAUTH_DAILY_TEST_TIME": "08:15",
+      "OAUTH_EARLY_PROBE_BATCH_SIZE": "19",
+      "OAUTH_RECOVERY_MONITOR_ENABLED": "true",
+      "OAUTH_RECOVERY_TEST_CONCURRENCY": "7",
+      "OAUTH_RECOVERY_TEST_MODEL_ID": "fixture-env-model",
+      "OAUTH_USAGE_REFRESH_CONCURRENCY": "9"
+    },
+    "expected": {
+      "oauth_auto_reset_credit_enabled": false,
+      "oauth_daily_test_enabled": true,
+      "oauth_daily_test_time": "07:30",
+      "oauth_early_probe_batch_size": 19,
+      "oauth_recovery_connection_account_ids": [
+        11,
+        13
+      ],
+      "oauth_recovery_model_account_ids": [
+        17
+      ],
+      "oauth_recovery_monitor_enabled": false,
+      "oauth_recovery_test_concurrency": 7,
+      "oauth_recovery_test_model_id": "fixture-file-model",
+      "oauth_usage_refresh_concurrency": 5
+    },
+    "oauth_config": {
+      "oauth_auto_reset_credit_enabled": false,
+      "oauth_daily_test_time": "07:30",
+      "oauth_recovery_connection_account_ids": [
+        11,
+        13
+      ],
+      "oauth_recovery_model_account_ids": [
+        17
+      ],
+      "oauth_recovery_monitor_enabled": false,
+      "oauth_recovery_test_model_id": "fixture-file-model",
+      "oauth_usage_refresh_concurrency": "5"
+    }
+  },
+  "templates": {
+    "crud": {
+      "create": {
+        "mappings": [
+          {
+            "source": "fixture-custom-*",
+            "target": "fixture-custom-model"
+          }
+        ],
+        "name": "fixture custom",
+        "whitelist": [
+          "fixture-custom-model"
+        ]
+      },
+      "created_view": {
+        "configured": true,
+        "custom_templates": [
+          {
+            "id": "custom-0123456789abcdef01234567",
+            "mappings": [
+              {
+                "source": "fixture-custom-*",
+                "target": "fixture-custom-model"
+              }
+            ],
+            "name": "fixture custom",
+            "whitelist": [
+              "fixture-custom-model"
+            ]
+          }
+        ],
+        "template_meta": {
+          "custom-0123456789abcdef01234567": {
+            "builtin": false,
+            "name": "fixture custom"
+          },
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover",
+          "custom-0123456789abcdef01234567"
+        ],
+        "template_versions": {
+          "custom-0123456789abcdef01234567": "9ff141550836ea45433809beb1047d35ef9166e9ec3d710b6a69f77e25bd2045",
+          "degraded": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "full": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "custom-0123456789abcdef01234567": {
+            "mappings": [
+              {
+                "source": "fixture-custom-*",
+                "target": "fixture-custom-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-custom-model"
+            ]
+          },
+          "degraded": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "cb117f2e052ddb21ef0ab4722d5944a0b64eb73828803c9276be21dc3971feac"
+      },
+      "custom_id": "custom-0123456789abcdef01234567",
+      "deleted_view": {
+        "configured": true,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "full": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "37bc7fbd6383ce943929e92018b0e48e6ce02c70095525752f5762066903cf7d"
+      },
+      "desired_mapping": {
+        "fixture-custom-*": "fixture-custom-model",
+        "fixture-custom-model": "fixture-custom-model"
+      },
+      "initial_view": {
+        "configured": false,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "full": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "14c292a7b6b4ab8504bb814242e7a644a065d74e7ae78bc78323e2687288f3ca"
+      },
+      "invalid_profiles": [
+        {
+          "accepted": true,
+          "combined": {
+            "fixture-alias-*": "fixture-exact",
+            "fixture-exact": "fixture-exact"
+          },
+          "id": "valid_exact_and_suffix_mapping",
+          "input": {
+            "mappings": [
+              {
+                "source": "fixture-alias-*",
+                "target": "fixture-exact"
+              }
+            ],
+            "whitelist": [
+              "fixture-exact"
+            ]
+          }
+        },
+        {
+          "accepted": false,
+          "id": "mapping_wildcard_must_be_trailing",
+          "input": {
+            "mappings": [
+              {
+                "source": "fixture-*-tail",
+                "target": "fixture-exact"
+              }
+            ],
+            "whitelist": []
+          }
+        },
+        {
+          "accepted": false,
+          "id": "mapping_conflicts_with_whitelist",
+          "input": {
+            "mappings": [
+              {
+                "source": "fixture-exact",
+                "target": "fixture-other"
+              }
+            ],
+            "whitelist": [
+              "fixture-exact"
+            ]
+          }
+        },
+        {
+          "accepted": false,
+          "id": "unknown_request_field",
+          "input": {
+            "future": true,
+            "mappings": [],
+            "whitelist": []
+          }
+        }
+      ],
+      "update": {
+        "mappings": [],
+        "name": "fixture custom edited",
+        "whitelist": [
+          "fixture-edited-model"
+        ]
+      },
+      "updated_view": {
+        "configured": true,
+        "custom_templates": [
+          {
+            "id": "custom-0123456789abcdef01234567",
+            "mappings": [],
+            "name": "fixture custom edited",
+            "whitelist": [
+              "fixture-edited-model"
+            ]
+          }
+        ],
+        "template_meta": {
+          "custom-0123456789abcdef01234567": {
+            "builtin": false,
+            "name": "fixture custom edited"
+          },
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover",
+          "custom-0123456789abcdef01234567"
+        ],
+        "template_versions": {
+          "custom-0123456789abcdef01234567": "5338e5087636901b8557f8743554f0a997da0ade20f3fc041b96a1a36f78ad3e",
+          "degraded": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "full": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "custom-0123456789abcdef01234567": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-edited-model"
+            ]
+          },
+          "degraded": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": []
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "4f38cb85fe988514d75b507b9d28579c21e020d5545646931b7eec9b964fe0ab"
+      }
+    },
+    "migration": {
+      "corrupt_json": "{fixture-invalid-json",
+      "expected_persisted": {
+        "configured": true,
+        "custom_templates": [],
+        "revision": 5,
+        "schema_version": 2,
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-base-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-base-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model"
+            ]
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": 1
+      },
+      "expected_view": {
+        "configured": true,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "887d45e891094c8ce86966f5c5a92294f9e7f54d1cd9c53119c4a6f7d07b8868",
+          "full": "d823eeb6f678309776cafd2839253932047a3a3520d449f22abc9ddabd9580bd",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-base-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-base-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model"
+            ]
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "0b3854987b03147e485e09e04c161eb3f42568a3b6a963242c4f7013fb021406"
+      },
+      "input": {
+        "configured": true,
+        "revision": 4,
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-base-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-base-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model"
+            ]
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": 1
+      },
+      "readonly_normalized": {
+        "configured": true,
+        "custom_templates": [],
+        "revision": 4,
+        "schema_version": 2,
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-base-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-base-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model"
+            ]
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": 1
+      },
+      "readonly_view": {
+        "configured": true,
+        "custom_templates": [],
+        "template_meta": {
+          "degraded": {
+            "builtin": false,
+            "name": "降智"
+          },
+          "full": {
+            "builtin": false,
+            "name": "满血"
+          },
+          "takeover": {
+            "builtin": false,
+            "name": "降智接管"
+          }
+        },
+        "template_order": [
+          "full",
+          "degraded",
+          "takeover"
+        ],
+        "template_versions": {
+          "degraded": "887d45e891094c8ce86966f5c5a92294f9e7f54d1cd9c53119c4a6f7d07b8868",
+          "full": "d823eeb6f678309776cafd2839253932047a3a3520d449f22abc9ddabd9580bd",
+          "takeover": "242da8f5e883573d069e20a6a417af30c7664dddaf718f4f8a5475b52df75c7c"
+        },
+        "templates": {
+          "degraded": {
+            "mappings": [
+              {
+                "source": "fixture-input-*",
+                "target": "fixture-base-model"
+              }
+            ],
+            "whitelist": [
+              "fixture-base-model"
+            ]
+          },
+          "full": {
+            "mappings": [],
+            "whitelist": [
+              "fixture-full-model"
+            ]
+          },
+          "takeover": {
+            "mappings": [],
+            "whitelist": []
+          }
+        },
+        "version": "d60985e1ab24d5017983f276e574d004256980e953f17d1168da7683341b1b4a"
+      }
+    }
+  }
+}

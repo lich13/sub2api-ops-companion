@@ -1,0 +1,451 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_schedule_ignores_long_operation_and_monitor_locks_without_testing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_locks",
+        "assertions": [
+          "assert_eq!(response[\"verified\"], true)",
+          "assert_eq!(locked.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(locked.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(locked.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(control[\"generation\"], 1)"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/manual-dispatch/fixtures.json",
+            "json_paths": ["scope.controls022"]
+          }
+        ]
+      },
+      "coverage_note": "两个合成 OAuth 账号分别持有真实账号 lease，Runtime config/fallback 锁和 test slot 也被占用；Runtime 手动调度两次都完成读回，且这一空闲场景没有 quota/test/recovery 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_manual_open_does_not_revive_old_task_across_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_open_does_not_revive_old_recovery_after_restart_but_new_evidence_can_run",
+        "assertions": [
+          "assert_eq!(harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"cancelled\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "harness.restart_runtime().await;",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实 Runtime 重启后旧人工控制意图保持 cancelled 且不派发；只有写入控制时间之后的被动额度观察才触发一次测活和恢复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_close_during_actual_scheduled_test_discards_late_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_close_during_dispatched_recovery_test_discards_late_result",
+        "assertions": [
+          "assert_eq!(closed[\"verified\"], true)",
+          "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"cancelled\")",
+          "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
+          "assert!(state[\"pending_events\"].as_object().unwrap().is_empty())",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "loopback 测活请求停在真实 HTTP 边界时执行 Runtime 手动关闭；放行迟到成功响应后等待 monitor worker 收束，并断言人工取消、无恢复请求、历史或事件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_fresh_independent_evidence_allows_recovery_but_old_evidence_does_not",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_open_does_not_revive_old_recovery_after_restart_but_new_evidence_can_run",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "重启后的旧快照保持静默；更新时间晚于人工控制的被动观察后，真实 Runtime 才允许恢复，整个验证不重新查询 usage。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_generation_filter_preserves_budget_and_rejects_stale_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_generation_filters_stale_history_and_results_without_losing_query_budget",
+        "assertions": [
+          "assert_eq!(snapshot[\"scheduler\"][id.to_string()][\"manual_control\"][\"generation\"], generation)",
+          "assert_eq!(snapshot[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"], json!([datetime(now - Duration::minutes(10))]))",
+          "assert!(snapshot[\"oauth_results\"].get(id.to_string()).is_none())",
+          "assert!(snapshot[\"pending_events\"].as_object().unwrap().is_empty())",
+          "assert!(snapshot[\"recovery_history\"].as_object().unwrap().is_empty())"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/manual-dispatch/fixtures.json",
+            "json_paths": ["manual_generation.row.id", "reference_time"]
+          }
+        ]
+      },
+      "coverage_note": "真实 OAuthState generation filter 丢弃旧结果、调度标记、pending event 和 history，同时保留自动查询预算。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_controls022:ManualControlTests.test_failed_control_persistence_never_sends_schedule_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "failed_manual_control_persistence_never_sends_schedulable_http",
+        "assertions": [
+          "assert!(result.is_err(),",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "通过只读合成 OAuth state 路径故障注入，在本地 HTTP 边界验证状态持久化失败先于 schedulable 写请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_reset_not_before_exact_estimated_and_latest_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "reset_not_before_uses_exact_estimated_and_latest_window_deadlines",
+        "assertions": [
+          "assert_eq!(oauth_admission::reset_not_before(&row, &exact_result), Some(exact_at))",
+          "assert_eq!(oauth_admission::reset_not_before(&row, &estimated_result), Some(now + Duration::seconds(77)))",
+          "assert_eq!(oauth_admission::reset_not_before(&row, &mixed_result), Some(now + Duration::seconds(90)))"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "逐项断言 exact reset、remaining-seconds 推算加 60 秒 grace，以及多个已耗尽窗口中较晚的 deadline。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_tick_waits_for_exact_reset_then_follows_delayed_and_advanced_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "dispatcher_waits_for_live_reset_deadline_and_uses_advanced_account_state",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 1)",
+          "assert_eq!(waiting_intent[\"waiting_reason\"], \"waiting_reset\")"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实 Runtime/PostgreSQL 在原 reset、延后 reset 和向前调整过期 reset 三个状态点检查 loopback GET；延后 reset 时断言已持久化 waiting_reason=waiting_reset，过期后仅查询一次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_passive_available_quota_dispatches_without_sixty_second_delay",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "passive_available_quota_dispatches_at_its_deadline_without_a_query_delay",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert!(started.elapsed() < StdDuration::from_secs(2))"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定 clock 下在 due 前无请求、到 deadline 后直接复用新鲜 quota 并在两秒内完成一次 loopback 测活和恢复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_unknown_or_zero_reset_credit_skips_before_any_worker_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "unknown_or_zero_reset_credit_skips_dispatcher_http_before_any_worker_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0,",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 0,",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0,",
+          "assert_eq!(state[\"scheduler\"][id.to_string()][\"credit_admission\"][\"reason\"], expected_reason,"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "合成 PostgreSQL account rate-limit 证据与 unknown/zero credit 快照驱动真实 Runtime admission；逐项断言 credit_admission.reason 并且没有 usage/test/recover loopback 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_slow_quota_does_not_block_cached_account_and_repeated_ticks_do_not_duplicate",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "slow_quota_worker_does_not_block_cached_dispatch_or_duplicate_requests",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(slow_id, \"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count_for(fast_id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(slow_id, \"POST\", \"/test\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "一个真实 usage GET 被 loopback gate 挂起时，另一账号用缓存 quota 仍完成测活；多轮 tick 后每账号请求只派发一次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_query_http_slots_are_global_across_account_workers",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "query_http_capacity_is_global_and_rejected_workers_consume_no_query_budget",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.max_active_usage.load(Ordering::Acquire), 1)",
+          "assert_eq!(after_budget[\"automatic_attempts\"], before_budget[\"automatic_attempts\"])",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "两个真实 Runtime worker 共用 query Coordinator 容量；被拒 worker 未消耗 cooldown/budget，首个请求完成后可重试并且最大并行 HTTP 为一。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_test_http_slots_are_global_across_account_workers",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "connection_test_http_capacity_is_global_across_recovery_workers",
+        "assertions": [
+          "assert_eq!(harness.mock.active_tests.load(Ordering::Acquire), 1)",
+          "assert_eq!(harness.mock.max_active_tests.load(Ordering::Acquire), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "两个待恢复账号经过真实 TestSlots；首个 POST 被 gate 阻塞时第二个等待，多轮 tick 不会并发或重复派发。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_confirmed_receipt_resumes_after_final_commit_failure_without_retest",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "confirmed_receipt_resumes_after_final_history_commit_failure_without_retest",
+        "assertions": [
+          ".fail_final_state_write_after_recovery(state_path.clone(), backup.clone())",
+          "expect(\"the loopback recovery response must inject the synthetic final-state write fault\")",
+          "harness.restart_runtime().await;",
+          "assert_eq!(harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"], Value::Null)",
+          "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"recovered\")",
+          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "回环恢复写已清除临时 PostgreSQL block 后，合成 state path 故障使最终 history commit 失败；恢复文件并重启后从已确认 receipt 完成 history，不重放 HTTP。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_method_generation_change_rejects_stale_recovery_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "method_generation_change_blocks_completed_test_without_replay",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], \"blocked\")",
+          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert!(intent[\"verification_receipt\"].is_null())",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实测试在 loopback gate 内改变 method generation 并运行 reconcile_unknown；迟到成功没有 receipt，被持久阻塞且重启后不重放。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_busy_account_does_not_overwrite_cancelled_method_selection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "busy_account_does_not_overwrite_cancelled_method_selection",
+        "assertions": [
+          "assert_eq!(cancelled[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"cancelled\")",
+          "assert_eq!(cancelled[\"scheduler\"][id.to_string()][\"recovery_method_generation\"], 1)",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "持有真实 account lease 时更改选择方式使 intent generation 失效；monitor tick 不重排取消状态且不发 usage/test 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_failed_verification_receipt_is_marked_uncertain_and_restart_does_not_replay",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "failed_test_receipt_persistence_is_uncertain_and_restart_does_not_replay",
+        "assertions": [
+          ".fail_state_write_after_test(state_path.clone(), backup.clone())",
+          "expect(\"successful test must inject only the synthetic receipt-state failure\")",
+          "harness.restart_runtime().await;",
+          "assert_eq!(intent[\"status\"], \"blocked\")",
+          "assert_eq!(intent[\"last_error_code\"], \"verification_uncertain\")",
+          "assert!(intent[\"verification_receipt\"].is_null())",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "本地测试 HTTP 成功后注入 OAuth state receipt 持久化故障；恢复文件并重启后 intent 标记 verification_uncertain，实际 POST 不重复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_manual_intervention_cancels_dispatched_verification",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_close_during_dispatched_recovery_test_discards_late_result",
+        "assertions": [
+          "assert_eq!(closed[\"verified\"], true)",
+          "assert_eq!(state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"], \"cancelled\")",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "人工关闭在测试 POST 已派发后完成；迟到响应放行后验证事件保持 cancelled 且无恢复写。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_failed_test_retries_after_one_minute_without_quota_cooldown_or_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "failed_test_retries_after_one_minute_without_quota_cooldown_or_budget",
+        "assertions": [
+          "assert_eq!(failed_intent[\"last_error_code\"], \"http_502\")",
+          "assert_eq!(parse_datetime(&failed_intent[\"next_retry_at\"]), Some(now + Duration::seconds(60)))",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 2)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(query[\"automatic_attempts\"], json!(attempts))"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实 Runtime 用被动 quota 先得到 http_502 test failure，再把 clock 推进 60 秒；即使 query cooldown 与六次自动预算均占满，也不发 GET 并成功重测/恢复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_manual_unschedulable_account_is_not_tested_or_recovered",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "cached_inventory_rechecks_live_eligibility_before_any_scheduler_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0, \"{change}\")",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{change}\")",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0, \"{change}\")"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "复用已有真实 Runtime/PostgreSQL stale-inventory contract：账号在 monitor startup 后由本地数据库改为 schedulable=false，下一次 tick 在 GET/test/recover 前重新读取并确认三类 loopback 请求均为零，覆盖旧测试人工不可调度账号不参与恢复的断言。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_block_or_manual_change_during_test_is_never_cleared",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "new_block_or_manual_change_during_test_is_never_cleared",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0, \"{name}\")",
+          "assert!(after[\"rate_limited_at\"].is_string())",
+          "assert_eq!(after[\"schedulable\"], false)",
+          "assert!(state[\"recovery_history\"].as_object().unwrap().is_empty())",
+          "assert_eq!(event[\"status\"], \"recovery_failed\", \"{name}\")",
+          "assert_eq!(event[\"error_code\"], \"recovery_state_changed\", \"{name}\")"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "测活仍挂在回环 HTTP 时分别注入新 rate limit 和 manual pause；两个分支都保留新账号状态、不调用恢复写、不提交 recovery history，并按旧语义记录 recovery_failed/recovery_state_changed 事件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_new_rate_limit_after_recovered_intent_retests_from_passive_quota",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "new_rate_limit_after_recovered_intent_retests_from_passive_quota",
+        "assertions": [
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
+          "event[\"account_id\"] == id && event[\"status\"] == \"recovered\""
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "已恢复 intent 遇到新的 block fingerprint 后，真实 Runtime 从新被动 quota 建立新周期，零 usage GET 并只测活/恢复一次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery019:Recovery019MonitorFixture.test_passive_quota_crossing_reset_point_is_reusable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "passive_quota_crossing_reset_point_remains_reusable",
+        "assertions": [
+          "assert_eq!(result[\"source\"], \"passive\")",
+          "assert!(recovery_rules::quota_ready(&row, &result, &metadata, now))",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "从 PostgreSQL account extra 构造 passive 观测，其两个窗口 reset 均已跨过；真实 Rust recovery quota gate 在固定 clock 下接受该缓存。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_management:ManagementTests.test_mutations_share_account_lock_without_blocking_unrelated_monitor",
+      "status": "superseded",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/manual_dispatch_parity.rs",
+        "test_name": "manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_locks",
+        "assertions": [
+          "assert_eq!(response[\"verified\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(report[\"total_count\"].as_u64(), Some(expected_inventory_count as u64))",
+          "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "不保留旧版本的 shared account-lock 409 行为；经批准的人工调度优先语义由真实 Runtime 集成测试与 loopback 请求计数验证。",
+      "replacement": {
+        "legacy_assertions": [
+          "持有 account lock 时，detach_managed 和 recover 请求均返回 HTTP 409。",
+          "持有 account lock 时，set_schedulable 抛出的 HTTPException.status_code 为 409。",
+          "持有 monitor run lock 时，对 unrelated account 的请求返回 HTTP 409。",
+          "所有被拒绝的锁冲突请求都不会触发外部调用（calls 为空）。"
+        ],
+        "approved_requirement": "Controls022 中批准的人工调度优先语义取代旧 desktop-management 测试的共享锁冲突语义：关闭 schedulable 必须在真实监控 cycle/account lease 与 config、fallback、test slot 被占用时完成写入和读回，并使进行中的监控结果失效。",
+        "replacement_contract": "Rust Runtime 测试先在两个账号 lease 及 config/fallback/test 锁被占用时验证两次 schedulable mutation 成功且没有 usage/test/recover 请求；再阻塞目标账号的 loopback usage 请求，确认人工关闭成功、generation 增加，放行迟到响应后目标账号 usage 仅一次且没有 test 或 recover-state 写入。"
+      }
+    }
+  ]
+}

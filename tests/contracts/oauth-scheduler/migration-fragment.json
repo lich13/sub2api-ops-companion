@@ -1,0 +1,2480 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_monitor_reads_normal_passive_snapshots_without_active_queries",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_reuses_passive_state_and_dispatches_one_bootstrap_query",
+        "assertions": [
+          "assert_eq!(usage_calls.len(), 1)",
+          "assert!(\n        usage_calls[0]\n            .path\n            .contains(&format!(\"/accounts/{bootstrap_id}/usage\"))\n    )",
+          "assert_eq!(usage_calls[0].api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(usage_calls[0].authorization.is_none())",
+          "assert!(\n        harness.runtime.monitor.state().unwrap()[\"oauth_results\"][passive_id.to_string()].is_null()\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“monitor reads normal passive snapshots without active queries”映射到 monitor_tick_reuses_passive_state_and_dispatches_one_bootstrap_query；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_depleted_window_waits_until_exact_reset_without_grace",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache",
+        "assertions": [
+          "assert_eq!(blocked[\"error_code\"], \"waiting_reset\")",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(latest))",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(available[\"success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(incomplete[\"error_code\"], \"incomplete_quota\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()], previous)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"failure_count\"],\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“depleted window waits until exact reset without grace”映射到 depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_all_depleted_windows_must_reach_the_latest_exact_reset",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache",
+        "assertions": [
+          "assert_eq!(blocked[\"error_code\"], \"waiting_reset\")",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(latest))",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(available[\"success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(incomplete[\"error_code\"], \"incomplete_quota\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()], previous)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"failure_count\"],\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“all depleted windows must reach the latest exact reset”映射到 depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_automatic_queries_have_a_minimum_one_hour_interval",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference",
+        "assertions": [
+          "assert_eq!(first[\"success\"], true)",
+          "assert_eq!(call.method, \"GET\")",
+          "assert_eq!(\n        call.path,\n        format!(\"/api/v1/admin/accounts/{id}/usage?source=active&force=true\")\n    )",
+          "assert_eq!(call.api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(call.authorization.is_none())",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"manual\"\n    )",
+          "assert_eq!(cooldown[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        cooldown[\"next_query_at\"],\n        datetime(start + Duration::minutes(70))\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"oauth_quota\"][\"plan_type\"], \"free\")",
+          "assert_eq!(\n        result[\"oauth_quota\"][\"ui_windows\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“automatic queries have a minimum one hour interval”映射到 active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_six_request_budget_is_rolling_across_midnight",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "rolling_automatic_budget_and_backoff_survive_state_reopen",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true, \"automatic request {hour}\")",
+          "assert_eq!(blocked[\"error_code\"], \"query_budget\")",
+          "assert_eq!(\n        blocked[\"next_query_at\"],\n        datetime(start + Duration::hours(24))\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        automatic_attempts\n    )",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 7)",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 8)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([\n            datetime(start + Duration::hours(1)),\n            datetime(start + Duration::hours(2)),\n            datetime(start + Duration::hours(3)),\n            datetime(start + Duration::hours(4)),\n            datetime(start + Duration::hours(5)),\n            datetime(start + Duration::hours(24))\n        ])\n    )",
+          "assert_eq!(failed[\"error_code\"], \"http_503\")",
+          "assert_eq!(\n            state[\"scheduler\"][failure_id.to_string()][\"quota_query\"][\"retry_at\"],\n            datetime(retry_at)\n        )",
+          "assert_eq!(blocked[\"skipped\"], true)",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(retry_at))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 13)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“six request budget is rolling across midnight”映射到 rolling_automatic_budget_and_backoff_survive_state_reopen；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_failures_back_off_one_three_six_then_twelve_hours",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "oauth_failures_persist_one_three_six_twelve_hour_backoff_and_skip_dispatch",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n            result[\"success\"],\n            false,\n            \"failure {} must remain unsuccessful\",\n            index + 1\n        )",
+          "assert_eq!(result[\"error_code\"], \"http_503\")",
+          "assert_eq!(\n            mock.call_count(),\n            index + 1,\n            \"one upstream call per failed attempt\"\n        )",
+          "assert_eq!(query[\"failure_count\"], index as i64 + 1)",
+          "assert_eq!(timestamp(&query[\"retry_at\"]), retry_at)",
+          "assert_eq!(skipped[\"success\"], false)",
+          "assert_eq!(skipped[\"skipped\"], true)",
+          "assert_eq!(timestamp(&skipped[\"next_query_at\"]), retry_at)",
+          "assert_eq!(\n            mock.call_count(),\n            index + 1,\n            \"pre-deadline backoff must not dispatch another upstream request\"\n        )",
+          "assert_eq!(mock.call_count(), 5)",
+          "assert!(mock.calls.lock().unwrap().iter().all(|(method, path)| {\n        method == \"GET\" && path.contains(\"/api/v1/admin/accounts/940041/usage\")\n    }))"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "oauth_query.failure_http_status",
+              "oauth_query.backoff_hours"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 OAuthQueryCoordinator 经回环 HTTP 请求收到五次 503；持久状态逐次断言 failure_count 与 1/3/6/12/12 小时 retry_at，并在每个截止前一秒验证 next_query_at 和上游请求数不增加。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_restart_preserves_automatic_budget_and_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "rolling_automatic_budget_and_backoff_survive_state_reopen",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true, \"automatic request {hour}\")",
+          "assert_eq!(blocked[\"error_code\"], \"query_budget\")",
+          "assert_eq!(\n        blocked[\"next_query_at\"],\n        datetime(start + Duration::hours(24))\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        automatic_attempts\n    )",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 7)",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 8)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([\n            datetime(start + Duration::hours(1)),\n            datetime(start + Duration::hours(2)),\n            datetime(start + Duration::hours(3)),\n            datetime(start + Duration::hours(4)),\n            datetime(start + Duration::hours(5)),\n            datetime(start + Duration::hours(24))\n        ])\n    )",
+          "assert_eq!(failed[\"error_code\"], \"http_503\")",
+          "assert_eq!(\n            state[\"scheduler\"][failure_id.to_string()][\"quota_query\"][\"retry_at\"],\n            datetime(retry_at)\n        )",
+          "assert_eq!(blocked[\"skipped\"], true)",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(retry_at))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 13)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“restart preserves automatic budget and cooldown”映射到 rolling_automatic_budget_and_backoff_survive_state_reopen；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_restart_preserves_failure_backoff",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "rolling_automatic_budget_and_backoff_survive_state_reopen",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true, \"automatic request {hour}\")",
+          "assert_eq!(blocked[\"error_code\"], \"query_budget\")",
+          "assert_eq!(\n        blocked[\"next_query_at\"],\n        datetime(start + Duration::hours(24))\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        automatic_attempts\n    )",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 7)",
+          "assert_eq!(\n        reopened\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 8)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([\n            datetime(start + Duration::hours(1)),\n            datetime(start + Duration::hours(2)),\n            datetime(start + Duration::hours(3)),\n            datetime(start + Duration::hours(4)),\n            datetime(start + Duration::hours(5)),\n            datetime(start + Duration::hours(24))\n        ])\n    )",
+          "assert_eq!(failed[\"error_code\"], \"http_503\")",
+          "assert_eq!(\n            state[\"scheduler\"][failure_id.to_string()][\"quota_query\"][\"retry_at\"],\n            datetime(retry_at)\n        )",
+          "assert_eq!(blocked[\"skipped\"], true)",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(retry_at))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 13)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“restart preserves failure backoff”映射到 rolling_automatic_budget_and_backoff_survive_state_reopen；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_reservation_is_on_disk_before_http_and_timeout_consumes_attempt",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "oauth_timeout_reads_disk_reservation_and_consumes_attempt_without_replay",
+        "assertions": [
+          "assert_eq!(mock.call_count(), 1)",
+          "assert_eq!(\n        pending[\"automatic_attempts\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .map(timestamp)\n            .collect::<Vec<_>>(),\n        vec![now]\n    )",
+          "assert_eq!(timestamp(&pending[\"last_query_at\"]), now)",
+          "assert_eq!(pending[\"last_source\"], \"automatic\")",
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"error_code\"], \"timeout\")",
+          "assert_ne!(result[\"skipped\"], true)",
+          "assert_eq!(\n        query[\"automatic_attempts\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .map(timestamp)\n            .collect::<Vec<_>>(),\n        vec![now]\n    )",
+          "assert_eq!(query[\"failure_count\"], 1)",
+          "assert_eq!(timestamp(&query[\"retry_at\"]), retry_at)",
+          "assert_eq!(skipped[\"skipped\"], true)",
+          "assert_eq!(timestamp(&skipped[\"next_query_at\"]), retry_at)",
+          "assert_eq!(\n        mock.call_count(),\n        1,\n        \"unknown timed-out request must not be replayed\"\n    )"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "oauth_query.timeout_seconds",
+              "oauth_query.skip_before_deadline_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "上游 handler 收到真实协调器请求时立即从磁盘读取 reservation，验证 automatic_attempts、last_query_at/source；请求超时后核实失败预算仍持久化且 retry_at 为一小时，截止前重试被跳过、回环请求总数保持一。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_corrupt_state_fails_closed_for_automatic_and_manual_requests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], format!(\"http_{status}\"))",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(rotated[\"success\"], true)",
+          "assert!(\n            harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                .get(\"auth_fingerprint\")\n                .is_none()\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(failed[\"error_code\"], \"http_401\")",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        attempts\n    )",
+          "assert!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"]\n            .get(\"auth_fingerprint\")\n            .is_none()\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"error_code\"],\n        \"query_cooldown\"\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(blocked[\"skipped\"].as_bool().unwrap_or(false))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“corrupt state fails closed for automatic and manual requests”映射到 auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_deleted_existing_state_fails_closed_for_all_requests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], format!(\"http_{status}\"))",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(rotated[\"success\"], true)",
+          "assert!(\n            harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                .get(\"auth_fingerprint\")\n                .is_none()\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(failed[\"error_code\"], \"http_401\")",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        attempts\n    )",
+          "assert!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"]\n            .get(\"auth_fingerprint\")\n            .is_none()\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"error_code\"],\n        \"query_cooldown\"\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(blocked[\"skipped\"].as_bool().unwrap_or(false))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“deleted existing state fails closed for all requests”映射到 auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_valid_json_with_corrupt_query_state_never_emits_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], format!(\"http_{status}\"))",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(rotated[\"success\"], true)",
+          "assert!(\n            harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                .get(\"auth_fingerprint\")\n                .is_none()\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(failed[\"error_code\"], \"http_401\")",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        attempts\n    )",
+          "assert!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"]\n            .get(\"auth_fingerprint\")\n            .is_none()\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"error_code\"],\n        \"query_cooldown\"\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(blocked[\"skipped\"].as_bool().unwrap_or(false))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“valid json with corrupt query state never emits http”映射到 auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_reservation_write_failure_prevents_http_for_all_requests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "reservation_write_failure_prevents_automatic_and_manual_http",
+        "assertions": [
+          "assert_eq!(result[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert!(harness.runtime.monitor.state().is_ok())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“reservation write failure prevents http for all requests”映射到 reservation_write_failure_prevents_automatic_and_manual_http；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_result_write_failure_keeps_reserved_attempt_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "reservation_precedes_http_and_failed_result_write_keeps_the_reservation",
+        "assertions": [
+          "assert_eq!(query_result[\"error_code\"], \"timeout\")",
+          "assert_eq!(\n        reserved[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(now)])\n    )",
+          "assert_eq!(\n        reserved[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"automatic\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(write_failed[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(write_failed[\"skipped\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“result write failure keeps reserved attempt after restart”映射到 reservation_precedes_http_and_failed_result_write_keeps_the_reservation；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_auth_errors_pause_across_restart_until_credentials_change",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], format!(\"http_{status}\"))",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(rotated[\"success\"], true)",
+          "assert!(\n            harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                .get(\"auth_fingerprint\")\n                .is_none()\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(failed[\"error_code\"], \"http_401\")",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        attempts\n    )",
+          "assert!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"]\n            .get(\"auth_fingerprint\")\n            .is_none()\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"error_code\"],\n        \"query_cooldown\"\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(blocked[\"skipped\"].as_bool().unwrap_or(false))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“auth errors pause across restart until credentials change”映射到 auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_manual_success_unpauses_auth_without_erasing_automatic_attempt",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], format!(\"http_{status}\"))",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(rotated[\"success\"], true)",
+          "assert!(\n            harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                .get(\"auth_fingerprint\")\n                .is_none()\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(failed[\"error_code\"], \"http_401\")",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        attempts\n    )",
+          "assert!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"]\n            .get(\"auth_fingerprint\")\n            .is_none()\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"error_code\"],\n        \"query_cooldown\"\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now())\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert!(blocked[\"skipped\"].as_bool().unwrap_or(false))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(blocked[\"error_code\"], \"query_state_unavailable\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“manual success unpauses auth without erasing automatic attempt”映射到 auth_pause_rotates_with_credentials_and_corrupt_state_fails_closed；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_manual_requests_bypass_but_neither_consume_nor_clear_automatic_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference",
+        "assertions": [
+          "assert_eq!(first[\"success\"], true)",
+          "assert_eq!(call.method, \"GET\")",
+          "assert_eq!(\n        call.path,\n        format!(\"/api/v1/admin/accounts/{id}/usage?source=active&force=true\")\n    )",
+          "assert_eq!(call.api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(call.authorization.is_none())",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"manual\"\n    )",
+          "assert_eq!(cooldown[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        cooldown[\"next_query_at\"],\n        datetime(start + Duration::minutes(70))\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"oauth_quota\"][\"plan_type\"], \"free\")",
+          "assert_eq!(\n        result[\"oauth_quota\"][\"ui_windows\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“manual requests bypass but neither consume nor clear automatic budget”映射到 active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_manual_query_refreshes_one_hour_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference",
+        "assertions": [
+          "assert_eq!(first[\"success\"], true)",
+          "assert_eq!(call.method, \"GET\")",
+          "assert_eq!(\n        call.path,\n        format!(\"/api/v1/admin/accounts/{id}/usage?source=active&force=true\")\n    )",
+          "assert_eq!(call.api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(call.authorization.is_none())",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"manual\"\n    )",
+          "assert_eq!(cooldown[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        cooldown[\"next_query_at\"],\n        datetime(start + Duration::minutes(70))\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"oauth_quota\"][\"plan_type\"], \"free\")",
+          "assert_eq!(\n        result[\"oauth_quota\"][\"ui_windows\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“manual query refreshes one hour cooldown”映射到 active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_concurrent_automatic_and_manual_queries_coalesce_to_one_http_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "concurrent_automatic_and_manual_coordinator_queries_coalesce_once",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(results.iter().all(|result| result[\"success\"] == true))",
+          "assert_eq!(coalesced_count, 7)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“automatic and manual coordinator callers share one HTTP request and seven followers coalesce”映射到 concurrent_automatic_and_manual_coordinator_queries_coalesce_once；all callers use the Runtime-owned Coordinator with mixed Source values, a barrier, injected time, temporary PostgreSQL, and loopback HTTP."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_full_quota_with_future_reset_preserves_backoff_until_available_response",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "future_full_quota_keeps_existing_backoff_until_an_available_response",
+        "assertions": [
+          "assert_eq!(failed[\"error_code\"], \"http_503\")",
+          "assert_eq!(failure_state[\"failure_count\"], 3)",
+          "assert_eq!(failure_state[\"retry_at\"], datetime(retry_at))",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(preserved[\"failure_count\"], 3)",
+          "assert_eq!(preserved[\"retry_at\"], datetime(retry_at))",
+          "assert_eq!(blocked[\"error_code\"], \"query_backoff\")",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(retry_at))",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert_eq!(available[\"success\"], true)",
+          "assert_eq!(cleared[\"failure_count\"], 0)",
+          "assert_eq!(cleared[\"retry_at\"], \"\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 5)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“full quota with future reset preserves backoff until available response”映射到 future_full_quota_keeps_existing_backoff_until_an_available_response；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_missing_required_window_counts_as_failure_and_preserves_good_cache",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache",
+        "assertions": [
+          "assert_eq!(blocked[\"error_code\"], \"waiting_reset\")",
+          "assert_eq!(blocked[\"next_query_at\"], datetime(latest))",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(available[\"success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(incomplete[\"error_code\"], \"incomplete_quota\")",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()], previous)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"failure_count\"],\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“missing required window counts as failure and preserves good cache”映射到 depleted_windows_wait_for_latest_exact_reset_and_missing_data_keeps_good_cache；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_free_plan_requires_only_seven_day_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference",
+        "assertions": [
+          "assert_eq!(first[\"success\"], true)",
+          "assert_eq!(call.method, \"GET\")",
+          "assert_eq!(\n        call.path,\n        format!(\"/api/v1/admin/accounts/{id}/usage?source=active&force=true\")\n    )",
+          "assert_eq!(call.api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(call.authorization.is_none())",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"manual\"\n    )",
+          "assert_eq!(cooldown[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        cooldown[\"next_query_at\"],\n        datetime(start + Duration::minutes(70))\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"oauth_quota\"][\"plan_type\"], \"free\")",
+          "assert_eq!(\n        result[\"oauth_quota\"][\"ui_windows\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“free plan requires only seven day window”映射到 active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_invalid_http_json_counts_as_failure_and_consumes_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "invalid_usage_json_consumes_automatic_budget_without_replay",
+        "assertions": [
+          "assert_eq!(first[\"error_code\"], \"usage_query_error\")",
+          "assert_eq!(metadata[\"automatic_attempts\"].as_array().unwrap().len(), 1)",
+          "assert_eq!(metadata[\"failure_count\"], 1)",
+          "assert_eq!(second[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“invalid http json counts as failure and consumes budget”映射到 invalid_usage_json_consumes_automatic_budget_without_replay；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_single_joins_running_batch_and_later_manual_query_runs_again",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "single_and_batch_runtime_queries_coalesce_and_keep_request_locks",
+        "assertions": [
+          "assert_eq!(first_batch[\"total\"], 1)",
+          "assert_eq!(single_result[\"account\"][\"id\"], id)",
+          "assert_eq!(batch_result[\"total\"], 1)",
+          "assert_eq!(batch_result[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"manual batch and user action must not consume automatic budget: {quota_query}\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(completed[\"total\"], 1)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(held.status.as_u16(), 409)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“single joins running batch and later manual query runs again”映射到 single_and_batch_runtime_queries_coalesce_and_keep_request_locks；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_batch_joins_single_query_that_started_first",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "runtime_batch_joins_manual_single_query_that_started_first",
+        "assertions": [
+          "assert_eq!(batch[\"total\"], 1)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(single.await.unwrap().unwrap()[\"account\"][\"id\"], id)",
+          "assert_eq!(completed[\"completed\"], 1)",
+          "assert_eq!(completed[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"joining a manual single request must not reserve automatic budget: {quota_query}\"\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“batch joins single query that started first”映射到 single_and_batch_runtime_queries_coalesce_and_keep_request_locks；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_batch_waits_for_busy_account_without_spending_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "runtime_batch_waits_for_busy_account_without_spending_budget",
+        "assertions": [
+          "assert_eq!(waiting[\"total\"], 1)",
+          "assert_eq!(progress[\"items\"][0][\"status\"], \"queued\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"a queued manual batch must not reserve automatic budget: {quota_query}\"\n    )",
+          "assert_eq!(completed[\"total\"], 1)",
+          "assert_eq!(completed[\"completed\"], 1)",
+          "assert_eq!(completed[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“batch waits for a busy account without spending budget”映射到 runtime_batch_waits_for_busy_account_without_spending_budget；the actual Runtime.start_quota_refresh batch queues the single locked account, sends no usage request or automatic budget reservation while blocked, then performs one request after the lease releases."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_single_joins_background_monitor_http_without_duplicate_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_and_direct_query_share_one_inflight_usage_request",
+        "assertions": [
+          "assert!(\n            !baseline.contains(&json!(datetime(due))),\n            \"the injected due time must be a new automatic reservation: {baseline_attempts}\"\n        )",
+          "assert_eq!(direct_result[\"account\"][\"id\"], id)",
+          "assert_eq!(\n                harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                    [\"automatic_attempts\"],\n                json!(expected_attempts),\n                \"the joined manual request must preserve the preexisting budget history\"\n            )",
+          "assert!(\n                quota_query[\"automatic_attempts\"] == baseline_attempts,\n                \"a running manual action must not spend automatic budget: {quota_query}\"\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), expected_usage_calls)",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/test\"),\n            0,\n            \"joining an ordinary quota query must not dispatch recovery model tests\"\n        )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“single joins background monitor http without duplicate request”映射到 monitor_and_direct_query_share_one_inflight_usage_request；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_background_cycle_does_not_duplicate_a_running_single_query",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_and_direct_query_share_one_inflight_usage_request",
+        "assertions": [
+          "assert!(\n            !baseline.contains(&json!(datetime(due))),\n            \"the injected due time must be a new automatic reservation: {baseline_attempts}\"\n        )",
+          "assert_eq!(direct_result[\"account\"][\"id\"], id)",
+          "assert_eq!(\n                harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"quota_query\"]\n                    [\"automatic_attempts\"],\n                json!(expected_attempts),\n                \"the joined manual request must preserve the preexisting budget history\"\n            )",
+          "assert!(\n                quota_query[\"automatic_attempts\"] == baseline_attempts,\n                \"a running manual action must not spend automatic budget: {quota_query}\"\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), expected_usage_calls)",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/test\"),\n            0,\n            \"joining an ordinary quota query must not dispatch recovery model tests\"\n        )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“background cycle does not duplicate a running single query”映射到 monitor_and_direct_query_share_one_inflight_usage_request；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_live_account_ineligible_after_inventory_never_emits_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "cached_inventory_rechecks_live_eligibility_before_any_scheduler_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0, \"{change}\")",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{change}\")",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0, \"{change}\")",
+          "assert!(harness.mock.unexpected().is_empty(), \"{change}\")"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“live account ineligible after inventory never emits http”映射到 cached_inventory_rechecks_live_eligibility_before_any_scheduler_request；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_live_monitor_reserves_actual_request_time_after_inventory_delay",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "live_monitor_reserves_request_time_after_blocked_inventory_read",
+        "assertions": [
+          "assert_eq!(query[\"last_query_at\"], datetime(requested))",
+          "assert_eq!(query[\"automatic_attempts\"], json!([datetime(requested)]))",
+          "assert_eq!(\n        state[\"oauth_results\"][id.to_string()][\"queried_at\"],\n        datetime(requested)\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“live monitor reserves actual request time after inventory delay”映射到 live_monitor_reserves_request_time_after_blocked_inventory_read；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_batch_cancellation_holds_locks_until_sent_request_finishes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "runtime_shutdown_waits_for_batch_request_before_releasing_account_lock",
+        "assertions": [
+          "assert_eq!(batch[\"total\"], 1)",
+          "assert!(\n        shutdown_waits_for_request,\n        \"shutdown must wait for the owner request\"\n    )",
+          "assert!(\n        account_lock_is_held,\n        \"the dispatched batch must retain its account lease\"\n    )",
+          "assert_eq!(dispatched_before_release, 1)",
+          "assert!(\n        shutdown_completed,\n        \"Runtime shutdown must finish after the request returns\"\n    )",
+          "assert!(\n        account_lock_released,\n        \"shutdown must release the owner lease after completion\"\n    )",
+          "assert_eq!(progress[\"status\"], \"completed\")",
+          "assert_eq!(progress[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(\n        request_count_after_shutdown, 1,\n        \"shutdown must not replay the query\"\n    )",
+          "assert!(unexpected.is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧 Python 取消批任务，并验证已派发请求返回前锁保持占用且只查询一次；Rust通过真实Runtime.close shutdown路径等待其拥有的Quota batch，回环请求未返回时shutdown仍在等待且账号lease为busy，响应返回后shutdown结束、lease释放、请求数保持一。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_manual_batch_refreshes_shared_cooldown_without_consuming_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "manual_runtime_batch_refreshes_cooldown_without_automatic_budget",
+        "assertions": [
+          "assert_eq!(automatic[\"success\"], true)",
+          "assert_eq!(initial_attempts, json!([datetime(start)]))",
+          "assert_eq!(batch[\"total\"], 1)",
+          "assert_eq!(batch[\"items\"][0][\"status\"], \"success\")",
+          "assert_eq!(query[\"last_source\"], \"manual\")",
+          "assert_eq!(query[\"automatic_attempts\"], initial_attempts)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        blocked[\"next_query_at\"],\n        datetime(batch_query_at + Duration::hours(1))\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(available[\"success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“manual batch refreshes the shared one-hour cooldown without consuming automatic budget”映射到 manual_runtime_batch_refreshes_cooldown_without_automatic_budget；the real Runtime batch API refreshes the query receipt, then injected-clock automatic requests verify the updated cooldown and unchanged budget list."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_cannot_exceed_rolling_budget_and_does_not_notify_bark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily cannot exceed rolling budget and does not notify bark”映射到 daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_waits_for_known_reset_and_does_not_notify_bark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily waits for known reset and does not notify bark”映射到 daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_reuses_fresh_passive_quota_and_only_sends_model_test",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark",
+        "assertions": [
+          "assert_eq!(saved[\"status\"], \"completed\")",
+          "assert_eq!(saved[\"accounts\"][id.to_string()][\"status\"], \"success\")",
+          "assert_eq!(\n        saved[\"accounts\"][id.to_string()][\"model_id\"],\n        \"gpt-5.6-luna\"\n    )",
+          "assert_eq!(model_call.body[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert!(\n        harness.runtime.monitor.state().unwrap()[\"pending_events\"]\n            .as_object()\n            .unwrap()\n            .is_empty()\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"status\"],\n        \"failed\"\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"error_code\"],\n        \"http_401\"\n    )",
+          "assert_eq!(after[\"pending_events\"].as_object().unwrap().len(), 1)",
+          "assert!(!serialized.contains(\"fixture-secret-do-not-log\"))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 2)",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily reuses fresh passive quota and only sends model test”映射到 daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_active_refresh_uses_automatic_budget_and_runs_only_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily active refresh uses automatic budget and runs only once”映射到 daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_model_http_401_pauses_later_automatic_queries",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark",
+        "assertions": [
+          "assert_eq!(saved[\"status\"], \"completed\")",
+          "assert_eq!(saved[\"accounts\"][id.to_string()][\"status\"], \"success\")",
+          "assert_eq!(\n        saved[\"accounts\"][id.to_string()][\"model_id\"],\n        \"gpt-5.6-luna\"\n    )",
+          "assert_eq!(model_call.body[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert!(\n        harness.runtime.monitor.state().unwrap()[\"pending_events\"]\n            .as_object()\n            .unwrap()\n            .is_empty()\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"status\"],\n        \"failed\"\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"error_code\"],\n        \"http_401\"\n    )",
+          "assert_eq!(after[\"pending_events\"].as_object().unwrap().len(), 1)",
+          "assert!(!serialized.contains(\"fixture-secret-do-not-log\"))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 2)",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily model http 401 pauses later automatic queries”映射到 daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_daily_model_http_402_pauses_later_automatic_queries",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_model_402_pauses_later_automatic_queries_without_retrying_or_barking",
+        "assertions": [
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"http_402\"\n    )",
+          "assert_eq!(state[\"pending_events\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        state[\"pending_events\"]\n            .as_object()\n            .unwrap()\n            .values()\n            .next()\n            .unwrap()[\"status\"],\n        \"auth_failed\"\n    )",
+          "assert_eq!(blocked[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“daily model http 402 pauses later automatic queries”映射到 daily_model_402_pauses_later_automatic_queries_without_retrying_or_barking；temporary PostgreSQL and loopback HTTP verify reservation order, dispatched request count, durable budget/cooldown state, and restart behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryLinkageTests.test_old_client_retired_probe_interval_is_accepted_but_not_saved_or_exposed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "retired_probe_interval_is_accepted_but_never_saved_or_exposed",
+        "assertions": [
+          "assert_eq!(result[\"oauth_daily_test_time\"], \"06:15\")",
+          "assert!(result.get(\"oauth_7d_probe_interval_seconds\").is_none())",
+          "assert!(saved.get(\"oauth_7d_probe_interval_seconds\").is_none())",
+          "assert_eq!(\n        harness\n            .runtime\n            .config\n            .current()\n            .unwrap()\n            .get(\"oauth_7d_probe_interval_seconds\"),\n        None\n    )",
+          "assert_eq!(\n        harness.runtime.config.current().unwrap()[\"oauth_daily_test_time\"],\n        \"06:15\"\n    )",
+          "assert!(harness.mock.calls().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧客户端提交已退役 oauth_7d_probe_interval_seconds 时配置保存成功并忽略该字段；oauth_daily_test_time=06:15 保持有效，响应、磁盘配置和运行时 current 均不暴露或保存退役字段。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_next_future_time_and_beijing_cross_day",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up",
+        "assertions": [
+          "assert_eq!(daily_test::next_time(before, \"05:00\").unwrap(), due)",
+          "assert_eq!(\n        daily_test::next_time(due, \"05:00\").unwrap(),\n        due + Duration::days(1)\n    )",
+          "assert_eq!(\n        daily_test::next_time(due, \"00:00\").unwrap(),\n        parse_datetime(&reference[\"daily\"][\"next_midnight_beijing\"]).unwrap()\n    )",
+          "assert!(schedule.claim(&config, harness.now()).unwrap().is_none())",
+          "assert_eq!(missed[\"status\"], \"missed\")",
+          "assert_eq!(\n        after_update[\"next_run_at\"],\n        datetime(due + Duration::hours(1))\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"next_run_at\"],\n        \"\"\n    )",
+          "assert!(\n            !daily_test::eligible(&candidate, due),\n            \"ineligible delta {changes}\"\n        )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“next future time and beijing cross day”映射到 daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_default_custom_time_enable_hot_update_and_dedup",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up",
+        "assertions": [
+          "assert_eq!(daily_test::next_time(before, \"05:00\").unwrap(), due)",
+          "assert_eq!(\n        daily_test::next_time(due, \"05:00\").unwrap(),\n        due + Duration::days(1)\n    )",
+          "assert_eq!(\n        daily_test::next_time(due, \"00:00\").unwrap(),\n        parse_datetime(&reference[\"daily\"][\"next_midnight_beijing\"]).unwrap()\n    )",
+          "assert!(schedule.claim(&config, harness.now()).unwrap().is_none())",
+          "assert_eq!(missed[\"status\"], \"missed\")",
+          "assert_eq!(\n        after_update[\"next_run_at\"],\n        datetime(due + Duration::hours(1))\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"next_run_at\"],\n        \"\"\n    )",
+          "assert!(\n            !daily_test::eligible(&candidate, due),\n            \"ineligible delta {changes}\"\n        )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“default custom time enable hot update and dedup”映射到 daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_missed_restart_and_interrupted_batches_do_not_catch_up",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up",
+        "assertions": [
+          "assert_eq!(daily_test::next_time(before, \"05:00\").unwrap(), due)",
+          "assert_eq!(\n        daily_test::next_time(due, \"05:00\").unwrap(),\n        due + Duration::days(1)\n    )",
+          "assert_eq!(\n        daily_test::next_time(due, \"00:00\").unwrap(),\n        parse_datetime(&reference[\"daily\"][\"next_midnight_beijing\"]).unwrap()\n    )",
+          "assert!(schedule.claim(&config, harness.now()).unwrap().is_none())",
+          "assert_eq!(missed[\"status\"], \"missed\")",
+          "assert_eq!(\n        after_update[\"next_run_at\"],\n        datetime(due + Duration::hours(1))\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"next_run_at\"],\n        \"\"\n    )",
+          "assert!(\n            !daily_test::eligible(&candidate, due),\n            \"ineligible delta {changes}\"\n        )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“missed restart and interrupted batches do not catch up”映射到 daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_legacy_deferred_intent_migrates_without_touching_pending",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "assertions": [
+          "assert_eq!(migrated[\"version\"], 5)",
+          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
+          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"retry\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"2026-09-29T19:30:00+00:00\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
+          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
+          "assert!(migrated.get(\"configs\").is_none())",
+          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
+          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
+          "assert_eq!(fs::read(&path).unwrap(), first_write)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“legacy deferred intent migrates without touching pending”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyScheduleTests.test_all_scheduling_gates_and_expired_time_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up",
+        "assertions": [
+          "assert_eq!(daily_test::next_time(before, \"05:00\").unwrap(), due)",
+          "assert_eq!(\n        daily_test::next_time(due, \"05:00\").unwrap(),\n        due + Duration::days(1)\n    )",
+          "assert_eq!(\n        daily_test::next_time(due, \"00:00\").unwrap(),\n        parse_datetime(&reference[\"daily\"][\"next_midnight_beijing\"]).unwrap()\n    )",
+          "assert!(schedule.claim(&config, harness.now()).unwrap().is_none())",
+          "assert_eq!(missed[\"status\"], \"missed\")",
+          "assert_eq!(\n        after_update[\"next_run_at\"],\n        datetime(due + Duration::hours(1))\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"next_run_at\"],\n        \"\"\n    )",
+          "assert!(\n            !daily_test::eligible(&candidate, due),\n            \"ineligible delta {changes}\"\n        )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“all scheduling gates and expired time fields”映射到 daily_schedule_hot_update_eligibility_and_missed_restart_never_catch_up；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_success_records_without_notification_or_recovery_and_no_repeat",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "runtime_tick_runs_a_due_daily_batch_once_without_catching_up",
+        "assertions": [
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"batches\"][\"2026-09-30\"][\"status\"],\n        \"completed\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(integer(&row[\"id\"]).unwrap() > 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“success records without notification or recovery and no repeat”映射到 runtime_tick_runs_a_due_daily_batch_once_without_catching_up；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_busy_lock_registers_and_later_runs_even_after_due_minute",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_cycle_lock_stays_queued_and_runs_after_due_minute",
+        "assertions": [
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"daily_test\"][\"batches\"][&local_date][\"status\"],\n        \"queued\",\n        \"a due batch must be registered even while another whole monitor cycle owns the lock\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(integer(&row[\"id\"]).unwrap() > 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“busy lock registers and later runs even after due minute”映射到 daily_cycle_lock_stays_queued_and_runs_after_due_minute；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_pause_depleted_missing_window_and_type_change",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“pause depleted missing window and type change”映射到 daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_failure_uses_reliable_queue_sanitizes_and_never_retests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark",
+        "assertions": [
+          "assert_eq!(saved[\"status\"], \"completed\")",
+          "assert_eq!(saved[\"accounts\"][id.to_string()][\"status\"], \"success\")",
+          "assert_eq!(\n        saved[\"accounts\"][id.to_string()][\"model_id\"],\n        \"gpt-5.6-luna\"\n    )",
+          "assert_eq!(model_call.body[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert!(\n        harness.runtime.monitor.state().unwrap()[\"pending_events\"]\n            .as_object()\n            .unwrap()\n            .is_empty()\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"status\"],\n        \"failed\"\n    )",
+          "assert_eq!(\n        after[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][failure_id.to_string()][\"error_code\"],\n        \"http_401\"\n    )",
+          "assert_eq!(after[\"pending_events\"].as_object().unwrap().len(), 1)",
+          "assert!(!serialized.contains(\"fixture-secret-do-not-log\"))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 2)",
+          "assert_eq!(paused[\"error_code\"], \"auth_paused\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“failure uses reliable queue sanitizes and never retests”映射到 daily_runtime_reuses_fresh_passive_quota_tests_once_and_queues_failure_without_bark；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_quota_failure_has_no_model_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-01\"][\"accounts\"][id.to_string()][\"error_code\"],\n        \"query_budget\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"status\"],\n        \"skipped\"\n    )",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][\"2026-10-02\"][\"accounts\"][depleted_id.to_string()][\"error_code\"],\n        \"waiting_reset\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 6)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“quota failure has no model request”映射到 daily_active_refresh_obeys_budget_and_known_reset_without_model_or_bark；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_recovery_test_in_same_cycle_is_reused",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_account",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(record[\"status\"], \"skipped\")",
+          "assert_eq!(record[\"reused_recovery_test\"], false)",
+          "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n                false\n            )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(record[\"status\"], \"success\")",
+          "assert_eq!(record[\"reused_recovery_test\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n                \"recovered\"\n            )",
+          "assert_eq!(record[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recovery test in same cycle is reused”映射到 daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_account；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_recovery_test_is_not_reused_after_account_becomes_unschedulable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_account",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(record[\"status\"], \"skipped\")",
+          "assert_eq!(record[\"reused_recovery_test\"], false)",
+          "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n                false\n            )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(record[\"status\"], \"success\")",
+          "assert_eq!(record[\"reused_recovery_test\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n                \"recovered\"\n            )",
+          "assert_eq!(record[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recovery test is not reused after account becomes unschedulable”映射到 daily_tick_reuses_only_same_cycle_recovery_test_for_a_still_eligible_account；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_daily_test:DailyExecutionTests.test_interruption_after_test_does_not_retry_on_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed_after_reopen",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(\n        state[\"daily_test\"][\"batches\"][date][\"status\"],\n        \"interrupted\"\n    )",
+          "assert!(\n        reopened\n            .claim(&config, due + Duration::seconds(3))\n            .unwrap()\n            .is_none()\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“interruption after test does not retry on restart”映射到 interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed_after_reopen；the Rust Schedule and Monitor run with an injected clock, temporary PostgreSQL, and loopback HTTP; the daily record and request counts are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_retired_refresh_state_is_removed_without_losing_recovery_or_events",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "assertions": [
+          "assert_eq!(migrated[\"version\"], 5)",
+          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
+          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"retry\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"2026-09-29T19:30:00+00:00\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
+          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
+          "assert!(migrated.get(\"configs\").is_none())",
+          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
+          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
+          "assert_eq!(fs::read(&path).unwrap(), first_write)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“retired refresh state is removed without losing recovery or events”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_v2_testing_intent_migrates_to_retry_in_v5",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "assertions": [
+          "assert_eq!(migrated[\"version\"], 5)",
+          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
+          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"retry\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"2026-09-29T19:30:00+00:00\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
+          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
+          "assert!(migrated.get(\"configs\").is_none())",
+          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
+          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
+          "assert_eq!(fs::read(&path).unwrap(), first_write)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“v2 testing intent migrates to retry in v5”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_migration_keeps_admin_key_and_oauth_snapshots_only",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently",
+        "assertions": [
+          "assert_eq!(migrated[\"version\"], 5)",
+          "assert_eq!(state.admin_token().unwrap(), \"fixture-admin-migration\")",
+          "assert_eq!(\n        migrated[\"oauth_results\"]\n            .as_object()\n            .unwrap()\n            .keys()\n            .cloned()\n            .collect::<Vec<_>>(),\n        vec![\"7\"]\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"status\"],\n        \"retry\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"7\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"2026-09-29T19:30:00+00:00\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_regular_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"7\"].get(\"last_reason\").is_none())",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"status\"],\n        \"ready\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"deferred_until\"],\n        \"\"\n    )",
+          "assert_eq!(\n        migrated[\"scheduler\"][\"8\"][\"recovery_intent\"][\"next_retry_at\"],\n        \"\"\n    )",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_7d_probe_at\").is_none())",
+          "assert!(migrated[\"scheduler\"][\"8\"].get(\"last_reason\").is_none())",
+          "assert_eq!(migrated[\"pending_events\"][\"keep\"][\"status\"], \"failed\")",
+          "assert!(migrated.get(\"configs\").is_none())",
+          "assert!(migrated[\"settings\"].get(\"usage_query_enabled\").is_none())",
+          "assert!(\n        migrated[\"settings\"]\n            .get(\"auto_query_interval_seconds\")\n            .is_none()\n    )",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&first_write).unwrap(),\n        migrated\n    )",
+          "assert_eq!(fs::read(&path).unwrap(), first_write)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“migration keeps admin key and oauth snapshots only”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_is_idempotent",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry",
+        "assertions": [
+          "assert!(failed.is_err())",
+          "assert!(guard_path.is_dir())",
+          "assert_ne!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true,\n        \"failed cleanup must not commit its completion marker\"\n    )",
+          "assert!(!guard_path.exists())",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“legacy guard cleanup is idempotent”映射到 legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_failure_keeps_state_for_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry",
+        "assertions": [
+          "assert!(failed.is_err())",
+          "assert!(guard_path.is_dir())",
+          "assert_ne!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true,\n        \"failed cleanup must not commit its completion marker\"\n    )",
+          "assert!(!guard_path.exists())",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"settings\"][\"legacy_recovery_cleanup_completed\"],\n        true\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“legacy guard cleanup failure keeps state for retry”映射到 legacy_recovery_cleanup_failure_keeps_marker_unset_and_can_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryHttpTests.test_recover_state_success_does_not_call_fallback",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"fallback\"], true)",
+          "assert_eq!(calls.len(), 3)",
+          "assert_eq!(calls[0].method, \"POST\")",
+          "assert!(\n        calls[0]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/recover-state\"))\n    )",
+          "assert_eq!(calls[1].method, \"POST\")",
+          "assert!(\n        calls[1]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/clear-rate-limit\"))\n    )",
+          "assert_eq!(calls[2].method, \"DELETE\")",
+          "assert!(\n        calls[2]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/temp-unschedulable\"))\n    )",
+          "assert_eq!(failed[\"success\"], false)",
+          "assert_eq!(failed[\"error_code\"], \"http_500\")",
+          "assert_eq!(harness.mock.calls().len(), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recover state success does not call fallback”映射到 recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryHttpTests.test_recover_state_404_uses_both_official_fallbacks",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"fallback\"], true)",
+          "assert_eq!(calls.len(), 3)",
+          "assert_eq!(calls[0].method, \"POST\")",
+          "assert!(\n        calls[0]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/recover-state\"))\n    )",
+          "assert_eq!(calls[1].method, \"POST\")",
+          "assert!(\n        calls[1]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/clear-rate-limit\"))\n    )",
+          "assert_eq!(calls[2].method, \"DELETE\")",
+          "assert!(\n        calls[2]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/temp-unschedulable\"))\n    )",
+          "assert_eq!(failed[\"success\"], false)",
+          "assert_eq!(failed[\"error_code\"], \"http_500\")",
+          "assert_eq!(harness.mock.calls().len(), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recover state 404 uses both official fallbacks”映射到 recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthRecoveryHttpTests.test_non_404_recovery_failure_never_falls_back",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500",
+        "assertions": [
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"fallback\"], true)",
+          "assert_eq!(calls.len(), 3)",
+          "assert_eq!(calls[0].method, \"POST\")",
+          "assert!(\n        calls[0]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/recover-state\"))\n    )",
+          "assert_eq!(calls[1].method, \"POST\")",
+          "assert!(\n        calls[1]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/clear-rate-limit\"))\n    )",
+          "assert_eq!(calls[2].method, \"DELETE\")",
+          "assert!(\n        calls[2]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{id}/temp-unschedulable\"))\n    )",
+          "assert_eq!(failed[\"success\"], false)",
+          "assert_eq!(failed[\"error_code\"], \"http_500\")",
+          "assert_eq!(harness.mock.calls().len(), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“non 404 recovery failure never falls back”映射到 recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_500；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_fresh_available_quota_recovers_existing_rate_limit_without_cache_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_self_heals_a_released_block_without_recovery_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“fresh available quota recovers existing rate limit without cache once”映射到 monitor_tick_self_heals_a_released_block_without_recovery_request；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_depleted_seven_day_never_runs_account_test",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "fresh_seven_day_exhaustion_blocks_model_verification_until_reset",
+        "assertions": [
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"pending\",\n        \"a fresh future seven-day reset may leave an intent pending\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(\n        harness.runtime.monitor.state().unwrap()[\"pending_events\"]\n            .as_object()\n            .unwrap()\n            .is_empty()\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧测试先查询一次，再确认新鲜7d仍100%且reset在未来时不运行模型测试、不给待通知事件；Rust真实 Monitor 经回环GET更新缓存，允许额度等待意图保持pending，并核对GET=1、test=0、事件为空。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_idle_ticks_do_not_reread_database_or_state_file",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "idle_monitor_ticks_do_not_repeat_upstream_requests",
+        "assertions": [
+          "assert!(\n        completed_while_locked,\n        \"an idle tick inside the inventory cache window must not query accounts\"\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(integer(&row[\"id\"]).unwrap() > 0);",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实Rust Monitor 首次tick后，在+2s idle tick期间同时用PG ACCESS EXCLUSIVE锁证明不查询accounts，并在Linux用inotify监视同一临时oauth-state.json的IN_OPEN/IN_ACCESS，断言状态文件零打开/读取；本机macOS只运行PG缓存断言，inotify分支交Linux CI执行。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_bootstrap_queue_is_bounded_and_advances_between_ticks",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_bootstrap_queue_is_bounded_and_advances_between_ticks",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(usage_ids, ids)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“bootstrap queue is bounded and advances between ticks”映射到 monitor_bootstrap_queue_is_bounded_and_advances_between_ticks；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recovery_test_uses_luna_and_creates_success_event",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_self_heals_a_released_block_without_recovery_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recovery test uses luna and creates success event”映射到 monitor_tick_self_heals_a_released_block_without_recovery_request；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_failure_is_cached_and_does_not_retest_for_delivery_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_401\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(event[\"status\"], \"auth_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_401\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(event[\"status\"], \"test_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_500\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“test failure is cached and does not retest for delivery retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_http_401_and_402_create_auth_events",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_401\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(event[\"status\"], \"auth_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_401\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(event[\"status\"], \"test_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_500\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“http 401 and 402 create auth events”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_no_automatic_probe_before_seven_day_reset",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "cached_seven_day_exhaustion_does_not_probe_before_future_reset",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(state[\"oauth_results\"][id.to_string()], prior)",
+          "assert!(state[\"pending_events\"].as_object().unwrap().is_empty())",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧缓存7d使用率100%、reset仍在未来；临时PostgreSQL中rate-limit已到期，真实Monitor tick不发额度GET、不发模型测试，且缓存与pending事件保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_successful_test_self_heals_without_recover_state_call",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_self_heals_a_released_block_without_recovery_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“successful test self heals without recover state call”映射到 monitor_tick_self_heals_a_released_block_without_recovery_request；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recover_state_runs_after_test_when_block_remains",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
+          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
+          "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
+          "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(restarted_intent[\"status\"], \"blocked\")",
+          "assert_eq!(restarted_intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(\n                after_restart[\"rate_limited_at\"],\n                after_write[\"rate_limited_at\"]\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“recover state runs after test when block remains”映射到 monitor_test_success_falls_back_to_recover_state_and_retries_failure；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_threshold_block_recovers_at_due_time_below_custom_threshold",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_self_heals_a_released_block_without_recovery_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“threshold block recovers at due time below custom threshold”映射到 monitor_tick_self_heals_a_released_block_without_recovery_request；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_may_clear_one_old_block_before_recover_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_tick_self_heals_a_released_block_without_recovery_request",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“test may clear one old block before recover state”映射到 monitor_tick_self_heals_a_released_block_without_recovery_request；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_threshold_block_still_above_threshold_waits_one_hour",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "threshold_block_still_above_threshold_waits_one_hour",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"next_retry_at\"],\n        datetime(due + Duration::seconds(7200))\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧阈值block在0秒查询、3599秒仍不查询、3600秒再查一次，模型测试保持0且next_retry=7200秒；Rust通过真实Monitor、注入时钟、临时PG和loopback quota验证该间隔。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_recovery_failure_keeps_intent_for_backoff_retry",
+      "status": "superseded",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
+          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
+          "assert_eq!(intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(intent[\"recovery_write_dispatched\"], true)",
+          "assert_eq!(\n                after_write[\"rate_limited_at\"],\n                blocked_before_write[\"rate_limited_at\"]\n            )",
+          "assert_eq!(\n                after_write[\"rate_limit_reset_at\"],\n                blocked_before_write[\"rate_limit_reset_at\"]\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(restarted_intent[\"status\"], \"blocked\")",
+          "assert_eq!(restarted_intent[\"last_error_code\"], \"recovery_uncertain\")",
+          "assert_eq!(\n                after_restart[\"rate_limited_at\"],\n                after_write[\"rate_limited_at\"]\n            )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n                harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n                Value::Null\n            )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧 Python recovery_success=False runner 期望收到 failure 后生成 recovery_failed 事件，将 intent 置为 retry 并在 +60s 重试；该 runner 把已派发 recover-state 的 HTTP 500 当作确定失败。实际 HTTP 500 不能证明状态写入未生效，按批准的未知写入禁止重放规则 superseded。",
+      "superseded_by": "monitor_test_success_falls_back_and_unknown_recovery_write_is_not_replayed",
+      "approved_behavior": "recover-state 状态写入响应为 500 时只读核对账号状态；无法确认时标记 blocked/recovery_uncertain，禁止按 +60s 自动重放。",
+      "replacement": {
+        "legacy_assertions": [
+          "recovery runner 被调用一次后 events[0].status == recovery_failed。",
+          "intent.status == retry 且 next_retry_at == RUN + 60s。"
+        ],
+        "approved_requirement": "已派发状态写入的 HTTP 500 结果未知；先只读核对，无法确认时阻止重放。",
+        "replacement_contract": "loopback 收到一次 recover-state POST 并返回 500；PG 只读账号复查仍显示原限额阻塞；intent 为 blocked/recovery_uncertain；推进 61s 后 tick 及新 Runtime startup/tick 均不增加 usage、test 或 recover-state 请求。"
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_failure_cannot_bypass_query_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_401\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(event[\"status\"], \"auth_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_401\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(event[\"status\"], \"test_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_500\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“test failure cannot bypass query cooldown”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrency_signature_change_stops_recovery_mutation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "monitor_recovery_stops_if_account_concurrency_changes_during_test",
+        "assertions": [
+          "assert_eq!(initial_concurrency, Some(2))",
+          "assert_eq!(changed_concurrency, Some(3))",
+          "assert_eq!(intent[\"status\"], \"retry\")",
+          "assert_eq!(intent[\"last_error_code\"], \"recovery_state_changed\")",
+          "assert_eq!(\n        intent[\"next_retry_at\"],\n        datetime(due + Duration::seconds(60))\n    )",
+          "assert_eq!(event[\"test_success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/clear-rate-limit\"), 0)",
+          "assert_eq!(harness.mock.count(\"DELETE\", \"/temp-unschedulable\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“concurrency signature change stops recovery mutation”映射到 monitor_recovery_stops_if_account_concurrency_changes_during_test；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_immediate_recovery_runs_at_0459_beijing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_recovers_fresh_available_quota_once_at_0459_beijing",
+        "assertions": [
+          "assert!(due .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap()).to_rfc3339().contains(\"T04:59:00+08:00\"));",
+          "assert_eq!(first[\"recovered_count\"], 1)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(id).await.unwrap()[\"rate_limited_at\"],\n        Value::Null\n    )",
+          "assert_eq!(event[\"status\"], \"recovered\")",
+          "assert_eq!(event[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(second[\"recovered_count\"], 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"recovered\"\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“immediate recovery runs at 0459 beijing”映射到 force_refresh_recovers_fresh_available_quota_once_at_0459_beijing；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_ignores_batch_cap_and_queries_all_accounts",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_ignores_probe_batch_cap_and_queries_all_accounts",
+        "assertions": [
+          "assert_eq!(report[\"success\"], true)",
+          "assert_eq!(report[\"total_count\"], 3)",
+          "assert_eq!(report[\"queried_count\"], 3)",
+          "assert_eq!(report[\"success_count\"], 3)",
+          "assert_eq!(report[\"failure_count\"], 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 3)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n            state[\"oauth_results\"][id.to_string()][\"queried_at\"],\n            report[\"refresh_at\"]\n        )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh ignores batch cap and queries all accounts”映射到 linked_credentials_share_account_locks_and_force_refresh_ignores_batch_cap；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrent_force_refresh_calls_share_one_cycle",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "concurrent_force_refresh_callers_share_one_runtime_cycle",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(first[\"success\"], true, \"first report: {first_diagnostic}\")",
+          "assert_eq!(\n        second[\"success\"], true,\n        \"coalesced report: {second_diagnostic}\"\n    )",
+          "assert_eq!(first[\"coalesced\"], false)",
+          "assert_eq!(second[\"coalesced\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(\n        has_no_automatic_attempts(quota_query),\n        \"manual refresh must not consume automatic budget: {quota_query}\"\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“concurrent force refresh calls share one cycle”映射到 concurrent_force_refresh_callers_share_one_runtime_cycle；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_timeout_waiting_for_shared_lock_is_explicit",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock",
+        "assertions": [
+          "assert_eq!(report[\"success\"], false)",
+          "assert_eq!(report[\"timed_out\"], true)",
+          "assert_eq!(report[\"error_code\"], \"force_refresh_timeout\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh timeout waiting for shared lock is explicit”映射到 force_refresh_cycle_lock_timeout_does_not_dispatch_after_unlock；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_due_quota_still_depleted_waits_one_hour",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "due_quota_still_depleted_waits_one_hour",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"next_retry_at\"],\n        datetime(due + Duration::seconds(7200))\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧5h额度已到reset但刷新后仍100%，初次查询后等待一小时，3599秒不重复查询、3600秒再次查询，模型测试为0；独立Rust Monitor场景断言两次loopback GET和7200秒retry。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_auth_failure_alerts_without_recovery_or_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry",
+        "assertions": [
+          "assert_eq!(intent[\"status\"], expected_status)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_401\")",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
+          "assert_eq!(event[\"status\"], \"auth_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_401\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(event[\"status\"], \"test_failed\")",
+          "assert_eq!(event[\"error_code\"], \"http_500\")",
+          "assert_eq!(event[\"test_success\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“test auth failure alerts without recovery or retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_account_read_failure_keeps_intent_for_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "account_read_failure_marks_retry_without_model_or_recovery_and_recovers",
+        "assertions": [
+          "assert!(\n        read_was_blocked,\n        \"fresh recovery account lookup must reach the injected PG lock\"\n    )",
+          "assert!(\n        read_was_terminated,\n        \"terminate only the blocked account-reader backend\"\n    )",
+          "assert!(\n        lease_released,\n        \"a failed account lookup must release the account lease\"\n    )",
+          "assert_eq!(first_usage_calls, 1)",
+          "assert_eq!(first_test_calls, 0)",
+          "assert_eq!(first_recovery_calls, 0)",
+          "assert!(\n        retry_committed,\n        \"account-read failure must persist the legacy +60s retry: {retry_state}\"\n    )",
+          "assert!(\n        events_empty,\n        \"account-read failure must not create a notification event\"\n    )",
+          "assert!(\n        retry_test_started,\n        \"the due retry must continue to model verification\"\n    )",
+          "assert_eq!(retry_test_calls, 1)",
+          "assert!(\n        recovered,\n        \"the account must recover once its read path is restored\"\n    )",
+          "assert!(unexpected.is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "通过真实临时PG在quota GET返回后锁住accounts表并仅终止等待中的fresh account lookup，验证模型测试/恢复写均未派发、intent记录+60s retry，并在读取恢复后的下次到期检查成功恢复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_force_refresh_missing_admin_key_is_explicit_and_does_not_query",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls",
+        "assertions": [
+          "assert_eq!(report[\"success\"], false)",
+          "assert_eq!(report[\"error_code\"], \"missing_sub2api_admin_credentials\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh missing admin key is explicit and does not query”映射到 force_refresh_without_admin_key_returns_explicit_error_without_upstream_calls；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_query:OAuthUsageTests.test_active_usage_uses_x_api_key_without_bearer_header",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference",
+        "assertions": [
+          "assert_eq!(first[\"success\"], true)",
+          "assert_eq!(call.method, \"GET\")",
+          "assert_eq!(\n        call.path,\n        format!(\"/api/v1/admin/accounts/{id}/usage?source=active&force=true\")\n    )",
+          "assert_eq!(call.api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert!(call.authorization.is_none())",
+          "assert_eq!(blocked[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(manual[\"success\"], true)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"],\n        json!([datetime(start)])\n    )",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"quota_query\"][\"last_source\"],\n        \"manual\"\n    )",
+          "assert_eq!(cooldown[\"error_code\"], \"query_cooldown\")",
+          "assert_eq!(\n        cooldown[\"next_query_at\"],\n        datetime(start + Duration::minutes(70))\n    )",
+          "assert_eq!(\n        harness\n            .runtime\n            .monitor\n            .queries\n            .query(\n                id,\n                ADMIN_KEY,\n                query_options(Source::Automatic, harness.now()),\n            )\n            .await[\"success\"],\n        true\n    )",
+          "assert_eq!(result[\"success\"], true)",
+          "assert_eq!(result[\"oauth_quota\"][\"plan_type\"], \"free\")",
+          "assert_eq!(\n        result[\"oauth_quota\"][\"ui_windows\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        1\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 4)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“active usage uses x api key without bearer header”映射到 active_usage_endpoint_budget_cooldown_manual_priority_and_free_plan_match_reference；the active usage coordinator sends the loopback request with the required authentication headers and path."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackLatestAttemptTests.test_force_refresh_401_after_success_enables_fallback_key",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known",
+        "assertions": [
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 401 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 402 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"timeout\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"network_error\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"http_500\"\n                )",
+          "assert_eq!(\n            refresh[\"success\"], false,\n            \"{failure_kind} is an unsuccessful forced refresh: {diagnostic}\"\n        )",
+          "assert_eq!(\n            report[\"oauth_states\"][oauth_id.to_string()],\n            \"unknown\",\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(report[\"desired\"], Value::Null, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/schedulable\"),\n            0,\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n            true,\n            \"{failure_kind} must leave the selected fallback key untouched\"\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(state[\"scheduler\"][oauth_id.to_string()][\"last_error_at\"].is_string());",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"available\")",
+          "assert_eq!(report[\"desired\"], false)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unknown\")",
+          "assert_eq!(report[\"desired\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        false\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh 401 after success enables fallback key”映射到 force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackLatestAttemptTests.test_force_refresh_402_without_prior_success_enables_selected_key",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known",
+        "assertions": [
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 401 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 402 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"timeout\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"network_error\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"http_500\"\n                )",
+          "assert_eq!(\n            refresh[\"success\"], false,\n            \"{failure_kind} is an unsuccessful forced refresh: {diagnostic}\"\n        )",
+          "assert_eq!(\n            report[\"oauth_states\"][oauth_id.to_string()],\n            \"unknown\",\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(report[\"desired\"], Value::Null, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/schedulable\"),\n            0,\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n            true,\n            \"{failure_kind} must leave the selected fallback key untouched\"\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(state[\"scheduler\"][oauth_id.to_string()][\"last_error_at\"].is_string());",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"available\")",
+          "assert_eq!(report[\"desired\"], false)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unknown\")",
+          "assert_eq!(report[\"desired\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        false\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh 402 without prior success enables selected key”映射到 force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackLatestAttemptTests.test_force_refresh_timeout_network_and_500_after_success_keep_key_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known",
+        "assertions": [
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 401 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 402 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"timeout\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"network_error\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"http_500\"\n                )",
+          "assert_eq!(\n            refresh[\"success\"], false,\n            \"{failure_kind} is an unsuccessful forced refresh: {diagnostic}\"\n        )",
+          "assert_eq!(\n            report[\"oauth_states\"][oauth_id.to_string()],\n            \"unknown\",\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(report[\"desired\"], Value::Null, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/schedulable\"),\n            0,\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n            true,\n            \"{failure_kind} must leave the selected fallback key untouched\"\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(state[\"scheduler\"][oauth_id.to_string()][\"last_error_at\"].is_string());",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"available\")",
+          "assert_eq!(report[\"desired\"], false)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unknown\")",
+          "assert_eq!(report[\"desired\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        false\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh timeout network and 500 after success keep key state”映射到 force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackLatestAttemptTests.test_force_refresh_success_after_failure_disables_selected_key",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known",
+        "assertions": [
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 401 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 402 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"timeout\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"network_error\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"http_500\"\n                )",
+          "assert_eq!(\n            refresh[\"success\"], false,\n            \"{failure_kind} is an unsuccessful forced refresh: {diagnostic}\"\n        )",
+          "assert_eq!(\n            report[\"oauth_states\"][oauth_id.to_string()],\n            \"unknown\",\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(report[\"desired\"], Value::Null, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/schedulable\"),\n            0,\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n            true,\n            \"{failure_kind} must leave the selected fallback key untouched\"\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(state[\"scheduler\"][oauth_id.to_string()][\"last_error_at\"].is_string());",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"available\")",
+          "assert_eq!(report[\"desired\"], false)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unknown\")",
+          "assert_eq!(report[\"desired\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        false\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“force refresh success after failure disables selected key”映射到 force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackLatestAttemptTests.test_stale_force_refresh_failure_is_unknown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known",
+        "assertions": [
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 401 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(refresh[\"success\"], false, \"HTTP 402 report: {diagnostic}\")",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unavailable\")",
+          "assert_eq!(report[\"desired\"], true)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(initial[\"success\"], true)",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"timeout\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"network_error\"\n                )",
+          "assert_eq!(\n                    harness.runtime.monitor.state().unwrap()[\"scheduler\"][oauth_id.to_string()][\"last_error_code\"],\n                    \"http_500\"\n                )",
+          "assert_eq!(\n            refresh[\"success\"], false,\n            \"{failure_kind} is an unsuccessful forced refresh: {diagnostic}\"\n        )",
+          "assert_eq!(\n            report[\"oauth_states\"][oauth_id.to_string()],\n            \"unknown\",\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(report[\"desired\"], Value::Null, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.mock.count(\"POST\", \"/schedulable\"),\n            0,\n            \"{failure_kind}\"\n        )",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0, \"{failure_kind}\")",
+          "assert_eq!(\n            harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n            true,\n            \"{failure_kind} must leave the selected fallback key untouched\"\n        )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert!(state[\"scheduler\"][oauth_id.to_string()][\"last_error_at\"].is_string());",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"available\")",
+          "assert_eq!(report[\"desired\"], false)",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].body[\"schedulable\"], false)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 2)",
+          "assert_eq!(report[\"oauth_states\"][oauth_id.to_string()], \"unknown\")",
+          "assert_eq!(report[\"desired\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        false\n    )"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“stale force refresh failure is unknown”映射到 force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthMonitorSnapshotTests.test_committed_snapshot_skips_in_progress_cycle",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "fallback_skips_an_uncommitted_force_refresh_snapshot_and_monitor_tick",
+        "assertions": [
+          "assert_eq!(report[\"platform_reasons\"][\"openai\"], \"refresh_in_progress\")",
+          "assert_eq!(report[\"desired_by_platform\"][\"openai\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(refresh[\"success\"], true)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“committed snapshot skips in progress cycle”映射到 fallback_skips_an_uncommitted_force_refresh_snapshot_and_monitor_tick；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthMonitorSnapshotTests.test_evaluation_guard_blocks_monitor_until_fallback_releases",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "fallback_write_excludes_monitor_tick_until_schedulable_response",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert_eq!(report[\"changed_ids\"], json!([key_id]))",
+          "assert_eq!(\n        harness.runtime.monitor.row(key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 1)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“evaluation guard blocks monitor until fallback releases”映射到 fallback_write_excludes_monitor_tick_until_schedulable_response；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:OAuthMonitorSnapshotTests.test_fallback_does_not_write_during_active_recovery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "fallback_ignores_uncommitted_snapshot_while_monitor_worker_is_active",
+        "assertions": [
+          "assert_eq!(report[\"platform_reasons\"][\"openai\"], \"refresh_in_progress\")",
+          "assert_eq!(report[\"desired_by_platform\"][\"openai\"], Value::Null)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 0)"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“fallback does not write during active recovery”映射到 fallback_ignores_uncommitted_snapshot_while_monitor_worker_is_active；the complete force-refresh/fallback path uses synthetic accounts and loopback calls, then checks selected states and writes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_runs_when_openai_monitor_is_busy_missing_or_failed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "grok_fallback_runs_without_openai_monitor_snapshot_when_oauth_state_is_valid",
+        "assertions": [
+          "assert!(harness.runtime.config.state.admin_token().is_ok())",
+          "assert_eq!(report[\"platform_reasons\"][\"openai\"], \"refresh_in_progress\")",
+          "assert_eq!(report[\"desired_by_platform\"][\"openai\"], Value::Null)",
+          "assert_eq!(\n        report[\"grok_oauth_states\"][grok_oauth_id.to_string()],\n        \"unavailable\"\n    )",
+          "assert_eq!(report[\"desired_by_platform\"][\"grok\"], true)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(\n        harness.runtime.monitor.row(openai_key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(\n        harness.runtime.monitor.row(grok_key_id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert_eq!(writes.len(), 1)",
+          "assert!(\n        writes[0]\n            .path\n            .ends_with(&format!(\"/api/v1/admin/accounts/{grok_key_id}/schedulable\"))\n    )",
+          "assert_eq!(writes[0].body[\"schedulable\"], true)",
+          "assert_eq!(writes[0].api_key.as_deref(), Some(ADMIN_KEY))",
+          "assert_eq!(writes[0].authorization, None)",
+          "assert_eq!(\n        fs::read(&harness.runtime.settings.usage_path).unwrap(),\n        oauth_state_before\n    )",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧测试中 OpenAI monitor 的 busy/missing/failed 只表示没有可用快照，管理员凭据仍有效；直接调用 KeyFallback::run(None, ..)，通过真实 Grok PostgreSQL inventory 与 loopback schedulable API 验证 OpenAI 暂停而 Grok 可继续。共享 OAuth state 损坏时拒绝写入由额外 fail-closed 测试覆盖。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_monitor_run_once_refreshes_inventory_without_network_when_recovery_is_disabled",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/oauth_scheduler_parity.rs",
+        "test_name": "recovery_disabled_tick_refreshes_inventory_without_upstream_requests",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(\n        inventory\n            .iter()\n            .any(|account| integer(&account[\"id\"]) == Some(id))\n    )",
+          "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 0)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(harness.mock.unexpected().is_empty())"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "固定旧断言“monitor run once refreshes inventory without network when recovery is disabled”映射到 recovery_disabled_tick_refreshes_inventory_without_upstream_requests；the real Monitor tick reads a temporary PostgreSQL inventory and must make no upstream usage, test, or recovery request."
+    }
+  ]
+}

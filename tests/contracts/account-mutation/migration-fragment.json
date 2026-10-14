@@ -1,0 +1,4472 @@
+{
+  "mappings": [
+    {
+      "covered_assertions": [
+        "same request remains idempotent after reopening; saved batch and all four child jobs are preserved without duplicate writes",
+        "an operation-store commit failure leaves no partial batch or jobs, and a later commit failure preserves existing state",
+        "native write occurs only after dispatch; exact credentials.model_mapping payload and PostgreSQL readback are verified",
+        "admin key and synthetic account credential never appear in persisted operation state or native payload"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_batch_commit_is_atomic_idempotent_and_secret_free",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 192,
+            "text": "self.assertEqual(first[\"batch_id\"], duplicate[\"batch_id\"])"
+          },
+          {
+            "line": 193,
+            "text": "self.assertEqual(len(first[\"items\"]), 2)"
+          },
+          {
+            "line": 194,
+            "text": "self.assertEqual(len(self.queue.listing(batch_id=first[\"batch_id\"])[\"items\"]), 2)"
+          },
+          {
+            "line": 196,
+            "text": "self.assertEqual(len(persisted[\"batches\"]), 1)"
+          },
+          {
+            "line": 197,
+            "text": "self.assertEqual(len(persisted[\"jobs\"]), 2)"
+          },
+          {
+            "line": 198,
+            "text": "self.assertTrue(all(job[\"batch_id\"] == first[\"batch_id\"] for job in persisted[\"jobs\"].values()))"
+          },
+          {
+            "line": 200,
+            "text": "self.assertNotIn(ADMIN_FIXTURE, stored)"
+          },
+          {
+            "line": 201,
+            "text": "self.assertNotIn(\"fixture-access-secret\", stored)"
+          },
+          {
+            "line": 202,
+            "text": "self.assertNotIn(ADMIN_FIXTURE, Path(self.service.r.settings.audit_path).read_text())"
+          },
+          {
+            "line": 206,
+            "text": "self.assertRaisesRegex(OSError, \"fixture atomic write failure\")"
+          },
+          {
+            "line": 209,
+            "text": "self.assertEqual(len(after_failure[\"batches\"]), 1)"
+          },
+          {
+            "line": 210,
+            "text": "self.assertEqual(len(after_failure[\"jobs\"]), 2)"
+          },
+          {
+            "line": 212,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 216,
+            "text": "self.assertEqual(duplicate_accounts.exception.status_code, 422)"
+          },
+          {
+            "line": 217,
+            "text": "self.assertEqual(len(self.queue.store.read()[\"batches\"]), 1)"
+          }
+        ],
+        "line_end": 217,
+        "line_start": 185,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "already-matching source completes unchanged without write; queued eligible children and ineligible Grok child appear together with exact terminal state"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_batch_reports_unchanged_success_and_ineligible_children_together",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 358,
+            "text": "self.assertEqual(initial[1][\"status\"], \"completed\")"
+          },
+          {
+            "line": 359,
+            "text": "self.assertTrue(initial[1][\"result\"][\"unchanged\"])"
+          },
+          {
+            "line": 360,
+            "text": "self.assertEqual(initial[2][\"status\"], \"queued\")"
+          },
+          {
+            "line": 361,
+            "text": "self.assertEqual(initial[3][\"status\"], \"failed\")"
+          },
+          {
+            "line": 362,
+            "text": "self.assertEqual(submitted[\"pending\"], 1)"
+          },
+          {
+            "line": 368,
+            "text": "self.assertEqual(final[1][\"status\"], \"completed\")"
+          },
+          {
+            "line": 369,
+            "text": "self.assertTrue(final[1][\"result\"][\"unchanged\"])"
+          },
+          {
+            "line": 370,
+            "text": "self.assertEqual(final[2][\"status\"], \"completed\")"
+          },
+          {
+            "line": 371,
+            "text": "self.assertEqual(final[3][\"status\"], \"failed\")"
+          },
+          {
+            "line": 372,
+            "text": "self.assertEqual(history[\"pending\"], 0)"
+          },
+          {
+            "line": 373,
+            "text": "self.assertEqual([call[0] for call in self.write_calls], [2])"
+          },
+          {
+            "line": 374,
+            "text": "self.assertEqual(self.db.rows[2][\"model_mapping\"], full_target)"
+          }
+        ],
+        "line_end": 374,
+        "line_start": 345,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "locked account remains queued while free peer writes and completes; releasing the real account lease dispatches the locked account once; batch history remains readable"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_busy_child_does_not_block_other_accounts_and_batch_remains_readable",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 222,
+            "text": "self.assertTrue(lock.acquire(blocking=False))"
+          },
+          {
+            "line": 231,
+            "text": "self.assertEqual((await self.final(second[\"id\"]))[\"status\"], \"completed\")"
+          },
+          {
+            "line": 232,
+            "text": "self.assertEqual((await self.final(third[\"id\"]))[\"status\"], \"completed\")"
+          },
+          {
+            "line": 233,
+            "text": "self.assertEqual(self.queue.get(first[\"id\"])[\"status\"], \"queued\")"
+          },
+          {
+            "line": 234,
+            "text": "self.assertEqual({aid for aid, _mapping, _key in self.write_calls}, {2, 3})"
+          },
+          {
+            "line": 238,
+            "text": "self.assertEqual((await self.final(first[\"id\"]))[\"status\"], \"completed\")"
+          },
+          {
+            "line": 240,
+            "text": "self.assertEqual({item[\"account_id\"] for item in history[\"items\"]}, {1, 2, 3})"
+          },
+          {
+            "line": 241,
+            "text": "self.assertEqual({item[\"status\"] for item in history[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 241,
+        "line_start": 219,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "after a native chunk is dispatched, a profile edit and selected-profile deletion do not change its frozen target",
+        "a 504 after PostgreSQL applies the mapping is read back as completed with the exact frozen payload and no replay"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_dispatched_timeout_checks_frozen_target_after_template_edit_and_deletion",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 324,
+            "text": "self.assertEqual(self.queue.get(full_child[\"id\"])[\"status\"], \"checking\")"
+          },
+          {
+            "line": 325,
+            "text": "self.assertEqual(self.queue.get(degraded_child[\"id\"])[\"status\"], \"checking\")"
+          },
+          {
+            "line": 326,
+            "text": "self.assertEqual(len(self.write_calls), 2)"
+          },
+          {
+            "line": 339,
+            "text": "self.assertEqual(self.queue.get(full_child[\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 340,
+            "text": "self.assertEqual(self.queue.get(degraded_child[\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 341,
+            "text": "self.assertEqual(len(self.write_calls), 2)"
+          },
+          {
+            "line": 342,
+            "text": "self.assertEqual(self.db.rows[1][\"model_mapping\"], self.write_calls[0][1])"
+          },
+          {
+            "line": 343,
+            "text": "self.assertEqual(self.db.rows[2][\"model_mapping\"], self.write_calls[1][1])"
+          }
+        ],
+        "line_end": 343,
+        "line_start": 308,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "batch listing contains all four children, terminal states, and pending=0 after dispatch"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_listing_by_batch_returns_full_terminal_history",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 252,
+            "text": "self.assertLess(len(default_items), 35)"
+          },
+          {
+            "line": 253,
+            "text": "self.assertEqual(len(full_history), 35)"
+          },
+          {
+            "line": 254,
+            "text": "self.assertEqual({item[\"batch_id\"] for item in full_history}, {submitted[\"batch_id\"]})"
+          }
+        ],
+        "line_end": 254,
+        "line_start": 243,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "renaming the selected profile and editing an unrelated profile leave a queued batch eligible",
+        "the exact original selected mapping is dispatched once and read back from PostgreSQL"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_other_template_and_name_changes_do_not_invalidate_queued_batch",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 396,
+            "text": "self.assertEqual(self.queue.get(child[\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 397,
+            "text": "self.assertEqual(self.write_calls, [(1, { \"fixture-full-model\": \"fixture-full-model\", \"fixture-input-*\": \"fixture-full-model\", }, ADMIN_FIXTURE)])"
+          },
+          {
+            "line": 402,
+            "text": "self.assertEqual(after[\"model_mapping\"], self.write_calls[0][1])"
+          },
+          {
+            "line": 404,
+            "text": "self.assertEqual(after[key], before[key], key)"
+          }
+        ],
+        "line_end": 404,
+        "line_start": 376,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "reopened Operations returns the same batch and child IDs for the same request before dispatch",
+        "the reopened queue dispatches each accepted eligible child exactly once and retains terminal history"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_queued_batch_survives_service_restart_without_duplicate_children",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 264,
+            "text": "self.assertEqual(duplicate[\"batch_id\"], submitted[\"batch_id\"])"
+          },
+          {
+            "line": 265,
+            "text": "self.assertEqual({item[\"id\"] for item in resumed}, child_ids)"
+          },
+          {
+            "line": 266,
+            "text": "self.assertTrue(all(item[\"status\"] == \"queued\" for item in resumed))"
+          },
+          {
+            "line": 271,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          },
+          {
+            "line": 273,
+            "text": "self.assertEqual([item[0] for item in self.write_calls].count(1), 1)"
+          },
+          {
+            "line": 274,
+            "text": "self.assertEqual([item[0] for item in self.write_calls].count(2), 1)"
+          }
+        ],
+        "line_end": 274,
+        "line_start": 256,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "deleting the selected queued profile before dispatch changes the child to needs_confirmation",
+        "the unchanged PostgreSQL account mapping and native bulk-write count prove no account write was sent"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_queued_batch_target_deletion_requires_confirmation_without_account_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 303,
+            "text": "self.assertEqual(self.queue.get(child[\"id\"])[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 304,
+            "text": "self.assertEqual(self.write_calls, [])"
+          },
+          {
+            "line": 305,
+            "text": "self.assertEqual(self.db.rows[1], before)"
+          },
+          {
+            "line": 306,
+            "text": "self.assertEqual(self.queue.listing(batch_id=submitted[\"batch_id\"])[\"pending\"], 1)"
+          }
+        ],
+        "line_end": 306,
+        "line_start": 294,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "queued batch sees changed selected profile, becomes needs_confirmation, sends no native write, and leaves account mapping unchanged"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_batch031:AccountTemplateBatch031Tests.test_target_template_change_requires_confirmation_without_account_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 290,
+            "text": "self.assertEqual(result[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 291,
+            "text": "self.assertEqual(self.write_calls, [])"
+          },
+          {
+            "line": 292,
+            "text": "self.assertEqual(self.db.rows[1], before)"
+          }
+        ],
+        "line_end": 292,
+        "line_start": 276,
+        "path": "tests/test_account_batch031.py",
+        "sha256": "62634faf3cbd1017b94db8e65481406f6c725ab407aed9f48248b6c14209dbeb"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "legacy job and request index survive migration; empty batch and batch-request indexes are added"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#legacy operation-store fixture"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:OperationStoreBatchMigrationTests.test_legacy_single_operation_state_migrates_batch_indexes_without_losing_jobs",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 165,
+            "text": "self.assertEqual(data['batches'], {})"
+          },
+          {
+            "line": 166,
+            "text": "self.assertEqual(data['batch_requests'], {})"
+          },
+          {
+            "line": 169,
+            "text": "self.assertEqual(migrated['jobs'][legacy_job['id']], legacy_job)"
+          },
+          {
+            "line": 170,
+            "text": "self.assertEqual(migrated['requests'], {'fixture-request-id-0001': legacy_job['id']})"
+          },
+          {
+            "line": 171,
+            "text": "self.assertEqual(migrated['batches'], {})"
+          },
+          {
+            "line": 172,
+            "text": "self.assertEqual(migrated['batch_requests'], {})"
+          }
+        ],
+        "line_end": 172,
+        "line_start": 150,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "operation_store_migrates_legacy_single_job_without_losing_jobs_or_request_indexes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "an already-satisfied priority operation completes as verified without another upstream write"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_already_satisfied_short_operation_is_only_verified",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 145,
+            "text": "self.assertEqual(result['status'], 'completed')"
+          },
+          {
+            "line": 146,
+            "text": "self.assertEqual(self.calls, [])"
+          }
+        ],
+        "line_end": 146,
+        "line_start": 142,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "child waits under real parent credential lease, independent account completes, child writes once after unlock"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_busy_queues_other_account_runs_then_exact_http_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 78,
+            "text": "self.assertEqual((await self.final(second))['status'], 'completed')"
+          },
+          {
+            "line": 79,
+            "text": "self.assertEqual(self.queue.get(first['id'])['status'], 'queued')"
+          },
+          {
+            "line": 80,
+            "text": "self.assertEqual(self.calls, [(2, {'priority': 5})])"
+          },
+          {
+            "line": 82,
+            "text": "self.assertEqual((await self.final(first))['status'], 'completed')"
+          },
+          {
+            "line": 83,
+            "text": "self.assertEqual(self.calls, [(2, {'priority': 5}), (1, {'priority': 5})])"
+          },
+          {
+            "line": 84,
+            "text": "self.assertEqual(self.queue.store.path.stat().st_mode & 0o777, 0o600)"
+          },
+          {
+            "line": 85,
+            "text": "self.assertNotIn('admin-fixture', self.queue.store.path.read_text())"
+          }
+        ],
+        "line_end": 85,
+        "line_start": 74,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "same request ID returns the same job; changed payload conflicts; a new priority supersedes the queued intent; cancellation prevents its write; parent lock blocks child work"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_idempotence_supersession_cancel_and_same_parent",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 107,
+            "text": "self.assertEqual(first['id'], duplicate['id'])"
+          },
+          {
+            "line": 108,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 110,
+            "text": "self.assertEqual(self.queue.get(first['id'])['status'], 'superseded')"
+          },
+          {
+            "line": 113,
+            "text": "self.assertEqual(self.calls, [])"
+          },
+          {
+            "line": 116,
+            "text": "self.assertEqual((await self.final(child))['status'], 'completed')"
+          },
+          {
+            "line": 117,
+            "text": "self.assertEqual(self.calls, [(2, {'priority': 5})])"
+          }
+        ],
+        "line_end": 117,
+        "line_start": 102,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "passive account observations preserve the priority field version while a relevant priority change rotates it",
+        "a relevant priority change under the held parent lease invalidates the queued child; the external value is preserved and no stale PUT is sent"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/version-vectors.json#/operation_versions_full_synthetic_account"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_irrelevant_change_proceeds_real_change_preserves_intent",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 92,
+            "text": "self.assertEqual((await self.final(first))['status'], 'completed')"
+          },
+          {
+            "line": 99,
+            "text": "self.assertEqual((result['status'], result['requested']['priority'], result['current']['priority']), ('needs_confirmation', 9, 7))"
+          },
+          {
+            "line": 100,
+            "text": "self.assertEqual(len(self.calls), 1)"
+          }
+        ],
+        "line_end": 100,
+        "line_start": 87,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_http_projects_versions_and_emits_exact_manual_write_payloads"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "reopened Operations resumes the persisted queued priority job and dispatches its exact write once",
+        "an uncertain priority write becomes checking and then needs_confirmation after readback, with no replay"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_restart_queued_resumes_but_uncertain_write_only_checks",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 124,
+            "text": "self.assertEqual(self.queue.get(queued['id'])['status'], 'completed')"
+          },
+          {
+            "line": 129,
+            "text": "self.assertEqual(self.queue.get(uncertain['id'])['status'], 'needs_confirmation')"
+          },
+          {
+            "line": 130,
+            "text": "self.assertEqual(self.calls, [(1, {'priority': 5})])"
+          }
+        ],
+        "line_end": 130,
+        "line_start": 119,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_unknown_priority_write_is_checked_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "an applied priority write with a 504 is completed from PostgreSQL readback and its exact PUT is not repeated",
+        "a non-applied uncertain priority write becomes needs_confirmation without replay",
+        "operation-store save failures before acceptance or dispatch produce no native priority write"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_account_operations023:Queue023Tests.test_timeout_readback_completes_without_replay_and_save_failure_never_sends",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 135,
+            "text": "self.assertEqual((await self.final(job))['status'], 'completed')"
+          },
+          {
+            "line": 136,
+            "text": "self.assertEqual(len(self.calls), 1)"
+          },
+          {
+            "line": 138,
+            "text": "self.assertRaises(OSError)"
+          },
+          {
+            "line": 140,
+            "text": "self.assertEqual(len(self.calls), 1)"
+          }
+        ],
+        "line_end": 140,
+        "line_start": 132,
+        "path": "tests/test_account_operations023.py",
+        "sha256": "e648722058c1f42991c1d809bca8795c2ba7e21ca2e49fb814e11a225977d7db"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_unknown_priority_write_is_checked_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "real lock keeps queued child operation pending while unrelated work completes; one write occurs after unlock"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:OperationsContracts035Tests.test_busy_settings_operation_remains_queued_then_runs_once",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 312,
+            "text": "self.assertEqual(self.queue.get(job[\"id\"])[\"status\"], \"queued\")"
+          },
+          {
+            "line": 313,
+            "text": "self.assertEqual(self.service.account_settings.apply.await_count, 1)"
+          },
+          {
+            "line": 315,
+            "text": "self.assertEqual(self.queue.get(job[\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 316,
+            "text": "self.assertEqual(self.service.account_settings.apply.await_count, 2)"
+          }
+        ],
+        "line_end": 316,
+        "line_start": 308,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "priority, recover, and reset_quota remain separate queued intents; manual priority acceptance sends no write"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:OperationsContracts035Tests.test_priority_does_not_cancel_recovery_or_use_card_intents",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 342,
+            "text": "self.assertEqual({self.queue.get(item[\"id\"])[\"status\"] for item in (priority, recovery, use_card)}, {\"queued\"})"
+          },
+          {
+            "line": 343,
+            "text": "self.assertEqual(self.queue.get(recovery[\"id\"])[\"action\"], \"recover\")"
+          },
+          {
+            "line": 344,
+            "text": "self.assertEqual(self.queue.get(use_card[\"id\"])[\"action\"], \"reset_quota\")"
+          }
+        ],
+        "line_end": 344,
+        "line_start": 335,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_capabilities_and_human_priority_keep_recovery_intents_independent"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a non-applied HTTP 504 enters checking, then needs_confirmation after PostgreSQL readback",
+        "the loopback records exactly one PUT after a second tick, proving the unknown write is not replayed"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:OperationsContracts035Tests.test_timeout_enters_confirmation_and_does_not_replay_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 330,
+            "text": "self.assertEqual(self.queue.get(job[\"id\"])[\"status\"], \"checking\")"
+          },
+          {
+            "line": 332,
+            "text": "self.assertEqual(self.queue.get(job[\"id\"])[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 333,
+            "text": "self.assertEqual(self.service.account_settings.apply.await_count, 1)"
+          }
+        ],
+        "line_end": 333,
+        "line_start": 326,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_unknown_priority_write_is_checked_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "already-satisfied setting reports verified completion with no second PUT"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:OperationsContracts035Tests.test_unchanged_settings_operation_is_verified_without_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 322,
+            "text": "self.assertEqual(result[\"status\"], \"completed\")"
+          },
+          {
+            "line": 323,
+            "text": "self.assertTrue(result[\"result\"][\"verified\"])"
+          },
+          {
+            "line": 324,
+            "text": "self.service.account_settings.apply.assert_not_awaited()"
+          }
+        ],
+        "line_end": 324,
+        "line_start": 318,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_queue_waits_for_parent_lock_then_writes_once_and_supersedes_idempotently"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "model configuration dispatches only credentials.model_mapping, preserves credential extras, proxy clear emits proxy_id=0, and PostgreSQL reads back NULL"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_model_config_writes_only_local_mapping_and_proxy_can_clear_with_zero",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 229,
+            "text": "self.assertTrue(result[\"verified\"])"
+          },
+          {
+            "line": 231,
+            "text": "self.assertEqual((method, path), (\"POST\", \"accounts/bulk-update\"))"
+          },
+          {
+            "line": 232,
+            "text": "self.assertEqual(kwargs[\"json\"], {\"account_ids\": [7], \"credentials\": {\"model_mapping\": {\"fixture-new-model\": \"fixture-new-model\"}}})"
+          },
+          {
+            "line": 234,
+            "text": "self.assertEqual(self.fixture.row[key], before[key], key)"
+          },
+          {
+            "line": 239,
+            "text": "self.assertEqual(self.fixture.calls[-1][2][\"json\"], {\"proxy_id\": 0})"
+          },
+          {
+            "line": 240,
+            "text": "self.assertIsNone(self.fixture.row[\"proxy_id\"])"
+          },
+          {
+            "line": 241,
+            "text": "self.assertEqual(self.fixture.row[\"group_ids\"], before[\"group_ids\"])"
+          },
+          {
+            "line": 242,
+            "text": "self.assertEqual(self.fixture.row[\"schedulable\"], before[\"schedulable\"])"
+          },
+          {
+            "line": 243,
+            "text": "self.assertEqual(self.fixture.row[\"credentials\"], before[\"credentials\"])"
+          }
+        ],
+        "line_end": 243,
+        "line_start": 223,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact_contracts"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "concurrency, load_factor, and proxy_id accept both valid endpoints, including i32 and i64 maxima",
+        "zero, over-limit, boolean, fractional, string, and overflowing numeric values are rejected by the live route",
+        "explicit NULL load_factor is accepted, written as JSON null, and read back as PostgreSQL NULL",
+        "effective load factor resolves explicit value, concurrency fallback, and default value from PostgreSQL state"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_numeric_requests_are_strict_and_effective_load_factor_is_automatic",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 139,
+            "text": "self.assertEqual(getattr(model(**{field: value, \"expected_version\": VERSION}), field), value)"
+          },
+          {
+            "line": 141,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 143,
+            "text": "self.assertIsNone(LoadFactorRequest(load_factor=None, expected_version=VERSION).load_factor)"
+          },
+          {
+            "line": 147,
+            "text": "self.assertEqual((await self.fixture.account_settings.view(7))[\"effective_load_factor\"], expected)"
+          }
+        ],
+        "line_end": 154,
+        "line_start": 131,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact_contracts"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "proxy DTO contains four public fields and omits host, port, username, password, and synthetic credentials"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_proxy_dto_exposes_no_address_or_authentication_fields",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 257,
+            "text": "self.assertEqual(result, [{\"id\": 11, \"name\": \"fixture proxy\", \"protocol\": \"https\", \"status\": \"active\"}])"
+          },
+          {
+            "line": 260,
+            "text": "self.assertNotIn(secret, serialized)"
+          }
+        ],
+        "line_end": 260,
+        "line_start": 255,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_http_projects_versions_and_emits_exact_manual_write_payloads"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "inherited credentials report each model, proxy, and sync capability as non-editable with its exact independent reason",
+        "passthrough disables model configuration but retains proxy and model-sync capability with empty reasons"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_real_credential_inheritance_and_passthrough_state_controls_capabilities",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 200,
+            "text": "self.assertTrue(independent[\"model_config\"][\"editable\"])"
+          },
+          {
+            "line": 201,
+            "text": "self.assertTrue(independent[\"proxy\"][\"editable\"])"
+          },
+          {
+            "line": 202,
+            "text": "self.assertTrue(independent[\"sync_models\"][\"editable\"])"
+          },
+          {
+            "line": 208,
+            "text": "self.assertFalse(inherited_caps[action][\"editable\"])"
+          },
+          {
+            "line": 209,
+            "text": "self.assertTrue(inherited_caps[action][\"reason\"])"
+          },
+          {
+            "line": 210,
+            "text": "self.assertFalse(target_reached({**inherited, \"model_mapping\": {}}, \"model_config\", {\"whitelist\": [], \"mappings\": []}))"
+          },
+          {
+            "line": 215,
+            "text": "self.assertFalse(passthrough_caps[\"model_config\"][\"editable\"])"
+          },
+          {
+            "line": 216,
+            "text": "self.assertTrue(passthrough_caps[\"proxy\"][\"editable\"])"
+          },
+          {
+            "line": 217,
+            "text": "self.assertIn(\"透传\", passthrough_caps[\"model_config\"][\"reason\"])"
+          },
+          {
+            "line": 221,
+            "text": "self.assertNotEqual(versions(changed_parent)[\"model_config\"], versions(account_row())[\"model_config\"])"
+          }
+        ],
+        "line_end": 221,
+        "line_start": 198,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_capabilities_and_human_priority_keep_recovery_intents_independent"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_http_projects_versions_and_emits_exact_manual_write_payloads"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "priority version ignores passive observations but changes with priority; pinned full-account, parent-child, group-order, and model-config version vectors match Python"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/version-vectors.json#/operation_versions_*"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_settings_versions_are_field_scoped_and_ignore_passive_observations",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 165,
+            "text": "self.assertNotEqual(result[\"priority\" if field == \"priority\" else field if field in result else \"proxy\"], baseline[\"priority\" if field == \"priority\" else field if field in result else \"proxy\"])"
+          },
+          {
+            "line": 171,
+            "text": "self.assertEqual(result[name], baseline[name], f\"{field} changed {name}\")"
+          },
+          {
+            "line": 173,
+            "text": "self.assertNotEqual(result[\"sync_models\"], baseline[\"sync_models\"])"
+          },
+          {
+            "line": 182,
+            "text": "self.assertEqual({name: versions(changed)[name] for name in setting_names}, {name: baseline[name] for name in setting_names}, field)"
+          },
+          {
+            "line": 187,
+            "text": "self.assertNotEqual(versions(changed)[\"model_config\"], baseline[\"model_config\"])"
+          },
+          {
+            "line": 189,
+            "text": "self.assertEqual(versions(changed)[name], baseline[name])"
+          },
+          {
+            "line": 193,
+            "text": "self.assertNotEqual(versions(changed)[\"model_config\"], baseline[\"model_config\"])"
+          },
+          {
+            "line": 194,
+            "text": "self.assertNotEqual(versions(changed)[\"sync_models\"], baseline[\"sync_models\"])"
+          },
+          {
+            "line": 196,
+            "text": "self.assertEqual(versions(changed)[name], baseline[name])"
+          }
+        ],
+        "line_end": 196,
+        "line_start": 156,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_http_projects_versions_and_emits_exact_manual_write_payloads"
+        },
+        {
+          "path": "server/tests/foundation_compatibility.rs",
+          "test": "all_version_vectors_match_the_pinned_python_contract"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "sync sends one empty-body POST, deduplicates/rejects unsafe model IDs, returns the warning, and never calls test or quota"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_settings035:SettingsContracts035Tests.test_sync_catalog_posts_only_safe_model_ids_and_never_runs_test_or_quota",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 249,
+            "text": "self.assertEqual(result[\"models\"], [\"gpt-6-sol\", \"fixture/model:v1\"])"
+          },
+          {
+            "line": 250,
+            "text": "self.assertEqual(result[\"warnings\"], [\"模型能力信息不完整\"])"
+          },
+          {
+            "line": 251,
+            "text": "self.assertEqual([(method, path) for method, path, _kwargs in self.fixture.calls], [(\"POST\", \"accounts/7/models/sync-upstream\")])"
+          },
+          {
+            "line": 253,
+            "text": "self.assertFalse(any(\"test\" in path or \"quota\" in path for _method, path, _kwargs in self.fixture.calls))"
+          }
+        ],
+        "line_end": 253,
+        "line_start": 245,
+        "path": "tests/test_account_settings035.py",
+        "sha256": "3a8b6c043b9355f0eff6fa405b0ce411d37bd39bf08af4d3341c0c5d19d3131a"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact_contracts"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "native fixture profile combines to exact mapping and Rust template view preserves whitelist/mapping split semantics"
+      ],
+      "fixture_anchors": [
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates",
+        "tests/contracts/config-catalog-fixtures.json#/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_combine_and_split_native_semantics",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 30,
+            "text": "self.assertEqual(combine(value), {\"fixture-model\": \"fixture-model\", \"fixture-input-*\": \"fixture-model\"})"
+          },
+          {
+            "line": 31,
+            "text": "self.assertEqual(combine(split({})), {})"
+          },
+          {
+            "line": 31,
+            "text": "self.assertEqual(split(combine(value)), value)"
+          },
+          {
+            "line": 32,
+            "text": "self.assertRaises(HTTPException)"
+          }
+        ],
+        "line_end": 32,
+        "line_start": 28,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "custom template IDs match custom- plus 24 hexadecimal characters; create, update, desired mapping, stale delete, and delete are checked",
+        "legacy PUT and dynamic custom-template HTTP paths are exercised through the real Axum API",
+        "deletion is confirmed after reload, and invalid/stale requests preserve the saved state"
+      ],
+      "fixture_anchors": [
+        "tests/contracts/config-catalog-fixtures.json#/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_custom_template_crud_uses_dynamic_id_and_preserves_legacy_put",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 96,
+            "text": "self.assertRegex(custom[\"id\"], r\"^custom-[a-f0-9]{24}$\")"
+          },
+          {
+            "line": 99,
+            "text": "self.assertEqual(self.templates.desired(payload), { \"fixture-custom-model\": \"fixture-custom-model\", \"fixture-custom-*\": \"fixture-custom-model\", })"
+          },
+          {
+            "line": 110,
+            "text": "self.assertEqual(updated[\"custom_templates\"][0][\"name\"], \"fixture custom edited\")"
+          },
+          {
+            "line": 111,
+            "text": "self.assertEqual(self.templates.desired(TemplateApplication( expected_version=\"0\" * 64, template_id=custom[\"id\"], template_version=updated[\"template_versions\"][custom[\"id\"]], )), {\"fixture-edited-model\": \"fixture-edited-model\"})"
+          },
+          {
+            "line": 122,
+            "text": "self.assertEqual(saved[\"templates\"][\"full\"][\"whitelist\"], [\"fixture-full-updated\"])"
+          },
+          {
+            "line": 123,
+            "text": "self.assertEqual(saved[\"custom_templates\"][0][\"id\"], custom[\"id\"])"
+          },
+          {
+            "line": 124,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 126,
+            "text": "self.assertEqual(stale.exception.status_code, 409)"
+          },
+          {
+            "line": 129,
+            "text": "self.assertEqual(deleted[\"custom_templates\"], [])"
+          },
+          {
+            "line": 130,
+            "text": "self.assertNotIn(custom[\"id\"], deleted[\"template_versions\"])"
+          },
+          {
+            "line": 131,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 135,
+            "text": "self.assertEqual(missing.exception.status_code, 409)"
+          }
+        ],
+        "line_end": 135,
+        "line_start": 87,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/config_catalog_contract.rs",
+          "test": "account_template_custom_crud_mapping_and_request_validation_match_pinned_python"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_http_crud_legacy_put_names_versions_and_deletion_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "blank whitespace names and 41-character names are rejected by both the template API and schema validation",
+        "invalid-name requests leave catalog version and stored profile version unchanged"
+      ],
+      "fixture_anchors": [
+        "tests/contracts/config-catalog-fixtures.json#/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_custom_template_names_reject_whitespace_and_over_limit",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 161,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 168,
+            "text": "self.assertEqual(blank.exception.status_code, 422)"
+          },
+          {
+            "line": 170,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 177,
+            "text": "self.assertEqual(self.templates.view()[\"custom_templates\"], [])"
+          }
+        ],
+        "line_end": 177,
+        "line_start": 159,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/config_catalog_contract.rs",
+          "test": "account_template_custom_crud_mapping_and_request_validation_match_pinned_python"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_http_crud_legacy_put_names_versions_and_deletion_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "29 custom templates plus three built-ins reach 32; over-limit edit returns 409 without changing stored bytes"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_custom_templates_are_capped_at_32_total",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 147,
+            "text": "self.assertEqual(len(view[\"templates\"]), 32)"
+          },
+          {
+            "line": 148,
+            "text": "self.assertEqual(len(view[\"custom_templates\"]), 29)"
+          },
+          {
+            "line": 149,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 156,
+            "text": "self.assertEqual(limit.exception.status_code, 409)"
+          },
+          {
+            "line": 157,
+            "text": "self.assertEqual(len(self.templates.view()[\"templates\"]), 32)"
+          }
+        ],
+        "line_end": 157,
+        "line_start": 137,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "Python-derived template desired mapping and profile versions are checked; actual batch applies the selected profile to persisted accounts"
+      ],
+      "fixture_anchors": [
+        "tests/contracts/config-catalog-fixtures.json#/templates",
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_desired_and_application_are_versioned",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 48,
+            "text": "self.assertEqual(self.templates.desired(payload), {\"fixture-model\": \"fixture-model\", \"fixture-input-*\": \"fixture-model\", \"fixture-terra-*\": \"fixture-model\"})"
+          },
+          {
+            "line": 48,
+            "text": "self.assertTrue(self.templates.achieved(2, payload))"
+          },
+          {
+            "line": 49,
+            "text": "self.assertRaises(HTTPException)"
+          }
+        ],
+        "line_end": 49,
+        "line_start": 46,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/config_catalog_contract.rs",
+          "test": "account_template_custom_crud_mapping_and_request_validation_match_pinned_python"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "selected full/degraded rows produce only three profiles; mapping, whitelist, takeover, version keys, permissions, and secret-free view are asserted"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_copies_only_three_model_profiles",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 38,
+            "text": "self.assertEqual(view[\"templates\"][\"full\"][\"whitelist\"], [\"fixture-full-model\", \"fixture-full-alt\", \"fixture-full-third\"])"
+          },
+          {
+            "line": 39,
+            "text": "self.assertEqual(view[\"templates\"][\"degraded\"][\"mappings\"], [{\"source\": \"fixture-input-*\", \"target\": \"fixture-model\"}, {\"source\": \"fixture-terra-*\", \"target\": \"fixture-model\"}])"
+          },
+          {
+            "line": 40,
+            "text": "self.assertEqual(view[\"templates\"][\"takeover\"], view[\"templates\"][\"degraded\"])"
+          },
+          {
+            "line": 41,
+            "text": "self.assertEqual(self.templates.store.path.stat().st_mode & 0o777, 0o600)"
+          },
+          {
+            "line": 41,
+            "text": "self.assertEqual(self.templates.view()[\"templates\"][\"full\"][\"whitelist\"], [\"fixture-full-model\", \"fixture-full-alt\", \"fixture-full-third\"])"
+          },
+          {
+            "line": 41,
+            "text": "self.assertNotIn(\"credentials\", json.dumps(view))"
+          },
+          {
+            "line": 42,
+            "text": "self.assertEqual(set(view[\"template_versions\"]), set(view[\"templates\"]))"
+          },
+          {
+            "line": 43,
+            "text": "self.assertTrue(all(meta[\"name\"] and meta[\"builtin\"] is False for meta in view[\"template_meta\"].values()))"
+          }
+        ],
+        "line_end": 43,
+        "line_start": 36,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "no explicit source IDs returns configured=false and performs no inferred initialization"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_does_not_guess_source_accounts",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 35,
+            "text": "self.assertFalse(view[\"configured\"])"
+          }
+        ],
+        "line_end": 35,
+        "line_start": 33,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "same explicit source pair preserves the initialized version; later unrelated source choice cannot overwrite it"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_initialization_is_idempotent_without_nested_lock",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 45,
+            "text": "self.assertEqual(first[\"version\"], second[\"version\"])"
+          }
+        ],
+        "line_end": 45,
+        "line_start": 44,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_initialization_uses_only_selected_profiles_once_and_preserves_json_order"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "blocked migration lock propagates failure and preserves the original legacy state bytes"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#temporary template state"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_legacy_migration_save_error_is_propagated",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 234,
+            "text": "self.assertRaisesRegex(OSError, \"fixture migration write failure\")"
+          },
+          {
+            "line": 237,
+            "text": "self.assertNotIn(\"custom_templates\", json.loads(self.templates.store.path.read_text()))"
+          }
+        ],
+        "line_end": 237,
+        "line_start": 223,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_legacy_save_and_migration_failures_preserve_original_bytes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "each legacy profile ID can be renamed/deleted; final template, metadata, and version maps stay empty after reload"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_legacy_template_ids_can_be_renamed_deleted_and_remain_empty_after_reload",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 187,
+            "text": "self.assertEqual(renamed[\"template_meta\"][template_id], { \"name\": f\"fixture {template_id} renamed\", \"builtin\": False, })"
+          },
+          {
+            "line": 193,
+            "text": "self.assertEqual(view[\"templates\"], {})"
+          },
+          {
+            "line": 194,
+            "text": "self.assertEqual(view[\"template_meta\"], {})"
+          },
+          {
+            "line": 195,
+            "text": "self.assertEqual(view[\"template_versions\"], {})"
+          },
+          {
+            "line": 197,
+            "text": "self.assertEqual(reopened[\"templates\"], {})"
+          },
+          {
+            "line": 198,
+            "text": "self.assertEqual(reopened[\"template_meta\"], {})"
+          },
+          {
+            "line": 199,
+            "text": "self.assertEqual(reopened[\"template_versions\"], {})"
+          }
+        ],
+        "line_end": 199,
+        "line_start": 179,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "legacy three-profile save after deletion returns 409 and preserves exact original bytes"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#temporary template state"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_legacy_three_item_save_after_template_deletion_requires_upgrade_without_partial_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 214,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 217,
+            "text": "self.assertEqual(upgrade.exception.status_code, 409)"
+          },
+          {
+            "line": 218,
+            "text": "self.assertIn(\"升级\", str(upgrade.exception.detail))"
+          },
+          {
+            "line": 220,
+            "text": "self.assertEqual(current[\"templates\"], before)"
+          },
+          {
+            "line": 221,
+            "text": "self.assertNotIn(\"degraded\", current[\"templates\"])"
+          }
+        ],
+        "line_end": 221,
+        "line_start": 201,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_legacy_save_and_migration_failures_preserve_original_bytes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "legacy three-profile state normalizes to the pinned schema, persists revision, and retains only the expected custom-template field"
+      ],
+      "fixture_anchors": [
+        "tests/contracts/config-catalog-fixtures.json#/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_migrates_legacy_template_state_with_three_builtin_profiles",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 81,
+            "text": "self.assertEqual(view[\"templates\"], old_templates)"
+          },
+          {
+            "line": 82,
+            "text": "self.assertEqual(view[\"custom_templates\"], [])"
+          },
+          {
+            "line": 84,
+            "text": "self.assertEqual(stored[\"revision\"], 5)"
+          },
+          {
+            "line": 85,
+            "text": "self.assertEqual(stored[\"custom_templates\"], [])"
+          }
+        ],
+        "line_end": 85,
+        "line_start": 69,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/config_catalog_contract.rs",
+          "test": "account_template_schema_upgrade_matches_pinned_python_and_preserves_read_only_or_corrupt_state"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a name-only edit of the legacy full profile preserves its profile version and updates metadata",
+        "editing profile content rotates its profile version and metadata covers the exact profile set"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/config-catalog-fixtures.json#/templates"
+      ],
+      "legacy_id": "py:tests.test_account_templates027:AccountTemplateTests.test_template_versions_track_profile_content_but_ignore_names",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 58,
+            "text": "self.assertEqual(renamed[\"template_versions\"][\"full\"], original)"
+          },
+          {
+            "line": 59,
+            "text": "self.assertEqual(renamed[\"template_meta\"][\"full\"], {\"name\": \"fixture renamed full\", \"builtin\": False})"
+          },
+          {
+            "line": 65,
+            "text": "self.assertNotEqual(changed[\"template_versions\"][\"full\"], original)"
+          },
+          {
+            "line": 66,
+            "text": "self.assertEqual(set(changed[\"template_meta\"]), set(changed[\"templates\"]))"
+          },
+          {
+            "line": 67,
+            "text": "self.assertTrue(all(item[\"name\"] and item[\"builtin\"] is False for item in changed[\"template_meta\"].values()))"
+          }
+        ],
+        "line_end": 67,
+        "line_start": 51,
+        "path": "tests/test_account_templates027.py",
+        "sha256": "be0cdb2ea0473ceb41f876720bbd30073a08484385f58a302f1f25675c4e16b2"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_custom_catalog_caps_crud_and_legacy_empty_state_survive_reload"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "template_http_crud_legacy_put_names_versions_and_deletion_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "exact candidates preserve live group union order, include absent catalog IDs, and omit wildcard, image, and blank entries"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_exact_model_test_options_ignore_wildcards_media_and_blanks",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 39,
+            "text": "self.assertEqual([item[\"id\"] for item in exact_model_options(allowlists)], [\"gpt-6-luna\", \"gpt-5.6-terra\"])"
+          },
+          {
+            "line": 41,
+            "text": "self.assertEqual(exact_model_options([{\"enabled\": True, \"models\": [\"*\"]}]), [])"
+          }
+        ],
+        "line_end": 41,
+        "line_start": 34,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "fresh, one-second-stale, and partial Grok billing cases use fixed-SHA Python oracle inputs and expected outcomes",
+        "the actual quota-refresh route makes one exact loopback usage request per OAuth Grok account with no credentials in its response"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_grok_billing"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_grok_batch_accepts_only_fresh_complete_billing",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 61,
+            "text": "self.assertTrue(billing_is_fresh(payload, queried.isoformat()))"
+          },
+          {
+            "line": 62,
+            "text": "self.assertFalse(billing_is_fresh({\"grok_billing\": {\"fetched_at\": (queried - timedelta(seconds=1)).isoformat()}}, queried.isoformat()))"
+          },
+          {
+            "line": 63,
+            "text": "self.assertFalse(billing_is_fresh({\"grok_billing\": {\"fetched_at\": queried.isoformat(), \"partial\": True}}, queried.isoformat()))"
+          }
+        ],
+        "line_end": 63,
+        "line_start": 58,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_grok_quota_refresh_accepts_only_fresh_complete_billing"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "live group union filters provider catalogue in exact Python-derived order and deduplicates duplicate model IDs"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_model_options_use_union_of_current_group_allowlists",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 29,
+            "text": "self.assertEqual([item[\"id\"] for item in filter_model_options(items, allowlists)], [\"gpt-6-luna\", \"gpt-5.6-terra\"])"
+          },
+          {
+            "line": 31,
+            "text": "self.assertEqual(len(filter_model_options(items, [{\"enabled\": False, \"models\": []}])), 3)"
+          },
+          {
+            "line": 32,
+            "text": "self.assertEqual(len(filter_model_options(items, [])), 3)"
+          }
+        ],
+        "line_end": 32,
+        "line_start": 18,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the live direct-priority route rejects booleans and negative values",
+        "priority zero and i32::MAX are accepted and read back from PostgreSQL with one exact PUT each"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_priority_is_strict_and_bounded",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 45,
+            "text": "self.assertEqual(PriorityRequest(priority=0, **base).priority, 0)"
+          },
+          {
+            "line": 46,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 48,
+            "text": "self.assertRaises(ValidationError)"
+          }
+        ],
+        "line_end": 49,
+        "line_start": 43,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "settings_model_config_proxy_clear_sync_and_numeric_validation_use_exact_contracts"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "missing and legacy true confirmation both work; unknown mode returns 422 before native request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_test_request_accepts_missing_or_legacy_confirmation",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 53,
+            "text": "self.assertFalse(request.confirmed)"
+          },
+          {
+            "line": 54,
+            "text": "self.assertTrue(TestRequest(expected_version=\"a\" * 64, confirmed=True).confirmed)"
+          },
+          {
+            "line": 55,
+            "text": "self.assertRaises(ValidationError)"
+          }
+        ],
+        "line_end": 56,
+        "line_start": 51,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "strict exact group union bypasses upstream catalog lookup and preserves models absent from catalog"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_candidates_are_full_exact_group_union_without_catalog_intersection",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 114,
+            "text": "self.assertEqual([item[\"id\"] for item in result], exact)"
+          },
+          {
+            "line": 115,
+            "text": "self.assertEqual([item[\"display_name\"] for item in result], exact)"
+          },
+          {
+            "line": 116,
+            "text": "self.assertEqual(db.params, {\"ids\": [13], \"platform\": \"openai\"})"
+          },
+          {
+            "line": 117,
+            "text": "self.assertIn(\"ORDER BY sort_order,id\", db.sql)"
+          }
+        ],
+        "line_end": 117,
+        "line_start": 96,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "no-group and disabled-allowlist requests fetch the unrestricted catalog and filter to text models"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_candidates_fall_back_when_no_group_or_allowlist_disabled",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 133,
+            "text": "self.assertEqual([item[\"id\"] for item in await actions.models(7, \"admin-key\", \"model_test\")], [\"gpt-6-sol\"])"
+          },
+          {
+            "line": 136,
+            "text": "self.assertEqual([item[\"id\"] for item in await actions.models(7, \"admin-key\", \"model_test\")], [\"gpt-6-sol\"])"
+          }
+        ],
+        "line_end": 136,
+        "line_start": 119,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "candidate is rechecked against current group allowlist before native test; wildcard/media candidates are denied"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_submission_rechecks_exact_allowlist",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 144,
+            "text": "self.assertTrue(await actions.model_allowed(row, \"gpt-6-sol\"))"
+          },
+          {
+            "line": 145,
+            "text": "self.assertFalse(await actions.model_allowed(row, \"gpt-6-luna\"))"
+          },
+          {
+            "line": 146,
+            "text": "self.assertFalse(await actions.model_allowed(row, \"gpt-6-*\"))"
+          },
+          {
+            "line": 147,
+            "text": "self.assertFalse(await actions.model_allowed(row, \"gpt-image-1\"))"
+          }
+        ],
+        "line_end": 147,
+        "line_start": 138,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "live group allowlist union filters the provider catalog; actual API performs one upstream model request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_models_filters_using_live_group_allowlist_union",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 93,
+            "text": "self.assertEqual([item[\"id\"] for item in result], [\"gpt-6-luna\", \"gpt-5.6-terra\"])"
+          },
+          {
+            "line": 94,
+            "text": "self.assertEqual(service.r.db.params, {\"ids\": [7, 8]})"
+          }
+        ],
+        "line_end": 94,
+        "line_start": 67,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "exact Python SSE content chunks retain whitespace/newlines; test can be repeated without confirmation after lock release"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/desktop_actions"
+      ],
+      "legacy_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_real_sse_keeps_whitespace_and_releases_lock_without_confirmation",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 172,
+            "text": "self.assertRaises(Exception)"
+          },
+          {
+            "line": 174,
+            "text": "self.assertEqual([e[\"text\"] for e in events if e[\"type\"] == \"content\"], chunks)"
+          },
+          {
+            "line": 175,
+            "text": "self.assertTrue(events[-1][\"success\"])"
+          },
+          {
+            "line": 176,
+            "text": "self.assertEqual(len(requests), 1)"
+          },
+          {
+            "line": 177,
+            "text": "self.assertEqual(requests[0][0], \"/api/v1/admin/accounts/7/test\")"
+          },
+          {
+            "line": 178,
+            "text": "self.assertNotIn(\"confirmed\", requests[0][1])"
+          },
+          {
+            "line": 179,
+            "text": "self.assertFalse(lock.locked())"
+          }
+        ],
+        "line_end": 181,
+        "line_start": 149,
+        "path": "tests/test_desktop_actions.py",
+        "sha256": "0afbb79fd418b597309f85281e50c62b8f23b1c99161fcb6f0881bb6abce4aa4"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "unsupported account platform and deleted account are rejected; stale account version returns conflict"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_account_platform_deleted_account_and_version_conflicts_are_rejected",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 209,
+            "text": "self.assertEqual(self.put().status_code, 422)"
+          },
+          {
+            "line": 210,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          },
+          {
+            "line": 214,
+            "text": "self.assertEqual(self.put(expected_version=\"a\" * 64).status_code, 404)"
+          },
+          {
+            "line": 215,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          },
+          {
+            "line": 218,
+            "text": "self.assertEqual(self.put(expected_version=\"a\" * 64).status_code, 409)"
+          },
+          {
+            "line": 219,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          }
+        ],
+        "line_end": 219,
+        "line_start": 207,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_auth_schema_deletion_and_error_readback_match_pinned_contract"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_http_preserves_scope_rejects_stale_targets_and_requires_readback"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "cross-platform, deleted scope, stale target, and invalid empty scope fail before another upstream PUT"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_cross_platform_deleted_scope_and_invalid_target_are_rejected_without_put",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 196,
+            "text": "self.assertEqual(self.put().status_code, 409)"
+          },
+          {
+            "line": 197,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          },
+          {
+            "line": 201,
+            "text": "self.assertEqual(self.put().status_code, 409)"
+          },
+          {
+            "line": 202,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          },
+          {
+            "line": 204,
+            "text": "self.assertEqual(self.put(group_ids=[12]).status_code, 422)"
+          },
+          {
+            "line": 205,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          }
+        ],
+        "line_end": 205,
+        "line_start": 194,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_http_preserves_scope_rejects_stale_targets_and_requires_readback"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_auth_schema_deletion_and_error_readback_match_pinned_contract"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "wrong admin key returns 401 without native PUT; successful result excludes credentials and extra"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_put_requires_fresh_admin_auth_and_response_excludes_credentials",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 180,
+            "text": "self.assertEqual(missing.status_code, 401)"
+          },
+          {
+            "line": 186,
+            "text": "self.assertEqual(invalid.status_code, 401)"
+          },
+          {
+            "line": 189,
+            "text": "self.assertEqual(response.status_code, 200, response.text)"
+          },
+          {
+            "line": 190,
+            "text": "self.assertNotIn(\"credentials\", response.text)"
+          },
+          {
+            "line": 191,
+            "text": "self.assertNotIn(\"api_key\", response.text)"
+          },
+          {
+            "line": 192,
+            "text": "self.assertNotIn(\"extra\", response.text)"
+          }
+        ],
+        "line_end": 192,
+        "line_start": 177,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_auth_schema_deletion_and_error_readback_match_pinned_contract"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "scoped group PUT merges out-of-scope memberships, reads PostgreSQL back, and sends one exact payload"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_put_uses_scope_target_version_and_preserves_out_of_scope_members",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 161,
+            "text": "self.assertEqual(response.status_code, 200, response.text)"
+          },
+          {
+            "line": 162,
+            "text": "self.assertEqual(response.json()[\"group_ids\"], [11, 99])"
+          },
+          {
+            "line": 163,
+            "text": "self.assertEqual(self.db.row[\"group_ids\"], [11, 99])"
+          },
+          {
+            "line": 166,
+            "text": "self.assertEqual(len(puts), 1)"
+          },
+          {
+            "line": 167,
+            "text": "self.assertEqual(puts[0][1], \"/api/v1/admin/accounts/1\")"
+          },
+          {
+            "line": 168,
+            "text": "self.assertEqual(puts[0][2], {\"group_ids\": [11, 99]})"
+          },
+          {
+            "line": 169,
+            "text": "self.auto_reset.cancel.assert_not_called()"
+          },
+          {
+            "line": 171,
+            "text": "self.assertFalse(any(path.endswith(\"/models\") or \"/usage\" in path for path in paths))"
+          },
+          {
+            "line": 172,
+            "text": "self.assertEqual( [params.get(\"ids\") for sql, params in self.db.fetch_all_calls if \"FROM groups\" in sql], [[10, 11]], )"
+          }
+        ],
+        "line_end": 175,
+        "line_start": 159,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_http_preserves_scope_rejects_stale_targets_and_requires_readback"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "unknown request keys and empty scope return 422 without upstream writes"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_request_schema_forbids_extra_fields_and_empty_scope",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 260,
+            "text": "self.assertEqual(response.status_code, 422)"
+          },
+          {
+            "line": 262,
+            "text": "self.assertEqual(response.status_code, 422)"
+          },
+          {
+            "line": 263,
+            "text": "self.assertEqual([call for call in self.capture.calls if call[0] == \"PUT\"], [])"
+          }
+        ],
+        "line_end": 263,
+        "line_start": 254,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_auth_schema_deletion_and_error_readback_match_pinned_contract"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a loopback 504 after applying the scoped group update is confirmed by PostgreSQL readback",
+        "the route returns the merged group IDs and sends exactly one PUT with the exact API key and no credentials"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_timeout_reads_back_applied_membership_without_replaying_put",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 232,
+            "text": "self.assertTrue(result[\"verified\"])"
+          },
+          {
+            "line": 233,
+            "text": "self.assertEqual(result[\"group_ids\"], [11, 99])"
+          },
+          {
+            "line": 234,
+            "text": "self.assertEqual(len(calls), 1)"
+          },
+          {
+            "line": 235,
+            "text": "self.auto_reset.cancel.assert_not_called()"
+          }
+        ],
+        "line_end": 235,
+        "line_start": 221,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_auth_schema_deletion_and_error_readback_match_pinned_contract"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "upstream 2xx without membership readback returns 502, preserves old memberships, and is not replayed"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_group_management:GroupManagementTests.test_upstream_success_without_readback_is_an_unconfirmed_error_without_replay",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 246,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 248,
+            "text": "self.assertEqual(raised.exception.status_code, 502)"
+          },
+          {
+            "line": 249,
+            "text": "self.assertIn(\"未确认\", str(raised.exception.detail))"
+          },
+          {
+            "line": 250,
+            "text": "self.assertEqual(len(calls), 1)"
+          },
+          {
+            "line": 251,
+            "text": "self.assertEqual(self.db.row[\"group_ids\"], [10, 99])"
+          },
+          {
+            "line": 252,
+            "text": "self.auto_reset.cancel.assert_not_called()"
+          }
+        ],
+        "line_end": 252,
+        "line_start": 237,
+        "path": "tests/test_group_management.py",
+        "sha256": "ef3814dd6832f29da7a2ed979353bc5ccd49a954225ac868083237b1924d6ad9"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "group_management_http_preserves_scope_rejects_stale_targets_and_requires_readback"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "real account lease leaves one child queued while another child writes; releasing it dispatches exactly once"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_busy_account_stays_queued_while_other_account_runs",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 467,
+            "text": "self.assertTrue(lock.acquire(blocking=False))"
+          },
+          {
+            "line": 474,
+            "text": "self.assertEqual(by_id[1][\"status\"], \"queued\")"
+          },
+          {
+            "line": 475,
+            "text": "self.assertEqual(by_id[2][\"status\"], \"completed\")"
+          },
+          {
+            "line": 476,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"ids\"], [2])"
+          },
+          {
+            "line": 480,
+            "text": "self.assertEqual([call[\"ids\"] for call in self.fixture.receiver.calls], [[2], [1]])"
+          },
+          {
+            "line": 481,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 481,
+        "line_start": 465,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "cancelled child is excluded from exact bulk account_ids; remaining children complete"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_cancelled_child_is_not_sent_in_native_batch",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 578,
+            "text": "self.assertEqual(self.queue.get(child[\"id\"])[\"status\"], \"cancelled\")"
+          },
+          {
+            "line": 579,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"ids\"], [2])"
+          }
+        ],
+        "line_end": 579,
+        "line_start": 570,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "adding a child after delete acceptance changes the queued parent to needs_confirmation with the related-account reason",
+        "the delete native request count stays unchanged and the new PostgreSQL child remains present"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_delete_child_set_change_requires_confirmation_without_native_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 623,
+            "text": "self.assertEqual(item[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 624,
+            "text": "self.assertIn(\"关联账号\", item[\"reason\"])"
+          },
+          {
+            "line": 625,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          }
+        ],
+        "line_end": 625,
+        "line_start": 612,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_delete_confirmation_detaches_managed_accounts_and_rechecks_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "adding a newly managed child after delete acceptance changes the managed parent to needs_confirmation",
+        "no batch-delete request occurs and the exact managed-account set remains in config"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_delete_managed_child_set_change_requires_confirmation_without_native_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 634,
+            "text": "self.assertEqual(self.queue.get(submitted[\"items\"][0][\"id\"])[\"managed_child_ids\"], [])"
+          },
+          {
+            "line": 640,
+            "text": "self.assertEqual(item[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 641,
+            "text": "self.assertIn(\"关联账号\", item[\"reason\"])"
+          },
+          {
+            "line": 642,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          },
+          {
+            "line": 643,
+            "text": "self.assertEqual(self.fixture.controller.config.managed_account_ids, {2})"
+          }
+        ],
+        "line_end": 643,
+        "line_start": 627,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_delete_confirmation_detaches_managed_accounts_and_rechecks_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "unconfirmed native delete returns 422 before persisting a batch",
+        "confirmed mixed-platform delete detaches the managed account, sends only exact account IDs once, and deletes both PostgreSQL rows"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_delete_requires_confirmation_detaches_managed_and_sends_only_ids",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 596,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 598,
+            "text": "self.assertEqual(raised.exception.status_code, 422)"
+          },
+          {
+            "line": 605,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"path\"], \"/api/v1/admin/accounts/batch-delete\")"
+          },
+          {
+            "line": 606,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"body\"], {\"account_ids\": [1, 2]})"
+          },
+          {
+            "line": 607,
+            "text": "self.assertEqual(self.fixture.rows[1][\"deleted_at\"], \"fixture-deleted\")"
+          },
+          {
+            "line": 608,
+            "text": "self.assertEqual(self.fixture.rows[2][\"deleted_at\"], \"fixture-deleted\")"
+          },
+          {
+            "line": 609,
+            "text": "self.assertEqual(self.fixture.controller.config.managed_account_ids, set())"
+          },
+          {
+            "line": 610,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 610,
+        "line_start": 594,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_delete_confirmation_detaches_managed_accounts_and_rechecks_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "failure to save an accepted proxy batch leaves no batch or child jobs and sends no native request",
+        "failure to persist the dispatched state leaves accepted children queued and emits no early bulk write",
+        "after recovery the batch sends the exact proxy payload once and PostgreSQL reads back the target"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_dispatch_persistence_failure_never_writes_native",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 542,
+            "text": "self.assertEqual(len(writes), 2)"
+          },
+          {
+            "line": 543,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          },
+          {
+            "line": 544,
+            "text": "self.assertEqual( {item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"queued\"}, )"
+          }
+        ],
+        "line_end": 547,
+        "line_start": 524,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_acceptance_and_dispatch_persistence_failures_never_send_early"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "an explicit unsupported-route 404 triggers exactly one per-account fallback PUT with the exact proxy body",
+        "a generic 404 becomes needs_confirmation and triggers no fallback or replay"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_explicit_route_404_falls_back_once_but_generic_404_does_not_replay",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 700,
+            "text": "self.assertEqual([call[\"method\"] for call in self.fixture.receiver.calls], [\"POST\", \"PUT\", \"PUT\"])"
+          },
+          {
+            "line": 701,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=route[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          },
+          {
+            "line": 710,
+            "text": "self.assertEqual([call[\"method\"] for call in self.fixture.receiver.calls], [\"POST\"])"
+          },
+          {
+            "line": 711,
+            "text": "self.assertEqual(self.queue.get(generic[\"items\"][0][\"id\"])[\"status\"], \"needs_confirmation\")"
+          }
+        ],
+        "line_end": 711,
+        "line_start": 694,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "native group batch merges out-of-scope groups, shares one exact payload, and reads both accounts back"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_groups_merge_final_payload_and_preserve_scope_outside",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 419,
+            "text": "self.assertEqual(len(calls), 1)"
+          },
+          {
+            "line": 420,
+            "text": "self.assertEqual(calls[0][\"path\"], \"/api/v1/admin/accounts/bulk-update\")"
+          },
+          {
+            "line": 421,
+            "text": "self.assertEqual(calls[0][\"body\"], {\"account_ids\": [1, 2], \"group_ids\": [2, 8]})"
+          },
+          {
+            "line": 422,
+            "text": "self.assertEqual(self.fixture.rows[1][\"group_ids\"], [2, 8])"
+          },
+          {
+            "line": 423,
+            "text": "self.assertEqual(self.fixture.rows[2][\"group_ids\"], [2, 8])"
+          },
+          {
+            "line": 424,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 424,
+        "line_start": 408,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "real proxy and template batch routes reject inherited children with failed status and a reason",
+        "no native bulk update is sent for either inherited child"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_inherited_proxy_and_template_children_are_rejected_without_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 659,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          },
+          {
+            "line": 660,
+            "text": "self.assertEqual(self.queue.get(proxy[\"items\"][0][\"id\"])[\"status\"], \"failed\")"
+          },
+          {
+            "line": 661,
+            "text": "self.assertEqual(self.queue.get(template[\"items\"][0][\"id\"])[\"status\"], \"failed\")"
+          }
+        ],
+        "line_end": 661,
+        "line_start": 645,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the actual runtime background scheduler, without a manual tick, dispatches and completes the accepted native batch",
+        "request count and exact chunk contents show each account is written exactly once"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_loop_auto_launches_one_native_batch",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 691,
+            "text": "self.assertEqual(states, {\"completed\"})"
+          },
+          {
+            "line": 692,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          }
+        ],
+        "line_end": 692,
+        "line_start": 680,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_scheduler_sends_a_101_account_batch_as_two_exact_chunks"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "string account IDs, duplicate IDs, malformed fields, empty/oversized account sets, zero target, and extra proxy fields are rejected with 422",
+        "all rejected shapes leave persisted batch and job indexes empty"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_malformed_account_batch_id_is_rejected_before_persist",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 714,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 721,
+            "text": "self.assertEqual(self.queue.listing()[\"items\"], [])"
+          }
+        ],
+        "line_end": 721,
+        "line_start": 713,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "malformed per-account result IDs and mismatched aggregate totals each become needs_confirmation",
+        "PostgreSQL retains the original proxy values and a second tick does not replay either bulk write"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_malformed_native_result_never_claims_success_or_replays",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 520,
+            "text": "self.assertEqual({item[\"status\"] for item in results}, {\"needs_confirmation\"})"
+          },
+          {
+            "line": 522,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), index + 1)"
+          }
+        ],
+        "line_end": 522,
+        "line_start": 510,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the real background scheduler completes a 101-account batch as exact 100- and 1-account chunks",
+        "the two chunks contain every account exactly once and all 101 PostgreSQL rows read back the target"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_more_than_100_accounts_are_chunked_without_replay",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 461,
+            "text": "self.assertEqual([len(call[\"ids\"]) for call in self.fixture.receiver.calls], [100, 100, 5])"
+          },
+          {
+            "line": 462,
+            "text": "self.assertEqual([call[\"body\"][\"proxy_id\"] for call in self.fixture.receiver.calls], [22, 22, 22])"
+          },
+          {
+            "line": 463,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 463,
+        "line_start": 456,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_scheduler_sends_a_101_account_batch_as_two_exact_chunks"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "valid partial native result partitions success and failed IDs; persisted mapping/proxy readback differs only for the reported failed child"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_partial_result_marks_only_failed_account",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 505,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          },
+          {
+            "line": 506,
+            "text": "self.assertEqual(results[1][\"status\"], \"completed\")"
+          },
+          {
+            "line": 507,
+            "text": "self.assertEqual(results[2][\"status\"], \"failed\")"
+          },
+          {
+            "line": 508,
+            "text": "self.assertEqual(results[2][\"result\"], None)"
+          }
+        ],
+        "line_end": 508,
+        "line_start": 496,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "multi-account proxy clear emits one POST with proxy_id=0 and reads both persisted NULL values back"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_proxy_clear_is_one_native_post_with_zero_only",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 432,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          },
+          {
+            "line": 433,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"body\"], {\"account_ids\": [1, 2], \"proxy_id\": 0})"
+          },
+          {
+            "line": 434,
+            "text": "self.assertEqual(self.fixture.rows[1][\"proxy_id\"], None)"
+          },
+          {
+            "line": 435,
+            "text": "self.assertEqual(self.fixture.rows[2][\"proxy_id\"], None)"
+          },
+          {
+            "line": 436,
+            "text": "self.assertEqual({item[\"status\"] for item in self.queue.listing(batch_id=submitted[\"batch_id\"])[\"items\"]}, {\"completed\"})"
+          }
+        ],
+        "line_end": 436,
+        "line_start": 426,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a persisted running proxy child and dispatched chunk reopen as checking",
+        "the recovered batch checks PostgreSQL without native replay and finishes needs_confirmation when the old target was not applied"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_restart_running_child_becomes_read_only_checking",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 591,
+            "text": "self.assertEqual(self.queue.get(child[\"id\"])[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 592,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          }
+        ],
+        "line_end": 592,
+        "line_start": 581,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_restart_checks_a_dispatched_chunk_without_replaying_it"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "template batch sends only credentials.model_mapping; source remains unchanged and modified child readback completes"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/templates"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_template_batch_writes_only_credentials_model_mapping",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 446,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          },
+          {
+            "line": 447,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"body\"], { \"account_ids\": [1, 2], \"credentials\": {\"model_mapping\": {\"fixture-model\": \"fixture-model\"}}, })"
+          },
+          {
+            "line": 451,
+            "text": "self.assertEqual(self.fixture.rows[aid][\"model_mapping\"], {\"fixture-model\": \"fixture-model\"})"
+          },
+          {
+            "line": 453,
+            "text": "self.assertEqual(self.fixture.rows[aid][field], before[aid][field], field)"
+          },
+          {
+            "line": 454,
+            "text": "self.assertEqual(self.queue.get(next(item[\"id\"] for item in submitted[\"items\"] if item[\"account_id\"] == aid))[\"status\"], \"completed\")"
+          }
+        ],
+        "line_end": 454,
+        "line_start": 438,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a stale template-version token is rejected with 409 before batch persistence",
+        "editing the selected profile after queue acceptance changes the child to needs_confirmation without writing the account"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_template_version_change_requires_confirmation",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 666,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 668,
+            "text": "self.assertEqual(raised.exception.status_code, 409)"
+          },
+          {
+            "line": 669,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          }
+        ],
+        "line_end": 669,
+        "line_start": 663,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a non-applied 504 leaves the old PostgreSQL value and enters needs_confirmation without replay",
+        "a 504 after apply completes through PostgreSQL readback and never repeats the exact native request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_timeout_before_write_and_after_write_are_readback_only",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 555,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          },
+          {
+            "line": 556,
+            "text": "self.assertEqual(self.fixture.rows[1][\"proxy_id\"], 21)"
+          },
+          {
+            "line": 557,
+            "text": "self.assertEqual(self.queue.get(before[\"items\"][0][\"id\"])[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 564,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 2)"
+          },
+          {
+            "line": 565,
+            "text": "self.assertEqual(self.fixture.rows[2][\"proxy_id\"], 22)"
+          },
+          {
+            "line": 566,
+            "text": "self.assertEqual(self.queue.get(after[\"items\"][0][\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 568,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 2)"
+          }
+        ],
+        "line_end": 568,
+        "line_start": 549,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "an inactive synthetic proxy target is marked needs_confirmation before dispatch",
+        "the native proxy bulk-update request count remains zero"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_unavailable_proxy_is_rejected_without_native_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 676,
+            "text": "self.assertEqual(submitted[\"items\"][0][\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 678,
+            "text": "self.assertEqual(self.fixture.receiver.calls, [])"
+          }
+        ],
+        "line_end": 678,
+        "line_start": 671,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "an already-matching template child and an already-matching proxy child complete as unchanged",
+        "the unchanged proxy child shares a mixed OpenAI/Grok batch but is excluded from the exact native account_ids"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_native_batch038:NativeBatch038Tests.test_unchanged_children_are_verified_without_native_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 489,
+            "text": "self.assertEqual(len(self.fixture.receiver.calls), 1)"
+          },
+          {
+            "line": 490,
+            "text": "self.assertEqual(self.fixture.receiver.calls[0][\"ids\"], [2])"
+          },
+          {
+            "line": 492,
+            "text": "self.assertTrue(results[1][\"result\"][\"unchanged\"])"
+          },
+          {
+            "line": 493,
+            "text": "self.assertEqual(results[1][\"status\"], \"completed\")"
+          },
+          {
+            "line": 494,
+            "text": "self.assertEqual(results[2][\"status\"], \"completed\")"
+          }
+        ],
+        "line_end": 494,
+        "line_start": 483,
+        "path": "tests/test_native_batch038.py",
+        "sha256": "3d26d89b97de1da14aeb956bb3be23a2819c8c5ba2ef4587b37cdfacaa098dd8"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "busy account remains queued while free peer writes, then writes once after actual lease release"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_busy_queue_retries_once_after_account_becomes_free",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 304,
+            "text": "self.assertTrue(lock.acquire())"
+          },
+          {
+            "line": 307,
+            "text": "self.assertEqual(self.queue.get(submitted[\"items\"][0][\"id\"])[\"status\"], \"queued\")"
+          },
+          {
+            "line": 308,
+            "text": "self.assertEqual(self.put_calls, [])"
+          },
+          {
+            "line": 312,
+            "text": "self.assertEqual(self.queue.get(submitted[\"items\"][0][\"id\"])[\"status\"], \"completed\")"
+          },
+          {
+            "line": 313,
+            "text": "self.assertEqual(self.put_calls, [2])"
+          }
+        ],
+        "line_end": 313,
+        "line_start": 301,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "reusing a request ID with a changed proxy target returns 409",
+        "changing proxy_id under the account lease after acceptance yields needs_confirmation, preserves the live PostgreSQL value, and sends no bulk write"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_field_conflict_is_confirmed_without_proxy_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 297,
+            "text": "self.assertEqual(result[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 298,
+            "text": "self.assertIn(\"相关字段\", result[\"reason\"])"
+          },
+          {
+            "line": 299,
+            "text": "self.assertEqual(self.put_calls, [])"
+          }
+        ],
+        "line_end": 299,
+        "line_start": 292,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "reordered accounts preserve the same batch and canonical child order; payload reuse conflicts"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_idempotency_conflict_and_account_order_are_deterministic",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 320,
+            "text": "self.assertEqual(second[\"batch_id\"], first[\"batch_id\"])"
+          },
+          {
+            "line": 321,
+            "text": "self.assertEqual([item[\"account_id\"] for item in second[\"items\"]], [2, 1])"
+          },
+          {
+            "line": 323,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 325,
+            "text": "self.assertEqual(raised.exception.status_code, 409)"
+          },
+          {
+            "line": 326,
+            "text": "self.assertEqual(raised.exception.detail[\"code\"], \"idempotency_conflict\")"
+          }
+        ],
+        "line_end": 326,
+        "line_start": 315,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "inherited, deleted, missing, inactive, and nonexistent-target cases produce exact per-item failed/needs_confirmation statuses",
+        "preflight rejects account writes before native bulk dispatch"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_inheritance_deleted_missing_and_invalid_target_are_per_item",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 265,
+            "text": "self.assertEqual(items[4][\"status\"], \"failed\")"
+          },
+          {
+            "line": 266,
+            "text": "self.assertTrue(items[4][\"reason\"])"
+          },
+          {
+            "line": 267,
+            "text": "self.assertEqual(items[5][\"status\"], \"failed\")"
+          },
+          {
+            "line": 268,
+            "text": "self.assertEqual(items[6][\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 269,
+            "text": "self.assertEqual(items[99][\"status\"], \"failed\")"
+          },
+          {
+            "line": 270,
+            "text": "self.assertEqual(submitted[\"pending\"], 1)"
+          },
+          {
+            "line": 271,
+            "text": "self.assertEqual(self.put_calls, [])"
+          }
+        ],
+        "line_end": 271,
+        "line_start": 259,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "mixed OpenAI/Grok changed targets are sorted into one exact native request while an already-matching child completes unchanged without dispatch",
+        "proxy clear is sent as proxy_id=0 and both PostgreSQL proxy_id values read back NULL"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_multiple_platforms_unchanged_and_clear_are_listed_and_written",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 233,
+            "text": "self.assertEqual(submitted[\"pending\"], 2)"
+          },
+          {
+            "line": 234,
+            "text": "self.assertEqual(initial[1][\"status\"], \"queued\")"
+          },
+          {
+            "line": 235,
+            "text": "self.assertEqual(initial[2][\"status\"], \"queued\")"
+          },
+          {
+            "line": 236,
+            "text": "self.assertEqual(initial[3][\"status\"], \"completed\")"
+          },
+          {
+            "line": 237,
+            "text": "self.assertTrue(initial[3][\"result\"][\"unchanged\"])"
+          },
+          {
+            "line": 238,
+            "text": "self.assertEqual(self.queue.listing(submitted[\"batch_id\"]), submitted)"
+          },
+          {
+            "line": 243,
+            "text": "self.assertEqual({item[\"status\"] for item in finished[\"items\"]}, {\"completed\"})"
+          },
+          {
+            "line": 244,
+            "text": "self.assertEqual([account_id for account_id, _body in self.writes], [1, 2])"
+          },
+          {
+            "line": 250,
+            "text": "self.assertEqual(clear[\"pending\"], 3)"
+          },
+          {
+            "line": 254,
+            "text": "self.assertEqual(clear_result[\"pending\"], 0)"
+          },
+          {
+            "line": 255,
+            "text": "self.assertEqual({item[\"status\"] for item in clear_result[\"items\"]}, {\"completed\"})"
+          },
+          {
+            "line": 256,
+            "text": "self.assertEqual([self.rows[account_id][\"proxy_id\"] for account_id in (1, 2, 3)], [None, None, None])"
+          },
+          {
+            "line": 257,
+            "text": "self.assertEqual([body for _account_id, body in self.writes[-3:]], [{\"proxy_id\": 0}] * 3)"
+          }
+        ],
+        "line_end": 257,
+        "line_start": 229,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "valid partial result marks only failed account; cancelled child is omitted from native target; completed peers persist"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_partial_proxy_writes_and_cancel_keep_each_child_state",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 278,
+            "text": "self.assertEqual(cancelled[\"status\"], \"cancelled\")"
+          },
+          {
+            "line": 284,
+            "text": "self.assertEqual(statuses, {1: \"completed\", 2: \"cancelled\", 3: \"needs_confirmation\"})"
+          },
+          {
+            "line": 287,
+            "text": "self.assertEqual(result[\"pending\"], 1)"
+          },
+          {
+            "line": 288,
+            "text": "self.assertEqual(self.put_calls, [1, 3])"
+          },
+          {
+            "line": 289,
+            "text": "self.assertEqual([account_id for account_id, _body in self.writes], [1])"
+          },
+          {
+            "line": 290,
+            "text": "self.assertEqual(self.rows[3][\"proxy_id\"], 11)"
+          }
+        ],
+        "line_end": 290,
+        "line_start": 273,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "empty, oversized, duplicate, and string-ID batches plus zero/extra-field proxy payloads are rejected before persistence",
+        "the invalid requests leave both batch and job indexes empty"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_request_contract_rejects_bad_shapes_and_duplicate_accounts",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 207,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 209,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 211,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 217,
+            "text": "self.assertRaises(ValidationError)"
+          },
+          {
+            "line": 224,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 226,
+            "text": "self.assertEqual(raised.exception.status_code, 422)"
+          },
+          {
+            "line": 227,
+            "text": "self.assertEqual(self.queue.listing()[\"items\"], [])"
+          }
+        ],
+        "line_end": 227,
+        "line_start": 206,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomic"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "a real proxy batch is reopened with a persisted running job and dispatched native chunk",
+        "recovery performs readback only and leaves needs_confirmation without a repeated native POST"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_restart_of_checking_never_replays_proxy_write",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 333,
+            "text": "self.assertEqual(self.queue.get(child_id)[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 334,
+            "text": "self.assertEqual(self.put_calls, [1])"
+          },
+          {
+            "line": 339,
+            "text": "self.assertEqual(self.queue.get(child_id)[\"status\"], \"needs_confirmation\")"
+          },
+          {
+            "line": 340,
+            "text": "self.assertEqual(self.put_calls, [1])"
+          }
+        ],
+        "line_end": 340,
+        "line_start": 328,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_restart_checks_a_dispatched_chunk_without_replaying_it"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "failed batch acceptance stores no batch/jobs and sends no native request",
+        "failed dispatch-state persistence leaves accepted jobs queued and does not send before the state can be saved",
+        "retry after restoring the test-local store lock sends exactly one proxy write and reads it back from PostgreSQL"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/operation-fixtures.json#/native_bulk"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_save_failure_does_not_accept_batch_or_dispatch_proxy",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 354,
+            "text": "self.assertRaises(OSError)"
+          },
+          {
+            "line": 356,
+            "text": "save_json.assert_called_once()"
+          },
+          {
+            "line": 357,
+            "text": "self.assertEqual(self.queue.listing()[\"items\"], [])"
+          },
+          {
+            "line": 363,
+            "text": "self.assertEqual(state.get(\"jobs\", {}), {})"
+          },
+          {
+            "line": 364,
+            "text": "self.assertEqual(state.get(\"batches\", {}), {})"
+          },
+          {
+            "line": 365,
+            "text": "self.assertEqual(self.put_calls, [])"
+          }
+        ],
+        "line_end": 365,
+        "line_start": 351,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_batch_acceptance_and_dispatch_persistence_failures_never_send_early"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the loopback applies the exact proxy clear then returns 504; PostgreSQL readback completes the job",
+        "a second tick does not replay the single upstream native request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatch036Tests.test_timeout_after_proxy_write_reads_back_without_replay",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 347,
+            "text": "self.assertEqual(result[\"status\"], \"completed\")"
+          },
+          {
+            "line": 348,
+            "text": "self.assertEqual(self.put_calls, [1])"
+          },
+          {
+            "line": 349,
+            "text": "self.assertEqual(self.writes, [(1, {\"proxy_id\": 21})])"
+          }
+        ],
+        "line_end": 349,
+        "line_start": 342,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_group_and_proxy_batches_send_exact_targets_and_never_replay_unknown_writes"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "actual desktop batch route returns 202; loopback Sub2API receiver records the exact x-api-key and proxy body"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)"
+      ],
+      "legacy_id": "py:tests.test_proxy_batch036:ProxyBatchRoute036Tests.test_post_batch_route_returns_202_and_forwards_key",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 399,
+            "text": "self.assertEqual(response.status_code, 202, response.text)"
+          },
+          {
+            "line": 400,
+            "text": "self.assertEqual(response.json(), result)"
+          },
+          {
+            "line": 401,
+            "text": "operations.submit_batch.assert_awaited_once()"
+          },
+          {
+            "line": 403,
+            "text": "self.assertIsInstance(request, ProxyBatchRequest)"
+          },
+          {
+            "line": 404,
+            "text": "self.assertEqual(request.payload.proxy_id, None)"
+          },
+          {
+            "line": 405,
+            "text": "self.assertEqual(key, ADMIN_KEY)"
+          },
+          {
+            "line": 406,
+            "text": "service.authenticate.assert_called_once_with(ADMIN_KEY, fresh=True)"
+          }
+        ],
+        "line_end": 409,
+        "line_start": 369,
+        "path": "tests/test_proxy_batch036.py",
+        "sha256": "3d60f0bbd0f07f519e3f5009582f00c30947193aee164814daa0ab9a9e407358"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "native 404 becomes the unsupported-diagnostic 502 and uses one native request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_native_404_is_reported_as_an_unsupported_diagnostic",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 189,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 192,
+            "text": "self.assertEqual(raised.exception.status_code, 502)"
+          },
+          {
+            "line": 193,
+            "text": "self.assertIn(\"不支持\", str(raised.exception.detail))"
+          },
+          {
+            "line": 194,
+            "text": "self.assertEqual(len(self.http.requests), 1)"
+          }
+        ],
+        "line_end": 194,
+        "line_start": 187,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "quality score, checked_at, item fields and exact sanitized result match pinned Python; credential extras are absent"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_quality_result_keeps_safe_items_and_checked_at_without_credentials",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 139,
+            "text": "self.assertEqual(result[\"score\"], 88)"
+          },
+          {
+            "line": 140,
+            "text": "self.assertEqual(result[\"grade\"], \"yellow\")"
+          },
+          {
+            "line": 141,
+            "text": "self.assertEqual(result[\"summary\"], \"一个目标需要关注\")"
+          },
+          {
+            "line": 142,
+            "text": "self.assertEqual(result[\"exit_ip\"], \"203.0.113.8\")"
+          },
+          {
+            "line": 143,
+            "text": "self.assertEqual(result[\"base_latency_ms\"], 20)"
+          },
+          {
+            "line": 144,
+            "text": "self.assertEqual(result[\"passed_count\"], 1)"
+          },
+          {
+            "line": 145,
+            "text": "self.assertEqual(result[\"warn_count\"], 1)"
+          },
+          {
+            "line": 146,
+            "text": "self.assertEqual(result[\"failed_count\"], 0)"
+          },
+          {
+            "line": 147,
+            "text": "self.assertEqual(result[\"challenge_count\"], 0)"
+          },
+          {
+            "line": 148,
+            "text": "self.assertEqual(result[\"checked_at\"], 1791774000)"
+          },
+          {
+            "line": 149,
+            "text": "self.assertEqual(result[\"items\"], [{ \"target\": \"example.invalid\", \"status\": \"pass\", \"http_status\": 200, \"latency_ms\": 20, \"message\": \"目标可达\", }])"
+          },
+          {
+            "line": 156,
+            "text": "self.assertNotIn(\"cf_ray\", result[\"items\"][0])"
+          },
+          {
+            "line": 158,
+            "text": "self.assertNotIn(\"fixture-secret\", encoded)"
+          },
+          {
+            "line": 159,
+            "text": "self.assertNotIn(\"fixture-token\", encoded)"
+          }
+        ],
+        "line_end": 159,
+        "line_start": 136,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the actual diagnostic route forwards one empty-body POST with the exact key and matches the pinned safe-result oracle",
+        "the real configured 90-second timeout returns within the bounded test window and does not replay the request",
+        "private proxy address, user, password, and token fields are absent from the public response"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_safe_proxy_test_forwards_native_action_with_bounded_timeout",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 118,
+            "text": "self.assertEqual(result, { \"success\": True, \"message\": \"代理连接正常\", \"latency_ms\": 31, \"ip_address\": \"203.0.113.7\", \"city\": \"Taipei\", \"region\": \"Taiwan\", \"country\": \"TW\", \"country_code\": \"TW\", })"
+          },
+          {
+            "line": 128,
+            "text": "self.assertEqual(self.http.client_calls, [(ADMIN_KEY, 90)])"
+          },
+          {
+            "line": 129,
+            "text": "self.assertEqual(len(self.http.requests), 1)"
+          },
+          {
+            "line": 131,
+            "text": "self.assertEqual((request[\"method\"], request[\"path\"]), (\"POST\", \"/api/v1/admin/proxies/7/test\"))"
+          },
+          {
+            "line": 132,
+            "text": "self.assertEqual(json.loads(request[\"body\"]), {})"
+          },
+          {
+            "line": 133,
+            "text": "self.assertNotIn(\"fixture-secret\", json.dumps(result))"
+          },
+          {
+            "line": 134,
+            "text": "self.assertNotIn(\"fixture-password\", json.dumps(result))"
+          }
+        ],
+        "line_end": 134,
+        "line_start": 115,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "two concurrent same proxy/action clicks share one upstream request while quality-check receives its own request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_same_proxy_and_action_coalesces_while_different_action_is_independent",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 167,
+            "text": "self.assertEqual(len(self.http.requests), 1)"
+          },
+          {
+            "line": 169,
+            "text": "self.assertEqual(await first, await second)"
+          },
+          {
+            "line": 170,
+            "text": "self.assertEqual(len(self.http.requests), 1)"
+          },
+          {
+            "line": 174,
+            "text": "self.assertEqual(len(self.http.requests), 2)"
+          },
+          {
+            "line": 175,
+            "text": "self.assertEqual(self.http.requests[-1][\"path\"], \"/api/v1/admin/proxies/7/quality-check\")"
+          }
+        ],
+        "line_end": 175,
+        "line_start": 161,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the loopback remains gated until the actual 90-second diagnostic timeout expires",
+        "the route returns 504 with one upstream POST and remains unreplayed after the gate is released"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_timeout_returns_without_replaying_the_native_request",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 179,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 182,
+            "text": "self.assertEqual(raised.exception.status_code, 504)"
+          },
+          {
+            "line": 183,
+            "text": "self.assertIn(\"未重放\", str(raised.exception.detail))"
+          },
+          {
+            "line": 184,
+            "text": "self.assertEqual(len(self.http.requests), 1)"
+          },
+          {
+            "line": 185,
+            "text": "self.assertEqual(self.http.client_calls, [(ADMIN_KEY, 90)])"
+          }
+        ],
+        "line_end": 185,
+        "line_start": 177,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the desktop quality route forwards the exact admin key and returns Python-derived sanitized quality output",
+        "a bad admin key returns 401 before any upstream call; the diagnostic timeout path also authenticates before dispatch"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnosticsRoute037Tests.test_desktop_routes_authenticate_and_forward_quality_check",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 216,
+            "text": "self.assertEqual(response.status_code, 200, response.text)"
+          },
+          {
+            "line": 217,
+            "text": "self.assertEqual(response.json()[\"score\"], 88)"
+          },
+          {
+            "line": 218,
+            "text": "service.authenticate.assert_called_once_with(ADMIN_KEY, fresh=True)"
+          },
+          {
+            "line": 219,
+            "text": "self.assertEqual(http.requests[0][\"path\"], \"/api/v1/admin/proxies/12/quality-check\")"
+          }
+        ],
+        "line_end": 223,
+        "line_start": 198,
+        "path": "tests/test_proxy_diagnostics037.py",
+        "sha256": "2e841fdc0e63ecf225ae9de9d4094deadf194247ae885ca94a0c21d6de84b9b6"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        },
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "concurrent clicks coalesce to one native request; failing native status returns error with one additional non-replayed request"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_diagnostics"
+      ],
+      "legacy_id": "py:tests.test_proxy_native_http037:NativeProxyHttpTests.test_inflight_clicks_share_one_actual_request_and_failure_is_not_replayed",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 79,
+            "text": "self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))"
+          },
+          {
+            "line": 83,
+            "text": "self.assertEqual(await first, await second)"
+          },
+          {
+            "line": 84,
+            "text": "self.assertEqual(len(self.requests), 1)"
+          },
+          {
+            "line": 86,
+            "text": "self.assertRaises(HTTPException)"
+          },
+          {
+            "line": 88,
+            "text": "self.assertEqual(len(self.requests), 2)"
+          }
+        ],
+        "line_end": 88,
+        "line_start": 76,
+        "path": "tests/test_proxy_native_http037.py",
+        "sha256": "ae462c0b00fe74c6d43e217e09f554bd541ccafc8a31a930be7e3dc8a41c5242"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_status_match_python"
+        }
+      ],
+      "uncovered_assertions": []
+    },
+    {
+      "covered_assertions": [
+        "the real desktop routes send exactly one POST each to /test and /quality-check with an empty JSON body and the configured admin key",
+        "the test result matches fixed-SHA Python safe_result output with latency 13 and redacts the native proxy URL and credentials",
+        "the quality result matches fixed-SHA Python safe_result output with score 80 and a challenge item"
+      ],
+      "fixture_anchors": [
+        "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
+        "tests/contracts/account-mutation/fixtures.json#/python_oracle/proxy_native_http"
+      ],
+      "legacy_id": "py:tests.test_proxy_native_http037:NativeProxyHttpTests.test_native_paths_headers_and_whitelist_arrive_at_real_receiver",
+      "source": {
+        "assertion_anchors": [
+          {
+            "line": 70,
+            "text": "self.assertEqual(self.requests, [('/api/v1/admin/proxies/7/test', {}, True), ('/api/v1/admin/proxies/7/quality-check', {}, True)])"
+          },
+          {
+            "line": 72,
+            "text": "self.assertEqual(connection['latency_ms'], 13)"
+          },
+          {
+            "line": 73,
+            "text": "self.assertNotIn('fixture-pass', json.dumps(connection))"
+          },
+          {
+            "line": 74,
+            "text": "self.assertEqual((quality['score'], quality['items'][0]['status']), (80, 'challenge'))"
+          }
+        ],
+        "line_end": 74,
+        "line_start": 67,
+        "path": "tests/test_proxy_native_http037.py",
+        "sha256": "ae462c0b00fe74c6d43e217e09f554bd541ccafc8a31a930be7e3dc8a41c5242"
+      },
+      "status": "full",
+      "targets": [
+        {
+          "path": "server/tests/account_mutation_parity.rs",
+          "test": "proxy_native_http_routes_headers_and_whitelists_match_python_oracle_at_loopback"
+        }
+      ],
+      "uncovered_assertions": []
+    }
+  ],
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "schema_version": 1,
+  "status_counts": {
+    "full": 96,
+    "partial": 0
+  },
+  "test_count": 96
+}

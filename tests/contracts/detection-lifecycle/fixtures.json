@@ -1,0 +1,477 @@
+{
+  "legacy_inventory": {
+    "assertion_sites": 370,
+    "file_count": 6,
+    "files": [
+      {
+        "path": "tests/test_detection030.py",
+        "source_sha256": "2d9e909140989ab399500283c1b0b54c55ac9b508ff3db30d0bf695c540d2f24",
+        "test_count": 31,
+        "tests": [
+          {
+            "assertion_sites": 5,
+            "line": 154,
+            "test_id": "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 165,
+            "test_id": "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 172,
+            "test_id": "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 178,
+            "test_id": "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history"
+          },
+          {
+            "assertion_sites": 9,
+            "line": 310,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_all_automatic_sources_and_models_share_exact_300_second_boundary"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 330,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_manual_jobs_are_exempt_and_do_not_extend_automatic_cooldown"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 341,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_actual_account_ids_have_independent_cooldowns_even_with_shared_parent"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 348,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 360,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatched_job_still_consumes_cooldown"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 373,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_cancelled_dispatched_job_still_consumes_cooldown_after_restart"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 392,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_queued_cancellation_before_dispatch_does_not_consume_cooldown"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 400,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_dispatch_registration_is_idempotent_for_retries_of_same_job"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 411,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_automatic_transport_retry_keeps_original_dispatch_time"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 420,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 437,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatch_persistence_never_reaches_upstream"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 444,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_cooling_clues_are_consumed_without_later_replay"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 460,
+            "test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_due_schedule_defers_to_cooldown_without_queuing_a_request"
+          },
+          {
+            "assertion_sites": 7,
+            "line": 482,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_verified_disposition_persists_one_outbox_before_bark_and_survives_restart"
+          },
+          {
+            "assertion_sites": 7,
+            "line": 496,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_result_bark_bypasses_suppression_from_its_new_degradation_mark"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 508,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_unverified_schedule_never_creates_result_notification"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 519,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_missing_admin_authorization_preserves_mark_without_notification"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 527,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_mark_save_failure_cannot_stop_scheduling_or_enqueue_result"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 537,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_non_degraded_and_empty_reports_do_not_create_notifications"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 544,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_result_delivery_retries_on_persisted_schedule_and_only_delivers_once"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 562,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_attempt_save_failure_blocks_bark_until_durable_retry"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 572,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_disabled_bark_suppresses_confirmed_result_and_invalid_config_waits"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 587,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_delivery_receipt_save_failure_keeps_durable_backoff"
+          },
+          {
+            "assertion_sites": 8,
+            "line": 609,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_completion_and_outbox_save_are_atomic_and_restart_can_recover"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 634,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_before_verdict_prevents_mark_schedule_and_bark"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 645,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_after_verified_disposition_suppresses_queued_result"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 654,
+            "test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_during_schedule_write_prevents_completed_receipt"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_detection_credits034.py",
+        "source_sha256": "07d42e4cb4acb9664ff48e0a7424a1b7625cc094c5f5f1bb808747e0c3523ab0",
+        "test_count": 10,
+        "tests": [
+          {
+            "assertion_sites": 2,
+            "line": 153,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_display_window_when_fresh_native_credits_are_available"
+          },
+          {
+            "assertion_sites": 1,
+            "line": 162,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_uses_native_credit_freshness_independently_from_a_fresh_full_window"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 173,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_window_for_unlimited_or_unknown_native_credits"
+          },
+          {
+            "assertion_sites": 1,
+            "line": 198,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_window_for_invalid_or_contradictory_native_evidence"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 222,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_pauses_only_when_native_credits_are_empty_and_full_window_is_fresh"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 234,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_uses_native_usage_percentages_without_mixing_freshness_or_decimal_balance"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 272,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_reason_preserves_precedence_for_manual_close_rate_limit_and_auth"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 284,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_old_rejection_before_recovery_point_is_ignored_but_new_fresh_rejection_blocks"
+          },
+          {
+            "assertion_sites": 1,
+            "line": 294,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_key_detection_still_uses_configured_actual_limits"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 303,
+            "test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_recovered_from_credit_pause_restarts_timer_and_respects_five_minute_gate"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_detection_disposition027.py",
+        "source_sha256": "07c5ce88c3387a298dd2e013b17918d518fa02510a8cdbfa1a8560d13f38f577",
+        "test_count": 5,
+        "tests": [
+          {
+            "assertion_sites": 12,
+            "line": 182,
+            "test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_first_group_verdict_persists_mark_and_confirms_schedulable_http"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 202,
+            "test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_restart_with_writing_disposition_marks_unknown_without_replay"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 229,
+            "test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_manual_generation_change_rejects_stale_verdict_without_disposition"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 242,
+            "test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_policy_save_failure_leaves_mark_and_schedule_untouched"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 252,
+            "test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_template_apply_merges_only_model_mapping_over_loopback_http"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_detection_rechecks034.py",
+        "source_sha256": "2fab28ad9049ecedb73a31e14adc70b3329dbd896ee74d060a2be695f4563aa4",
+        "test_count": 17,
+        "tests": [
+          {
+            "assertion_sites": 8,
+            "line": 212,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_scheduled_marked_account_is_rechecked_with_immutable_admission_metadata"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 225,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_unenabled_marked_account_does_not_recheck_old_clues"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 236,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_five_minute_gate_defers_marked_recheck_then_allows_at_exact_boundary"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 253,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_recheck_keeps_manual_close_status_auth_and_quota_precedence"
+          },
+          {
+            "assertion_sites": 15,
+            "line": 278,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_normal_result_clears_mark_persists_receipt_and_notifies_without_schedule_write"
+          },
+          {
+            "assertion_sites": 8,
+            "line": 304,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_pending_recovery_receipt_resumes_after_finish_boundary_failure"
+          },
+          {
+            "assertion_sites": 7,
+            "line": 322,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_notification_retries_after_five_seconds_and_delivers_once"
+          },
+          {
+            "assertion_sites": 10,
+            "line": 342,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_restart_adopts_mark_clear_when_control_receipt_save_fails_without_replaying_model_or_schedule"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 368,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_receipt_and_delivery_survive_restart_and_duplicate_processing_is_once"
+          },
+          {
+            "assertion_sites": 7,
+            "line": 384,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_first_group_target_remains_marked_without_a_recovery_receipt"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 397,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_final_target_or_invalid_result_does_not_clear_mark"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 430,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_same_job_id_with_new_completed_at_is_processed_after_a_retry"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 466,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_generation_change_makes_late_recheck_a_noop"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 477,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_mark_version_change_makes_late_recheck_a_noop"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 489,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_manual_release_hold_invalidates_late_recheck_and_preserves_mark"
+          },
+          {
+            "assertion_sites": 10,
+            "line": 500,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_retrying_failed_first_group_scores_first_sample_separately_from_aggregate"
+          },
+          {
+            "assertion_sites": 13,
+            "line": 548,
+            "test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_real_model_tests_persists_recheck_metadata_and_first_group_validity"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_detection_schedulable037.py",
+        "source_sha256": "ba95c632adff7f84cc1ad1a3f653679d100646a2d596fe34c5bfaf0851c37069",
+        "test_count": 6,
+        "tests": [
+          {
+            "assertion_sites": 4,
+            "line": 23,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closed_oauth_and_key_accounts_do_not_dispatch_marked_or_unmarked"
+          },
+          {
+            "assertion_sites": 8,
+            "line": 40,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_reopening_after_a_long_pause_keeps_settings_and_waits_a_full_interval"
+          },
+          {
+            "assertion_sites": 6,
+            "line": 64,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closing_queued_or_running_job_cancels_it_without_a_new_request"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 93,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_reopening_marked_account_still_waits_for_shared_cooldown"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 115,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_legacy_recheck_admitted_while_closed_cannot_clear_the_mark"
+          },
+          {
+            "assertion_sites": 5,
+            "line": 125,
+            "test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closed_target_cannot_apply_a_late_recheck_result"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_model_detection027.py",
+        "source_sha256": "b20d1ebc33c85a9ed596141567a2ff50464a0616ef17088343d921e6770c0eee",
+        "test_count": 11,
+        "tests": [
+          {
+            "assertion_sites": 3,
+            "line": 123,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_default_is_disabled_and_save_schedules_from_injected_now"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 133,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_pause_and_resume_starts_a_fresh_wait_without_replaying_missed_time"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 152,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_completed_job_anchors_next_run_from_current_time_without_catch_up"
+          },
+          {
+            "assertion_sites": 8,
+            "line": 165,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_duplicate_detection_events_are_ignored_while_job_is_active"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 182,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_manual_generation_overrides_an_older_automatic_job"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 194,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_failed_persistence_fails_closed_and_unreliable_state_is_rejected"
+          },
+          {
+            "assertion_sites": 7,
+            "line": 208,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_missing_candidate_stays_paused_without_dispatch_or_repeated_directory_read"
+          },
+          {
+            "assertion_sites": 2,
+            "line": 227,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_missing_target_bank_never_dispatches_automatic_requests"
+          },
+          {
+            "assertion_sites": 1,
+            "line": 233,
+            "test_id": "py:tests.test_model_detection027:_DetectionFixture.test_detection_state_survives_restart"
+          },
+          {
+            "assertion_sites": 4,
+            "line": 276,
+            "test_id": "py:tests.test_model_detection027:_ModelTestFixture.test_automatic_first_group_target_is_actionable_without_probability_threshold"
+          },
+          {
+            "assertion_sites": 3,
+            "line": 291,
+            "test_id": "py:tests.test_model_detection027:_ModelTestFixture.test_manual_model_test_never_invokes_automatic_disposition"
+          }
+        ]
+      }
+    ],
+    "test_count": 80
+  },
+  "oracle": {
+    "automatic_dispatch_cooldown_seconds": 300,
+    "default_detection_model": "gpt-6-luna",
+    "default_interval_minutes": 15,
+    "marked_recheck_shared_cooldown_seconds": 300,
+    "notification_retry_seconds": [
+      5,
+      30,
+      120,
+      600
+    ],
+    "recovery_retry_seconds": [
+      5
+    ],
+    "source_anchors": {
+      "cooldown": "app/detection_dispatch.py:COOLDOWN_SECONDS",
+      "legacy_boundary_test": "tests/test_detection030.py:AutomaticCooldownTests.test_all_automatic_sources_and_models_share_exact_300_second_boundary",
+      "legacy_recheck_gate_test": "tests/test_detection_rechecks034.py:RecheckAdmissionTests.test_five_minute_gate_defers_marked_recheck_then_allows_at_exact_boundary"
+    },
+    "target_model": "gpt-5.6-luna"
+  },
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "reference_sources": {
+    "app/model_detection.py": "cb5711c75ffd484fe44dd5c4e31eefef82eef7269adf2b79942cd500a88fbfcb"
+  },
+  "schema_version": 1
+}

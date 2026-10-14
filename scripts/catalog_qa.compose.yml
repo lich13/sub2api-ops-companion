@@ -42,10 +42,8 @@ services:
       pg: { condition: service_healthy }
       redis: { condition: service_started }
   ops:
-    image: sub2ops-catalog-qa:0.1.8
+    image: sub2ops-catalog-qa:0.1.40
     build: ..
-    volumes:
-      - ..:/workspace:ro
     tmpfs:
       - /data:uid=10001,gid=10001,mode=0700
     environment:
@@ -58,12 +56,17 @@ services:
     depends_on:
       pg: { condition: service_healthy }
   mock:
-    image: sub2ops-catalog-qa:0.1.8
+    image: python:3.12-slim
     user: "10001:10001"
-    working_dir: /workspace
-    command: [python, scripts/model_catalog_integration.py, serve]
-    volumes: ["..:/workspace:ro"]
+    working_dir: /qa
+    command:
+      - sh
+      - -c
+      - python -m pip install --disable-pip-version-check --no-cache-dir --target /tmp/qa-deps 'psycopg[binary]==3.2.9' && exec python model_catalog_integration.py serve
+    volumes: ["./model_catalog_integration.py:/qa/model_catalog_integration.py:ro"]
     environment:
+      PYTHONPATH: /tmp/qa-deps
+      PYTHONDONTWRITEBYTECODE: "1"
       DESKTOP_QA_DISPOSABLE: sub2ops-desktop
       DATABASE_URL: postgresql://sub2api:qa-only-password@pg:5432/sub2api?sslmode=disable
   nginx:

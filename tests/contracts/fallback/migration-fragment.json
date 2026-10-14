@@ -1,0 +1,787 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackConfigTests.test_default_missing_file_and_restart_reload",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "config_is_atomic_private_reloadable_and_partial_saves_preserve_coexist",
+        "assertions": [
+          "assert!(!loaded.enabled);",
+          "assert!(restarted.load().valid && restarted.load().enabled);",
+          "assert_eq!(restarted.load().version, saved.version);",
+          "0o600"
+        ]
+      },
+      "coverage_note": "真实配置缺省、重启读回、版本和0600，检查无临时文件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackConfigTests.test_settings_path_is_configurable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "configured_fallback_path_is_used_without_reading_or_creating_default_state",
+        "assertions": [
+          "assert_eq!(settings.fallback_path, path);",
+          "assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);"
+        ]
+      },
+      "coverage_note": "独立环境配置指定路径，读取不创建任何状态。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackConfigTests.test_invalid_persisted_ids_disable_policy_and_do_not_retarget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "corrupt_persisted_ids_and_coexist_fail_closed_without_retarget_or_overwrite",
+        "assertions": [
+          "assert!(!config.valid);",
+          "assert!(config.ids.is_empty());",
+          "assert_eq!(report[\"reason\"], \"invalid_config\");",
+          "assert_eq!(fs::read_to_string(path).unwrap(), raw);",
+          "assert_eq!(fallback.load().ids, vec![4]);"
+        ]
+      },
+      "coverage_note": "真实状态文件错误ID、NaN/Infinity与非法coexist关闭托管且不覆盖；字符串整数兼容。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackConfigTests.test_digit_string_ids_remain_valid",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "corrupt_persisted_ids_and_coexist_fail_closed_without_retarget_or_overwrite",
+        "assertions": [
+          "assert!(!config.valid);",
+          "assert!(config.ids.is_empty());",
+          "assert_eq!(report[\"reason\"], \"invalid_config\");",
+          "assert_eq!(fs::read_to_string(path).unwrap(), raw);",
+          "assert_eq!(fallback.load().ids, vec![4]);"
+        ]
+      },
+      "coverage_note": "真实状态文件错误ID、NaN/Infinity与非法coexist关闭托管且不覆盖；字符串整数兼容。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_all_unavailable_turns_selected_keys_on_and_skips_others",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "all_unavailable",
+        "assertions": [
+          "check_case(\"all_unavailable\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "all_unavailable"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "两轮真实PG/HTTP对照旧实现；未选账号不请求、只切换未调度项，无额度请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_any_available_turns_selected_keys_off",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "any_available",
+        "assertions": [
+          "check_case(\"any_available\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "any_available"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "可用与不可用OAuth混合仍关闭选定Key，仅发送必要一次写。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_noop_partial_failure_retry_and_boundary_filters",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "partial_failure",
+        "assertions": [
+          "check_case(\"partial_failure\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "partial_failure"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "连续两轮确切请求顺序；失败Key再尝试，已成功项不重复，过滤Grok未知、OAuth与不存在项。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_key_switching_does_not_mutate_recovery_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "all_unavailable",
+        "assertions": [
+          "check_case(\"all_unavailable\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "all_unavailable"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "运行前后OAuth状态文件逐字节一致，所有外部请求仅schedulable。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_revalidates_live_key_immediately_before_each_dispatch",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "live_revalidation",
+        "assertions": [
+          "check_case(\"live_revalidation\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "live_revalidation"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "第一条HTTP时删除或改型剩余账号，并更改调度；后续不派发过期项。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_mixed_unknown_empty_inventory_and_failures_keep_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "unknown_empty_busy_disabled_and_inventory_failure_preserve_existing_state",
+        "assertions": [
+          "check_case(name).await;",
+          "check_platform_failures().await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          },
+          {
+            "name": "check_platform_failures",
+            "assertions": [
+              "assert_eq!(result[\"platform_reasons\"][failing], \"inventory_failed\");",
+              "assert_eq!(result[\"changed_ids\"], json!([id]));",
+              "assert_eq!(calls.len(), 1);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "未知、空库存、busy、禁用和真实PG查询失败时保留状态；Grok隔离继续。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_disable_or_remove_does_not_undo_schedulable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "disabling_removing_and_reenabling_evaluate_fresh_without_undoing_prior_writes",
+        "assertions": [
+          "assert_eq!(report[\"reason\"], \"disabled_or_empty\");",
+          "assert_eq!(states, vec![true, true]);",
+          "assert_eq!(report[\"changed_ids\"], json!([4, 5]));",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), writes + 2);"
+        ]
+      },
+      "coverage_note": "同一个真实Runtime先执行、禁用、移除、重新启用；禁用不回滚，重新启用按新额度决策。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_reenable_evaluates_afresh",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "disabling_removing_and_reenabling_evaluate_fresh_without_undoing_prior_writes",
+        "assertions": [
+          "assert_eq!(report[\"reason\"], \"disabled_or_empty\");",
+          "assert_eq!(states, vec![true, true]);",
+          "assert_eq!(report[\"changed_ids\"], json!([4, 5]));",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), writes + 2);"
+        ]
+      },
+      "coverage_note": "同一个真实Runtime先执行、禁用、移除、重新启用；禁用不回滚，重新启用按新额度决策。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackControllerTests.test_dispatch_budget_stops_new_writes_and_retries_fairly",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "dispatch_budget_defers_remaining_accounts_and_next_cycle_resumes_fairly",
+        "assertions": [
+          "assert_eq!(first[\"reason\"], \"dispatch_budget_exhausted\");",
+          "assert_eq!(first[\"changed_ids\"], json!([4, 5, 6, 7]));",
+          "assert_eq!(second[\"changed_ids\"], json!([8]));",
+          "assert!(started.elapsed() >= Duration::from_secs(10));"
+        ]
+      },
+      "coverage_note": "真实10秒预算，单请求2.6秒低于3秒上限；已调度账号不占请求，剩余账号下一轮优先。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackTransportTests.test_loopback_sends_only_schedulable_json_to_admin_endpoint",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "all_unavailable",
+        "assertions": [
+          "check_case(\"all_unavailable\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "all_unavailable"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实loopback确切方法路径、仅schedulable payload、x-api-key且无Bearer。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackTransportTests.test_controller_uses_real_schedulable_transport",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "all_unavailable",
+        "assertions": [
+          "check_case(\"all_unavailable\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "all_unavailable"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "完整控制器连接真实原生HTTP模拟，调度PG读回及请求数与固定Python一致。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:KeyFallbackTransportTests.test_http_success_requires_code0_and_matching_schedulable_envelope",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "schedulable_http_requires_matching_code_id_boolean_and_bounds_timeout",
+        "assertions": [
+          "assert_eq!(result[\"success\"], accepted);",
+          "assert_eq!(result[\"error_code\"], \"timeout\");",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), 8);"
+        ]
+      },
+      "coverage_note": "真实HTTP要求code0、匹配账号和布尔调度字段；3秒超时仅一次请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_platforms_can_dispatch_opposite_states_without_quota_requests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "opposite_platforms",
+        "assertions": [
+          "check_case(\"opposite_platforms\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "opposite_platforms"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "两平台相反目标各执行一次调度，不发额度请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_each_platform_inventory_failure_is_isolated",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "each_platform_inventory_failure_preserves_the_other_platform_and_redacts_details",
+        "assertions": [
+          "check_platform_failures().await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_platform_failures",
+            "assertions": [
+              "assert_eq!(result[\"platform_reasons\"][failing], \"inventory_failed\");",
+              "assert_eq!(result[\"changed_ids\"], json!([id]));",
+              "assert_eq!(calls.len(), 1);",
+              "assert!(!audit.contains(\"fixture private inventory details\"));"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实PG view按平台抛错，另一个平台仍成功；审计不含异常明文。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_empty_unknown_and_foreign_oauth_inventory_keep_grok_key_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "unsupported_or_unknown_grok_inventory_keeps_existing_key_state",
+        "assertions": [
+          "assert_eq!(report[\"desired_by_platform\"][\"grok\"], Value::Null);",
+          "assert!(h.mock.calls.lock().unwrap().is_empty());"
+        ]
+      },
+      "coverage_note": "真实PG逐次设schedulable null、foreign platform、deleted、apikey、空库存，均保持Key不请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_revalidates_selected_key_type_platform_and_deletion",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "grok_live_revalidation_and_legacy_disabled_config_preserve_selection_and_permissions",
+        "assertions": [
+          "assert_eq!(fs::read(path).unwrap(), old);",
+          "assert_eq!(restarted.load().ids, vec![4, 5]);",
+          "assert_eq!(report[\"changed_ids\"], json!([]));",
+          "assert!(h.mock.calls.lock().unwrap().is_empty());"
+        ]
+      },
+      "coverage_note": "旧禁用配置不变；混选Grok重载和0600，逐次验证删除、类型、平台变化均不发请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_old_config_is_preserved_and_grok_selection_survives_reload",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "grok_live_revalidation_and_legacy_disabled_config_preserve_selection_and_permissions",
+        "assertions": [
+          "assert_eq!(fs::read(path).unwrap(), old);",
+          "assert_eq!(restarted.load().ids, vec![4, 5]);",
+          "assert_eq!(report[\"changed_ids\"], json!([]));",
+          "assert!(h.mock.calls.lock().unwrap().is_empty());"
+        ]
+      },
+      "coverage_note": "旧禁用配置不变；混选Grok重载和0600，逐次验证删除、类型、平台变化均不发请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_capture_uses_only_schedulable_field",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "opposite_platforms",
+        "assertions": [
+          "check_case(\"opposite_platforms\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "opposite_platforms"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Grok真实HTTP仅单字段schedulable，固定Python两轮请求数一致。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_fallback_inventory_includes_only_supported_keys",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "supported_key_inventory_excludes_other_platforms_oauth_and_deleted_accounts",
+        "assertions": [
+          "assert_eq!(accepted, vec![4, 8]);"
+        ]
+      },
+      "coverage_note": "当前控制器实际使用的live_key过滤器覆盖完整旧向量和排序。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_coexist_is_persisted_and_legacy_save_preserves_remaining_selection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "config_is_atomic_private_reloadable_and_partial_saves_preserve_coexist",
+        "assertions": [
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![4, 5]);",
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![5]);",
+          "assert_eq!(fs::read(path).unwrap(), before);"
+        ]
+      },
+      "coverage_note": "真实配置保存、ConfigService局部更新保留剩余coexist，非法子集或ID原子拒绝不改文件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_partial_desktop_key_config_save_preserves_coexist_members",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "config_is_atomic_private_reloadable_and_partial_saves_preserve_coexist",
+        "assertions": [
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![4, 5]);",
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![5]);",
+          "assert_eq!(fs::read(path).unwrap(), before);"
+        ]
+      },
+      "coverage_note": "真实配置保存、ConfigService局部更新保留剩余coexist，非法子集或ID原子拒绝不改文件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_coexist_must_be_subset_of_managed_ids_and_invalid_save_is_atomic",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "config_is_atomic_private_reloadable_and_partial_saves_preserve_coexist",
+        "assertions": [
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![4, 5]);",
+          "assert_eq!(fallback.load().coexist.into_iter().collect::<Vec<_>>(), vec![5]);",
+          "assert_eq!(fs::read(path).unwrap(), before);"
+        ]
+      },
+      "coverage_note": "真实配置保存、ConfigService局部更新保留剩余coexist，非法子集或ID原子拒绝不改文件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_legacy_config_defaults_to_no_coexist_selection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "corrupt_persisted_ids_and_coexist_fail_closed_without_retarget_or_overwrite",
+        "assertions": [
+          "assert!(fallback.load().coexist.is_empty());",
+          "assert_eq!(report[\"changed_ids\"], json!([4]));",
+          "assert!(!config.valid);",
+          "assert_eq!(fs::read_to_string(path).unwrap(), raw);"
+        ]
+      },
+      "coverage_note": "旧配置没有coexist按普通托管关闭Key，错误coexist子集failclosed、不覆盖、不派发。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_invalid_persisted_coexist_subset_disables_policy_without_changes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "corrupt_persisted_ids_and_coexist_fail_closed_without_retarget_or_overwrite",
+        "assertions": [
+          "assert!(fallback.load().coexist.is_empty());",
+          "assert_eq!(report[\"changed_ids\"], json!([4]));",
+          "assert!(!config.valid);",
+          "assert_eq!(fs::read_to_string(path).unwrap(), raw);"
+        ]
+      },
+      "coverage_note": "旧配置没有coexist按普通托管关闭Key，错误coexist子集failclosed、不覆盖、不派发。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_available_oauth_enables_coexist_and_disables_only_regular_managed_key",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "coexist_available",
+        "assertions": [
+          "check_case(\"coexist_available\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "coexist_available"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "完整PG/HTTP控制器两轮与固定Python compare，核对目标、账号状态、请求及不写恢复历史。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_unknown_or_stale_oauth_preserves_both_existing_key_states",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "coexist_unknown",
+        "assertions": [
+          "check_case(\"coexist_unknown\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "coexist_unknown"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "完整PG/HTTP控制器两轮与固定Python compare，核对目标、账号状态、请求及不写恢复历史。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_all_unavailable_oauth_still_enables_regular_and_coexist_keys",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "coexist_unavailable",
+        "assertions": [
+          "check_case(\"coexist_unavailable\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "coexist_unavailable"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "完整PG/HTTP控制器两轮与固定Python compare，核对目标、账号状态、请求及不写恢复历史。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_disabled_account_and_automatic_degradation_hold_prevent_coexist_enable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "coexist_held",
+        "assertions": [
+          "check_case(\"coexist_held\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "check_case",
+            "assertions": [
+              "assert_eq!(&report[field], value,",
+              "assert_eq!(calls.len(), case[\"calls\"].as_array().unwrap().len(),",
+              "assert_eq!(call[\"method\"], \"POST\");",
+              "assert_eq!(call[\"payload\"], json!({\"schedulable\":expected[\"schedulable\"]}));",
+              "assert_eq!(call[\"authorization\"], Value::Null);",
+              "assert_eq!(fs::read(&h.runtime.settings.usage_path).unwrap(), before,"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/fallback/fixtures.json",
+            "ids": [
+              "coexist_held"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "完整PG/HTTP控制器两轮与固定Python compare，核对目标、账号状态、请求及不写恢复历史。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:KeyCoexist030Tests.test_manual_disable_detaches_only_target_and_cannot_be_reopened_by_coexist",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fallback_runtime_parity.rs",
+        "test_name": "manual_disable_detaches_coexist_before_native_write_and_cannot_be_reopened",
+        "assertions": [
+          "assert_eq!(response[\"verified\"], true);",
+          "assert_eq!(response[\"detached\"], true);",
+          "assert_eq!(calls[0][\"config\"][\"managed_account_ids\"], json!([5]));",
+          "assert_eq!(calls[0][\"config\"][\"coexist_account_ids\"], json!([5]));",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), 1);"
+        ]
+      },
+      "coverage_note": "人工写入抵达上游前已持久化只解除目标托管；后续fallback不重新开启，其他成员仍保留。"
+    }
+  ]
+}

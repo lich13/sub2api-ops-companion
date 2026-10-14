@@ -1,0 +1,461 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_absent_allowlisted_model_still_dispatches_and_native_mapping_is_reported",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "absent_allowlisted_model_does_not_block_batch_and_reports_native_mapping",
+        "assertions": [
+          "assert_ne!(requested, unrelated)",
+          "assert_eq!(accepted[\"items\"][0][\"requested\"][\"model_id\"], requested)",
+          "assert_eq!(accepted[\"items\"][0][\"requested\"][\"mode\"], \"default\")",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(item[\"status\"], \"completed\")",
+          "assert_eq!(item[\"result\"][\"success\"], true)",
+          "assert_eq!(item[\"result\"][\"requested_model\"], requested)",
+          "assert_eq!(item[\"result\"][\"actual_model\"], actual)",
+          "assert_eq!(harness.actions.accounts(&ids).await.unwrap(), before_rows)",
+          "assert_eq!(after_groups, before_groups)",
+          "assert!(detail[\"events\"].as_array().unwrap().is_empty())",
+          "assert_eq!(calls.len(), 1)",
+          "assert_eq!(calls[0].body[\"model_id\"], requested)",
+          "assert_eq!(calls[0].body[\"mode\"], \"default\")",
+          "assert!(calls[0].body.get(\"confirmed\").is_none())",
+          "assert!(calls[0].body.get(\"expected_version\").is_none())",
+          "assert_eq!(harness.mock.test_calls().len(), 1)"
+        ]
+      },
+      "coverage_note": "Unrelated group allowlists never trigger a catalog prerequisite; native SSE mapping is reported with bounded summary and exact authenticated native body; account and group rows remain unchanged."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_acceptance_is_atomic_idempotent_and_order_independent",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_deferred",
+        "assertions": [
+          "assert_eq!(first[\"batch_id\"], reordered[\"batch_id\"])",
+          "assert_eq!(first[\"batch_id\"], replay[\"batch_id\"])",
+          "assert_eq!(first[\"pending\"], 2)",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        2\n    )",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(accepted_state[\"batches\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        accepted_state[\"batch_requests\"].as_object().unwrap().len(),\n        1\n    )",
+          "assert!(accepted_state[\"jobs\"]\n        .as_object()\n        .unwrap()\n        .values()\n        .all(|job| job[\"batch_id\"] == first[\"batch_id\"]))",
+          "assert_eq!(\n        fs::metadata(harness.operations.store.0.path())\n            .unwrap()\n            .permissions()\n            .mode()\n            & 0o777,\n        0o600\n    )",
+          "assert_eq!(\n            item[\"requested\"],\n            json!({\"confirmed\":true,\"model_id\":fixtures()[\"connection_test\"][\"requested_model\"],\"mode\":\"default\"})\n        )",
+          "assert!(harness\n        .operations\n        .submit_batch(&failed_request, ADMIN_KEY, false)\n        .await\n        .is_err())",
+          "assert_eq!(fs::read(original.0.path()).unwrap(), before)",
+          "assert_eq!(harness.operations.keys.lock().unwrap().len(), 2)",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&changed, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            409\n        )",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(harness.mock.test_calls().len(), 0)",
+          "assert_eq!(\n        harness\n            .operations\n            .submit_batch(&single_conflict, ADMIN_KEY, false)\n            .await\n            .unwrap_err()\n            .status\n            .as_u16(),\n        409\n    )",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        3\n    )"
+        ]
+      },
+      "coverage_note": "Concurrent submissions and reversed account order return the same batch; all indexes and child IDs commit atomically with 0600 permissions, while an injected save failure preserves existing bytes and volatile keys without native dispatch."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_accepted_model_is_frozen_and_idempotent_after_configuration_change",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_model_is_frozen_per_batch_and_new_batches_use_current_configuration",
+        "assertions": [
+          "assert_eq!(first, replay)",
+          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| call.body[\"model_id\"].clone())\n            .collect::<Vec<_>>(),\n        vec![\n            json!(\"fixture-accepted-model\"),\n            json!(\"fixture-later-model\")\n        ]\n    )"
+        ]
+      },
+      "coverage_note": "A repeated request after configuration changes preserves its frozen model and child result; the next batch uses the new configured model with one request each."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_batch_retains_only_sanitized_summary_without_response_content",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemeral_content",
+        "assertions": [
+          "assert!(items[&ids[1]][\"result\"][\"error\"]\n        .as_str()\n        .unwrap()\n        .contains(\"[REDACTED]\"))",
+          "assert!(!surface.contains(marker))",
+          "assert!(harness\n            .operations\n            .get(item[\"id\"].as_str().unwrap(), 0)\n            .unwrap()[\"events\"]\n            .as_array()\n            .unwrap()\n            .is_empty())",
+          "assert_eq!(result[\"result\"][\"success\"], true)",
+          "assert!(result[\"events\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .any(|event| event[\"type\"] == \"content\" && event[\"text\"] == CONTENT_MARKER))",
+          "assert_eq!(\n        harness.mock.test_calls().last().unwrap().body[\"model_id\"],\n        \"fixture-single-model\"\n    )",
+          "assert!(!fs::read_to_string(harness.operations.store.0.path())\n        .unwrap()\n        .contains(CONTENT_MARKER))"
+        ]
+      },
+      "coverage_note": "Batch state/public output/audit contain only summary fields and exclude body, bearer, provider and account token markers; batch event arrays remain empty."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_cancel_batch_leaves_running_item_and_cancels_only_unstarted_items",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "cancelling_batch_stops_only_undispatched_items",
+        "assertions": [
+          "assert_eq!(\n        before_items\n            .values()\n            .filter(|item| item[\"status\"] == \"running\")\n            .count(),\n        1\n    )",
+          "assert_eq!(\n        stopped_items\n            .values()\n            .filter(|item| item[\"status\"] == \"running\")\n            .count(),\n        1\n    )",
+          "assert_eq!(\n        stopped_items\n            .values()\n            .filter(|item| item[\"status\"] == \"cancelled\")\n            .count(),\n        2\n    )",
+          "assert_eq!(stopped[\"pending\"], 1)",
+          "assert_eq!(\n        items_by_account(&finished)\n            .values()\n            .filter(|item| item[\"status\"] == \"completed\")\n            .count(),\n        1\n    )",
+          "assert_eq!(harness.mock.test_calls().len(), 1)"
+        ]
+      },
+      "coverage_note": "One gated running child continues while a queued child and a stale undispatched child cancel; only the first native request is sent."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_clean_eof_truncated_stream_and_disconnect_are_uncertain_without_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_eof_truncation_and_transport_disconnect_remain_unknown_after_restart",
+        "assertions": [
+          "assert_eq!(item[\"status\"], \"needs_confirmation\")",
+          "assert_eq!(item[\"result\"][\"success\"], false)",
+          "assert_eq!(item[\"result\"][\"uncertain\"], true)",
+          "assert!(item[\"result\"][\"error\"]\n            .as_str()\n            .is_some_and(|v| !v.is_empty()))",
+          "assert_eq!(harness.mock.test_calls().len(), 3)",
+          "assert_eq!(retained, finished)",
+          "assert_eq!(retained[\"pending\"], 3)",
+          "assert_eq!(harness.mock.test_calls().len(), 3)"
+        ]
+      },
+      "coverage_note": "Native clean EOF, truncated SSE and transport reset each remain uncertain/failed with errors across queue restart and never trigger another native request."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_concurrency_is_clamped_to_eight",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_concurrency_defaults_to_two_and_clamps_to_one_or_eight",
+        "assertions": [
+          "assert_eq!(harness.mock.test_calls().len(), expected)",
+          "assert_eq!(harness.mock.active.lock().unwrap().len(), expected)",
+          "assert!(finished[\"items\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .all(|item| item[\"status\"] == \"completed\"))",
+          "assert_eq!(harness.mock.test_calls().len(), ids.len())",
+          "assert!(harness\n            .mock\n            .active_snapshots\n            .lock()\n            .unwrap()\n            .iter()\n            .all(|snapshot| snapshot.len() <= expected))"
+        ]
+      },
+      "coverage_note": "Configured 99 clamps to eight, with actual active HTTP request snapshots proving the cap."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_concurrency_is_clamped_to_one",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_concurrency_defaults_to_two_and_clamps_to_one_or_eight",
+        "assertions": [
+          "assert_eq!(harness.mock.test_calls().len(), expected)",
+          "assert_eq!(harness.mock.active.lock().unwrap().len(), expected)",
+          "assert!(finished[\"items\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .all(|item| item[\"status\"] == \"completed\"))",
+          "assert_eq!(harness.mock.test_calls().len(), ids.len())",
+          "assert!(harness\n            .mock\n            .active_snapshots\n            .lock()\n            .unwrap()\n            .iter()\n            .all(|snapshot| snapshot.len() <= expected))"
+        ]
+      },
+      "coverage_note": "Configured zero clamps to one, with observed active HTTP requests never exceeding the limit."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_confirmed_payload_is_required_and_strict",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "strict_fields_and_single_test_defaults_match_reference",
+        "assertions": [
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(accepted[\"status\"], \"queued\")",
+          "assert_eq!(\n        accepted[\"requested\"],\n        fixtures()[\"request_defaults\"][\"public_requested\"]\n    )",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&invalid_batch, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(harness.operations.store.read().unwrap(), before)",
+          "assert!(\n        sub2ops_server::validation::operation_payload(\"test\", &json!({\"confirmed\": \"true\"}))\n            .is_err()\n    )",
+          "assert!(sub2ops_server::validation::operation_payload(\n        \"test\",\n        &json!({\"confirmed\": true, \"unknown\": true})\n    )\n    .is_err())"
+        ]
+      },
+      "coverage_note": "Missing, false, nonboolean confirmation and client-selected batch models reject with 422; persistent state stays unchanged."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_default_concurrency_is_two",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_concurrency_defaults_to_two_and_clamps_to_one_or_eight",
+        "assertions": [
+          "assert_eq!(harness.mock.test_calls().len(), expected)",
+          "assert_eq!(harness.mock.active.lock().unwrap().len(), expected)",
+          "assert!(finished[\"items\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .all(|item| item[\"status\"] == \"completed\"))",
+          "assert_eq!(harness.mock.test_calls().len(), ids.len())",
+          "assert!(harness\n            .mock\n            .active_snapshots\n            .lock()\n            .unwrap()\n            .iter()\n            .all(|snapshot| snapshot.len() <= expected))"
+        ]
+      },
+      "coverage_note": "Loopback request barriers prove the default limit is two and all queued children eventually run exactly once."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_dispatch_state_save_failure_sends_no_http_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "dispatch_state_save_failure_never_sends_the_native_test_request",
+        "assertions": [
+          "assert!(harness.operations.store.transaction(|_| Ok(())).is_err())",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"][&job_id][\"status\"],\n        \"queued\"\n    )",
+          "assert!(harness.mock.test_calls().is_empty())"
+        ]
+      },
+      "coverage_note": "An authentication barrier followed by an unwritable operation lock prevents dispatch and preserves the queued state."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_global_eight_slots_include_existing_single_account_operations",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_batch_shares_eight_global_slots_with_existing_single_operations",
+        "assertions": [
+          "assert_eq!(harness.mock.test_calls().len(), 8)",
+          "assert_eq!(harness.mock.active.lock().unwrap().len(), 8)",
+          "assert_eq!(finished[\"pending\"], 0)",
+          "assert_eq!(\n            harness\n                .wait_status(single[\"id\"].as_str().unwrap(), \"completed\")\n                .await[\"result\"][\"success\"],\n            true\n        )",
+          "assert_eq!(harness.mock.test_calls().len(), 9)",
+          "assert!(harness\n        .mock\n        .active_snapshots\n        .lock()\n        .unwrap()\n        .iter()\n        .all(|snapshot| snapshot.len() <= 8))"
+        ]
+      },
+      "coverage_note": "Seven gated single-account tests leave one of eight global slots for a batch, then all nine jobs complete once after release."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_missing_model_setting_uses_default",
+      "status": "mapped",
+      "coverage_note": "A real authenticated HTTP batch is accepted with an absent model setting. Its frozen request, single native test request and completed summary all use the legacy default; the native success terminal is required.",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_missing_model_setting_uses_legacy_default_for_native_request_and_summary",
+        "assertions": [
+          "assert_eq!(status, 202)",
+          "assert_eq!(accepted[\"items\"][0][\"requested\"][\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(finished[\"items\"][0][\"status\"], \"completed\")",
+          "assert_eq!(finished[\"items\"][0][\"result\"][\"success\"], true)",
+          "assert_eq!(calls.len(), 1)",
+          "assert_eq!(calls[0].body[\"model_id\"], \"gpt-5.6-luna\")",
+          "assert_eq!(finished[\"items\"][0][\"result\"][\"requested_model\"], \"gpt-5.6-luna\")"
+        ]
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_mixed_platform_types_missing_deleted_and_stale_items_are_isolated",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_mixed_platforms_missing_deleted_unsupported_and_stale_items_are_isolated",
+        "assertions": [
+          "assert_eq!(items[&ids[index]][\"status\"], \"completed\")",
+          "assert_eq!(items[&ids[index]][\"status\"], \"failed\")",
+          "assert_eq!(items[&ids[5]][\"status\"], \"needs_confirmation\")",
+          "assert_eq!(finished[\"pending\"], 1)",
+          "assert_eq!(\n        items[&ids[1]][\"requested\"],\n        json!({\"confirmed\":true,\"mode\":\"text\",\"model_id\":\"\"})\n    )",
+          "assert_eq!(called, BTreeSet::from([ids[0], ids[1], ids[6]]))",
+          "assert_eq!(calls.len(), 3)",
+          "assert_eq!(grok.body[\"model_id\"], \"\")",
+          "assert_eq!(grok.body[\"mode\"], \"text\")"
+        ]
+      },
+      "coverage_note": "Real PostgreSQL OpenAI OAuth/key and Grok key accounts complete independently; deleted/missing/unsupported children fail and stale versions require confirmation without blocking valid peers."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_one_thousand_boundary_and_complete_listing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "one_thousand_account_batch_boundary_and_listing_are_complete",
+        "assertions": [
+          "assert_eq!(accepted[\"items\"].as_array().unwrap().len(), max)",
+          "assert_eq!(accepted[\"pending\"], max)",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        max\n    )",
+          "assert_eq!(\n        error.status.as_u16(),\n        fixtures()[\"batch_limit\"][\"over_limit_status\"]\n            .as_u64()\n            .unwrap() as u16\n    )",
+          "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&invalid, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(cancelled[\"pending\"], 0)",
+          "assert_eq!(cancelled[\"items\"].as_array().unwrap().len(), max)",
+          "assert!(cancelled[\"items\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .all(|item| item[\"status\"] == \"cancelled\"))",
+          "assert!(harness.mock.test_calls().is_empty())"
+        ]
+      },
+      "coverage_note": "The real queue accepts exactly 1000 synthetic accounts, rejects empty/1001/string-ID lists and cancels the complete undispatched batch without native requests."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_only_native_success_terminal_passes_and_actual_model_is_never_invented",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_only_native_success_terminal_passes_and_actual_model_is_never_invented",
+        "assertions": [
+          "assert_eq!(items[&ids[index]][\"result\"][\"success\"], false)",
+          "assert!(items[&ids[index]][\"result\"][\"error\"]\n            .as_str()\n            .is_some_and(|v| !v.is_empty()))",
+          "assert_eq!(harness.mock.test_calls().len(), 4)"
+        ]
+      },
+      "coverage_note": "False terminal, native error and HTTP failure never pass; a successful terminal without test_start retains null actual model."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_parent_siblings_and_same_account_never_overlap",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_parent_siblings_and_duplicate_account_never_overlap",
+        "assertions": [
+          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<BTreeSet<_>>(),\n        BTreeSet::from([ids[0], ids[3]])\n    )",
+          "assert_eq!(harness.mock.test_calls().len(), 2)",
+          "assert_eq!(first[\"pending\"], 0)",
+          "assert_eq!(second[\"pending\"], 0)",
+          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .filter(|call| account_id_from_test_path(&call.path) == Some(ids[3]))\n            .count(),\n        2\n    )",
+          "assert!(resources.insert(*id), \"same account overlapped\")",
+          "assert!(\n                    resources.insert(ids[0]),\n                    \"shared parent credential overlapped\"\n                )"
+        ]
+      },
+      "coverage_note": "Actual parent and sibling requests share an exclusive resource, independent accounts proceed, and a second batch for the same account cannot overlap; request snapshots verify every pair."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_request_id_conflicts_and_duplicate_accounts_do_not_add_jobs",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_deferred",
+        "assertions": [
+          "assert_eq!(first[\"batch_id\"], reordered[\"batch_id\"])",
+          "assert_eq!(first[\"batch_id\"], replay[\"batch_id\"])",
+          "assert_eq!(first[\"pending\"], 2)",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        2\n    )",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(accepted_state[\"batches\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        accepted_state[\"batch_requests\"].as_object().unwrap().len(),\n        1\n    )",
+          "assert!(accepted_state[\"jobs\"]\n        .as_object()\n        .unwrap()\n        .values()\n        .all(|job| job[\"batch_id\"] == first[\"batch_id\"]))",
+          "assert_eq!(\n        fs::metadata(harness.operations.store.0.path())\n            .unwrap()\n            .permissions()\n            .mode()\n            & 0o777,\n        0o600\n    )",
+          "assert_eq!(\n            item[\"requested\"],\n            json!({\"confirmed\":true,\"model_id\":fixtures()[\"connection_test\"][\"requested_model\"],\"mode\":\"default\"})\n        )",
+          "assert!(harness\n        .operations\n        .submit_batch(&failed_request, ADMIN_KEY, false)\n        .await\n        .is_err())",
+          "assert_eq!(fs::read(original.0.path()).unwrap(), before)",
+          "assert_eq!(harness.operations.keys.lock().unwrap().len(), 2)",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&changed, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            409\n        )",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(harness.mock.test_calls().len(), 0)",
+          "assert_eq!(\n        harness\n            .operations\n            .submit_batch(&single_conflict, ADMIN_KEY, false)\n            .await\n            .unwrap_err()\n            .status\n            .as_u16(),\n        409\n    )",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        3\n    )"
+        ]
+      },
+      "coverage_note": "Changed accounts, client identity and expected version conflict under the same request ID; duplicate accounts reject before persistence."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_restart_resumes_queued_once_and_never_replays_dispatched",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_restart_resumes_queued_peer_once_and_retains_unknown_dispatched_result",
+        "assertions": [
+          "assert_eq!(\n        account_id_from_test_path(&harness.mock.test_calls()[0].path),\n        Some(ids[1])\n    )",
+          "assert_eq!(replay[\"batch_id\"], accepted[\"batch_id\"])",
+          "assert_eq!(\n        replay[\"items\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .map(|item| item[\"id\"].clone())\n            .collect::<Vec<_>>(),\n        accepted[\"items\"]\n            .as_array()\n            .unwrap()\n            .iter()\n            .map(|item| item[\"id\"].clone())\n            .collect::<Vec<_>>()\n    )",
+          "assert_eq!(items[&ids[0]][\"status\"], \"completed\")",
+          "assert_eq!(items[&ids[1]][\"status\"], \"needs_confirmation\")",
+          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<Vec<_>>(),\n        vec![ids[1], ids[0]]\n    )",
+          "assert_eq!(\n        items_by_account(&cancelled)[&ids[1]][\"status\"],\n        \"needs_confirmation\"\n    )",
+          "assert_eq!(harness.mock.test_calls().len(), 2)"
+        ]
+      },
+      "coverage_note": "The actual in-flight HTTP job is interrupted, the same request and IDs restore, queued peer resumes once, and unknown dispatched work remains confirmation-required after cancellation and another tick."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_single_account_test_keeps_existing_content_stream",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemeral_content",
+        "assertions": [
+          "assert!(items[&ids[1]][\"result\"][\"error\"]\n        .as_str()\n        .unwrap()\n        .contains(\"[REDACTED]\"))",
+          "assert!(!surface.contains(marker))",
+          "assert!(harness\n            .operations\n            .get(item[\"id\"].as_str().unwrap(), 0)\n            .unwrap()[\"events\"]\n            .as_array()\n            .unwrap()\n            .is_empty())",
+          "assert_eq!(result[\"result\"][\"success\"], true)",
+          "assert!(result[\"events\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .any(|event| event[\"type\"] == \"content\" && event[\"text\"] == CONTENT_MARKER))",
+          "assert_eq!(\n        harness.mock.test_calls().last().unwrap().body[\"model_id\"],\n        \"fixture-single-model\"\n    )",
+          "assert!(!fs::read_to_string(harness.operations.store.0.path())\n        .unwrap()\n        .contains(CONTENT_MARKER))"
+        ]
+      },
+      "coverage_note": "The ordinary single test retains native content in its in-memory events using its chosen model, while durable operation state excludes model content."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_single_and_batch_request_ids_share_conflict_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "batch_acceptance_is_idempotent_conflicts_are_rejected_and_dispatch_is_deferred",
+        "assertions": [
+          "assert_eq!(first[\"batch_id\"], reordered[\"batch_id\"])",
+          "assert_eq!(first[\"batch_id\"], replay[\"batch_id\"])",
+          "assert_eq!(first[\"pending\"], 2)",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        2\n    )",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(accepted_state[\"batches\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        accepted_state[\"batch_requests\"].as_object().unwrap().len(),\n        1\n    )",
+          "assert!(accepted_state[\"jobs\"]\n        .as_object()\n        .unwrap()\n        .values()\n        .all(|job| job[\"batch_id\"] == first[\"batch_id\"]))",
+          "assert_eq!(\n        fs::metadata(harness.operations.store.0.path())\n            .unwrap()\n            .permissions()\n            .mode()\n            & 0o777,\n        0o600\n    )",
+          "assert_eq!(\n            item[\"requested\"],\n            json!({\"confirmed\":true,\"model_id\":fixtures()[\"connection_test\"][\"requested_model\"],\"mode\":\"default\"})\n        )",
+          "assert!(harness\n        .operations\n        .submit_batch(&failed_request, ADMIN_KEY, false)\n        .await\n        .is_err())",
+          "assert_eq!(fs::read(original.0.path()).unwrap(), before)",
+          "assert_eq!(harness.operations.keys.lock().unwrap().len(), 2)",
+          "assert!(harness.mock.test_calls().is_empty())",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&changed, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            409\n        )",
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(harness.mock.test_calls().len(), 0)",
+          "assert_eq!(\n        harness\n            .operations\n            .submit_batch(&single_conflict, ADMIN_KEY, false)\n            .await\n            .unwrap_err()\n            .status\n            .as_u16(),\n        409\n    )",
+          "assert_eq!(\n        harness.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        3\n    )"
+        ]
+      },
+      "coverage_note": "Both single-first and batch-first request-ID conflicts return 409 without inserting duplicate jobs."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_version_change_before_dispatch_requires_confirmation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/operation_contract.rs",
+        "test_name": "connection_dispatch_detects_credential_changes_but_ignores_passive_observations",
+        "assertions": [
+          "assert_eq!(items[&ids[0]][\"status\"], \"needs_confirmation\")",
+          "assert_eq!(\n        items[&ids[0]][\"requested\"][\"model_id\"],\n        fixtures()[\"connection_test\"][\"requested_model\"]\n    )",
+          "assert_eq!(items[&ids[1]][\"status\"], \"completed\")",
+          "assert_eq!(calls.len(), 1)",
+          "assert_eq!(account_id_from_test_path(&calls[0].path), Some(ids[1]))"
+        ]
+      },
+      "coverage_note": "Changing the actual stored credential after acceptance blocks dispatch; passive usage/updated_at changes do not invalidate the unrelated child."
+    }
+  ]
+}

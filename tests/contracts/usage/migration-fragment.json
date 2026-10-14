@@ -1,0 +1,3397 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "legacy_test_count": 70,
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_request_forwarded_and_response_models_remain_distinct",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_request_forwarded_and_response_models_remain_distinct",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_request_forwarded_and_response_models_remain_distinct\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_request_forwarded_and_response_models_remain_distinct"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_mapping_itself_is_not_a_response_mismatch",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_mapping_itself_is_not_a_response_mismatch",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_mapping_itself_is_not_a_response_mismatch\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_mapping_itself_is_not_a_response_mismatch"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_response_mismatch_uses_legacy_model_fallback_and_explicit_flag",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_response_mismatch_uses_legacy_model_fallback_and_explicit_flag",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_response_mismatch_uses_legacy_model_fallback_and_explicit_flag\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_response_mismatch_uses_legacy_model_fallback_and_explicit_flag"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 6 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_explicit_request_type_takes_precedence_over_legacy_flags",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_explicit_request_type_takes_precedence_over_legacy_flags",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_explicit_request_type_takes_precedence_over_legacy_flags\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_explicit_request_type_takes_precedence_over_legacy_flags"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_legacy_request_types_and_ws_precedence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_legacy_request_types_and_ws_precedence",
+        "assertions": [
+          "replay_direct_case(\n        \"py:tests.test_usage_records:ProjectionTests.test_legacy_request_types_and_ws_precedence\",\n    )\n    .await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_legacy_request_types_and_ws_precedence"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 16 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_native_request_type_keeps_legacy_projection_for_cyber_and_live",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_native_request_type_keeps_legacy_projection_for_cyber_and_live",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_native_request_type_keeps_legacy_projection_for_cyber_and_live\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_native_request_type_keeps_legacy_projection_for_cyber_and_live"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_all_money_is_decimal_text_and_account_cost_has_independent_basis",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_all_money_is_decimal_text_and_account_cost_has_independent_basis",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_all_money_is_decimal_text_and_account_cost_has_independent_basis\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_all_money_is_decimal_text_and_account_cost_has_independent_basis"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_account_cost_preserves_products_beyond_28_significant_digits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_account_cost_preserves_products_beyond_28_significant_digits",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_account_cost_preserves_products_beyond_28_significant_digits\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_account_cost_preserves_products_beyond_28_significant_digits"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_account_cost_fallback_zero_and_missing_are_distinct",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_account_cost_fallback_zero_and_missing_are_distinct",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_account_cost_fallback_zero_and_missing_are_distinct\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_account_cost_fallback_zero_and_missing_are_distinct"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 6 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_projection_drops_credentials_headers_bodies_and_unknown_columns",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_projection_drops_credentials_headers_bodies_and_unknown_columns",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_projection_drops_credentials_headers_bodies_and_unknown_columns\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_projection_drops_credentials_headers_bodies_and_unknown_columns"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_sparse_history_keeps_unknown_values_null",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_sparse_history_keeps_unknown_values_null",
+        "assertions": [
+          "replay_direct_case(\n        \"py:tests.test_usage_records:ProjectionTests.test_sparse_history_keeps_unknown_values_null\",\n    )\n    .await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_sparse_history_keeps_unknown_values_null"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 project 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:ProjectionTests.test_timestamps_require_timezone_and_normalize_to_utc",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_projection_timestamps_require_timezone_and_normalize_to_utc",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:ProjectionTests.test_timestamps_require_timezone_and_normalize_to_utc\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:ProjectionTests.test_timestamps_require_timezone_and_normalize_to_utc"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 10 个 project, timestamp 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_empty_database_and_default_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_empty_database_and_default_window",
+        "assertions": [
+          "replay_direct_case(\n        \"py:tests.test_usage_records:UsageRecordsTests.test_empty_database_and_default_window\",\n    )\n    .await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_empty_database_and_default_window"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_window_boundaries_and_descending_time_then_id",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_window_boundaries_and_descending_time_then_id",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_window_boundaries_and_descending_time_then_id\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_window_boundaries_and_descending_time_then_id"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_account_api_key_and_all_model_stages_can_be_filtered",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_account_api_key_and_all_model_stages_can_be_filtered",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_account_api_key_and_all_model_stages_can_be_filtered\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_account_api_key_and_all_model_stages_can_be_filtered"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_model_wildcards_backslash_and_sql_text_are_literal_parameters",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_model_wildcards_backslash_and_sql_text_are_literal_parameters",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_model_wildcards_backslash_and_sql_text_are_literal_parameters\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_model_wildcards_backslash_and_sql_text_are_literal_parameters"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_request_type_filter_matches_legacy_and_explicit_semantics",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_request_type_filter_matches_legacy_and_explicit_semantics",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_request_type_filter_matches_legacy_and_explicit_semantics\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_request_type_filter_matches_legacy_and_explicit_semantics"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_mismatch_filter_agrees_with_projected_flags",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_mismatch_filter_agrees_with_projected_flags",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_mismatch_filter_agrees_with_projected_flags\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_mismatch_filter_agrees_with_projected_flags"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_pagination_has_no_overlap_or_gap_at_identical_timestamps",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_pagination_has_no_overlap_or_gap_at_identical_timestamps",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_pagination_has_no_overlap_or_gap_at_identical_timestamps\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_pagination_has_no_overlap_or_gap_at_identical_timestamps"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 4 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_concurrent_backdated_insert_is_excluded_until_refresh",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_concurrent_backdated_insert_is_excluded_until_refresh",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_concurrent_backdated_insert_is_excluded_until_refresh\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_concurrent_backdated_insert_is_excluded_until_refresh"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 5 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_cursor_freezes_both_default_window_endpoints",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_cursor_freezes_both_default_window_endpoints",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_cursor_freezes_both_default_window_endpoints\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_cursor_freezes_both_default_window_endpoints"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_cursor_rejects_each_changed_filter_before_querying",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "each_changed_usage_filter_is_rejected_before_database_access",
+        "assertions": [
+          "for field in fixed[\"usage_records\"][\"cursor_filter_changes\"]",
+          "assert_invalid_cursor_does_not_reach_database("
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.cursor_filter_changes"
+            ]
+          }
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_invalid_cursor_does_not_reach_database",
+            "assertions": [
+              "let error = result.expect_err(\"changed cursor filters must be rejected\");",
+              "assert_eq!(error.status.as_u16(), 422, \"filter change: {label}\");",
+              "logged_statements(application_name).len(),\n        before_statements,"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "对 from_at、to_at、account_id、api_key_id、user_id、model、request_type、mismatch_only 分别变更游标条件；每次临时隐藏实际 usage_logs 表并核对 422 与 guard 连接 SQL 日志不增长，证明查询前拒绝。",
+      "reuse": {
+        "fragment": "tests/contracts/query/migration-fragment.json",
+        "scope": "对 from_at、to_at、account_id、api_key_id、user_id、model、request_type、mismatch_only 分别变更游标条件；每次临时隐藏实际 usage_logs 表并核对 422 与 guard 连接 SQL 日志不增长，证明查询前拒绝。"
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_bad_cursors_are_422_without_database_access",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_bad_cursors_are_422_without_database_access",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_bad_cursors_are_422_without_database_access\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_bad_cursors_are_422_without_database_access"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 24 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_invalid_filters_fail_before_database_access",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_invalid_filters_fail_before_database_access",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_invalid_filters_fail_before_database_access\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_invalid_filters_fail_before_database_access"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 13 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_new_count_applies_filters_and_is_not_limited_to_page_size",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_new_count_applies_filters_and_is_not_limited_to_page_size",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_new_count_applies_filters_and_is_not_limited_to_page_size\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_new_count_applies_filters_and_is_not_limited_to_page_size"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_user_filter_is_shared_by_pages_and_new_record_count",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_user_filter_is_shared_by_pages_and_new_record_count",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_user_filter_is_shared_by_pages_and_new_record_count\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_user_filter_is_shared_by_pages_and_new_record_count"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 5 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_user_filter_uses_record_ids_after_directory_rows_are_physically_deleted",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_user_filter_uses_record_ids_after_directory_rows_are_physically_deleted",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_user_filter_uses_record_ids_after_directory_rows_are_physically_deleted\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_user_filter_uses_record_ids_after_directory_rows_are_physically_deleted"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_detail_preserves_history_when_related_rows_are_missing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_detail_preserves_history_when_related_rows_are_missing",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_detail_preserves_history_when_related_rows_are_missing\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_detail_preserves_history_when_related_rows_are_missing"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 detail, list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_detail_joins_names_without_dropping_soft_deleted_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_detail_joins_names_without_dropping_soft_deleted_account",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_detail_joins_names_without_dropping_soft_deleted_account\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_detail_joins_names_without_dropping_soft_deleted_account"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 detail 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_detail_returns_404_and_invalid_id_is_422",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_records_detail_returns_404_and_invalid_id_is_422",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordsTests.test_detail_returns_404_and_invalid_id_is_422\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsTests.test_detail_returns_404_and_invalid_id_is_422"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 detail 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_list_count_and_detail_use_bounded_read_only_transactions",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_list_count_and_detail_are_bounded_read_only_select_transactions",
+        "assertions": [
+          "assert_eq!(counted[\"new_count\"], 3);",
+          "assert_eq!(after, before, \"usage list/count/detail did not alter the fixture rows\");",
+          "assert_multiline_log_parser_fixture();",
+          "assert_eq!(txs.len(), 3, \"one list, one count, and one detail transaction\");",
+          "assert!(setup_sql.contains(\"read only\"));",
+          "assert!(tx[bounded].contains(&format!(\"'{timeout_setting}'\")),",
+          "assert!(sql.starts_with(\"select \"), \"only SELECT is allowed: {sql}\");",
+          "assert_eq!(bounded_transactions, 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.statement_timeout"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "通过临时 PostgreSQL SQL 日志核实 list/count 使用 REPEATABLE READ, READ ONLY、detail 使用 READ ONLY，三者均设置固定 5 秒本地 timeout，事务内只执行显式列 SELECT，list 有 LIMIT，并以账户记录数前后相等验证无业务写入。",
+      "reuse": {
+        "fragment": "tests/contracts/query/migration-fragment.json",
+        "scope": "通过临时 PostgreSQL SQL 日志核实 list/count 使用 REPEATABLE READ, READ ONLY、detail 使用 READ ONLY，三者均设置固定 5 秒本地 timeout，事务内只执行显式列 SELECT，list 有 LIMIT，并以账户记录数前后相等验证无业务写入。"
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_single_shanghai_day_includes_both_day_edges_and_excludes_next_midnight",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_date_single_shanghai_day_includes_both_day_edges_and_excludes_next_midnight",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordDateTests.test_single_shanghai_day_includes_both_day_edges_and_excludes_next_midnight\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordDateTests.test_single_shanghai_day_includes_both_day_edges_and_excludes_next_midnight"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_leap_day_and_multi_day_range_use_inclusive_calendar_end_date",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_date_leap_day_and_multi_day_range_use_inclusive_calendar_end_date",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordDateTests.test_leap_day_and_multi_day_range_use_inclusive_calendar_end_date\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordDateTests.test_leap_day_and_multi_day_range_use_inclusive_calendar_end_date"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_year_boundary_uses_next_calendar_day_for_end",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_date_year_boundary_uses_next_calendar_day_for_end",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordDateTests.test_year_boundary_uses_next_calendar_day_for_end\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          },
+          {
+            "name": "pinned_date_window_timestamp_boundary_matrix",
+            "assertions": [
+              "assert_eq!(matrix[\"id\"], \"pinned_date_window_timestamp_boundary_matrix\");",
+              "assert_eq!(cases.len(), 12);",
+              "assert_eq!(actual, expected, \"boundary case {case_id}; input={input}\");"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordDateTests.test_year_boundary_uses_next_calendar_day_for_end",
+              "pinned_date_window_timestamp_boundary_matrix"
+            ],
+            "json_paths": [
+              "date_boundary_matrix.cases"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。A supplemental 12-case matrix captures date_window/timestamp outputs and errors from the pinned Python functions, then compares every item directly in Rust, including year bounds, leap day, 1990 DST, and the 1919 Shanghai midnight gap."
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_invalid_or_mixed_date_filters_fail_before_database_access",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_date_invalid_or_mixed_date_filters_fail_before_database_access",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordDateTests.test_invalid_or_mixed_date_filters_fail_before_database_access\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordDateTests.test_invalid_or_mixed_date_filters_fail_before_database_access"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 21 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates_before_query",
+        "assertions": [
+          "assert_eq!(second[\"items\"][0][\"id\"], first_id + 1);",
+          "assert!(second.get(\"summary\").is_none());",
+          "assert_eq!(second[\"latest_id\"], first[\"latest_id\"]);",
+          "for field in contract()[\"usage_records\"][\"date_cursor_changes\"]",
+          "assert_invalid_cursor_does_not_reach_database("
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.page_size",
+              "usage_records.date_cursor_changes"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定北京自然日创建真实日期游标；推进 list_at 时钟后核对继续页仍使用原窗口、无 summary 且 watermark 不漂移；省略 start/end、改变 start 或 end 时逐项验证 422 且无 PostgreSQL 查询。",
+      "reuse": {
+        "fragment": "tests/contracts/query/migration-fragment.json",
+        "scope": "固定北京自然日创建真实日期游标；推进 list_at 时钟后核对继续页仍使用原窗口、无 summary 且 watermark 不漂移；省略 start/end、改变 start 或 end 时逐项验证 422 且无 PostgreSQL 查询。"
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_pre_date_api_cursor_payload_still_works_and_freezes_default_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_date_pre_date_api_cursor_payload_still_works_and_freezes_default_window",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordDateTests.test_pre_date_api_cursor_payload_still_works_and_freezes_default_window\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordDateTests.test_pre_date_api_cursor_payload_still_works_and_freezes_default_window"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_is_opt_in_and_uses_actual_cost_without_other_cost_bases",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_summary_is_opt_in_and_uses_actual_cost_without_other_cost_bases",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_is_opt_in_and_uses_actual_cost_without_other_cost_bases\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_is_opt_in_and_uses_actual_cost_without_other_cost_bases"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_covers_all_pages_and_is_independent_of_page_limit",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_summary_covers_all_pages_and_is_independent_of_page_limit",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_covers_all_pages_and_is_independent_of_page_limit\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_covers_all_pages_and_is_independent_of_page_limit"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 4 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_joint_date_user_key_account_model_type_and_mismatch_filters_apply_to_summary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_joint_date_user_key_account_model_type_and_mismatch_filters_apply_to_summary",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_joint_date_user_key_account_model_type_and_mismatch_filters_apply_to_summary\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_joint_date_user_key_account_model_type_and_mismatch_filters_apply_to_summary"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_retains_history_after_related_entities_are_soft_or_hard_deleted",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_summary_retains_history_after_related_entities_are_soft_or_hard_deleted",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_retains_history_after_related_entities_are_soft_or_hard_deleted\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_retains_history_after_related_entities_are_soft_or_hard_deleted"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 8 个 detail, list, options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_empty_null_and_zero_cost_totals_are_decimal_strings",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_empty_null_and_zero_cost_totals_are_decimal_strings",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_empty_null_and_zero_cost_totals_are_decimal_strings\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_empty_null_and_zero_cost_totals_are_decimal_strings"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_preserves_decimal_precision_without_float_or_context_rounding",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_summary_preserves_decimal_precision_without_float_or_context_rounding",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_preserves_decimal_precision_without_float_or_context_rounding\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_preserves_decimal_precision_without_float_or_context_rounding"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_new_count_never_aggregates_even_when_summary_is_requested",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_new_count_never_aggregates_even_when_summary_is_requested",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_new_count_never_aggregates_even_when_summary_is_requested\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_new_count_never_aggregates_even_when_summary_is_requested"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_summary_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          },
+          {
+            "name": "assert_summary_snapshot_with_concurrent_write",
+            "assertions": [
+              "assert_eq!(writer_sum, \"103.1\");",
+              "assert_eq!(\n        first[\"latest_id\"], 2,\n        \"watermark uses the pre-write snapshot\"\n    );",
+              "assert_eq!(first[\"summary\"], json!({\"actual_cost\":\"0.3\"}));",
+              "assert_eq!(first[\"items\"][0][\"id\"], 2);",
+              "assert_eq!(first[\"items\"][0][\"actual_cost\"], \"0.2\");",
+              "assert_eq!(page[\"latest_id\"], 2, \"cursor preserves the old watermark\");",
+              "assert_eq!(page[\"items\"][0][\"id\"], 1);",
+              "assert_eq!(new_count[\"new_count\"], 1);",
+              "assert_eq!(new_count[\"latest_id\"], 3);",
+              "assert_eq!(refreshed[\"summary\"][\"actual_cost\"], \"103.1\");"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 4 个 list 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。trace 只回放每次调用前的数据库快照，不单独作为并发覆盖；同一 Rust 测试另在隔离 PostgreSQL 中用 advisory lock 阻塞 summary SELECT，期间由另一连接提交新增与更新，再核对首屏 summary、items、watermark、游标续页和刷新结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_more_than_100_users_and_keys_are_complete_in_ascending_id_pages",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_more_than_100_users_and_keys_are_complete_in_ascending_id_pages",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_more_than_100_users_and_keys_are_complete_in_ascending_id_pages\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_more_than_100_users_and_keys_are_complete_in_ascending_id_pages"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 8 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_users_directory_excludes_deleted_but_retains_duplicate_names_and_disabled_entries",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_users_directory_excludes_deleted_but_retains_duplicate_names_and_disabled_entries",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_users_directory_excludes_deleted_but_retains_duplicate_names_and_disabled_entries\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_users_directory_excludes_deleted_but_retains_duplicate_names_and_disabled_entries"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_key_directory_excludes_deleted_and_orphaned_keys_but_retains_disabled_owner_identity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_key_directory_excludes_deleted_and_orphaned_keys_but_retains_disabled_owner_identity",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_key_directory_excludes_deleted_and_orphaned_keys_but_retains_disabled_owner_identity\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_key_directory_excludes_deleted_and_orphaned_keys_but_retains_disabled_owner_identity"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_deleted_entities_cannot_bypass_directory_filter_by_id_name_or_owner",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_deleted_entities_cannot_bypass_directory_filter_by_id_name_or_owner",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_deleted_entities_cannot_bypass_directory_filter_by_id_name_or_owner\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_deleted_entities_cannot_bypass_directory_filter_by_id_name_or_owner"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 30 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_user_search_matches_name_email_or_id",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_user_search_matches_name_email_or_id",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_user_search_matches_name_email_or_id\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_user_search_matches_name_email_or_id"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 5 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_key_search_by_name_or_id_is_combined_with_user_scope",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_key_search_by_name_or_id_is_combined_with_user_scope",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_key_search_by_name_or_id_is_combined_with_user_scope\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_key_search_by_name_or_id_is_combined_with_user_scope"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 6 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_search_escapes_wildcards_and_parameterizes_sql",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_directory_search_escapes_wildcards_and_parameterizes_sql",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_search_escapes_wildcards_and_parameterizes_sql\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_search_escapes_wildcards_and_parameterizes_sql"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 4 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_output_is_an_exact_whitelist_and_never_returns_secrets",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_directory_output_is_an_exact_whitelist_and_never_returns_secrets",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_output_is_an_exact_whitelist_and_never_returns_secrets\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_directory_output_is_an_exact_whitelist_and_never_returns_secrets"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_empty_directory_or_unknown_owner_returns_no_cursor",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_empty_directory_or_unknown_owner_returns_no_cursor",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_empty_directory_or_unknown_owner_returns_no_cursor\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_empty_directory_or_unknown_owner_returns_no_cursor"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_option_cursor_is_bound_to_kind_query_and_user_scope",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_option_cursor_is_bound_to_kind_query_and_user_scope",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_option_cursor_is_bound_to_kind_query_and_user_scope\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_option_cursor_is_bound_to_kind_query_and_user_scope"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 6 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_invalid_option_parameters_and_cursors_do_not_reach_database",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_invalid_option_parameters_and_cursors_do_not_reach_database",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_invalid_option_parameters_and_cursors_do_not_reach_database\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_invalid_option_parameters_and_cursors_do_not_reach_database"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 10 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordOptionsTests.test_options_use_bounded_read_only_directory_queries_without_usage_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_options_options_use_bounded_read_only_directory_queries_without_usage_history",
+        "assertions": [
+          "replay_direct_case(\"py:tests.test_usage_records:UsageRecordOptionsTests.test_options_use_bounded_read_only_directory_queries_without_usage_history\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_direct_case",
+            "assertions": [
+              "assert_eq!(\n                        actual, event[\"expected\"],\n                        \"legacy operation {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        statements.len(),\n                        0,\n                        \"legacy rejected before SQL: {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordOptionsTests.test_options_use_bounded_read_only_directory_queries_without_usage_history"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 options 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_list_and_detail_require_admin_header_before_any_database_read",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_list_and_detail_require_admin_header_before_any_database_read",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_list_and_detail_require_admin_header_before_any_database_read\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_list_and_detail_require_admin_header_before_any_database_read"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 12 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_authenticated_list_and_detail_are_safe_serializable_read_responses",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_authenticated_list_and_detail_are_safe_serializable_read_responses",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_authenticated_list_and_detail_are_safe_serializable_read_responses\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_authenticated_list_and_detail_are_safe_serializable_read_responses"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_filters_and_new_count_are_applied",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_route_filters_and_new_count_are_applied",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_route_filters_and_new_count_are_applied\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_filters_and_new_count_are_applied"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_records_route_passes_user_id_to_list_and_new_count",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_records_route_passes_user_id_to_list_and_new_count",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_records_route_passes_user_id_to_list_and_new_count\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_records_route_passes_user_id_to_list_and_new_count"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_passes_date_window_and_summary_with_exact_decimal_json",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_route_passes_date_window_and_summary_with_exact_decimal_json",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_route_passes_date_window_and_summary_with_exact_decimal_json\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_passes_date_window_and_summary_with_exact_decimal_json"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_summary_default_and_explicit_false_do_not_aggregate",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_route_summary_default_and_explicit_false_do_not_aggregate",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_route_summary_default_and_explicit_false_do_not_aggregate\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_summary_default_and_explicit_false_do_not_aggregate"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_rejects_invalid_dates_mixed_time_modes_and_summary_boolean",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_route_rejects_invalid_dates_mixed_time_modes_and_summary_boolean",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_route_rejects_invalid_dates_mixed_time_modes_and_summary_boolean\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_route_rejects_invalid_dates_mixed_time_modes_and_summary_boolean"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 9 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_summary_reads_never_trigger_quota_models_oauth_or_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_summary_reads_never_trigger_quota_models_oauth_or_http",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_summary_reads_never_trigger_quota_models_oauth_or_http\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_summary_reads_never_trigger_quota_models_oauth_or_http"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 4 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_filters_returns_whitelist_and_never_runs_oauth_or_http"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 2 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_rejects_invalid_parameters_and_cross_condition_cursor",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_options_route_rejects_invalid_parameters_and_cross_condition_cursor",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_rejects_invalid_parameters_and_cross_condition_cursor\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_options_route_rejects_invalid_parameters_and_cross_condition_cursor"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 8 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_invalid_route_parameters_are_422_and_absent_detail_is_404",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_invalid_route_parameters_are_422_and_absent_detail_is_404",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_invalid_route_parameters_are_422_and_absent_detail_is_404\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_invalid_route_parameters_are_422_and_absent_detail_is_404"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 10 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_malformed_cursor_numbers_return_422_at_http_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": "legacy_route_malformed_cursor_numbers_return_422_at_http_boundary",
+        "assertions": [
+          "replay_route_case(\"py:tests.test_usage_records:UsageRecordsRouteTests.test_malformed_cursor_numbers_return_422_at_http_boundary\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "replay_route_case",
+            "assertions": [
+              "assert!(\n        events\n            .iter()\n            .all(|event| event[\"reference_now\"].as_str() == Some(reference_now_text)),\n        \"legacy route trace has one fixed reference time: {legacy_id}\"\n    );",
+              "assert_eq!(\n                observed_at, reference_now_text,\n                \"legacy route reference time {legacy_id}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected_status,\n            \"legacy route {legacy_id}: {path}; params={:?}\",\n            event[\"params\"]\n        );",
+              "assert_eq!(\n                stable_response(&actual_body),\n                stable_response(&event[\"expected_body\"]),\n                \"legacy route body {legacy_id}: {path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
+              "assert_read_only_queries(&statements, &context);"
+            ]
+          },
+          {
+            "name": "operation_statements",
+            "assertions": [
+              "assert!(before < after, \"SQL log barriers are out of order\");",
+              ".filter(|statement| !is_pool_session_setup_statement(statement))"
+            ]
+          },
+          {
+            "name": "assert_read_only_queries",
+            "assertions": [
+              "sql.starts_with(\"select \")",
+              "!sql.contains(\"credentials\")",
+              "!sql.contains(\"request_body\")"
+            ]
+          },
+          {
+            "name": "is_pool_session_setup_statement",
+            "assertions": [
+              "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/usage/fixtures.json",
+            "ids": [
+              "py:tests.test_usage_records:UsageRecordsRouteTests.test_malformed_cursor_numbers_return_422_at_http_boundary"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 3 个 http 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。HTTP trace preserves the legacy NOW and runs Runtime with that fixed clock so the default window remains deterministic. "
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_usage_records_expose_no_write_method",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_collection_detail_and_options_reject_all_write_methods_over_http",
+        "assertions": [
+          "assert_eq!(\n                response.status(),\n                reqwest::StatusCode::METHOD_NOT_ALLOWED,",
+          "logged_statements(\"query-history-http\"),\n        before,"
+        ]
+      },
+      "coverage_note": "实际 Axum loopback router 对 usage collection、detail、options 的 POST/PUT/PATCH/DELETE 共 12 种组合均返回 405；请求前后 PostgreSQL app-name SQL 语句集完全不变。",
+      "reuse": {
+        "fragment": "tests/contracts/query/migration-fragment.json",
+        "scope": "实际 Axum loopback router 对 usage collection、detail、options 的 POST/PUT/PATCH/DELETE 共 12 种组合均返回 405；请求前后 PostgreSQL app-name SQL 语句集完全不变。"
+      }
+    }
+  ],
+  "uncovered_notes": []
+}

@@ -34,4 +34,4 @@
 
 计算失败保留最后结果并标记延迟，超过五分钟隐藏数字、显示数据过期。账号快照不等待统计；明细及快照均排除已删除账号。返回枚举原因与统计，不返回原始错误正文、提示词或凭据。
 
-可用 `python -m scripts.quality_replay` 做只读回放；连接来自运行环境的 DATABASE_URL，输出仅含账号编号与聚合统计。`scripts.quality_integration` 只接受专用隔离数据库。
+质量计算与查询使用 Rust 实现。`server/tests/projection_parity_contract.rs` 和 `server/tests/query_history_contract.rs` 使用固定旧版数据向量、模拟上游及临时 PostgreSQL 检查评分与历史查询；通过 `python scripts/server_test.py --test projection_parity_contract` 或 `--test query_history_contract` 运行，不连接生产数据库。

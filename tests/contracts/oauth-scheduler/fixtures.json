@@ -1,0 +1,38 @@
+{
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "scope": {
+    "oauth_queries": 39,
+    "daily_test": 13,
+    "oauth_monitor_runtime_http_state": 32,
+    "usage_query": 1,
+    "excluded_monitor": 8,
+    "key_fallback_snapshot_extra": 3,
+    "key_fallback_latest_attempt_extra": 5,
+    "key_fallback_grok_isolation_extra": 1,
+    "recovery_selection_runtime_extra": 1,
+    "previously_mapped_oauth_queries": 2,
+    "base_total": 85,
+    "total": 95
+  },
+  "daily": {
+    "before_0500_beijing": "2026-09-21T20:59:50Z",
+    "due_0500_beijing": "2026-09-21T21:00:00Z",
+    "next_midnight_beijing": "2026-09-22T16:00:00Z",
+    "next_at_0500_beijing": "2026-09-29T21:00:00Z"
+  },
+  "oauth_query_contract": {
+    "active_usage_path": "/usage?source=active&force=true",
+    "admin_header": "x-api-key",
+    "bearer_header": null,
+    "automatic_budget_per_rolling_day": 6,
+    "automatic_min_interval_seconds": 3600,
+    "retry_backoff_hours": [1, 3, 6, 12, 12],
+    "manual_consumes_automatic_budget": false
+  },
+  "monitor_fallback": {
+    "busy_reason": "refresh_in_progress",
+    "busy_must_not_dispatch_usage": true,
+    "busy_must_not_dispatch_test": true,
+    "busy_must_not_write_schedulable": true
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "daily_test": {
+    "claimed_status": "running",
+    "late_batch_date": "2031-04-06",
+    "late_status": "missed",
+    "late_tick_at": "2031-04-06T06:09:01+00:00",
+    "next_run_at": "2031-04-06T06:08:00+00:00",
+    "on_time_claim_at": "2031-04-05T06:08:35+00:00",
+    "on_time_status": "queued",
+    "on_time_tick_at": "2031-04-05T06:08:30+00:00",
+    "scheduled_at": "2031-04-05T06:08:00+00:00",
+    "startup_at": "2031-04-05T06:07:08+00:00",
+    "startup_stale_status": "interrupted"
+  },
+  "detection": {
+    "legacy_observation": {
+      "active_cancel_calls": 1,
+      "terminal_generation_delta": 1,
+      "terminal_manual_status": "paused",
+      "terminal_next_at": null
+    },
+    "legacy_source_rules": {
+      "active_branch_checks_worker_guard": true,
+      "human_control_invalidates_generation": true,
+      "terminal_timer_requires_matching_generation": true
+    },
+    "manual_close": {
+      "active_interim_statuses": [
+        "paused",
+        "running"
+      ],
+      "database_schedulable": false,
+      "generation_delta": 1,
+      "max_model_dispatches": 1,
+      "terminal_next_at": null,
+      "terminal_status": "paused"
+    },
+    "manual_reopen": {
+      "automatic_started_at": "2031-04-05T06:07:08+00:00",
+      "next_allowed_at": "2031-04-05T06:12:08+00:00",
+      "next_at": "2031-04-05T06:12:08+00:00",
+      "saved_interval_minutes": 1,
+      "status": "waiting"
+    }
+  },
+  "manual_control": {
+    "bark_posts_after_two_deliver_ticks": 1,
+    "generation": 1,
+    "notified_keys": [
+      "auth:73:active_usage:fixture"
+    ],
+    "remaining_pending_count": 0,
+    "remaining_pending_stages": [
+      "active_usage"
+    ],
+    "removed_daily_key": "daily:2031-04-05:73",
+    "removed_stage": "daily_test",
+    "removed_stages": [
+      "daily_test",
+      "recovery"
+    ]
+  },
+  "recovery_receipt": {
+    "fingerprint_length": 64,
+    "format": "legacy-envelope",
+    "recovery_write_dispatches_after_crash": 1,
+    "required_keys": [
+      "block_state",
+      "credential_fingerprint",
+      "result"
+    ],
+    "required_result_fields": [
+      "success",
+      "recovery_method",
+      "recovery_method_generation"
+    ],
+    "unknown_max_test_dispatches": 1,
+    "unknown_verification_error": "verification_uncertain"
+  },
+  "reference": {
+    "daily_time_beijing": "14:08",
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+  }
+}

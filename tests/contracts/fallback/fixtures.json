@@ -1,0 +1,2640 @@
+{
+  "cases": [
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 6,
+          "name": "key-6",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "all_unavailable",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4
+          ],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 5,
+          "schedulable": false,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "any_available",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 2,
+          "name": "oauth-2",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": false,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            5
+          ],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available",
+            "2": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available",
+            "2": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          },
+          "2": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "unknown_network",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "network_error",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "unknown_empty",
+      "oauth": [],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {},
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {},
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {}
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "unknown_stale",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T06:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "mixed_unknown",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        },
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 2,
+          "name": "oauth-2",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable",
+            "2": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable",
+            "2": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        },
+        {
+          "id": 5,
+          "schedulable": true,
+          "timeout": 3
+        },
+        {
+          "id": 6,
+          "schedulable": true,
+          "timeout": 3
+        },
+        {
+          "id": 5,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          99
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [
+        5
+      ],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 6,
+          "name": "key-6",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 7,
+          "name": "key-7",
+          "platform": "grok",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 8,
+          "name": "key-8",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "oauth"
+        }
+      ],
+      "name": "partial_failure",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4,
+            6
+          ],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [
+            5
+          ],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable",
+            "8": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [
+            5
+          ],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable",
+            "8": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "disabled",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 6,
+          "name": "key-6",
+          "platform": "anthropic",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": "2026-09-05T08:00:00+00:00",
+          "id": 8,
+          "name": "key-8",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 9,
+          "name": "key-9",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "dispatch_filters",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4
+          ],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {
+        "5": {
+          "deleted_at": "2026-09-05T08:00:00+00:00"
+        },
+        "6": {
+          "type": "oauth"
+        },
+        "7": {
+          "schedulable": true
+        }
+      },
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 6,
+          "name": "key-6",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 7,
+          "name": "key-7",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "live_revalidation",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4
+          ],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable",
+            "6": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": false,
+          "timeout": 3
+        },
+        {
+          "id": 5,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 2,
+          "name": "oauth-2",
+          "overload_until": null,
+          "platform": "grok",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": false,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "grok",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "opposite_platforms",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4,
+            5
+          ],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": true,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "unavailable"
+          },
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": true,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "unavailable"
+          },
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": true,
+      "calls": [
+        {
+          "id": 5,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 2,
+          "name": "oauth-2",
+          "overload_until": null,
+          "platform": "grok",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": false,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "grok",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "grok_openai_busy",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            5
+          ],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": true,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "unavailable"
+          },
+          "oauth_states": {},
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": true,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "unavailable"
+          },
+          "oauth_states": {},
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 2,
+          "name": "oauth-2",
+          "overload_until": null,
+          "platform": "grok",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "grok",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "grok_unknown",
+      "oauth": [],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": false,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "available"
+          },
+          "oauth_states": {},
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": false,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {
+            "2": "available"
+          },
+          "oauth_states": {},
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": false,
+        "grok_enabled": false,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": false,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "disabled",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "failed_ids": [],
+          "reason": "disabled_or_empty",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "failed_ids": [],
+          "reason": "disabled_or_empty",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "empty_selection",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "failed_ids": [],
+          "reason": "disabled_or_empty",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "failed_ids": [],
+          "reason": "disabled_or_empty",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        },
+        {
+          "id": 5,
+          "schedulable": false,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_available",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4,
+            5
+          ],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_unknown",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "network_error",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_missing",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {}
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": true,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_stale",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        },
+        {
+          "changed_ids": [],
+          "desired": null,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": null
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unknown"
+          },
+          "reason": "keep_existing",
+          "skipped": true
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T06:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [
+        {
+          "id": 4,
+          "schedulable": true,
+          "timeout": 3
+        },
+        {
+          "id": 5,
+          "schedulable": true,
+          "timeout": 3
+        }
+      ],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_unavailable",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [
+            4,
+            5
+          ],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": true,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": true
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "unavailable"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "error": "query failed",
+            "error_code": "http_401",
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "busy": false,
+      "calls": [],
+      "change_after_first": {},
+      "config": {
+        "coexist_account_ids": [
+          4,
+          5
+        ],
+        "config_version": 1,
+        "enabled": true,
+        "grok_enabled": true,
+        "managed_account_ids": [
+          4,
+          5
+        ],
+        "openai_enabled": true,
+        "updated_by": "fixture-user"
+      },
+      "fail": [],
+      "gate": [
+        5
+      ],
+      "grok": [],
+      "keys": [
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 4,
+          "name": "key-4",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "disabled",
+          "type": "apikey"
+        },
+        {
+          "credentials": {
+            "api_key": "secret-key-material"
+          },
+          "deleted_at": null,
+          "id": 5,
+          "name": "key-5",
+          "platform": "openai",
+          "schedulable": false,
+          "status": "active",
+          "type": "apikey"
+        }
+      ],
+      "name": "coexist_held",
+      "oauth": [
+        {
+          "auto_pause_on_expired": false,
+          "credentials": {
+            "plan_type": "plus"
+          },
+          "deleted_at": null,
+          "error_message": "stale error text",
+          "expires_at": null,
+          "extra": {},
+          "id": 1,
+          "name": "oauth-1",
+          "overload_until": null,
+          "platform": "openai",
+          "rate_limit_reset_at": null,
+          "rate_limited_at": null,
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": null,
+          "type": "oauth"
+        }
+      ],
+      "reports": [
+        {
+          "changed_ids": [],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        },
+        {
+          "changed_ids": [],
+          "desired": false,
+          "desired_by_platform": {
+            "grok": null,
+            "openai": false
+          },
+          "failed_ids": [],
+          "grok_oauth_states": {},
+          "oauth_states": {
+            "1": "available"
+          },
+          "reason": "",
+          "skipped": false
+        }
+      ],
+      "snapshot": {
+        "oauth_results": {
+          "1": {
+            "oauth_quota": {
+              "plan_type": "plus",
+              "ui_windows": [
+                {
+                  "key": "codex_5h",
+                  "label": "5h",
+                  "remaining_percent": 80,
+                  "used_percent": 20
+                },
+                {
+                  "key": "codex_7d",
+                  "label": "7d",
+                  "remaining_percent": 70,
+                  "used_percent": 30
+                }
+              ]
+            },
+            "queried_at": "2026-09-05T08:00:00+00:00",
+            "success": true
+          }
+        }
+      }
+    }
+  ],
+  "now": "2026-09-05T08:00:00+00:00",
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+}

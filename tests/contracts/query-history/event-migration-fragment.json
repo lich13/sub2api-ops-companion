@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_events030:EventQuery030Tests.test_default_category_preserves_legacy_predicate_and_rejects_unknown_categories",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventQuery030Tests.test_detail_outside_selected_category_is_not_returned",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventQuery030Tests.test_list_and_detail_use_the_same_category_before_pagination",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventQuery030Tests.test_other_events_preserve_orphans_and_deleted_entity_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventRoutes030Tests.test_optional_category_reaches_both_service_entrypoints",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_events030:EventRoutes030Tests.test_unknown_category_is_rejected_before_any_query",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_postgres_events030:PostgreSQLEvents030Tests.test_categories_are_disjoint_and_complete_except_explicit_local_limits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_postgres_events030:PostgreSQLEvents030Tests.test_default_category_executes_the_legacy_predicate",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_postgres_events030:PostgreSQLEvents030Tests.test_detail_uses_same_category_and_preserves_missing_or_deleted_entities",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_errors_use_account_filter_and_cursor",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(fixed[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA)",
+          "assert_eq!(\n        removed_unrelated_event.rows_affected(),\n        1,\n        \"temporary business schema must start with its one unrelated fixture event\"\n    )",
+          "assert_eq!(actual_scopes, expected_scopes)",
+          "assert_eq!(\n                actual_ids, page_expected,\n                \"pinned Python page mismatch for category={category:?}, account={account_id:?}, page={index}\"\n            )",
+          "assert!(\n                actual_ids.iter().all(|id| !seen.contains(id)),\n                \"Rust pagination overlapped pages for category={category:?}, account={account_id:?}\"\n            )",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor)",
+          "assert_eq!(expected_cursor, actual_ids.last().copied())",
+          "assert_eq!(\n            seen, expected_ids,\n            \"all pages must preserve the old filter result\"\n        )",
+          "assert_eq!(\n            cursor, None,\n            \"the final Rust page must terminate pagination\"\n        )",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\")",
+          "assert_eq!(actual.unwrap_err().status.as_u16(), 404)",
+          "assert_eq!(actual.unwrap(), expected[\"value\"], \"event detail {id}\")",
+          "assert_eq!(\n            queries\n                .errors(None, None, 2, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(\n            queries\n                .error_detail(1, Some(category))\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
+          "assert_eq!(logged_statements(\"query-history-events\"), before_invalid)"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_event_routes_match_queries",
+            "assertions": [
+              "assert_eq!(request.method(), Method::GET)",
+              "assert_eq!(request.headers().get(\"x-api-key\").unwrap(), ADMIN_KEY)",
+              "assert!(request.headers().get(\"authorization\").is_none())",
+              "assert_eq!(response.status().as_u16(), 200)",
+              "assert_eq!(\n                body[\"items\"]\n                    .as_array()\n                    .unwrap()\n                    .iter()\n                    .map(|v| v[\"id\"].clone())\n                    .collect::<Vec<_>>(),\n                page[\"ids\"].as_array().unwrap().clone()\n            )",
+              "assert_eq!(body[\"next_cursor\"], page[\"next_cursor\"])",
+              "assert_eq!(\n            response.status().as_u16(),\n            expected[\"status\"].as_u64().unwrap() as u16\n        )",
+              "assert_eq!(response.json::<Value>().await.unwrap(), expected[\"value\"])",
+              "assert_eq!(response.status().as_u16(), 422)",
+              "assert_eq!(logged_statements(\"query-history-events-http\"), before)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Pinned Python and Rust query the same synthetic PostgreSQL events, including orphan/deleted entities: all pages across three categories and four account scopes plus full detail DTOs/404 are compared. Actual Axum routes repeat list/detail comparisons; invalid categories return 422 before any SQL, proven from the isolated PostgreSQL statement log."
+    }
+  ]
+}

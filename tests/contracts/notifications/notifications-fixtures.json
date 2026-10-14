@@ -1,0 +1,1295 @@
+{
+  "bark": {
+    "allowed_urls": [
+      "https://fixture.example.invalid",
+      "http://localhost:8080",
+      "http://127.0.0.1:8080",
+      "http://[::1]:8080"
+    ],
+    "atomic_save": {
+      "mode_octal": "0600",
+      "persisted": {
+        "device_key": "fixture-save-two"
+      },
+      "temporary_files": []
+    },
+    "config_save": {
+      "mode_octal": "0600",
+      "panel": {
+        "config_updated_at": "2026-09-04T03:00:00+00:00",
+        "config_valid": true,
+        "configured": true,
+        "device_key_set": true,
+        "device_key_status": "已设置",
+        "enabled": true,
+        "revision": "ed41751dc983f9a1c1e5480e30372cb6a496132f09f1951a9410c40859209c09",
+        "server_url_valid": true
+      },
+      "persisted": {
+        "device_key": "fixture-save-two",
+        "enabled": true,
+        "server_url": "http://127.0.0.1:50126",
+        "updated_at": "2026-09-04T03:00:00+00:00",
+        "updated_by": "fixture-admin"
+      },
+      "temporary_files": []
+    },
+    "invalid_existing_config": {
+      "config_valid": false,
+      "device_key": "",
+      "enabled": false,
+      "server_url": "https://api.day.app"
+    },
+    "invalid_schema_cases": [
+      {
+        "expected_config_valid": false,
+        "id": "enabled_wrong_type",
+        "input": {
+          "device_key": "fixture-key",
+          "enabled": {
+            "fixture": true
+          },
+          "server_url": "https://api.day.app"
+        }
+      },
+      {
+        "expected_config_valid": false,
+        "id": "device_key_wrong_type",
+        "input": {
+          "device_key": 17,
+          "enabled": false,
+          "server_url": "https://api.day.app"
+        }
+      },
+      {
+        "expected_config_valid": false,
+        "id": "invalid_effective_url",
+        "input": {
+          "device_key": "fixture-key",
+          "enabled": false,
+          "server_url": "http://fixture.example.invalid"
+        }
+      }
+    ],
+    "invalid_utf8_config": {
+      "panel_config_valid": false,
+      "settings": {
+        "config_valid": false,
+        "device_key": "",
+        "enabled": false,
+        "server_url": "https://api.day.app"
+      }
+    },
+    "malformed_then_valid": {
+      "delivered_dedupe_keys": [
+        "event:7"
+      ],
+      "request_count": 1
+    },
+    "message_cases": [
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "recovered",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号额度已恢复可用",
+          "账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：5h / 7d\n模型：gpt-5.6-luna\n错误码：http_401"
+        ],
+        "id": "recovered"
+      },
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "test_failed",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号额度恢复后测试失败",
+          "账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：5h / 7d\n模型：gpt-5.6-luna\n错误码：http_401\n错误：Authorization: [REDACTED]"
+        ],
+        "id": "test_failed"
+      },
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "recovery_failed",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号自动恢复失败",
+          "账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：5h / 7d\n模型：gpt-5.6-luna\n错误码：http_401\n错误：Authorization: [REDACTED]"
+        ],
+        "id": "recovery_failed"
+      },
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "auth_failed",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号认证异常",
+          "账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：5h / 7d\n模型：gpt-5.6-luna\n错误码：http_401\n错误：Authorization: [REDACTED]\n阶段：active usage\n时间：2026-09-04 11:00"
+        ],
+        "id": "auth_failed"
+      },
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "recovered_at": "2026-09-04T03:00:00+00:00",
+          "reset_credit": {
+            "completed_at": "2026-09-04T03:00:00+00:00",
+            "consumed": true,
+            "verification_method": "connection"
+          },
+          "stage": "active_usage",
+          "status": "recovered",
+          "test_success": true,
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "✅ OAuth 用卡成功，已恢复调度",
+          "账号：oauth-seven #7\n验证方式：测试连接\n模型：gpt-5.6-luna\n用卡时间：2026-09-04 11:00\n恢复时间：2026-09-04 11:00"
+        ],
+        "id": "confirmed_credit"
+      },
+      {
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "reset_credit": {
+            "completed_at": "2026-09-04T03:00:00+00:00",
+            "consumed": true
+          },
+          "stage": "active_usage",
+          "status": "recovered",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        },
+        "expected": [
+          "OAuth 账号额度已恢复可用",
+          "账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：5h / 7d\n模型：gpt-5.6-luna\n错误码：http_401"
+        ],
+        "id": "incomplete_credit"
+      }
+    ],
+    "multisegment_failure": {
+      "delivered_count": 0,
+      "payloads": [
+        {
+          "body": "第 1/2 段\n账号 ID：7\n名称：oauth-seven\n套餐：plus\n窗口：fixture-window-0-长长长长长长长长长长长长长长长长长长长长... / fixture-window-1-长长长长长长长长长长长长长长长长长长长长... / fixture-window-2-长长长长长长长长长长长长长长长长长长长长... / fixture-window-3-长长长长长长长长长长长长长长长长长长长长... / fixture-window-4-长长长长长长长长长长长长长长长长长长长长... / fixture-window-5-长长长长长长长长长长长长长长长长长长长长... / fixture-window-6-长长长长长长长长长长长长长长长长长长长长... / fixture-window-7-长长长长长长长长长长长长长长长长长长长长... / fixture-window-8-长长长长长长长长长长长长长长长长长长长长... / fixture-window-9-长长长长长长长长长长长长长长长长长长长长... / fixture-window-10-长长长长长长长长长长长长长长长长长长长... / fixture-window-11-长长长长长长长长长长长长长长长长长长长... / fixture-window-12-长长长长长长长长长长长长长长长长长长长... / fixture-window-13-长长长长长长长长长长长长长长长长长长长... / fixture-window-14-长长长长长长长长长长长长长长长长长长长... / fixture-window-15-长长长长长长长长长长长长长长长长长长长... / fixture-window-16-长长长长长长长长长长长长长长长长长长长... / fixture-window-17-长长长长长长长长长长长长长长长长长长长... / fixture-window-18-长长长长长长长长长长长长长长长长长长长... / fixture-window-19-长长长长长长长长长长长长长长长长长长长... / fixture-window-20-长长长长长长长长长长长长长长长长长长长... / fixture-window-21-长长长长长长长长长长长长长长长长长长长... / fixture-window-22-长长长长长长长长长长长长长长长长长长长... / fixture-window-23-长长长长长长长长长长长长长长长长长长长... / fixture-window-24-长长长长长长长长长长长长长长长长长长长... / fixture-window-25-长长长长长长长长长长长长长长长长长长长... / fixture-window-26-长长长长长长长长长长长长长长长长长长长... / fixture-window-27-长长长长长长长长长长长长长长长长长长长... / fixture-window-28-长长长长长长长长",
+          "device_key": "fixture-device-key",
+          "title": "OAuth 账号额度已恢复可用 (1/2)"
+        },
+        {
+          "body": "第 2/2 段\n长长长长长长长长长长长... / fixture-window-29-长长长长长长长长长长长长长长长长长长长... / fixture-window-30-长长长长长长长长长长长长长长长长长长长... / fixture-window-31-长长长长长长长长长长长长长长长长长长长... / fixture-window-32-长长长长长长长长长长长长长长长长长长长... / fixture-window-33-长长长长长长长长长长长长长长长长长长长... / fixture-window-34-长长长长长长长长长长长长长长长长长长长... / fixture-window-35-长长长长长长长长长长长长长长长长长长长... / fixture-window-36-长长长长长长长长长长长长长长长长长长长... / fixture-window-37-长长长长长长长长长长长长长长长长长长长... / fixture-window-38-长长长长长长长长长长长长长长长长长长长... / fixture-window-39-长长长长长长长长长长长长长长长长长长长... / fixture-window-40-长长长长长长长长长长长长长长长长长长长... / fixture-window-41-长长长长长长长长长长长长长长长长长长长... / fixture-window-42-长长长长长长长长长长长长长长长长长长长... / fixture-window-43-长长长长长长长长长长长长长长长长长长长... / fixture-window-44-长长长长长长长长长长长长长长长长长长长... / fixture-window-45-长长长长长长长长长长长长长长长长长长长... / fixture-window-46-长长长长长长长长长长长长长长长长长长长... / fixture-window-47-长长长长长长长长长长长长长长长长长长长... / fixture-window-48-长长长长长长长长长长长长长长长长长长长... / fixture-window-49-长长长长长长长长长长长长长长长长长长长...\n模型：gpt-5.6-luna\n错误码：http_401",
+          "device_key": "fixture-device-key",
+          "title": "OAuth 账号额度已恢复可用 (2/2)"
+        }
+      ],
+      "request_count": 2,
+      "total_parts": 2
+    },
+    "normalize_inputs": [
+      "https://api.day.app///",
+      "https://fixture.example.invalid/root/"
+    ],
+    "normalized": [
+      "https://api.day.app",
+      "https://fixture.example.invalid/root"
+    ],
+    "panel": {
+      "config_updated_at": null,
+      "config_valid": true,
+      "configured": true,
+      "device_key_set": true,
+      "device_key_status": "已设置",
+      "enabled": true,
+      "server_url_valid": true
+    },
+    "payload": {
+      "chunks": [
+        "前缀汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉",
+        "字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉",
+        "字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂suffix"
+      ],
+      "max_bytes": 2400,
+      "parts": [
+        "第 1/3 段\n前缀汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂",
+        "第 2/3 段\n汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字",
+        "第 3/3 段\n🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂suffix"
+      ],
+      "text": "前缀汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂汉字🙂suffix"
+    },
+    "push_urls": [
+      "https://fixture.example.invalid/root/push",
+      "https://fixture.example.invalid/%E8%87%AA%E5%BB%BA/push",
+      "https://fixture.example.invalid/%E8%87%AA%E5%BB%BA/push"
+    ],
+    "queue": {
+      "confirmed_credit": {
+        "notified_keys": [
+          "event:7"
+        ],
+        "pending_count": 0,
+        "requests": 1,
+        "title": "✅ OAuth 用卡成功，已恢复调度"
+      },
+      "explicitly_disabled": {
+        "pending_count": 0,
+        "requests": 0,
+        "suppressed": true
+      },
+      "failure_retry": {
+        "pending_count": 1,
+        "requests": 1,
+        "scheduler": {}
+      },
+      "invalid_config": {
+        "pending_count": 1,
+        "requests": 0
+      },
+      "invalid_environment": {
+        "config_valid": false,
+        "pending_count": 1,
+        "requests": 0
+      },
+      "malformed_then_valid": {
+        "delivered": [
+          {
+            "account_id": 7,
+            "account_name": "oauth-seven",
+            "checked_at": "2026-09-04T03:00:00+00:00",
+            "dedupe_key": "event:7",
+            "error": "Authorization: Bearer [fixture-secret-marker]",
+            "error_code": "http_401",
+            "model_id": "gpt-5.6-luna",
+            "plan_type": "plus",
+            "stage": "active_usage",
+            "status": "recovered",
+            "window_labels": [
+              "5h",
+              "7d"
+            ]
+          }
+        ],
+        "delivered_dedupe_keys": [
+          "event:7"
+        ],
+        "malformed_input": {
+          "account_id": "fixture-invalid-id",
+          "status": "recovered"
+        },
+        "requests": 1,
+        "valid_event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "recovered",
+          "window_labels": [
+            "5h",
+            "7d"
+          ]
+        }
+      },
+      "manual_revoke": {
+        "pending_count": 0,
+        "requests": 0
+      },
+      "multisegment_failure": {
+        "body_byte_lengths": [
+          2399,
+          1813
+        ],
+        "event": {
+          "account_id": 7,
+          "account_name": "oauth-seven",
+          "checked_at": "2026-09-04T03:00:00+00:00",
+          "dedupe_key": "event:7",
+          "error": "Authorization: Bearer [fixture-secret-marker]",
+          "error_code": "http_401",
+          "model_id": "gpt-5.6-luna",
+          "plan_type": "plus",
+          "stage": "active_usage",
+          "status": "recovered",
+          "window_labels": [
+            "window-0-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-1-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-2-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-3-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-4-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-5-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-6-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-7-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-8-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-9-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-10-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-11-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-12-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-13-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-14-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-15-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-16-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-17-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-18-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-19-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-20-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-21-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-22-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-23-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-24-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-25-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-26-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-27-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-28-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-29-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-30-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-31-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-32-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-33-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-34-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-35-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-36-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-37-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-38-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-39-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-40-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-41-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-42-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-43-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-44-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-45-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-46-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-47-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-48-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+            "window-49-长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长"
+          ]
+        },
+        "notified_keys": [],
+        "pending_count": 1,
+        "requests": 2,
+        "titles": [
+          "OAuth 账号额度已恢复可用 (1/2)",
+          "OAuth 账号额度已恢复可用 (2/2)"
+        ],
+        "total_parts": 2
+      },
+      "success_dedup": {
+        "notified_keys": [
+          "event:7"
+        ],
+        "pending_count": 0,
+        "requests": 1,
+        "suppressed": false
+      }
+    },
+    "rejected_errors": [
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url",
+      "invalid_server_url"
+    ],
+    "rejected_urls": [
+      "http://fixture.example.invalid",
+      "ftp://127.0.0.1",
+      "https://fixture-user@fixture.example.invalid",
+      "https://fixture.example.invalid?device_key=fixture-value",
+      "https://fixture.example.invalid/#fragment",
+      " https://fixture.example.invalid/has space ",
+      "https://fixture.example.invalid/bad%escape",
+      "https://fixture.example.invalid/bad\u0000path",
+      "not-a-url"
+    ],
+    "sanitization": {
+      "expected": "{api_key:[REDACTED],\"other\":\"ok\"} headers={X-Api-Key: [REDACTED] Authorization: [REDACTED] Cookie: [REDACTED] url=https://[REDACTED]@example.invalid/path?access_token=[REDACTED] private_key=[REDACTED] Incorrect API key provided: [REDACTED] token is [REDACTED] unlabelled [REDACTED] [REDACTED PRIVATE KEY]",
+      "input": "{\"api_key\":\"fixture-json-api-key\",\"other\":\"ok\"}\nheaders={'X-Api-Key': 'fixture-header-key'}\nAuthorization: Basic fixture-basic-auth-value\nCookie: session=fixture-cookie-session; refresh=fixture-cookie-refresh\nurl=https://fixture-user:fixture-password@example.invalid/path?access_token=fixture-query-token\nprivate_key=fixture-private-key-value\nIncorrect API key provided: fixture-error-key\ntoken is narrative-fixture-token\nunlabelled sk-proj-fixture-marker\n-----BEGIN PRIVATE KEY----- fixture-pem-marker -----END PRIVATE KEY-----",
+      "long_utf8": "汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉汉...",
+      "long_utf8_expected_length_at_most": 400
+    },
+    "settings_environment_fallback": {
+      "config_valid": true,
+      "device_key": "fixture-env-key",
+      "enabled": true,
+      "server_url": "https://env.example.invalid/"
+    },
+    "settings_file_overrides_environment": {
+      "config_valid": true,
+      "device_key": "fixture-file-key",
+      "enabled": false,
+      "server_url": "https://file.example.invalid"
+    },
+    "timeout_calls": {
+      "monitor_delivered_count": 1,
+      "test_payload": {
+        "body": "Bark 推送通道正常。",
+        "device_key": "fixture-device-key",
+        "title": "Sub2API Ops Companion"
+      },
+      "test_success": true,
+      "timeouts": [
+        3,
+        8
+      ]
+    },
+    "transport_expected": {
+      "business_code": {
+        "error_code": "bark_response_code",
+        "sent_parts": 0,
+        "success": false,
+        "total_parts": 1
+      },
+      "http_status": {
+        "error_code": "http_status",
+        "sent_parts": 0,
+        "success": false,
+        "total_parts": 1
+      },
+      "invalid_json": {
+        "error_code": "response_decode",
+        "success": false
+      },
+      "invalid_url": {
+        "error_code": "invalid_server_url",
+        "success": false
+      },
+      "missing_key": {
+        "error_code": "missing_device_key",
+        "success": false
+      },
+      "request_error": {
+        "error_code": "request_error",
+        "success": false
+      },
+      "string_code": {
+        "error_code": "bark_response_code",
+        "sent_parts": 0,
+        "success": false,
+        "total_parts": 1
+      },
+      "timeout": {
+        "error_code": "timeout",
+        "success": false
+      }
+    }
+  },
+  "capacity": {
+    "match_cases": [
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "provider_plain_normalized",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 1,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "  OUR SERVERS ARE CURRENTLY OVERLOADED. Please try again later!!!  ",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Selected model is at capacity. Please try a different model.",
+        "id": "provider_body_wrapped",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"message\": \"Selected model is at capacity. Please try a different model.\"}}",
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 2,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
+        "id": "provider_detail_object",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 11,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": {
+            "error": {
+              "message": "stream disconnected before completion: Concurrency limit exceeded for account, please retry later"
+            }
+          },
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
+        "id": "provider_plain_concurrency",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 12,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "  STREAM   DISCONNECTED BEFORE COMPLETION: concurrency limit exceeded for account, please retry later!!! ",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_wrong_platform",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "grok",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 3,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "Our servers are currently overloaded. Please try again later.",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_wrong_type",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "client_key",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 4,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "Our servers are currently overloaded. Please try again later.",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_deleted",
+        "row": {
+          "account_deleted_at": "2026-09-04T03:00:00+00:00",
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 5,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "Our servers are currently overloaded. Please try again later.",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_wrong_owner",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "client",
+          "error_phase": "upstream",
+          "id": 6,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "Our servers are currently overloaded. Please try again later.",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_wrong_phase",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "request",
+          "id": 7,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": "Our servers are currently overloaded. Please try again later.",
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_body_plain_string",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "Our servers are currently overloaded. Please try again later.",
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 10,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_body_nested_request",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": {
+            "request": {
+              "error": {
+                "message": "Our servers are currently overloaded. Please try again later."
+              }
+            }
+          },
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 8,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_body_nested_request_json",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"request\": {\"error\": {\"message\": \"Selected model is at capacity. Please try a different model.\"}}}",
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 9,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "provider_partial_concurrency",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": {
+            "error": {
+              "message": "stream disconnected before completion: concurrency limit exceeded for account"
+            }
+          },
+          "error_message": null,
+          "error_owner": "provider",
+          "error_phase": "upstream",
+          "id": 13,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      }
+    ],
+    "messages": [
+      "Our servers are currently overloaded. Please try again later.",
+      "Selected model is at capacity. Please try a different model.",
+      "stream disconnected before completion: Concurrency limit exceeded for account, please retry later"
+    ],
+    "retry_windows": [
+      5,
+      30,
+      120,
+      600
+    ]
+  },
+  "gateway": {
+    "match_cases": [
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "gateway_phrase_1",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"  OUR \\n SERVERS \\n ARE \\n CURRENTLY \\n OVERLOADED. \\n PLEASE \\n TRY \\n AGAIN \\n LATER.!!! \", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "  OUR \n SERVERS \n ARE \n CURRENTLY \n OVERLOADED. \n PLEASE \n TRY \n AGAIN \n LATER.!!! ",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 1,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Selected model is at capacity. Please try a different model.",
+        "id": "gateway_phrase_2",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"  SELECTED \\n MODEL \\n IS \\n AT \\n CAPACITY. \\n PLEASE \\n TRY \\n A \\n DIFFERENT \\n MODEL.!!! \", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "  SELECTED \n MODEL \n IS \n AT \n CAPACITY. \n PLEASE \n TRY \n A \n DIFFERENT \n MODEL.!!! ",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 2,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "stream disconnected before completion: Concurrency limit exceeded for account, please retry later",
+        "id": "gateway_phrase_3",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"  STREAM \\n DISCONNECTED \\n BEFORE \\n COMPLETION: \\n CONCURRENCY \\n LIMIT \\n EXCEEDED \\n FOR \\n ACCOUNT, \\n PLEASE \\n RETRY \\n LATER!!! \", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "  STREAM \n DISCONNECTED \n BEFORE \n COMPLETION: \n CONCURRENCY \n LIMIT \n EXCEEDED \n FOR \n ACCOUNT, \n PLEASE \n RETRY \n LATER!!! ",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 3,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "gateway_body_after_message_clear",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": null,
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 10,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "response_failed",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"type\": \"response.failed\", \"response\": {\"error\": {\"message\": \"Our servers are currently overloaded. Please try again later.\"}}}",
+          "error_message": null,
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 11,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "response_incomplete",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"type\": \"response.incomplete\", \"response\": {\"error\": {\"message\": \"Our servers are currently overloaded. Please try again later.\"}}}",
+          "error_message": null,
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 11,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": "Our servers are currently overloaded. Please try again later.",
+        "id": "gateway_stream_false_with_body",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 12,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": false,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_20",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "key",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 20,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_21",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "grok",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 21,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_22",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "client",
+          "id": 22,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_23",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 23,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": false,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_24",
+        "row": {
+          "account_deleted_at": "2026-09-04T03:00:00+00:00",
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\": {\"code\": \"fixture-overloaded\", \"message\": \"Our servers are currently overloaded. Please try again later.\", \"type\": \"fixture-unavailable\"}}",
+          "error_message": "Our servers are currently overloaded. Please try again later.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 24,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_25",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": null,
+          "error_message": "Selected model is at capacity.",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 25,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_26",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"error\":{\"code\":\"server_error\",\"message\":\"synthetic failure\"}}",
+          "error_message": "server_error",
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 26,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      },
+      {
+        "expected": null,
+        "id": "gateway_false_positive_27",
+        "row": {
+          "account_deleted_at": null,
+          "account_id": 1,
+          "account_name": "fixture-account",
+          "account_platform": "openai",
+          "account_type": "oauth",
+          "created_at": "2026-09-04T03:00:00+00:00",
+          "error_body": "{\"request\": {\"error\": {\"message\": \"Our servers are currently overloaded. Please try again later.\"}}}",
+          "error_message": null,
+          "error_owner": "platform",
+          "error_phase": "internal",
+          "error_source": "gateway",
+          "id": 27,
+          "model": "fixture-model",
+          "requested_model": "fixture-model",
+          "stream": true,
+          "upstream_error_detail": null,
+          "upstream_error_message": null,
+          "upstream_model": "fixture-model",
+          "upstream_status_code": 200
+        }
+      }
+    ],
+    "sql_contract": {
+      "account_filter_formatted": "\nSELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,\n nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,\n coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,\n a.proxy_id, md5(a.credentials::text) AS credential_version,\n md5((a.credentials - 'model_mapping')::text) AS credential_settings_version,\n a.credentials->'model_mapping' AS model_mapping,\n nullif(a.credentials->>'project_id','') IS NOT NULL AS model_sync_project,\n md5(coalesce(a.credentials->'model_mapping','{}'::jsonb)::text) AS model_mapping_version,\n (SELECT md5(jsonb_agg(jsonb_build_array(g.id,g.model_allowlist) ORDER BY g.id)::text)\n  FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id) AS model_catalog_version,\n a.credentials->>'subscription_tier' AS quota_grok_tier, a.credentials->>'entitlement_status' AS quota_grok_entitlement,\n a.temp_unschedulable_until, a.rate_limit_reset_at, a.overload_until, a.expires_at, a.auto_pause_on_expired,\n coalesce(a.extra->>'grok_needs_reauth','false') = 'true' AS needs_reauth,\n ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=a.id ORDER BY ag.group_id) AS group_ids,\n u.created_at AS last_success_at, u.created_at AS last_called_at, e.created_at AS last_error_at, e.id AS last_error_id,\n e.provider_error_code AS last_error_code, coalesce(e.upstream_status_code,e.status_code) AS last_error_status,\n coalesce(nullif(e.upstream_error_message,''),e.error_message) AS last_error_message\nFROM accounts a\nLEFT JOIN LATERAL (SELECT created_at FROM usage_logs WHERE account_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) u ON true\nLEFT JOIN LATERAL (SELECT e.* FROM ops_error_logs e WHERE e.account_id=a.id AND ((e.account_id IS NOT NULL AND e.error_phase IN ('upstream', 'account_auth') AND e.error_owner='provider') OR (e.account_id IS NOT NULL AND (e.error_owner='platform' AND e.error_phase='internal' AND e.error_source='gateway') AND EXISTS (SELECT 1 FROM accounts evidence_account WHERE evidence_account.id=e.account_id AND evidence_account.platform='openai' AND evidence_account.type IN ('oauth','apikey')) AND (regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.stream IS TRUE OR e.error_owner='provider' THEN e.error_message END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(e.upstream_error_message)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"'))), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"'))), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(e)->'upstream_errors')='array' THEN to_jsonb(e)->'upstream_errors' ELSE '[]'::jsonb END) event WHERE regexp_replace(regexp_replace(lower(btrim(event->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->>'error_message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->'error'->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->'response'->'error'->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later'))))) AND NOT (COALESCE(((CASE WHEN e.upstream_error_message !~ '^\\s*\\{' THEN e.upstream_error_message END ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR CASE WHEN e.upstream_error_message !~ '^\\s*\\{' THEN e.upstream_error_message END ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.upstream_error_message !~ '^\\s*\\{' THEN e.upstream_error_message END ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.error_message !~ '^\\s*\\{' THEN e.error_message END ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR CASE WHEN e.error_message !~ '^\\s*\\{' THEN e.error_message END ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.error_message !~ '^\\s*\\{' THEN e.error_message END ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute') OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(e)->'upstream_errors')='array' THEN to_jsonb(e)->'upstream_errors' ELSE '[]'::jsonb END) event WHERE event->>'message' ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR event->>'message' ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->>'message' ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->>'error_message' ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR event->>'error_message' ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->>'error_message' ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->'error'->>'message' ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR event->'error'->>'message' ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->'error'->>'message' ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->'response'->'error'->>'message' ~* '您\\s*已\\s*(?:达到|超过)\\s*请求(?:数|数量)\\s*限制[^\\n]{0,120}(?:1\\s*分钟内|每\\s*(?:1\\s*)?分钟)\\s*(?:最多|至多)?\\s*请求\\s*[0-9]+\\s*次' OR event->'response'->'error'->>'message' ~* 'you\\s*(?:have\\s*)?(?:reached|exceeded)\\s*(?:the\\s*)?(?:request\\s*)?(?:rate\\s*)?limit[^\\n]{0,120}[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute' OR event->'response'->'error'->>'message' ~* '(?:request\\s*(?:rate\\s*)?limit|maximum\\s+(?:number\\s+of\\s+)?requests?|requests?\\s*(?:rate\\s*)?limit)[^\\n]{0,120}(?:maximum\\s*)?[0-9]+\\s*(?:requests?|reqs?)\\s*(?:per|/|a)\\s*minute') OR (e.error_owner IN ('client','platform') AND e.error_phase IN ('concurrency','rate_limit','admission') AND (CASE WHEN e.upstream_error_message !~ '^\\s*\\{' THEN e.upstream_error_message END ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR CASE WHEN e.error_message !~ '^\\s*\\{' THEN e.error_message END ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(e)->'upstream_errors')='array' THEN to_jsonb(e)->'upstream_errors' ELSE '[]'::jsonb END) event WHERE event->>'message' ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR event->>'error_message' ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR event->'error'->>'message' ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))' OR event->'response'->'error'->>'message' ~* '(?:too\\s+many\\s+concurrent\\s+requests\\s+for\\s+(?:user|client|api[ -]?key)|(?:user|client|api[ -]?key)\\s+concurrency\\s+limit\\s+exceeded|(?:用户|客户端|密钥)\\s*(?:并发请求|并发)\\s*(?:数)?\\s*(?:已)?(?:达到|超过|超出).{0,20}(?:限制|上限))')))), FALSE) AND NOT COALESCE((regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.upstream_error_message !~ '^\\s*\\{' THEN e.upstream_error_message END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.error_message !~ '^\\s*\\{' THEN e.error_message END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(substring(e.error_body FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"'))), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.error_body ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.error_body FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(substring(e.upstream_error_detail FROM '^\\s*\\{\\s*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"'))), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(CASE WHEN e.upstream_error_detail ~ '^\\s*\\{[^{}]*\"type\"\\s*:\\s*\"response\\.(failed|incomplete)\"' THEN substring(e.upstream_error_detail FROM '^\\s*\\{[^{}]*\"response\"\\s*:\\s*\\{[^{}]*\"error\"\\s*:\\s*\\{[^{}]*\"message\"\\s*:\\s*\"([^\"]*)\"') END)), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(to_jsonb(e)->'upstream_errors')='array' THEN to_jsonb(e)->'upstream_errors' ELSE '[]'::jsonb END) event WHERE regexp_replace(regexp_replace(lower(btrim(event->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->>'error_message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->'error'->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later') OR regexp_replace(regexp_replace(lower(btrim(event->'response'->'error'->>'message')), '[[:space:]]+', ' ', 'g'), '[.!?。！？,，;；:：[:space:]]+$', '', 'g') IN ('our servers are currently overloaded. please try again later','selected model is at capacity. please try a different model','stream disconnected before completion: concurrency limit exceeded for account, please retry later')), FALSE)) ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e ON true\nWHERE a.deleted_at IS NULL AND a.id=%(id)s ORDER BY a.id\n",
+      "dto_expected": {
+        "account_id": 387,
+        "account_name": null,
+        "created_at": "2026-10-01T00:00:00+00:00",
+        "error_owner": null,
+        "error_phase": null,
+        "error_source": null,
+        "error_type": null,
+        "group_id": null,
+        "group_name": null,
+        "id": 15886,
+        "message": "Our servers are currently overloaded. Please try again later.",
+        "model": null,
+        "platform": null,
+        "provider_error_code": null,
+        "request_id": null,
+        "requested_model": null,
+        "resolved": true,
+        "status_code": null,
+        "upstream_model": null,
+        "upstream_status_code": null
+      },
+      "dto_input": {
+        "account_id": 387,
+        "account_name": null,
+        "created_at": "2026-10-01T00:00:00+00:00",
+        "error_message": "Our servers are currently overloaded. Please try again later.",
+        "id": 15886,
+        "resolved": true
+      },
+      "gateway_history_visible": true,
+      "provider_history_visible": true
+    }
+  },
+  "reference": {
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+  }
+}

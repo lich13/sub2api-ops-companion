@@ -1,0 +1,548 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_valid_normal_fingerprint_runs_one_group_and_really_recovers",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_one_valid_group_really_recovers_with_durable_history",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"completed_groups\"], 1)",
+          "assert_eq!(job[\"valid_groups\"], 1)",
+          "assert_eq!(job[\"attempts\"], 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(result[\"recovered\"], true, \"{result}\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n        \"recovered\"\n    )",
+          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+          "assert!(h.runtime.monitor.row(id).await.unwrap()[\"rate_limit_reset_at\"].is_null())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_failed_model_request_does_not_recover",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery",
+        "assertions": [
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(job[\"error_code\"], \"auth_or_quota\")",
+          "assert_eq!(job[\"valid_groups\"], 0)",
+          "assert_eq!(\n            saved[\"last_error_code\"], expected,\n            \"status={status}: {saved}\"\n        )",
+          "assert_eq!(\n            saved[\"status\"],\n            if status == 401 {\n                \"auth_failed\"\n            } else {\n                \"retry\"\n            }\n        )",
+          "assert!(\n                state[\"scheduler\"][id.to_string()][\"quota_query\"][\"auth_fingerprint\"].is_string()\n            )",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(h.runtime.monitor.row(id).await.unwrap()[\"rate_limit_reset_at\"].is_string())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_empty_fingerprint_analysis_does_not_recover",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery",
+        "assertions": [
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(job[\"error_code\"], \"auth_or_quota\")",
+          "assert_eq!(job[\"valid_groups\"], 0)",
+          "assert_eq!(\n            saved[\"last_error_code\"], expected,\n            \"status={status}: {saved}\"\n        )",
+          "assert_eq!(\n            saved[\"status\"],\n            if status == 401 {\n                \"auth_failed\"\n            } else {\n                \"retry\"\n            }\n        )",
+          "assert!(\n                state[\"scheduler\"][id.to_string()][\"quota_query\"][\"auth_fingerprint\"].is_string()\n            )",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(h.runtime.monitor.row(id).await.unwrap()[\"rate_limit_reset_at\"].is_string())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_auth_failure_enters_auth_pause_without_recovery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_invalid_auth_or_empty_sample_never_authorizes_recovery",
+        "assertions": [
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(job[\"error_code\"], \"auth_or_quota\")",
+          "assert_eq!(job[\"valid_groups\"], 0)",
+          "assert_eq!(\n            saved[\"last_error_code\"], expected,\n            \"status={status}: {saved}\"\n        )",
+          "assert_eq!(\n            saved[\"status\"],\n            if status == 401 {\n                \"auth_failed\"\n            } else {\n                \"retry\"\n            }\n        )",
+          "assert!(\n                state[\"scheduler\"][id.to_string()][\"quota_query\"][\"auth_fingerprint\"].is_string()\n            )",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(h.runtime.monitor.row(id).await.unwrap()[\"rate_limit_reset_at\"].is_string())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_missing_prediction_does_not_authorize_recovery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_missing_prediction_never_authorizes_recovery",
+        "assertions": [
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_ne!(\n        h.runtime.monitor.state().unwrap()[\"scheduler\"][id.to_string()][\"recovery_intent\"]\n            [\"status\"],\n        \"recovered\"\n    )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_degraded_fingerprint_stops_scheduling_without_recovery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_degradation_stops_scheduling_without_recovery_write",
+        "assertions": [
+          "assert_eq!(job[\"first_group_prediction\"], \"gpt-5.6-luna\")",
+          "assert_eq!(h.runtime.detection.mark(id).unwrap()[\"marked\"], true)",
+          "assert_eq!(\n        h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n        false\n    )",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_model_to_connection_before_dispatch_skips_stale_task",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_method_or_manual_changes_before_dispatch_skip_every_request",
+        "assertions": [
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(state[\"recovery_history\"], json!({}))",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"],\n            before[\"scheduler\"][id.to_string()][\"quota_query\"]\n        )",
+          "assert!(h.runtime.monitor.lease(&current).is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_model_reselected_before_dispatch_skips_old_method_generation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_method_or_manual_changes_before_dispatch_skip_every_request",
+        "assertions": [
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(state[\"recovery_history\"], json!({}))",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"],\n            before[\"scheduler\"][id.to_string()][\"quota_query\"]\n        )",
+          "assert!(h.runtime.monitor.lease(&current).is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_selected_method_change_rejects_success_before_recovery_write",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_method_or_manual_changes_reject_completed_success",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_ne!(\n            state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n            \"recovered\"\n        )",
+          "assert_eq!(\n                state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n                \"cancelled\"\n            )",
+          "assert_eq!(current[\"schedulable\"], false)"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_method_generation_change_rejects_success_even_if_model_is_reselected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_method_or_manual_changes_reject_completed_success",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_ne!(\n            state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n            \"recovered\"\n        )",
+          "assert_eq!(\n                state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n                \"cancelled\"\n            )",
+          "assert_eq!(current[\"schedulable\"], false)"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_manual_control_generation_rejects_success_before_recovery_write",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_method_or_manual_changes_reject_completed_success",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(result[\"success\"], false)",
+          "assert_eq!(result[\"skipped\"], true)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_ne!(\n            state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n            \"recovered\"\n        )",
+          "assert_eq!(\n                state[\"scheduler\"][id.to_string()][\"recovery_intent\"][\"status\"],\n                \"cancelled\"\n            )",
+          "assert_eq!(current[\"schedulable\"], false)"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_cooldown_has_no_model_job_or_account_lease_and_opens_at_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_cooldown_opens_at_exact_boundary_without_holding_account",
+        "assertions": [
+          "assert_eq!(result[\"deferred\"], true)",
+          "assert_eq!(result[\"next_at\"], datetime(due))",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(completed[\"status\"], \"completed\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(\n        h.runtime.detection.next_allowed_at(id).unwrap(),\n        datetime(due + Duration::seconds(300))\n    )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_waiting_for_model_slot_does_not_hold_account_lease",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_waiting_for_slot_releases_account_and_manual_generation_stops_dispatch",
+        "assertions": [
+          "assert_eq!(pending[\"deferred\"], true)",
+          "assert_eq!(job[\"status\"], \"queued\")",
+          "assert!(h.runtime.detection.next_allowed_at(id).unwrap().is_null())",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(result.unwrap_err().status.as_u16(), 409)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert!(h.runtime.detection.next_allowed_at(id).unwrap().is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:NaturalModelRecovery030Tests.test_manual_generation_changed_while_queued_prevents_dispatch",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "recovery_model_waiting_for_slot_releases_account_and_manual_generation_stops_dispatch",
+        "assertions": [
+          "assert_eq!(pending[\"deferred\"], true)",
+          "assert_eq!(job[\"status\"], \"queued\")",
+          "assert!(h.runtime.detection.next_allowed_at(id).unwrap().is_null())",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(result.unwrap_err().status.as_u16(), 409)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert!(h.runtime.detection.next_allowed_at(id).unwrap().is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_structured_local_limiters_never_authorize_credit_consumption",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_filters_local_limiters_before_selecting_true_upstream_evidence",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(\n                h.runtime.monitor.credits.state(id).unwrap()[\"evidence_id\"],\n                evidence_id.to_string()\n            )",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert!(h.runtime.monitor.credits.state(id).unwrap()[\"attempt_at\"].is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(\n                h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n                true\n            )",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_local_limiter_is_filtered_before_latest_real_upstream_evidence_is_selected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_filters_local_limiters_before_selecting_true_upstream_evidence",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(\n                h.runtime.monitor.credits.state(id).unwrap()[\"evidence_id\"],\n                evidence_id.to_string()\n            )",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert!(h.runtime.monitor.credits.state(id).unwrap()[\"attempt_at\"].is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(\n                h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n                true\n            )",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_failed_evidence_query_never_falls_back_or_authorizes_consumption",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_failed_evidence_read_never_falls_back_or_consumes",
+        "assertions": [
+          "assert!(result.is_err())",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert!(h.runtime.monitor.credits.state(id).unwrap()[\"attempt_at\"].is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert_eq!(\n        h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n        true\n    )",
+          "assert!(h.runtime.monitor.lease(&row).is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_credit_waits_for_slot_consumes_once_and_verifies_immediately",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_query_delay",
+        "assertions": [
+          "assert!(h.runtime.monitor.credits.state(id).unwrap()[\"attempt_at\"].is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_err())",
+          "assert_eq!(h.runtime.tests.jobs.available_permits(), 1)",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"planned_groups\"], 1)",
+          "assert_eq!(job[\"groups\"].as_array().unwrap().len(), 1)",
+          "assert_eq!(\n            h.runtime.monitor.credits.state(id).unwrap()[\"consumed\"],\n            true\n        )",
+          "assert_eq!(task[\"stage\"], \"recovered\", \"{task}\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 2)",
+          "assert_eq!(h.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .unwrap()\n                .len(),\n            if cooldown { 2 } else { 1 }\n        )",
+          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(state[\"pending_events\"], json!({}))",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"]\n                [task[\"episode\"].as_str().unwrap()][\"outcome\"],\n            \"restored\"\n        )",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(\n            h.runtime.monitor.state().unwrap()[\"recovery_history\"],\n            state[\"recovery_history\"]\n        )",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_manual_control_during_credit_model_verification_keeps_receipt_without_recovery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_manual_control_keeps_consumed_receipt_and_never_restores_schedule",
+        "assertions": [
+          "assert_eq!(receipt[\"stage\"], \"manual\")",
+          "assert_eq!(receipt[\"consumed\"], true)",
+          "assert!(receipt[\"reset_completed_at\"].is_string())",
+          "assert_eq!(receipt[\"owns_pause\"], false)",
+          "assert_eq!(final_task[\"episode\"], receipt[\"episode\"])",
+          "assert_eq!(final_task[\"receipt\"], receipt[\"receipt\"])",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(\n        h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n        false\n    )",
+          "assert_eq!(\n        h.runtime.monitor.state().unwrap()[\"recovery_history\"],\n        json!({})\n    )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_credit_cooldown_does_not_pause_consume_or_hold_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_cooldown_finishes_unissued_episode_without_account_hold",
+        "assertions": [
+          "assert_eq!(task[\"stage\"], \"finished\")",
+          "assert_eq!(task[\"result_reason\"], \"model_cooldown\")",
+          "assert_eq!(task[\"outcome\"], \"not_executed\")",
+          "assert!(task[\"attempt_at\"].is_null())",
+          "assert!(h.runtime.tests.latest(id).unwrap().is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 0)",
+          "assert!(h\n        .runtime\n        .monitor\n        .lease(&h.runtime.monitor.row(id).await.unwrap())\n        .is_ok())",
+          "assert_eq!(\n        h.runtime.monitor.credits.state(id).unwrap()[\"stage\"],\n        \"finished\"\n    )",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 0)"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_credit_consumption_bypasses_hourly_query_cooldown_with_model_capacity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_query_delay",
+        "assertions": [
+          "assert!(h.runtime.monitor.credits.state(id).unwrap()[\"attempt_at\"].is_null())",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_err())",
+          "assert_eq!(h.runtime.tests.jobs.available_permits(), 1)",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"planned_groups\"], 1)",
+          "assert_eq!(job[\"groups\"].as_array().unwrap().len(), 1)",
+          "assert_eq!(\n            h.runtime.monitor.credits.state(id).unwrap()[\"consumed\"],\n            true\n        )",
+          "assert_eq!(task[\"stage\"], \"recovered\", \"{task}\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 2)",
+          "assert_eq!(h.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"quota_query\"][\"automatic_attempts\"]\n                .as_array()\n                .unwrap()\n                .len(),\n            if cooldown { 2 } else { 1 }\n        )",
+          "assert_eq!(state[\"recovery_history\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(state[\"pending_events\"], json!({}))",
+          "assert_eq!(\n            state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"]\n                [task[\"episode\"].as_str().unwrap()][\"outcome\"],\n            \"restored\"\n        )",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(\n            h.runtime.monitor.state().unwrap()[\"recovery_history\"],\n            state[\"recovery_history\"]\n        )",
+          "assert!(h\n            .runtime\n            .monitor\n            .lease(&h.runtime.monitor.row(id).await.unwrap())\n            .is_ok())"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_invalid_model_credit_verification_finishes_without_retrying",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_failures_obey_terminal_evidence_and_cooldown",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"failed\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), expected_requests)",
+          "assert_eq!(job[\"uncertain\"], true)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert_eq!(task[\"stage\"], \"finished\")",
+          "assert_eq!(task[\"outcome\"], \"unrecovered\")",
+          "assert_eq!(task[\"result_reason\"], \"invalid_model_or_request\")",
+          "assert_eq!(task[\"result_reason\"], \"model_cooldown\")",
+          "assert_eq!(task[\"result_reason\"], \"verification_interrupted\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), expected_requests)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n            h.runtime.monitor.state().unwrap()[\"recovery_history\"],\n            json!({})\n        )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_transient_credit_verification_stops_when_model_cooldown_reaches_deadline",
+      "status": "superseded",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_failures_obey_terminal_evidence_and_cooldown",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"failed\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), expected_requests)",
+          "assert_eq!(job[\"uncertain\"], true)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert_eq!(task[\"stage\"], \"finished\")",
+          "assert_eq!(task[\"outcome\"], \"unrecovered\")",
+          "assert_eq!(task[\"result_reason\"], \"invalid_model_or_request\")",
+          "assert_eq!(task[\"result_reason\"], \"model_cooldown\")",
+          "assert_eq!(task[\"result_reason\"], \"verification_interrupted\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), expected_requests)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(\n            h.runtime.monitor.state().unwrap()[\"recovery_history\"],\n            json!({})\n        )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation.",
+      "replacement": {
+        "legacy_assertions": [
+          "An unknown network result is retried up to three times before recovery cooldown stops further verification."
+        ],
+        "approved_requirement": "已派发请求先只读核对，无法确认的标记待核对，禁止重放未知测活、用卡及不可逆写入。",
+        "replacement_contract": "Truncated SSE produces one uncertain, non-retryable request and a finished unrecovered receipt. Definite HTTP 502 retains three bounded attempts and respects the shared model cooldown and verification deadline."
+      }
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_models030:CreditModelRecovery030Tests.test_uncertain_consumption_is_not_replayed_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/src/model_recovery_tests.rs",
+        "test_name": "credit_model_unknown_consumption_survives_full_runtime_restart_without_replay",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"failed\")",
+          "assert!(before[\"attempt_at\"].is_string())",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(task[\"episode\"], before[\"episode\"])",
+          "assert_eq!(task[\"attempt_at\"], before[\"attempt_at\"])",
+          "assert_eq!(task[\"stage\"], \"finished\")",
+          "assert_eq!(task[\"outcome\"], \"unknown\")",
+          "assert_eq!(h.mock.count(\"POST\", \"/reset-quota\"), 1)",
+          "assert_eq!(h.mock.count(\"POST\", \"/recover-state\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/v1/responses\"), 0)",
+          "assert_eq!(h.mock.count(\"GET\", \"/usage\"), 0)",
+          "assert_eq!(h.mock.count(\"POST\", \"/schedulable\"), 1)",
+          "assert_eq!(\n        h.runtime.monitor.row(id).await.unwrap()[\"schedulable\"],\n        false\n    )",
+          "assert_eq!(state[\"pending_events\"], json!({}))",
+          "assert_eq!(state[\"recovery_history\"], json!({}))",
+          "assert_eq!(\n        state[\"scheduler\"][id.to_string()][\"credit_result_notifications\"]\n            [task[\"episode\"].as_str().unwrap()][\"status\"],\n        \"pending\"\n    )"
+        ]
+      },
+      "coverage_note": "Real Runtime, disposable PostgreSQL and loopback native/model HTTP exercise the selected recovery method, durable outcome, request counts and account-lease release; only the resolved OAuth transport destination is replaced for isolation."
+    }
+  ]
+}

@@ -20,3 +20,4 @@ desktop/src-tauri/gen/android/app/src/main/jniLibs/
 desktop/src-tauri/gen/android/app/src/androidTest/assets/
 desktop/artifacts/
 experiments/connection_probe/rust/target/
+server/target/

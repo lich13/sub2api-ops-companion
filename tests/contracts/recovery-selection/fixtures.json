@@ -1,0 +1,1225 @@
+{
+  "cases": [
+    {
+      "expected": [
+        {
+          "oauth_daily_test_time": "06:15",
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32
+          ]
+        },
+        {
+          "oauth_daily_test_time": "06:15",
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ]
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "06:15",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": null,
+        "oauth_recovery_model_account_ids": null,
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "cc819475e26027b1d3cb7659a99e438cc393917d3639133cd2a336b5f249e02b"
+      },
+      "name": "legacy",
+      "raw": {
+        "oauth_daily_test_time": "06:15"
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": "2026-10-09T04:00:00+00:00",
+              "extra": {},
+              "id": 33,
+              "name": "fixture-oauth-33",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 34,
+              "name": "fixture-oauth-34",
+              "parent_account_id": null,
+              "platform": "grok",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 35,
+              "name": "fixture-oauth-35",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "apikey"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 36,
+              "name": "fixture-oauth-36",
+              "parent_account_id": 31,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_recovery_connection_account_ids": [],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32
+          ]
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "4604bd17099c28532000077992e3a54c1971d9501839026d69559a95d392ca44"
+      },
+      "name": "explicit_empty",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [],
+        "oauth_recovery_model_account_ids": []
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 33,
+              "name": "fixture-oauth-33",
+              "parent_account_id": null,
+              "platform": "grok",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_recovery_connection_account_ids": [
+            31
+          ],
+          "oauth_recovery_model_account_ids": [
+            32
+          ],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32
+          ]
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31
+        ],
+        "oauth_recovery_model_account_ids": [
+          32
+        ],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "5e002c23d3fa8ea185c01d7a7b5f71c1cb66161c761d6ade4904ed50083f9bcc"
+      },
+      "name": "explicit_selected",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31
+        ],
+        "oauth_recovery_model_account_ids": [
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 33,
+              "name": "fixture-oauth-33",
+              "parent_account_id": null,
+              "platform": "grok",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ]
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+      },
+      "name": "sticky",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_seen_account_ids": [
+          31,
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "save",
+          "changes": {
+            "oauth_recovery_connection_account_ids": [
+              32,
+              39
+            ],
+            "oauth_recovery_model_account_ids": []
+          }
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32
+          ],
+          "oauth_recovery_model_account_ids": [
+            31
+          ],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "05:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32
+          ],
+          "oauth_recovery_model_account_ids": [
+            31
+          ],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+      },
+      "name": "model_mode",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_seen_account_ids": [
+          31,
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "save",
+          "changes": {
+            "oauth_recovery_connection_account_ids": [
+              32
+            ],
+            "oauth_recovery_model_account_ids": [
+              31
+            ]
+          }
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "06:15",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            31
+          ],
+          "oauth_recovery_model_account_ids": [
+            32
+          ],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "06:15",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            32
+          ],
+          "oauth_recovery_model_account_ids": [
+            31
+          ],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "06:15",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31
+        ],
+        "oauth_recovery_model_account_ids": [
+          32
+        ],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "5e002c23d3fa8ea185c01d7a7b5f71c1cb66161c761d6ade4904ed50083f9bcc"
+      },
+      "name": "partial_save",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31
+        ],
+        "oauth_recovery_model_account_ids": [
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "save",
+          "changes": {
+            "oauth_daily_test_time": "06:15"
+          }
+        },
+        {
+          "action": "save",
+          "changes": {
+            "oauth_recovery_connection_account_ids": [
+              32
+            ],
+            "oauth_recovery_model_account_ids": [
+              31
+            ]
+          }
+        },
+        {
+          "action": "save",
+          "changes": {
+            "oauth_recovery_connection_account_ids": [],
+            "oauth_recovery_model_account_ids": []
+          }
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ]
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "08:00",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+      },
+      "name": "stale_revision",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_seen_account_ids": [
+          31,
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "save",
+          "changes": {
+            "oauth_daily_test_time": "08:00"
+          }
+        }
+      ]
+    },
+    {
+      "expected": [
+        {
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39
+          ]
+        },
+        {
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39,
+            40
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39,
+            40
+          ]
+        },
+        {
+          "oauth_auto_reset_credit_enabled": false,
+          "oauth_daily_test_enabled": true,
+          "oauth_daily_test_time": "07:30",
+          "oauth_early_probe_batch_size": 8,
+          "oauth_recovery_connection_account_ids": [
+            31,
+            32,
+            39,
+            40
+          ],
+          "oauth_recovery_model_account_ids": [],
+          "oauth_recovery_monitor_enabled": true,
+          "oauth_recovery_seen_account_ids": [
+            31,
+            32,
+            39,
+            40
+          ],
+          "oauth_recovery_test_concurrency": 2,
+          "oauth_recovery_test_model_id": "gpt-5.6-luna",
+          "oauth_usage_refresh_concurrency": 4
+        }
+      ],
+      "initial": {
+        "oauth_auto_reset_credit_enabled": false,
+        "oauth_daily_test_enabled": true,
+        "oauth_daily_test_time": "05:00",
+        "oauth_early_probe_batch_size": 8,
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_monitor_enabled": true,
+        "oauth_recovery_test_concurrency": 2,
+        "oauth_recovery_test_model_id": "gpt-5.6-luna",
+        "oauth_usage_refresh_concurrency": 4,
+        "revision": "a74c031e35c9b9021f05297cd24b071e9847a35319fce594f20fc4da7d2bd18b"
+      },
+      "name": "concurrent",
+      "raw": {
+        "oauth_recovery_connection_account_ids": [
+          31,
+          32
+        ],
+        "oauth_recovery_model_account_ids": [],
+        "oauth_recovery_seen_account_ids": [
+          31,
+          32
+        ]
+      },
+      "steps": [
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 39,
+              "name": "fixture-oauth-39",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "reconcile",
+          "rows": [
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 31,
+              "name": "fixture-oauth-31",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 32,
+              "name": "fixture-oauth-32",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            },
+            {
+              "credentials": {
+                "plan_type": "plus"
+              },
+              "deleted_at": null,
+              "extra": {},
+              "id": 40,
+              "name": "fixture-oauth-40",
+              "parent_account_id": null,
+              "platform": "openai",
+              "schedulable": true,
+              "status": "active",
+              "type": "oauth"
+            }
+          ]
+        },
+        {
+          "action": "save",
+          "changes": {
+            "oauth_daily_test_time": "07:30"
+          }
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "oauth_auto_reset_credit_enabled": false,
+    "oauth_daily_test_enabled": true,
+    "oauth_daily_test_time": "05:00",
+    "oauth_early_probe_batch_size": 8,
+    "oauth_recovery_connection_account_ids": null,
+    "oauth_recovery_model_account_ids": null,
+    "oauth_recovery_monitor_enabled": true,
+    "oauth_recovery_test_concurrency": 2,
+    "oauth_recovery_test_model_id": "gpt-5.6-luna",
+    "oauth_usage_refresh_concurrency": 4
+  },
+  "legacy_assertions_passed": [
+    "tests.test_recovery_config030.RecoveryConfig030Tests.test_explicit_empty_lists_remain_empty_and_survive_settings_reload",
+    "tests.test_recovery_config030.RecoveryConfig030Tests.test_invalid_account_ids_cannot_change_recovery_selection",
+    "tests.test_recovery_config030.RecoveryConfig030Tests.test_oauth_lists_are_exposed_and_partial_old_client_save_preserves_them",
+    "tests.test_recovery_config030.RecoveryConfig030Tests.test_overlapping_modes_reject_the_entire_save_without_mutating_state",
+    "tests.test_recovery_config030.RecoveryConfig030Tests.test_recovery_modes_can_be_switched_in_one_atomic_save",
+    "tests.test_recovery_config030.RecoveryMigration030Tests.test_existing_empty_or_selected_lists_gain_a_seen_baseline_without_selection_changes",
+    "tests.test_recovery_config030.RecoveryMigration030Tests.test_failed_legacy_inventory_read_does_not_mark_migration_complete",
+    "tests.test_recovery_config030.RecoveryMigration030Tests.test_legacy_accounts_migrate_and_first_new_account_is_auto_selected",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_concurrent_reconcile_and_partial_save_preserve_all_fields_without_inventory_fetch",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_corrupt_or_deleted_existing_config_stops_reconcile_without_replacing_it",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_failed_selection_write_preserves_both_lists_seen_watermark_and_runtime_settings",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_first_new_eligible_account_is_added_once_but_removal_and_reappearance_are_sticky",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_moving_account_to_model_mode_is_not_reversed_by_inventory_reconcile",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_old_revision_cannot_overwrite_a_new_automatic_account_and_partial_save_keeps_it",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_restart_keeps_seen_watermark_and_does_not_reselect_old_account",
+    "tests.test_recovery_selection034.RecoverySelection034Tests.test_upgrade_records_seen_baseline_without_adding_to_explicit_selection"
+  ],
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+}

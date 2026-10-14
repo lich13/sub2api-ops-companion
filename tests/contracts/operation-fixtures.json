@@ -1,0 +1,43 @@
+{
+  "reference": {
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+    "sources": [
+      "app/account_operations.py",
+      "app/connection_batches.py",
+      "app/native_batches.py",
+      "tests/test_connection_batch039.py",
+      "tests/test_native_batch038.py",
+      "tests/test_connection_batch_http039.py"
+    ]
+  },
+  "request_defaults": {
+    "input_payload": {
+      "confirmed": true
+    },
+    "public_requested": {
+      "confirmed": true,
+      "model_id": "",
+      "mode": "default"
+    }
+  },
+  "connection_test": {
+    "requested_model": "fixture-requested-model",
+    "actual_model": "fixture-native-mapped-model",
+    "unrelated_allowlist_model": "fixture-unrelated-allowed-model",
+    "sse": {
+      "truncated_status": "needs_confirmation",
+      "missing_terminal_status": "needs_confirmation",
+      "explicit_failure_success": false
+    }
+  },
+  "batch_limit": {
+    "maximum_accounts": 1000,
+    "over_limit_status": 422
+  },
+  "native_bulk": {
+    "partitioned_success_status": "completed",
+    "partitioned_failure_status": "failed",
+    "unknown_result_status": "needs_confirmation",
+    "unknown_result_replays": 0
+  }
+}

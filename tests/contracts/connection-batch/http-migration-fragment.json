@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_account_busy_requeue_clears_dispatch_time_and_remains_cancellable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_late_account_busy_requeues_without_dispatch_time_and_can_cancel",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(queued[\"items\"][0][\"status\"], \"queued\")",
+          "assert!(queued[\"items\"][0].get(\"started_at\").is_some())",
+          "assert_eq!(queued[\"items\"][0][\"started_at\"], Value::Null)",
+          "assert_eq!(\n        h.runtime.operations.store.read().unwrap()[\"jobs\"][&jid][\"started_at\"],\n        Value::Null\n    )",
+          "assert_eq!(cancelled.0, 200)",
+          "assert_eq!(cancelled.1[\"pending\"], 0)",
+          "assert_eq!(cancelled.1[\"items\"][0][\"status\"], \"cancelled\")",
+          "assert_eq!(h.batch_listing(&bid).await, cancelled.1)",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "Acquiring the account lease behind a real authentication gate forces a late busy response; the durable queued record clears started_at and cancels permanently without native test requests."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_cancel_stops_undispatched_items_and_allows_running_native_test_to_finish",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_cancel_preserves_running_request_and_generic_cancel_cannot_interrupt_it",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(running.0, 200)",
+          "assert_eq!(running.1[\"status\"], \"running\")",
+          "assert!(running.1[\"started_at\"].is_string())",
+          "assert_eq!(generic.0, 200)",
+          "assert_eq!(generic.1, running.1)",
+          "assert_eq!(\n        fs::read(h.runtime.operations.store.0.path()).unwrap(),\n        before\n    )",
+          "assert_eq!(cancelled.0, 200)",
+          "assert_eq!(cancelled.1[\"pending\"], 1)",
+          "assert_eq!(cancelled.1[\"items\"][0][\"status\"], \"running\")",
+          "assert_eq!(item[\"status\"], \"cancelled\")",
+          "assert_eq!(h.batch_listing(&bid).await, cancelled.1)",
+          "assert_eq!(finished[\"pending\"], 0)",
+          "assert_eq!(detail[\"result\"][\"success\"], true)",
+          "assert_eq!(detail[\"result\"][\"requested_model\"], \"fixture-model\")",
+          "assert_eq!(detail[\"result\"][\"actual_model\"], \"fixture-model\")",
+          "assert!(detail[\"result\"][\"duration_ms\"]\n        .as_i64()\n        .is_some_and(|v| v >= 0))",
+          "assert_eq!(detail[\"events\"], json!([]))",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].path, path)",
+          "assert_eq!(writes[0].api_key, ADMIN_KEY)",
+          "assert_eq!(writes[0].body[\"model_id\"], \"fixture-model\")",
+          "assert_eq!(\n        h.request(\n            Method::POST,\n            &format!(\"account-operations/batches/{bid}/cancel\"),\n            None\n        )\n        .await\n        .1,\n        finished\n    )",
+          "assert!(!finished\n        .to_string()\n        .contains(\"fixture-batch-http-private-content\"))",
+          "assert!(!fs::read_to_string(h.runtime.operations.store.0.path())\n        .unwrap()\n        .contains(\"fixture-batch-http-private-content\"))",
+          "assert_eq!(h.batch_listing(&bid).await, finished)"
+        ]
+      },
+      "coverage_note": "A real gated SSE request continues after cancellation while queued and stale undispatched peers stop; summary, models, duration and persistence survive full Runtime restart without response content."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_cancelled_batch_item_rejects_late_needs_confirmation_update",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_cancel_during_blocked_account_read_rejects_late_conflict",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(cancelled.0, 200)",
+          "assert_eq!(cancelled.1[\"pending\"], 0)",
+          "assert_eq!(cancelled.1[\"items\"][0][\"status\"], \"cancelled\")",
+          "assert_eq!(h.batch_listing(&bid).await, cancelled.1)",
+          "assert!(manual_writes(&h).is_empty())",
+          "assert_eq!(h.batch_listing(&bid).await, cancelled.1)"
+        ]
+      },
+      "coverage_note": "An actual PostgreSQL table lock blocks dispatch reading; HTTP cancellation wins, later credential change and read completion cannot replace the cancelled record, including after Runtime restart."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_forbidden_and_mixed_action_payloads_are_rejected_without_persistence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_conflicts_auth_schema_and_missing_batches_preserve_state",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(result.0, 409)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"idempotency_conflict\")",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(result.0, 401)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(result.0, 422)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"invalid_request\")",
+          "assert!(!result.2.contains(\"fixture-request-body-must-not-escape\"))",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(h.request(method, &path, None).await.0, 404)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(h.batch_listing(bid).await, batch)",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "Unknown top-level fields, per-child payloads, client model/mode/prompt, mixed proxy fields and invalid confirmation return 422 invalid_request and never persist or expose request content."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_generic_cancel_cannot_interrupt_dispatched_batch_item",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_cancel_preserves_running_request_and_generic_cancel_cannot_interrupt_it",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(running.0, 200)",
+          "assert_eq!(running.1[\"status\"], \"running\")",
+          "assert!(running.1[\"started_at\"].is_string())",
+          "assert_eq!(generic.0, 200)",
+          "assert_eq!(generic.1, running.1)",
+          "assert_eq!(\n        fs::read(h.runtime.operations.store.0.path()).unwrap(),\n        before\n    )",
+          "assert_eq!(cancelled.0, 200)",
+          "assert_eq!(cancelled.1[\"pending\"], 1)",
+          "assert_eq!(cancelled.1[\"items\"][0][\"status\"], \"running\")",
+          "assert_eq!(item[\"status\"], \"cancelled\")",
+          "assert_eq!(h.batch_listing(&bid).await, cancelled.1)",
+          "assert_eq!(finished[\"pending\"], 0)",
+          "assert_eq!(detail[\"result\"][\"success\"], true)",
+          "assert_eq!(detail[\"result\"][\"requested_model\"], \"fixture-model\")",
+          "assert_eq!(detail[\"result\"][\"actual_model\"], \"fixture-model\")",
+          "assert!(detail[\"result\"][\"duration_ms\"]\n        .as_i64()\n        .is_some_and(|v| v >= 0))",
+          "assert_eq!(detail[\"events\"], json!([]))",
+          "assert_eq!(writes.len(), 1)",
+          "assert_eq!(writes[0].path, path)",
+          "assert_eq!(writes[0].api_key, ADMIN_KEY)",
+          "assert_eq!(writes[0].body[\"model_id\"], \"fixture-model\")",
+          "assert_eq!(\n        h.request(\n            Method::POST,\n            &format!(\"account-operations/batches/{bid}/cancel\"),\n            None\n        )\n        .await\n        .1,\n        finished\n    )",
+          "assert!(!finished\n        .to_string()\n        .contains(\"fixture-batch-http-private-content\"))",
+          "assert!(!fs::read_to_string(h.runtime.operations.store.0.path())\n        .unwrap()\n        .contains(\"fixture-batch-http-private-content\"))",
+          "assert_eq!(h.batch_listing(&bid).await, finished)"
+        ]
+      },
+      "coverage_note": "Generic cancel returns the exact running job and unchanged state bytes while native SSE is gated; the original request completes successfully once released."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_generic_cancel_preserves_dispatched_unknown_result_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_generic_cancel_and_restart_preserve_dispatched_unknown_result",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(unknown[\"result\"][\"success\"], false)",
+          "assert_eq!(unknown[\"result\"][\"uncertain\"], true)",
+          "assert!(unknown[\"started_at\"].is_string())",
+          "assert_eq!(cancelled.0, 200)",
+          "assert_eq!(cancelled.1, unknown)",
+          "assert_eq!(\n        fs::read(h.runtime.operations.store.0.path()).unwrap(),\n        before\n    )",
+          "assert_eq!(\n        h.request(\n            Method::POST,\n            &format!(\"account-operations/{jid}/cancel\"),\n            None\n        )\n        .await\n        .1,\n        unknown\n    )",
+          "assert_eq!(retained[\"pending\"], 1)",
+          "assert_eq!(retained[\"items\"][0][\"status\"], \"needs_confirmation\")",
+          "assert_eq!(retained[\"items\"][0][\"result\"], unknown[\"result\"])",
+          "assert_eq!(manual_writes(&h).len(), 1)"
+        ]
+      },
+      "coverage_note": "Missing native terminal creates an uncertain result with started_at; generic cancellation and complete Runtime restart preserve the result and pending count without another native call."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_proxy_batch_still_uses_existing_union_branch_and_cannot_be_test_cancelled",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_proxy_union_preserves_existing_action_and_rejects_test_cancel",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert!(items\n        .as_array()\n        .unwrap()\n        .iter()\n        .all(|item| item[\"action\"] == \"proxy\" && item[\"requested\"] == json!({\"proxy_id\":null})))",
+          "assert_eq!(items[0][\"status\"], \"completed\")",
+          "assert_eq!(items[1][\"status\"], \"queued\")",
+          "assert_eq!(items[2][\"status\"], \"queued\")",
+          "assert_eq!(batch[\"pending\"], 2)",
+          "assert_eq!(h.batch_listing(bid).await, batch)",
+          "assert_eq!(\n        h.request(\n            Method::POST,\n            &format!(\"account-operations/batches/{bid}/cancel\"),\n            None\n        )\n        .await\n        .0,\n        404\n    )",
+          "assert_eq!(\n        fs::read(h.runtime.operations.store.0.path()).unwrap(),\n        before\n    )",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "The existing proxy union still returns one unchanged/completed and two queued children with exact requested payloads; the test-only cancellation endpoint rejects it with 404."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_request_id_conflicts_do_not_accept_changed_or_other_action_batches",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_conflicts_auth_schema_and_missing_batches_preserve_state",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(result.0, 409)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"idempotency_conflict\")",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(result.0, 401)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(result.0, 422)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"invalid_request\")",
+          "assert!(!result.2.contains(\"fixture-request-body-must-not-escape\"))",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(h.request(method, &path, None).await.0, 404)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(h.batch_listing(bid).await, batch)",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "Changed accounts and cross-action request IDs return exact 409 idempotency_conflict without changing durable bytes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_submit_list_and_cancel_require_admin_authorization",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_conflicts_auth_schema_and_missing_batches_preserve_state",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(result.0, 409)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"idempotency_conflict\")",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(result.0, 401)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(result.0, 422)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"invalid_request\")",
+          "assert!(!result.2.contains(\"fixture-request-body-must-not-escape\"))",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(h.request(method, &path, None).await.0, 404)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(h.batch_listing(bid).await, batch)",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "Missing and invalid administrator credentials return 401 on submit, listing, batch cancel and generic cancel; state and native write count remain unchanged."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_test_batch_is_202_idempotent_and_readable_after_queue_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_acceptance_is_202_atomic_order_independent_and_survives_runtime_restart",
+        "assertions": [
+          "assert_eq!(first.0, 202)",
+          "assert_eq!(duplicate.0, 202)",
+          "assert_eq!(first.1, duplicate.1)",
+          "assert_eq!(batch[\"pending\"], 3)",
+          "assert!(items\n        .values()\n        .all(|item| item[\"action\"] == \"test\" && item[\"status\"] == \"queued\"))",
+          "assert_eq!(\n        items[&ids[0]][\"requested\"],\n        json!({\"confirmed\":true,\"mode\":\"default\",\"model_id\":\"fixture-model\"})\n    )",
+          "assert_eq!(\n        items[&ids[1]][\"requested\"],\n        json!({\"confirmed\":true,\"mode\":\"text\",\"model_id\":\"\"})\n    )",
+          "assert_eq!(items[&ids[2]][\"requested\"], items[&ids[0]][\"requested\"])",
+          "assert_eq!(state[\"jobs\"].as_object().unwrap().len(), 3)",
+          "assert_eq!(state[\"batches\"].as_object().unwrap().len(), 1)",
+          "assert_eq!(\n        state[\"batch_requests\"],\n        json!({request[\"request_id\"].as_str().unwrap():bid})\n    )",
+          "assert_eq!(h.batch_listing(&bid).await, batch)",
+          "assert_eq!(h.batch_listing(&bid).await, batch)",
+          "assert_eq!(replay.0, 202)",
+          "assert_eq!(replay.1, batch)",
+          "assert_eq!(\n        h.runtime.operations.store.read().unwrap()[\"jobs\"]\n            .as_object()\n            .unwrap()\n            .len(),\n        3\n    )",
+          "assert!(manual_writes(&h).is_empty())",
+          "assert!(!fs::read_to_string(h.runtime.operations.store.0.path())\n            .unwrap()\n            .contains(marker))",
+          "assert!(!batch.to_string().contains(marker))"
+        ]
+      },
+      "coverage_note": "Real Axum HTTP returns 202 for simultaneous reversed submissions, persists one batch and exact frozen requests, and returns identical listings and IDs after replacing the whole Runtime."
+    },
+    {
+      "legacy_test_id": "py:tests.test_connection_batch_http039:ConnectionBatchHttp039Tests.test_unknown_and_malformed_batch_ids_return_404_without_changes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/account_mutation_parity.rs",
+        "test_name": "connection_http_conflicts_auth_schema_and_missing_batches_preserve_state",
+        "assertions": [
+          "assert_eq!(accepted.0, 202)",
+          "assert_eq!(result.0, 409)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"idempotency_conflict\")",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(result.0, 401)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(result.0, 422)",
+          "assert_eq!(result.1[\"detail\"][\"code\"], \"invalid_request\")",
+          "assert!(!result.2.contains(\"fixture-request-body-must-not-escape\"))",
+          "assert_eq!(\n            fs::read(h.runtime.operations.store.0.path()).unwrap(),\n            before\n        )",
+          "assert_eq!(h.request(method, &path, None).await.0, 404)",
+          "assert_eq!(\n                fs::read(h.runtime.operations.store.0.path()).unwrap(),\n                before\n            )",
+          "assert_eq!(h.batch_listing(bid).await, batch)",
+          "assert!(manual_writes(&h).is_empty())"
+        ]
+      },
+      "coverage_note": "Unknown valid-length and malformed batch IDs return 404 on real listing and cancellation routes without changing stored bytes."
+    }
+  ]
+}

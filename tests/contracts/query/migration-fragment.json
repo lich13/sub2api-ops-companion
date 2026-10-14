@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_postgres_events030:PostgreSQLEvents030Tests.test_list_pagination_filters_before_limit_and_preserves_account_filter",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "event_pagination_matches_pinned_python_across_category_account_pages",
+        "assertions": [
+          "assert_eq!(oracle[\"reference_sha\"], REFERENCE_SHA);",
+          "assert_eq!(actual_ids, page_expected,",
+          "assert!(actual_ids.iter().all(|id| !seen.contains(id)),",
+          "assert_eq!(actual[\"next_cursor\"].as_i64(), expected_cursor);",
+          "assert_eq!(seen, expected_ids, \"all pages must preserve the old filter result\");",
+          "assert_eq!(combinations, 12, \"three categories × four account scopes\");"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "reference_sha",
+              "event_pagination.page_size",
+              "event_pagination.categories",
+              "event_pagination.account_ids"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Runner 从固定 Git SHA 归档旧 app 与 PostgreSQL 测试，在临时 sub2ops_qa 上运行原测试并调用旧 DesktopService.errors 生成 12 组实际分页 oracle；Rust 查询实际业务 schema，逐页比较过滤结果、cursor、跨页无重叠及完整终止。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_cursor_rejects_each_changed_filter_before_querying",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "each_changed_usage_filter_is_rejected_before_database_access",
+        "assertions": [
+          "for field in fixed[\"usage_records\"][\"cursor_filter_changes\"]",
+          "assert_invalid_cursor_does_not_reach_database("
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.cursor_filter_changes"
+            ]
+          }
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_invalid_cursor_does_not_reach_database",
+            "assertions": [
+              "let error = result.expect_err(\"changed cursor filters must be rejected\");",
+              "assert_eq!(error.status.as_u16(), 422, \"filter change: {label}\");",
+              "logged_statements(application_name).len(),\n        before_statements,"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "对 from_at、to_at、account_id、api_key_id、user_id、model、request_type、mismatch_only 分别变更游标条件；每次临时隐藏实际 usage_logs 表并核对 422 与 guard 连接 SQL 日志不增长，证明查询前拒绝。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordDateTests.test_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_date_cursor_keeps_window_and_rejects_changed_or_omitted_dates_before_query",
+        "assertions": [
+          "assert_eq!(second[\"items\"][0][\"id\"], first_id + 1);",
+          "assert!(second.get(\"summary\").is_none());",
+          "assert_eq!(second[\"latest_id\"], first[\"latest_id\"]);",
+          "for field in contract()[\"usage_records\"][\"date_cursor_changes\"]",
+          "assert_invalid_cursor_does_not_reach_database("
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.page_size",
+              "usage_records.date_cursor_changes"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定北京自然日创建真实日期游标；推进 list_at 时钟后核对继续页仍使用原窗口、无 summary 且 watermark 不漂移；省略 start/end、改变 start 或 end 时逐项验证 422 且无 PostgreSQL 查询。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_list_count_and_detail_use_bounded_read_only_transactions",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_list_count_and_detail_are_bounded_read_only_select_transactions",
+        "assertions": [
+          "assert_eq!(counted[\"new_count\"], 3);",
+          "assert_eq!(after, before, \"usage list/count/detail did not alter the fixture rows\");",
+          "assert_multiline_log_parser_fixture();",
+          "assert_eq!(txs.len(), 3, \"one list, one count, and one detail transaction\");",
+          "assert!(setup_sql.contains(\"read only\"));",
+          "assert!(tx[bounded].contains(&format!(\"'{timeout_setting}'\")),",
+          "assert!(sql.starts_with(\"select \"), \"only SELECT is allowed: {sql}\");",
+          "assert_eq!(bounded_transactions, 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "usage_records.statement_timeout"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "通过临时 PostgreSQL SQL 日志核实 list/count 使用 REPEATABLE READ, READ ONLY、detail 使用 READ ONLY，三者均设置固定 5 秒本地 timeout，事务内只执行显式列 SELECT，list 有 LIMIT，并以账户记录数前后相等验证无业务写入。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_usage_records:UsageRecordsRouteTests.test_usage_records_expose_no_write_method",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "usage_collection_detail_and_options_reject_all_write_methods_over_http",
+        "assertions": [
+          "assert_eq!(\n                response.status(),\n                reqwest::StatusCode::METHOD_NOT_ALLOWED,",
+          "logged_statements(\"query-history-http\"),\n        before,"
+        ]
+      },
+      "coverage_note": "实际 Axum loopback router 对 usage collection、detail、options 的 POST/PUT/PATCH/DELETE 共 12 种组合均返回 405；请求前后 PostgreSQL app-name SQL 语句集完全不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_failures_back_off_one_three_six_then_twelve_hours",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "oauth_failures_persist_one_three_six_twelve_hour_backoff_and_skip_dispatch",
+        "assertions": [
+          "assert_eq!(result[\"error_code\"], \"http_503\");",
+          "assert_eq!(query[\"failure_count\"], index as i64 + 1);",
+          "assert_eq!(timestamp(&query[\"retry_at\"]), retry_at);",
+          "assert_eq!(skipped[\"skipped\"], true);",
+          "assert_eq!(timestamp(&skipped[\"next_query_at\"]), retry_at);",
+          "assert_eq!(mock.call_count(), index + 1,"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "oauth_query.failure_http_status",
+              "oauth_query.backoff_hours"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 OAuthQueryCoordinator 经回环 HTTP 请求收到五次 503；持久状态逐次断言 failure_count 与 1/3/6/12/12 小时 retry_at，并在每个截止前一秒验证 next_query_at 和上游请求数不增加。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_queries:OAuthQueryCoordinatorTests.test_reservation_is_on_disk_before_http_and_timeout_consumes_attempt",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/query_history_contract.rs",
+        "test_name": "oauth_timeout_reads_disk_reservation_and_consumes_attempt_without_replay",
+        "assertions": [
+          "let reservation = mock.reservations.lock().unwrap()[0]",
+          "assert_eq!(pending[\"last_source\"], \"automatic\");",
+          "assert_eq!(result[\"error_code\"], \"timeout\");",
+          "assert_eq!(query[\"failure_count\"], 1);",
+          "assert_eq!(timestamp(&query[\"retry_at\"]), retry_at);",
+          "assert_eq!(mock.call_count(), 1, \"unknown timed-out request must not be replayed\");"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/query/contract.json",
+            "json_paths": [
+              "oauth_query.timeout_seconds",
+              "oauth_query.skip_before_deadline_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "上游 handler 收到真实协调器请求时立即从磁盘读取 reservation，验证 automatic_attempts、last_query_at/source；请求超时后核实失败预算仍持久化且 retry_at 为一小时，截止前重试被跳过、回环请求总数保持一。"
+    }
+  ],
+  "uncovered_notes": [
+    "此有界片段只映射上述七个旧测试 ID；tests/test_usage_records.py 与 tests/test_oauth_queries.py 的其他断言不在本片段覆盖范围内。"
+  ]
+}

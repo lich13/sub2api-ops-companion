@@ -1,0 +1,2057 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_capacity_and_slow_ttft_only_create_detection_clues",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "assertions": [
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
+          "assert_eq!(state[\"notifications\"][provider_error_id.to_string()][\"status\"], \"clue\");",
+          "assert_eq!(state[\"notifications\"][&slow_clue][\"status\"], \"clue\");",
+          "assert_eq!(state[\"pending\"], json!({}));",
+          "assert_eq!(state[\"slow_pending\"], json!({}));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);",
+          "state[\"detection_events\"]"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "临时 PostgreSQL 中的真实 Capacity poll 形成精确 provider/slow clue；Runtime delivery 保持空通知队列，Bark 与模型 loopback 均为零。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_disabled_bark_does_not_suppress_detection_clues",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "assertions": [
+          "harness.runtime().detection.bark.configure(",
+          "assert_eq!(disabled_observed,",
+          "assert_eq!(disabled_state[\"pending\"], json!({}));",
+          "assert_eq!(disabled_state[\"slow_pending\"], json!({}));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
+          "expect(\"disabled Bark must not turn capacity clues into result notifications\")"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "关闭 Bark 配置时真实 Capacity poll 仍保留两类 clue，通知队列为空且没有 Bark 或模型请求。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_invalid_bark_config_does_not_suppress_detection_clues",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "assertions": [
+          "harness.runtime().detection.bark.configure(",
+          "assert_eq!(repeated_observed,",
+          "assert_eq!(repeated[\"pending\"], json!({}));",
+          "assert_eq!(repeated[\"slow_pending\"], json!({}));",
+          "expect(\"invalid optional Bark config must retain capacity clues without emitting results\")",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "无效可选 Bark 配置不影响 Capacity clue 的收集与去重；持久 clue 保留且无 Bark 请求。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DetectionClueTests.test_upgrade_discards_legacy_pending_notifications_without_replaying_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "assertions": [
+          "state[\"pending\"][\"fixture-legacy-error\"]",
+          "state[\"slow_pending\"][\"fixture-legacy-slow\"]",
+          "harness.restart_runtime().await;",
+          "assert_eq!(upgraded[\"pending\"], json!({}));",
+          "assert_eq!(upgraded[\"slow_pending\"], json!({}));",
+          "assert_eq!(upgraded[\"detection_events\"], json!({}));",
+          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-error\"][\"status\"], \"retired\");",
+          "assert_eq!(upgraded[\"notifications\"][\"fixture-legacy-slow\"][\"status\"], \"retired\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "升级旧 pending/slow_pending 状态时，旧通知被标为 retired、队列清空，重启后也没有 Bark 或模型重放。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_all_automatic_sources_and_models_share_exact_300_second_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary",
+        "assertions": [
+          "account_version(&manual_live)",
+          "assert_eq!(manual[\"status\"], \"queued\");",
+          "assert_eq!(started[\"job_id\"], first_job[\"id\"]);",
+          "assert_eq!(started[\"started_at\"], datetime(reference_time()));",
+          "harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(reference_time() + Duration::seconds(cooldown))",
+          "outcome.is_null()",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          "assert_eq!(second_job[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), manual_request_count + 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "同一账户上六种自动来源在299秒均被冷却拒绝；冷却期间 accepted automatic job 等待且不占 AccountLease，两个以 live account version 校验的 manual job 均 queued 并可并发执行，取消等待 job 不延长冷却，300秒边界后新自动 job 成功。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_manual_jobs_are_exempt_and_do_not_extend_automatic_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_request_is_exempt_from_automatic_timestamp_and_same_job_registration_is_idempotent",
+        "assertions": [
+          "assert_eq!(manual[\"trigger_source\"], \"manual\");",
+          "assert_eq!(manual[\"status\"], \"completed\");",
+          "assert_eq!(completed_groups, 3);",
+          "assert_eq!(harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()], dispatch_before_manual)",
+          "assert_eq!(harness.runtime().detection.next_allowed_at(id).unwrap(), next_allowed_before_manual)",
+          ".trigger(id, &[\"scheduled\".into()])"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.below_99.outputs"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实自动 job 后运行三组手动 ModelTests，automatic_starts 与 next_allowed_at 均保持原值；Rust 计的是 Responses HTTP 样本数，旧计数是 job-level execute 调用数。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_actual_account_ids_have_independent_cooldowns_even_with_shared_parent",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "shared_parent_children_have_independent_automatic_dispatch_records",
+        "assertions": [
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);",
+          "assert_eq!(dispatches.as_object().unwrap().len(), 3);",
+          "assert_eq!(dispatches[first_id.to_string()][\"job_id\"], first_job_id);",
+          "assert_eq!(dispatches[second_id.to_string()][\"job_id\"], second_job_id);",
+          "assert_eq!(dispatches[third_id.to_string()][\"job_id\"], third_job_id);",
+          "assert!(dispatches.get(parent_id.to_string()).is_none());"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "隔离 PostgreSQL 分配的 child fixture ID 分别持有独立的 automatic_starts；共享 parent 不被登记，覆盖旧例的 child 独立性语义。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_restart_keeps_dispatch_time_even_when_result_summaries_are_pruned",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "assertions": [
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatched_job_still_consumes_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_timestamp",
+        "assertions": [
+          "assert_eq!(failed[\"status\"], \"failed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          "assert_eq!(first_start[\"started_at\"], datetime(reference_time()));",
+          "assert!(cooling.is_null());",
+          "assert_eq!(completed[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 loopback HTTP 400 使自动 ModelTests job 失败，但 dispatch timestamp 留存；299秒错误 clue 不发新请求，300秒边界后新 job 成功。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_cancelled_dispatched_job_still_consumes_cooldown_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "queued_cancel_does_not_consume_cooldown_but_dispatched_cancel_survives_restart",
+        "assertions": [
+          "assert_eq!(cancelled[\"status\"], \"cancelled\");",
+          "let saved_at = sub2ops_server::compat::parse_datetime(&saved_dispatch[\"started_at\"]).unwrap();",
+          "assert!(cooling.is_null());",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);",
+          "harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(saved_at + Duration::seconds(300))",
+          "assert_eq!(after_cooldown[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "自动 job 已真实到达 loopback 后取消，重启 Runtime；299秒时不再派发且冷却截止仍锚定原 dispatch，300秒边界后才接受下一 job。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_queued_cancellation_before_dispatch_does_not_consume_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "queued_cancel_does_not_consume_cooldown_but_dispatched_cancel_survives_restart",
+        "assertions": [
+          "assert_eq!(queued[\"status\"], \"queued\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);",
+          "next_allowed_at(id)\n        .unwrap()\n        .is_null()",
+          "assert_eq!(cancelled[\"status\"], \"cancelled\");",
+          "assert_eq!(after_queued_cancel[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "持有真实 account lease 时 automatic job 保持 queued 并取消；未发上游请求、未建立 cooldown，释放 lease 后下一 automatic job 正常完成并首次 dispatch。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_dispatch_registration_is_idempotent_for_retries_of_same_job",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_request_is_exempt_from_automatic_timestamp_and_same_job_registration_is_idempotent",
+        "assertions": [
+          ".register_dispatch(&same_job)",
+          "[\"automatic_starts\"][id.to_string()], dispatch_before_manual",
+          ".register_dispatch(&different_job)",
+          "as_u16()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "同一 job_id 再次 register_dispatch 不改变已登记时间；不同自动 job 冲突，手动 job 不登记 automatic_starts。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_automatic_transport_retry_keeps_original_dispatch_time",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "retryable_model_transport_failure_preserves_first_dispatch_timestamp",
+        "assertions": [
+          "assert_eq!(job[\"status\"], \"completed\");",
+          "assert_eq!(attempts, 2);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), attempts as usize);",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        json!({\"job_id\":job_id,\"started_at\":datetime(reference_time())})\n    );",
+          "harness.runtime().detection.next_allowed_at(id).unwrap(),\n        datetime(reference_time() + Duration::seconds(300))"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "首个 loopback ModelTests 请求发生可重试 transport failure，第二次成功；两次真实请求共用首次 dispatch timestamp，冷却仍从原时刻精确计算300秒。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_upgrade_imports_latest_automatic_start_and_ignores_manual_jobs",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+        "assertions": [
+          "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
+          "assert_eq!(dispatch[\"started_at\"], datetime(started_at));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target dispatch_history_migration_survives_pruned_job_summaries_and_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_failed_dispatch_persistence_never_reaches_upstream",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_dispatch_registration_failure_never_reaches_upstream",
+        "assertions": [
+          "terminal[\"status\"], \"failed\"",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "[\"automatic_starts\"]",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "自动 dispatch history 写入失败后 job 失败，automatic_starts 保持缺席，模型与 Bark loopback 请求均为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_cooling_clues_are_consumed_without_later_replay",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "cooling_clues_are_consumed_without_later_replay",
+        "assertions": [
+          "assert!(after_cooling_tick[\"consumed\"].get(&error_clue).is_some());",
+          "assert!(after_cooling_tick[\"consumed\"].get(&slow_clue).is_some());",
+          "assert!(capacity_state[\"detection_events\"].get(&error_clue).is_none());",
+          "assert!(capacity_state[\"detection_events\"].get(&slow_clue).is_none());",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          "assert_eq!(harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()][\"job_id\"], job_id);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target cooling_clues_are_consumed_without_later_replay 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:AutomaticCooldownTests.test_due_schedule_defers_to_cooldown_without_queuing_a_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted_cooldown",
+        "assertions": [
+          "assert!(detection_state[\"consumed\"].get(&first_clue).is_some());",
+          "assert!(detection_state[\"consumed\"].get(&duplicate_clue).is_some());",
+          "assert_eq!(first_requests.len(), 1);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted_cooldown 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_verified_disposition_persists_one_outbox_before_bark_and_survives_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+        "assertions": [
+          "job[\"automatic_disposition\"][\"status\"], \"completed\"",
+          "schedule_writes[0].payload, json!({\"schedulable\":false})",
+          "control[\"disposition_notification\"][\"status\"], \"queued\"",
+          "bark.len(), 1",
+          "\"首组指纹推测：gpt-5.6-luna\""
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实自动首组降智完成 PG schedule readback 后只建立一个 outbox，Bark 成功一次；重启与重复 delivery 不重复 schedule POST 或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_result_bark_bypasses_suppression_from_its_new_degradation_mark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+        "assertions": [
+          "assert_eq!(job[\"automatic_disposition\"][\"status\"], \"completed\");",
+          "assert_eq!(schedule_writes[0].payload, json!({\"schedulable\":false}));",
+          "assert_eq!(control[\"disposition_notification\"][\"status\"], \"queued\");",
+          "assert_eq!(bark.len(), 1);",
+          "contains(&account_name)",
+          "assert!(bark[0].payload[\"title\"].as_str().unwrap().contains(\"降智\"));",
+          "contains(\"首组指纹推测：gpt-5.6-luna\")"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实自动首组处置递送一次 critical Bark；正文核对账号名、ID与首组指纹预测，标题核对停止调度和降智文案。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_unverified_schedule_never_creates_result_notification",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "verified_schedule_response_is_required_before_a_degraded_result_enters_the_outbox",
+        "assertions": [
+          "assert_eq!(current[\"disposition\"][\"schedule_verified\"], false);",
+          "assert_eq!(current[\"disposition_notification\"], Value::Null);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target verified_schedule_response_is_required_before_a_degraded_result_enters_the_outbox 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_missing_admin_authorization_preserves_mark_without_notification",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "missing_admin_authorization_preserves_the_mark_without_schedule_or_bark",
+        "assertions": [
+          "assert_eq!(current[\"disposition\"][\"status\"], \"needs_confirmation\");",
+          "assert_eq!(current[\"disposition\"][\"marked\"], true);",
+          "assert_eq!(current[\"disposition_notification\"], Value::Null);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "有效模型结果进入处置后移除 admin Authorization；Rust 验证 mark 保留且没有 schedule 写或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_mark_save_failure_cannot_stop_scheduling_or_enqueue_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_mark_persistence_failure_does_not_write_schedule_or_queue_bark",
+        "assertions": [
+          "assert_eq!(account[\"schedulable\"], true);",
+          "assert_eq!(harness.runtime().detection.mark(id).unwrap()[\"marked\"], false);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Capacity mark 持久化失败时 PG schedulable 保持开启、disposition outbox 为空且不发 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_non_degraded_and_empty_reports_do_not_create_notifications",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "non_degraded_and_empty_automatic_reports_create_no_disposition_notification",
+        "assertions": [
+          "harness.runtime().detection.control(id).unwrap()[\"disposition\"].is_null()",
+          "\"disposition_notifications\"",
+          "harness.mock.count(\"POST\", \"/push\"), 0",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "正常与空报告两种自动 verdict 均不产生 disposition、mark、outbox、schedulable 写或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_result_delivery_retries_on_persisted_schedule_and_only_delivers_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_notification_retries_use_durable_backoff_and_send_once_after_success",
+        "assertions": [
+          "assert_eq!(event[\"status\"], \"retry\");",
+          "assert_eq!(event[\"attempts\"], attempt);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), attempt as usize);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), delays.len() + 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.notification_retry_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target automatic_notification_retries_use_durable_backoff_and_send_once_after_success 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_attempt_save_failure_blocks_bark_until_durable_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "disposition_outbox_and_bark_receipts_recover_from_local_write_failures",
+        "assertions": [
+          "deliver_notifications()",
+          "reservation[\"attempts\"], 0",
+          "harness.mock.count(\"POST\", \"/push\"), 0",
+          "resumed[\"status\"], \"completed\""
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "attempts 预留本地保存失败会阻止 Bark；修复存储并重试后才提交递送，验证写前保护与持久重试。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_disabled_bark_suppresses_confirmed_result_and_invalid_config_waits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "confirmed_bark_waits_for_enabled_valid_config_and_invalid_config_preserves_queue",
+        "assertions": [
+          "first_notice[\"status\"], \"queued\"",
+          "suppressed[\"status\"], \"suppressed\"",
+          "invalid_config[\"status\"], \"queued\"",
+          "harness.mock.count(\"POST\", \"/push\"), 0",
+          "bark.len(), 1"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Bark disabled 时标记通知为 suppressed；无效配置保持 queued；恢复有效配置后只递送一次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_delivery_receipt_save_failure_keeps_durable_backoff",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "disposition_outbox_and_bark_receipts_recover_from_local_write_failures",
+        "assertions": [
+          "assert_eq!(receipt_pending[\"status\"], \"queued\");",
+          "assert_eq!(receipt_pending[\"attempts\"], 1);",
+          "let receipt_retry_at = receipt_pending[\"next_at\"].clone();",
+          "harness.restart_runtime().await;",
+          "assert_eq!(persisted_receipt[\"next_at\"], receipt_retry_at);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 2);",
+          "assert_eq!(resumed[\"status\"], \"completed\");"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Bark 成功但 delivered receipt 落盘失败后，重启仍保留 durable retry 时间；到期重试完成且只再发送一次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_completion_and_outbox_save_are_atomic_and_restart_can_recover",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "disposition_outbox_and_bark_receipts_recover_from_local_write_failures",
+        "assertions": [
+          "result.is_err()",
+          "account[\"schedulable\"], false",
+          "\"disposition_notifications\"",
+          "resumed[\"status\"], \"completed\"",
+          "harness.mock.count(\"POST\", \"/push\"), 2"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "最终处置/outbox 本地事务失败后 schedule readback 保持已确认；Runtime 重启从持久状态恢复，不重复调度写或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_before_verdict_prevents_mark_schedule_and_bark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_generation_change_rejects_a_stale_verdict_without_any_disposition",
+        "assertions": [
+          "error.status.as_u16(), 409",
+          "error.detail.to_string().contains(\"人工操作\")",
+          "control(id).unwrap()[\"disposition\"].is_null()",
+          "&format!(\"/api/v1/admin/accounts/{id}/schedulable\")",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "人工 generation 变化后的旧 verdict 返回 stale guard 错误，不写 disposition、mark、schedule 或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_after_verified_disposition_suppresses_queued_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_override_suppresses_a_queued_verified_disposition_notification",
+        "assertions": [
+          "assert_eq!(before[\"disposition_notification\"][\"status\"], \"queued\");",
+          "assert_eq!(current[\"disposition_notification\"][\"status\"], \"suppressed\");",
+          "assert_eq!(current[\"disposition_notification\"][\"reason\"], \"manual_intervention\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "人工覆盖发生在 schedule 已确认且通知排队后，通知被持久抑制，重启/重复 delivery 不发送 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection030:DispositionNotificationTests.test_manual_override_during_schedule_write_prevents_completed_receipt",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_generation_change_during_schedule_write_blocks_receipt_and_bark",
+        "assertions": [
+          "assert_eq!(current[\"disposition\"][\"status\"], \"overridden\");",
+          "assert_eq!(current[\"disposition_notification\"], Value::Null);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "人工 generation 变化与 schedule 写竞争时，迟到的 schedule 响应不能生成 completed receipt 或 Bark；对照的是 Runtime 持久结果，不要求暴露旧 Python 内部异常对象。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_display_window_when_fresh_native_credits_are_available",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "quota_evidence_uses_independent_freshness_precedence_and_configured_key_limits",
+        "assertions": [
+          "assert_eq!(harness.runtime().detection.control(empty_id).unwrap()[\"reason\"], \"已确认额度耗尽\");",
+          "assert_eq!(allowed[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "full usage window 变旧但 native credits 新鲜且为正时，真实 Runtime 仍启动并完成检测。",
+      "supporting_targets": []
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_uses_native_credit_freshness_independently_from_a_fresh_full_window",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "detection_credits_unknown_or_stale_evidence_does_not_override_fresh_usage_clock",
+        "assertions": [
+          "\"balance\":null",
+          "\"fetched_at\":(now-Duration::minutes(51)).timestamp() as f64",
+          "assert_eq!(job[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          "assert_native_oauth_calls(&harness.mock.calls(\"POST\", \"/v1/responses\"));"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "51 分钟前的未知原生额度与新鲜 100% usage 并存时，完整 Runtime tick 仍允许自动 ModelTests job 成功派发。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_window_for_unlimited_or_unknown_native_credits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "native_credit_and_usage_evidence_matrix_matches_full_runtime_admission",
+        "assertions": [
+          "\"unlimited\",",
+          "(\"missing\", json!({}), Some(full_quota.clone()), false),",
+          "control[\"status\"], \"queued\", \"case {label}\"",
+          "job[\"status\"], \"completed\", \"case {label}\""
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "同一 Runtime tick 矩阵验证 fresh full window 下 unlimited、missing 与 stale native credits 均允许 dispatch。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_allows_full_window_for_invalid_or_contradictory_native_evidence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "native_credit_and_usage_evidence_matrix_matches_full_runtime_admission",
+        "assertions": [
+          "\"contradictory\",",
+          "\"nan-balance\",",
+          "\"negative-balance\",",
+          "\"future-snapshot\",",
+          "control[\"status\"], \"queued\", \"case {label}\""
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "同一 Runtime tick 矩阵验证矛盾、NaN、负余额与未来时间戳等 native credit 输入不会误挡 full-window dispatch。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_pauses_only_when_native_credits_are_empty_and_full_window_is_fresh",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "native_credit_and_usage_evidence_matrix_matches_full_runtime_admission",
+        "assertions": [
+          "\"exact-full-empty\",",
+          "control[\"status\"], \"paused\", \"case {label}\"",
+          "control[\"reason\"], \"已确认额度耗尽\", \"case {label}\"",
+          "control[\"job_id\"].is_null()"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "fresh full usage window 加 fresh empty native credits 会暂停自动 job、记录额度耗尽原因且不发模型请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_tick_uses_native_usage_percentages_without_mixing_freshness_or_decimal_balance",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "native_credit_and_usage_evidence_matrix_matches_full_runtime_admission",
+        "assertions": [
+          "\"below-full-native-window\",",
+          "\"elapsed-window-reset\",",
+          "\"fractional-positive-credit\",",
+          "job[\"status\"], \"completed\", \"case {label}\"",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "真实 Runtime tick 覆盖 native usage 百分比边界、reset 时间与小数正余额，并按状态断言 dispatch/暂停结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_reason_preserves_precedence_for_manual_close_rate_limit_and_auth",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "quota_evidence_uses_independent_freshness_precedence_and_configured_key_limits",
+        "assertions": [
+          "assert_eq!(harness.runtime().detection.control(empty_id).unwrap()[\"reason\"], \"已确认额度耗尽\");",
+          "assert_eq!(allowed[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "manual close 与 upstream rate-limit 由真实 reason 分支核对；OAuth auth-fingerprint 优先级由 fresh/stale OAuth rejection target 补足。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "stale_oauth_rejection_is_ignored_but_fresh_rejection_blocks_recheck",
+          "assertions": [
+            "\"认证异常，等待凭据更新\""
+          ],
+          "fixtures": []
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_old_rejection_before_recovery_point_is_ignored_but_new_fresh_rejection_blocks",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "stale_oauth_rejection_is_ignored_but_fresh_rejection_blocks_recheck",
+        "assertions": [
+          "\"认证异常，等待凭据更新\"",
+          "\"上游已拒绝额度请求\"",
+          "as_u16()",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "旧 OAuth rejection 被 freshness 忽略；fresh rejection 阻止 recheck completion，mark 保留且不发模型或 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_key_detection_still_uses_configured_actual_limits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "quota_evidence_uses_independent_freshness_precedence_and_configured_key_limits",
+        "assertions": [
+          "assert_eq!(harness.runtime().detection.control(empty_id).unwrap()[\"reason\"], \"已确认额度耗尽\");",
+          "assert_eq!(allowed[\"status\"], \"completed\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "API-Key 检测按账号配置的实际额度限额给出额度耗尽 reason，不依赖 OAuth native credit 字段。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_credits034:DetectionCredits034Tests.test_recovered_from_credit_pause_restarts_timer_and_respects_five_minute_gate",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "oauth_recovery_restarts_interval_but_preserves_shared_cooldown",
+        "assertions": [
+          "paused[\"reason\"], \"已确认额度耗尽\"",
+          "job[\"status\"], \"completed\"",
+          "assert_native_oauth_calls(&oauth_calls)",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 1"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "恢复 native credit pause 后重新锚定 interval，同时保留共享 dispatch cooldown，到边界后只发一次 OAuth 模型请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_first_group_verdict_persists_mark_and_confirms_schedulable_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+        "assertions": [
+          "schedule_writes[0].admin_authorized",
+          "schedule_writes[0].bearer_authorized",
+          "schedule_writes[0].payload, json!({\"schedulable\":false})",
+          "&format!(\"/api/v1/admin/accounts/{id}/schedulable\")"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 schedulable 管理请求记录并校验 admin Authorization；该头有权限而模型 bearer 没有，正文仅关闭 schedulable。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_restart_with_writing_disposition_marks_unknown_without_replay",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "preexisting_writing_disposition_becomes_unknown_after_restart_without_replay",
+        "assertions": [
+          "disposition[\"status\"], \"needs_confirmation\"",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "启动时从 PostgreSQL 读到预存 writing disposition 后转为 needs_confirmation；不重放 schedule POST 或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_manual_generation_change_rejects_stale_verdict_without_disposition",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_generation_change_rejects_a_stale_verdict_without_any_disposition",
+        "assertions": [
+          "error.status.as_u16(), 409",
+          "error.detail.to_string().contains(\"人工操作\")",
+          "control(id).unwrap()[\"disposition\"].is_null()",
+          "&format!(\"/api/v1/admin/accounts/{id}/schedulable\")",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "直接提交人工操作前创建的旧 verdict 会被 generation guard 拒绝，disposition 为空且外部写请求为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_policy_save_failure_leaves_mark_and_schedule_untouched",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "control_store_failure_before_verdict_leaves_mark_schedule_and_outbox_untouched",
+        "assertions": [
+          ".is_err()",
+          "control(id).unwrap()[\"disposition\"].is_null()",
+          "mark(id).unwrap()[\"marked\"]",
+          "[\"schedulable\"],\n        true",
+          "&format!(\"/api/v1/admin/accounts/{id}/schedulable\")",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "control store 故障发生在 verdict 前时，原 mark 与 schedulable 状态保持，disposition/outbox 不产生，外部写为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_disposition027:DetectionDispositionTests.test_template_apply_merges_only_model_mapping_over_loopback_http",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/projection_parity_contract.rs",
+        "test_name": "key_template_action_verifies_mapping_and_preserves_the_full_account_row",
+        "assertions": [
+          "assert_eq!(result[\"verified\"], true);",
+          "assert_eq!(after, expected_after,",
+          "observed_calls,\n        vec!["
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Rust 真实调用 Actions.apply_template，以临时 PostgreSQL 验证完整账号行只改变 model_mapping，并检查 loopback bulk-update 的唯一请求 path、认证值和 payload。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_scheduled_marked_account_is_rechecked_with_immutable_admission_metadata",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
+        "assertions": [
+          "assert_eq!(job[\"degradation_recheck\"], true);",
+          "assert_eq!(job[\"requested_model\"], \"gpt-6-luna\");",
+          "assert_eq!(job[\"detection_mark_version\"], marked[\"version\"]);",
+          "assert_eq!(job[\"recheck_schedulable\"], true);",
+          "assert_eq!(control[\"recheck_recovery\"][\"mark_cleared\"], true);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "已派发的 marked recheck 固定保留 requested_model 与 detection_mark_version，并验证恢复完成且不写 schedule。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_unenabled_marked_account_does_not_recheck_old_clues",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "disabling_generation_drops_old_marked_clue_without_model_recheck",
+        "assertions": [
+          "disabled[\"enabled\"], false",
+          "disabled[\"status\"], \"disabled\"",
+          "disabled[\"next_at\"].is_null()",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "禁用检测提升 generation 并丢弃旧 marked clue；后续 tick 不启动模型 recheck。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_five_minute_gate_defers_marked_recheck_then_allows_at_exact_boundary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
+        "assertions": [
+          "assert_eq!(job[\"degradation_recheck\"], true);",
+          "assert_eq!(job[\"recheck_schedulable\"], true);",
+          "assert_eq!(control[\"recheck_recovery\"][\"mark_cleared\"], true);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "marked account 的 recheck 在共享 cooldown 到期前不启动，到精确边界完成后只清 mark、不发 schedule POST。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckAdmissionTests.test_recheck_keeps_manual_close_status_auth_and_quota_precedence",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "quota_evidence_uses_independent_freshness_precedence_and_configured_key_limits",
+        "assertions": [
+          "\"账号停用或认证异常\"",
+          "assert_eq!(disabled_control[\"status\"], \"paused\");",
+          "assert_eq!(disabled_control[\"reason\"], \"账号停用或认证异常\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "账号 status=disabled 的真实 tick 保持 paused，并以“账号停用或认证异常”优先于 quota/recheck；无额外模型或 Bark 请求。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
+          "assertions": [
+            "assert_eq!(job[\"degradation_recheck\"], true);",
+            "assert_eq!(job[\"recheck_schedulable\"], true);",
+            "assert_eq!(control[\"recheck_recovery\"][\"mark_cleared\"], true);",
+            "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/detection-lifecycle/fixtures.json",
+              "json_paths": [
+                "oracle.automatic_dispatch_cooldown_seconds"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_normal_result_clears_mark_persists_receipt_and_notifies_without_schedule_write",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
+        "assertions": [
+          "assert_eq!(control[\"recheck_recovery\"][\"mark_cleared\"], true);",
+          "assert_eq!(delivered_event[\"status\"], \"delivered\");",
+          "assert_eq!(harness.runtime().detection.control(id).unwrap()[\"hold\"], true);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "正常 recheck 清除 mark 后 hold 仍为 true；持久 recovery event 已 delivered，Bark 只发送一次且不触碰 schedule。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_pending_recovery_receipt_resumes_after_finish_boundary_failure",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "assertions": [
+          "recovered[\"status\"], \"completed\"",
+          "recovered[\"job_id\"], job_id",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "recovery finish 边界本地提交失败后，重启采用持久 mark-clear receipt，不重发模型或 schedule 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_notification_retries_after_five_seconds_and_delivers_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "assertions": [
+          "retry[\"status\"], \"retry\"",
+          "retry[\"attempts\"], 1",
+          "Duration::seconds(5)",
+          "harness.mock.count(\"POST\", \"/push\"), 2"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.notification_retry_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "recovery Bark 事件按五秒退避；到期前保持一次请求，到期后成功并持久去重。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_restart_adopts_mark_clear_when_control_receipt_save_fails_without_replaying_model_or_schedule",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_second_retry",
+        "assertions": [
+          "recovered[\"mark_cleared\"], true",
+          "recovered[\"mark_version_after\"].is_string()",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "control receipt 保存失败后重启从 mark version 采用已完成 recovery receipt，模型与 schedule 请求均不重放。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_recovery_receipt_and_delivery_survive_restart_and_duplicate_processing_is_once",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
+        "assertions": [
+          "harness.restart_runtime().await;",
+          "assert_eq!(repeated_receipt[\"status\"], \"completed\");",
+          "assert_eq!(harness.runtime().detection.control(id).unwrap()[\"hold\"], true);",
+          "assert_eq!(harness.runtime().detection.store.read().unwrap()[\"disposition_notifications\"][&job_id][\"status\"], \"delivered\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Runtime 重启后重复 complete_recheck 仍返回已完成，hold 与 delivered event 持久保留，不重复发送 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_first_group_target_remains_marked_without_a_recovery_receipt",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "target_recheck_and_stale_generation_cannot_clear_a_mark_or_emit_notifications",
+        "assertions": [
+          "assert_eq!(target_job[\"degradation_recheck\"], true);",
+          "assert_eq!(harness.runtime().detection.mark(id).unwrap()[\"marked\"], true);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Rust target target_recheck_and_stale_generation_cannot_clear_a_mark_or_emit_notifications 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_final_target_or_invalid_result_does_not_clear_mark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "missing_result_report_variants_never_clear_marks_or_create_outbox_events",
+        "assertions": [
+          "complete_recheck(&job)",
+          "mark(id).unwrap()[\"marked\"]",
+          "\"disposition_notifications\"",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "最终 target、空报告、invalid first group、可重试失败组、失败组和手动结果均保持 mark，不生成 recovery receipt/outbox/Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckCompletionTests.test_same_job_id_with_new_completed_at_is_processed_after_a_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "same_recheck_job_id_with_new_completion_time_is_processed_after_retry",
+        "assertions": [
+          "after[\"handled_job\"], job_id",
+          "receipt[\"status\"], \"completed\"",
+          "receipt[\"mark_cleared\"], true",
+          "event[\"kind\"], \"recovered\""
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "相同 recheck job_id 用新的 completed_at 重试会被处理并形成一个 completed recovery receipt/event。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_generation_change_makes_late_recheck_a_noop",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "target_recheck_and_stale_generation_cannot_clear_a_mark_or_emit_notifications",
+        "assertions": [
+          "assert_eq!(target_job[\"degradation_recheck\"], true);",
+          "assert_eq!(harness.runtime().detection.mark(id).unwrap()[\"marked\"], true);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Rust target target_recheck_and_stale_generation_cannot_clear_a_mark_or_emit_notifications 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_mark_version_change_makes_late_recheck_a_noop",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_close",
+        "assertions": [
+          "as_u16()",
+          "mark(changed_mark_id).unwrap()[\"marked\"]",
+          "recheck_recovery\"].is_null()"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "mark version 在 admission 后变化会拒绝 late recheck，mark 保留且不生成 recovery receipt。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_manual_release_hold_invalidates_late_recheck_and_preserves_mark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_close",
+        "assertions": [
+          "control(released_id).unwrap()[\"hold\"]",
+          "mark(released_id).unwrap()[\"marked\"]",
+          "as_u16()",
+          "recheck_recovery\"].is_null()"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "人工 release hold 会使 late recheck 失效；hold 保持释放、mark 保留且没有 recovery receipt。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_retrying_failed_first_group_scores_first_sample_separately_from_aggregate",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "failed_first_group_retry_scores_first_sample_separately_from_aggregate",
+        "assertions": [
+          "set_model_failure_response(3, StatusCode::BAD_GATEWAY.as_u16());",
+          "assert_eq!(initial_job[\"status\"], \"completed\");",
+          "assert_eq!(initial_job[\"can_retry\"], true);",
+          "assert_eq!(initial_job[\"groups\"][0][\"attempts\"], 3);",
+          "assert_eq!(initial_job[\"groups\"][1][\"status\"], \"completed\");",
+          "assert_eq!(initial_job[\"report\"][\"prediction\"], \"gpt-5.4\");",
+          "assert_eq!(initial_job[\"report\"][\"used_outputs\"], 2);",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 5",
+          "assert_eq!(retry_in_flight[\"report\"][\"used_outputs\"], 2);",
+          "assert_eq!(completed[\"first_group_prediction\"], \"claude-sonnet-4-6\");",
+          "assert_eq!(completed[\"report\"][\"prediction\"], \"gpt-5.6-luna\");",
+          "assert_eq!(completed[\"report\"][\"used_outputs\"], 3);",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 6",
+          "assert_eq!(completed[\"automatic_disposition\"], Value::Null);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "确定三次 HTTP 502 后，首组失败而两组输出成功形成可重试的 completed job，aggregate 为未提前结束的两样本 gpt-5.4；300秒后只重试首组，复用另两组缓存，最终 first-group claude-sonnet-4-6 与三样本 gpt-5.6-luna aggregate 分开保留且原始 cooldown 不延长。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "manual_model_test_never_runs_automatic_disposition_for_a_target_first_group",
+          "assertions": [
+            "assert_eq!(job[\"trigger_source\"], \"manual\");",
+            "assert_eq!(job[\"first_group_prediction\"], \"gpt-5.6-luna\");",
+            "assert!(job[\"automatic_disposition\"].is_null());",
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);"
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+              "json_paths": [
+                "modeltrace_runtime.automatic_first_group.outputs.0"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_rechecks034:RecheckStaleResultTests.test_real_model_tests_persists_recheck_metadata_and_first_group_validity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "failed_first_group_retry_scores_first_sample_separately_from_aggregate",
+        "assertions": [
+          "assert_eq!(initial_job[\"requested_model\"], \"gpt-6-luna\");",
+          "assert_eq!(initial_job[\"detection_mark_version\"], marked[\"version\"]);",
+          "assert_eq!(initial_job[\"first_group_valid\"], false);",
+          "assert!(initial_job[\"first_group_prediction\"].is_null());",
+          "assert_eq!(retry_in_flight[\"groups\"][2][\"status\"], \"completed\");",
+          "assert_eq!(retry_in_flight[\"report\"][\"used_outputs\"], 2);",
+          "assert_eq!(completed[\"first_group_valid\"], true);",
+          "assert_eq!(completed[\"first_group_prediction\"], \"claude-sonnet-4-6\");",
+          "assert_eq!(completed[\"report\"][\"used_outputs\"], 3);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "自动 job 的 requested_model 与 detection_mark_version 持久在结果中；首组重试前有效性为 false 且无 prediction，两组 cached outputs 保留，在首组唯一重试后 first_group_prediction 变成 claude-sonnet-4-6，而 aggregate 复用缓存形成三样本报告。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closed_oauth_and_key_accounts_do_not_dispatch_marked_or_unmarked",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "closed_oauth_and_key_accounts_do_not_dispatch_marked_or_unmarked",
+        "assertions": [
+          "state[\"status\"], \"paused\", \"{kind} marked={marked}\"",
+          "state[\"reason\"], \"调度已关闭\", \"{kind} marked={marked}\"",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "OAuth 与 API-Key 在 schedulable 关闭时，marked/unmarked 自动检测均暂停且无 model/Bark dispatch。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_reopening_after_a_long_pause_keeps_settings_and_waits_a_full_interval",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "reopening_after_long_unschedulable_pause_preserves_settings_and_full_interval",
+        "assertions": [
+          "paused[\"interval_minutes\"], 15",
+          "waiting[\"interval_minutes\"], 15",
+          "waiting[\"model_id\"], \"gpt-6-luna\"",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "长时间 schedulable pause 后保留 enable/interval/model 设置，重新开启从当前 clock 等待完整 interval。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closing_queued_or_running_job_cancels_it_without_a_new_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "completed_worker_anchors_next_interval_and_closed_schedule_cancels_active_request",
+        "assertions": [
+          "let queued_lease = harness",
+          "assert_eq!(queued[\"automatic\"], true);",
+          "assert_eq!(queued_close[\"verified\"], true);",
+          "assert_eq!(queued_cancelled[\"status\"], \"cancelled\");",
+          "next_allowed_at(queued_id)",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), initial_count);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "关闭调度时，仍持有 fixture AccountLease 的 automatic job 尚未 launch；真实 tick 将其取消，不新增 HTTP 请求或 cooldown。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_reopening_marked_account_still_waits_for_shared_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "reopening_marked_account_still_waits_for_shared_dispatch_cooldown",
+        "assertions": [
+          "job[\"degradation_recheck\"], true",
+          "job[\"first_group_valid\"], true",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 1",
+          "schedules[0].payload, json!({\"schedulable\":true})"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "marked account 重新开启后仍等待已存在共享 cooldown，到边界才做一次 recheck。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_legacy_recheck_admitted_while_closed_cannot_clear_the_mark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_close",
+        "assertions": [
+          "closed_control[\"reason\"], \"调度已关闭\"",
+          "closed_control[\"recheck_recovery\"].is_null()",
+          "mark(closed_id).unwrap()[\"marked\"]",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "调度关闭后到达的旧 recheck 不清 mark，也不产生 disposition/outbox/Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_detection_schedulable037:SchedulableGateTests.test_closed_target_cannot_apply_a_late_recheck_result",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_close",
+        "assertions": [
+          "close[\"verified\"], true",
+          "closed_control[\"reason\"], \"调度已关闭\"",
+          "mark(closed_id).unwrap()[\"marked\"]",
+          "harness.mock.count(\"POST\",&format!(\"/api/v1/admin/accounts/{closed_id}/schedulable\")),1",
+          "harness.mock.count(\"POST\", \"/push\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "已关闭账号的 late recheck 保持 mark，检测不发第二次 schedule 写或通知。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_default_is_disabled_and_save_schedules_from_injected_now",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_detection_state_persists_across_runtime_restart",
+        "assertions": [
+          "default[\"enabled\"], false",
+          "default[\"status\"], \"disabled\"",
+          "default[\"next_at\"].is_null()",
+          "saved[\"next_at\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.default_interval_minutes",
+              "oracle.default_detection_model"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target automatic_detection_state_persists_across_runtime_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_completed_job_anchors_next_run_from_current_time_without_catch_up",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "completed_worker_anchors_interval_from_current_clock_without_catch_up",
+        "assertions": [
+          "first_job[\"status\"], \"completed\"",
+          "state[\"status\"], \"waiting\"",
+          "state[\"next_at\"]",
+          "harness.mock.unexpected().is_empty()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "worker completion 将下次运行锚定在当前 completion clock，过去遗漏时间不会触发 catch-up。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_duplicate_detection_events_are_ignored_while_job_is_active",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted_cooldown",
+        "assertions": [
+          "assert!(detection_state[\"consumed\"].get(&first_clue).is_some());",
+          "assert!(detection_state[\"consumed\"].get(&duplicate_clue).is_some());",
+          "assert_eq!(first_requests.len(), 1);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "活动 job 与 cooldown 内的重复 clue 被 consumed/deduplicated，不额外启动自动 job。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_failed_persistence_fails_closed_and_unreliable_state_is_rejected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "invalid_or_unwritable_detection_state_fails_closed_without_external_dispatch",
+        "assertions": [
+          "harness.runtime().detection.held(id)",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0",
+          "harness.mock.unexpected().is_empty()"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "损坏 JSON、未知/不可靠 schema 和写入故障均 fail closed，不产生外部 dispatch。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_missing_candidate_stays_paused_without_dispatch_or_repeated_directory_read",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_interval",
+        "assertions": [
+          "blocked[\"candidate_blocked\"], true",
+          "blocked[\"status\"], \"paused\"",
+          "resumed[\"candidate_blocked\"], false",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "candidate 暂不可用时暂停并按一分钟边界重新检查；候选恢复后以完整 interval 重新等待。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_missing_target_bank_never_dispatches_automatic_requests",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "missing_fingerprint_target_pauses_candidate_without_dispatch_or_recheck_loop",
+        "assertions": [
+          "blocked[\"reason\"], \"当前指纹库缺少降智判定模型\"",
+          "blocked[\"candidate_blocked\"], true",
+          "harness.mock.count(\"POST\", \"/v1/responses\"), 0"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "指纹库缺少目标模型时暂停自动 candidate，无 Responses dispatch 或重复 recheck。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_detection_state_survives_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_detection_state_persists_across_runtime_restart",
+        "assertions": [
+          "resumed[\"enabled\"], true",
+          "resumed[\"interval_minutes\"], 20",
+          "resumed[\"generation\"], saved[\"generation\"]",
+          "resumed[\"next_at\"], saved[\"next_at\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.default_interval_minutes",
+              "oracle.default_detection_model"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust target automatic_detection_state_persists_across_runtime_restart 通过真实 Runtime、临时 PostgreSQL 业务状态和 loopback 外部请求核验该场景；断言锚点限定为实际执行的调用次数、请求负载、持久状态和通知结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_ModelTestFixture.test_automatic_first_group_target_is_actionable_without_probability_threshold",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+        "assertions": [
+          "assert_eq!(job[\"automatic_disposition\"][\"status\"], \"completed\");",
+          "assert_eq!(schedule_writes[0].payload, json!({\"schedulable\":false}));",
+          "assert_eq!(control[\"disposition_notification\"][\"status\"], \"queued\");",
+          "assert_eq!(bark.len(), 1);",
+          "assert!(job[\"report\"][\"probability\"].as_f64().unwrap() < 0.99);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实自动首组概率低于 0.99 仍触发已验证的自动处置与 Bark outbox。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_ModelTestFixture.test_manual_model_test_never_invokes_automatic_disposition",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_model_test_never_runs_automatic_disposition_for_a_target_first_group",
+        "assertions": [
+          "assert_eq!(job[\"trigger_source\"], \"manual\");",
+          "assert_eq!(job[\"first_group_prediction\"], \"gpt-5.6-luna\");",
+          "assert!(job[\"automatic_disposition\"].is_null());",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs.0"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "手动 ModelTests 的首组 target 只完成报告，不调用自动 disposition、schedule 写或 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_pause_and_resume_starts_a_fresh_wait_without_replaying_missed_time",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "account_pause_and_resume_after_long_gap_starts_a_fresh_full_interval",
+        "assertions": [
+          "assert_eq!(paused[\"status\"], \"paused\");",
+          "assert!(paused[\"next_at\"].is_null());",
+          "assert_eq!(paused[\"interval_minutes\"], 15);",
+          "assert_eq!(\n        harness.runtime().detection.mark(id).unwrap()[\"marked\"],\n        true\n    );",
+          "assert_eq!(resumed[\"status\"], \"waiting\");",
+          "datetime(harness.now() + Duration::minutes(15))",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);",
+          "get(id.to_string())\n            .is_none()"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "在真实 Runtime 与临时 PostgreSQL 中禁用账号调度并暂停检测，经过4小时后恢复账号、清理 mark；验证配置保留、从当前时刻重新等待完整15分钟且未补跑旧任务。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_manual_generation_overrides_an_older_automatic_job",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_generation_change_rejects_a_stale_detection_guard",
+        "assertions": [
+          "assert_eq!(\n        after[\"generation\"],\n        before[\"generation\"].as_i64().unwrap() + 1\n    );",
+          "assert_eq!(after[\"hold\"], false);",
+          "assert_eq!(after[\"disposition\"][\"status\"], \"overridden\");",
+          "assert_eq!(stale_guard.status.as_u16(), 409);",
+          "assert!(stale_guard.detail.to_string().contains(\"新的人工操作\"));"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "通过真实 Runtime 控制状态创建旧 generation guard，再执行人工释放；验证 generation 递增、hold 清除、旧处置标记为 overridden、旧 guard 以409和“新的人工操作”拒绝。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_capacity_and_slow_clues_never_send_bark_directly",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queue_upgrade",
+        "assertions": [
+          "assert_eq!(observed, [provider_clue.clone(), slow_clue.clone()].into());",
+          "assert_eq!(state[\"pending\"], json!({}));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Rust 以 Runtime poll 生成并持久化 clue，delivery 后通知队列仍为空且 Bark/model loopback 均为零；旧 CapacityAlerts.deliver_due 属内部 API 差异。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_low_confidence_first_sample_stops_then_notifies_once_across_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+        "assertions": [
+          "assert_eq!(job[\"groups\"][0][\"diagnostics\"][\"http_status\"], 200);",
+          "assert_eq!(job[\"groups\"][0][\"diagnostics\"][\"response_protocol\"], \"responses\");",
+          "assert_eq!(job[\"groups\"][0][\"diagnostics\"][\"events\"], 2);",
+          "harness.restart_runtime().await;",
+          "let consumed_clue = harness.runtime().detection.store.read().unwrap()[\"consumed\"]",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          ".get(&clue_id)"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "自动首组 job 明确记录 HTTP 200、Responses 协议和两个 SSE event；重启后重新注入已消费 clue 仍不 replay。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_normal_three_sample_result_neither_marks_nor_sends_bark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "non_degraded_and_empty_automatic_reports_create_no_disposition_notification",
+        "assertions": [
+          "assert_eq!(automatic_job[\"report\"][\"prediction\"], \"gpt-5.4\");",
+          "assert_eq!(automatic_job[\"report\"][\"used_outputs\"], 3);",
+          "assert_eq!(automatic_job[\"automatic_disposition\"], Value::Null);",
+          "assert_eq!(harness.runtime().detection.mark(automatic_id).unwrap()[\"marked\"], false);",
+          "actions\n            .account(automatic_id, None)\n            .await\n            .unwrap()[\"schedulable\"],\n        true",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+        ],
+        "fixtures": []
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "manual_model_test_never_runs_automatic_disposition_for_a_target_first_group",
+          "assertions": [
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);",
+            "assert!(job[\"automatic_disposition\"].is_null());",
+            "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 0);"
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+              "json_paths": [
+                "modeltrace_runtime.below_99.outputs"
+              ]
+            }
+          ]
+        }
+      ],
+      "coverage_note": "同一个 automatic job 完成全部三组正常样本且 aggregate 为 gpt-5.4；不建立 mark/disposition、不关闭 schedule、不递送 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_bark_waits_for_schedule_readback",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "verified_schedule_response_is_required_before_a_degraded_result_enters_the_outbox",
+        "assertions": [
+          "assert_eq!(current[\"disposition\"][\"schedule_verified\"], false);",
+          "persist_synthetic_schedulable(&harness.mock, id, false).await;",
+          "assert_eq!(confirmed[\"schedule_verified\"], true);",
+          "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", &format!(\"/api/v1/admin/accounts/{id}/schedulable\")),\n        1\n    );",
+          "assert_eq!(harness.runtime().detection.view(id).unwrap()[\"disposition_notification\"][\"status\"], \"queued\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.automatic_first_group.outputs"
+            ]
+          }
+        ]
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
+          "assertions": [
+            "assert_eq!(control[\"disposition\"][\"schedule_verified\"], true);",
+            "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+              "json_paths": [
+                "modeltrace_runtime.automatic_first_group.outputs"
+              ]
+            }
+          ]
+        }
+      ],
+      "coverage_note": "首次 disposition readback 仍为 true 时不建 outbox；外部将临时 PostgreSQL schedulable 置 false 后，同一 disposition 重新 readback 成功且只发一次 schedule POST。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_cooldown_counts_real_http_and_releases_at_exact_300_seconds",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary",
+        "assertions": [
+          "assert_eq!(waiting[\"status\"], \"queued\");",
+          "assert_eq!(waiting[\"waiting_until\"], datetime(reference_time() + Duration::seconds(cooldown)));",
+          ".try_account(&live)",
+          "account_version(&manual_live)",
+          "assert_eq!(manual[\"status\"], \"queued\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 3);",
+          "assert_eq!(harness.wait_job_terminal(manual_job_id).await[\"status\"], \"completed\");",
+          "assert_eq!(queued_cancelled[\"status\"], \"cancelled\");",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), manual_request_count + 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "冷却中的已接受 automatic ModelTests job 精确记录 waiting_until 且不持 AccountLease；以当前 Actions account version 校验并明确排队的两个手动 job 可占用 slots，队列取消不扩展 cooldown，边界后自动请求恢复。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_manual_request_does_not_consume_or_extend_automatic_budget",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "manual_request_is_exempt_from_automatic_timestamp_and_same_job_registration_is_idempotent",
+        "assertions": [
+          "assert_eq!(manual[\"trigger_source\"], \"manual\");",
+          "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch_before_manual\n    );",
+          "assert_eq!(\n        harness.runtime().detection.next_allowed_at(id).unwrap(),\n        next_allowed_before_manual\n    );"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.below_99.outputs"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "手动 ModelTests 完成后 automatic_starts/next_allowed_at 不变，cooldown 内自动触发仍被拒绝；Rust HTTP 样本数与旧 job-level 调用数不同。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_failed_http_dispatch_still_cools_after_restart_and_result_pruning",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "failed_dispatched_job_still_owns_cooldown_and_retry_keeps_original_timestamp",
+        "assertions": [
+          "assert_eq!(failed[\"status\"], \"failed\");",
+          "assert_eq!(failed[\"error_code\"], \"invalid_model_or_request\");",
+          "state[\"jobs\"] = json!({});",
+          "state[\"accounts\"] = json!({});",
+          "state[\"requests\"] = json!({});",
+          "harness.restart_runtime().await;",
+          "harness.runtime().detection.migrate_dispatches().unwrap();",
+          "harness.advance(cooldown - 1);",
+          "assert!(cooling.is_null());",
+          "harness.advance(1);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
+          "assertions": [
+            "assert_eq!(dispatch[\"job_id\"], \"fixture-auto-latest\");",
+            "assert_eq!(\n        harness.runtime().detection.store.read().unwrap()[\"automatic_starts\"][id.to_string()],\n        dispatch\n    );",
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 0);"
+          ],
+          "fixtures": []
+        }
+      ],
+      "coverage_note": "invalid_model_or_request 失败 dispatch 在 job/result 索引剪枝和 Runtime 重启迁移后仍保留原时间戳；299 秒不派发，300 秒边界重试。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_cooling_and_duplicate_clues_do_not_replay_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted_cooldown",
+        "assertions": [
+          "assert!(detection_state[\"consumed\"].get(&first_clue).is_some());",
+          "assert!(detection_state[\"consumed\"].get(&duplicate_clue).is_some());",
+          "harness.restart_runtime().await;",
+          "assert_eq!(after_reinjection[\"consumed\"], consumed_before_restart);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);",
+          "let new_clue = format!(\"error:fixture-new-{id}\");",
+          "assert_eq!(second_job[\"triggers\"], json!([new_clue]));",
+          "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.automatic_dispatch_cooldown_seconds"
+            ]
+          }
+        ]
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/detection_lifecycle_parity.rs",
+          "test_name": "cooling_clues_are_consumed_without_later_replay",
+          "assertions": [
+            "assert!(after_cooling_tick[\"consumed\"].get(&error_clue).is_some());",
+            "assert!(after_cooling_tick[\"consumed\"].get(&slow_clue).is_some());",
+            "assert_eq!(harness.mock.count(\"POST\", \"/v1/responses\"), 1);"
+          ],
+          "fixtures": []
+        }
+      ],
+      "coverage_note": "两个已消费 clue ID 在重启后重新注入仍不 replay；冷却边界前不新增 dispatch，边界后新的 clue 可触发下一 job。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_http_integration030:DetectionHttpIntegration030Tests.test_bark_response_failure_retries_once_when_due_after_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/detection_lifecycle_parity.rs",
+        "test_name": "automatic_notification_retries_use_durable_backoff_and_send_once_after_success",
+        "assertions": [
+          "harness.mock.set_bark_response_failures(1);",
+          "assert_eq!(body_error_retry[\"error_code\"], \"bark_response_code\");",
+          "harness.restart_runtime().await;",
+          "assert_eq!(persisted_body_error[\"status\"], \"retry\");",
+          "assert_eq!(delivered_body_error[\"status\"], \"delivered\");",
+          "assert_eq!(delivered_body_error[\"attempts\"], 2);",
+          "assert_eq!(harness.mock.count(\"POST\", \"/push\"), pushes_before_body_error + 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/detection-lifecycle/fixtures.json",
+            "json_paths": [
+              "oracle.notification_retry_seconds"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Bark HTTP 200 但 JSON code=500 时记录 bark_response_code；重启保留 durable backoff，到期只重试一次后 delivered。"
+    }
+  ]
+}

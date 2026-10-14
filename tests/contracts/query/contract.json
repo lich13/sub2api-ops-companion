@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "event_pagination": {
+    "page_size": 3,
+    "categories": ["degradation", "other", null],
+    "account_ids": [null, 1, 5, 99]
+  },
+  "usage_records": {
+    "page_size": 1,
+    "cursor_filter_changes": [
+      "from_at",
+      "to_at",
+      "account_id",
+      "api_key_id",
+      "user_id",
+      "model",
+      "request_type",
+      "mismatch_only"
+    ],
+    "date_cursor_changes": ["omitted", "start_date", "end_date"],
+    "statement_timeout": "5s"
+  },
+  "oauth_query": {
+    "failure_http_status": 503,
+    "backoff_hours": [1, 3, 6, 12, 12],
+    "timeout_seconds": 2,
+    "skip_before_deadline_seconds": 1
+  }
+}

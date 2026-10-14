@@ -1,0 +1,1474 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_bank_is_pinned_and_valid_sequence_scores",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "pinned_legacy_80_number_vectors_match_validation_and_analysis",
+        "assertions": [
+          "assert_eq!(fixture[\"bank_is_pinned\"], true)",
+          "assert_eq!(fixture[\"bank_sha256\"], version[\"sha256\"])",
+          "assert_eq!(numbers.len(), fixture[\"valid_sequence\"][\"validated_count\"])",
+          "assert_eq!(numbers.len(), 80)",
+          "assert_eq!(plain_numbers.len(), thought[\"plain_validated_count\"])",
+          "assert_eq!(wrapped_numbers.len(), thought[\"wrapped_validated_count\"])",
+          "assert_eq!(plain_numbers.len(), 80)",
+          "assert_eq!(wrapped_numbers, plain_numbers)",
+          "assert_eq!(\n        modeltrace::validate(thought[\"invalid_mixed_text\"].as_str().unwrap()).len(),\n        thought[\"invalid_mixed_count\"]\n    )",
+          "assert!(modeltrace::validate(thought[\"invalid_mixed_text\"].as_str().unwrap()).is_empty())"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_report",
+            "assertions": [
+              "assert_eq!(actual[\"prediction\"], expected[\"prediction\"], \"{context}\")",
+              "assert_eq!(\n        actual[\"used_outputs\"], expected[\"used_outputs\"],\n        \"{context}\"\n    )",
+              "assert_eq!(\n        actual[\"bank_version\"], expected[\"bank_version\"],\n        \"{context}\"\n    )"
+            ]
+          },
+          {
+            "name": "assert_probability_close",
+            "assertions": [
+              "assert!(\n        (actual - expected).abs() <= 1.0e-12,\n        \"{context}: actual={actual:.17e}, expected={expected:.17e}\"\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定版本同一80整数序列核对清洗、校验、bank摘要与完整分析结果；原文和thought/fence包裹的结果相同，正文混入被拒绝。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_thought_tags_and_fences_are_removed_without_scoring_prose",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "pinned_legacy_80_number_vectors_match_validation_and_analysis",
+        "assertions": [
+          "assert_eq!(fixture[\"bank_is_pinned\"], true)",
+          "assert_eq!(fixture[\"bank_sha256\"], version[\"sha256\"])",
+          "assert_eq!(numbers.len(), fixture[\"valid_sequence\"][\"validated_count\"])",
+          "assert_eq!(numbers.len(), 80)",
+          "assert_eq!(plain_numbers.len(), thought[\"plain_validated_count\"])",
+          "assert_eq!(wrapped_numbers.len(), thought[\"wrapped_validated_count\"])",
+          "assert_eq!(plain_numbers.len(), 80)",
+          "assert_eq!(wrapped_numbers, plain_numbers)",
+          "assert_eq!(\n        modeltrace::validate(thought[\"invalid_mixed_text\"].as_str().unwrap()).len(),\n        thought[\"invalid_mixed_count\"]\n    )",
+          "assert!(modeltrace::validate(thought[\"invalid_mixed_text\"].as_str().unwrap()).is_empty())"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_report",
+            "assertions": [
+              "assert_eq!(actual[\"prediction\"], expected[\"prediction\"], \"{context}\")",
+              "assert_eq!(\n        actual[\"used_outputs\"], expected[\"used_outputs\"],\n        \"{context}\"\n    )",
+              "assert_eq!(\n        actual[\"bank_version\"], expected[\"bank_version\"],\n        \"{context}\"\n    )"
+            ]
+          },
+          {
+            "name": "assert_probability_close",
+            "assertions": [
+              "assert!(\n        (actual - expected).abs() <= 1.0e-12,\n        \"{context}: actual={actual:.17e}, expected={expected:.17e}\"\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定版本同一80整数序列核对清洗、校验、bank摘要与完整分析结果；原文和thought/fence包裹的结果相同，正文混入被拒绝。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_collector_merges_delta_snapshot_and_return_model",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_contract.rs",
+        "test_name": "stream_failure_and_collector_projection_match_pinned_python",
+        "assertions": [
+          "assert_eq!(projection, case[\"expected\"], \"collector case {}\", case[\"id\"]);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-fixtures.json",
+            "ids": [
+              "responses_delta_then_snapshot"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "同一个 collector case 比较 delta、snapshot、return model 与 completed 的完整投影。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_reasoning_is_not_scored_as_final_answer",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_contract.rs",
+        "test_name": "stream_failure_and_collector_projection_match_pinned_python",
+        "assertions": [
+          "assert_eq!(projection, case[\"expected\"], \"collector case {}\", case[\"id\"]);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-fixtures.json",
+            "ids": [
+              "reasoning_is_not_answer"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "reasoning delta 不进入 final text 的旧断言由完整 collector projection fixture 覆盖。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_integer_and_bytes_guards",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_contract.rs",
+        "test_name": "stream_failure_and_collector_projection_match_pinned_python",
+        "assertions": [
+          "assert_eq!(projection, case[\"expected\"], \"collector case {}\", case[\"id\"]);",
+          "assert_eq!(collector.text().len(), model_test_stream::MAX_TEXT);",
+          "assert_eq!(error.code, \"output_limit\");"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-fixtures.json",
+            "ids": [
+              "answer_number_guard"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "旧测试的数字数量限制与 UTF-8 字节上限分别由 collector case 和实际 MAX_TEXT 边界更新验证。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_hard_errors_are_not_retryable",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "legacy_hard_http_failures_are_not_retryable_but_503_is",
+        "assertions": [
+          "assert_eq!(\n            failure.retryable, retryable,\n            \"HTTP {status} retryability matches the pinned ModelTrace contract\"\n        )",
+          "assert!(!model_test_stream::failure(0, &json!({\"error\":{\"message\":\"Concurrency limit exceeded for account, please retry later\"}})).retryable)"
+        ]
+      },
+      "coverage_note": "401、429与本地并发限制不可重试，明确503拒绝可重试。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_target_bypasses_account_model_mapping",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "actual_api_key_oauth_and_chat_targets_send_expected_http_payloads",
+        "assertions": [
+          "assert_eq!(api_key.model, \"gpt-6-luna\");",
+          "assert_eq!(api_payload[\"model\"], \"gpt-6-luna\");"
+        ]
+      },
+      "coverage_note": "数据库账号带有不同 model_mapping，真实构造并发送的目标仍是选定模型 gpt-6-luna。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace019:ModelTrace019Tests.test_oauth_target_uses_shared_codex_user_agent_and_version",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "actual_api_key_oauth_and_chat_targets_send_expected_http_payloads",
+        "assertions": [
+          "assert_eq!(\n        api_key.url,\n        format!(\"{}/v1/responses\", harness.upstream_url)\n    )",
+          "assert_eq!(api_key.model, \"gpt-6-luna\")",
+          "assert_eq!(api_key.protocol, \"responses\")",
+          "assert_eq!(\n        api_key.headers[header::AUTHORIZATION],\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(api_payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(api_payload[\"max_output_tokens\"], 4096)",
+          "assert_eq!(api_payload[\"stream\"], true)",
+          "assert_eq!(api_payload[\"store\"], false)",
+          "assert_eq!(api_payload[\"input\"][0][\"content\"][0][\"text\"], api_prompt)",
+          "assert!(api_payload.get(\"tools\").is_none())",
+          "assert!(api_payload.get(\"reasoning\").is_none())",
+          "assert!(api_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(api_payload.get(\"thinking\").is_none())",
+          "assert_eq!(\n        result.unwrap(),\n        (text.into(), Some(\"fixture-returned-model\".into()))\n    )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"responses\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 23)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 19)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 2)",
+          "assert_eq!(request.path, \"/v1/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(request.payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(request.payload[\"max_output_tokens\"], 4096)",
+          "assert!(\n            request.headers.get(name).is_none(),\n            \"API-key request has no OAuth {name} header\"\n        )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex_app/0.159.3 (macOS 15.6; arm64) iTerm (codex_app; 0.159.3)\")\n    )",
+          "assert_eq!(oauth.url, \"https://chatgpt.com/backend-api/codex/responses\")",
+          "assert_eq!(oauth.protocol, \"responses\")",
+          "assert!(oauth.oauth)",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"version\"),\n        Some(\"0.159.3\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"originator\"),\n        Some(\"codex_app\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"openai-beta\"),\n        Some(\"responses=experimental\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"chatgpt-account-id\"),\n        Some(format!(\"fixture-account-{oauth_id}\"))\n    )",
+          "assert!(header_text_from_target(&oauth, \"user-agent\")\n        .unwrap()\n        .contains(\"codex_app/0.159.3\"))",
+          "assert!(oauth_payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(oauth_payload[\"stream\"], true)",
+          "assert_eq!(result.unwrap().0, text)",
+          "assert_eq!(request.path, \"/backend-api/codex/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-access-token-{oauth_id}\")\n    )",
+          "assert!(request.payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT),\n        header_text_from_target(&oauth, \"user-agent\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex_app\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.159.3\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"openai-beta\")).as_deref(),\n        Some(\"responses=experimental\")\n    )",
+          "assert_eq!(\n        header_text(\n            request,\n            header::HeaderName::from_static(\"chatgpt-account-id\")\n        )\n        .as_deref(),\n        Some(account_header.as_str())\n    )",
+          "assert_eq!(\n        header_text_from_target(&legacy_oauth, \"user-agent\").as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex-tui\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.160.0\")\n    )",
+          "assert_eq!(chat.protocol, \"chat_completions\")",
+          "assert_eq!(\n        chat.url,\n        format!(\"{}/v1/chat/completions\", harness.upstream_url)\n    )",
+          "assert_eq!(chat_payload[\"max_completion_tokens\"], 4096)",
+          "assert!(chat_payload.get(\"max_output_tokens\").is_none())",
+          "assert!(chat_payload.get(\"tools\").is_none())",
+          "assert!(chat_payload.get(\"reasoning\").is_none())",
+          "assert!(chat_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(chat_payload.get(\"thinking\").is_none())",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"chat_completions\")",
+          "assert_eq!(request.path, \"/v1/chat/completions\")",
+          "assert_eq!(request.payload[\"max_completion_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"end_reason\"], \"done\")"
+        ]
+      },
+      "coverage_note": "实际 OAuth target 与 loopback request 共用当前 Codex identity 与 user-agent。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_concurrency_one_two_three_peaks_and_no_raw_content_in_summary",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "real_http_concurrency_one_two_three_matches_oracle_and_redacts_summary",
+        "assertions": [
+          "assert_eq!(\n            harness.state.active(),\n            peak_barrier,\n            \"all first {concurrency} HTTP requests should be held at the loopback gate\"\n        )",
+          "assert_eq!(harness.state.peak(), peak_barrier)",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"one HTTP request per planned group\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], 3)",
+          "assert!(\n            job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }),\n            \"each actual group records a first-text duration\"\n        )",
+          "assert_eq!(request_indexes, [0, 1, 2].into_iter().collect())",
+          "assert!(captured\n            .iter()\n            .all(|request| request.path == \"/v1/responses\"\n                && request.payload[\"model\"] == \"gpt-6-luna\"))",
+          "assert!(!persisted.contains(&outputs[0]))",
+          "assert!(!persisted.contains(\"fixture-api-key-\"))",
+          "assert!(!persisted.contains(\"input_text\"))",
+          "assert!(!persisted.contains(prompt))"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_report",
+            "assertions": [
+              "assert_eq!(actual[\"prediction\"], expected[\"prediction\"], \"{context}\")",
+              "assert_eq!(\n        actual[\"used_outputs\"], expected[\"used_outputs\"],\n        \"{context}\"\n    )",
+              "assert_eq!(\n        actual[\"bank_version\"], expected[\"bank_version\"],\n        \"{context}\"\n    )"
+            ]
+          },
+          {
+            "name": "assert_probability_close",
+            "assertions": [
+              "assert!(\n        (actual - expected).abs() <= 1.0e-12,\n        \"{context}: actual={actual:.17e}, expected={expected:.17e}\"\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 HTTP runtime 在并发1、2、3时逐轮验证峰值、三请求/三组和 pinned 三样本报告，并检查实际输出、凭据及捕获 prompt 未写入状态。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_retry_backoff_releases_request_slot",
+      "status": "superseded",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "uncertain_body_disconnect_is_not_replayed_and_cannot_be_manually_retried",
+        "assertions": [
+          "assert_eq!(harness.state.count(), 1);",
+          "assert_eq!(failed[\"uncertain\"], true);",
+          "assert_eq!(failed[\"attempts\"], 1);",
+          "assert_eq!(failed[\"can_retry\"], false);",
+          "assert_eq!(retry.status.as_u16(), 409);"
+        ]
+      },
+      "coverage_note": "旧网络错误退避并再次发送的断言由已批准的未知请求禁止重放契约取代。",
+      "replacement": {
+        "legacy_assertions": [
+          "network_error 被视为可重试，3个组运行中总请求数达到4，并再次调用首次失败的 prompt。",
+          "首次失败组的 attempts 最终为2。"
+        ],
+        "approved_requirement": "已派发请求先只读核对，无法确认的标记待核对，禁止重放未知测活、用卡及不可逆写入。",
+        "replacement_contract": "Loopback body reset 只发送一次；任务状态为 failed 且 uncertain=true、can_retry=false，手动 retry 返回409，延迟后请求数仍为1。"
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "definite_upstream_rejection_retries_only_failed_group_and_releases_slot",
+          "assertions": [
+            "assert_eq!(\n        harness.state.captured()[1].sample_index,\n        1,\n        \"the group slot is free while a definite rejection backs off\"\n    )",
+            "assert_eq!(harness.state.captured()[2].sample_index, 2)",
+            "assert_eq!(harness.state.count(), 4)",
+            "assert_eq!(indexes, [0, 1, 2, 0])",
+            "assert_eq!(job[\"status\"], \"completed\")",
+            "assert_eq!(job[\"attempts\"], 4)",
+            "assert_eq!(job[\"groups\"][0][\"attempts\"], 2)",
+            "assert_eq!(job[\"groups\"][1][\"attempts\"], 1)",
+            "assert_eq!(job[\"groups\"][2][\"attempts\"], 1)",
+            "assert_eq!(job[\"completed_groups\"], 3)",
+            "assert_eq!(job[\"can_retry\"], false)"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_cancel_stops_active_streams_and_waiting_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "cancellation_drains_streams_releases_shared_credential_lock_and_prevents_late_writes",
+        "assertions": [
+          "assert_eq!(\n        harness.state.count(),\n        3,\n        \"siblings cannot overlap one parent's credentials\"\n    )",
+          "assert_eq!(\n        harness.runtime.tests.get(&second_id).unwrap()[\"status\"],\n        \"queued\"\n    )",
+          "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+          "assert_eq!(second_job[\"status\"], \"completed\")",
+          "assert_eq!(harness.state.count(), 6)",
+          "assert_eq!(\n        harness.runtime.tests.get(&first_id).unwrap()[\"status\"],\n        \"cancelled\",\n        \"late terminal frames from aborted streams must not overwrite the cancel state\"\n    )"
+        ]
+      },
+      "coverage_note": "真实运行中取消活动流后，确认同凭据 sibling 排队任务可启动且迟到 terminal 不覆盖 cancelled 状态。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "cancellation_aborts_a_pending_retry_timer_without_late_dispatch",
+          "assertions": [
+            "assert_eq!(waiting[\"attempts\"], 1)",
+            "assert_eq!(harness.state.count(), 1)",
+            "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+            "assert_eq!(\n        harness.state.count(),\n        1,\n        \"the cancelled one-second retry timer cannot issue a second POST\"\n    )",
+            "assert_eq!(\n        harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n        \"cancelled\"\n    )"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_fatal_error_cancels_peers_without_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "fatal_401_and_429_cancel_dispatched_peers_without_retry",
+        "assertions": [
+          "assert_eq!(harness.state.active(), 3)",
+          "assert_eq!(job[\"status\"], \"failed\")",
+          "assert_eq!(job[\"error_code\"], expected_error)",
+          "assert_eq!(job[\"attempts\"], 3)",
+          "assert_eq!(harness.state.count(), 3)",
+          "assert_eq!(\n            job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .filter(|group| group[\"status\"] == \"failed\")\n                .count(),\n            1\n        )",
+          "assert_eq!(\n            job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .filter(|group| group[\"status\"] == \"cancelled\")\n                .count(),\n            2\n        )",
+          "assert_eq!(harness.state.count(), 3, \"fatal peers are never retried\")",
+          "assert_eq!(\n            harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n            \"failed\"\n        )"
+        ]
+      },
+      "coverage_note": "实际 401/429 在三个并发请求中触发 fatal，中止另外两组且不重试。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_cancel_drains_pending_progress_write_before_terminal_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "cancellation_during_predispatch_write_sends_no_request_and_finishes_all_groups",
+        "assertions": [
+          "assert_eq!(started[\"status\"], \"queued\")",
+          "assert_eq!(harness.state.count(), 0)",
+          "assert!(\n        explicitly_released,\n        \"the injected write lock must drain before its watchdog\"\n    )",
+          "assert!(pending, \"cancellation waits for the pending dispatch write\")",
+          "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+          "assert!(cancelled[\"groups\"]\n        .as_array()\n        .unwrap()\n        .iter()\n        .all(|group| group[\"status\"] == \"cancelled\"))",
+          "assert_eq!(\n        harness.state.count(),\n        0,\n        \"a cancelled dispatch cannot send any upstream request\"\n    )",
+          "assert_eq!(\n        harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n        \"cancelled\"\n    )"
+        ]
+      },
+      "coverage_note": "真实文件锁阻塞派发前写入，取消等待排空后全部分组 cancelled 且上游零请求；补充流中进度写入的终态保护。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "cancellation_waits_for_pending_progress_write_before_terminal_state",
+          "assertions": [
+            "assert!(\n        explicitly_released,\n        \"the injected file lock must release before the watchdog\"\n    )",
+            "assert!(\n        pending,\n        \"cancel waits while the already-started synchronous progress write owns the job\"\n    )",
+            "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+            "assert_eq!(\n        harness.runtime.tests.get(&job_id).unwrap()[\"status\"],\n        \"cancelled\",\n        \"the drained progress write cannot replace the terminal cancellation\"\n    )",
+            "assert!(\n        cancelled[\"groups\"].as_array().unwrap().iter().all(|group| {\n            !matches!(\n                group[\"status\"].as_str(),\n                Some(\"queued\" | \"running\" | \"receiving\" | \"retrying\" | \"analyzing\")\n            )\n        }),\n        \"all uncompleted groups become terminal when the task is cancelled\"\n    )"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_progress_write_freezes_nested_diagnostics_before_background_update",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "first_text_progress_diagnostics_are_frozen_before_later_stream_events",
+        "assertions": [
+          "assert_eq!(first_snapshot[\"diagnostics\"][\"events\"], 1)",
+          "assert_eq!(\n        first_snapshot[\"diagnostics\"][\"last_event_type\"],\n        \"response.output_text.delta\"\n    )",
+          "assert_eq!(final_diagnostics[\"diagnostics\"][\"events\"], 2)",
+          "assert_eq!(\n        final_diagnostics[\"diagnostics\"][\"last_event_type\"],\n        \"response.completed\"\n    )",
+          "assert_eq!(\n        first_snapshot[\"diagnostics\"][\"last_event_type\"], \"response.output_text.delta\",\n        \"the earlier nested progress snapshot does not acquire later diagnostic fields\"\n    )"
+        ]
+      },
+      "coverage_note": "保存第一条 delta 的嵌套诊断快照；流完成后的诊断增加事件，早期快照保持原事件数和类型。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_invalid_completed_sample_is_not_retried_and_idempotency_binds_concurrency",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "invalid_completed_outputs_are_not_retried_and_idempotency_binds_concurrency",
+        "assertions": [
+          "assert_eq!(harness.state.count(), 3,\n        \"invalid completed output is not re-dispatched\");",
+          "assert_eq!(job[\"valid_groups\"], 0);",
+          "assert_eq!(conflict.status.as_u16(), 409);",
+          "assert_eq!(harness.state.count(), 3);"
+        ]
+      },
+      "coverage_note": "无效 completed output 每组仅发送一次；同一 request id 改并发度返回409且没有追加请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_manual_schedule_and_passive_quota_updates_do_not_change_pinned_target",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "manual_schedulability_and_passive_quota_changes_do_not_change_the_live_target",
+        "assertions": [
+          "sqlx::query(\"UPDATE accounts SET schedulable=false,extra=$1,updated_at=now() WHERE id=$2\")",
+          "assert_eq!(job[\"attempts\"], 3);",
+          "assert_report(\n        &job[\"report\"],\n        &fixture[\"prefix_reports\"][2],"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.below_99.prefix_reports"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "在真实 SQL 中改变 schedulable 和 quota 后，已启动的三组任务仍完成并与 pinned 目标报告一致。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_small_completion_frame_returns_without_waiting_for_four_kib_or_eof",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "responses_sse_event_names_multiline_crlf_eof_and_small_terminal_frames",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, \"1,2,3\")",
+          "assert_eq!(diagnostics[\"end_reason\"], \"completed\")",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"responses\")",
+          "assert_eq!(result.unwrap(), (\"1 1 \".into(), Some(\"actual\".into())))",
+          "assert_eq!(diagnostics[\"events\"], 2)",
+          "assert_eq!(\n        diagnostics[\"first_event_type\"],\n        \"response.output_text.delta\"\n    )",
+          "assert_eq!(diagnostics[\"last_event_type\"], \"response.completed\")",
+          "assert!(\n        started.elapsed() < Duration::from_millis(500),\n        \"small terminal does not wait for four KiB or stream EOF\"\n    )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert!(\n            request.payload.get(field).is_none(),\n            \"OAuth request omits {field}\"\n        )"
+        ]
+      },
+      "coverage_note": "小型 completed SSE frame 在响应体保持 pending 时仍能返回，不依赖 EOF。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace022:ModelConcurrencyTests.test_actual_http_three_samples_obey_requested_peak_and_target",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "real_http_concurrency_one_two_three_matches_oracle_and_redacts_summary",
+        "assertions": [
+          "assert_eq!(\n            harness.state.active(),\n            peak_barrier,\n            \"all first {concurrency} HTTP requests should be held at the loopback gate\"\n        )",
+          "assert_eq!(harness.state.peak(), peak_barrier)",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"one HTTP request per planned group\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], 3)",
+          "assert!(\n            job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }),\n            \"each actual group records a first-text duration\"\n        )",
+          "assert_eq!(request_indexes, [0, 1, 2].into_iter().collect())",
+          "assert!(captured\n            .iter()\n            .all(|request| request.path == \"/v1/responses\"\n                && request.payload[\"model\"] == \"gpt-6-luna\"))",
+          "assert!(!persisted.contains(&outputs[0]))",
+          "assert!(!persisted.contains(\"fixture-api-key-\"))",
+          "assert!(!persisted.contains(\"input_text\"))",
+          "assert!(!persisted.contains(prompt))"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_report",
+            "assertions": [
+              "assert_eq!(actual[\"prediction\"], expected[\"prediction\"], \"{context}\")",
+              "assert_eq!(\n        actual[\"used_outputs\"], expected[\"used_outputs\"],\n        \"{context}\"\n    )",
+              "assert_eq!(\n        actual[\"bank_version\"], expected[\"bank_version\"],\n        \"{context}\"\n    )"
+            ]
+          },
+          {
+            "name": "assert_probability_close",
+            "assertions": [
+              "assert!(\n        (actual - expected).abs() <= 1.0e-12,\n        \"{context}: actual={actual:.17e}, expected={expected:.17e}\"\n    )"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 loopback 请求核对 peak 1/2/3、三条唯一 challenge、target path 和 model。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_actual_key_and_oauth_headers_and_complete_json",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "actual_api_key_oauth_and_chat_targets_send_expected_http_payloads",
+        "assertions": [
+          "assert_eq!(\n        api_key.url,\n        format!(\"{}/v1/responses\", harness.upstream_url)\n    )",
+          "assert_eq!(api_key.model, \"gpt-6-luna\")",
+          "assert_eq!(api_key.protocol, \"responses\")",
+          "assert_eq!(\n        api_key.headers[header::AUTHORIZATION],\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(api_payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(api_payload[\"max_output_tokens\"], 4096)",
+          "assert_eq!(api_payload[\"stream\"], true)",
+          "assert_eq!(api_payload[\"store\"], false)",
+          "assert_eq!(api_payload[\"input\"][0][\"content\"][0][\"text\"], api_prompt)",
+          "assert!(api_payload.get(\"tools\").is_none())",
+          "assert!(api_payload.get(\"reasoning\").is_none())",
+          "assert!(api_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(api_payload.get(\"thinking\").is_none())",
+          "assert_eq!(\n        result.unwrap(),\n        (text.into(), Some(\"fixture-returned-model\".into()))\n    )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"responses\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 23)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 19)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 2)",
+          "assert_eq!(request.path, \"/v1/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(request.payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(request.payload[\"max_output_tokens\"], 4096)",
+          "assert!(\n            request.headers.get(name).is_none(),\n            \"API-key request has no OAuth {name} header\"\n        )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex_app/0.159.3 (macOS 15.6; arm64) iTerm (codex_app; 0.159.3)\")\n    )",
+          "assert_eq!(oauth.url, \"https://chatgpt.com/backend-api/codex/responses\")",
+          "assert_eq!(oauth.protocol, \"responses\")",
+          "assert!(oauth.oauth)",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"version\"),\n        Some(\"0.159.3\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"originator\"),\n        Some(\"codex_app\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"openai-beta\"),\n        Some(\"responses=experimental\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"chatgpt-account-id\"),\n        Some(format!(\"fixture-account-{oauth_id}\"))\n    )",
+          "assert!(header_text_from_target(&oauth, \"user-agent\")\n        .unwrap()\n        .contains(\"codex_app/0.159.3\"))",
+          "assert!(oauth_payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(oauth_payload[\"stream\"], true)",
+          "assert_eq!(result.unwrap().0, text)",
+          "assert_eq!(request.path, \"/backend-api/codex/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-access-token-{oauth_id}\")\n    )",
+          "assert!(request.payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT),\n        header_text_from_target(&oauth, \"user-agent\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex_app\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.159.3\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"openai-beta\")).as_deref(),\n        Some(\"responses=experimental\")\n    )",
+          "assert_eq!(\n        header_text(\n            request,\n            header::HeaderName::from_static(\"chatgpt-account-id\")\n        )\n        .as_deref(),\n        Some(account_header.as_str())\n    )",
+          "assert_eq!(\n        header_text_from_target(&legacy_oauth, \"user-agent\").as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex-tui\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.160.0\")\n    )",
+          "assert_eq!(chat.protocol, \"chat_completions\")",
+          "assert_eq!(\n        chat.url,\n        format!(\"{}/v1/chat/completions\", harness.upstream_url)\n    )",
+          "assert_eq!(chat_payload[\"max_completion_tokens\"], 4096)",
+          "assert!(chat_payload.get(\"max_output_tokens\").is_none())",
+          "assert!(chat_payload.get(\"tools\").is_none())",
+          "assert!(chat_payload.get(\"reasoning\").is_none())",
+          "assert!(chat_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(chat_payload.get(\"thinking\").is_none())",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"chat_completions\")",
+          "assert_eq!(request.path, \"/v1/chat/completions\")",
+          "assert_eq!(request.payload[\"max_completion_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"end_reason\"], \"done\")"
+        ]
+      },
+      "coverage_note": "真实 API key 与 OAuth loopback request 都解析完整 JSON response，并比较凭据和 OAuth user-agent。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_chat_selection_json_and_sse_end_frames",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "actual_api_key_oauth_and_chat_targets_send_expected_http_payloads",
+        "assertions": [
+          "assert_eq!(\n        api_key.url,\n        format!(\"{}/v1/responses\", harness.upstream_url)\n    )",
+          "assert_eq!(api_key.model, \"gpt-6-luna\")",
+          "assert_eq!(api_key.protocol, \"responses\")",
+          "assert_eq!(\n        api_key.headers[header::AUTHORIZATION],\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(api_payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(api_payload[\"max_output_tokens\"], 4096)",
+          "assert_eq!(api_payload[\"stream\"], true)",
+          "assert_eq!(api_payload[\"store\"], false)",
+          "assert_eq!(api_payload[\"input\"][0][\"content\"][0][\"text\"], api_prompt)",
+          "assert!(api_payload.get(\"tools\").is_none())",
+          "assert!(api_payload.get(\"reasoning\").is_none())",
+          "assert!(api_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(api_payload.get(\"thinking\").is_none())",
+          "assert_eq!(\n        result.unwrap(),\n        (text.into(), Some(\"fixture-returned-model\".into()))\n    )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"responses\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 23)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 19)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 2)",
+          "assert_eq!(request.path, \"/v1/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-api-key-{api_key_id}\")\n    )",
+          "assert_eq!(request.payload[\"model\"], \"gpt-6-luna\")",
+          "assert_eq!(request.payload[\"max_output_tokens\"], 4096)",
+          "assert!(\n            request.headers.get(name).is_none(),\n            \"API-key request has no OAuth {name} header\"\n        )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex_app/0.159.3 (macOS 15.6; arm64) iTerm (codex_app; 0.159.3)\")\n    )",
+          "assert_eq!(oauth.url, \"https://chatgpt.com/backend-api/codex/responses\")",
+          "assert_eq!(oauth.protocol, \"responses\")",
+          "assert!(oauth.oauth)",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"version\"),\n        Some(\"0.159.3\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"originator\"),\n        Some(\"codex_app\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"openai-beta\"),\n        Some(\"responses=experimental\".into())\n    )",
+          "assert_eq!(\n        header_text_from_target(&oauth, \"chatgpt-account-id\"),\n        Some(format!(\"fixture-account-{oauth_id}\"))\n    )",
+          "assert!(header_text_from_target(&oauth, \"user-agent\")\n        .unwrap()\n        .contains(\"codex_app/0.159.3\"))",
+          "assert!(oauth_payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(oauth_payload[\"stream\"], true)",
+          "assert_eq!(result.unwrap().0, text)",
+          "assert_eq!(request.path, \"/backend-api/codex/responses\")",
+          "assert_eq!(\n        auth_header(request),\n        format!(\"Bearer fixture-access-token-{oauth_id}\")\n    )",
+          "assert!(request.payload.get(\"max_output_tokens\").is_none())",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT),\n        header_text_from_target(&oauth, \"user-agent\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex_app\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.159.3\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"openai-beta\")).as_deref(),\n        Some(\"responses=experimental\")\n    )",
+          "assert_eq!(\n        header_text(\n            request,\n            header::HeaderName::from_static(\"chatgpt-account-id\")\n        )\n        .as_deref(),\n        Some(account_header.as_str())\n    )",
+          "assert_eq!(\n        header_text_from_target(&legacy_oauth, \"user-agent\").as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::USER_AGENT).as_deref(),\n        Some(\"codex-tui/0.160.0 (macOS 15.6; arm64) iTerm2 (codex-tui; 0.160.0)\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"originator\")).as_deref(),\n        Some(\"codex-tui\")\n    )",
+          "assert_eq!(\n        header_text(request, header::HeaderName::from_static(\"version\")).as_deref(),\n        Some(\"0.160.0\")\n    )",
+          "assert_eq!(chat.protocol, \"chat_completions\")",
+          "assert_eq!(\n        chat.url,\n        format!(\"{}/v1/chat/completions\", harness.upstream_url)\n    )",
+          "assert_eq!(chat_payload[\"max_completion_tokens\"], 4096)",
+          "assert!(chat_payload.get(\"max_output_tokens\").is_none())",
+          "assert!(chat_payload.get(\"tools\").is_none())",
+          "assert!(chat_payload.get(\"reasoning\").is_none())",
+          "assert!(chat_payload.get(\"reasoning_effort\").is_none())",
+          "assert!(chat_payload.get(\"thinking\").is_none())",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"chat_completions\")",
+          "assert_eq!(request.path, \"/v1/chat/completions\")",
+          "assert_eq!(request.payload[\"max_completion_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"end_reason\"], \"done\")"
+        ]
+      },
+      "coverage_note": "chat-completions selection、JSON body、SSE done terminal 和结果文本均经 loopback 执行。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_event_name_multiline_crlf_and_final_frame_without_blank",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "responses_sse_event_names_multiline_crlf_eof_and_small_terminal_frames",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, \"1,2,3\")",
+          "assert_eq!(diagnostics[\"end_reason\"], \"completed\")",
+          "assert_eq!(diagnostics[\"response_protocol\"], \"responses\")",
+          "assert_eq!(result.unwrap(), (\"1 1 \".into(), Some(\"actual\".into())))",
+          "assert_eq!(diagnostics[\"events\"], 2)",
+          "assert_eq!(\n        diagnostics[\"first_event_type\"],\n        \"response.output_text.delta\"\n    )",
+          "assert_eq!(diagnostics[\"last_event_type\"], \"response.completed\")",
+          "assert!(\n        started.elapsed() < Duration::from_millis(500),\n        \"small terminal does not wait for four KiB or stream EOF\"\n    )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert!(\n            request.payload.get(field).is_none(),\n            \"OAuth request omits {field}\"\n        )"
+        ]
+      },
+      "coverage_note": "SSE multiline data 使用 CRLF 且 terminal frame 以 EOF 结束时仍可解析。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_unknown_is_not_incomplete_and_200_error_is_fatal",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "provider_token_and_filter_terminals_keep_samples_but_unknown_is_not_success",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, text, \"{reason} sse={sse}\")",
+          "assert_eq!(harness.state.count(), 1, \"{reason} sse={sse}\")",
+          "assert_eq!(diagnostics[\"end_reason\"], reason)",
+          "assert_eq!(diagnostics[\"incomplete_reason\"], reason)",
+          "assert_eq!(diagnostics[\"provider_status\"], \"incomplete\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 120)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 3890)",
+          "assert_eq!(diagnostics[\"max_output_tokens\"], 4096)",
+          "assert_eq!(\n                diagnostics[\"last_event_type\"],\n                if sse {\n                    \"response.incomplete\"\n                } else {\n                    \"response\"\n                }\n            )",
+          "assert!(!serialized.contains(text), \"diagnostics omit the sample\")",
+          "assert!(\n                !serialized.contains(&prompt),\n                \"diagnostics omit the challenge\"\n            )",
+          "assert!(\n                !serialized.contains(\"fixture-api-key-\"),\n                \"diagnostics omit the credential\"\n            )",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"a provider token terminal uses three requests, not nine\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"attempts\"], 3)",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], expected_valid)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert!(job[\"groups\"].as_array().unwrap().iter().all(|group| {\n            group[\"attempts\"] == 1 && group[\"diagnostics\"][\"end_reason\"] == \"max_output_tokens\"\n        }))",
+          "assert!(job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }))",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(unknown[\"status\"], \"failed\")",
+          "assert_eq!(unknown[\"error_code\"], \"incomplete_response\")",
+          "assert_eq!(unknown[\"attempts\"], 1)",
+          "assert_eq!(unknown[\"can_retry\"], false)",
+          "assert_eq!(failure.code, \"incomplete_stream\")",
+          "assert_eq!(failure.retryable, true)",
+          "assert_eq!(failure.code, expected_code)",
+          "assert_eq!(failure.retryable, false)"
+        ]
+      },
+      "coverage_note": "固定 transport cases 区分未知协议、HTTP auth error 和缺少 terminal 的 SSE stream。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_partial_integer_and_final_count_do_not_trigger_stream_guard",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_contract.rs",
+        "test_name": "stream_failure_and_collector_projection_match_pinned_python",
+        "assertions": [
+          "assert_eq!(projection, case[\"expected\"], \"collector case {}\", case[\"id\"]);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-fixtures.json",
+            "ids": [
+              "answer_number_guard",
+              "whole_chat_json"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "collector fixture 同时核对超过预期数字数量的 stream guard 与 whole JSON 完成文本投影。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Transport023Tests.test_native_identity_pairing_and_version_validation",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "legacy_native_identity_pairing_and_version_validation_are_preserved",
+        "assertions": [
+          "assert_eq!(version, \"0.160.1-beta.2\")",
+          "assert_eq!(\n        model_target::originator(agent.split('/').next().unwrap()),\n        Some(\"codex-tui\".into())\n    )",
+          "assert_eq!(\n        agent,\n        \"codex-tui/0.160.1-beta.2 (Linux; x86_64) term (codex-tui; 0.160.1-beta.2)\"\n    )",
+          "assert!(!agent.contains(\"bad/\"))"
+        ]
+      },
+      "coverage_note": "复现0.160.1-beta.2与bad/输入，核对规范化后的完整原生user-agent。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Execution023Tests.test_conflicted_task_can_be_cancelled_without_another_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "stale_conflicted_job_can_be_cancelled_without_a_provider_request",
+        "assertions": [
+          "assert_eq!(started[\"status\"], \"needs_confirmation\");",
+          "assert_eq!(cancelled[\"status\"], \"cancelled\");",
+          "assert_eq!(harness.state.count(), 0);"
+        ]
+      },
+      "coverage_note": "stale expected_version 进入 needs_confirmation 后可取消且不发送 provider request。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Execution023Tests.test_99_boundary_uses_unrounded_value",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "raw_99_boundary_early_stream_cancellation_and_automatic_first_group_match_oracle",
+        "assertions": [
+          "assert!(below[\"prefix_reports\"][0][\"probability\"].as_f64().unwrap() < 0.99);",
+          "assert_eq!(below[\"display_probability_2dp\"], 0.99);",
+          "assert_eq!(early_job[\"completion_reason\"], \"confidence_99\");"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.below_99.prefix_reports",
+              "modeltrace_runtime.above_99.prefix_reports"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 Runtime 分析 pinned 的低于99%但显示四舍五入为0.99和实际达到99%的样本，按未舍入 probability 决策。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Execution023Tests.test_early_finish_cancels_other_active_streams",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "raw_99_boundary_early_stream_cancellation_and_automatic_first_group_match_oracle",
+        "assertions": [
+          "assert_eq!(harness.state.active(), 3);",
+          "assert_eq!(early_job[\"completed_groups\"], 1);",
+          "assert_eq!(\n        early_groups\n            .iter()\n            .filter(|group| group[\"status\"] == \"completed\")\n            .count(),\n        1",
+          "assert_eq!(\n        harness.runtime.tests.get(&early_id).unwrap(),\n        terminal_snapshot"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/modeltrace-runtime/fixtures.json",
+            "json_paths": [
+              "modeltrace_runtime.above_99.outputs",
+              "modeltrace_runtime.above_99.prefix_reports"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "三条真实 active stream 中一个达到 raw 99% 后结束任务，其余组跳过或取消且迟到 terminal 不覆盖终态。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Execution023Tests.test_retryable_group_isolated_and_successful_groups_not_resent",
+      "status": "superseded",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "uncertain_body_disconnect_is_not_replayed_and_cannot_be_manually_retried",
+        "assertions": [
+          "assert_eq!(harness.state.count(), 1);",
+          "assert_eq!(failed[\"error_code\"], \"network_error\");",
+          "assert_eq!(failed[\"uncertain\"], true);",
+          "assert_eq!(failed[\"can_retry\"], false);"
+        ]
+      },
+      "coverage_note": "舊 incomplete_stream 自動與手動重放要求被已批准的未知请求禁止重放契约取代；Rust 通过 loopback body reset 验证 unknown failure 只派发一次。",
+      "replacement": {
+        "legacy_assertions": [
+          "首次 incomplete_stream 后自动重试失败组，保留两个成功组不重发；显式 retry 后仅再次调用原失败 prompt。",
+          "显式 retry 的重复 request id 不新增网络调用。"
+        ],
+        "approved_requirement": "已派发请求先只读核对，无法确认的标记待核对，禁止重放未知测活、用卡及不可逆写入。",
+        "replacement_contract": "请求 body 中断后结果标记 uncertain、failed、can_retry=false，loopback 只观察到一次 POST，手动 retry 返回409；无迟到自动 replay。"
+      },
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "definite_upstream_rejection_retries_only_failed_group_and_releases_slot",
+          "assertions": [
+            "assert_eq!(\n        harness.state.captured()[1].sample_index,\n        1,\n        \"the group slot is free while a definite rejection backs off\"\n    )",
+            "assert_eq!(harness.state.captured()[2].sample_index, 2)",
+            "assert_eq!(harness.state.count(), 4)",
+            "assert_eq!(indexes, [0, 1, 2, 0])",
+            "assert_eq!(job[\"status\"], \"completed\")",
+            "assert_eq!(job[\"attempts\"], 4)",
+            "assert_eq!(job[\"groups\"][0][\"attempts\"], 2)",
+            "assert_eq!(job[\"groups\"][1][\"attempts\"], 1)",
+            "assert_eq!(job[\"groups\"][2][\"attempts\"], 1)",
+            "assert_eq!(job[\"completed_groups\"], 3)",
+            "assert_eq!(job[\"can_retry\"], false)"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace023:Execution023Tests.test_global_two_jobs_and_same_credential_scope_wait",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "model_tests_allow_two_global_jobs_and_queue_the_third_independent_account",
+        "assertions": [
+          "assert_eq!(\n        harness.state.count(),\n        6,\n        \"the third independent job cannot exceed the global two-job cap\"\n    )",
+          "assert_eq!(\n        harness.runtime.tests.get(&third_id).unwrap()[\"status\"],\n        \"queued\"\n    )",
+          "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+          "assert_eq!(second_job[\"status\"], \"completed\")",
+          "assert_eq!(third_job[\"status\"], \"completed\")",
+          "assert_eq!(harness.state.count(), 9)",
+          "assert_eq!(\n        harness.runtime.tests.get(&first_id).unwrap()[\"status\"],\n        \"cancelled\"\n    )"
+        ]
+      },
+      "coverage_note": "两条不同凭据的 Runtime job 实际发出6个请求；第三个独立账号 queued，global cap 为2。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "cancellation_drains_streams_releases_shared_credential_lock_and_prevents_late_writes",
+          "assertions": [
+            "assert_eq!(\n        harness.state.count(),\n        3,\n        \"siblings cannot overlap one parent's credentials\"\n    )",
+            "assert_eq!(\n        harness.runtime.tests.get(&second_id).unwrap()[\"status\"],\n        \"queued\"\n    )",
+            "assert_eq!(cancelled[\"status\"], \"cancelled\")",
+            "assert_eq!(second_job[\"status\"], \"completed\")",
+            "assert_eq!(harness.state.count(), 6)",
+            "assert_eq!(\n        harness.runtime.tests.get(&first_id).unwrap()[\"status\"],\n        \"cancelled\",\n        \"late terminal frames from aborted streams must not overwrite the cancel state\"\n    )"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace024:TerminalHTTPTests.test_provider_budget_and_filter_terminal_keep_partial_samples",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "provider_token_and_filter_terminals_keep_samples_but_unknown_is_not_success",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, text, \"{reason} sse={sse}\")",
+          "assert_eq!(harness.state.count(), 1, \"{reason} sse={sse}\")",
+          "assert_eq!(diagnostics[\"end_reason\"], reason)",
+          "assert_eq!(diagnostics[\"incomplete_reason\"], reason)",
+          "assert_eq!(diagnostics[\"provider_status\"], \"incomplete\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 120)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 3890)",
+          "assert_eq!(diagnostics[\"max_output_tokens\"], 4096)",
+          "assert_eq!(\n                diagnostics[\"last_event_type\"],\n                if sse {\n                    \"response.incomplete\"\n                } else {\n                    \"response\"\n                }\n            )",
+          "assert!(!serialized.contains(text), \"diagnostics omit the sample\")",
+          "assert!(\n                !serialized.contains(&prompt),\n                \"diagnostics omit the challenge\"\n            )",
+          "assert!(\n                !serialized.contains(\"fixture-api-key-\"),\n                \"diagnostics omit the credential\"\n            )",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"a provider token terminal uses three requests, not nine\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"attempts\"], 3)",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], expected_valid)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert!(job[\"groups\"].as_array().unwrap().iter().all(|group| {\n            group[\"attempts\"] == 1 && group[\"diagnostics\"][\"end_reason\"] == \"max_output_tokens\"\n        }))",
+          "assert!(job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }))",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(unknown[\"status\"], \"failed\")",
+          "assert_eq!(unknown[\"error_code\"], \"incomplete_response\")",
+          "assert_eq!(unknown[\"attempts\"], 1)",
+          "assert_eq!(unknown[\"can_retry\"], false)",
+          "assert_eq!(failure.code, \"incomplete_stream\")",
+          "assert_eq!(failure.retryable, true)",
+          "assert_eq!(failure.code, expected_code)",
+          "assert_eq!(failure.retryable, false)"
+        ]
+      },
+      "coverage_note": "Responses JSON/SSE provider budget与 filter terminal 保留 partial output 和 usage diagnostics。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace024:TerminalHTTPTests.test_unknown_terminal_is_distinct_from_retryable_disconnection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "provider_token_and_filter_terminals_keep_samples_but_unknown_is_not_success",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, text, \"{reason} sse={sse}\")",
+          "assert_eq!(harness.state.count(), 1, \"{reason} sse={sse}\")",
+          "assert_eq!(diagnostics[\"end_reason\"], reason)",
+          "assert_eq!(diagnostics[\"incomplete_reason\"], reason)",
+          "assert_eq!(diagnostics[\"provider_status\"], \"incomplete\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 120)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 3890)",
+          "assert_eq!(diagnostics[\"max_output_tokens\"], 4096)",
+          "assert_eq!(\n                diagnostics[\"last_event_type\"],\n                if sse {\n                    \"response.incomplete\"\n                } else {\n                    \"response\"\n                }\n            )",
+          "assert!(!serialized.contains(text), \"diagnostics omit the sample\")",
+          "assert!(\n                !serialized.contains(&prompt),\n                \"diagnostics omit the challenge\"\n            )",
+          "assert!(\n                !serialized.contains(\"fixture-api-key-\"),\n                \"diagnostics omit the credential\"\n            )",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"a provider token terminal uses three requests, not nine\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"attempts\"], 3)",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], expected_valid)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert!(job[\"groups\"].as_array().unwrap().iter().all(|group| {\n            group[\"attempts\"] == 1 && group[\"diagnostics\"][\"end_reason\"] == \"max_output_tokens\"\n        }))",
+          "assert!(job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }))",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(unknown[\"status\"], \"failed\")",
+          "assert_eq!(unknown[\"error_code\"], \"incomplete_response\")",
+          "assert_eq!(unknown[\"attempts\"], 1)",
+          "assert_eq!(unknown[\"can_retry\"], false)",
+          "assert_eq!(failure.code, \"incomplete_stream\")",
+          "assert_eq!(failure.retryable, true)",
+          "assert_eq!(failure.code, expected_code)",
+          "assert_eq!(failure.retryable, false)"
+        ]
+      },
+      "coverage_note": "unknown incomplete terminal 在真实 ModelTests 中是失败，不被记为成功组且不可重试。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/modeltrace_runtime_parity.rs",
+          "test_name": "uncertain_body_disconnect_is_not_replayed_and_cannot_be_manually_retried",
+          "assertions": [
+            "assert_eq!(harness.state.count(), 1)",
+            "assert_eq!(failed[\"status\"], \"failed\")",
+            "assert_eq!(failed[\"error_code\"], \"network_error\")",
+            "assert_eq!(failed[\"uncertain\"], true)",
+            "assert_eq!(failed[\"can_retry\"], false)",
+            "assert_eq!(failed[\"attempts\"], 1)",
+            "assert_eq!(failed[\"groups\"][0][\"uncertain\"], true)",
+            "assert_eq!(retry.status.as_u16(), 409)",
+            "assert_eq!(\n        harness.state.count(),\n        1,\n        \"no delayed automatic replay after uncertain failure\"\n    )"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace024:TerminalHTTPTests.test_actual_payload_budget_and_terminal_diagnostics_for_both_protocols",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "actual_payload_budget_and_terminal_diagnostics_match_both_protocols",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, text)",
+          "assert_eq!(diagnostics[\"end_reason\"], \"max_output_tokens\")",
+          "assert_eq!(diagnostics[\"first_event_type\"], \"response.created\")",
+          "assert_eq!(diagnostics[\"last_event_type\"], \"response.completed\")",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 3890)",
+          "assert_eq!(diagnostics[\"events\"], 2)",
+          "assert_eq!(request.payload[\"max_output_tokens\"], 4096)",
+          "assert!(\n            request.payload.get(field).is_none(),\n            \"Responses omits {field}\"\n        )",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(chat.protocol, \"chat_completions\")",
+          "assert_eq!(diagnostics[\"end_reason\"], \"length\")",
+          "assert_eq!(diagnostics[\"first_event_type\"], \"chat.completion\")",
+          "assert_eq!(diagnostics[\"last_event_type\"], \"chat.completion\")",
+          "assert_eq!(diagnostics[\"events\"], 1)",
+          "assert_eq!(request.payload[\"max_completion_tokens\"], 4096)",
+          "assert!(request.payload.get(field).is_none(), \"Chat omits {field}\")"
+        ]
+      },
+      "coverage_note": "实际 Responses/Chat target 分别构造正确 token budget，并检查工具/推理参数缺省。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_modeltrace024:TerminalTaskHTTPTests.test_explicit_token_terminal_uses_three_requests_not_nine",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/modeltrace_runtime_parity.rs",
+        "test_name": "provider_token_and_filter_terminals_keep_samples_but_unknown_is_not_success",
+        "assertions": [
+          "assert_eq!(result.unwrap().0, text, \"{reason} sse={sse}\")",
+          "assert_eq!(harness.state.count(), 1, \"{reason} sse={sse}\")",
+          "assert_eq!(diagnostics[\"end_reason\"], reason)",
+          "assert_eq!(diagnostics[\"incomplete_reason\"], reason)",
+          "assert_eq!(diagnostics[\"provider_status\"], \"incomplete\")",
+          "assert_eq!(diagnostics[\"input_tokens\"], 120)",
+          "assert_eq!(diagnostics[\"output_tokens\"], 4096)",
+          "assert_eq!(diagnostics[\"reasoning_tokens\"], 3890)",
+          "assert_eq!(diagnostics[\"max_output_tokens\"], 4096)",
+          "assert_eq!(\n                diagnostics[\"last_event_type\"],\n                if sse {\n                    \"response.incomplete\"\n                } else {\n                    \"response\"\n                }\n            )",
+          "assert!(!serialized.contains(text), \"diagnostics omit the sample\")",
+          "assert!(\n                !serialized.contains(&prompt),\n                \"diagnostics omit the challenge\"\n            )",
+          "assert!(\n                !serialized.contains(\"fixture-api-key-\"),\n                \"diagnostics omit the credential\"\n            )",
+          "assert_eq!(\n            harness.state.count(),\n            3,\n            \"a provider token terminal uses three requests, not nine\"\n        )",
+          "assert_eq!(job[\"status\"], \"completed\")",
+          "assert_eq!(job[\"attempts\"], 3)",
+          "assert_eq!(job[\"completed_groups\"], 3)",
+          "assert_eq!(job[\"valid_groups\"], expected_valid)",
+          "assert_eq!(job[\"can_retry\"], false)",
+          "assert!(job[\"groups\"].as_array().unwrap().iter().all(|group| {\n            group[\"attempts\"] == 1 && group[\"diagnostics\"][\"end_reason\"] == \"max_output_tokens\"\n        }))",
+          "assert!(job[\"groups\"]\n                .as_array()\n                .unwrap()\n                .iter()\n                .all(|group| { group[\"ttft_ms\"].as_u64().is_some() }))",
+          "assert_eq!(harness.state.count(), 1)",
+          "assert_eq!(unknown[\"status\"], \"failed\")",
+          "assert_eq!(unknown[\"error_code\"], \"incomplete_response\")",
+          "assert_eq!(unknown[\"attempts\"], 1)",
+          "assert_eq!(unknown[\"can_retry\"], false)",
+          "assert_eq!(failure.code, \"incomplete_stream\")",
+          "assert_eq!(failure.retryable, true)",
+          "assert_eq!(failure.code, expected_code)",
+          "assert_eq!(failure.retryable, false)"
+        ]
+      },
+      "coverage_note": "max_output_tokens incomplete terminal 每组仅发送一次，共3请求而不是9次。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank:FingerprintBankTests.test_success_is_cached_and_hourly_check_is_gated",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "remote_update_public_contract_hourly_gate_and_restart_cache_match_pinned_behavior",
+        "assertions": [
+          "assert_eq!(public[\"source\"], \"remote\")",
+          "assert_eq!(public[\"status\"], \"idle\")",
+          "assert_eq!(public[\"result\"], \"updated\")",
+          "assert_eq!(public[\"error\"], Value::Null)",
+          "assert_eq!(public[\"checked_at\"], 1000.0)",
+          "assert_eq!(public[\"synced_at\"], 1000.0)",
+          "assert_eq!(public[\"cooldown_until\"], Value::Null)",
+          "assert_eq!(public[\"retrieval\"], \"api_tree\")",
+          "assert_eq!(public[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(\n        transport\n            .calls()\n            .iter()\n            .map(|call| call.accept.as_str())\n            .collect::<Vec<_>>(),\n        [\n            \"application/vnd.github+json\",\n            \"application/vnd.github+json\",\n            \"text/plain\"\n        ]\n    )",
+          "assert!(Arc::ptr_eq(&snapshot, &bank.snapshot()))",
+          "assert_ne!(\n        bank.snapshot().0[\"models\"][0][\"id\"],\n        \"fixture-mutated-model\"\n    )",
+          "assert_eq!(snapshot.1[\"revision\"], revision)",
+          "assert_eq!(bank.snapshot().1[\"revision\"], revision)",
+          "assert_eq!(bank.public()[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3, \"the hourly check remains gated\")",
+          "assert_eq!(transport.count(), 4)",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(\"/git/trees/\"), 1)",
+          "assert_eq!(\n        transport.count_matching(\"/data/unified_bank.json\"),\n        1,\n        \"same revision only refreshes the commit head\"\n    )",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"checked_at\"], 4600.0)",
+          "assert_eq!(cached[\"source\"], \"cache\")",
+          "assert_eq!(cached[\"status\"], \"idle\")",
+          "assert_eq!(cached[\"error\"], Value::Null)",
+          "assert_eq!(cached[\"version\"][\"revision\"], revision)",
+          "assert_eq!(restarted.snapshot().0, modeltrace::bundled().unwrap().0)",
+          "assert_eq!(restarted_transport.count(), 0)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank:FingerprintBankTests.test_failed_update_keeps_last_good_bank",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "failed_remote_update_after_restart_keeps_the_persisted_last_good_bank",
+        "assertions": [
+          "assert_eq!(saved.1[\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(restarted.snapshot().1, saved.1)",
+          "assert_eq!(failures.count(), 4)",
+          "assert_eq!(restarted.public()[\"error\"], \"network\")",
+          "assert_eq!(restarted.snapshot().0, saved.0)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank:FingerprintBankTests.test_concurrent_sync_is_deduplicated",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "concurrent_sync_calls_share_one_check_and_publish_checking_state",
+        "assertions": [
+          "assert_eq!(bank.public()[\"status\"], \"checking\")",
+          "assert_eq!(transport.count(), 1)",
+          "assert_eq!(\n        transport.count(),\n        1,\n        \"concurrent caller joins the active check\"\n    )",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(bank.public()[\"status\"], \"idle\")",
+          "assert_eq!(bank.public()[\"result\"], \"updated\")"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_public_contract_and_cache_startup",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "remote_update_public_contract_hourly_gate_and_restart_cache_match_pinned_behavior",
+        "assertions": [
+          "assert_eq!(public[\"source\"], \"remote\")",
+          "assert_eq!(public[\"status\"], \"idle\")",
+          "assert_eq!(public[\"result\"], \"updated\")",
+          "assert_eq!(public[\"error\"], Value::Null)",
+          "assert_eq!(public[\"checked_at\"], 1000.0)",
+          "assert_eq!(public[\"synced_at\"], 1000.0)",
+          "assert_eq!(public[\"cooldown_until\"], Value::Null)",
+          "assert_eq!(public[\"retrieval\"], \"api_tree\")",
+          "assert_eq!(public[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(\n        transport\n            .calls()\n            .iter()\n            .map(|call| call.accept.as_str())\n            .collect::<Vec<_>>(),\n        [\n            \"application/vnd.github+json\",\n            \"application/vnd.github+json\",\n            \"text/plain\"\n        ]\n    )",
+          "assert!(Arc::ptr_eq(&snapshot, &bank.snapshot()))",
+          "assert_ne!(\n        bank.snapshot().0[\"models\"][0][\"id\"],\n        \"fixture-mutated-model\"\n    )",
+          "assert_eq!(snapshot.1[\"revision\"], revision)",
+          "assert_eq!(bank.snapshot().1[\"revision\"], revision)",
+          "assert_eq!(bank.public()[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3, \"the hourly check remains gated\")",
+          "assert_eq!(transport.count(), 4)",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(\"/git/trees/\"), 1)",
+          "assert_eq!(\n        transport.count_matching(\"/data/unified_bank.json\"),\n        1,\n        \"same revision only refreshes the commit head\"\n    )",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"checked_at\"], 4600.0)",
+          "assert_eq!(cached[\"source\"], \"cache\")",
+          "assert_eq!(cached[\"status\"], \"idle\")",
+          "assert_eq!(cached[\"error\"], Value::Null)",
+          "assert_eq!(cached[\"version\"][\"revision\"], revision)",
+          "assert_eq!(restarted.snapshot().0, modeltrace::bundled().unwrap().0)",
+          "assert_eq!(restarted_transport.count(), 0)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_hourly_check_same_revision_skips_tree_and_payload",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "remote_update_public_contract_hourly_gate_and_restart_cache_match_pinned_behavior",
+        "assertions": [
+          "assert_eq!(public[\"source\"], \"remote\")",
+          "assert_eq!(public[\"status\"], \"idle\")",
+          "assert_eq!(public[\"result\"], \"updated\")",
+          "assert_eq!(public[\"error\"], Value::Null)",
+          "assert_eq!(public[\"checked_at\"], 1000.0)",
+          "assert_eq!(public[\"synced_at\"], 1000.0)",
+          "assert_eq!(public[\"cooldown_until\"], Value::Null)",
+          "assert_eq!(public[\"retrieval\"], \"api_tree\")",
+          "assert_eq!(public[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(\n        transport\n            .calls()\n            .iter()\n            .map(|call| call.accept.as_str())\n            .collect::<Vec<_>>(),\n        [\n            \"application/vnd.github+json\",\n            \"application/vnd.github+json\",\n            \"text/plain\"\n        ]\n    )",
+          "assert!(Arc::ptr_eq(&snapshot, &bank.snapshot()))",
+          "assert_ne!(\n        bank.snapshot().0[\"models\"][0][\"id\"],\n        \"fixture-mutated-model\"\n    )",
+          "assert_eq!(snapshot.1[\"revision\"], revision)",
+          "assert_eq!(bank.snapshot().1[\"revision\"], revision)",
+          "assert_eq!(bank.public()[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3, \"the hourly check remains gated\")",
+          "assert_eq!(transport.count(), 4)",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(\"/git/trees/\"), 1)",
+          "assert_eq!(\n        transport.count_matching(\"/data/unified_bank.json\"),\n        1,\n        \"same revision only refreshes the commit head\"\n    )",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"checked_at\"], 4600.0)",
+          "assert_eq!(cached[\"source\"], \"cache\")",
+          "assert_eq!(cached[\"status\"], \"idle\")",
+          "assert_eq!(cached[\"error\"], Value::Null)",
+          "assert_eq!(cached[\"version\"][\"revision\"], revision)",
+          "assert_eq!(restarted.snapshot().0, modeltrace::bundled().unwrap().0)",
+          "assert_eq!(restarted_transport.count(), 0)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_network_and_timeout_retry_then_five_minute_cooldown",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "network_and_timeout_retry_once_then_apply_five_minute_cooldown",
+        "assertions": [
+          "assert_eq!(\n            transport.count(),\n            4,\n            \"{code} performs one retry per endpoint\"\n        )",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(INFO_REFS_PATH), 2)",
+          "assert_eq!(bank.public()[\"error\"], code)",
+          "assert_eq!(bank.public()[\"status\"], \"error\")",
+          "assert_eq!(bank.public()[\"cooldown_until\"], 1300.0)",
+          "assert_eq!(transport.count(), 4, \"{code} cooldown blocks early checks\")",
+          "assert_eq!(transport.count(), 5)",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"cooldown_until\"], Value::Null)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_rate_limit_retry_after_and_rate_reset_are_respected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "retry_after_and_rate_reset_cooldowns_gate_manual_fallback_checks",
+        "assertions": [
+          "assert_eq!(bank.public()[\"error\"], \"rate-limit\")",
+          "assert_eq!(bank.public()[\"cooldown_until\"], 1600.0)",
+          "assert_eq!(transport.count(), 2)",
+          "assert_eq!(transport.count(), 2, \"force cannot bypass Retry-After\")",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"cooldown_until\"], Value::Null)",
+          "assert_eq!(reset_bank.public()[\"error\"], \"rate-limit\")",
+          "assert_eq!(reset_bank.public()[\"cooldown_until\"], 2200.0)",
+          "assert_eq!(reset_transport.count(), 2)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_official_git_refs_fallback_uses_pinned_raw_files",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "successful_git_refs_fallback_downloads_only_fixed_hashed_sources",
+        "assertions": [
+          "assert_eq!(public[\"source\"], \"remote\")",
+          "assert_eq!(public[\"status\"], \"idle\")",
+          "assert_eq!(public[\"result\"], \"updated\")",
+          "assert_eq!(public[\"retrieval\"], \"git_refs\")",
+          "assert_eq!(public[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 6)",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(INFO_REFS_PATH), 1)",
+          "assert_eq!(transport.count_matching(\"/git/trees/\"), 0)",
+          "assert_eq!(transport.count_matching(\"raw.githubusercontent.com\"), 3)",
+          "assert_eq!(\n        sha256(PINNED_CORE),\n        modeltrace::manifest()[\"files\"][\"core\"][\"sha256\"]\n    )",
+          "assert_eq!(\n        sha256(PINNED_CHALLENGE),\n        modeltrace::manifest()[\"files\"][\"challenge\"][\"sha256\"]\n    )"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_successful_fallback_keeps_explicit_api_rate_limit_for_manual_checks",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "rate_limited_same_revision_fallback_preserves_manual_check_boundary",
+        "assertions": [
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"cooldown_until\"], 1600.0)",
+          "assert_eq!(transport.count(), 2)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(bank.public()[\"cooldown_until\"], Value::Null)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_invalid_json_nan_infinity_dimension_and_model_id_are_rejected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "malformed_nonfinite_dimension_duplicate_and_old_banks_are_rejected",
+        "assertions": [
+          "rejected_remote_bank(b\"{\".to_vec(), \"invalid-data\", None).await;\n    rejected_remote_bank(non_finite_bank(\"NaN\"), \"invalid-data\", None).await;\n    rejected_remote_bank(non_finite_bank(\"Infinity\"), \"invalid-data\", None).await;\n    rejected_remote_bank(schema_variant(\"dimension\"), \"invalid-data\", None).await;\n    rejected_remote_bank(schema_variant(\"duplicate_model\"), \"invalid-data\", None).await;\n    rejected_remote_bank(schema_variant(\"older_built_at\"), \"incompatible\", None).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "rejected_remote_bank",
+            "assertions": [
+              "assert_eq!(public[\"error\"], expected)",
+              "assert_eq!(public[\"status\"], expected_status)",
+              "assert_eq!(public[\"result\"], \"failed\")",
+              "assert_eq!(bank.snapshot().1[\"revision\"], current_revision())",
+              "assert_eq!(transport.count(), 3)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_hash_mismatch_is_invalid_data",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "remote_bank_git_blob_mismatch_is_invalid_data",
+        "assertions": [
+          "rejected_remote_bank(PINNED_BANK.to_vec(), \"invalid-data\", Some(&\"0\".repeat(40))).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "rejected_remote_bank",
+            "assertions": [
+              "assert_eq!(public[\"error\"], expected)",
+              "assert_eq!(public[\"status\"], expected_status)",
+              "assert_eq!(public[\"result\"], \"failed\")",
+              "assert_eq!(bank.snapshot().1[\"revision\"], current_revision())",
+              "assert_eq!(transport.count(), 3)"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_cache_write_failure_keeps_active_snapshot",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "cache_persist_failure_keeps_the_last_good_active_snapshot",
+        "assertions": [
+          "assert_eq!(last_good.1[\"revision\"], first_revision)",
+          "assert_eq!(transport.count(), 6)",
+          "assert_eq!(active.public()[\"error\"], \"cache\")",
+          "assert_eq!(active.public()[\"status\"], \"error\")",
+          "assert_eq!(active.public()[\"cooldown_until\"], 1300.0)",
+          "assert!(Arc::ptr_eq(&last_good, &active.snapshot()))",
+          "assert_eq!(restarted.public()[\"source\"], \"cache\")",
+          "assert_eq!(restarted.public()[\"version\"][\"revision\"], first_revision)",
+          "assert_eq!(restarted.snapshot().1[\"revision\"], first_revision)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_capture_and_snapshot_are_isolated",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "remote_update_public_contract_hourly_gate_and_restart_cache_match_pinned_behavior",
+        "assertions": [
+          "assert_eq!(public[\"source\"], \"remote\")",
+          "assert_eq!(public[\"status\"], \"idle\")",
+          "assert_eq!(public[\"result\"], \"updated\")",
+          "assert_eq!(public[\"error\"], Value::Null)",
+          "assert_eq!(public[\"checked_at\"], 1000.0)",
+          "assert_eq!(public[\"synced_at\"], 1000.0)",
+          "assert_eq!(public[\"cooldown_until\"], Value::Null)",
+          "assert_eq!(public[\"retrieval\"], \"api_tree\")",
+          "assert_eq!(public[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(\n        transport\n            .calls()\n            .iter()\n            .map(|call| call.accept.as_str())\n            .collect::<Vec<_>>(),\n        [\n            \"application/vnd.github+json\",\n            \"application/vnd.github+json\",\n            \"text/plain\"\n        ]\n    )",
+          "assert!(Arc::ptr_eq(&snapshot, &bank.snapshot()))",
+          "assert_ne!(\n        bank.snapshot().0[\"models\"][0][\"id\"],\n        \"fixture-mutated-model\"\n    )",
+          "assert_eq!(snapshot.1[\"revision\"], revision)",
+          "assert_eq!(bank.snapshot().1[\"revision\"], revision)",
+          "assert_eq!(bank.public()[\"version\"][\"revision\"], revision)",
+          "assert_eq!(transport.count(), 3, \"the hourly check remains gated\")",
+          "assert_eq!(transport.count(), 4)",
+          "assert_eq!(transport.count_matching(COMMIT_PATH), 2)",
+          "assert_eq!(transport.count_matching(\"/git/trees/\"), 1)",
+          "assert_eq!(\n        transport.count_matching(\"/data/unified_bank.json\"),\n        1,\n        \"same revision only refreshes the commit head\"\n    )",
+          "assert_eq!(bank.public()[\"result\"], \"up-to-date\")",
+          "assert_eq!(bank.public()[\"checked_at\"], 4600.0)",
+          "assert_eq!(cached[\"source\"], \"cache\")",
+          "assert_eq!(cached[\"status\"], \"idle\")",
+          "assert_eq!(cached[\"error\"], Value::Null)",
+          "assert_eq!(cached[\"version\"][\"revision\"], revision)",
+          "assert_eq!(restarted.snapshot().0, modeltrace::bundled().unwrap().0)",
+          "assert_eq!(restarted_transport.count(), 0)"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_fingerprint_bank027:FingerprintBank027Tests.test_concurrent_sync_calls_merge_into_one_check",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/fingerprint_sync_parity.rs",
+        "test_name": "concurrent_sync_calls_share_one_check_and_publish_checking_state",
+        "assertions": [
+          "assert_eq!(bank.public()[\"status\"], \"checking\")",
+          "assert_eq!(transport.count(), 1)",
+          "assert_eq!(\n        transport.count(),\n        1,\n        \"concurrent caller joins the active check\"\n    )",
+          "assert_eq!(transport.count(), 3)",
+          "assert_eq!(bank.public()[\"status\"], \"idle\")",
+          "assert_eq!(bank.public()[\"result\"], \"updated\")"
+        ]
+      },
+      "coverage_note": "以固定来源的 bank 和可注入的模拟官方 transport 执行更新、错误、缓存或并发场景；逐项对照所列公共字段、请求次数、时钟边界和快照断言，不访问外网。"
+    }
+  ],
+  "uncovered_notes": []
+}

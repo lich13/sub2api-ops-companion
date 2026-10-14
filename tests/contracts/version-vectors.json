@@ -1,0 +1,1014 @@
+{
+  "canonical_json_strategies": [
+    {
+      "id": "operation_versions.digest",
+      "json_dumps": {
+        "default": "str",
+        "ensure_ascii": false,
+        "separators": "Python default",
+        "sort_keys": true
+      },
+      "source": "app/operation_versions.py#digest"
+    },
+    {
+      "id": "config_service.revision",
+      "json_dumps": {
+        "default": "str",
+        "ensure_ascii": true,
+        "separators": "Python default",
+        "sort_keys": true
+      },
+      "source": "app/config_service.py#revision"
+    },
+    {
+      "id": "desktop_api.account_dto.version",
+      "json_dumps": {
+        "default": "str",
+        "ensure_ascii": true,
+        "input_shape": "ordered list",
+        "separators": "Python default",
+        "sort_keys": false
+      },
+      "source": "app/desktop_api.py#account_dto.value.version"
+    },
+    {
+      "id": "model_rules.revision",
+      "json_dumps": {
+        "allow_nan": false,
+        "default": null,
+        "ensure_ascii": false,
+        "separators": [
+          ",",
+          ":"
+        ],
+        "sort_keys": true
+      },
+      "source": "app/model_rules.py#revision"
+    }
+  ],
+  "purpose": "合成基线向量；供 Rust 端逐项复现 Python 版本、配置和模型目录哈希。",
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "schema_version": 1,
+  "typed_values": {
+    "datetime": {
+      "encoding": {
+        "$type": "datetime",
+        "python_str": "Python str(datetime)",
+        "value": "ISO-8601"
+      },
+      "note": "仅脚本计算时解码为 datetime；Rust 对 default=str 的向量需产生 python_str 字段中的文本。"
+    }
+  },
+  "vectors": [
+    {
+      "expected_version": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
+      "id": "account_template_version_from_operation_version",
+      "input": {
+        "concurrency": 4,
+        "credential_settings_version": 2,
+        "credential_version": "凭据版本-α",
+        "error_message": null,
+        "extra": {
+          "openai_oauth_passthrough": false,
+          "openai_passthrough": false,
+          "parent_account_id": null,
+          "reset_credit_available": true
+        },
+        "group_ids": [
+          "组-β",
+          "组-α"
+        ],
+        "id": 31,
+        "load_factor": 1.25,
+        "model_catalog_version": "目录版本-β",
+        "model_mapping": {
+          "gpt-6": "别名-六",
+          "nullable": null
+        },
+        "model_mapping_version": 3,
+        "model_sync_project": "项目-δ",
+        "name": "合成账户-雪",
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "priority": 7,
+        "proxy_id": 7,
+        "rate_limit_reset_at": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08+00:00",
+          "value": "2031-04-05T06:07:08+00:00"
+        },
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_until": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08",
+          "value": "2031-04-05T06:07:08"
+        },
+        "type": "oauth"
+      },
+      "source": "app/account_templates.py#account_version"
+    },
+    {
+      "assertions": [
+        "direct and extra parent IDs produce equal stable scheduling versions",
+        "direct parent_account_id remains part of operation identity and account template version"
+      ],
+      "cases": {
+        "child_direct_parent_id": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": 17,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-α"
+          ],
+          "id": 18,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": 17,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "apikey"
+        },
+        "child_extra_parent_id": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": 17,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-α"
+          ],
+          "id": 18,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "apikey"
+        },
+        "parent": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-α"
+          ],
+          "id": 17,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        }
+      },
+      "expected": {
+        "child_direct_account_template_version": "d0eb15a8a3b0b39e9118c005ddae2fdb2d93bfdfeb2010a9f6c6cff601c662cd",
+        "child_direct_model_config_version": "5329da9b3525135f82cc427912cf1eacda9427c0c02002f8eae9528d1a525af0",
+        "child_direct_priority_version": "43cac2edb0a5ac2dee953fc2eea507451af257086baab8e1777e99ca177d950b",
+        "child_extra_account_template_version": "5d6403e75d559492b43712da41fd8f3f15d41d1b6a2f5c1009af83e22d237004",
+        "child_extra_model_config_version": "5329da9b3525135f82cc427912cf1eacda9427c0c02002f8eae9528d1a525af0",
+        "child_extra_priority_version": "43cac2edb0a5ac2dee953fc2eea507451af257086baab8e1777e99ca177d950b",
+        "parent_account_template_version": "adb68f6d1e6e63cfa6616ecadad6bd5df7c4480cade9f230d44d26ff981d422e",
+        "parent_priority_version": "2be9b4ce5c4b47cc0fc244586989b67c81bfb02e2fa5a5f759bb46bd39576941"
+      },
+      "id": "account_versions_parent_child_identity",
+      "source": "app/operation_versions.py#versions; app/account_templates.py#account_version"
+    },
+    {
+      "assertions": [
+        "sort_keys=true",
+        "ensure_ascii uses Python default true",
+        "datetime uses Python str(value)"
+      ],
+      "expected_revision": "c15c155c57b4f859b7602e0ab970de6d4ff9f28e6d18b9521f9c6dd8a8acffa1",
+      "id": "config_revision_unicode_null_number_datetime",
+      "input": {
+        "count": 7,
+        "nullable": null,
+        "ratio": 1.25,
+        "updated_at": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08+00:00",
+          "value": "2031-04-05T06:07:08+00:00"
+        },
+        "说明": "OAuth 配置-雪"
+      },
+      "source": "app/config_service.py#revision"
+    },
+    {
+      "assertions": [
+        "group IDs are sorted before hashing",
+        "datetime uses Python str(value) via default=str"
+      ],
+      "cases": {
+        "group_ids_3_9": {
+          "group_ids": [
+            3,
+            9
+          ],
+          "id": 31,
+          "platform": "openai",
+          "priority": 7,
+          "schedulable": true,
+          "type": "oauth",
+          "updated_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          }
+        },
+        "group_ids_9_3": {
+          "group_ids": [
+            9,
+            3
+          ],
+          "id": 31,
+          "platform": "openai",
+          "priority": 7,
+          "schedulable": true,
+          "type": "oauth",
+          "updated_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          }
+        }
+      },
+      "expected_versions": {
+        "group_ids_3_9": "1146776760515e513e97dfc6ab71ebd933f56ec6ce5703d7f7e0a39189346e24",
+        "group_ids_9_3": "1146776760515e513e97dfc6ab71ebd933f56ec6ce5703d7f7e0a39189346e24"
+      },
+      "id": "desktop_account_dto_version_group_order_invariance",
+      "source": "app/desktop_api.py#account_dto.value.version"
+    },
+    {
+      "expected_revision": "66bf928a08287d36623c9fa62844a025ac9322f64a0ff86fca11a90431910053",
+      "id": "model_catalog_account_cache_identity",
+      "input": {
+        "credentials": {
+          "model_mapping": {
+            "gpt-*": "别名-六"
+          }
+        },
+        "extra": {
+          "openai_oauth_passthrough": false
+        },
+        "id": 31,
+        "platform": "openai",
+        "type": "oauth"
+      },
+      "source": "app/model_catalog.py#source_catalog identity; app/model_rules.py#revision"
+    },
+    {
+      "expected_revision": "fdd2940e1cf6700dd94a3863c319c9cf84c86790d72bc7d67e7bef410a7b98b3",
+      "id": "model_catalog_accounts_routes_revision",
+      "input": [
+        [
+          {
+            "credentials": {
+              "model_mapping": {
+                "gpt-*": "别名-六"
+              }
+            },
+            "extra": {
+              "openai_oauth_passthrough": false
+            },
+            "id": 31,
+            "platform": "openai",
+            "type": "oauth"
+          }
+        ],
+        [
+          {
+            "enabled": true,
+            "endpoint": "responses",
+            "id": 5,
+            "match_type": "exact",
+            "priority": 7,
+            "public_model": "模型-别名",
+            "target_platform": "openai",
+            "upstream_model": "gpt-6-astra"
+          }
+        ]
+      ],
+      "source": "app/model_catalog.py#revision([accounts, routes]); app/model_rules.py#revision"
+    },
+    {
+      "expected_etag_header": "\"f67cc5ea91392dbdd7bc352633af28ac41084398e2e6625bdff1e8a4af53e0fd\"",
+      "expected_etag_value": "f67cc5ea91392dbdd7bc352633af28ac41084398e2e6625bdff1e8a4af53e0fd",
+      "id": "model_catalog_final_response_etag",
+      "input": {
+        "future": {
+          "保留": true
+        },
+        "models": [
+          {
+            "display_name": "自定义星云",
+            "nullable": null,
+            "priority": 7,
+            "slug": "gpt-6-astra",
+            "weight": 1.25
+          }
+        ]
+      },
+      "source": "app/model_catalog.py#revision(final); app/model_rules.py#revision"
+    },
+    {
+      "assertions": [
+        "updated_at is converted to str before model_rules.revision"
+      ],
+      "expected_version": "99cc549c573df14eef9f6aef14903d1ca0fd982458994e7778c2a170e827a6a9",
+      "id": "model_catalog_group_version",
+      "input": {
+        "codex_models_manifest_config": {
+          "enabled": false,
+          "priority": 3
+        },
+        "id": 17,
+        "model_allowlist": {
+          "enabled": true,
+          "models": [
+            "gpt-*",
+            "模型-*"
+          ]
+        },
+        "platform": "composite",
+        "updated_at": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08+00:00",
+          "value": "2031-04-05T06:07:08+00:00"
+        }
+      },
+      "source": "app/model_catalog.py#group.row.version; app/model_rules.py#revision"
+    },
+    {
+      "expected_revision": "31c28453abdf8a52bcb81def2b36dfba83f725556970a3520acb8dc55dfff5dc",
+      "id": "model_catalog_native_body_revision",
+      "input": {
+        "future": {
+          "保留": true
+        },
+        "models": [
+          {
+            "display_name": "星云",
+            "nullable": null,
+            "priority": 7,
+            "slug": "gpt-6-astra",
+            "weight": 1.25
+          }
+        ]
+      },
+      "source": "app/model_catalog.py#revision(original); app/model_rules.py#revision"
+    },
+    {
+      "assertions": [
+        "ensure_ascii=false",
+        "sort_keys=true",
+        "separators=(',', ':')",
+        "allow_nan=false"
+      ],
+      "expected_revision": "8b7f961ccf4dc266b5e523f22e60493290cd4059454420757ede828e36adc964",
+      "id": "model_rules_revision_compact_unicode_null_number",
+      "input": {
+        "priority": 7,
+        "模型": {
+          "name": "星云",
+          "nullable": null,
+          "weight": 1.25
+        }
+      },
+      "source": "app/model_rules.py#revision"
+    },
+    {
+      "assertions": [
+        "Unicode is UTF-8 JSON text",
+        "datetime uses Python str(value) via default=str"
+      ],
+      "expected_sha256": "db60644dda162f4e3aee28e59a0808605afaced4739db692075fd35cc864a535",
+      "id": "operation_digest_unicode_null_number_datetime",
+      "input": {
+        "fraction": 1.25,
+        "integer": 7,
+        "null_value": null,
+        "timestamp": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08+00:00",
+          "value": "2031-04-05T06:07:08+00:00"
+        },
+        "文字": "模型-雪"
+      },
+      "source": "app/operation_versions.py#digest"
+    },
+    {
+      "expected_versions": {
+        "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
+        "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
+        "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+        "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
+        "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
+        "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
+        "model_test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+        "priority": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+        "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+        "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
+        "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
+        "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+        "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
+        "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+        "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
+      },
+      "id": "operation_versions_full_synthetic_account",
+      "input": {
+        "concurrency": 4,
+        "credential_settings_version": 2,
+        "credential_version": "凭据版本-α",
+        "error_message": null,
+        "extra": {
+          "openai_oauth_passthrough": false,
+          "openai_passthrough": false,
+          "parent_account_id": null,
+          "reset_credit_available": true
+        },
+        "group_ids": [
+          "组-β",
+          "组-α"
+        ],
+        "id": 31,
+        "load_factor": 1.25,
+        "model_catalog_version": "目录版本-β",
+        "model_mapping": {
+          "gpt-6": "别名-六",
+          "nullable": null
+        },
+        "model_mapping_version": 3,
+        "model_sync_project": "项目-δ",
+        "name": "合成账户-雪",
+        "overload_until": null,
+        "parent_account_id": null,
+        "platform": "openai",
+        "priority": 7,
+        "proxy_id": 7,
+        "rate_limit_reset_at": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08+00:00",
+          "value": "2031-04-05T06:07:08+00:00"
+        },
+        "schedulable": true,
+        "status": "active",
+        "temp_unschedulable_until": {
+          "$type": "datetime",
+          "python_str": "2031-04-05 06:07:08",
+          "value": "2031-04-05T06:07:08"
+        },
+        "type": "oauth"
+      },
+      "source": "app/operation_versions.py#versions"
+    },
+    {
+      "assertions": [
+        "all field versions are equal after group_ids permutation"
+      ],
+      "cases": {
+        "a": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "b": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-α",
+            "组-β"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        }
+      },
+      "expected_versions": {
+        "a": {
+          "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
+          "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
+          "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+          "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
+          "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
+          "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
+          "model_test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+          "priority": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+          "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+          "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
+          "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
+          "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+          "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
+          "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+          "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
+        },
+        "b": {
+          "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
+          "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
+          "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+          "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
+          "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
+          "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
+          "model_test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+          "priority": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+          "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
+          "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
+          "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
+          "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+          "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
+          "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
+          "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
+        }
+      },
+      "id": "operation_versions_group_order_invariance",
+      "source": "app/operation_versions.py#versions"
+    },
+    {
+      "assertions": [
+        "model_mapping_version and credential_settings_version invalidate the version",
+        "model mapping is hashed when model_mapping_version is absent",
+        "passthrough settings invalidate the version",
+        "model_catalog_version alone does not invalidate model_config"
+      ],
+      "cases": {
+        "baseline": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "catalog_observation_only_changed": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "新目录观察版本",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "credential_settings_version_changed": {
+          "concurrency": 4,
+          "credential_settings_version": 3,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "mapping_version_incremented": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 4,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "mapping_without_version": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": null,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "mapping_without_version_changed": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": false,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "另一个合成别名",
+            "nullable": null
+          },
+          "model_mapping_version": null,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        },
+        "passthrough_changed": {
+          "concurrency": 4,
+          "credential_settings_version": 2,
+          "credential_version": "凭据版本-α",
+          "error_message": null,
+          "extra": {
+            "openai_oauth_passthrough": true,
+            "openai_passthrough": false,
+            "parent_account_id": null,
+            "reset_credit_available": true
+          },
+          "group_ids": [
+            "组-β",
+            "组-α"
+          ],
+          "id": 31,
+          "load_factor": 1.25,
+          "model_catalog_version": "目录版本-β",
+          "model_mapping": {
+            "gpt-6": "别名-六",
+            "nullable": null
+          },
+          "model_mapping_version": 3,
+          "model_sync_project": "项目-δ",
+          "name": "合成账户-雪",
+          "overload_until": null,
+          "parent_account_id": null,
+          "platform": "openai",
+          "priority": 7,
+          "proxy_id": 7,
+          "rate_limit_reset_at": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08+00:00",
+            "value": "2031-04-05T06:07:08+00:00"
+          },
+          "schedulable": true,
+          "status": "active",
+          "temp_unschedulable_until": {
+            "$type": "datetime",
+            "python_str": "2031-04-05 06:07:08",
+            "value": "2031-04-05T06:07:08"
+          },
+          "type": "oauth"
+        }
+      },
+      "expected_model_config_versions": {
+        "baseline": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
+        "catalog_observation_only_changed": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
+        "credential_settings_version_changed": "caf61060c23d33b706b448f71cf4274c4b62ff21727735f7c607c88088800bab",
+        "mapping_version_incremented": "d21ae48ac6af59890cb2b0e4f9abdc627bd3015b851626234c65de3c842bd45a",
+        "mapping_without_version": "afbfd140bf7bf7e9825d507e52c2212c5d5ba0c83f269dd967cccc4983296cf8",
+        "mapping_without_version_changed": "cab3abd9fb4a33e96e0762da7f3943cf57f3dfd5bf4bc6e4813029743c5ac48f",
+        "passthrough_changed": "bf4fcc40415953bd7e30802b3920999b8c41d67ecddd26c5db67c77ed4b9164c"
+      },
+      "id": "operation_versions_model_config_sensitivity",
+      "source": "app/operation_versions.py#versions[model_config]"
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:StoreTests.test_atomic_permissions_conflict_restart_and_corruption",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "model_store_atomic_permissions_restart_conflict_and_corruption",
+        "assertions": [
+          "assert_eq!(\n        fs::metadata(&path).unwrap().permissions().mode() & 0o777,\n        0o600\n    )",
+          "assert_eq!(\n        ModelConfig::new(path.clone(), false).group(7).unwrap(),\n        saved\n    )",
+          "assert_eq!(\n        names,\n        [\"model.json\".to_owned(), \"model.json.lock\".to_owned()].into()\n    )",
+          "assert_eq!(\n        store\n            .save(7, &json!({}), initial[\"revision\"].as_str().unwrap())\n            .unwrap_err()\n            .status\n            .as_u16(),\n        409\n    )",
+          "assert!(store\n        .save(7, &json!({}), saved[\"revision\"].as_str().unwrap())\n        .is_err())",
+          "assert_eq!(fs::read(&path).unwrap(), b\"{\")"
+        ]
+      },
+      "coverage_note": "Atomic state replacement keeps 0600 permissions, revision conflicts reject stale writes, restart preserves saved overrides and corrupt bytes cannot be replaced."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:StoreTests.test_parallel_stores_do_not_lose_another_group",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "independent_model_stores_preserve_concurrent_group_changes",
+        "assertions": [
+          "assert_eq!(\n            store.group(id).unwrap()[\"overrides\"][\"fixture-model\"][\"display_name\"],\n            format!(\"group-{id}\")\n        )"
+        ]
+      },
+      "coverage_note": "Two independent store instances synchronize concurrent group writes without losing either group."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:CatalogTests.test_authentication_on_every_hit_group_isolation_etag_and_forwarded_identity",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "native_auth_on_every_hit_group_isolation_etag_and_forwarded_identity",
+        "assertions": [
+          "assert_eq!(first.status, 200)",
+          "assert_eq!(body[\"models\"][0][\"display_name\"], \"Seven\")",
+          "assert_eq!(\n        body[\"models\"][0][\"unknown\"],\n        native()[\"models\"][0][\"unknown\"]\n    )",
+          "assert_eq!(body[\"future_envelope\"], native()[\"future_envelope\"])",
+          "assert_eq!(cached.status, 304)",
+          "assert!(cached.body.is_empty())",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), 2)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&other.body).unwrap(),\n        native()\n    )",
+          "assert_eq!(rejected.status, 401)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&rejected.body).unwrap(),\n        json!({\"error\":\"fixture-revoked\"})\n    )",
+          "assert_eq!(calls.len(), 4)",
+          "assert_eq!(call[\"method\"], \"GET\")",
+          "assert_eq!(call[\"path\"], format!(\"/v1/models?{QUERY}\"))",
+          "assert_eq!(call[\"x-real-ip\"], \"127.0.0.1\")",
+          "assert_eq!(call[\"if-none-match\"], \"\")",
+          "assert_eq!(\n            call[\"authorization\"],\n            format!(\"Bearer fixture-caller-{}\", if index == 2 { 8 } else { 7 })\n        )"
+        ]
+      },
+      "coverage_note": "Real loopback HTTP verifies four native GETs, group isolation, ETag 304 only after authentication, revoked 401, forwarded authorization/IP and unchanged native fields."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:CatalogTests.test_loopback_uses_real_get_and_preserves_unknown_json",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "native_auth_on_every_hit_group_isolation_etag_and_forwarded_identity",
+        "assertions": [
+          "assert_eq!(first.status, 200)",
+          "assert_eq!(body[\"models\"][0][\"display_name\"], \"Seven\")",
+          "assert_eq!(\n        body[\"models\"][0][\"unknown\"],\n        native()[\"models\"][0][\"unknown\"]\n    )",
+          "assert_eq!(body[\"future_envelope\"], native()[\"future_envelope\"])",
+          "assert_eq!(cached.status, 304)",
+          "assert!(cached.body.is_empty())",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), 2)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&other.body).unwrap(),\n        native()\n    )",
+          "assert_eq!(rejected.status, 401)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&rejected.body).unwrap(),\n        json!({\"error\":\"fixture-revoked\"})\n    )",
+          "assert_eq!(calls.len(), 4)",
+          "assert_eq!(call[\"method\"], \"GET\")",
+          "assert_eq!(call[\"path\"], format!(\"/v1/models?{QUERY}\"))",
+          "assert_eq!(call[\"x-real-ip\"], \"127.0.0.1\")",
+          "assert_eq!(call[\"if-none-match\"], \"\")",
+          "assert_eq!(\n            call[\"authorization\"],\n            format!(\"Bearer fixture-caller-{}\", if index == 2 { 8 } else { 7 })\n        )"
+        ]
+      },
+      "coverage_note": "Actual GET method, exact URL/query, caller identity and unknown nested model/envelope JSON are asserted on a real loopback server."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:CatalogTests.test_invalid_config_and_database_failure_return_unchanged_native",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "corrupt_config_and_database_failure_preserve_native_catalog_and_private_status",
+        "assertions": [
+          "assert_eq!(fallback.status, 200)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&fallback.body).unwrap(),\n        native()\n    )",
+          "assert_eq!(fallback.headers[\"x-sub2ops-catalog\"], \"fallback\")",
+          "assert_eq!(h.runtime.catalog.status()[\"state\"], \"fallback\")",
+          "assert_eq!(\n        fs::read(&h.runtime.settings.model_path).unwrap(),\n        b\"{fixture-private-invalid\"\n    )",
+          "assert_eq!(unavailable.status, 200)",
+          "assert_eq!(\n        serde_json::from_slice::<Value>(&unavailable.body).unwrap(),\n        native()\n    )",
+          "assert_eq!(unavailable.headers[\"x-sub2ops-catalog\"], \"fallback\")",
+          "assert!(!h\n        .runtime\n        .catalog\n        .status()\n        .to_string()\n        .contains(\"fixture-private\"))",
+          "assert_eq!(h.mock.calls.lock().unwrap().len(), 2)"
+        ]
+      },
+      "coverage_note": "Malformed on-disk config and a closed database both return the full native JSON with fallback status; private error content and damaged bytes remain protected."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:CatalogTests.test_composite_does_not_add_unsaved_supplements_or_mutate_accounts",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "composite_does_not_publish_unsaved_alias_or_write_account_state",
+        "assertions": [
+          "assert_eq!(response.status, 200)",
+          "assert_eq!(\n            serde_json::from_slice::<Value>(&response.body).unwrap(),\n            native()\n        )",
+          "assert_eq!(h.runtime.monitor.row(1).await.unwrap(), before)",
+          "assert_eq!(calls.len(), 2)",
+          "assert!(calls.iter().all(|v| v[\"method\"] == \"GET\"))",
+          "assert!(!h.runtime.settings.model_path.exists())"
+        ]
+      },
+      "coverage_note": "Real composite routes and account mappings are seeded in PostgreSQL; schedulable true and false both preserve native models, unchanged accounts and GET-only requests without creating config."
+    },
+    {
+      "legacy_test_id": "py:tests.test_model_catalog:CatalogTests.test_routes_require_admin_and_old_surface_is_absent",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "model_admin_routes_authenticate_and_retired_surfaces_stay_absent",
+        "assertions": [
+          "assert_eq!(\n        client.get(&path).send().await.unwrap().status().as_u16(),\n        401\n    )",
+          "assert_eq!(response.status().as_u16(), 200)",
+          "assert_eq!(\n        response.json::<Value>().await.unwrap()[\"groups\"]\n            .as_array()\n            .unwrap()\n            .len(),\n        2\n    )",
+          "assert_eq!(\n            client\n                .get(format!(\"{base}{path}\"))\n                .send()\n                .await\n                .unwrap()\n                .status()\n                .as_u16(),\n            404\n        )",
+          "assert_eq!(\n        client\n            .post(format!(\"{base}/api/desktop/v1/model-groups/7/preview\"))\n            .header(\"x-api-key\", ADMIN)\n            .json(&json!({\"extra\":1}))\n            .send()\n            .await\n            .unwrap()\n            .status()\n            .as_u16(),\n        404\n    )"
+        ]
+      },
+      "coverage_note": "Actual Axum HTTP routes require admin authentication and return 404 for retired models/docs/preview surfaces."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_invalidation_never_waits_for_an_inflight_snapshot",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "snapshot_invalidation_never_waits_or_republishes_inflight_cache",
+        "assertions": [
+          "assert!(!inflight.is_finished())",
+          "assert_eq!(first[\"accounts\"][0][\"name\"], \"fixture-inflight\")",
+          "assert_eq!(second[\"accounts\"][0][\"name\"], \"fixture-after\")",
+          "assert_eq!(\n        harness.runtime.snapshot().await.unwrap(),\n        second,\n        \"the subsequent uncontended snapshot is cached normally\"\n    )",
+          "assert!(harness.mock.calls.lock().unwrap().is_empty())"
+        ]
+      },
+      "coverage_note": "A real PostgreSQL lock suspends snapshot construction; invalidation finishes within 100ms while it is blocked. After release, a newer database change is visible immediately without another invalidation, and the next uncontended snapshot is cached normally."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_inflight_snapshot_cannot_revive_invalidated_cache",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/catalog_runtime_parity.rs",
+        "test_name": "snapshot_invalidation_never_waits_or_republishes_inflight_cache",
+        "assertions": [
+          "assert!(!inflight.is_finished())",
+          "assert_eq!(first[\"accounts\"][0][\"name\"], \"fixture-inflight\")",
+          "assert_eq!(second[\"accounts\"][0][\"name\"], \"fixture-after\")",
+          "assert_eq!(\n        harness.runtime.snapshot().await.unwrap(),\n        second,\n        \"the subsequent uncontended snapshot is cached normally\"\n    )",
+          "assert!(harness.mock.calls.lock().unwrap().is_empty())"
+        ]
+      },
+      "coverage_note": "A real PostgreSQL lock suspends snapshot construction; invalidation finishes within 100ms while it is blocked. After release, a newer database change is visible immediately without another invalidation, and the next uncontended snapshot is cached normally."
+    }
+  ]
+}

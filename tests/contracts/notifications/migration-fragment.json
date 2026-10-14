@@ -1,0 +1,1038 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkUrlTests.test_default_and_path_urls_normalize_before_push",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_url_validation_and_utf8_parts_match_pinned_python",
+        "assertions": [
+          "bark::normalize_url(input.as_str().unwrap()).unwrap()",
+          "assert_eq!(format!(\"{normalized}/push\"), expected.as_str().unwrap());"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.normalize_inputs",
+              "bark.normalized",
+              "bark.push_urls"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "pinned Python 结果核对默认 URL 尾斜线及 ASCII、Unicode、已编码路径。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkUrlTests.test_https_is_allowed_and_http_is_loopback_only",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_url_validation_and_utf8_parts_match_pinned_python",
+        "assertions": [
+          "for value in url[\"allowed_urls\"].as_array().unwrap()",
+          "for value in url[\"rejected_urls\"].as_array().unwrap()",
+          "bark::normalize_url(value.as_str().unwrap()).is_err()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.allowed_urls",
+              "bark.rejected_urls"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定旧实现的允许／拒绝 URL 矩阵逐项经过 Rust validator。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkPayloadTests.test_utf8_chunks_preserve_text_and_final_body_limit",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_url_validation_and_utf8_parts_match_pinned_python",
+        "assertions": [
+          "assert_eq!(chunks.concat(), text);",
+          "assert_eq!(json!(chunks), payload[\"chunks\"]);",
+          "assert!(chunks.iter().all(|part| part.len() <= max));",
+          "assert_eq!(json!(parts), payload[\"parts\"]);",
+          "assert!(parts.iter().all(|part| part.len() <= max));"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.payload"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "比较 pinned Python 的 UTF-8 分块和最终 body，重建原文且每段受字节上限约束。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkPayloadTests.test_four_event_types_have_fixed_titles_and_required_fields",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_oauth_event_titles_and_bodies_match_pinned_python",
+        "assertions": [
+          "json!([title, body]),\n            case[\"expected\"],"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.message_cases"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定旧实现的四类 OAuth 状态及完整／不完整用卡事件输出逐字比较；错误消息使用合成 bearer 标记，输出应已清理。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkPayloadTests.test_error_sanitization_covers_common_secret_shapes_and_utf8_limit",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_error_sanitization_matches_pinned_python_for_synthetic_markers",
+        "assertions": [
+          "assert_eq!(actual, cases[\"expected\"]);",
+          "assert_eq!(long, cases[\"long_utf8\"]);",
+          "long.len() <= cases[\"long_utf8_expected_length_at_most\"].as_u64().unwrap() as usize"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.sanitization"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "合成 API key、header、Basic、cookie、URL 凭据与 query、private key、token、PEM 输出对照 pinned Python，并检查 UTF-8 上限。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_loopback_capture_receives_real_v2_json_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_loopback_request_uses_v2_json_and_percent_encoded_path",
+        "assertions": [
+          "assert!(result.success);",
+          "assert_eq!(requests.len(), 1);",
+          "assert_eq!(requests[0].path, \"/push\");",
+          "assert!(requests[0].content_type.starts_with(\"application/json\"));",
+          "requests[0].payload,\n        json!({\"device_key\":\"fixture-device-key\",\"title\":\"fixture-title\",\"body\":\"fixture-body\"})"
+        ]
+      },
+      "coverage_note": "回环 HTTP 捕获核验实际 POST、JSON content type 和 device_key/title/body payload。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_unicode_server_path_is_percent_encoded_for_real_request",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_loopback_request_uses_v2_json_and_percent_encoded_path",
+        "assertions": [
+          "assert!(\n        unicode_notifier\n            .push(\"fixture-title\", \"fixture-body\", 3, &Value::Null)\n            .await\n            .success\n    );",
+          "assert_eq!(requests.len(), 2);",
+          "assert_eq!(requests[1].path, \"/%E8%87%AA%E5%BB%BA/push\");"
+        ]
+      },
+      "coverage_note": "真实回环请求断言 Unicode server path 使用百分号编码。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_http_and_business_codes_must_both_succeed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_http_status_business_code_json_decode_and_redirect_are_classified",
+        "assertions": [
+          "let expected = [",
+          "assert!(!result.success);",
+          "assert_eq!(result.error_code, error_code);",
+          "assert_eq!(capture.bark_request_count(), 5);"
+        ]
+      },
+      "coverage_note": "针对 HTTP status、Bark business code 和字符串 code 的失败逐项断言错误分类。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_redirect_is_not_followed_or_accepted_as_delivery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_http_status_business_code_json_decode_and_redirect_are_classified",
+        "assertions": [
+          "assert!(!result.success);",
+          "assert_eq!(result.error_code, error_code);",
+          "capture.landing_request_count(),\n        0,\n        \"Bark redirects are not followed\"",
+          "assert_eq!(capture.bark_request_count(), 5);"
+        ]
+      },
+      "coverage_note": "真实 302 被判为 HTTP 失败且 landing GET 次数为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_missing_key_invalid_url_and_invalid_json_have_stable_codes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_http_status_business_code_json_decode_and_redirect_are_classified",
+        "assertions": [
+          "assert_eq!(missing_key.error_code, \"missing_device_key\");",
+          "assert_eq!(invalid_url.error_code, \"invalid_server_url\");",
+          "\"response_decode\",",
+          "assert!(!result.success);",
+          "assert_eq!(capture.bark_request_count(), 5);"
+        ]
+      },
+      "coverage_note": "缺 key、非法 URL 和 invalid JSON 分别命中稳定错误码，非法请求不会发出。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_transport_failures_are_classified",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_timeout_connection_failure_and_invalid_runtime_config_are_stable",
+        "assertions": [
+          "assert!(!timed.success);",
+          "timed.error_code,",
+          "assert!(!disconnected.success);",
+          "disconnected.error_code,",
+          "assert_eq!(capture.bark_request_count(), 1);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.transport_expected.timeout.error_code",
+              "bark.transport_expected.request_error.error_code"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实回环超时和关闭 loopback port 的连接失败对照固定旧错误码，invalid config 不请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_runtime_config_swaps_never_mix_device_key_and_server",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_runtime_config_swaps_never_mix_key_and_server_path",
+        "assertions": [
+          "assert!(\n            notifier\n                .push(\"fixture-title\", \"fixture-body\", 3, &Value::Null)\n                .await\n                .success\n        );",
+          ".expect(\"Bark runtime config swapper completed\");",
+          "assert_eq!(requests.len(), 1500);",
+          "request.path.as_str(),",
+          "\"/a/push\", Some(\"fixture-key-a\")"
+        ]
+      },
+      "coverage_note": "并发 1500 次推送／配置切换后核对每个 request 的 key 与 path 属于同一配置代。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_invalid_runtime_config_blocks_test_push",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_timeout_connection_failure_and_invalid_runtime_config_are_stable",
+        "assertions": [
+          "assert!(!invalid.success);",
+          "assert_eq!(invalid.error_code, \"invalid_config\");",
+          "assert_eq!(capture.bark_request_count(), 1);"
+        ]
+      },
+      "coverage_note": "invalid runtime config 返回 invalid_config，且 Bark 请求数不增加。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_monitor_and_test_push_use_three_and_eight_second_timeouts",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_monitor_and_test_endpoint_observe_three_and_eight_second_timeouts",
+        "assertions": [
+          "assert!(started.elapsed() >= StdDuration::from_millis(2700));",
+          "assert!(started.elapsed() < StdDuration::from_secs(5));",
+          "assert_eq!(capture.bark_request_count(), 1);",
+          "runtime.monitor.store.snapshot().unwrap()[\"pending_events\"]",
+          "assert_eq!(response.status(), StatusCode::OK);",
+          "assert!(started.elapsed() >= StdDuration::from_millis(6500));",
+          "assert!(started.elapsed() < StdDuration::from_secs(8));",
+          "assert_eq!(capture.bark_request_count(), 2);",
+          "assert_eq!(request.payload[\"title\"], \"Sub2API Ops Companion\");",
+          "assert_eq!(request.payload[\"body\"], \"Bark 推送通道正常。\");"
+        ]
+      },
+      "coverage_note": "使用真实延迟回环请求验证 monitor 约 3 秒超时、测试推送等待超过 6.5 秒后仍成功并核对 payload。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_multisegment_failure_does_not_deliver_event",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "multi_requests.len(),",
+          "multi_state[\"pending_events\"][dedupe_key]",
+          "multi_reference[\"notified_keys\"]",
+          "multi_reference[\"titles\"]",
+          "multi_reference[\"body_byte_lengths\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.queue.multisegment_failure"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定旧实现生成多段失败夹具，核对 request 数、pending/notified 状态、标题及 body 字节长度。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkTransportTests.test_malformed_event_does_not_block_a_later_valid_event",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "malformed_oauth_event_does_not_block_a_later_valid_event_matches_pinned_python",
+        "assertions": [
+          "assert_eq!(json!(delivered), expected[\"delivered\"]);",
+          "expected[\"delivered_dedupe_keys\"]",
+          "assert_eq!(capture.bark_request_count(), expected[\"requests\"]);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.queue.malformed_then_valid",
+              "bark.queue.malformed_then_valid.delivered"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定 Python 返回的完整 delivered event 数组、dedupe key 和真实请求数逐项比较。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_json_config_overrides_environment",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_json_settings_override_environment_and_missing_files_use_environment",
+        "assertions": [
+          "assert_eq!(\n        json!({\n            \"enabled\":reference_settings.bark[\"enabled\"],",
+          "reference[\"bark\"][\"settings_file_overrides_environment\"]",
+          "assert_eq!(loaded.bark[\"enabled\"], true);",
+          "assert_eq!(loaded.bark[\"device_key\"], \"fixture-file-priority-key\");",
+          "loaded.bark[\"server_url\"],\n        format!(\"{}/from-file\", capture.url)\n    );",
+          "assert_eq!(file_notifier.notify_oauth(&[event], None).await.len(), 1);",
+          "assert_eq!(request.path, \"/from-file/push\");",
+          "assert_eq!(request.payload[\"device_key\"], \"fixture-file-priority-key\");",
+          "assert_eq!(requests.len(), 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.settings_file_overrides_environment"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定 Python settings 对照文件覆盖环境变量，并以真实回环请求核对 file key/path。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_environment_precedes_defaults_when_file_is_missing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_json_settings_override_environment_and_missing_files_use_environment",
+        "assertions": [
+          "reference[\"bark\"][\"settings_environment_fallback\"]",
+          "assert_eq!(loaded.bark[\"enabled\"], expected[\"enabled\"]);",
+          "assert_eq!(loaded.bark_valid, expected[\"config_valid\"]);",
+          "assert_eq!(loaded.bark[\"device_key\"], \"fixture-env-fallback-key\");",
+          "loaded.bark[\"server_url\"],\n        format!(\"{}/from-environment\", capture.url)\n    );",
+          ".notify_oauth(&[event], None)\n            .await\n            .len(),\n        1",
+          "assert_eq!(requests.len(), 2);",
+          "assert_eq!(requests[1].path, \"/from-environment/push\");",
+          "requests[1].payload[\"device_key\"],\n        \"fixture-env-fallback-key\"\n    );"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.settings_environment_fallback"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "配置文件缺失时环境变量 settings 与实际回环 request 均和 pinned Python fallback 比较。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_invalid_existing_config_is_not_treated_as_explicitly_disabled",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "malformed_and_wrong_type_bark_config_remain_invalid",
+        "assertions": [
+          "reference[\"bark\"][\"invalid_existing_config\"][\"config_valid\"]",
+          "assert!(!invalid.bark_valid);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.invalid_existing_config.config_valid"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "损坏的既有 JSON 不当作显式关闭，Rust config_valid 为 false。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_non_utf8_existing_config_is_invalid_without_crashing",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "non_utf8_bark_config_keeps_invalid_config_panel_readable_like_pinned_python",
+        "assertions": [
+          "assert!(!loaded.bark_valid);",
+          "let panel = notifier.panel().unwrap_or_else(|error|",
+          "panel[\"config_valid\"],"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.invalid_utf8_config.settings.config_valid",
+              "bark.invalid_utf8_config.panel_config_valid"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定旧配置有效性和 panel.config_valid 断言均在 Rust target 中表达；若 panel 返回错误，测试显式失败。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_invalid_field_schema_and_effective_url_mark_config_invalid",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_invalid_field_and_effective_url_cases_match_pinned_python",
+        "assertions": [
+          "loaded.bark_valid, case[\"expected_config_valid\"],",
+          "\"pinned invalid configuration case {}\","
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.invalid_schema_cases"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定旧配置有效性断言逐个 case 比较 Rust 对应值；错误 schema 和外部 HTTP URL 均有预期结果。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_atomic_save_is_0600_and_leaves_no_temporary_file",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_store_write_json_is_atomic_private_and_leaves_no_temporary_file",
+        "assertions": [
+          "write_atomic_json(&path, &json!({\"device_key\":\"fixture-save-one\"})).unwrap();",
+          "write_atomic_json(&path, &json!({\"device_key\":\"fixture-save-two\"})).unwrap();",
+          "assert_eq!(persisted, expected[\"persisted\"]);",
+          "fs::metadata(&path).unwrap().permissions().mode() & 0o777",
+          "expected[\"temporary_files\"].as_array().unwrap().len()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.atomic_save.persisted",
+              "bark.atomic_save.mode_octal",
+              "bark.atomic_save.temporary_files"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "两次调用 Rust store::write_json 写入与 pinned raw saver 相同的完整 payload，逐项核对最终 JSON、0600 和无残留临时文件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkConfigTests.test_panel_config_never_exposes_device_key",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "bark_config_service_save_preserves_fields_and_redacts_runtime_key",
+        "assertions": [
+          "assert_eq!(comparable_persisted, expected[\"persisted\"]);",
+          "assert_eq!(persisted[\"updated_by\"], \"fixture-admin\");",
+          "assert_eq!(second[\"config_updated_at\"], persisted[\"updated_at\"]);",
+          "assert!(!rendered.contains(\"fixture-save-two\"));",
+          "assert!(!rendered.contains(configured_url));",
+          "assert!(second.get(\"device_key\").is_none());",
+          "assert!(second.get(\"server_url\").is_none());",
+          "assert_eq!(second[\"device_key_status\"], \"已设置\");"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.config_save.persisted",
+              "bark.config_save.mode_octal",
+              "bark.config_save.temporary_files"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "Rust ConfigService.save 两次更新后，与固定 0.1.39 ConfigService.save 的完整持久对象（仅归一化动态 updated_at）、0600 和无临时文件对照，并核实面板不泄露实际 device key/URL。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_success_is_acknowledged_without_other_sender",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "assert!(state[\"pending_events\"].as_object().unwrap().is_empty());",
+          "assert_eq!(capture.bark_request_count(), 1);",
+          "state[\"scheduler\"][\"7\"][\"last_notification_suppressed\"],",
+          "json!([\"fixture:queue-success\"])"
+        ]
+      },
+      "coverage_note": "The real Runtime delivers and acknowledges the queued OAuth event through Bark, preserves last_notification_suppressed=false, and a second delivery makes no additional request. The old hasattr(main_module, TelegramOpsBot) check is a Python module-structure assertion: the reviewed Rust runtime has only its typed Bark notification path, with no alternate sender module or dependency; no Python private symbol is required for equivalent delivery behavior."
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_confirmed_reset_credit_event_is_pushed_once_with_specific_title",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "assert_eq!(capture.bark_request_count(), 2);",
+          "reference[\"bark\"][\"queue\"][\"confirmed_credit\"][\"title\"]",
+          "restarted.snapshot().unwrap()[\"scheduler\"][\"7\"][\"notified_keys\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.queue.confirmed_credit.title"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "两次 deliver 只新增一次 request；title 与 pinned Python 一致且重启后保留 notified key。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_failure_keeps_pending_for_retry",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "after_failure[\"pending_events\"][\"fixture:queue-failure\"]",
+          "\"an unacknowledged event remains retryable\"",
+          "runtime.monitor.store.snapshot().unwrap()[\"pending_events\"][\"fixture:queue-failure\"]",
+          "after_failure[\"scheduler\"],\n        scheduler_before_failure"
+        ],
+        "fixtures": []
+      },
+      "coverage_note": "Bark business failure 保留原 pending 事件并增加 request 数；scheduler 相对失败前快照不变，failed key 不登记为 notified。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_manual_control_revokes_already_copied_recovery_notification",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "manual_control_cancels_copied_recovery_notification_before_bark_delivery",
+        "assertions": [
+          "assert_eq!(capture.bark_request_count(), 1);",
+          "value != \"z-fixture-recovery\"",
+          "state[\"pending_events\"].as_object().unwrap().is_empty()"
+        ]
+      },
+      "coverage_note": "请求 gate 阻塞已复制事件期间执行 manual control；释放后仅 active 通知成功，recovery 被撤销。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_explicitly_disabled_marks_pending_as_suppressed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "state[\"scheduler\"][\"7\"][\"last_notification_suppressed\"],",
+          "assert_eq!(capture.bark_request_count(), 4);",
+          ".get(\"fixture:queue-disabled\")"
+        ]
+      },
+      "coverage_note": "显式关闭后 pending 被消耗并设置 suppression 状态，Bark 请求数不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_invalid_config_preserves_pending",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "invalid_state[\"pending_events\"][\"fixture:queue-invalid\"]",
+          "invalid_state[\"scheduler\"].as_object().unwrap().is_empty()",
+          "assert_eq!(capture.bark_request_count(), 4);"
+        ]
+      },
+      "coverage_note": "损坏配置下 pending 保留、scheduler 无成功记录且没有新增 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_bark:BarkQueueTests.test_invalid_environment_enabled_preserves_pending",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "oauth_notification_queue_ack_retry_dedup_and_suppression_match_pinned_python",
+        "assertions": [
+          "env_state[\"pending_events\"][\"fixture:queue-invalid-environment\"]",
+          "env_state[\"scheduler\"].as_object().unwrap().is_empty()",
+          "reference[\"bark\"][\"queue\"][\"invalid_environment\"][\"config_valid\"]"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "bark.queue.invalid_environment.config_valid"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "无效 enabled 环境值的 config_valid 和 pending 保留行为与 pinned Python fixture 比较。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_match_requires_exact_provider_openai_oauth_error",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_and_gateway_match_cases_flow_through_clue_state_machine",
+        "assertions": [
+          "assert_collected_fixture_case(&capacity_state, case);",
+          "for case in capacity_cases.as_array().unwrap()"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "capacity.match_cases"
+            ]
+          }
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_collected_fixture_case",
+            "assertions": [
+              "!expected.is_empty(),\n            \"fixture expected a concrete matched message for {}\",",
+              "error_evidence::match_message(&case[\"row\"]),\n            Some(expected),",
+              "assert_eq!(notification[\"status\"], \"clue\",",
+              "snapshot[\"detection_events\"]\n                .get(event_key.as_str())\n                .unwrap()[\"account_id\"],",
+              "notification.is_null(),\n            \"case {} should not emit a clue\",",
+              "get(event_key.as_str())\n            .is_none()"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "消息识别结果与 provider/openai/oauth、删除账号、gateway 请求范围通过真实 PostgreSQL clue 状态机核对；无效候选不产生 clue/event。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_first_watermark_has_no_history_and_each_new_event_creates_one_clue",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_watermark_replay_pagination_and_restart_preserve_clue_events",
+        "assertions": [
+          "assert_eq!(first[\"cursor\"], base + 2);",
+          "first[\"detection_events\"].as_object().unwrap().is_empty()",
+          "two_new[\"detection_events\"]\n        .get(format!(\"error:{}\", base + 3).as_str())\n        .is_some());",
+          "two_new[\"detection_events\"]\n        .get(format!(\"error:{}\", base + 4).as_str())\n        .is_some());",
+          "\"poll replay does not duplicate clue events\"",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 PG 首次 watermark 忽略旧行；两个新 clue、低 ID replay 和重复 poll 均验证，且无 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_pagination_replay_delay_and_restart_continue_from_persisted_cursor",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_watermark_replay_pagination_and_restart_preserve_clue_events",
+        "assertions": [
+          "get(format!(\"error:{}\", base + 1).as_str())",
+          "assert_eq!(paged[\"detection_events\"].as_object().unwrap().len(), 402);",
+          "assert_eq!(paged[\"cursor\"], base + 403);",
+          "assert_eq!(restored[\"cursor\"], base + 403);",
+          "assert_eq!(resumed[\"cursor\"], base + 404);",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "低 ID 延迟行 replay、402 条 clue 的分页、持久 cursor 重启与继续拉取均在临时 PG 中检查。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_raw_clues_never_enter_bark_retry_schedule",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "raw_capacity_clues_never_enter_retry_windows_or_bark_request_schedule",
+        "assertions": [
+          "for delay in reference[\"capacity\"][\"retry_windows\"].as_array().unwrap()",
+          "assert!(state[\"slow_pending\"].as_object().unwrap().is_empty());",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;",
+          "assert_eq!(capture.bark_request_count(), 0);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "capacity.retry_windows"
+            ]
+          }
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "按 pinned Python retry 时间窗推进时钟，检查 clue 不进入 pending/slow_pending 且没有 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_save_failure_does_not_advance_cursor_or_claim_delivery",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_save_failures_do_not_advance_or_lose_cursor_and_evidence",
+        "assertions": [
+          "restarted_after_failed_save.store.snapshot().is_err()",
+          "assert_eq!(unchanged[\"cursor\"], base + 1);",
+          "assert_eq!(recovered[\"cursor\"], base + 2);",
+          "fs::read(&path).unwrap(), bytes_before",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "临时状态目录保存失败后检查文件、cursor、evidence 与恢复 retry，且无 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_suppresses_new_clues_but_preserves_other_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_mark_suppresses_only_its_account_and_preserves_other_clues",
+        "assertions": [
+          "state[\"detection_events\"].get(\"error:9992001\").is_none()",
+          "state[\"detection_events\"].get(\"error:9992002\").is_some()",
+          "state[\"notifications\"][\"9992001\"][\"reason\"],",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "mark 只抑制指定账户，另一账户保留 clue，且没有 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_clears_legacy_pending_and_retry_but_preserves_other_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_mark_clears_legacy_pending_and_retry_only_for_marked_account",
+        "assertions": [
+          "assert!(state[\"pending\"].get(\"1\").is_none());",
+          "assert!(state[\"pending\"].get(\"2\").is_some());",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "对两个账户 seed legacy pending 并 mark 一个，核对只清理该账户和请求数为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_is_scoped_to_id_not_parent_or_same_name_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_mark_scope_uses_account_id_instead_of_parent_or_name",
+        "assertions": [
+          "get(format!(\"error:{}\", base + 2).as_str())",
+          "get(format!(\"error:{}\", base + 3).as_str())",
+          "vec![parent.to_string()]",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实父／子 accounts 行同名，mark 只作用于父 account ID，Bark 请求为零。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_collect_loop_persists_one_new_clue_within_three_seconds_without_bark",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "runtime_persists_provider_and_gateway_clues_within_three_seconds_without_bark_delivery",
+        "assertions": [
+          "assert!(elapsed <= StdDuration::from_secs(3));",
+          "state[\"detection_events\"]\n        .get(provider_key.as_str())\n        .is_some());",
+          "state[\"notifications\"][(base + 1).to_string()][\"status\"],",
+          "assert!(capture.bark_requests().is_empty());"
+        ]
+      },
+      "coverage_note": "Runtime collect loop 在三秒内通过真实 PG 持久化 provider clue（同测 gateway），不发 Bark。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_unmark_only_allows_events_after_change_and_mark_survives_restart",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_unmark_allows_only_newer_evidence_and_persists_across_restart",
+        "assertions": [
+          "state[\"detection_events\"].get(\"error:9994001\").is_none()",
+          "state[\"detection_events\"].get(\"error:9994002\").is_some()",
+          "restored[\"marks\"][\"1\"][\"marked\"],",
+          ".store\n            .set_mark(1, true, &\"0\".repeat(64), changed_at, None)\n            .unwrap_err()\n            .status\n            .as_u16(),\n        409",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "unmark 时间门槛、重启持久化、旧 revision 409 和 Bark 请求数均有状态断言。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_capacity_alerts:CapacityAlertTests.test_mark_and_account_guard_serialize_per_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_mark_and_account_guard_serialize_per_account",
+        "assertions": [
+          ".recv_timeout(StdDuration::from_secs(2))",
+          "assert!(started.load(Ordering::Acquire));",
+          "!marking.is_finished(),\n        \"mark waits for the per-account guard\"",
+          "guarded.join().unwrap();",
+          "assert_eq!(marking.join().unwrap()[\"marked\"], true);",
+          "assert!(alerts.store.snapshot().unwrap()[\"pending\"]\n        .as_object()\n        .unwrap()\n        .is_empty());",
+          "assert_eq!(capture.bark_request_count(), 0);"
+        ]
+      },
+      "coverage_note": "并发线程持有账户 guard 时 mark 等待，释放后完成并清空 pending。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_gateway_alerts022:GatewayAlertTests.test_gateway_shapes_and_complete_phrases_without_request_body_false_positive",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "capacity_and_gateway_match_cases_flow_through_clue_state_machine",
+        "assertions": [
+          "for case in gateway_cases.as_array().unwrap()",
+          "assert_collected_fixture_case(&gateway_state, case);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "gateway.match_cases"
+            ]
+          }
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_collected_fixture_case",
+            "assertions": [
+              "!expected.is_empty(),\n            \"fixture expected a concrete matched message for {}\",",
+              "error_evidence::match_message(&case[\"row\"]),\n            Some(expected),",
+              "assert_eq!(notification[\"status\"], \"clue\",",
+              "snapshot[\"detection_events\"]\n                .get(event_key.as_str())\n                .unwrap()[\"account_id\"],",
+              "notification.is_null(),\n            \"case {} should not emit a clue\",",
+              "get(event_key.as_str())\n            .is_none()"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "消息识别结果与 provider/openai/oauth、删除账号、gateway 请求范围通过真实 PostgreSQL clue 状态机核对；无效候选不产生 clue/event。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_gateway_alerts022:GatewayAlertTests.test_sql_template_can_be_formatted_and_preserves_provider_history",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "gateway_history_remains_queryable_while_upgrade_clues_are_not_backfilled",
+        "assertions": [
+          "assert!(sql::ERRORS_ERROR_WHERE.contains(\"e.error_owner='provider'\"));",
+          "assert!(sql::ERRORS_ERROR_WHERE.contains(\"e.error_owner='platform'\"));",
+          "assert!(sql::ERRORS_ERROR_WHERE.contains(\"EXISTS (SELECT 1 FROM accounts evidence_account\"));",
+          "ids.contains(&(base + 1))",
+          "ids.contains(&(base + 2))",
+          "assert_eq!(scoped[\"items\"][0][\"id\"], base + 2);"
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/notifications/notifications-fixtures.json",
+            "json_paths": [
+              "gateway.sql_contract.dto_input",
+              "gateway.sql_contract.dto_expected"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "真实 Errors SQL 查询验证 provider/gateway history、账户过滤和固定 Python DTO；并保留有关联账户的 SQL 条件。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_gateway_alerts022:GatewayAlertTests.test_upgrade_history_visible_but_not_backfilled_marked_still_suppressed",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "gateway_history_remains_queryable_while_upgrade_clues_are_not_backfilled",
+        "assertions": [
+          "initial[\"detection_events\"].as_object().unwrap().is_empty()",
+          "get(format!(\"error:{}\", base + 3).as_str())",
+          "state[\"notifications\"][(base + 3).to_string()][\"reason\"],",
+          "state[\"notifications\"][(base + 4).to_string()][\"status\"],",
+          "assert_no_bark_call_from_notifications(&runtime, &capture).await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "assert_no_bark_call_from_notifications",
+            "assertions": [
+              "runtime.monitor.deliver().await.unwrap();",
+              "runtime.detection.deliver_notifications().await.unwrap();",
+              "assert_eq!(capture.bark_request_count(), 0);"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "旧 history 可查询但不回填；mark 后 gateway 被抑制，同批 provider 有 clue，无 Bark 请求。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_gateway_alerts022:GatewayAlertTests.test_gateway_clue_persists_under_three_seconds_while_other_work_waits",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/notification_contract.rs",
+        "test_name": "runtime_persists_provider_and_gateway_clues_within_three_seconds_without_bark_delivery",
+        "assertions": [
+          "assert!(elapsed <= StdDuration::from_secs(3));",
+          "state[\"detection_events\"]\n        .get(gateway_key.as_str())\n        .is_some());",
+          "state[\"notifications\"][(base + 2).to_string()][\"status\"],",
+          "assert!(!unrelated.is_finished());",
+          "assert!(capture.bark_requests().is_empty());"
+        ]
+      },
+      "coverage_note": "真实 runtime collect loop 三秒内持久化 gateway clue；无关工作仍运行且 Bark 零请求。"
+    }
+  ],
+  "uncovered_notes": []
+}

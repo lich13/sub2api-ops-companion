@@ -154,6 +154,27 @@ async function clickResultButton(label: string) {
   await flush();
 }
 
+async function clickSummaryButton(label: string) {
+  const button = [...container.querySelectorAll<HTMLButtonElement>('section[aria-label="批量测试连接摘要"] button')]
+    .find((node) => node.textContent?.trim() === label);
+  if (!button) throw new Error(`missing summary button: ${label}`);
+  await act(async () => button.click());
+  await flush();
+}
+
+type PersistedState = { batchId?: string; request?: { request_id?: string }; visible?: boolean };
+
+function persistedStates() {
+  return Object.keys(localStorage).flatMap((key) => {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) ?? "{}") as PersistedState;
+      return value && typeof value === "object" && ("batchId" in value || "request" in value) ? [{ key, value }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 async function advance(ms = 10_000) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
   await flush();
@@ -294,6 +315,53 @@ describe("connection batch tests", () => {
     expect(resultRow(account(2).name).textContent).toContain("通过");
   });
 
+  it("persists a closed timed-out request through remount and recovers it only after explicit reopen", async () => {
+    const storageKey = "https://timeout.example.invalid";
+    const recovered = batch("batch-recovered-hidden", [completed(1)]);
+    let attempts = 0;
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch") {
+        if (++attempts === 1) throw new Error("请求超时，提交结果未知");
+        return recovered as never;
+      }
+      if (method === "GET" && path === "/account-operations?batch_id=batch-recovered-hidden") return recovered as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    const accountWithPersistableVersion = account(1, {
+      version: "a".repeat(64),
+      operation_versions: { test: "b".repeat(64) },
+    });
+    await renderHarness({ storageKey, connectionKey: "timeout:1", accounts: [accountWithPersistableVersion] });
+    await click("start");
+
+    expect(output("error")).toContain("请求超时");
+    expect(output("busy")).toBe("true");
+    expect(submissions()).toHaveLength(1);
+    const originalRequest = submissions()[0]?.[2];
+    await clickResultButton("关闭结果");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("提交结果待确认");
+    expect(output("busy")).toBe("true");
+    expect(persistedStates()[0]?.value).toEqual({ request: originalRequest, visible: false });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderHarness({ storageKey, connectionKey: "timeout:2", accounts: [account(2)] });
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("提交结果待确认");
+    expect(output("busy")).toBe("true");
+    expect(submissions()).toHaveLength(1);
+
+    await clickSummaryButton("查看测活结果");
+    expect(submissions()).toHaveLength(1);
+    await clickResultButton("恢复提交结果");
+    expect(submissions()).toHaveLength(2);
+    expect(submissions()[1]?.[2]).toEqual(originalRequest);
+    expect(output("batch-id")).toBe("batch-recovered-hidden");
+    expect(output("busy")).toBe("false");
+    expect(resultRow(account(1).name).textContent).toContain("通过");
+  });
+
   it("persists the batch under an opaque key and restores it with GET after remounting the same server", async () => {
     const storageKey = "https://persist.example.invalid";
     const savedBatchId = "a".repeat(32);
@@ -304,11 +372,16 @@ describe("connection batch tests", () => {
     });
     await renderHarness({ storageKey, connectionKey: "persist:1" });
     await click("start");
-    const keys = Object.keys(localStorage);
-    const savedKey = keys.find((key) => localStorage.getItem(key)?.includes(savedBatchId));
-    expect(savedKey).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem(savedKey!)!)).toEqual({ batchId: savedBatchId });
-    expect(keys.join(" ")).not.toContain(storageKey);
+    await advance();
+    expect(resultRow(account(1).name).textContent).toContain("通过");
+    await clickResultButton("关闭结果");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("已结束 1/1 · 通过 1");
+
+    const saved = persistedStates().find(({ value }) => value.batchId === savedBatchId);
+    expect(saved?.value).toEqual({ batchId: savedBatchId, visible: false });
+    expect(saved?.key).toBeTruthy();
+    expect(saved?.key).not.toContain(storageKey);
     const initialReads = reads().length;
 
     await act(async () => root.unmount());
@@ -320,7 +393,179 @@ describe("connection batch tests", () => {
     expect(api).toHaveBeenCalledWith("GET", `/account-operations?batch_id=${savedBatchId}`);
     expect(reads().length).toBeGreaterThan(initialReads);
     expect(output("batch-id")).toBe(savedBatchId);
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("查看测活结果");
+    expect(container.textContent).not.toContain(account(1).name);
+
+    await clickSummaryButton("查看测活结果");
     expect(resultRow(account(1).name).textContent).toContain("通过");
+    expect(submissions()).toHaveLength(1);
+  });
+
+  it("opens a saved batch by default when its legacy preference has no visibility field", async () => {
+    const storageKey = "https://legacy.example.invalid";
+    const savedBatchId = "c".repeat(32);
+    const savedBatch = batch(savedBatchId, [completed(1)]);
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch") return savedBatch as never;
+      if (method === "GET" && path === `/account-operations?batch_id=${savedBatchId}`) return savedBatch as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderHarness({ storageKey, connectionKey: "legacy:1" });
+    await click("start");
+
+    const saved = persistedStates().find(({ value }) => value.batchId === savedBatchId);
+    expect(saved).toBeTruthy();
+    localStorage.setItem(saved!.key, JSON.stringify({ batchId: savedBatchId }));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+
+    await renderHarness({ storageKey, connectionKey: "legacy:2", accounts: [] });
+    await advance();
+
+    expect(submissions()).toHaveLength(1);
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
+    expect(resultRow(account(1).name).textContent).toContain("通过");
+  });
+
+  it("opens the new batch automatically after a completed result was closed", async () => {
+    const firstBatchId = "d".repeat(32);
+    const secondBatchId = "e".repeat(32);
+    let submissionsCount = 0;
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch") {
+        const nextId = ++submissionsCount === 1 ? firstBatchId : secondBatchId;
+        const accountId = submissionsCount;
+        return batch(nextId, [completed(accountId)]) as never;
+      }
+      if (method === "GET" && path === `/account-operations?batch_id=${firstBatchId}`) return batch(firstBatchId, [completed(1)]) as never;
+      if (method === "GET" && path === `/account-operations?batch_id=${secondBatchId}`) return batch(secondBatchId, [completed(2)]) as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderHarness({ accounts: [account(1)] });
+    await click("start");
+    await clickResultButton("关闭结果");
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+
+    await renderHarness({ accounts: [account(2)] });
+    await click("start");
+
+    expect(submissions()).toHaveLength(2);
+    expect(output("batch-id")).toBe(secondBatchId);
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
+    expect(resultRow(account(2).name).textContent).toContain("通过");
+    expect(container.textContent).not.toContain(account(1).name);
+  });
+
+  it("keeps a running batch busy after hiding its results", async () => {
+    const runningBatch = batch("batch-hidden-running", [operation(1, { status: "running" })]);
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch") return runningBatch as never;
+      if (method === "GET" && path === "/account-operations?batch_id=batch-hidden-running") return runningBatch as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderHarness();
+    await click("start");
+
+    expect(output("busy")).toBe("true");
+    expect(resultRow(account(1).name).textContent).toContain("测试中");
+    await clickResultButton("关闭结果");
+
+    const summary = container.querySelector('section[aria-label="批量测试连接摘要"]');
+    expect(summary?.textContent).toContain("查看测活结果");
+    expect(summary?.textContent).toContain("已完成 0/1 · 通过 0");
+    expect(output("busy")).toBe("true");
+    await click("start");
+    expect(submissions()).toHaveLength(1);
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+  });
+
+  it("keeps a closed result hidden when a pending submission responds late", async () => {
+    const response = deferred<OperationBatch>();
+    const lateBatch = batch("batch-late-after-close", [operation(1, { status: "running" })]);
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "POST" && path === "/account-operations/batch") return response.promise as never;
+      if (method === "GET" && path === "/account-operations?batch_id=batch-late-after-close") return lateBatch as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+    await renderHarness();
+    await click("start");
+
+    expect(output("starting")).toBe("true");
+    expect(output("busy")).toBe("true");
+    await clickResultButton("关闭结果");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("正在提交");
+    expect(output("busy")).toBe("true");
+    expect(persistedStates()[0]?.value).toMatchObject({ visible: false, request: { request_id: expect.any(String) } });
+
+    await click("start");
+    expect(submissions()).toHaveLength(1);
+    await act(async () => response.resolve(lateBatch));
+    await flush();
+
+    expect(output("batch-id")).toBe("batch-late-after-close");
+    expect(output("starting")).toBe("false");
+    expect(output("busy")).toBe("true");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')?.textContent).toContain("已完成 0/1 · 通过 0");
+    expect(persistedStates()[0]?.value).toEqual({ batchId: "batch-late-after-close", visible: false });
+    expect(submissions()).toHaveLength(1);
+  });
+
+  it("restores each connection's visibility independently when switching between connections", async () => {
+    const firstBatchId = "1".repeat(32);
+    const secondBatchId = "2".repeat(32);
+    const first = batch(firstBatchId, [completed(1)]);
+    const second = batch(secondBatchId, [completed(2)]);
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (method === "POST" && path === "/account-operations/batch") {
+        const submitted = body as { accounts: { account_id: number }[] };
+        return (submitted.accounts[0]?.account_id === 1 ? first : second) as never;
+      }
+      if (method === "GET" && path === `/account-operations?batch_id=${firstBatchId}`) return first as never;
+      if (method === "GET" && path === `/account-operations?batch_id=${secondBatchId}`) return second as never;
+      throw new Error(`Unexpected fixture request: ${method} ${path}`);
+    });
+
+    await renderHarness({
+      connectionKey: "connection-a:1",
+      storageKey: "https://connection-a.example.invalid",
+      accounts: [account(1)],
+    });
+    await click("start");
+    await clickResultButton("关闭结果");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+
+    await renderHarness({
+      connectionKey: "connection-b:1",
+      storageKey: "https://connection-b.example.invalid",
+      accounts: [account(2)],
+    });
+    await click("start");
+    expect(resultRow(account(2).name).textContent).toContain("通过");
+
+    await renderHarness({
+      connectionKey: "connection-a:2",
+      storageKey: "https://connection-a.example.invalid",
+      accounts: [account(1)],
+    });
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeTruthy();
+
+    await renderHarness({
+      connectionKey: "connection-b:2",
+      storageKey: "https://connection-b.example.invalid",
+      accounts: [account(2)],
+    });
+    expect(resultRow(account(2).name).textContent).toContain("通过");
+    expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
+    expect(submissions()).toHaveLength(2);
+    expect(persistedStates().map(({ value }) => [value.batchId, value.visible]).sort()).toEqual([
+      [firstBatchId, false],
+      [secondBatchId, true],
+    ]);
   });
 
   it("pauses batch polling while inactive and resumes it when active again", async () => {

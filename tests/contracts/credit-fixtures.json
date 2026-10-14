@@ -1,0 +1,205 @@
+{
+  "reference": {
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+    "source": "app.auto_reset.quota_result/project_state and app.auto_reset_policy constants"
+  },
+  "quota_result": {
+    "input": {
+      "now": "2026-09-30T08:00:00+00:00",
+      "requested_at": "2026-09-30T07:59:58+00:00",
+      "row": {
+        "id": 7,
+        "platform": "openai",
+        "type": "oauth",
+        "credentials": {"plan_type": "plus"},
+        "extra": {}
+      },
+      "data": {
+        "fetched_at": "2026-09-30T08:00:00+00:00",
+        "rate_limit": {
+          "primary_window": {
+            "limit_window_seconds": 18000,
+            "used_percent": 10,
+            "reset_at": 1790773200,
+            "reset_after_seconds": 18000
+          },
+          "secondary_window": {
+            "limit_window_seconds": 604800,
+            "used_percent": 20,
+            "reset_at": 1791187200,
+            "reset_after_seconds": 432000
+          }
+        }
+      }
+    },
+    "expected": {
+      "account_id": 7,
+      "template_type": "oauth",
+      "success": true,
+      "source": "sub2api_admin_usage",
+      "queried_at": "2026-09-30T08:00:00+00:00",
+      "read_started_at": "2026-09-30T07:59:58+00:00",
+      "read_completed_at": "2026-09-30T08:00:00+00:00",
+      "oauth_quota": {
+        "plan_type": "plus",
+        "updated_at": "2026-09-30T08:00:00+00:00",
+        "ui_windows": [
+          {
+            "key": "codex_5h",
+            "label": "5h",
+            "used_percent": 10.0,
+            "remaining_percent": 90.0,
+            "reset_at": "2026-09-30T13:00:00+00:00",
+            "reset_after_seconds": 18000,
+            "window_minutes": 300,
+            "depleted": false,
+            "reset_source": "server_exact"
+          },
+          {
+            "key": "codex_7d",
+            "label": "7d",
+            "used_percent": 20.0,
+            "remaining_percent": 80.0,
+            "reset_at": "2026-10-05T08:00:00+00:00",
+            "reset_after_seconds": 432000,
+            "window_minutes": 10080,
+            "depleted": false,
+            "reset_source": "server_exact"
+          }
+        ]
+      }
+    }
+  },
+  "project": {
+    "input": {
+      "task": {
+        "episode": "fixture-episode",
+        "stage": "finished",
+        "policy_version": 1,
+        "outcome": "unknown",
+        "result_reason": "verification_interrupted",
+        "error_code": "result_uncertain",
+        "trigger_at": "2026-09-30T08:00:00+00:00",
+        "consume_deadline_at": "2026-09-30T08:05:00+00:00",
+        "verification_deadline_at": "2026-09-30T08:10:00+00:00",
+        "completed_at": "2026-09-30T08:00:45+00:00",
+        "attempt_at": "2026-09-30T08:00:20+00:00",
+        "evidence_source": "account_rate_limit",
+        "evidence_at": "2026-09-30T08:00:00+00:00",
+        "test_completed_at": null,
+        "recovered_at": null,
+        "next_at": null
+      },
+      "notices": {
+        "fixture-episode": {"status": "delivered", "attempts": 3}
+      }
+    },
+    "expected": {
+      "stage": "finished",
+      "label": "消费结果不确定，禁止重复用卡",
+      "error": "验证曾派发但结果未保存，已停止自动续接",
+      "notification_status": "delivered",
+      "notification_attempts": 3,
+      "trigger_at": "2026-09-30T08:00:00+00:00",
+      "consume_deadline_at": "2026-09-30T08:05:00+00:00",
+      "verification_deadline_at": "2026-09-30T08:10:00+00:00",
+      "outcome": "unknown",
+      "completed_at": "2026-09-30T08:00:45+00:00",
+      "next_at": null,
+      "attempt_at": "2026-09-30T08:00:20+00:00",
+      "evidence_source": "account_rate_limit",
+      "evidence_at": "2026-09-30T08:00:00+00:00",
+      "test_completed_at": null,
+      "recovered_at": null
+    }
+  },
+  "reason_codes": {
+    "expected": {
+      "account_changed": "账号配置已变化",
+      "account_deleted": "账号已删除或不存在",
+      "account_disabled": "账号已停用",
+      "account_error": "账号状态异常",
+      "account_ineligible": "账号资格或恢复设置已变化",
+      "already_redeemed": "上游报告已兑换，本轮消费结果待确认",
+      "auth_paused": "认证异常，等待凭据更新",
+      "bank_unavailable": "指纹库缺少判定目标",
+      "block_cleared": "本轮限流或耗尽已解除",
+      "clock_untrusted": "时钟或触发时间无法可靠确认",
+      "conflict": "Sub2API 自动用卡已开启，存在冲突",
+      "consume_deadline": "已超过五分钟用卡窗口，未补执行",
+      "credit_snapshot_unconfirmed": "重置卡查询结果尚未确认，等待重新核对",
+      "credit_unconfirmed": "没有可信的可用重置卡观测",
+      "detection_held": "账号已标记降智或被检测停调度",
+      "http_400": "验证请求被上游拒绝",
+      "http_401": "上游认证失败",
+      "http_402": "上游拒绝账号额度",
+      "http_403": "上游拒绝访问",
+      "http_404": "验证接口或模型不存在",
+      "http_422": "验证请求参数无效",
+      "http_429": "验证受到上游限流",
+      "incomplete_quota": "额度证据不完整",
+      "incomplete_response": "模型响应未完整结束",
+      "invalid_credit_snapshot": "重置卡余额或到期信息无效",
+      "invalid_model_or_request": "模型或请求参数被上游拒绝",
+      "manual_intervention": "人工操作已变更",
+      "model_analysis_insufficient": "模型验证未获得有效指纹样本",
+      "model_busy": "等待当前模型测试结束",
+      "model_cooldown": "模型冷却无法在截止前完成",
+      "model_request_failed": "模型验证请求失败",
+      "model_unavailable": "验证模型不在当前分组白名单中",
+      "model_verification_pending": "等待模型验证",
+      "model_verifier_unavailable": "模型验证服务尚未就绪",
+      "no_credit": "没有可用重置卡",
+      "nothing_to_reset": "上游确认当前无需重置，等待状态核对",
+      "notification_failed": "通知发送失败",
+      "ownership_changed": "账号已被其他操作修改，请人工确认调度状态",
+      "pause_uncertain": "暂停结果待确认，未发送用卡请求",
+      "protocol_mismatch": "模型响应协议不兼容",
+      "query_backoff": "等待查询退避",
+      "query_budget": "剩余查询预算不足",
+      "query_busy": "额度读取仍在执行",
+      "query_cooldown": "查询冷却超出本轮用卡截止时间",
+      "query_slots": "等待额度查询执行槽",
+      "query_state_unavailable": "状态无法保存，已暂停自动处理",
+      "quota_unavailable": "必要额度窗口尚未恢复",
+      "rate_limited": "验证遭到上游限流",
+      "recovery_failed": "恢复调度未确认",
+      "recovery_ineligible": "恢复验证条件已变化",
+      "recovery_state_changed": "恢复状态已变化",
+      "reset_state_changed": "账号或额度证据已变化",
+      "result_uncertain": "重置结果待确认，禁止重复用卡",
+      "supplement_limit": "本轮卡证据补查已使用，未重复查询",
+      "test_failed": "测活失败",
+      "test_slots": "等待验证执行槽",
+      "verification_deadline": "已超过五分钟验证期限",
+      "verification_interrupted": "验证曾派发但结果未保存，已停止自动续接",
+      "verification_limit": "两轮验证均未确认恢复"
+    }
+  },
+  "evidence_errors": {
+    "expected": {
+      "content_changed": "卡快照内容已变化",
+      "credentials_changed": "凭据已变化",
+      "limit_changed": "限流事件已变化",
+      "missing": "缺少可信卡观测",
+      "new_failure": "出现更新的查询失败证据",
+      "outside_window": "卡观测不在当前额度窗口内",
+      "quota_missing": "缺少有效额度时间",
+      "window_changed": "额度窗口已变化"
+    }
+  },
+  "labels": {
+    "expected": {
+      "consume_failed": "用卡明确失败",
+      "not_executed": "未执行用卡",
+      "restored": "用卡成功，已恢复调度",
+      "unknown": "消费结果不确定，禁止重复用卡",
+      "unrecovered": "用卡成功，恢复未完成"
+    }
+  },
+  "fallbacks": {
+    "reason": "操作未确认",
+    "evidence_error": "卡证据无效",
+    "label": "最近用卡结果"
+  }
+}

@@ -1,0 +1,481 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_explicit_empty_lists_remain_empty_and_survive_settings_reload",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "partial_old_client_save_preserves_modes_and_explicit_empty_reload",
+        "assertions": [
+          "scenario(\"partial_save\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.5",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_invalid_account_ids_cannot_change_recovery_selection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "invalid_selection_and_overlap_never_partially_write",
+        "assertions": [
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+          "assert_eq!(h.runtime.config.snapshot(Some(\"oauth\")).unwrap(), initial)"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_oauth_lists_are_exposed_and_partial_old_client_save_preserves_them",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "partial_old_client_save_preserves_modes_and_explicit_empty_reload",
+        "assertions": [
+          "scenario(\"partial_save\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.5",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/recovery_selection_parity.rs",
+          "test_name": "stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it",
+          "assertions": [
+            "assert_eq!(error.status.as_u16(), 409)",
+            "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+            "assert_eq!(h.raw(), expected)"
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_overlapping_modes_reject_the_entire_save_without_mutating_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "invalid_selection_and_overlap_never_partially_write",
+        "assertions": [
+          "assert_eq!(error.status.as_u16(), 422)",
+          "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+          "assert_eq!(h.runtime.config.snapshot(Some(\"oauth\")).unwrap(), initial)"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_recovery_modes_can_be_switched_in_one_atomic_save",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "model_mode_switch_survives_inventory_reconcile",
+        "assertions": [
+          "scenario(\"model_mode\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.4",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryMigration030Tests.test_existing_empty_or_selected_lists_gain_a_seen_baseline_without_selection_changes",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "explicit_empty_selection_records_only_seen_baseline",
+        "assertions": [
+          "scenario(\"explicit_empty\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.1",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/recovery_selection_parity.rs",
+          "test_name": "explicit_selection_keeps_both_modes_and_records_seen_baseline",
+          "assertions": [
+            "scenario(\"explicit_selected\").await;"
+          ],
+          "helper_assertions": [
+            {
+              "name": "scenario",
+              "assertions": [
+                "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+                "assert_eq!(reloaded.oauth[C], json!([]))",
+                "assert_eq!(reloaded.oauth[M], json!([]))"
+              ]
+            }
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/recovery-selection/fixtures.json",
+              "json_paths": [
+                "cases.2",
+                "reference_sha"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryMigration030Tests.test_failed_legacy_inventory_read_does_not_mark_migration_complete",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "failed_legacy_inventory_cannot_mark_selection_migrated",
+        "assertions": [
+          "assert!(h.runtime.monitor.inventory(true).await.is_err())",
+          "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+          "assert!(h.raw().get(S).is_none())"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_config030:RecoveryMigration030Tests.test_legacy_accounts_migrate_and_first_new_account_is_auto_selected",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "legacy_selection_filters_inventory_and_adds_first_new_account_once",
+        "assertions": [
+          "scenario(\"legacy\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.0",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_concurrent_reconcile_and_partial_save_preserve_all_fields_without_inventory_fetch",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "concurrent_reconcile_and_partial_save_preserve_all_fields_without_inventory",
+        "assertions": [
+          "assert_eq!(h.raw(), expected)"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_corrupt_or_deleted_existing_config_stops_reconcile_without_replacing_it",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "corrupt_or_deleted_existing_config_cannot_be_reinitialized",
+        "assertions": [
+          "assert!(h\n        .runtime\n        .config\n        .reconcile(&[row(31), row(39)])\n        .await\n        .is_err())",
+          "assert_eq!(\n        fs::read_to_string(&h.runtime.settings.oauth_path).unwrap(),\n        \"{\"\n    )",
+          "assert!(h\n        .runtime\n        .config\n        .reconcile(&[row(31), row(39)])\n        .await\n        .is_err())",
+          "assert!(!h.runtime.settings.oauth_path.exists())"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_failed_selection_write_preserves_both_lists_seen_watermark_and_runtime_settings",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "failed_reconcile_write_preserves_selection_seen_and_effective_config",
+        "assertions": [
+          "assert!(h\n        .runtime\n        .config\n        .reconcile(&[row(31), row(39)])\n        .await\n        .is_err())",
+          "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+          "assert_eq!(h.runtime.config.current().unwrap(), current)",
+          "assert_eq!(h.raw()[S], json!([31]))"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_first_new_eligible_account_is_added_once_but_removal_and_reappearance_are_sticky",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "legacy_selection_filters_inventory_and_adds_first_new_account_once",
+        "assertions": [
+          "scenario(\"legacy\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.0",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/recovery_selection_parity.rs",
+          "test_name": "manual_removal_and_reappearance_never_reselect_seen_accounts",
+          "assertions": [
+            "scenario(\"sticky\").await;"
+          ],
+          "helper_assertions": [
+            {
+              "name": "scenario",
+              "assertions": [
+                "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+                "assert_eq!(reloaded.oauth[C], json!([]))",
+                "assert_eq!(reloaded.oauth[M], json!([]))"
+              ]
+            }
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/recovery-selection/fixtures.json",
+              "json_paths": [
+                "cases.3",
+                "reference_sha"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_moving_account_to_model_mode_is_not_reversed_by_inventory_reconcile",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "model_mode_switch_survives_inventory_reconcile",
+        "assertions": [
+          "scenario(\"model_mode\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.4",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_old_revision_cannot_overwrite_a_new_automatic_account_and_partial_save_keeps_it",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it",
+        "assertions": [
+          "assert_eq!(error.status.as_u16(), 409)",
+          "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
+          "assert_eq!(h.raw(), expected)"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_restart_keeps_seen_watermark_and_does_not_reselect_old_account",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "reloaded_runtime_keeps_seen_watermark_and_manual_removal",
+        "assertions": [
+          "assert_eq!(restarted.config.oauth.read().unwrap()[C], json!([32]))",
+          "assert_eq!(restarted.config.oauth.read().unwrap()[S], json!([31, 32]))"
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    },
+    {
+      "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_upgrade_records_seen_baseline_without_adding_to_explicit_selection",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/recovery_selection_parity.rs",
+        "test_name": "explicit_empty_selection_records_only_seen_baseline",
+        "assertions": [
+          "scenario(\"explicit_empty\").await;"
+        ],
+        "helper_assertions": [
+          {
+            "name": "scenario",
+            "assertions": [
+              "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
+              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
+              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+              "assert_eq!(reloaded.oauth[C], json!([]))",
+              "assert_eq!(reloaded.oauth[M], json!([]))"
+            ]
+          }
+        ],
+        "fixtures": [
+          {
+            "path": "tests/contracts/recovery-selection/fixtures.json",
+            "json_paths": [
+              "cases.1",
+              "reference_sha"
+            ]
+          }
+        ]
+      },
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+    }
+  ]
+}

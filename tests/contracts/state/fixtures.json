@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "sha": "6be7c291ed38dcc337cb88f693639040a3463899"
+  },
+  "scope": {
+    "synthetic_only": true,
+    "network": "loopback fixtures only; no production host or business state"
+  },
+  "store": {
+    "new_state_mode_octal": "0600",
+    "new_lock_mode_octal": "0600",
+    "preserved_existing_mode_octal": "0640",
+    "no_change_preserves_inode_and_mtime": true,
+    "first_empty_transaction_creates_state": true,
+    "atomic_failure_preserves_target_and_leaves_no_tempfile": true,
+    "read_only_missing_state_creates_no_parent_lock_or_state": true
+  },
+  "cross_language": {
+    "python_input": {
+      "version": 1,
+      "origin": "python-6be7c291",
+      "payload": {
+        "count": 7,
+        "unicode": "合成状态",
+        "scale": "0.0250000000"
+      }
+    },
+    "rust_output": {
+      "version": 1,
+      "origin": "rust-0.1.40",
+      "payload": {
+        "count": 11,
+        "unicode": "合成状态",
+        "scale": "0.0250000000"
+      }
+    }
+  },
+  "numeric": {
+    "amounts": [
+      {"column": "positive_scale_10", "sql_literal": "0.0250000000", "expected": "0.0250000000"},
+      {"column": "zero_scale_10", "sql_literal": "0E-10", "expected": "0E-10"},
+      {"column": "negative_scale_10", "sql_literal": "-12.3456000000", "expected": "-12.3456000000"},
+      {"column": "large_integer_fraction", "sql_literal": "123456789012345678901234567890.1234000000", "expected": "123456789012345678901234567890.1234000000"},
+      {"column": "same_value_scale_3", "sql_literal": "0.025", "expected": "0.025"},
+      {"column": "small_exponent", "sql_literal": "0.0000001", "expected": "1E-7"},
+      {"column": "integer_scale_0", "sql_literal": "0", "expected": "0"},
+      {"column": "integer_scale_10", "sql_literal": "1.0000000000", "expected": "1.0000000000"}
+    ],
+    "python_default_str_serialization": "{\"amounts\": [\"0.0250000000\", \"0E-10\", \"-12.3456000000\", \"123456789012345678901234567890.1234000000\", \"0.025\", \"1E-7\", \"0\", \"1.0000000000\"]}",
+    "python_operation_digest": "89f4efd40289b651ddc5d79b3ec3482c176453b953226183505608cac9e6a67a"
+  },
+  "tasks": {
+    "client_disconnect_background_http": "in-flight loopback request completes after inbound client socket closes",
+    "close_timeouts_seconds": [0, 1],
+    "close_releases_owned_permits": true,
+    "spawn_after_close_is_rejected": true
+  },
+  "coordinator": {
+    "pending_duplicate_error_code": "query_busy",
+    "drain_rejects_new_work_error_code": "service_stopping",
+    "drain_aborts_owned_query": true,
+    "drain_releases_state_lock": true
+  },
+  "runtime": {
+    "legacy_config": {
+      "oauth_auto_reset_credit_enabled": false,
+      "oauth_daily_test_enabled": false,
+      "oauth_daily_test_time": "05:00",
+      "oauth_early_probe_batch_size": 8,
+      "oauth_recovery_connection_account_ids": [],
+      "oauth_recovery_model_account_ids": [],
+      "oauth_recovery_monitor_enabled": false,
+      "oauth_recovery_test_concurrency": 2,
+      "oauth_recovery_test_model_id": "fixture-model",
+      "oauth_usage_refresh_concurrency": 4,
+      "oauth_recovery_seen_account_ids": [71001, 71002],
+      "updated_at": "2031-04-05T06:07:08+00:00",
+      "updated_by": "state-contract-fixture",
+      "oauth_7d_probe_interval_seconds": 5400,
+      "oauth_early_probe_interval_seconds": 120,
+      "oauth_usage_refresh_enabled": true,
+      "discarded_legacy_field": "fixture-only"
+    },
+    "legacy_config_retained_keys": [
+      "oauth_auto_reset_credit_enabled",
+      "oauth_daily_test_enabled",
+      "oauth_daily_test_time",
+      "oauth_early_probe_batch_size",
+      "oauth_recovery_connection_account_ids",
+      "oauth_recovery_model_account_ids",
+      "oauth_recovery_monitor_enabled",
+      "oauth_recovery_test_concurrency",
+      "oauth_recovery_test_model_id",
+      "oauth_usage_refresh_concurrency",
+      "oauth_recovery_seen_account_ids",
+      "updated_at",
+      "updated_by"
+    ],
+    "legacy_profile_jobs": {
+      "fixture-job": {
+        "items": [
+          {"id": "queued-profile", "account_id": 71999, "status": "queued", "target": {"model": "queued-target"}, "error": ""},
+          {"id": "writing-profile-applied", "account_id": 71001, "status": "writing", "target": {"model": "fixture-native"}, "error": ""},
+          {"id": "writing-profile-retired", "account_id": 71002, "status": "writing", "target": {"model": "fixture-target"}, "error": ""},
+          {"id": "already-applied-profile", "account_id": 71001, "status": "applied", "target": {"model": "fixture-native"}, "error": "fixture-terminal"}
+        ]
+      }
+    },
+    "legacy_capacity_without_profile_intents": {
+      "version": 1,
+      "cursor": null,
+      "initialized_at": null,
+      "seen": {},
+      "marks": {},
+      "pending": {},
+      "slow_ttft": {},
+      "slow_pending": {},
+      "detection_events": {}
+    },
+    "capacity_profile_intents": {
+      "queued-capacity": {"account_id": 71999, "status": "queued", "target": {"model": "queued-target"}, "error": ""},
+      "writing-capacity-applied": {"account_id": 71001, "status": "writing", "target": {"model": "fixture-native"}, "error": ""},
+      "writing-capacity-retired": {"account_id": 71002, "status": "writing", "target": {"model": "fixture-target"}, "error": ""},
+      "already-applied-capacity": {"account_id": 71001, "status": "applied", "target": {"model": "fixture-native"}, "error": "fixture-terminal"}
+    },
+    "expected_statuses": {
+      "queued-profile": "retired",
+      "writing-profile-applied": "applied",
+      "writing-profile-retired": "retired",
+      "already-applied-profile": "applied",
+      "queued-capacity": "retired",
+      "writing-capacity-applied": "applied",
+      "writing-capacity-retired": "retired",
+      "already-applied-capacity": "applied"
+    },
+    "legacy_recovery_cleanup_completed": true,
+    "legacy_guard_state_removed": true,
+    "scheduled_test_plan_cleanup": {
+      "deleted_cron": "* * * * *",
+      "deleted_auto_recover": true,
+      "kept_cron": "@hourly",
+      "kept_auto_recover": true
+    },
+    "readonly_runtime_creates_no_files_or_modifies_existing_file": true,
+    "new_directory_startup_succeeds_without_profile_intents": true
+  }
+}

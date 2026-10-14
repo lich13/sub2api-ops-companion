@@ -1,0 +1,32 @@
+{
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "reference_time": "2031-04-05T06:07:08+00:00",
+  "scope": {
+    "controls022": 6,
+    "recovery_dispatch036": 12,
+    "recovery019_monitor": 5,
+    "superseded_desktop_lock": 1
+  },
+  "manual_generation": {
+    "row": {
+      "id": 98100001,
+      "name": "fixture-manual-generation",
+      "platform": "openai",
+      "type": "oauth",
+      "status": "active",
+      "schedulable": true,
+      "credentials": {
+        "plan_type": "plus",
+        "access_token": "fixture-access-token",
+        "refresh_token": "fixture-refresh-token"
+      },
+      "extra": {},
+      "rate_limited_at": null,
+      "rate_limit_reset_at": null,
+      "overload_until": null,
+      "temp_unschedulable_until": null,
+      "temp_unschedulable_reason": "",
+      "concurrency": 1
+    }
+  }
+}

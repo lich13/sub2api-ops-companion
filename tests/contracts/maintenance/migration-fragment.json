@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
+  "mappings": [
+    {
+      "legacy_test_id": "py:tests.test_oauth_config_migration:OAuthConfigMigrationTests.test_migration_preserves_effective_settings_and_state_without_bot_secret",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "oauth_offline_migration_preserves_effective_configuration_state_and_rerun_bytes",
+        "assertions": [
+          "assert_eq!(result[\"legacy_removed\"], true)",
+          "assert_eq!(config[\"oauth_daily_test_time\"], \"05:15\")",
+          "assert_eq!(config[\"oauth_daily_test_enabled\"], false)",
+          "assert_eq!(config[\"oauth_recovery_monitor_enabled\"], false)",
+          "assert_eq!(config[\"oauth_usage_refresh_concurrency\"], 7)",
+          "assert_eq!(\n        config[\"oauth_recovery_test_model_id\"],\n        \"fixture-preserved-model\"\n    )",
+          "assert_eq!(state[\"admin_token\"], \"fixture-preserved-admin\")",
+          "assert_eq!(state[\"pending_events\"], json!({\"event\":{\"id\":\"keep\"}}))",
+          "assert_eq!(\n        state[\"oauth_results\"][\"1\"][\"summary\"],\n        json!({\"ui_windows\":[2]})\n    )",
+          "assert!(neutral.contains(\"BARK_DEVICE_KEY=fixture-preserved-bark\"))",
+          "assert!(!neutral.contains(\"TELEGRAM_\"))",
+          "assert!(!neutral.contains(\"fixture-retired-bot-token\"))",
+          "assert!(!config.to_string().contains(\"fixture-retired-bot-token\"))",
+          "assert_eq!(\n            fs::metadata(root.path().join(name))\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+          "assert!(!root.path().join(\"old.json\").exists())",
+          "assert!(!root.path().join(\"pairing.json\").exists())",
+          "assert_eq!(fs::read(root.path().join(\"oauth.json\")).unwrap(), before)"
+        ]
+      },
+      "coverage_note": "Explicit Rust maintenance command preserves effective OAuth fields and history, strips only retired derived data/secrets, writes 0600 files and reruns without changing config bytes."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_config_migration:OAuthConfigMigrationTests.test_new_config_wins_and_invalid_input_never_deletes_old_files",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "oauth_offline_migration_current_values_win_and_invalid_sources_never_delete_history",
+        "assertions": [
+          "assert_eq!(\n        read(&root.path().join(\"oauth.json\"))[\"oauth_daily_test_time\"],\n        \"07:31\"\n    )",
+          "assert_eq!(\n        read(&root.path().join(\"oauth.json\"))[\"oauth_recovery_connection_account_ids\"],\n        json!([7])\n    )",
+          "assert!(migrate_oauth(&env, &second.path().join(\".env\")).is_err())",
+          "assert_eq!(fs::read(second.path().join(\".env\")).unwrap(), before)",
+          "assert!(second.path().join(\"old.json\").exists())",
+          "assert!(second.path().join(\"pairing.json\").exists())",
+          "assert!(!second.path().join(\"oauth.json\").exists())"
+        ]
+      },
+      "coverage_note": "Current config takes precedence, account selections remain native arrays, and invalid legacy time fails before source removal or environment edits."
+    },
+    {
+      "legacy_test_id": "py:tests.test_oauth_config_migration:OAuthConfigMigrationTests.test_save_failure_keeps_sources_and_existing_config",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "oauth_offline_migration_failed_atomic_write_keeps_sources_and_cleans_temporary_files",
+        "assertions": [
+          "assert!(failed.is_err())",
+          "assert!(root.path().join(\"old.json\").exists())",
+          "assert!(root.path().join(\"pairing.json\").exists())",
+          "assert!(!root.path().join(\"oauth.json\").exists())",
+          "assert_eq!(fs::read(root.path().join(\".env\")).unwrap(), before)",
+          "assert!(fs::read_dir(root.path()).unwrap().all(|entry| !entry\n        .unwrap()\n        .file_name()\n        .to_string_lossy()\n        .starts_with(\".sub2ops-migration-\")))"
+        ]
+      },
+      "coverage_note": "An actual filesystem permission failure preserves source configuration/state/environment and leaves no temporary migration file."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_only_migration:MigrationTests.test_retains_effective_urls_and_unrelated_secrets_without_retired_backup",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "desktop_offline_migration_preserves_effective_urls_secrets_and_only_expected_files",
+        "assertions": [
+          "assert_eq!(result[\"connection_migrated\"], true)",
+          "assert_eq!(\n        read(&root.path().join(\"connection.json\")),\n        json!({\"base_url\":\"https://public.example.invalid\",\"verify_base_url\":\"http://127.0.0.1:8080\"})\n    )",
+          "assert_eq!(fs::read_to_string(root.path().join(\".env\")).unwrap(),\"DATABASE_URL=fixture-preserved\\nOAUTH_DAILY_TEST_TIME=05:15\\nBARK_DEVICE_KEY=fixture-preserved-bark\\n\")",
+          "assert_eq!(\n            fs::metadata(root.path().join(name))\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
+          "assert_eq!(\n        read(&root.path().join(\"group-model-config.json\")),\n        json!({\"schema\":1,\"groups\":{}})\n    )",
+          "assert_eq!(\n        files,\n        BTreeSet::from([\n            PathBuf::from(\"connection.json\"),\n            PathBuf::from(\".env\"),\n            PathBuf::from(\"group-model-config.json\")\n        ])\n    )",
+          "assert_eq!(\n        migrate_desktop(&env, &root.path().join(\".env\"), false)\n            .await\n            .unwrap()[\"retired_bytes\"],\n        0\n    )"
+        ]
+      },
+      "coverage_note": "The explicit Rust migration preserves effective URLs and unrelated environment lines, removes retired browser secrets only after successful writes, initializes the model store and reruns idempotently without backups."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_only_migration:MigrationTests.test_invalid_or_overlapping_connection_aborts_before_deleting_state",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "desktop_offline_migration_invalid_overlapping_or_symlink_sources_never_delete_state",
+        "assertions": [
+          "assert!(migrate_desktop(&env, &root.path().join(\".env\"), false)\n        .await\n        .is_err())",
+          "assert_eq!(fs::read(root.path().join(\".env\")).unwrap(), before)",
+          "assert_eq!(\n        fs::read(root.path().join(\"sessions.json\")).unwrap(),\n        session\n    )",
+          "assert!(migrate_desktop(&env, &root.path().join(\".env\"), false)\n        .await\n        .is_err())",
+          "assert!(migrate_desktop(&env, &root.path().join(\".env\"), false)\n        .await\n        .is_err())",
+          "assert_eq!(\n        fs::read(root.path().join(\"sessions.json\")).unwrap(),\n        session\n    )",
+          "assert!(!root.path().join(\"connection.json\").exists())"
+        ]
+      },
+      "coverage_note": "Invalid URLs, overlapping destinations and symbolic-link sources reject before changing environment or deleting sessions."
+    },
+    {
+      "legacy_test_id": "py:tests.test_desktop_only_migration:MigrationTests.test_menu_removal_matches_path_and_origin_only",
+      "status": "mapped",
+      "target": {
+        "kind": "rust_test",
+        "path": "server/tests/maintenance_contract.rs",
+        "test_name": "desktop_offline_migration_removes_only_retired_menu_on_matching_host_and_path",
+        "assertions": [
+          "assert_eq!(result[\"menu_items_removed\"], 1)",
+          "assert_eq!(retained, json!([items[1], items[2]]))"
+        ]
+      },
+      "coverage_note": "Real PostgreSQL settings row locking and update remove only the retired SSO path on the configured host; other hosts and paths remain byte-equivalent as parsed values."
+    }
+  ]
+}

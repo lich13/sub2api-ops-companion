@@ -1,15 +1,19 @@
 services:
   sub2api-ops-companion:
-    build: .
+    image: ${OPS_IMAGE:-sub2ops-companion:local}
+    build:
+      context: .
+      args:
+        BUILD_REVISION: ${BUILD_REVISION:-development}
     container_name: sub2api-ops-companion
     restart: unless-stopped
+    stop_grace_period: 60s
     env_file:
       - .env
     user: "${OPS_CONTAINER_USER:-10001:10001}"
     ports:
       - "127.0.0.1:18081:18081"
     volumes:
-      - .:/workspace
       - ./data:/data
     networks:
       - sub2api-network

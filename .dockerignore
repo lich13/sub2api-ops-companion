@@ -1,8 +1,9 @@
-.git
-.env
-data
-desktop
-**/__pycache__
-**/*.pyc
-.DS_Store
-**/target
+**
+!Dockerfile
+!server
+!server/Cargo.toml
+!server/Cargo.lock
+!server/src
+!server/src/**
+!server/resources
+!server/resources/**
