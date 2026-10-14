@@ -27,11 +27,14 @@ server/target/release/sub2ops-server serve
 
 Python 仅用于隔离测试驱动。驱动从 Git 固定提交 `6be7c291ed38dcc337cb88f693639040a3463899` 临时读取旧实现；需要完整 Git 历史、项目 Python 测试依赖及 PostgreSQL 的 `initdb`／`pg_ctl`。测试使用回环模拟上游与临时数据库，不读取生产配置。
 
+历史并发 fixture 曾用 `asyncio.sleep(0.035)` 触发首批并发，结果会受 CI 调度影响。驱动只在临时 reference 副本的 `tests/test_modeltrace022.py` 指定测试中加入首批事件屏障（最多等待 5 秒）；测试名和断言保持不变，驱动会核对 `self.assert*` 调用的 AST，旧 `app/` 文件字节不变。`--filter` 透传至 `unittest discover -k`；无参数仍运行全部 882 项。
+
 ```bash
 cargo fetch --locked --manifest-path server/Cargo.toml
 python scripts/server_test.py
 cargo clippy --locked --manifest-path server/Cargo.toml --all-targets --features test-fixtures -- -D warnings
 python scripts/server_reference_tests.py
+python scripts/server_reference_tests.py --filter test_concurrency_one_two_three_peaks_and_no_raw_content_in_summary
 python scripts/server_http_contract.py
 python scripts/server_http_contract.py --command-json '["server/target/debug/sub2ops-server"]'
 python scripts/server_mutation_contract.py
