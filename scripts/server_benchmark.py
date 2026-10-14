@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import signal
 import subprocess
 import tempfile
 import threading
@@ -28,10 +29,10 @@ from server_http_contract import (ADMIN_KEY, API, HttpClient, REFERENCE_SHA, ROO
     TemporaryPostgres, archive_reference_app, free_port, require, seed_fingerprint_cache)
 
 
-def docker(*arguments: str) -> str:
+def docker(*arguments: str, include_stderr: bool = False) -> str:
     result = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False)
     require(result.returncode == 0, "Docker fixture command failed: " + arguments[0])
-    return result.stdout.strip()
+    return (result.stdout + (result.stderr if include_stderr else "")).strip()
 
 
 def distribution(values: list[float]) -> dict:
@@ -167,6 +168,20 @@ class Sampler:
         self.thread.join(3)
 
 
+def shutdown_summary(implementation: str, state: dict, logs: str) -> dict:
+    code = state.get("ExitCode")
+    application_complete = "Application shutdown complete." in logs
+    stopped = not state.get("Running", True) and not state.get("OOMKilled", False) and not state.get("Error")
+    # Uvicorn 0.34.2 re-raises SIGTERM after lifespan shutdown. Docker reports
+    # 128 + SIGTERM; its completion log distinguishes this from interruption.
+    clean = stopped and (
+        implementation == "rust" and code == 0
+        or implementation == "python" and code in (0, 128 + signal.SIGTERM) and application_complete
+    )
+    return {"exit_code": code, "clean": bool(clean), "oom_killed": bool(state.get("OOMKilled")),
+        "application_shutdown_complete": application_complete if implementation == "python" else None}
+
+
 @contextmanager
 def service(image: str, implementation: str, database: str, upstream: str, state: Path):
     name = "sub2ops-full-benchmark-" + uuid.uuid4().hex
@@ -189,6 +204,7 @@ def service(image: str, implementation: str, database: str, upstream: str, state
     if implementation == "python":
         command.extend(["python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)])
     created = False
+    shutdown = {}
     try:
         docker(*command)
         created = True
@@ -202,13 +218,17 @@ def service(image: str, implementation: str, database: str, upstream: str, state
                 pass
             require(time.monotonic() < deadline, "full runtime did not become ready")
             time.sleep(.1)
-        yield name, client
+        yield name, client, shutdown
     finally:
         if created:
             docker("stop", "--time", "60", name)
             info = json.loads(docker("inspect", name))[0]
+            logs = docker("logs", name, include_stderr=True) if implementation == "python" else ""
+            shutdown.update(shutdown_summary(implementation, info["State"], logs))
             docker("rm", name)
-            require(info["State"]["ExitCode"] == 0, "full runtime did not shut down cleanly")
+            require(shutdown["clean"], f"{implementation} runtime shutdown failed "
+                f"(exit={shutdown['exit_code']}, oom={shutdown['oom_killed']}, "
+                f"application_complete={shutdown['application_shutdown_complete']})")
 
 
 def seed(database: str, count: int):
@@ -233,7 +253,7 @@ def measure(args, image, implementation, reference, root, postgres):
             state = root / f"{implementation}-{count}-{iteration}"
             state.mkdir(mode=0o700)
             seed_fingerprint_cache(reference, state)
-            with Native(args.delay_ms / 1000) as native, service(image, implementation, postgres.url, native.url, state) as (container, client):
+            with Native(args.delay_ms / 1000) as native, service(image, implementation, postgres.url, native.url, state) as (container, client, shutdown):
                 def api(method, path, body=None, expected=200):
                     begin = time.monotonic()
                     response = client.request(method, API + path, body=body, headers={"x-api-key": ADMIN_KEY})
@@ -284,7 +304,8 @@ def measure(args, image, implementation, reference, root, postgres):
                     duration = (finish - start) * 1000
                     elapsed.append(duration)
                     runs.append({"repetition": iteration + 1, "elapsed_ms": round(duration, 3), "idle": idle,
-                        "load": sampler.metrics(start, finish), "native_requests": sum(native.calls.values()), "native_peak": native.peak})
+                        "load": sampler.metrics(start, finish), "native_requests": sum(native.calls.values()),
+                        "native_peak": native.peak, "shutdown": shutdown})
                 finally:
                     native.hold.set()
                     sampler.close()
