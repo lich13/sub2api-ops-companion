@@ -10,8 +10,19 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from urllib.parse import urlsplit
+
+import psycopg
 
 from server_http_contract import REFERENCE_SHA, ROOT, TemporaryPostgres
+
+
+def reference_database(postgres: TemporaryPostgres) -> str:
+    # The unchanged historical integration tests require this database name
+    # and reject URL query overrides. It still belongs to our disposable cluster.
+    with psycopg.connect(postgres.url, autocommit=True) as connection:
+        connection.execute("CREATE DATABASE sub2ops_qa")
+    return urlsplit(postgres.url)._replace(path="/sub2ops_qa", query="", fragment="").geturl()
 
 
 def main() -> int:
@@ -32,7 +43,7 @@ def main() -> int:
         postgres = TemporaryPostgres(reference)
         try:
             postgres.start()
-            env["SUB2OPS_TEST_DATABASE_URL"] = postgres.url
+            env["SUB2OPS_TEST_DATABASE_URL"] = reference_database(postgres)
             result = subprocess.run(
                 [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"],
                 cwd=reference, env=env, capture_output=True, text=True,
