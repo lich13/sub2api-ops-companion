@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1
-FROM rust:1.99.0-slim-bookworm AS build
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+FROM rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa AS build
 WORKDIR /build/server
 COPY server/Cargo.toml server/Cargo.lock ./
 COPY server/src ./src
@@ -13,9 +13,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked \
     && install -m 0755 target/release/sub2ops-server /usr/local/bin/sub2ops-server
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && apt-get clean \
     && find /var/lib/apt/lists -mindepth 1 -delete \
     && groupadd --gid 10001 companion \

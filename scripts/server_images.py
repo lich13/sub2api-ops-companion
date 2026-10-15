@@ -7,7 +7,7 @@ import gzip
 import hashlib
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import tarfile
@@ -15,6 +15,25 @@ import tempfile
 import tomllib
 
 from server_http_contract import REFERENCE_SHA, ROOT, require
+
+
+def test_fixture_path(name: str) -> bool:
+    parts = PurePosixPath(name.lstrip("./")).parts
+    return any("supervision_fixture" in part for part in parts)
+
+
+def require_no_fixture_layers(bundle: Path) -> None:
+    with tarfile.open(bundle, mode="r:gz") as archive:
+        manifest_file = archive.extractfile("manifest.json")
+        require(manifest_file is not None, "runtime image archive manifest missing")
+        manifest = json.load(manifest_file)
+        for image in manifest:
+            for layer_name in image.get("Layers", []):
+                layer = archive.extractfile(layer_name)
+                require(layer is not None, "runtime image archive layer missing")
+                with tarfile.open(fileobj=layer, mode="r|") as contents:
+                    for entry in contents:
+                        require(not test_fixture_path(entry.name), "runtime image archive contains a CI supervision fixture")
 
 
 def run(arguments, **kwargs):
@@ -45,6 +64,10 @@ def main():
              "-t", args.rust_image, str(ROOT)])
         info = json.loads(run(["docker", "image", "inspect", args.rust_image], capture_output=True, text=True).stdout)[0]
         require(info["Config"]["Labels"]["org.opencontainers.image.revision"] == args.revision, "image revision label differs")
+        require(info["Config"].get("User") == "10001:10001", "runtime image must use the non-root companion user")
+        curl = run(["docker", "run", "--rm", "--entrypoint", "/usr/bin/curl", args.rust_image, "--version"],
+                   capture_output=True, text=True).stdout.strip()
+        require(curl.startswith("curl "), "runtime image curl healthcheck client missing")
         version = run(["docker", "run", "--rm", args.rust_image, "--version"], capture_output=True, text=True).stdout.strip()
         require(version == "Sub2Ops " + release_version + " rust " + args.revision, "executable build revision differs")
         container = run(["docker", "create", args.rust_image], capture_output=True, text=True).stdout.strip()
@@ -54,6 +77,7 @@ def main():
                 run(["docker", "export", container], stdout=output)
             with tarfile.open(exported) as filesystem:
                 names = [entry.name.lstrip("./") for entry in filesystem]
+                require(not any(test_fixture_path(name) for name in names), "runtime image contains a CI supervision fixture")
                 forbidden = [name for name in names if name == "workspace" or name.startswith("workspace/")
                     or name.startswith(("usr/bin/python", "usr/local/bin/python", "usr/lib/python", "usr/local/lib/python"))]
                 require(not forbidden, "runtime image contains Python or a workspace source mount")
@@ -78,6 +102,7 @@ def main():
         with bundle.open("rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
+        require_no_fixture_layers(bundle)
         (args.output_dir / "SHA256SUMS").write_text(digest.hexdigest() + "  " + bundle.name + "\n")
         (args.output_dir / "manifest.json").write_text(json.dumps({"version": release_version, "revision": args.revision,
             "image_id": info["Id"], "image_tag": args.rust_image, "image_bytes": info["Size"],
