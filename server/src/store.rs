@@ -248,28 +248,6 @@ pub fn read_config(path: &Path) -> Result<Value> {
     }
 }
 
-pub struct InstanceLock(File);
-impl InstanceLock {
-    pub fn acquire(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true);
-        #[cfg(unix)]
-        options.mode(0o600);
-        let file = options.open(path)?;
-        file.try_lock_exclusive()
-            .map_err(|_| Error::new(503, "已有服务实例正在使用此状态目录"))?;
-        Ok(Self(file))
-    }
-}
-impl Drop for InstanceLock {
-    fn drop(&mut self) {
-        let _ = FileExt::unlock(&self.0);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

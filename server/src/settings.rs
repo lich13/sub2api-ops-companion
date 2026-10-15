@@ -128,6 +128,9 @@ impl Settings {
         for (key, default, min, max) in [
             ("oauth_usage_refresh_concurrency", 4, 1, 16),
             ("oauth_recovery_test_concurrency", 2, 1, 8),
+            // Historical early-probe setting: retain storage, validation and
+            // default for compatibility. Current scheduling does not probe
+            // before reset or use this value as a worker dispatch limit.
             ("oauth_early_probe_batch_size", 8, 1, 50),
         ] {
             let value = text(&configured(key))
