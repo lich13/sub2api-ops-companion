@@ -355,7 +355,7 @@ impl Runtime {
                             runtime
                                 .monitor
                                 .schedule
-                                .tick(&config, chrono::Utc::now())
+                                .tick(&config, runtime.monitor.now())
                                 .map(|_| ())
                         }),
                         "notifications" => runtime.monitor.deliver().await,
