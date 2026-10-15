@@ -10,6 +10,7 @@ pub const EFFORTS: &[&str] = &[
     "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 ];
 pub const FIELDS: &[&str] = &["supported_reasoning_levels", "default_reasoning_level"];
+pub const VERIFIED_SUB2API_VERSIONS: &[&str] = &["0.2.9", "0.2.10"];
 pub fn model_id(value: &Value) -> Result<&str> {
     let value = value.as_str().filter(|v| {
         !v.is_empty()
@@ -196,10 +197,7 @@ pub fn forwarding(
             }
         }
     }
-    if !matches!(
-        version.strip_prefix('v').unwrap_or(version),
-        "0.2.9" | "0.2.10"
-    ) {
+    if !VERIFIED_SUB2API_VERSIONS.contains(&version.strip_prefix('v').unwrap_or(version)) {
         return result("unverified", "当前 Sub2API 版本尚无已核对的转发契约");
     }
     if available

@@ -4,29 +4,12 @@ Sub2API 的 Rust 旁路运维服务，提供 OAuth 额度监控、Bark 事件推
 
 **Sub2Ops** 支持 macOS Apple Silicon 和 Android ARM64，提供分组动态、账号管理、错误详情及 Ops 设置；Mac 另有菜单栏快捷面板。下载与使用见 [客户端说明](desktop/README.md)，版本变化见 [发布记录](desktop/CHANGELOG.md)。仅通过 App 管理；网页、SSO 和旧表单接口已下线。
 
-## 功能
-
 - OAuth 额度监控：等待恢复时间后确认额度，统一限制自动查询并执行恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key；存在可用 OAuth 时，勾选“OAuth 可用时也启用”的 Key 保持开启，其余关闭。没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
 
-## OAuth 监控机制
-
-- 普通后台额度刷新已移除；客户端自动更新只读已有快照与使用日志。
-- 不提前探测。每两秒读取已选账号的恢复状态，以必要窗口和当前阻断中的最晚恢复时间为准；服务端提供准确时间时，到点即开始复核，仅按剩余秒数推算的时间保留 60 秒余量。
-- 每账号自动查询至少间隔 1 小时，滚动 24 小时最多 6 次；失败、超时和到点仍未释放按 1、3、6、12 小时退避，之后保持 12 小时。
-- 预算在请求前持久化，重启保留；401/402 暂停自动查询，凭据变化或手动成功后解除。正常账号不轮询，新账号无额度数据时才初始化查询。
-- 手动单查和全部刷新可强制查询，不消耗或清空自动预算；结果共享并刷新自动冷却，同账号并发查询合并。
-- `free` 只要求 7d 窗口；其他套餐同时要求 5h 和 7d。7d 无余量时不测活。
-- 恢复监控全天运行；每日测活默认北京时间 `05:00`，先复用一小时内的完整额度，补查仍受限频约束；等待恢复或受限账号跳过，错过不补跑。
-- 恢复账号可互斥选择“测试连接”或“模型测试”。前者使用现有连接测活模型；后者使用账号保存的检测模型，仅验证第 1 组，之后仍须复核额度、阻断与暂停归属。未选账号不自动恢复或用卡。
-- 从 0.1.34 起，升级时保留现有恢复选择并记录账号基线；之后新增的合资格 OpenAI OAuth 母账号自动加入“测试连接”。人工取消或移入模型测试组后不重复加入，分类本身不触发调度、查询或测活。
-- active usage 同一账号不会并发重复请求；请求前登记预算，结果原子写入状态文件。
-- 各账号独立完成额度核对与恢复验证，慢账号或 Bark 投递不阻塞其他账号。优先复用跨恢复点的有效额度，补查仍受查询预算限制；模型验证继续遵守五分钟冷却。等待时分别显示原因和下次允许时间。
-- 测活结果先持久化为待推送事件。Bark 完整发送失败只重试发送，不重复测活；Bark 关闭时事件按 suppressed 语义确认。
-
-客户端自动刷新只读取已有快照；用户点击额度查询才主动刷新。未知额度不会显示为 0%。
+机制说明：[OAuth 监控](docs/oauth-monitoring.md)、[模型检测](docs/model-detection.md)、[自动用卡](docs/automatic-credit.md)、[账号测试](docs/account-operations.md)、[模型目录](docs/model-catalog.md)。升级和回退见 [UPGRADING.md](UPGRADING.md)。
 
 ## 运行
 
@@ -39,64 +22,36 @@ docker compose up -d --build
 
 服务源码位于 [`server/`](server/README.md)，正式镜像不含 Python 运行时。生产部署优先加载对应提交的 `Companion-linux-amd64` CI 成品，并设置 `OPS_IMAGE`；镜像只挂载 `/data`。`--check-state` 检查现有配置、状态和数据库后退出，`--read-only` 提供不派发后台任务、不写业务或状态的验收入口。两种模式都必须使用与正式服务相同的环境配置。
 
-默认监听 `127.0.0.1:18081`。生产环境建议通过 nginx 挂载到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log。nginx 示例见 `deploy/nginx/sub2ops.location.conf`。
+Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务默认监听 `0.0.0.0:18081`。生产环境建议通过 nginx 挂载到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log。nginx 示例见 `deploy/nginx/sub2ops.location.conf`。
 
 ## 环境变量
 
-- `SUB2API_CONFIG_PATH`：独立连接配置文件，默认 `/data/sub2api-config.json`，JSON 的 `base_url` / `verify_base_url` 优先于对应环境变量。
-- `GROUP_MODEL_CONFIG_PATH`：分组思考档位补全文件；权限 `0600`，按分组版本校验。
+| 变量 | 说明 |
+|---|---|
+| `SUB2API_CONFIG_PATH` | 独立连接配置文件，默认 `/data/sub2api-config.json`，JSON 的 `base_url` / `verify_base_url` 优先于对应环境变量。 |
+| `SUB2API_BASE_URL` | Sub2API 公网根地址。 |
+| `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
+| `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`；按分组版本校验。 |
+| `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
+| `BASE_PATH` | 反代路径前缀，默认 `/sub2ops`。 |
+| `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。 |
+| `OAUTH_CONFIG_PATH` | OAuth 自动化配置，默认 `/data/oauth-config.json`；JSON 优先于环境变量，环境变量优先于默认值。 |
+| `BARK_CONFIG_PATH` | Bark 配置文件，默认 `/data/bark-config.json`。 |
+| `BARK_ENABLED` | 是否启用 OAuth 事件的 Bark 推送，默认关闭。 |
+| `BARK_DEVICE_KEY` | Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。 |
+| `BARK_SERVER_URL` | Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。 |
+| `KEY_FALLBACK_CONFIG_PATH` | Key 调度回退配置文件，默认 `/data/key-fallback-config.json`。 |
+| `OAUTH_RECOVERY_MONITOR_ENABLED` | 是否监控到期恢复，默认开启。 |
+| `OAUTH_AUTO_RESET_CREDIT_ENABLED` | 7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。 |
+| `OAUTH_DAILY_TEST_ENABLED` | 是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。 |
+| `OAUTH_DAILY_TEST_TIME` | 每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。 |
+| `OAUTH_USAGE_REFRESH_CONCURRENCY` | active usage 并发，默认 `4`。 |
+| `OAUTH_RECOVERY_TEST_CONCURRENCY` | account test 并发，默认 `2`。 |
+| `OAUTH_EARLY_PROBE_BATCH_SIZE` | 历史提前探测参数，默认 `8`；保留读取、保存和校验兼容，当前不提前探测，也不用于后台派发上限。 |
+| `OAUTH_RECOVERY_TEST_MODEL_ID` | 恢复测活模型，默认 `gpt-5.6-luna`。 |
 
-- `DATABASE_URL`：Sub2API PostgreSQL 连接串。
-- `BASE_PATH`：反代路径前缀，默认 `/sub2ops`。
-- `USAGE_QUERY_STATE_PATH`：OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。
-- `OAUTH_CONFIG_PATH`：OAuth 自动化配置，默认 `/data/oauth-config.json`，权限 `0600`；JSON 优先于环境变量，环境变量优先于默认值。
-- `BARK_CONFIG_PATH`：Bark 配置文件，默认 `/data/bark-config.json`。
-- `BARK_ENABLED`：是否启用 OAuth 事件的 Bark 推送，默认关闭。
-- `BARK_DEVICE_KEY`：Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。
-- `BARK_SERVER_URL`：Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。
-
-OpenAI OAuth 与 Key 的三类明确上游降智错误和慢首字预警只作为模型检测线索，不直接发送 Bark。独立采集任务每两秒读取既有记录；同一账号所有自动模型检测共用五分钟门限，冷却中的重复线索直接忽略。只有首组有效指纹判定降智、标记保存并确认停止调度后，才发送结果通知，失败按 5/30/120/600 秒独立重试。采集水位、标记、冷却与通知状态持久化为权限 `0600` 的独立文件，升级不补发历史通知或补跑历史线索，不修改数据库表。
-
-定时检测仅在账号“允许调度”开启时执行，已标记降智的账号也遵守此规则。关闭调度后保留检测设置，重新开启后按保存的间隔重新计时，不补跑错过的检测。有效复查确认恢复正常并取消标记后，发送独立恢复通知，保持当前调度状态。失败或分析不足不会清除标记，人工操作始终优先。Codex 点数与额度窗口独立判断：有可用点数或无限额度时，百分比满额不阻止检测；点数未知且无当前阻断时继续按计划执行，不增加额度查询。
-
-- `KEY_FALLBACK_CONFIG_PATH`：Key 调度回退配置文件，默认 `/data/key-fallback-config.json`，权限 `0600`。
-- `OAUTH_RECOVERY_MONITOR_ENABLED`：是否监控到期恢复。
-- `OAUTH_AUTO_RESET_CREDIT_ENABLED`：7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。
-- `OAUTH_DAILY_TEST_ENABLED`：是否启用每日 OpenAI OAuth 测活，默认开启；仅异常通过 Bark 推送。
-- `OAUTH_DAILY_TEST_TIME`：每日测活时间（北京时间 `HH:MM`），默认 `05:00`。修改时间、启用或重启后均等待下一个未来时间点，错过不补跑。
-- `OAUTH_USAGE_REFRESH_CONCURRENCY`：active usage 并发，默认 `4`。
-- `OAUTH_RECOVERY_TEST_CONCURRENCY`：account test 并发，默认 `2`。
-- `OAUTH_EARLY_PROBE_BATCH_SIZE`：每轮最多处理的 OAuth 账号数，默认 `8`。
-- `OAUTH_RECOVERY_TEST_MODEL_ID`：恢复测活模型，默认 `gpt-5.6-luna`。
-- `SUB2API_BASE_URL`：Sub2API 公网根地址。
-- `SUB2API_VERIFY_BASE_URL`：可选的服务端内网校验根地址。
-
-自动用卡从本轮原始 7d 满额且发生有效上游限流的时间起，最多等待五分钟；过期不补执行，重复限流和重启不刷新期限。缺少可信卡观测时最多补查一次。每轮唯一一次消费豁免一小时查询间隔，但仍计入滚动 24 小时六次预算；普通查询规则不变。消费明确成功后，五分钟内最多两轮恢复验证，仍遵守模型检测冷却。最终结果通过 Bark 通知，投递最多五次；未知消费禁止重放，只有消费、验证和恢复调度都确认成功才计入用卡恢复历史。
-
-单账号和批量代理选择都支持主动“测试连接”和“质量检测”，由 Sub2API 原生接口执行并返回结果。打开弹层不会自动检测，点击检测不会选择或应用代理。
-
-账号页多选操作栏的“测试连接”用于账号本身，最多 1000 个，结果在当前页面展开。OpenAI 使用接受批次时固定的服务端测活模型；Grok 使用原生默认文本模式。供应商白名单或模型目录缺失不阻止提交，也不写入配置；保留原生模型映射并显示实际模型。批次按连接恢复，未派发项可停止，已派发的未知结果不自动重测。
-
-“关闭结果”在提交、执行、完成或失败时均可使用，只隐藏结果区。关闭后通过“查看测活结果”重新打开，后台仍继续执行；关闭状态按连接保存，迟到响应、返回页面或重启不会自行展开。主动发起新批次会展开新结果，“停止未开始”仍是独立操作。
-
-## 新模型思考档位
-
-“功能”页的模型配置只维护需要补全的新模型。输入精确 ID 后读取真实上游，填写支持的思考档位与默认值；缺失信息不猜测。只写入 `supported_reasoning_levels` 和 `default_reasoning_level`，保存至 `GROUP_MODEL_CONFIG_PATH`（默认 `/data/group-model-config.json`，0600）。白名单阻挡时经明确确认只追加当前模型，保留其他条目和开关；冲突、失败保留草稿。
-
-补全绑定普通或 Composite 分组的真实路由与账号映射。路由变化后停止应用；目录缺少新条目时只使用其自身的真实描述。当前已核对原版 Sub2API 0.2.9 / 0.2.10 的 Responses 转发规则：未知 Grok 型号会丢弃思考强度，部分档位会被改写；分组强度策略也可能限制请求。这些情况显示“转发受限”，未知版本或证据缺失显示“转发未核实”，均只存草稿。上游原生支持后可“恢复原生”，仅移除 Companion 补全，不撤销白名单或账号配置。升级不自动添加补全项，不修改 Sub2API 源码、镜像或表结构。
-
-兼容入口仅处理带 `client_version` 的 GET `/v1/models`、`/models` 及 `/backend-api/codex/models`。每次请求先交给原 Sub2API 校验实际调用者，之后应用当前分组覆盖；异常返回原目录。nginx 配置见 `deploy/nginx/codex-models.location.conf`，只开放 API 的 IP 入口使用 `codex-models-raw-ip.location.conf` 保留普通 `/models` 的关闭状态。原模型调用和普通列表不经过兼容层。
-
-## 升级迁移
-
-从 0.1.39 升级时沿用当前 JSON 状态、配置与数据库，不迁移业务表结构。先用只读模式检查，确认旧服务停止后再启动 Rust；禁止两个服务同时派发后台任务。未派发任务可接续，已派发且无法确认的结果保留待核对，不自动重放。回退使用旧镜像及当前兼容状态，不能覆盖为旧快照。
-
-更早的部署可在停服后使用 `sub2ops-server migrate-oauth --env-file /data/companion.env` 整理 OAuth 配置，或使用 `sub2ops-server migrate-desktop --env-file /data/companion.env` 完成桌面配置迁移。后者默认移除旧管理菜单；需要保留时加 `--keep-menu`。这些命令只在明确调用时执行，不随服务启动运行；先校验并写入新配置，再清理已替代的旧配置，保留业务历史。nginx 的模型目录接管配置需单独安装，回滚该功能时先撤回目录接管。
-
-夜间恢复冷却已退役；即时恢复全天运行。旧夜间配置字段在升级时移除，遗留延后意图重新进入严格恢复检查。每日测活使用独立批次记录，按北京时间日期去重，中断批次不补测；人工暂停或冷却、额度不足和不可调度的账号跳过。
-
-首次启动新版时会把 `/data/usage-query-state.json` 收缩为管理员 API Key、OAuth 快照和调度元数据。同时幂等删除历史的一分钟自动恢复计划并清理旧状态文件。数据库清理失败时不写完成标记，下次启动会继续重试。审计历史不会被删除。
+`OAUTH_CONFIG_PATH` 中的 JSON 优先于环境变量，环境变量优先于默认值。新建状态和配置文件默认 `0600`，已有权限保持不变。
 
 ## 安全
 
-Companion 具有账号调度操作权限，不应独立暴露在公网。仅在 `127.0.0.1` 或 Docker 内网监听，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 只保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 只保存在 `BARK_CONFIG_PATH`；两个文件权限均为 `0600`，密钥不写入 URL、页面、日志或审计明文。
+Companion 具有账号调度操作权限，不应独立暴露在公网。仅向回环地址或 Docker 内网开放服务，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 保存在 `BARK_CONFIG_PATH`；新文件默认 `0600`，已有文件保留权限并给出安全诊断，密钥不写入 URL、页面、日志或审计明文。不要公开 `.env`、`data/` 或生产日志。
