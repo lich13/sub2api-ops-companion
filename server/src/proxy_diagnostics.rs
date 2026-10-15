@@ -106,10 +106,11 @@ pub struct ProxyDiagnostics {
 }
 impl ProxyDiagnostics {
     pub fn new(actions: Actions) -> Self {
+        let tasks = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         Self {
             actions,
             running: Arc::new(Mutex::new(BTreeMap::new())),
-            tasks: Default::default(),
+            tasks,
         }
     }
     pub async fn close(&self, seconds: u64) {

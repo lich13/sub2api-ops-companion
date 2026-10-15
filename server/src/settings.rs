@@ -109,7 +109,9 @@ impl Settings {
             |key: &str, default: &str| env.get(key).cloned().unwrap_or_else(|| default.to_owned());
         let oauth_path = PathBuf::from(get("OAUTH_CONFIG_PATH", "/data/oauth-config.json"));
         let bark_path = PathBuf::from(get("BARK_CONFIG_PATH", "/data/bark-config.json"));
-        let config = read_config(&oauth_path)?;
+        let config = read_config(&oauth_path).inspect_err(|_| {
+            eprintln!("startup_diagnostic resource=oauth_config error_code=read_failed");
+        })?;
         let mut oauth = json!({});
         let configured = |key: &str| {
             config.get(key).cloned().unwrap_or_else(|| {
@@ -200,6 +202,9 @@ impl Settings {
             url.trim()
         };
         bark_valid &= crate::bark::normalize_url(url).is_ok();
+        if !bark_valid {
+            eprintln!("startup_diagnostic resource=bark_config error_code=optional_config_invalid");
+        }
         let bark = json!({"enabled":enabled,"device_key":key,"server_url":url});
         Ok(Self {
             database_url: env

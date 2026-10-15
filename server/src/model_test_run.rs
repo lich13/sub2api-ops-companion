@@ -278,6 +278,9 @@ impl ModelTests {
             {
                 return Err(Failure::new("account_changed", false));
             }
+            if self.actions.supervisor.is_stopping() {
+                return Err(Failure::new("internal_error", false));
+            }
             if job["automatic"] == true && run.attempts.load(Ordering::Acquire) == 0 {
                 self.hooks
                     .register_dispatch(&self.get(id).map_err(internal)?)
@@ -377,9 +380,9 @@ impl ModelTests {
                         .clone();
                     let snapshot = context.snapshot.clone();
                     let outputs = samples.values().cloned().collect::<Vec<_>>();
-                    let report = tokio::task::spawn_blocking(move || {
+                    let report = crate::supervision::join(tokio::task::spawn_blocking(move || {
                         modeltrace::analyze(&outputs, &snapshot)
-                    })
+                    }))
                     .await;
                     let report = match report {
                         Ok(Ok(report)) => report,

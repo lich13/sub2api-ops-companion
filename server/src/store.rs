@@ -248,6 +248,20 @@ pub fn read_config(path: &Path) -> Result<Value> {
     }
 }
 
+/// Compatibility diagnostic only: never change modes or reject old files.
+pub(crate) fn diagnose_permissions(path: &Path, resource: &'static str) {
+    match fs::metadata(path) {
+        #[cfg(unix)]
+        Ok(metadata) if metadata.permissions().mode() & 0o777 != 0o600 => {
+            eprintln!("startup_diagnostic resource={resource} error_code=existing_permissions");
+        }
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            eprintln!("startup_diagnostic resource={resource} error_code=metadata_unavailable");
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

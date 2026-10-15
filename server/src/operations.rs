@@ -864,7 +864,10 @@ impl Operations {
         self.get(jid, 0)
     }
     pub async fn tick(self: &Arc<Self>) -> Result<()> {
-        if self.actions.settings.read_only || self.closing.load(Ordering::Acquire) {
+        if self.actions.settings.read_only
+            || self.closing.load(Ordering::Acquire)
+            || self.actions.supervisor.is_stopping()
+        {
             return Ok(());
         }
         let data = self.store.read()?;
@@ -970,23 +973,35 @@ impl Operations {
         permit: Option<tokio::sync::OwnedSemaphorePermit>,
         test_permit: Option<crate::execution::TestPermit>,
     ) {
+        if self.actions.supervisor.is_stopping() {
+            return;
+        }
         let jid = string(&job["id"]).to_owned();
         let queue = self.clone();
         let task_id = jid.clone();
         let (send, ready) = tokio::sync::oneshot::channel();
-        let task = tokio::spawn(async move {
-            let _ = ready.await;
-            let _permit = permit;
-            let _test_permit = test_permit;
-            let result = queue.run(&task_id).await;
-            if let Err(error) = result {
-                let _ = queue.run_error(&task_id, error);
-            }
-            queue
+        let cleanup = self.clone();
+        let cleanup_id = jid.clone();
+        let registration = crate::supervision::on_drop(move || {
+            cleanup
                 .tasks
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .remove(&task_id);
+                .remove(&cleanup_id);
+        });
+        let task = self.actions.supervisor.spawn("operation", async move {
+            let _registration = registration;
+            let _ = ready.await;
+            let _permit = permit;
+            let _test_permit = test_permit;
+            let result = queue
+                .actions
+                .supervisor
+                .guard("operation", queue.run(&task_id))
+                .await;
+            if let Some(Err(error)) = result {
+                let _ = queue.run_error(&task_id, error);
+            }
         });
         self.tasks
             .lock()
@@ -995,13 +1010,27 @@ impl Operations {
         let _ = send.send(());
     }
     fn launch_native(self: &Arc<Self>, bid: String, permit: tokio::sync::OwnedSemaphorePermit) {
+        if self.actions.supervisor.is_stopping() {
+            return;
+        }
         let queue = self.clone();
         let task_id = bid.clone();
         let (send, ready) = tokio::sync::oneshot::channel();
-        let task = tokio::spawn(async move {
+        let cleanup = self.clone();
+        let cleanup_id = bid.clone();
+        let registration = crate::supervision::on_drop(move || {
+            cleanup
+                .tasks
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&cleanup_id);
+        });
+        let task = self.actions.supervisor.spawn("native_batch", async move {
+            let _registration = registration;
             let _ = ready.await;
             let _permit = permit;
-            if let Err(error) = queue.run_native(&task_id).await {
+            let result = queue.actions.supervisor.guard("native_batch", queue.run_native(&task_id)).await;
+            if let Some(Err(error)) = result {
                 if let Ok(data) = queue.store.read() {
                     for jid in data["batches"][&task_id]["job_ids"]
                         .as_array()
@@ -1016,11 +1045,6 @@ impl Operations {
                 }
             }
             let _ = queue.refresh_chunks(&task_id);
-            queue
-                .tasks
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&task_id);
         });
         self.tasks
             .lock()
@@ -1029,6 +1053,9 @@ impl Operations {
         let _ = send.send(());
     }
     async fn run(&self, jid: &str) -> Result<()> {
+        if self.actions.supervisor.is_stopping() {
+            return Ok(());
+        }
         let job = self.store.read()?["jobs"][jid].clone();
         if !matches!(string(&job["status"]), "queued" | "checking") {
             return Ok(());
@@ -1075,6 +1102,9 @@ impl Operations {
             return Ok(());
         }
         self.actions.upstream.authenticate(&key, true).await?;
+        if self.actions.supervisor.is_stopping() {
+            return Ok(());
+        }
         if self.store.read()?["jobs"][jid]["status"] != "queued" {
             return Ok(());
         }

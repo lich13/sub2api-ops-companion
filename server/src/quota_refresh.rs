@@ -48,7 +48,7 @@ impl Runtime {
         let runtime = self.clone();
         let key = key.to_owned();
         let requested = Instant::now();
-        let handle = tokio::spawn(async move {
+        let handle = self.actions.supervisor.spawn("quota_refresh", async move {
             let limit = runtime
                 .config
                 .current()
@@ -110,7 +110,7 @@ impl Runtime {
     ) -> Result<Value> {
         let id = integer(&original["id"]).ok_or_else(Error::invalid)?;
         let _lease = loop {
-            if self.closing.load(Ordering::Acquire) {
+            if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));
             }
             let row = self.actions.account(id, None).await?;

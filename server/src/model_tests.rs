@@ -223,7 +223,10 @@ impl ModelTests {
         for job in changed {let aid=integer(&job["account_id"]).ok_or_else(Error::internal)?.to_string();if data["accounts"][&aid]["id"]==job["id"] {data["accounts"][aid]=job;}}Ok(())})
     }
     pub fn resume(&self) -> Result<()> {
-        if self.actions.settings.read_only || self.closing.load(Ordering::Acquire) {
+        if self.actions.settings.read_only
+            || self.closing.load(Ordering::Acquire)
+            || self.actions.supervisor.is_stopping()
+        {
             return Ok(());
         }
         for job in self.data()?["jobs"]
@@ -245,7 +248,7 @@ impl ModelTests {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
         }
-        if self.closing.load(Ordering::Acquire) {
+        if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             return Err(Error::new(503, "服务正在停止"));
         }
         let _guard = self.start.lock().await;
@@ -315,15 +318,35 @@ impl ModelTests {
     pub(crate) fn launch(&self, job: Value, context: Option<Arc<Context>>) -> Result<()> {
         let id = string(&job["id"]).to_owned();
         let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
-        if self.closing.load(Ordering::Acquire) || tasks.contains_key(&id) {
+        if self.closing.load(Ordering::Acquire)
+            || self.actions.supervisor.is_stopping()
+            || tasks.contains_key(&id)
+        {
             return Ok(());
         }
         let this = self.clone();
         let task_id = id.clone();
         let (send, receive) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
+        let cleanup = self.clone();
+        let cleanup_id = id.clone();
+        let registration = crate::supervision::on_drop(move || {
+            cleanup
+                .tasks
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&cleanup_id);
+        });
+        let handle = self.actions.supervisor.spawn("model_test", async move {
+            let _registration = registration;
             let _ = receive.await;
-            if let Err(error) = this.wait_and_run(&job, context).await {
+            let result = this.actions.supervisor.guard("model_test", this.wait_and_run(&job, context)).await;
+            if result.is_none() {
+                if this.get(&task_id).is_ok_and(|job| ACTIVE.contains(&string(&job["status"])) && job["status"] != "queued") {
+                    let _=this.update(&task_id,json!({"status":"interrupted","error":"测试已中断，结果未确认","completed_at":crate::compat::datetime((this.clock)()),"can_retry":false,"uncertain":true}));
+                }
+                this.contexts.lock().unwrap_or_else(|e| e.into_inner()).remove(&task_id);
+            }
+            if let Some(Err(error)) = result {
                 let current = this.get(&task_id).unwrap_or(Value::Null);
                 if ACTIVE.contains(&string(&current["status"])) {
                     let message = if matches!(error.status.as_u16(), 409 | 422) {
@@ -334,10 +357,6 @@ impl ModelTests {
                     let _=this.update(&task_id,json!({"status":if matches!(error.status.as_u16(),409|422) {"needs_confirmation"}else {"failed"},"error":message,"completed_at":crate::compat::now(),"can_retry":false}));
                 }
             }
-            this.tasks
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&task_id);
         });
         tasks.insert(id, handle);
         let _ = send.send(());
@@ -347,6 +366,9 @@ impl ModelTests {
         let id = string(&job["id"]);
         let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
         let (_lease, _job_slot, _budget) = loop {
+            if self.actions.supervisor.is_stopping() {
+                return Ok(());
+            }
             let current = self.get(id)?;
             if current["status"] != "queued" {
                 return Ok(());
@@ -455,6 +477,9 @@ impl ModelTests {
                 self.update(id,json!({"status":"failed","preflight_result":result,"completed_at":crate::compat::now(),"error":result.get("error").unwrap_or(&json!("恢复条件未确认"))}))?;
                 return Ok(());
             }
+        }
+        if self.actions.supervisor.is_stopping() {
+            return Ok(());
         }
         let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.snapshot.1,"can_retry":false}))?;
         self.run(job, context).await

@@ -27,6 +27,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
+    future::{Future, IntoFuture},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
@@ -87,6 +88,49 @@ impl Runtime {
         clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
     ) -> Result<Arc<Self>> {
         let settings = Arc::new(settings);
+        for (resource, path) in [
+            ("oauth_state", settings.usage_path.clone()),
+            ("oauth_config", settings.oauth_path.clone()),
+            ("bark_config", settings.bark_path.clone()),
+            ("fallback_config", settings.fallback_path.clone()),
+            ("connection_config", settings.connection_path.clone()),
+            ("model_config", settings.model_path.clone()),
+            ("audit", settings.audit_path.clone()),
+            (
+                "operations",
+                settings
+                    .usage_path
+                    .with_file_name("account-operations.json"),
+            ),
+            (
+                "capacity",
+                settings
+                    .usage_path
+                    .with_file_name("capacity-alert-state.json"),
+            ),
+            (
+                "model_tests",
+                settings.data_dir().join("model-test-results.json"),
+            ),
+            (
+                "detection",
+                settings.data_dir().join("model-detection-state.json"),
+            ),
+            (
+                "fingerprints",
+                settings.data_dir().join("modeltrace-bank-state.json"),
+            ),
+            (
+                "templates",
+                settings.data_dir().join("account-templates.json"),
+            ),
+            (
+                "legacy_profiles",
+                settings.data_dir().join("account-model-profiles.json"),
+            ),
+        ] {
+            crate::store::diagnose_permissions(&path, resource);
+        }
         let instance = if settings.read_only {
             None
         } else {
@@ -97,7 +141,7 @@ impl Runtime {
             )?)
         };
         let db = Database::open(&settings.database_url, settings.read_only).await?;
-        let upstream = Upstream::new(settings.clone())?;
+        let upstream = startup("upstream", Upstream::new(settings.clone()))?;
         let oauth = OAuthState::new(settings.usage_path.clone(), settings.read_only);
         let queries = Queries {
             db: db.clone(),
@@ -114,7 +158,8 @@ impl Runtime {
             templates,
             settings.clone(),
         )?;
-        let bark = Bark::new(settings.clone())?;
+        let mut bark = Bark::new(settings.clone())?;
+        bark.supervise(actions.supervisor.clone());
         let config = ConfigService::new(
             settings.clone(),
             bark.clone(),
@@ -161,7 +206,8 @@ impl Runtime {
             budget.clone(),
         );
         monitor.clock = clock.clone();
-        let bank = FingerprintBank::new(settings.clone())?;
+        let mut bank = startup("fingerprints", FingerprintBank::new(settings.clone()))?;
+        bank.supervise(actions.supervisor.clone());
         let mut tests = ModelTests::new(actions.clone(), bank, hooks.clone(), budget.clone());
         tests.clock = clock.clone();
         let capacity = CapacityAlerts::new(db.clone(), &settings);
@@ -173,10 +219,15 @@ impl Runtime {
             bark,
         );
         detection.clock = clock;
-        let operations = Operations::new_deferred(actions.clone(), hooks.clone(), budget.clone())?;
+        let operations = startup(
+            "operations",
+            Operations::new_deferred(actions.clone(), hooks.clone(), budget.clone()),
+        )?;
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
-        let quality = QualityCache::new(db.clone());
+        let mut quality = QualityCache::new(db.clone());
+        quality.supervise(actions.supervisor.clone());
         let proxies = ProxyDiagnostics::new(actions.clone());
+        let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         let (stop, _) = watch::channel(false);
         let runtime = Arc::new(Self {
             settings,
@@ -199,7 +250,7 @@ impl Runtime {
             quota_batch: Mutex::new(json!({"status":"idle","items":[],"total":0,"completed":0})),
             quota_task: Mutex::new(None),
             usage_flights: Mutex::new(Default::default()),
-            requests: Default::default(),
+            requests,
             tasks: Mutex::new(vec![]),
             stop,
             _instance: instance,
@@ -215,23 +266,33 @@ impl Runtime {
     /// Validation is also used by --check-state. It performs no business writes,
     /// migrations, task dispatch or state-file creation.
     pub async fn preflight(&self) -> Result<Value> {
-        self.actions.queries.oauth.snapshot()?;
-        self.config.snapshot(None)?;
-        self.config.fallback.preflight()?;
-        self.tests.data()?;
-        self.detection.store.read()?;
-        self.detection.capacity.store.snapshot()?;
-        self.operations.store.read()?;
-        crate::account_templates::normalize(self.actions.templates.store.read()?)?;
+        startup("oauth_state", self.actions.queries.oauth.snapshot())?;
+        startup("oauth_config", self.config.snapshot(None))?;
+        startup("fallback_config", self.config.fallback.preflight())?;
+        startup("model_tests", self.tests.data())?;
+        startup("detection", self.detection.store.read())?;
+        startup("capacity", self.detection.capacity.store.snapshot())?;
+        startup("operations", self.operations.store.read())?;
+        startup(
+            "templates",
+            self.actions
+                .templates
+                .store
+                .read()
+                .and_then(crate::account_templates::normalize),
+        )?;
         if let Some(profiles) = self.legacy_profiles() {
-            profiles.read()?;
+            startup("legacy_profiles", profiles.read())?;
         }
-        crate::model_config::ModelConfig::new(
-            self.settings.model_path.clone(),
-            self.settings.read_only,
-        )
-        .read()?;
-        self.settings.connection_config()?;
+        startup(
+            "model_config",
+            crate::model_config::ModelConfig::new(
+                self.settings.model_path.clone(),
+                self.settings.read_only,
+            )
+            .read(),
+        )?;
+        startup("connection_config", self.settings.connection_config())?;
         let accounts = self.actions.queries.accounts().await?;
         self.actions.queries.groups(&accounts).await?;
         self.actions.queries.errors(None, None, 1, None).await?;
@@ -280,10 +341,10 @@ impl Runtime {
         ] {
             let runtime = self.clone();
             let mut stop = self.stop.subscribe();
-            let handle = tokio::spawn(async move {
+            let handle = self.actions.supervisor.spawn(kind, async move {
                 let mut failures = 0_u32;
                 loop {
-                    if *stop.borrow() {
+                    if *stop.borrow() || runtime.actions.supervisor.is_stopping() {
                         break;
                     }
                     let started = std::time::Instant::now();
@@ -349,6 +410,46 @@ impl Runtime {
         Ok(())
     }
 
+    /// The entrypoint owns shutdown; a failed worker only closes admission and
+    /// signals this owner, so no worker can end up waiting for its own handle.
+    pub async fn serve(
+        self: &Arc<Self>,
+        listener: tokio::net::TcpListener,
+        shutdown: impl Future<Output = ()>,
+    ) -> Result<()> {
+        if let Err(error) = self.start().await {
+            self.close().await;
+            return Err(error);
+        }
+        let (stop, receive) = tokio::sync::oneshot::channel();
+        let server = axum::serve(listener, crate::api::router(self.clone()))
+            .with_graceful_shutdown(async {
+                let _ = receive.await;
+            })
+            .into_future();
+        tokio::pin!(server);
+        tokio::select! {
+            result = &mut server => { self.close().await; result?; },
+            _ = shutdown => {
+                let _ = stop.send(());
+                let _ = tokio::time::timeout(Duration::from_secs(60), async {
+                    tokio::join!(self.close(), &mut server)
+                }).await;
+            },
+            _ = self.actions.supervisor.failed() => {
+                let _ = stop.send(());
+                let _ = tokio::time::timeout(Duration::from_secs(60), async {
+                    tokio::join!(self.close(), &mut server)
+                }).await;
+            },
+        }
+        if self.actions.supervisor.has_failed() {
+            Err(Error::internal())
+        } else {
+            Ok(())
+        }
+    }
+
     async fn refresh_route(&self) {
         if let Ok(key) = self.actions.queries.oauth.admin_token() {
             if !key.is_empty() {
@@ -360,7 +461,7 @@ impl Runtime {
     pub fn writable(&self) -> Result<()> {
         if self.settings.read_only {
             Err(Error::read_only())
-        } else if self.closing.load(Ordering::Acquire) {
+        } else if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
             Err(Error::new(503, "服务正在停止"))
         } else {
             Ok(())
@@ -368,6 +469,9 @@ impl Runtime {
     }
 
     pub async fn authenticate(&self, key: &str, fresh: bool) -> Result<()> {
+        if self.actions.supervisor.is_stopping() {
+            return Err(Error::new(503, "服务正在停止"));
+        }
         self.upstream.authenticate(key, fresh).await?;
         if !self.settings.read_only {
             self.actions.queries.oauth.save_admin_token(key)?;
@@ -379,6 +483,7 @@ impl Runtime {
         if self.closing.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.actions.supervisor.stop();
         let _ = self.stop.send(true);
         let mut tasks = std::mem::take(&mut *self.tasks.lock().unwrap_or_else(|e| e.into_inner()));
         let quota = self

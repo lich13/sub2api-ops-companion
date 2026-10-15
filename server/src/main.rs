@@ -1,4 +1,3 @@
-use std::{future::IntoFuture, time::Duration};
 use sub2ops_server::{
     error::{Error, Result},
     runtime::Runtime,
@@ -106,22 +105,7 @@ async fn run() -> Result<()> {
         return Ok(());
     }
     let listener = tokio::net::TcpListener::bind(address).await?;
-    runtime.start().await?;
-    let (stop, receive) = tokio::sync::oneshot::channel();
-    let server = axum::serve(listener, sub2ops_server::api::router(runtime.clone()))
-        .with_graceful_shutdown(async {
-            let _ = receive.await;
-        })
-        .into_future();
-    tokio::pin!(server);
-    tokio::select! {
-        result=&mut server=>{runtime.close().await;result?;},
-        _=shutdown()=>{
-            let _=stop.send(());
-            let ((),_)=tokio::join!(runtime.close(),tokio::time::timeout(Duration::from_secs(60),&mut server));
-        },
-    }
-    Ok(())
+    runtime.serve(listener, shutdown()).await
 }
 async fn shutdown() {
     #[cfg(unix)]

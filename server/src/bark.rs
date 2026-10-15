@@ -294,8 +294,12 @@ pub struct Bark {
     pub config: Arc<RwLock<Config>>,
     client: reqwest::Client,
     settings: Arc<Settings>,
+    supervisor: crate::supervision::Supervisor,
 }
 impl Bark {
+    pub(crate) fn supervise(&mut self, supervisor: crate::supervision::Supervisor) {
+        self.supervisor = supervisor;
+    }
     pub fn new(settings: Arc<Settings>) -> Result<Self> {
         let config = Config {
             enabled: settings.bark["enabled"] == true,
@@ -309,6 +313,7 @@ impl Bark {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
             settings,
+            supervisor: Default::default(),
         })
     }
     pub fn runtime(&self) -> Config {
@@ -370,6 +375,9 @@ impl Bark {
         };
         let total = chunks.len();
         for (index, body) in chunks.into_iter().enumerate() {
+            if self.supervisor.is_stopping() {
+                return PushResult::failed("service_stopping", index, total);
+            }
             let title = if total > 1 {
                 format!("{title} ({}/{total})", index + 1)
             } else {

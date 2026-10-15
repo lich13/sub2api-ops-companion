@@ -262,6 +262,9 @@ impl Operations {
         }
         self.actions.upstream.authenticate(&key, true).await?;
         for chunk in candidates.chunks(100) {
+            if self.actions.supervisor.is_stopping() {
+                return Ok(());
+            }
             self.native_chunk(bid, chunk, &key).await?;
         }
         Ok(())

@@ -52,6 +52,7 @@ pub struct Actions {
     pub locks: AccountLocks,
     pub templates: Templates,
     pub settings: Arc<Settings>,
+    pub supervisor: crate::supervision::Supervisor,
     client: reqwest::Client,
 }
 pub struct TestRun {
@@ -184,6 +185,7 @@ impl Actions {
             locks,
             templates,
             settings,
+            supervisor: Default::default(),
             client,
         })
     }
@@ -196,6 +198,9 @@ impl Actions {
         timeout: Duration,
         stream: bool,
     ) -> Result<reqwest::Response> {
+        if self.supervisor.is_stopping() {
+            return Err(Error::new(503, "服务正在停止"));
+        }
         if self.settings.read_only && method != reqwest::Method::GET {
             return Err(Error::read_only());
         }
@@ -708,7 +713,7 @@ impl Actions {
     ) -> TestRun {
         let (sender, receiver) = mpsc::channel(16);
         let actions = self.clone();
-        let task = tokio::spawn(async move {
+        let task = self.supervisor.spawn("connection_test", async move {
             let _lease = lease;
             let started = Instant::now();
             let run = actions.consume_test(id, &payload, &key, &sender, summary, started);

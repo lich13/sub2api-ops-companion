@@ -105,12 +105,12 @@ impl Coordinator {
     }
     fn spawn_owned(&self, id: i64, future: impl Future<Output = ()> + Send + 'static) {
         let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
-        if flights.closed {
+        if flights.closed || self.actions.supervisor.is_stopping() {
             flights.pending.remove(&id);
             return;
         }
         let (send, receive) = tokio::sync::oneshot::channel();
-        let task = tokio::spawn(async move {
+        let task = self.actions.supervisor.spawn("quota_query", async move {
             if receive.await.is_ok() {
                 future.await;
             }
@@ -207,7 +207,7 @@ impl Coordinator {
         let fingerprint = credential_fingerprint(&row);
         let (pending, owner) = {
             let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
-            if flights.closed {
+            if flights.closed || self.actions.supervisor.is_stopping() {
                 return skipped("service_stopping");
             }
             if let Some(pending) = flights.pending.get(&id) {
@@ -508,7 +508,7 @@ impl Coordinator {
         };
         let (tx, pending) = {
             let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
-            if flights.closed {
+            if flights.closed || self.actions.supervisor.is_stopping() {
                 return skipped("service_stopping");
             }
             if flights.pending.contains_key(&id) {

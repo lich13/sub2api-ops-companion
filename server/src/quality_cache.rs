@@ -30,6 +30,7 @@ pub struct QualityCache {
     db: Database,
     state: Arc<Mutex<Cache>>,
     clock: Arc<dyn Fn() -> Instant + Send + Sync>,
+    supervisor: crate::supervision::Supervisor,
 }
 
 #[derive(Debug)]
@@ -184,6 +185,9 @@ async fn read_evidence(
 }
 
 impl QualityCache {
+    pub(crate) fn supervise(&mut self, supervisor: crate::supervision::Supervisor) {
+        self.supervisor = supervisor;
+    }
     pub fn new(db: Database) -> Self {
         Self::new_with_clock(db, Arc::new(Instant::now))
     }
@@ -192,6 +196,7 @@ impl QualityCache {
         Self {
             db,
             clock,
+            supervisor: Default::default(),
             state: Arc::new(Mutex::new(Cache {
                 results: BTreeMap::new(),
                 attempt: None,
@@ -230,9 +235,9 @@ impl QualityCache {
                         },
                     )
                 };
-                let computed = tokio::task::spawn_blocking(move || {
+                let computed = crate::supervision::join(tokio::task::spawn_blocking(move || {
                     quality::calculate_evidence(usage, &errors, baselines.as_ref())
-                })
+                }))
                 .await;
                 let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
                 if let Ok((results, baselines)) = computed {
@@ -261,6 +266,7 @@ impl QualityCache {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let at = (self.clock)();
         if !state.closed
+            && !self.supervisor.is_stopping()
             && state
                 .attempt
                 .is_none_or(|v| at.saturating_duration_since(v) >= StdDuration::from_secs(30))
@@ -268,7 +274,7 @@ impl QualityCache {
         {
             state.attempt = Some(at);
             let this = self.clone();
-            state.task = Some(tokio::spawn(async move {
+            state.task = Some(self.supervisor.spawn("quality", async move {
                 this.refresh().await;
             }));
         }

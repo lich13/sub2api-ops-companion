@@ -65,6 +65,7 @@ pub mod settings;
 mod snapshot;
 pub mod sql;
 pub mod store;
+pub mod supervision;
 pub mod tasks;
 pub mod upstream;
 pub mod usage;

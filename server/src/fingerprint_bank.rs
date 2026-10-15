@@ -221,6 +221,10 @@ pub struct FingerprintBank {
     tasks: crate::tasks::Tasks,
 }
 impl FingerprintBank {
+    pub(crate) fn supervise(&mut self, supervisor: crate::supervision::Supervisor) {
+        self.tasks = crate::tasks::Tasks::supervised(supervisor);
+    }
+
     pub fn new(settings: Arc<Settings>) -> Result<Self> {
         let client = reqwest::Client::builder()
             .no_proxy()

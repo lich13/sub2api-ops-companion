@@ -89,7 +89,7 @@ impl Monitor {
         (self.clock)()
     }
     pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::Acquire)
+        self.closed.load(Ordering::Acquire) || self.actions.supervisor.is_stopping()
     }
     pub fn state(&self) -> Result<Value> {
         self.store.snapshot()
@@ -244,7 +244,7 @@ impl Monitor {
         })
     }
     pub async fn tick(&self) -> Result<()> {
-        if self.actions.settings.read_only || self.closed.load(Ordering::Acquire) {
+        if self.actions.settings.read_only || self.is_closed() {
             return Ok(());
         }
         let config = self.config.current()?;
@@ -408,6 +408,9 @@ impl Monitor {
             self.store.commit(waiting)?;
         }
         for item in candidates {
+            if self.is_closed() {
+                break;
+            }
             let id = integer(&item["account_id"]).unwrap_or(0);
             if workers.contains_key(&id) {
                 continue;
@@ -426,14 +429,16 @@ impl Monitor {
             cycle_results.insert(id, receive);
             workers.insert(
                 id,
-                tokio::spawn(async move {
-                    let result = this.run_item(item, Source::Automatic, true).await;
-                    let receipt = result.as_ref().cloned().unwrap_or_else(|_| {
+                self.actions
+                    .supervisor
+                    .spawn_result("oauth_worker", async move {
+                        let result = this.run_item(item, Source::Automatic, true).await;
+                        let receipt = result.as_ref().cloned().unwrap_or_else(|_| {
                         json!({"success":false,"skipped":true,"error_code":"recovery_uncertain"})
                     });
-                    let _ = send.send(Some(receipt));
-                    result
-                }),
+                        let _ = send.send(Some(receipt));
+                        result
+                    }),
             );
         }
         drop(workers);
@@ -468,10 +473,12 @@ impl Monitor {
                 let this = self.clone();
                 workers.insert(
                     id,
-                    tokio::spawn(async move {
-                        this.credits.run_account(&row, this.now()).await?;
-                        Ok(json!({}))
-                    }),
+                    self.actions
+                        .supervisor
+                        .spawn_result("credit_worker", async move {
+                            this.credits.run_account(&row, this.now()).await?;
+                            Ok(json!({}))
+                        }),
                 );
             }
         }
@@ -480,10 +487,13 @@ impl Monitor {
             if !self.is_closed() && daily.is_none() {
                 if let Some(batch) = self.schedule.claim(&config, now)? {
                     let this = self.clone();
-                    *daily = Some(tokio::spawn(async move {
-                        this.run_daily_with_recovery(batch, inventory, cycle_results)
-                            .await
-                    }));
+                    *daily = Some(self.actions.supervisor.spawn_result(
+                        "daily_worker",
+                        async move {
+                            this.run_daily_with_recovery(batch, inventory, cycle_results)
+                                .await
+                        },
+                    ));
                 }
             }
         }
@@ -600,7 +610,7 @@ impl Monitor {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
         }
-        if self.closed.load(Ordering::Acquire) {
+        if self.is_closed() {
             return Err(Error::new(503, "服务正在停止"));
         }
         let (mut receive, coalesced) = {
@@ -614,7 +624,7 @@ impl Monitor {
                 let (send, receive) = watch::channel(None);
                 *force = Some(receive.clone());
                 let this = self.clone();
-                let task = tokio::spawn(async move {
+                let task = self.actions.supervisor.spawn("quota_force", async move {
                     let result=this.force_cycle(timeout).await.unwrap_or_else(|_|json!({"success":false,"timed_out":false,"error_code":"force_refresh_failed","error":"主动查询未完成"}));
                     let _ = send.send(Some(result));
                     *this.force.lock().await = None;
