@@ -1384,7 +1384,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“migration keeps admin key and oauth snapshots only”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“migration keeps admin key and oauth snapshots only”映射到 legacy_oauth_state_migration_preserves_only_live_snapshots_and_retries_idempotently；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. Rust 0.1.43 安全加固另由 hardening_contract::normalize_filters_invalid_scheduler_keys_and_keeps_recovered_history 覆盖文本、溢出、0、负数键过滤和已恢复历史保留；固定 Python fixture 不变。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthStateStoreTests.test_legacy_guard_cleanup_is_idempotent",

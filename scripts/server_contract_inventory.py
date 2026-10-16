@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 EXPECTED_TEST_FILES = 65
 EXPECTED_TEST_FUNCTIONS = 884
 REPO_ROOT = Path(__file__).resolve().parents[1]

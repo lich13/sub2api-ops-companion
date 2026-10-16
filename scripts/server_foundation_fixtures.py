@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 AT = datetime(2031, 4, 5, 6, 7, 8, tzinfo=timezone.utc)
 VECTOR_IDS = {
     "account_template_version_from_operation_version",

@@ -19,7 +19,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 CONTRACT_DIR = ROOT / "tests" / "contracts" / "account-mutation"
 FIXTURE_PATH = CONTRACT_DIR / "fixtures.json"
 MIGRATION_PATH = CONTRACT_DIR / "migration-fragment.json"

@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import HTTPException
 
 
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 CUSTOM_ID = "0123456789abcdef01234567"
 
 

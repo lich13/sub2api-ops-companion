@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 
 # Reuse the established isolated git-show exporter. The reference app is loaded
 # only from a runner-owned temporary directory; no production config is read.

@@ -17,7 +17,7 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 FIXTURE_PATH = ROOT / "tests" / "contracts" / "state" / "fixtures.json"
 sys.path.insert(0, str(ROOT / "scripts"))
 import server_http_contract as http_contract

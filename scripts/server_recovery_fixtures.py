@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 AT = datetime(2031, 4, 5, 6, 7, 8, tzinfo=timezone.utc)
 DAY_START = datetime(2031, 4, 5, 20, 59, 0, tzinfo=timezone.utc)
 DAY_TARGET = datetime(2031, 4, 5, 21, 0, 0, tzinfo=timezone.utc)

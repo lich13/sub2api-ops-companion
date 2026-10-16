@@ -49,7 +49,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_DIR = ROOT / "tests" / "contracts" / "http"
 SCHEMA_PATH = CONTRACT_DIR / "schema.sql"
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 API = "/api/desktop/v1"
 ADMIN_KEY = "fixture-admin-server-contract-040"
 WRONG_ADMIN_KEY = "fixture-invalid-server-contract-040"
@@ -590,6 +590,9 @@ class ContractSuite:
                 "capabilities response lacks api_version=1")
         require(response.body.get("service") == "Sub2API Ops Companion",
                 "capabilities service identity differs")
+        if response.body.get("implementation") == "rust":
+            require(response.body.get("platforms") == ["macos", "android"],
+                    "Rust capabilities must advertise both supported clients")
         return {"status": response.status, "api_version": 1}
 
     def _snapshot(self) -> dict[str, object]:

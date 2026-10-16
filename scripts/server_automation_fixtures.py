@@ -31,7 +31,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 FIXTURE_PATH = ROOT / "tests" / "contracts" / "automation" / "automation-fixtures.json"
 TEST_PATH = ROOT / "server" / "tests" / "automation_runtime_contract.rs"
 SCHEMA_PATH = ROOT / "tests" / "contracts" / "http" / "schema.sql"

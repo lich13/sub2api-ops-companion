@@ -25,7 +25,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 TEST_PATH = ROOT / "server" / "tests" / "operation_contract.rs"
 FIXTURE_PATH = ROOT / "tests" / "contracts" / "operation-fixtures.json"
 IMPLEMENTATION_PATHS = (

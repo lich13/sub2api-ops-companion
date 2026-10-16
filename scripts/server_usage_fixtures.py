@@ -24,7 +24,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 REFERENCE_PATHS = ("app", "tests/test_usage_records.py")
 DATE_BOUNDARY_MATRIX_ID = "pinned_date_window_timestamp_boundary_matrix"
 DATE_BOUNDARY_MATRIX_TEST_ID = (

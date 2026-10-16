@@ -48,7 +48,7 @@
           }
         ]
       },
-      "coverage_note": "固定旧实现的允许／拒绝 URL 矩阵逐项经过 Rust validator。"
+      "coverage_note": "固定 Python fixture 仍按旧实现矩阵核对，未改写历史结果；Rust 0.1.43 安全加固另由 bark_https_rejects_non_public_literal_ips_and_allows_public_hosts 覆盖非公网 HTTPS literal IP（含数字写法）拒绝，以及 api.day.app、自建 HTTPS 域名和 HTTP loopback 放行。"
     },
     {
       "legacy_test_id": "py:tests.test_bark:BarkPayloadTests.test_utf8_chunks_preserve_text_and_final_body_limit",

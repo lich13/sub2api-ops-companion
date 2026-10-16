@@ -24,7 +24,10 @@ from server_http_contract import TemporaryPostgres  # noqa: E402
 FIXTURE_PATH = ROOT / "tests" / "contracts" / "manual-dispatch" / "fixtures.json"
 MIGRATION_PATH = ROOT / "tests" / "contracts" / "manual-dispatch" / "migration-fragment.json"
 TEST_TARGET = "manual_dispatch_parity"
-REFERENCE_SHA = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))["reference_sha"]
+from server_reference import REFERENCE_SHA
+
+if json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))["reference_sha"] != REFERENCE_SHA:
+    raise RuntimeError("fixture reference differs from pinned Python revision")
 REFERENCE_PATHS = (
     "app",
     "tests/test_oauth_monitor.py",

@@ -15,7 +15,7 @@ from pathlib import Path
 from server_credit_contract import safe_environment
 from server_http_contract import ROOT, TemporaryPostgres
 
-REFERENCE_SHA = "6be7c291ed38dcc337cb88f693639040a3463899"
+from server_reference import REFERENCE_SHA
 REFERENCE_PATHS = (
     "app",
     "tests/test_postgres_events030.py",
