@@ -695,6 +695,75 @@ fn bark_url_validation_and_utf8_parts_match_pinned_python() {
 }
 
 #[test]
+fn bark_https_rejects_non_public_literal_ips_and_allows_public_hosts() {
+    let accepted = [
+        "https://api.day.app",
+        "https://example.invalid/self-hosted",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://[::1]:8080",
+    ];
+    for url in accepted {
+        assert!(
+            bark::normalize_url(url).is_ok(),
+            "expected public HTTPS host or existing HTTP loopback to pass"
+        );
+    }
+
+    let rejected = [
+        // IPv4 loopback, unspecified, link-local, private, shared and multicast.
+        "https://127.0.0.1",
+        "https://0.0.0.0",
+        "https://169.254.1.1",
+        "https://10.0.0.1",
+        "https://172.16.0.1",
+        "https://192.168.1.1",
+        "https://100.64.0.1",
+        "https://224.0.0.1",
+        "https://255.255.255.255",
+        // Reserved and documentation ranges.
+        "https://192.0.0.1",
+        "https://192.0.2.1",
+        "https://198.18.0.1",
+        "https://198.51.100.1",
+        "https://203.0.113.1",
+        "https://240.0.0.1",
+        // IPv6 unspecified, loopback, link-local, ULA, site-local, multicast,
+        // documentation, benchmarking, ORCHID and 6to4 ranges.
+        "https://[::]",
+        "https://[::1]",
+        "https://[fe80::1]",
+        "https://[fc00::1]",
+        "https://[fd00::1]",
+        "https://[fec0::1]",
+        "https://[ff02::1]",
+        "https://[2001:db8::1]",
+        "https://[2001:2::1]",
+        "https://[2001:20::1]",
+        "https://[2002:7f00:1::1]",
+        // IPv4-mapped IPv6 and WHATWG-style numeric IPv4 host spellings.
+        "https://[::ffff:127.0.0.1]",
+        "https://[::ffff:192.168.1.1]",
+        "https://2130706433",
+        "https://0x7f000001",
+        "https://0177.0.0.1",
+    ];
+    for url in rejected {
+        assert!(
+            bark::normalize_url(url).is_err(),
+            "non-public HTTPS literal must be rejected"
+        );
+    }
+
+    let secret_url = "https://192.0.2.1/fixture-secret-device-key";
+    let error = bark::normalize_url(secret_url).unwrap_err();
+    assert_eq!(error.status.as_u16(), 422);
+    let public_error = error.detail.to_string();
+    assert!(!public_error.contains(secret_url));
+    assert!(!public_error.contains("fixture-secret-device-key"));
+}
+
+#[test]
 fn bark_oauth_event_titles_and_bodies_match_pinned_python() {
     for case in fixture()["bark"]["message_cases"].as_array().unwrap() {
         let (title, body) = bark::oauth_message(&case["event"]);

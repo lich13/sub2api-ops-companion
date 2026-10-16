@@ -16,6 +16,7 @@ use sub2ops_server::{
     capacity_alerts::CapacityStore,
     compat,
     db::{self, Database},
+    execution::DiskLease,
     oauth_queries::{Coordinator, QueryOptions, Source},
     oauth_state::OAuthState,
     queries::Queries,
@@ -130,12 +131,19 @@ fn store_preserves_permissions_identity_and_atomic_failure_invariants() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let existing_mode = u32::from_str_radix(
+        // The pinned Python fixture records its historical 0640 mode-preservation
+        // behavior. Rust 0.1.43 intentionally tightens an existing state file to
+        // 0600 whenever a successful write replaces it.
+        let python_existing_mode = u32::from_str_radix(
             expected["preserved_existing_mode_octal"].as_str().unwrap(),
             8,
         )
         .unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(existing_mode)).unwrap();
+        assert_eq!(
+            python_existing_mode, 0o640,
+            "pinned Python history stays fixed"
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(python_existing_mode)).unwrap();
         store
             .transaction(|value| {
                 value["payload"]["changed"] = true.into();
@@ -145,13 +153,26 @@ fn store_preserves_permissions_identity_and_atomic_failure_invariants() {
         let changed = fs::metadata(&path).unwrap();
         assert_eq!(
             changed.mode() & 0o777,
-            existing_mode,
-            "existing mode is preserved"
+            0o600,
+            "0.1.43 tightens legacy 0640 state to private mode"
         );
         assert_ne!(
             first.ino(),
             changed.ino(),
             "changed state is replaced atomically"
+        );
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        store
+            .transaction(|value| {
+                value["payload"]["second_change"] = true.into();
+                Ok(())
+            })
+            .expect("changed transaction tightens a legacy 0644 state file");
+        assert_eq!(
+            fs::metadata(&path).unwrap().mode() & 0o777,
+            0o600,
+            "existing 0644 state converges to private mode"
         );
     }
 
@@ -175,6 +196,73 @@ fn store_preserves_permissions_identity_and_atomic_failure_invariants() {
             .to_string_lossy()
             .starts_with(".sub2ops-state-")
     }));
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_lock_lease_audit_and_capacity_account_files_converge_to_private_modes() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    fn mode(path: &Path) -> u32 {
+        fs::metadata(path).unwrap().mode() & 0o777
+    }
+
+    let temporary = tempfile::tempdir().expect("create owned permission fixture directory");
+    let root = temporary.path();
+
+    let state_path = root.join("store-state.json");
+    let store = Store::policy(&state_path, json!({"payload":{}}), false);
+    store
+        .transaction(|_| Ok(()))
+        .expect("create synthetic Store state and lock");
+    let store_lock_path = state_path.with_extension("lock");
+    fs::set_permissions(&store_lock_path, fs::Permissions::from_mode(0o644)).unwrap();
+    store
+        .transaction(|state| {
+            state["payload"]["lock_repaired"] = true.into();
+            Ok(())
+        })
+        .expect("write while converging the existing Store lock");
+    assert_eq!(mode(&store_lock_path), 0o600, "existing Store lock");
+
+    let lease_state = root.join("lease-state.json");
+    let lease_path = PathBuf::from(format!("{}.fixture", lease_state.display()));
+    fs::write(&lease_path, b"synthetic lease fixture").unwrap();
+    fs::set_permissions(&lease_path, fs::Permissions::from_mode(0o644)).unwrap();
+    let held_lease = DiskLease::try_acquire(&lease_state, "fixture", false)
+        .expect("acquire and restrict the existing lease file");
+    assert_eq!(mode(&lease_path), 0o600, "existing DiskLease");
+    assert!(
+        DiskLease::try_acquire(&lease_state, "fixture", false).is_err(),
+        "a second instance cannot acquire the held disk lease"
+    );
+    drop(held_lease);
+    let released_lease = DiskLease::try_acquire(&lease_state, "fixture", false)
+        .expect("dropping the instance lease releases its exclusive lock");
+    drop(released_lease);
+
+    let audit_path = root.join("audit.jsonl");
+    fs::write(&audit_path, b"{}\n").unwrap();
+    fs::set_permissions(&audit_path, fs::Permissions::from_mode(0o644)).unwrap();
+    sub2ops_server::audit::write(&audit_path, "fixture_event", json!({"fixture":true}), false);
+    assert_eq!(mode(&audit_path), 0o600, "existing audit append target");
+    assert_eq!(
+        fs::read_to_string(&audit_path).unwrap().lines().count(),
+        2,
+        "audit hardening preserves append behavior"
+    );
+
+    let capacity_lock_dir = root.join("capacity-alert-locks");
+    fs::create_dir_all(&capacity_lock_dir).unwrap();
+    let capacity_lock_path = capacity_lock_dir.join("71001.lock");
+    fs::write(&capacity_lock_path, b"synthetic account lock fixture").unwrap();
+    fs::set_permissions(&capacity_lock_path, fs::Permissions::from_mode(0o644)).unwrap();
+    let capacity = CapacityStore::new(root.join("capacity-state.json"), false);
+    let guard = capacity
+        .account_guard(71001)
+        .expect("acquire and restrict the existing account guard file");
+    assert_eq!(mode(&capacity_lock_path), 0o600, "existing account guard");
+    drop(guard);
 }
 
 #[test]
@@ -737,11 +825,17 @@ async fn runtime_start_migrates_legacy_state_by_readback_and_keeps_old_python_re
     let root = contract_dir().join("runtime-migration");
     fs::create_dir_all(&root).expect("create runner-owned migration directory");
     seed_fingerprint_cache(&root);
+    let oauth_config_path = root.join("oauth-config.json");
     fs::write(
-        root.join("oauth-config.json"),
+        &oauth_config_path,
         serde_json::to_vec_pretty(&contract["runtime"]["legacy_config"]).unwrap(),
     )
     .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&oauth_config_path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
     fs::write(
         root.join("account-model-profiles.json"),
         serde_json::to_vec_pretty(&json!({
@@ -774,6 +868,15 @@ async fn runtime_start_migrates_legacy_state_by_readback_and_keeps_old_python_re
         .start()
         .await
         .expect("writable startup runs legacy config/recovery/template migrations");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            fs::metadata(&oauth_config_path).unwrap().mode() & 0o777,
+            0o600,
+            "migration write tightens an existing 0644 OAuth config"
+        );
+    }
 
     assert!(
         !root.join("guard-state.json").exists(),

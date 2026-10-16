@@ -193,6 +193,7 @@ impl Store {
         options.mode(0o600);
         let lock = options.open(&self.0.lock_path)?;
         lock.lock_exclusive()?;
+        private_permissions(&lock)?;
         // A write must always reconcile the current on-disk value after taking
         // the shared advisory lock, even when a read snapshot is cached.
         let mut value = self.read_disk()?;
@@ -215,23 +216,23 @@ pub fn write_json(path: &Path, value: &Value) -> Result<()> {
     let mut temporary = tempfile::Builder::new()
         .prefix(".sub2ops-state-")
         .tempfile_in(parent)?;
-    #[cfg(unix)]
-    {
-        let mode = match fs::metadata(path) {
-            Ok(metadata) => metadata.permissions().mode() & 0o777,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0o600,
-            Err(error) => return Err(error.into()),
-        };
-        temporary
-            .as_file()
-            .set_permissions(fs::Permissions::from_mode(mode))?;
-    }
+    private_permissions(temporary.as_file())?;
     serde_json::to_writer_pretty(&mut temporary, value)?;
     temporary.write_all(b"\n")?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|_| Error::internal())?;
     File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+/// Tighten the opened file, without following a path that could be replaced.
+/// Callers of persistent lock files must hold the lock before changing its mode.
+pub(crate) fn private_permissions(file: &File) -> std::io::Result<()> {
+    #[cfg(unix)]
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    #[cfg(not(unix))]
+    let _ = file;
     Ok(())
 }
 

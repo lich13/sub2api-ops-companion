@@ -63,6 +63,7 @@ impl DiskLease {
         let file = options.open(format!("{}.{suffix}", state.display()))?;
         file.try_lock_exclusive()
             .map_err(|_| crate::account_locks::busy())?;
+        crate::store::private_permissions(&file)?;
         Ok(Self(file))
     }
 }

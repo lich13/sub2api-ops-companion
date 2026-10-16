@@ -185,6 +185,7 @@ impl CapacityStore {
         }
         let file = options.open(parent.join(format!("{id}.lock")))?;
         file.lock_exclusive()?;
+        crate::store::private_permissions(&file)?;
         Ok(MarkGuard { _file: file })
     }
     pub fn set_mark(

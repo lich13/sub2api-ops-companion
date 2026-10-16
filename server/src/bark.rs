@@ -13,6 +13,36 @@ use std::{
     time::Duration,
 };
 pub const DEFAULT_URL: &str = "https://api.day.app";
+
+fn public_literal(ip: IpAddr) -> bool {
+    // Exclude IANA special-purpose ranges, multicast and reserved space.
+    // URL parsing normalizes alternate IPv4 spellings before this check.
+    match ip {
+        IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !matches!(a, 0 | 10 | 127 | 224..=255)
+                && !(a == 100 && (64..=127).contains(&b))
+                && !(a == 169 && b == 254)
+                && !(a == 172 && (16..=31).contains(&b))
+                && !(a == 192 && (b == 168 || b == 0 && matches!(c, 0 | 2) || b == 88 && c == 99))
+                && !(a == 198 && (matches!(b, 18 | 19) || b == 51 && c == 100))
+                && !(a == 203 && b == 0 && c == 113)
+        }
+        IpAddr::V6(ip) => {
+            if let Some(mapped) = ip.to_ipv4_mapped() {
+                return public_literal(IpAddr::V4(mapped));
+            }
+            let segments = ip.segments();
+            // Only global unicast; exclude protocol, documentation and 6to4
+            // ranges (the latter can embed a non-public IPv4 destination).
+            segments[0] & 0xe000 == 0x2000
+                && !(segments[0] == 0x2001 && (segments[1] <= 0x01ff || segments[1] == 0x0db8))
+                && segments[0] != 0x2002
+                && !(segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
+        }
+    }
+}
+
 pub fn normalize_url(value: &str) -> Result<String> {
     let raw = value.trim();
     let invalid = || Error::new(422, "Bark 服务 URL 无效；HTTP 仅允许 loopback");
@@ -41,6 +71,13 @@ pub fn normalize_url(value: &str) -> Result<String> {
     if parsed.scheme() == "http"
         && hostname != "localhost"
         && !hostname.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    {
+        return Err(invalid());
+    }
+    if parsed.scheme() == "https"
+        && hostname
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| !public_literal(ip))
     {
         return Err(invalid());
     }
