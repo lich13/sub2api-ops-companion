@@ -16,15 +16,58 @@ static REDACTIONS: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
 ]
 });
 
+fn redact_text(value: &str) -> String {
+    let mut text = value.to_owned();
+    for (pattern, replacement) in REDACTIONS.iter() {
+        text = pattern.replace_all(&text, *replacement).into_owned();
+    }
+    text
+}
+
+fn contains_request_data(text: &str) -> bool {
+    static REQUEST: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)["']?\b(?:request(?:_body|body)?|body|messages|prompt|input|content|credentials|headers|authorization)["']?\s*[:=]"#).expect("request pattern")
+    });
+    REQUEST.is_match(&text.replace("\\\"", "\""))
+}
+
+/// Redact at the audit boundary without changing ordinary values, keys or
+/// scalar types. Error-body projection is deliberately not used here: it
+/// drops fields that are necessary to inspect operation receipts.
+pub fn redact_json(value: &Value) -> Value {
+    static SENSITIVE_KEY: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:authorization|proxy-authorization|x-api-key|x-auth-token|api[ _-]?key|access[ _-]?(?:key|token)|refresh[ _-]?token|private[ _-]?key|(?:bark[ _-]?)?device[ _-]?key|token|secret|password|set-cookie|cookie|credentials|headers|request(?:_body|body)?|body|messages|prompt|input|content)$").expect("audit key pattern")
+    });
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| {
+                    let value = if SENSITIVE_KEY.is_match(key) {
+                        Value::String("[REDACTED]".into())
+                    } else {
+                        redact_json(value)
+                    };
+                    (key.clone(), value)
+                })
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(redact_json).collect()),
+        Value::String(text) if contains_request_data(text) => {
+            "上游错误包含请求或凭据数据，详细内容已隐藏".into()
+        }
+        Value::String(text) => redact_text(text).into(),
+        _ => value.clone(),
+    }
+}
+
 pub fn sanitize(value: &str, limit: usize) -> String {
     let mut text = if value.is_empty() {
         "-".to_owned()
     } else {
         value.replace('\0', " ")
     };
-    for (pattern, replacement) in REDACTIONS.iter() {
-        text = pattern.replace_all(&text, *replacement).into_owned();
-    }
+    text = redact_text(&text);
     text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.len() > limit {
         if limit <= 3 {
@@ -54,15 +97,12 @@ pub fn clean(value: &Value, limit: usize) -> String {
 }
 
 pub fn safe_error(value: &Value, limit: usize) -> String {
-    static REQUEST: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?i)["']?\b(?:request(?:_body|body)?|body|messages|prompt|input|content|credentials|headers|authorization)["']?\s*[:=]"#).expect("request pattern")
-    });
     let text = if value.is_null() {
         String::new()
     } else {
         crate::compat::text(value)
     };
-    if REQUEST.is_match(&text.replace("\\\"", "\"")) {
+    if contains_request_data(&text) {
         "上游错误包含请求或凭据数据，详细内容已隐藏".into()
     } else {
         clean(value, limit)

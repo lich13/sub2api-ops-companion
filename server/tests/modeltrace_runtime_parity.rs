@@ -1426,6 +1426,39 @@ async fn actual_api_key_oauth_and_chat_targets_send_expected_http_payloads() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn transport_diagnostics_redact_untrusted_event_names_and_content_types() {
+    let harness = RuntimeHarness::new().await;
+    let account_id = harness.seed_account("apikey", None, json!({})).await;
+    let target = harness.target_for(account_id).await;
+    let secret = "sk-test-synthetic-diagnostic-value";
+    let event = json!({"type":secret});
+    let terminal =
+        json!({"type":"response.completed","response":response_output("1,2,3", "fixture-model")});
+    harness
+        .state
+        .set_scenario(Scenario::single(ResponsePlan::bytes(
+            StatusCode::OK,
+            &format!("application/{secret}"),
+            format!("data: {event}\n\ndata: {terminal}\n\n").into_bytes(),
+        )));
+    let (result, diagnostics) = execute_target(&target, &group_prompt(0)).await;
+    assert_eq!(result.unwrap().0, "1,2,3");
+    assert_eq!(harness.state.count(), 1);
+    assert_eq!(diagnostics["first_event_type"], "[REDACTED]");
+    assert_eq!(diagnostics["last_event_type"], "response.completed");
+    assert_eq!(diagnostics["content_type"], "application/[REDACTED]");
+    assert_eq!(diagnostics["end_reason"], "completed");
+    assert!(!diagnostics.to_string().contains(secret));
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("audit.jsonl");
+    sub2ops_server::audit::write(&path, "model_test_transport", diagnostics.clone(), false);
+    let stored = sub2ops_server::audit::read(&path, 1, None);
+    assert_eq!(stored[0]["payload"], diagnostics);
+    assert!(!fs::read_to_string(path).unwrap().contains(secret));
+    harness.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn responses_sse_event_names_multiline_crlf_eof_and_small_terminal_frames() {
     let harness = RuntimeHarness::new().await;
     let account_id = harness.seed_account("apikey", None, json!({})).await;

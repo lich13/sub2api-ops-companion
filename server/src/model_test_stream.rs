@@ -531,8 +531,9 @@ async fn received(
     } else {
         "unknown"
     };
+    let event_type = crate::security::clean(&json!(event_type), 80);
     if diag.get("first_event_type").is_none() {
-        diag["first_event_type"] = event_type.into();
+        diag["first_event_type"] = event_type.clone().into();
         diag["first_event_ms"] = json!(started.elapsed().as_millis());
     }
     diag["last_event_type"] = event_type.into();
@@ -614,7 +615,7 @@ pub async fn execute(
             .map_err(|_| Failure::new("network_error", true))?;
         let status = response.status().as_u16();
         diag["http_status"] = status.into();
-        diag["content_type"] = response
+        let content_type = response
             .headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok())
@@ -624,8 +625,8 @@ pub async fn execute(
             .unwrap_or("")
             .chars()
             .take(80)
-            .collect::<String>()
-            .into();
+            .collect::<String>();
+        diag["content_type"] = crate::security::clean(&json!(content_type), 80).into();
         diag["headers_ms"] = json!(started.elapsed().as_millis());
         if let Some(callback) = &callback {
             callback(json!({"status":"receiving","diagnostics":diag}))

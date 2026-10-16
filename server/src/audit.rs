@@ -25,6 +25,7 @@ pub fn write(path: &Path, event: &str, payload: Value, read_only: bool) {
         let mut file = options.open(path)?;
         file.lock_exclusive()?;
         crate::store::private_permissions(&file)?;
+        let payload = crate::security::redact_json(&payload);
         let mut bytes = serde_json::to_vec(&json!({"ts":now(),"event":event,"payload":payload}))?;
         bytes.push(b'\n');
         file.write_all(&bytes)
