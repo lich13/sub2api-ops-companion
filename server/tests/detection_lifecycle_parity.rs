@@ -185,6 +185,10 @@ struct Call {
 }
 
 fn assert_native_oauth_calls(calls: &[Call]) {
+    assert_native_oauth_calls_for(calls, "gpt-6-luna");
+}
+
+fn assert_native_oauth_calls_for(calls: &[Call], expected_model: &str) {
     assert!(
         !calls.is_empty(),
         "OAuth fixture must issue a Responses request"
@@ -195,7 +199,7 @@ fn assert_native_oauth_calls(calls: &[Call]) {
         assert!(!call.admin_header_present);
         assert!(call.oauth_native_headers);
         assert!(call.native_codex_payload);
-        assert_eq!(call.payload["model"], "gpt-6-luna");
+        assert_eq!(call.payload["model"], expected_model);
     }
 }
 
@@ -746,6 +750,16 @@ impl Harness {
     }
 
     async fn enable_detection(&self, id: i64, interval_minutes: i64) -> Value {
+        self.enable_detection_with_model(id, interval_minutes, "gpt-6-luna")
+            .await
+    }
+
+    async fn enable_detection_with_model(
+        &self,
+        id: i64,
+        interval_minutes: i64,
+        model_id: &str,
+    ) -> Value {
         let control = self.runtime().detection.control(id).unwrap();
         self.runtime()
             .detection
@@ -754,7 +768,7 @@ impl Harness {
                 &json!({
                     "enabled":true,
                     "interval_minutes":interval_minutes,
-                    "model_id":"gpt-6-luna",
+                    "model_id":model_id,
                     "expected_version":model_detection::version(&control)
                 }),
             )
@@ -850,6 +864,48 @@ fn bank_state_without_target() -> Value {
     }
 
     let raw_bank = serde_json::to_string(&bank).expect("serialize target-less synthetic bank");
+    let manifest = modeltrace::manifest();
+    version["sha256"] = sha256(&raw_bank).into();
+    version["core_blob"] = manifest["files"]["core"]["gitBlob"].clone();
+    version["challenge_blob"] = manifest["files"]["challenge"]["gitBlob"].clone();
+    json!({
+        "version":1,
+        "active":{"raw_bank":raw_bank,"version":version},
+        "source":"fixture",
+        "checked_at":0,
+        "synced_at":0,
+        "cooldown_until":null,
+        "last_error":null,
+        "result":null
+    })
+}
+
+fn bank_state_with_swapped_model_labels(left_id: &str, right_id: &str) -> Value {
+    assert_ne!(left_id, right_id);
+    let (mut bank, mut version) =
+        modeltrace::bundled().expect("load bundled synthetic bank source");
+    let models = bank["models"].as_array_mut().unwrap();
+    let left_index = models
+        .iter()
+        .position(|model| model["id"] == left_id)
+        .expect("synthetic bank contains the first model label");
+    let right_index = models
+        .iter()
+        .position(|model| model["id"] == right_id)
+        .expect("synthetic bank contains the second model label");
+    let left_name = models[left_index]["display_name"].clone();
+    let right_name = models[right_index]["display_name"].clone();
+    models[left_index]["id"] = right_id.into();
+    models[left_index]["display_name"] = right_name;
+    models[right_index]["id"] = left_id.into();
+    models[right_index]["display_name"] = left_name;
+    let model_order = models
+        .iter()
+        .map(|model| model["id"].clone())
+        .collect::<Vec<_>>();
+    bank["robust"]["model_order"] = json!(model_order);
+
+    let raw_bank = serde_json::to_string(&bank).expect("serialize relabeled synthetic bank");
     let manifest = modeltrace::manifest();
     version["sha256"] = sha256(&raw_bank).into();
     version["core_blob"] = manifest["files"]["core"]["gitBlob"].clone();
@@ -1941,6 +1997,102 @@ async fn capacity_provider_and_slow_evidence_survive_bark_config_and_legacy_queu
 }
 
 #[tokio::test]
+async fn automatic_sol_prediction_uses_requested_astra_model_and_stops_after_first_group() {
+    let mut harness = Harness::new(sample_text("automatic_first_group", 0)).await;
+    harness
+        .restart_with_bank_state(&bank_state_with_swapped_model_labels(
+            model_detection::TARGET,
+            "gpt-6-sol",
+        ))
+        .await;
+    let bank = harness.runtime().tests.bank.snapshot();
+    let models = bank.0["models"].as_array().unwrap();
+    assert!(models
+        .iter()
+        .any(|model| model["id"] == model_detection::TARGET));
+    assert!(models.iter().any(|model| model["id"] == "gpt-6-sol"));
+
+    harness.mock.set_models(vec![
+        json!({"id":"gpt-6-astra","name":"fixture requested model"}),
+        json!({"id":"gpt-6-sol","name":"fixture forwarded model"}),
+        json!({"id":"gpt-6-luna","name":"fixture model"}),
+        json!({"id":model_detection::TARGET,"name":"fixture legacy target"}),
+    ]);
+    let row = harness.seed_account("oauth", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    harness
+        .enable_detection_with_model(id, 1, "gpt-6-astra")
+        .await;
+    let budget = harness
+        .runtime()
+        .budget
+        .clone()
+        .acquire_many_owned(24)
+        .await
+        .unwrap();
+    harness
+        .runtime()
+        .detection
+        .update(
+            id,
+            json!({"next_at":datetime(harness.now()-Duration::seconds(1))}),
+        )
+        .unwrap();
+    harness.runtime().detection.tick().await.unwrap();
+    let job_id = harness.runtime().detection.control(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let queued = harness.runtime().tests.get(&job_id).unwrap();
+    assert_eq!(queued["requested_model"], "gpt-6-astra");
+    assert_eq!(queued["forwarded_model"], "gpt-6-astra");
+    harness
+        .runtime()
+        .tests
+        .update(&job_id, json!({"forwarded_model":"gpt-6-sol"}))
+        .unwrap();
+    drop(budget);
+
+    let job = harness.wait_job_terminal(&job_id).await;
+    assert_eq!(job["requested_model"], "gpt-6-astra");
+    assert_eq!(job["forwarded_model"], "gpt-6-sol");
+    assert_eq!(job["first_group_valid"], true);
+    assert_eq!(job["first_group_prediction"], "gpt-6-sol");
+    assert_eq!(job["report"]["prediction"], "gpt-6-sol");
+    assert_eq!(job["automatic_disposition"]["status"], "completed");
+    assert_eq!(job["completion_reason"], "automatic_degradation");
+    assert_eq!(
+        job["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|group| group["status"] == "completed")
+            .count(),
+        1
+    );
+    let responses = harness.mock.calls("POST", "/v1/responses");
+    assert_eq!(responses.len(), 1);
+    assert_native_oauth_calls_for(&responses, "gpt-6-astra");
+    assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
+    assert_eq!(
+        harness
+            .mock
+            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+        1
+    );
+    assert_eq!(
+        harness.runtime().detection.mark(id).unwrap()["marked"],
+        true
+    );
+    assert_eq!(
+        harness.runtime().actions.account(id, None).await.unwrap()["schedulable"],
+        false
+    );
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates() {
     let mut harness = Harness::new(sample_text("automatic_first_group", 0)).await;
     let row = harness.seed_account("apikey", true, json!({})).await;
@@ -2977,6 +3129,127 @@ async fn marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_sched
 }
 
 #[tokio::test]
+async fn sol_request_with_astra_prediction_stays_unmarked_and_clears_a_qualified_recheck() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
+    harness.mock.set_models(vec![
+        json!({"id":"gpt-6.1-sol","name":"fixture requested model"}),
+        json!({"id":"gpt-6.1-astra","name":"fixture forwarded model"}),
+        json!({"id":"gpt-6-astra","name":"fixture prediction"}),
+    ]);
+    let row = harness.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    harness
+        .enable_detection_with_model(id, 1, "gpt-6.1-sol")
+        .await;
+
+    let control = harness.runtime().detection.control(id).unwrap();
+    let initial_mark = harness.runtime().detection.mark(id).unwrap();
+    let verdict_job = json!({
+        "id":"fixture-sol-astra-verdict",
+        "account_id":id,
+        "automatic":true,
+        "degradation_recheck":false,
+        "detection_generation":control["generation"],
+        "detection_mark_version":initial_mark["version"],
+        "requested_model":"gpt-6.1-sol",
+        "forwarded_model":"gpt-6.1-astra",
+        "triggers":["scheduled"]
+    });
+    let astra_report = json!({
+        "prediction":"gpt-6-astra",
+        "used_outputs":1,
+        "probability":0.97
+    });
+    assert!(harness
+        .runtime()
+        .detection
+        .verdict(&verdict_job, &astra_report)
+        .await
+        .unwrap()
+        .is_null());
+    assert_eq!(
+        harness.runtime().detection.mark(id).unwrap()["marked"],
+        false
+    );
+    assert!(harness.runtime().detection.control(id).unwrap()["disposition"].is_null());
+    assert_eq!(
+        harness
+            .mock
+            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+        0
+    );
+
+    let marked = harness
+        .runtime()
+        .detection
+        .capacity
+        .store
+        .set_mark(
+            id,
+            true,
+            initial_mark["version"].as_str().unwrap(),
+            harness.now(),
+            Some("fixture-prior-sol-astra-degradation"),
+        )
+        .unwrap();
+    harness
+        .runtime()
+        .detection
+        .update(
+            id,
+            json!({
+                "hold":true,
+                "disposition":{"status":"completed","marked":true,"schedule_verified":true,"job_id":"fixture-prior-sol-astra-degradation"}
+            }),
+        )
+        .unwrap();
+    let current = harness.runtime().detection.control(id).unwrap();
+    let account = harness.runtime().actions.account(id, None).await.unwrap();
+    let account_version =
+        sub2ops_server::compat::operation_versions(&account, false)["model_test"].clone();
+    let mut recheck_job = completed_recheck_job(
+        id,
+        &current["generation"],
+        &marked["version"],
+        &account_version,
+        "fixture-sol-astra-recheck",
+        harness.now(),
+    );
+    recheck_job["requested_model"] = "gpt-6.1-sol".into();
+    recheck_job["forwarded_model"] = "gpt-6.1-astra".into();
+    recheck_job["first_group_prediction"] = "gpt-6-astra".into();
+    recheck_job["report"]["prediction"] = "gpt-6-astra".into();
+
+    let receipt = harness
+        .runtime()
+        .detection
+        .complete_recheck(&recheck_job)
+        .await
+        .unwrap();
+    assert_eq!(receipt["status"], "completed");
+    assert_eq!(receipt["mark_cleared"], true);
+    assert_eq!(receipt["model_id"], "gpt-6.1-sol");
+    assert_eq!(receipt["prediction"], "gpt-6-astra");
+    assert_eq!(
+        harness.runtime().detection.mark(id).unwrap()["marked"],
+        false
+    );
+    assert_eq!(
+        harness.runtime().detection.control(id).unwrap()["hold"],
+        true
+    );
+    assert_eq!(
+        harness
+            .mock
+            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+        0
+    );
+    assert_eq!(harness.mock.count("POST", "/push"), 0);
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate() {
     let cooldown = fixture()["oracle"]["automatic_dispatch_cooldown_seconds"]
         .as_i64()
@@ -3062,6 +3335,7 @@ async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate(
         .await
         .unwrap();
     assert_eq!(retry["status"], "queued");
+    assert_eq!(retry["requested_model"], "gpt-6-luna");
     tokio::time::timeout(StdDuration::from_secs(10), gate.entered.notified())
         .await
         .expect("bounded retry must send only the failed first group to the fixture");
@@ -3079,6 +3353,7 @@ async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate(
 
     let completed = harness.wait_job_terminal(&job_id).await;
     assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["requested_model"], "gpt-6-luna");
     assert_eq!(completed["first_group_valid"], true);
     assert_eq!(completed["first_group_prediction"], "claude-sonnet-4-6");
     assert_eq!(completed["report"]["prediction"], "gpt-5.6-luna");
@@ -3822,6 +4097,7 @@ async fn missing_result_report_variants_never_clear_marks_or_create_outbox_event
         "target-first-group",
         "target-aggregate",
         "empty-report",
+        "missing-prediction",
         "invalid-first-group",
         "retry-eligible",
         "failed-group",
@@ -3866,6 +4142,7 @@ async fn missing_result_report_variants_never_clear_marks_or_create_outbox_event
             "target-first-group" => job["first_group_prediction"] = model_detection::TARGET.into(),
             "target-aggregate" => job["report"]["prediction"] = model_detection::TARGET.into(),
             "empty-report" => job["report"]["used_outputs"] = 0.into(),
+            "missing-prediction" => job["report"]["prediction"] = Value::Null,
             "invalid-first-group" => job["first_group_valid"] = false.into(),
             "retry-eligible" => job["can_retry"] = true.into(),
             "failed-group" => {

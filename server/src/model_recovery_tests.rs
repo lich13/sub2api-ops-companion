@@ -89,6 +89,7 @@ struct MockUpstream {
     usage_cards: Arc<StdMutex<Option<Value>>>,
     model_status: Arc<StdMutex<u16>>,
     model_output: Arc<StdMutex<String>>,
+    expected_responses_model: Arc<StdMutex<String>>,
     reset_uncertain: Arc<StdMutex<bool>>,
 }
 
@@ -106,6 +107,7 @@ impl MockUpstream {
             usage_cards: Arc::new(StdMutex::new(None)),
             model_status: Arc::new(StdMutex::new(200)),
             model_output: Arc::new(StdMutex::new(sample("above_99"))),
+            expected_responses_model: Arc::new(StdMutex::new("gpt-6-luna".into())),
             reset_uncertain: Arc::new(StdMutex::new(false)),
         }
     }
@@ -141,6 +143,10 @@ impl MockUpstream {
     fn set_model_gate(&self, gate: Gate) {
         *self.model_gate.lock().unwrap() = Some(gate);
     }
+
+    fn set_expected_responses_model(&self, model: impl Into<String>) {
+        *self.expected_responses_model.lock().unwrap() = model.into();
+    }
 }
 
 fn json_response(value: Value) -> Response {
@@ -166,6 +172,8 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         return json_response(json!({
             "code": 0,
             "data": [
+                {"id":"gpt-6-astra","name":"fixture requested model"},
+                {"id":"gpt-6-sol","name":"fixture lower tier"},
                 {"id":"gpt-6-luna","name":"fixture model"},
                 {"id":"gpt-5.6-luna","name":"fixture reference"},
                 {"id":"fixture-model","name":"fixture recovery model"}
@@ -293,7 +301,8 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             parts.headers.get("content-type").unwrap(),
             "application/json"
         );
-        assert_eq!(payload["model"], "gpt-6-luna");
+        let expected_model = state.expected_responses_model.lock().unwrap().clone();
+        assert_eq!(payload["model"].as_str(), Some(expected_model.as_str()));
         assert_eq!(payload["stream"], true);
         let status = *state.model_status.lock().unwrap();
         if status == 0 {
@@ -573,8 +582,24 @@ fn usage_result(row: &Value, at: DateTime<Utc>) -> Value {
 }
 
 async fn seed_recovery(harness: &Harness, uncertain_test: bool) -> (Value, Value, Value) {
+    seed_recovery_with_model(harness, uncertain_test, "gpt-6-luna").await
+}
+
+async fn seed_recovery_with_model(
+    harness: &Harness,
+    uncertain_test: bool,
+    model_id: &str,
+) -> (Value, Value, Value) {
     let row = harness.seed_account("oauth", true, true).await;
     let id = integer(&row["id"]).unwrap();
+    harness
+        .runtime
+        .detection
+        .update(id, json!({"model_id":model_id}))
+        .unwrap();
+    harness
+        .mock
+        .set_expected_responses_model(model_id.to_owned());
     let observed = harness.now() - Duration::seconds(1);
     let usage = usage_result(&row, observed);
     let summary = quota::summary_from_result(&row, &usage);
@@ -787,6 +812,47 @@ async fn recovery_model_degradation_stops_scheduling_without_recovery_write() {
     natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn recovery_model_completed_report_compares_requested_model_before_recovery_write() {
+    let h = Harness::new().await;
+    let (row, usage, intent) = seed_recovery_with_model(&h, false, "gpt-6-astra").await;
+    let id = integer(&row["id"]).unwrap();
+    let job = run_natural_model(&h, id, &intent, &usage).await;
+    assert_eq!(job["status"], "completed");
+    assert_eq!(job["requested_model"], "gpt-6-astra");
+    assert_eq!(job["forwarded_model"], "gpt-6-astra");
+    assert_eq!(job["first_group_valid"], true);
+    assert_ne!(job["first_group_prediction"], "gpt-6-sol");
+    assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], false);
+
+    h.runtime
+        .tests
+        .update(
+            job["id"].as_str().unwrap(),
+            json!({
+                "forwarded_model":"gpt-6-sol",
+                "first_group_valid":true,
+                "first_group_prediction":"gpt-6-sol",
+                "report":{"prediction":"gpt-6-sol","used_outputs":1,"probability":0.97}
+            }),
+        )
+        .unwrap();
+    let result = natural_cycle(&h, id, &intent, &usage).await;
+    assert_eq!(result["success"], false);
+    assert_eq!(result["error_code"], "detection_held");
+    assert_eq!(result["model_id"], "gpt-6-astra");
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], false);
+    let scheduler = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()].clone();
+    assert_eq!(
+        scheduler["recovery_intent"]["last_error_code"],
+        "detection_held"
+    );
+    assert!(h.mock.unexpected().is_empty());
     h.close().await;
 }
 
