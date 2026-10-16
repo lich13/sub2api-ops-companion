@@ -1467,6 +1467,9 @@ async function runScenario(scenario) {
       }
     });
     const page = await context.newPage();
+    // Keep the 75 synthetic records inside the default Beijing-day filter.
+    // Time still advances so queue timers and revision timestamps remain active.
+    await page.clock.install({ time: new Date("2026-10-01T04:00:00.000Z") });
     page.setDefaultTimeout(TIMEOUT);
     page.setDefaultNavigationTimeout(30000);
     page.on("pageerror", (error) => pageErrors.push(error.name));
