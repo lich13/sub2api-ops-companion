@@ -3,6 +3,7 @@ use crate::{
     degradation_rechecks,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
+    model_downgrade::{bank_contains, is_downgrade, valid_report},
     model_tests::ACTIVE,
     security::safe_error,
 };
@@ -142,9 +143,15 @@ impl Detection {
             };
             value = self.control(id)?;
             let report = &job["report"];
-            let valid =
-                job["status"] == "completed" && integer(&report["used_outputs"]).unwrap_or(0) > 0;
-            let confirmed = job["first_group_prediction"] == TARGET && valid;
+            let valid = job["status"] == "completed" && valid_report(report);
+            // Confirmation follows the same first-group evidence as the
+            // automatic disposition; the aggregate remains the result view.
+            let confirmed = valid
+                && job["first_group_valid"] == true
+                && is_downgrade(
+                    string(&job["requested_model"]),
+                    string(&job["first_group_prediction"]),
+                );
             let triggers = job["triggers"]
                 .as_array()
                 .into_iter()
@@ -253,13 +260,7 @@ impl Detection {
                 .model_allowed(&row, string(&value["model_id"]), true)
                 .await?;
             let bank = self.tests.bank.snapshot();
-            if !allowed
-                || !bank.0["models"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m["id"] == TARGET)
-            {
+            if !allowed || !bank_contains(&bank.0, TARGET) {
                 self.update(
                     id,
                     json!({"candidate_recheck_at":datetime(self.now()+Duration::minutes(1))}),

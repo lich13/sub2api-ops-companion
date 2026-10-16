@@ -148,7 +148,7 @@ impl Settings {
         let model = configured("oauth_recovery_test_model_id");
         let model = string(&model).trim();
         oauth["oauth_recovery_test_model_id"] = if model.is_empty() {
-            "gpt-5.6-luna"
+            crate::model_downgrade::DEFAULT_TEST_MODEL
         } else {
             model
         }

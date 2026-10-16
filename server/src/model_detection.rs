@@ -6,7 +6,9 @@ use crate::{
     compat::{datetime, digest, integer, operation_versions, parse_datetime, pick, string, truthy},
     detection_quota,
     error::{Error, Result},
-    key_fallback, model_target,
+    key_fallback,
+    model_downgrade::{bank_contains, is_downgrade, valid_report},
+    model_target,
     model_tests::{ModelTests, ACTIVE},
     oauth_monitor::Monitor,
     store::Store,
@@ -15,7 +17,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-pub const TARGET: &str = "gpt-5.6-luna";
+pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
     json!({"enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","generation":0,"next_at":null,"status":"disabled","reason":"","job_id":null,"hold":false})
 }
@@ -152,7 +154,33 @@ impl Detection {
         Ok(value)
     }
     pub fn human_control(&self, id: i64, release: bool) -> Result<()> {
-        self.store.transaction(|data| {let value=data["accounts"].as_object_mut().unwrap().entry(id.to_string()).or_insert_with(defaults);value["generation"]=json!(integer(&value["generation"]).unwrap_or(0)+1);value.as_object_mut().unwrap().extend(json!({"pending_request_id":null,"status":"paused","reason":"人工操作后重新核对","next_at":null}).as_object().unwrap().clone());if release {value["hold"]=false.into();if truthy(&value["disposition"]) {value["disposition"]["status"]="overridden".into();value["disposition"]["reason"]="人工操作已优先处理".into();}}Ok(())})
+        self.store.transaction(|data| {
+            let value = data["accounts"]
+                .as_object_mut()
+                .unwrap()
+                .entry(id.to_string())
+                .or_insert_with(defaults);
+            value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
+            value.as_object_mut().unwrap().extend(
+                json!({
+                    "pending_request_id": null,
+                    "status": "paused",
+                    "reason": "人工操作后重新核对",
+                    "next_at": null,
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            if release {
+                value["hold"] = false.into();
+                if truthy(&value["disposition"]) {
+                    value["disposition"]["status"] = "overridden".into();
+                    value["disposition"]["reason"] = "人工操作已优先处理".into();
+                }
+            }
+            Ok(())
+        })
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         let request = detection_request(payload)?;
@@ -166,7 +194,41 @@ impl Detection {
             return Err(Error::new(422, "所选模型不在当前分组白名单中"));
         }
         let _guard = self.actions.locks.control(id).await;
-        self.store.transaction(|data| {let value=data["accounts"].as_object_mut().unwrap().entry(id.to_string()).or_insert_with(defaults);if version(value)!=request["expected_version"] {return Err(Error::new(409,"检测设置已变化，请重新读取"));}value["generation"]=json!(integer(&value["generation"]).unwrap_or(0)+1);value.as_object_mut().unwrap().extend(json!({"enabled":request["enabled"],"interval_minutes":request["interval_minutes"],"model_id":request["model_id"],"pending_request_id":null,"candidate_blocked":false,"candidate_recheck_at":null,"status":if request["enabled"]==true {"waiting"}else {"disabled"},"reason":"","next_at":if request["enabled"]==true {json!(datetime(self.now()+Duration::minutes(integer(&request["interval_minutes"]).unwrap())))}else {Value::Null}}).as_object().unwrap().clone());Ok(())})?;
+        self.store.transaction(|data| {
+            let value = data["accounts"]
+                .as_object_mut()
+                .unwrap()
+                .entry(id.to_string())
+                .or_insert_with(defaults);
+            if version(value) != request["expected_version"] {
+                return Err(Error::new(409, "检测设置已变化，请重新读取"));
+            }
+            value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
+            let enabled = request["enabled"] == true;
+            let next_at = if enabled {
+                json!(datetime(
+                    self.now() + Duration::minutes(integer(&request["interval_minutes"]).unwrap())
+                ))
+            } else {
+                Value::Null
+            };
+            let changes = json!({
+                "enabled": request["enabled"],
+                "interval_minutes": request["interval_minutes"],
+                "model_id": request["model_id"],
+                "pending_request_id": null,
+                "candidate_blocked": false,
+                "candidate_recheck_at": null,
+                "status": if enabled { "waiting" } else { "disabled" },
+                "reason": "",
+                "next_at": next_at,
+            });
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(changes.as_object().unwrap().clone());
+            Ok(())
+        })?;
         self.view(id)
     }
     pub async fn reason(&self, row: &Value, mark: &Value, recheck: bool) -> Result<String> {
@@ -251,7 +313,40 @@ impl Detection {
         if clues.is_empty() {
             return Ok(());
         }
-        self.capacity.store.transaction(|data| {for field in ["detection_clues","notifications"] {if !data[field].is_object() {data[field]=json!({});}}for key in &clues {let record=json!({"status":status,"reason":reason,"job_id":job,"updated_at":datetime(self.now())});data["detection_clues"][key.as_str()]=record.clone();if let Some(key)=key.strip_prefix("error:") {data["notifications"][key]=record;}}while data["detection_clues"].as_object().unwrap().len()>10000 {let key=data["detection_clues"].as_object().unwrap().keys().next().unwrap().clone();data["detection_clues"].as_object_mut().unwrap().shift_remove(&key);}Ok(())})?;
+        self.capacity.store.transaction(|data| {
+            for field in ["detection_clues", "notifications"] {
+                if !data[field].is_object() {
+                    data[field] = json!({});
+                }
+            }
+            for key in &clues {
+                let record = json!({
+                    "status": status,
+                    "reason": reason,
+                    "job_id": job,
+                    "updated_at": datetime(self.now()),
+                });
+                data["detection_clues"][key.as_str()] = record.clone();
+                if let Some(key) = key.strip_prefix("error:") {
+                    data["notifications"][key] = record;
+                }
+            }
+            while data["detection_clues"].as_object().unwrap().len() > 10000 {
+                let key = data["detection_clues"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .next()
+                    .unwrap()
+                    .clone();
+                data["detection_clues"]
+                    .as_object_mut()
+                    .unwrap()
+                    .shift_remove(&key);
+            }
+            Ok(())
+        })?;
+
         self.audit(
             "model_detection_clue",
             json!({"triggers":clues,"result":status,"reason":reason,"job_id":job}),
@@ -302,11 +397,7 @@ impl Detection {
             .model_allowed(&row, string(&value["model_id"]), true)
             .await?;
         let bank = self.tests.bank.snapshot();
-        let ready = bank.0["models"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|model| model["id"] == TARGET);
+        let ready = bank_contains(&bank.0, TARGET);
         if !allowed || !ready {
             let reason = if !allowed {
                 "所选模型不在当前模型候选中"
@@ -322,14 +413,53 @@ impl Detection {
             .filter(|v| !v.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-        self.update(id,json!({"pending_request_id":request,"candidate_blocked":false,"candidate_recheck_at":null,"triggers":causes,"status":"queued","reason":"等待检测","next_at":null}))?;
-        let job=self.tests.start(id,&json!({"model_id":value["model_id"],"expected_version":"0".repeat(64),"expected_operation_version":operation_versions(&row,false)["model_test"],"request_id":request,"concurrency":1}),Some(&json!({"detection_generation":value["generation"],"detection_mark_version":mark["version"],"triggers":causes,"degradation_recheck":recheck,"recheck_account_version":if recheck {operation_versions(&row,false)["model_test"].clone()}else {Value::Null},"recheck_schedulable":if recheck {row["schedulable"].clone()}else {Value::Null}}))).await?;
+        self.update(
+            id,
+            json!({
+                "pending_request_id": request,
+                "candidate_blocked": false,
+                "candidate_recheck_at": null,
+                "triggers": causes,
+                "status": "queued",
+                "reason": "等待检测",
+                "next_at": null,
+            }),
+        )?;
+
+        let job = self
+            .tests
+            .start(
+                id,
+                &json!({
+                    "model_id": value["model_id"],
+                    "expected_version": "0".repeat(64),
+                    "expected_operation_version": operation_versions(&row, false)["model_test"],
+                    "request_id": request,
+                    "concurrency": 1,
+                }),
+                Some(&json!({
+                        "detection_generation": value["generation"],
+                        "detection_mark_version": mark["version"],
+                        "triggers": causes,
+                        "degradation_recheck": recheck,
+                        "recheck_account_version": if recheck { operation_versions(&row, false)["model_test"].clone()} else { Value::Null},
+                        "recheck_schedulable": if recheck { row["schedulable"].clone()} else { Value::Null},
+                    })),
+            )
+            .await?;
+
         self.update(id,json!({"job_id":job["id"],"pending_request_id":null,"status":job["status"],"reason":job["error"]}))?;
         self.clue_status(causes, "testing", "", job["id"].as_str())?;
         Ok(job)
     }
     pub async fn verdict(&self, job: &Value, report: &Value) -> Result<Value> {
-        if integer(&report["used_outputs"]).unwrap_or(0) < 1 || report["prediction"] != TARGET {
+        // The automatic caller supplies the first group's independent report.
+        if !valid_report(report)
+            || !is_downgrade(
+                string(&job["requested_model"]),
+                string(&report["prediction"]),
+            )
+        {
             return Ok(Value::Null);
         }
         self.guard(job).await?;
@@ -358,7 +488,20 @@ impl Detection {
             if !reason.is_empty() {
                 return Err(Error::new(409, reason));
             }
-            let mut disposition = json!({"status":"pending","job_id":job["id"],"generation":value["generation"],"mark_version":mark["version"],"marked":false,"schedule_verified":false,"created_at":datetime(self.now()),"model_id":job["requested_model"],"prediction":report["prediction"],"probability":report["probability"],"triggers":job["triggers"]});
+            let mut disposition = json!({
+                "status": "pending",
+                "job_id": job["id"],
+                "generation": value["generation"],
+                "mark_version": mark["version"],
+                "marked": false,
+                "schedule_verified": false,
+                "created_at": datetime(self.now()),
+                "model_id": job["requested_model"],
+                "prediction": report["prediction"],
+                "probability": report["probability"],
+                "triggers": job["triggers"],
+            });
+
             if job["recovery_context"]["kind"] == "credit" {
                 disposition["credit_episode"] = job["recovery_context"]["fingerprint"].clone();
                 let task = self.monitor.credits.state(id)?;
@@ -454,7 +597,17 @@ impl Detection {
             }
         }
         self.commit_disposition(id, &d, &row).await?;
-        self.audit("model_detection_disposition",json!({"account_id":id,"job_id":d["job_id"],"marked":d["marked"],"schedule_verified":d["schedule_verified"],"status":d["status"]}));
+        self.audit(
+            "model_detection_disposition",
+            json!({
+                "account_id": id,
+                "job_id": d["job_id"],
+                "marked": d["marked"],
+                "schedule_verified": d["schedule_verified"],
+                "status": d["status"],
+            }),
+        );
+
         Ok(d)
     }
 }

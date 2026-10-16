@@ -198,7 +198,7 @@ impl operations::Backend for Hooks {
         let model = if truthy(configured) {
             text(configured).trim().to_owned()
         } else {
-            "gpt-5.6-luna".to_owned()
+            crate::model_downgrade::DEFAULT_TEST_MODEL.to_owned()
         };
         Ok((
             model,

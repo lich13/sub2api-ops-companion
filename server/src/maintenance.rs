@@ -184,7 +184,7 @@ pub fn migrate_oauth(env: &BTreeMap<String, String>, env_file: &Path) -> Result<
         &retired,
         &[target.clone(), state_path.clone(), env_file.to_path_buf()],
     )?;
-    let defaults = json!({"oauth_auto_reset_credit_enabled":false,"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00","oauth_early_probe_batch_size":8,"oauth_recovery_connection_account_ids":null,"oauth_recovery_model_account_ids":null,"oauth_recovery_monitor_enabled":true,"oauth_recovery_test_concurrency":2,"oauth_recovery_test_model_id":"gpt-5.6-luna","oauth_usage_refresh_concurrency":4});
+    let defaults = json!({"oauth_auto_reset_credit_enabled":false,"oauth_daily_test_enabled":true,"oauth_daily_test_time":"05:00","oauth_early_probe_batch_size":8,"oauth_recovery_connection_account_ids":null,"oauth_recovery_model_account_ids":null,"oauth_recovery_monitor_enabled":true,"oauth_recovery_test_concurrency":2,"oauth_recovery_test_model_id":crate::model_downgrade::DEFAULT_TEST_MODEL,"oauth_usage_refresh_concurrency":4});
     let mut result = json!({});
     for key in OAUTH_FIELDS {
         let default = &defaults[*key];

@@ -1,7 +1,8 @@
 use crate::{
     compat::{datetime, integer, operation_versions, string, truthy},
     error::{Error, Result},
-    model_detection::{Detection, TARGET},
+    model_detection::Detection,
+    model_downgrade::{is_downgrade, valid_report},
     security::safe_error,
 };
 use serde_json::{json, Value};
@@ -15,6 +16,9 @@ pub fn normal_result(job: &Value) -> bool {
     let report = &job["report"];
     let first = string(&job["first_group_prediction"]);
     let prediction = string(&report["prediction"]);
+    let requested = string(&job["requested_model"]);
+    // Clearing a mark requires both the original first group and the full
+    // report to be normal, plus the complete group/terminal checks below.
     let groups = job["groups"].as_array();
     let used = report["used_outputs"].as_i64();
     job["automatic"] == true
@@ -22,9 +26,9 @@ pub fn normal_result(job: &Value) -> bool {
         && job["status"] == "completed"
         && job["first_group_valid"] == true
         && !first.trim().is_empty()
-        && first != TARGET
-        && !prediction.trim().is_empty()
-        && prediction != TARGET
+        && !is_downgrade(requested, first)
+        && valid_report(report)
+        && !is_downgrade(requested, prediction)
         && used.is_some_and(|n| n >= 1)
         && !truthy(&job["error_code"])
         && !truthy(&job["can_retry"])
@@ -69,7 +73,28 @@ impl Detection {
                 return Err(Error::new(409, reason));
             }
             let report = &job["report"];
-            self.update(id,json!({"recheck_recovery":{"status":"pending","job_id":job["id"],"generation":value["generation"],"mark_version":mark["version"],"mark_cleared":false,"recheck_account_version":job["recheck_account_version"],"recheck_schedulable":job["recheck_schedulable"],"created_at":datetime(self.now()),"model_id":job["requested_model"],"prediction":report["prediction"],"first_group_prediction":job["first_group_prediction"],"probability":report["probability"],"valid_groups":report["used_outputs"]},"status":"handling","reason":"正在取消降智标记"}))?;
+            self.update(
+                id,
+                json!({
+                    "recheck_recovery": {
+                        "status": "pending",
+                        "job_id": job["id"],
+                        "generation": value["generation"],
+                        "mark_version": mark["version"],
+                        "mark_cleared": false,
+                        "recheck_account_version": job["recheck_account_version"],
+                        "recheck_schedulable": job["recheck_schedulable"],
+                        "created_at": datetime(self.now()),
+                        "model_id": job["requested_model"],
+                        "prediction": report["prediction"],
+                        "first_group_prediction": job["first_group_prediction"],
+                        "probability": report["probability"],
+                        "valid_groups": report["used_outputs"],
+                    },
+                    "status": "handling",
+                    "reason": "正在取消降智标记",
+                }),
+            )?;
         }
         self.finish_recheck_recovery(id).await
     }
@@ -116,9 +141,66 @@ impl Detection {
             return Err(Error::new(503, "降智标记取消结果尚未确认"));
         }
         let now = datetime(self.now());
-        receipt.as_object_mut().unwrap().extend(json!({"status":"completed","mark_cleared":true,"mark_version_after":verified["version"],"completed_at":now,"reason":"检测恢复正常，已取消降智标记"}).as_object().unwrap().clone());
-        self.store.transaction(|data| {let current=&mut data["accounts"][id.to_string()];if current["generation"]!=receipt["generation"] {return Err(Error::new(409,"人工操作已替代复查结果"));}current["recheck_recovery"]=receipt.clone();if !data["disposition_notifications"].is_object() {data["disposition_notifications"]=json!({});}let events=data["disposition_notifications"].as_object_mut().unwrap();for event in events.values_mut() {if event["account_id"]==id && event["kind"]!="recovered" && matches!(string(&event["status"]),"queued"|"retry") {event["status"]="suppressed".into();event["reason"]="degradation_recovered".into();}}
-            events.entry(string(&receipt["job_id"]).to_owned()).or_insert_with(||json!({"kind":"recovered","job_id":receipt["job_id"],"account_id":id,"account_name":safe_error(&row["name"],120),"account_type":row["type"],"generation":receipt["generation"],"mark_version":verified["version"],"model_id":receipt["model_id"],"prediction":receipt["prediction"],"first_group_prediction":receipt["first_group_prediction"],"probability":receipt["probability"],"valid_groups":receipt["valid_groups"],"schedulable":row["schedulable"],"triggers":["scheduled"],"created_at":now,"next_at":now,"attempts":0,"status":"queued"}));Ok(())})?;
+        receipt.as_object_mut().unwrap().extend(
+            json!({
+                "status": "completed",
+                "mark_cleared": true,
+                "mark_version_after": verified["version"],
+                "completed_at": now,
+                "reason": "检测恢复正常，已取消降智标记",
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
+
+        self.store.transaction(|data| {
+            let current = &mut data["accounts"][id.to_string()];
+            if current["generation"] != receipt["generation"] {
+                return Err(Error::new(409, "人工操作已替代复查结果"));
+            }
+            current["recheck_recovery"] = receipt.clone();
+            if !data["disposition_notifications"].is_object() {
+                data["disposition_notifications"] = json!({});
+            }
+            let events = data["disposition_notifications"].as_object_mut().unwrap();
+            for event in events.values_mut() {
+                if event["account_id"] == id
+                    && event["kind"] != "recovered"
+                    && matches!(string(&event["status"]), "queued" | "retry")
+                {
+                    event["status"] = "suppressed".into();
+                    event["reason"] = "degradation_recovered".into();
+                }
+            }
+
+            events
+                .entry(string(&receipt["job_id"]).to_owned())
+                .or_insert_with(|| {
+                    json!({
+                        "kind": "recovered",
+                        "job_id": receipt["job_id"],
+                        "account_id": id,
+                        "account_name": safe_error(&row["name"], 120),
+                        "account_type": row["type"],
+                        "generation": receipt["generation"],
+                        "mark_version": verified["version"],
+                        "model_id": receipt["model_id"],
+                        "prediction": receipt["prediction"],
+                        "first_group_prediction": receipt["first_group_prediction"],
+                        "probability": receipt["probability"],
+                        "valid_groups": receipt["valid_groups"],
+                        "schedulable": row["schedulable"],
+                        "triggers": ["scheduled"],
+                        "created_at": now,
+                        "next_at": now,
+                        "attempts": 0,
+                        "status": "queued",
+                    })
+                });
+            Ok(())
+        })?;
+
         self.audit("model_detection_recovered",json!({"account_id":id,"job_id":receipt["job_id"],"mark_cleared":true,"schedulable":row["schedulable"]}));
         Ok(receipt)
     }

@@ -30,6 +30,7 @@ mod manual_actions;
 pub mod model_catalog;
 pub mod model_config;
 pub mod model_detection;
+pub mod model_downgrade;
 pub mod model_reasoning;
 pub mod model_rules;
 pub mod model_target;

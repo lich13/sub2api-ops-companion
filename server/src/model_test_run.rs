@@ -2,6 +2,7 @@ use crate::{
     audit,
     compat::{integer, string, truthy},
     error::{Error, Result},
+    model_downgrade::{diagnose_prediction, is_downgrade, valid_report},
     model_target,
     model_test_stream::{self, Failure, Progress},
     model_tests::{error_text, Context, ModelTests},
@@ -30,7 +31,15 @@ struct Run {
 }
 impl ModelTests {
     fn progress(&self, id: &str, run: &Run) -> Result<()> {
-        self.update(id,json!({"groups":run.groups.lock().unwrap_or_else(|e|e.into_inner()).clone(),"attempts":run.attempts.load(Ordering::Acquire),"duration_ms":run.started.elapsed().as_millis()}))?;
+        self.update(
+            id,
+            json!({
+                "groups": run.groups.lock().unwrap_or_else(|e|e.into_inner()).clone(),
+                "attempts": run.attempts.load(Ordering::Acquire),
+                "duration_ms": run.started.elapsed().as_millis(),
+            }),
+        )?;
+
         Ok(())
     }
     fn group(&self, id: &str, run: &Run, index: usize, changes: Value) -> Result<()> {
@@ -172,11 +181,34 @@ impl ModelTests {
         } else {
             "samples_finished"
         };
-        self.update(id,json!({"status":status,"error":error,"error_code":fatal.as_ref().map(|f|f.code),"uncertain":fatal.as_ref().is_some_and(|f|f.uncertain),"can_retry":retryable,"completion_reason":reason,"automatic_disposition":disposition,"groups":groups,"completed_at":crate::compat::now(),"duration_ms":run.started.elapsed().as_millis(),"attempts":run.attempts.load(Ordering::Acquire)}))?;
+        self.update(
+            id,
+            json!({
+                "status": status,
+                "error": error,
+                "error_code": fatal.as_ref().map(|f|f.code),
+                "uncertain": fatal.as_ref().is_some_and(|f|f.uncertain),
+                "can_retry": retryable,
+                "completion_reason": reason,
+                "automatic_disposition": disposition,
+                "groups": groups,
+                "completed_at": crate::compat::now(),
+                "duration_ms": run.started.elapsed().as_millis(),
+                "attempts": run.attempts.load(Ordering::Acquire),
+            }),
+        )?;
+
         audit::write(
             &self.actions.settings.audit_path,
             "model_test_result",
-            json!({"account_id":aid,"job_id":id,"status":status,"attempts":run.attempts.load(Ordering::Acquire),"valid_groups":current["valid_groups"],"completion_reason":reason}),
+            json!({
+                "account_id": aid,
+                "job_id": id,
+                "status": status,
+                "attempts": run.attempts.load(Ordering::Acquire),
+                "valid_groups": current["valid_groups"],
+                "completion_reason": reason,
+            }),
             false,
         );
         self.contexts
@@ -287,7 +319,22 @@ impl ModelTests {
                     .map_err(internal)?;
             }
             run.attempts.fetch_add(1, Ordering::AcqRel);
-            self.group(id,&run,index,json!({"status":"running","attempts":attempt+1,"error":"","ttft_ms":null,"retryable":false,"started_at":crate::compat::now(),"diagnostics":{}})).map_err(internal)?;
+            self.group(
+                id,
+                &run,
+                index,
+                json!({
+                    "status": "running",
+                    "attempts": attempt+1,
+                    "error": "",
+                    "ttft_ms": null,
+                    "retryable": false,
+                    "started_at": crate::compat::now(),
+                    "diagnostics": {},
+                }),
+            )
+            .map_err(internal)?;
+
             audit::write(
                 &self.actions.settings.audit_path,
                 "model_test_attempt",
@@ -397,6 +444,14 @@ impl ModelTests {
                             return Ok(());
                         }
                     };
+                    if job["automatic"] == true {
+                        diagnose_prediction(
+                            string(&job["requested_model"]),
+                            string(&report["prediction"]),
+                        );
+                    }
+                    // Retried first groups must be scored independently even
+                    // when later groups already contributed to the aggregate.
                     let first = if index == 0 && job["automatic"] == true && samples.len() > 1 {
                         modeltrace::analyze(&[samples[&0].clone()], &context.snapshot)
                             .map_err(internal)?
@@ -405,14 +460,44 @@ impl ModelTests {
                     };
                     self.group(id,&run,index,json!({"status":"completed","analysis_ms":analysis_started.elapsed().as_millis()})).map_err(internal)?;
                     let current = self.get(id).map_err(internal)?;
-                    self.update(id,json!({"completed_groups":samples.len(),"valid_groups":integer(&report["used_outputs"]).unwrap_or(0),"returned_models":run.returned.lock().unwrap_or_else(|e|e.into_inner()).clone(),"report":report,"first_group_valid":if index==0 {integer(&first["used_outputs"]).unwrap_or(0)>=1 && truthy(&first["prediction"])}else {truthy(&current["first_group_valid"])},"first_group_prediction":if index==0 {&first["prediction"]}else {&current["first_group_prediction"]}})).map_err(internal)?;
+                    let first_group_valid = if index == 0 {
+                        valid_report(&first)
+                    } else {
+                        truthy(&current["first_group_valid"])
+                    };
+                    let first_group_prediction = if index == 0 {
+                        &first["prediction"]
+                    } else {
+                        &current["first_group_prediction"]
+                    };
+                    self.update(id, json!({
+                        "completed_groups": samples.len(),
+                        "valid_groups": integer(&report["used_outputs"]).unwrap_or(0),
+                        "returned_models": run.returned.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                        "report": report,
+                        "first_group_valid": first_group_valid,
+                        "first_group_prediction": first_group_prediction,
+                    })).map_err(internal)?;
                     if index == 0
                         && job["automatic"] == true
-                        && integer(&first["used_outputs"]).unwrap_or(0) >= 1
-                        && first["prediction"] == "gpt-5.6-luna"
+                        && valid_report(&first)
+                        && is_downgrade(
+                            string(&job["requested_model"]),
+                            string(&first["prediction"]),
+                        )
                     {
                         run.early.store(true, Ordering::Release);
-                        let disposition=self.hooks.verdict(self.get(id).map_err(internal)?,first).await.unwrap_or_else(|error|json!({"status":"overridden","reason":crate::security::safe_error(&error.detail,200)}));
+                        let disposition = self
+                            .hooks
+                            .verdict(self.get(id).map_err(internal)?, first)
+                            .await
+                            .unwrap_or_else(|error| {
+                                json!({
+                                    "status": "overridden",
+                                    "reason": crate::security::safe_error(&error.detail, 200),
+                                })
+                            });
+
                         *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) =
                             disposition.clone();
                         self.update(id,json!({"automatic_disposition":disposition,"completion_reason":"automatic_degradation"})).map_err(internal)?;
@@ -426,7 +511,18 @@ impl ModelTests {
                     return Ok(());
                 }
                 Err(failure) => {
-                    self.group(id,&run,index,json!({"error":error_text(failure.code),"retryable":failure.retryable && !failure.uncertain,"uncertain":failure.uncertain})).map_err(internal)?;
+                    self.group(
+                        id,
+                        &run,
+                        index,
+                        json!({
+                            "error": error_text(failure.code),
+                            "retryable": failure.retryable && !failure.uncertain,
+                            "uncertain": failure.uncertain,
+                        }),
+                    )
+                    .map_err(internal)?;
+
                     // A missing terminal can represent a billed request. Only a
                     // definite upstream rejection is eligible for the old retry loop.
                     if failure.uncertain || !failure.retryable {

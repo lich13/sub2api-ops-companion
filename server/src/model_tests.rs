@@ -437,13 +437,20 @@ impl ModelTests {
         } else {
             let snapshot = self.bank.snapshot();
             if job["automatic"] == true
-                && !snapshot.0["models"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m["id"] == "gpt-5.6-luna")
+                && !crate::model_downgrade::bank_contains(
+                    &snapshot.0,
+                    crate::model_downgrade::LEGACY_TARGET,
+                )
             {
                 return Err(Error::new(409, "当前指纹库缺少降智判定模型"));
+            }
+            if job["automatic"] == true
+                && !crate::model_downgrade::bank_contains(
+                    &snapshot.0,
+                    string(&job["requested_model"]),
+                )
+            {
+                eprintln!("model_detection_diagnostic level=debug reason=requested_model_absent");
             }
             #[cfg(any(test, feature = "test-fixtures"))]
             let target = {

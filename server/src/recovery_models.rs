@@ -3,6 +3,7 @@ use crate::{
     credit_rules,
     error::{Error, Result},
     model_detection::{Detection, TARGET},
+    model_downgrade::{bank_contains, is_downgrade, valid_report},
     model_tests::ACTIVE,
     oauth_queries::Source,
     oauth_state::block_signature,
@@ -19,7 +20,15 @@ impl Detection {
         job: Option<&str>,
         waiting: &str,
     ) -> Value {
-        json!({"success":false,"deferred":true,"error_code":"model_verification_pending","error":reason,"next_at":until.filter(truthy).unwrap_or(json!(datetime(self.now()+Duration::seconds(5)))),"job_id":job,"waiting_reason":waiting})
+        json!({
+            "success": false,
+            "deferred": true,
+            "error_code": "model_verification_pending",
+            "error": reason,
+            "next_at": until.filter(truthy).unwrap_or(json!(datetime(self.now()+Duration::seconds(5)))),
+            "job_id": job,
+            "waiting_reason": waiting,
+        })
     }
     pub async fn recovery_reason(
         &self,
@@ -118,7 +127,16 @@ impl Detection {
         let value = self.control(id)?;
         let state = self.monitor.state()?;
         let meta = &state["scheduler"][id.to_string()];
-        let mut context = json!({"account_id":id,"kind":kind,"fingerprint":fingerprint,"control_generation":self.monitor.generation(id)?,"method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"attempt":attempt,"consume":consume});
+        let mut context = json!({
+            "account_id": id,
+            "kind": kind,
+            "fingerprint": fingerprint,
+            "control_generation": self.monitor.generation(id)?,
+            "method_generation": integer(&meta["recovery_method_generation"]).unwrap_or(0),
+            "attempt": attempt,
+            "consume": consume,
+        });
+
         let mut identity = context.clone();
         identity.as_object_mut().unwrap().shift_remove("consume");
         let request = digest(&json!([
@@ -174,12 +192,12 @@ impl Detection {
                 return Ok(result.clone());
             }
             let report = &job["report"];
-            let valid = job["status"] == "completed"
-                && integer(&report["used_outputs"]).unwrap_or(0) >= 1
-                && report["prediction"]
-                    .as_str()
-                    .is_some_and(|v| !v.trim().is_empty());
-            if valid && report["prediction"] != TARGET {
+            let valid = job["status"] == "completed" && valid_report(report);
+            let degraded = is_downgrade(
+                string(&job["requested_model"]),
+                string(&report["prediction"]),
+            );
+            if valid && !degraded {
                 if let Err(error) = self.guard(&job).await {
                     return Ok(
                         json!({"success":false,"error_code":"recovery_state_changed","error":crate::security::safe_error(&error.detail,200)}),
@@ -208,10 +226,30 @@ impl Detection {
                     .unwrap_or(401);
                 code = format!("http_{status}");
             }
-            let degraded = report["prediction"] == TARGET;
-            return Ok(
-                json!({"success":valid && !degraded,"error_code":if degraded {"detection_held"}else if valid {""}else {&code},"error":job["error"].as_str().filter(|v|!v.is_empty()).unwrap_or(if degraded {"账号已判定降智"}else if valid {""}else {"模型验证未获得有效样本"}),"model_id":job["requested_model"],"completed_at":job["completed_at"],"job_id":job["id"],"retryable":retryable,"uncertain":job["uncertain"]==true || job["status"]=="interrupted"}),
-            );
+            let result_code = if degraded {
+                "detection_held"
+            } else if valid {
+                ""
+            } else {
+                &code
+            };
+            let default_error = if degraded {
+                "账号已判定降智"
+            } else if valid {
+                ""
+            } else {
+                "模型验证未获得有效样本"
+            };
+            return Ok(json!({
+                "success": valid && !degraded,
+                "error_code": result_code,
+                "error": job["error"].as_str().filter(|v| !v.is_empty()).unwrap_or(default_error),
+                "model_id": job["requested_model"],
+                "completed_at": job["completed_at"],
+                "job_id": job["id"],
+                "retryable": retryable,
+                "uncertain": job["uncertain"] == true || job["status"] == "interrupted",
+            }));
         }
         let allowed = self.next_allowed_at(id)?;
         if parse_datetime(&allowed).is_some_and(|due| self.now() < due) {
@@ -241,18 +279,33 @@ impl Detection {
             );
         }
         let bank = self.tests.bank.snapshot();
-        if !bank.0["models"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|model| model["id"] == TARGET)
-        {
+        if !bank_contains(&bank.0, TARGET) {
             return Ok(
                 json!({"success":false,"error":"指纹库缺少降智判定模型","error_code":"bank_unavailable"}),
             );
         }
         let mark = self.mark(id)?;
-        let job=self.tests.start(id,&json!({"model_id":value["model_id"],"expected_version":"0".repeat(64),"expected_operation_version":operation_versions(&row,false)["model_test"],"request_id":request,"concurrency":1}),Some(&json!({"detection_generation":value["generation"],"detection_mark_version":mark["version"],"triggers":[format!("{kind}:{fingerprint}")],"recovery_context":context,"planned_groups":1}))).await?;
+        let job = self
+            .tests
+            .start(
+                id,
+                &json!({
+                    "model_id": value["model_id"],
+                    "expected_version": "0".repeat(64),
+                    "expected_operation_version": operation_versions(&row, false)["model_test"],
+                    "request_id": request,
+                    "concurrency": 1,
+                }),
+                Some(&json!({
+                    "detection_generation": value["generation"],
+                    "detection_mark_version": mark["version"],
+                    "triggers": [format!("{kind}:{fingerprint}")],
+                    "recovery_context": context,
+                    "planned_groups": 1,
+                })),
+            )
+            .await?;
+
         self.update(
             id,
             json!({"job_id":job["id"],"triggers":job["triggers"],"status":job["status"]}),
@@ -294,9 +347,13 @@ impl Detection {
         {
             Ok(Value::Null)
         } else {
-            Ok(
-                json!({"success":false,"deferred":truthy(&result["next_query_at"]),"error_code":result["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("reset_uncertain"),"error":"重置尚未确认成功","next_at":result["next_query_at"]}),
-            )
+            Ok(json!({
+                "success": false,
+                "deferred": truthy(&result["next_query_at"]),
+                "error_code": result["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("reset_uncertain"),
+                "error": "重置尚未确认成功",
+                "next_at": result["next_query_at"],
+            }))
         }
     }
 }
