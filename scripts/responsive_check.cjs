@@ -293,7 +293,7 @@ function fixtureAccountActions(account) {
   const openai = account.platform === "openai" && ["oauth", "apikey"].includes(account.type);
   return {
     primary: openai ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
-    more: ["测试连接", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
+    more: ["测试连接", "账号保活", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
   };
 }
 
