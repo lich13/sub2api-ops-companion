@@ -1,6 +1,6 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{fs, panic::AssertUnwindSafe};
-use sub2ops_server::{audit, error_evidence};
+use sub2ops_server::{audit, error_evidence, operations, proxy_diagnostics};
 
 #[test]
 fn audit_write_redacts_nested_sensitive_values_and_preserves_public_structure() {
@@ -165,5 +165,101 @@ fn capacity_message_is_classified_before_audit_redacts_attached_credentials() {
             !serialized.contains(marker),
             "audit evidence leaked a fixture marker"
         );
+    }
+}
+
+fn quality_diagnostic(items: Value) -> Value {
+    json!({
+        "score": 90,
+        "grade": "A",
+        "summary": "fixture quality result",
+        "items": items
+    })
+}
+
+#[test]
+fn proxy_quality_result_rejects_malformed_items() {
+    let valid = quality_diagnostic(json!([{"status":"pass"}]));
+    let safe = proxy_diagnostics::safe_result("quality-check", &valid)
+        .expect("well-shaped quality items remain accepted");
+    assert_eq!(safe["items"][0]["status"], "pass");
+
+    let mut missing_items = valid.clone();
+    missing_items.as_object_mut().unwrap().remove("items");
+    let too_many_items = quality_diagnostic(json!(vec![json!({"status":"pass"}); 33]));
+    let cases = [
+        ("missing items", missing_items),
+        (
+            "items is not an array",
+            quality_diagnostic(json!({"status":"pass"})),
+        ),
+        ("too many items", too_many_items),
+        ("item is not an object", quality_diagnostic(json!([null]))),
+        (
+            "unsupported item status",
+            quality_diagnostic(json!([{"status":"unknown"}])),
+        ),
+    ];
+
+    for (case, data) in cases {
+        let error = proxy_diagnostics::safe_result("quality-check", &data).expect_err(case);
+        assert_eq!(error.status.as_u16(), 502, "{case}");
+        assert_eq!(error.detail, "代理质量响应格式不兼容", "{case}");
+    }
+}
+
+fn valid_operation_batch_state() -> Value {
+    json!({
+        "version": 1,
+        "jobs": {
+            "fixture-job": {
+                "account_id": 7,
+                "payload": {},
+                "status": "queued",
+                "batch_id": "fixture-batch"
+            }
+        },
+        "requests": {},
+        "batches": {"fixture-batch": {"job_ids": ["fixture-job"]}},
+        "batch_requests": {}
+    })
+}
+
+#[test]
+fn operation_batch_job_ids_reject_malformed_references() {
+    let valid = valid_operation_batch_state();
+    operations::validate_store(&valid).expect("well-formed batch job reference");
+
+    let mut missing_ids = valid.clone();
+    missing_ids["batches"]["fixture-batch"]
+        .as_object_mut()
+        .unwrap()
+        .remove("job_ids");
+    let mut mismatched_batch = valid.clone();
+    mismatched_batch["jobs"]["fixture-job"]["batch_id"] = "other-batch".into();
+    let cases = [
+        ("missing job_ids", missing_ids),
+        ("job_ids is not an array", {
+            let mut data = valid.clone();
+            data["batches"]["fixture-batch"]["job_ids"] = json!("fixture-job");
+            data
+        }),
+        ("job id is not a string", {
+            let mut data = valid.clone();
+            data["batches"]["fixture-batch"]["job_ids"] = json!([null]);
+            data
+        }),
+        ("job id is missing", {
+            let mut data = valid.clone();
+            data["batches"]["fixture-batch"]["job_ids"] = json!(["missing-job"]);
+            data
+        }),
+        ("job belongs to another batch", mismatched_batch),
+    ];
+
+    for (case, data) in cases {
+        let error = operations::validate_store(&data).expect_err(case);
+        assert_eq!(error.status.as_u16(), 503, "{case}");
+        assert_eq!(error.detail, "操作状态无法读取", "{case}");
     }
 }

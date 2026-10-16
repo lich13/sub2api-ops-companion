@@ -105,6 +105,15 @@ async fn run() -> Result<()> {
         return Ok(());
     }
     let listener = tokio::net::TcpListener::bind(address).await?;
+    let bound = listener.local_addr()?;
+    let scope = if bound.ip().is_unspecified() {
+        "all_interfaces"
+    } else if bound.ip().is_loopback() {
+        "loopback"
+    } else {
+        "configured_address_redacted"
+    };
+    eprintln!("Sub2Ops listening scope={scope} port={}", bound.port());
     runtime.serve(listener, shutdown()).await
 }
 async fn shutdown() {

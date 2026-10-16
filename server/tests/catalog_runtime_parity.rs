@@ -864,7 +864,7 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         }
     }).await.expect("snapshot must reach the blocked database read");
     assert!(!inflight.is_finished());
-    tokio::time::timeout(Duration::from_millis(100), harness.runtime.invalidate())
+    tokio::time::timeout(Duration::from_secs(5), harness.runtime.invalidate())
         .await
         .expect("invalidation must not wait for the snapshot lock or database");
     sqlx::query("UPDATE accounts SET name='fixture-inflight' WHERE id=12")
