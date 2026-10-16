@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::{io::Write, path::Path, time::Duration};
 
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
+const MAX_OPERATION_JSON_BYTES: usize = 128 * 1024 * 1024;
 
 fn recoveries_valid(data: &Value) -> bool {
     data.as_array().is_some_and(|rows| {
@@ -711,7 +712,7 @@ pub(crate) async fn http_detailed(
         HttpFailure::from(message)
     };
     let limit = if path.starts_with("/account-operations/") {
-        134_217_728
+        MAX_OPERATION_JSON_BYTES
     } else {
         MAX_JSON_BYTES
     };
@@ -790,6 +791,111 @@ pub(crate) async fn http_detailed(
 mod tests {
     use super::*;
     use std::{io::Read, net::TcpListener};
+
+    #[test]
+    fn capabilities_accepts_existing_and_android_clients() {
+        for platforms in [
+            serde_json::json!(["macos"]),
+            serde_json::json!(["macos", "android"]),
+        ] {
+            assert!(shape_valid(
+                "/capabilities",
+                &serde_json::json!({
+                    "api_version":1, "platforms":platforms
+                })
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn response_limits_cover_exact_boundaries_and_chunked_overflow() {
+        for (path, limit) in [
+            ("/snapshot", MAX_JSON_BYTES),
+            ("/account-operations/fixture", MAX_OPERATION_JSON_BYTES),
+        ] {
+            for (extra, chunked) in [(0, false), (0, true), (1, false), (1, true)] {
+                let length = limit + extra;
+                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+                let base = format!("http://{}", listener.local_addr().unwrap());
+                let server = std::thread::spawn(move || {
+                    let (mut socket, _) = listener.accept().unwrap();
+                    socket
+                        .set_write_timeout(Some(Duration::from_secs(20)))
+                        .unwrap();
+                    let mut request = [0; 4096];
+                    let _ = socket.read(&mut request);
+                    let framing = if chunked {
+                        "Transfer-Encoding: chunked".to_owned()
+                    } else {
+                        format!("Content-Length: {length}")
+                    };
+                    // An HTTP failure is intentional: it proves that a body at
+                    // the boundary reaches ordinary status handling, not size rejection.
+                    let headers = format!("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\n{framing}\r\nConnection: close\r\n\r\n");
+                    if socket.write_all(headers.as_bytes()).is_err() {
+                        return;
+                    }
+                    let mut block = vec![b' '; 65_536];
+                    let mut sent = 0;
+                    while sent < length {
+                        if sent == 0 {
+                            block[..2].copy_from_slice(b"{}");
+                        } else {
+                            block[..2].fill(b' ');
+                        }
+                        let size = block.len().min(length - sent);
+                        if chunked && write!(socket, "{size:x}\r\n").is_err() {
+                            return;
+                        }
+                        if socket.write_all(&block[..size]).is_err() {
+                            return;
+                        }
+                        if chunked && socket.write_all(b"\r\n").is_err() {
+                            return;
+                        }
+                        sent += size;
+                    }
+                    if chunked {
+                        let _ = socket.write_all(b"0\r\n\r\n");
+                    }
+                });
+                let directory = tempfile::tempdir().unwrap();
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(Duration::from_secs(30))
+                    .build()
+                    .unwrap();
+                let error = http(
+                    &client,
+                    &base,
+                    "fixture-admin-key",
+                    "GET",
+                    path,
+                    None,
+                    &directory.path().join("network.log"),
+                )
+                .await
+                .unwrap_err();
+                server.join().unwrap();
+                if extra == 0 {
+                    assert!(
+                        error.contains("网关暂不可用 [502]"),
+                        "at-limit body must reach HTTP status handling"
+                    );
+                } else {
+                    assert!(
+                        error.contains("服务响应超过大小限制"),
+                        "oversize body must be rejected"
+                    );
+                }
+                assert!(
+                    !std::fs::read_to_string(directory.path().join("network.log"))
+                        .unwrap_or_default()
+                        .contains("fixture-admin-key")
+                );
+            }
+        }
+    }
 
     async fn serve(
         status: &str,

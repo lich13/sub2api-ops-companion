@@ -436,6 +436,9 @@ pub fn normalize(raw: &Value) -> Value {
         .max()
         .unwrap_or(0);
     for (account, meta) in &scheduler {
+        let Ok(account_id) = account.parse::<i64>() else {
+            continue;
+        };
         let intent = &meta["recovery_intent"];
         if intent["status"] != "recovered" {
             continue;
@@ -446,7 +449,7 @@ pub fn normalize(raw: &Value) -> Value {
         );
         if !history.contains_key(&key) {
             sequence += 1;
-            history.insert(key.clone(),json!({"id":sequence,"dedupe_key":key,"account_id":account.parse::<i64>().unwrap(),"account_name":"","model_id":"","test_completed_at":null,"recovered_at":null,"legacy":true}));
+            history.insert(key.clone(),json!({"id":sequence,"dedupe_key":key,"account_id":account_id,"account_name":"","model_id":"","test_completed_at":null,"recovered_at":null,"legacy":true}));
         }
     }
     json!({"version":5,"settings":settings,"oauth_results":results,"scheduler":scheduler,"pending_events":pending,"daily_test":raw["daily_test"].as_object().cloned().unwrap_or_default(),"recovery_history":history})

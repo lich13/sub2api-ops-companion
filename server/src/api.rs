@@ -17,6 +17,17 @@ use futures_util::FutureExt;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, convert::Infallible, panic::AssertUnwindSafe, sync::Arc};
 
+// Requests can carry two existing 16 MiB media fields. Desktop response limits
+// are independent of this inbound JSON limit.
+const MAX_REQUEST_BODY_BYTES: usize = 36 * 1024 * 1024;
+
+async fn json_payload(body: Body) -> Result<Value> {
+    let raw = to_bytes(body, MAX_REQUEST_BODY_BYTES)
+        .await
+        .map_err(|_| Error::invalid())?;
+    serde_json::from_slice(&raw).map_err(|_| Error::invalid())
+}
+
 pub fn router(runtime: Arc<Runtime>) -> Router {
     Router::new()
         .route("/healthz", get(health))
@@ -239,10 +250,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     }
     let mut payload = json!({});
     if crate::request_schema::has_body(&path, method.as_str()) {
-        let raw = to_bytes(request.into_body(), 36 * 1024 * 1024)
-            .await
-            .map_err(|_| Error::invalid())?;
-        payload = serde_json::from_slice(&raw).map_err(|_| Error::invalid())?;
+        payload = json_payload(request.into_body()).await?;
         crate::request_schema::validate(&path, method.as_str(), &mut payload)?;
     }
     if path == ["connection-status"] {
@@ -261,7 +269,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let mut status = StatusCode::OK;
     let result: Value = match path.as_slice() {
         ["capabilities"] => {
-            json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos"],"version":crate::VERSION,
+            json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
             "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION})
         }
         ["snapshot"] => runtime.snapshot().await?,
@@ -717,6 +725,39 @@ fn test_response(runtime: Arc<Runtime>, id: i64, payload: Value, key: String) ->
 #[cfg(test)]
 mod response_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn request_limit_accepts_boundary_and_rejects_chunked_overflow() {
+        for (length, chunked) in [
+            (MAX_REQUEST_BODY_BYTES, false),
+            (MAX_REQUEST_BODY_BYTES, true),
+            (MAX_REQUEST_BODY_BYTES + 1, false),
+            (MAX_REQUEST_BODY_BYTES + 1, true),
+        ] {
+            let mut bytes = vec![b' '; length];
+            bytes[..2].copy_from_slice(b"{}");
+            let body = if chunked {
+                let bytes = axum::body::Bytes::from(bytes);
+                let chunks: Vec<_> = (0..bytes.len())
+                    .step_by(65_536)
+                    .map(|start| {
+                        Ok::<_, Infallible>(bytes.slice(start..(start + 65_536).min(bytes.len())))
+                    })
+                    .collect();
+                Body::from_stream(futures_util::stream::iter(chunks))
+            } else {
+                Body::from(bytes)
+            };
+            let result = json_payload(body).await;
+            if length == MAX_REQUEST_BODY_BYTES {
+                assert_eq!(result.unwrap(), json!({}));
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+                assert_eq!(error.detail["code"], "invalid_request");
+            }
+        }
+    }
 
     #[tokio::test]
     async fn desktop_failures_are_correlated_private_and_uncacheable() {
