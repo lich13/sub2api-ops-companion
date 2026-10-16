@@ -7,6 +7,8 @@ import sys
 import tempfile
 import zipfile
 
+from verify_native_privacy import verify_native_binary
+
 
 def run(*args):
     return subprocess.check_output([str(a) for a in args], text=True, stderr=subprocess.STDOUT)
@@ -28,7 +30,9 @@ def verify(apk):
         assert libraries and all(n.startswith("lib/arm64-v8a/") for n in libraries)
         for name in libraries:
             library = Path(temporary) / Path(name).name
-            library.write_bytes(package.read(name))
+            data = package.read(name)
+            verify_native_binary(data)
+            library.write_bytes(data)
             headers = run(elf, "-lW", library)
             alignments = [int(line.split()[-1], 16) for line in headers.splitlines() if re.match(r"\s*LOAD\s", line)]
             assert alignments and min(alignments) >= 0x4000, f"4 KB ELF: {name}"

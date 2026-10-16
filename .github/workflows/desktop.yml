@@ -134,6 +134,11 @@ jobs:
         working-directory: desktop/src-tauri
       - run: pnpm bundle
         working-directory: desktop
+      - name: Check packaged macOS privacy and signature
+        run: |
+          python3 -m unittest discover -s scripts -p test_native_privacy.py
+          python3 scripts/verify_native_privacy.py desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sub2Ops.app/Contents/MacOS/sub2ops
+          codesign --verify --deep --strict desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sub2Ops.app
       - name: Package and checksum
         run: |
           mkdir -p artifacts

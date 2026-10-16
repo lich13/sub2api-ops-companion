@@ -34,10 +34,10 @@ anyhow = "1"
 [dev-dependencies]
 tempfile = "3"
 
-# Keep proc-macro dylibs loadable with Apple's current linker; strip can produce
-# a misaligned LINKEDIT string pool on Apple Silicon.
 [profile.release]
-strip = "none"
+strip = "debuginfo"
 
+# Keep host proc-macro dylibs loadable with Apple's current linker; stripping
+# their symbols can produce a misaligned LINKEDIT string pool on Apple Silicon.
 [profile.release.build-override]
 strip = "none"
