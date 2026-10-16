@@ -129,7 +129,7 @@ def archive_reference_app(destination: Path, sha: str) -> Path:
 
 
 def seed_fingerprint_cache(app_dir: Path, state_dir: Path) -> None:
-    """Keep the Python reference's hourly ModelTrace sync on bundled fixture data."""
+    """Keep both runtimes' hourly ModelTrace sync on bundled fixture data."""
     data_dir = app_dir / "modeltrace_data"
     manifest = json.loads((data_dir / "manifest.json").read_text(encoding="utf-8"))
     raw = (data_dir / "unified_bank.json").read_bytes()

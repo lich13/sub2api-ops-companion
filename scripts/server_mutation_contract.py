@@ -826,10 +826,12 @@ def run_owned(command: list[str] | None, postgres_bin_dir: str | None) -> dict[s
         temporary_path = Path(temporary_owner.name)
         state_dir = temporary_path / "state"
         state_dir.mkdir(mode=0o700)
-        reference_app = None
-        if command is None:
-            reference_app = http.archive_reference_app(temporary_path / "reference", REFERENCE_SHA)
-            http.seed_fingerprint_cache(reference_app, state_dir)
+        reference_fixture = http.archive_reference_app(temporary_path / "reference", REFERENCE_SHA)
+        # Both runtimes must start and restart with the same fixed bank. A new
+        # Rust state directory otherwise starts a real network sync that can
+        # race the deliberate SIGKILL in the unknown-request recovery case.
+        http.seed_fingerprint_cache(reference_fixture, state_dir)
+        reference_app = reference_fixture if command is None else None
         postgres = http.TemporaryPostgres(temporary_path, postgres_bin_dir)
         postgres.start()
         seed_accounts(postgres.url)

@@ -59,6 +59,7 @@ jobs:
       - name: Shared full-service HTTP and mutation contracts
         run: |
           mkdir -p ci-results
+          python -m unittest discover -s scripts -p test_mutation_contract_isolation.py
           python scripts/server_http_contract.py > ci-results/python-http.json
           python scripts/server_http_contract.py --command-json '["server/target/debug/sub2ops-server"]' > ci-results/rust-http.json
           python scripts/server_mutation_contract.py > ci-results/python-mutations.json
