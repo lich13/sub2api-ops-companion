@@ -282,27 +282,46 @@ pub fn analyze(outputs: &[String], snapshot: &(Value, Value)) -> Result<Value> {
     if valid.is_empty() {
         return Ok(Value::Null);
     }
+    // Snapshots are normally validated when installed, but analysis must also
+    // reject malformed dimensions and finite inputs that overflow arithmetic.
+    crate::fingerprint_bank::validate(data)?;
+    let invalid = || Error::new(503, "指纹库数据无效");
+    let models = data["models"].as_array().ok_or_else(invalid)?;
     let rows = valid
         .iter()
         .map(|nums| scores(nums, data))
         .collect::<Vec<_>>();
+    if rows
+        .iter()
+        .any(|row| row.len() != models.len() || row.iter().any(|v| !v.is_finite()))
+    {
+        return Err(invalid());
+    }
     let combined = (0..rows[0].len())
         .map(|i| mean(&rows.iter().map(|row| row[i]).collect::<Vec<_>>()))
         .collect::<Vec<_>>();
     let beta = data["calibration"][valid.len().to_string()]["beta"]
         .as_f64()
-        .unwrap();
+        .ok_or_else(invalid)?;
     let logits = combined.iter().map(|x| x * beta).collect::<Vec<_>>();
+    if logits.iter().any(|v| !v.is_finite()) {
+        return Err(invalid());
+    }
     let top = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let weights = logits.iter().map(|x| (x - top).exp()).collect::<Vec<_>>();
     let total = weights.iter().sum::<f64>();
-    let mut results=data["models"].as_array().unwrap().iter().enumerate().map(|(i,m)|json!({"model":m["id"],"display_name":m["display_name"],"probability":weights[i]/total,"score":combined[i]})).collect::<Vec<_>>();
-    results.sort_by(|a, b| {
-        b["probability"]
-            .as_f64()
-            .unwrap()
-            .total_cmp(&a["probability"].as_f64().unwrap())
-    });
+    if !total.is_finite() || total <= 0.0 {
+        return Err(invalid());
+    }
+    let mut ranked = models.iter().enumerate().map(|(i, model)| {
+        let probability = weights[i] / total;
+        (probability, json!({"model":model["id"],"display_name":model["display_name"],"probability":probability,"score":combined[i]}))
+    }).collect::<Vec<_>>();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let results = ranked
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect::<Vec<_>>();
     Ok(
         json!({"prediction":results[0]["model"],"prediction_name":results[0]["display_name"],"probability":results[0]["probability"],"used_outputs":valid.len(),"results":results,"bank_version":version}),
     )

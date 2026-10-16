@@ -361,6 +361,70 @@ fn fingerprint_bank_validation_and_git_fixtures_match_pinned_python() {
     );
 }
 
+fn assert_modeltrace_bank_error(bank: &Value, version: &Value, input: &str, case: &str) {
+    let error =
+        modeltrace::analyze(&[input.to_owned()], &(bank.clone(), version.clone())).expect_err(case);
+    assert_eq!(error.status.as_u16(), 503, "{case}");
+    assert_eq!(error.detail, "指纹库数据无效", "{case}");
+}
+
+#[test]
+fn modeltrace_analysis_rejects_extreme_finite_results_and_malformed_bank_shapes() {
+    let (bank, version) = modeltrace::bundled().expect("bundled ModelTrace bank");
+    let input = (1..=100)
+        .map(|number| number.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let mut extreme_beta = bank.clone();
+    extreme_beta["calibration"]["1"]["beta"] = json!(f64::MAX);
+    fingerprint_bank::validate(&extreme_beta)
+        .expect("finite positive calibration values remain schema-valid");
+    assert_modeltrace_bank_error(
+        &extreme_beta,
+        &version,
+        &input,
+        "extreme finite calibration beta",
+    );
+
+    let mut tiny_scale = bank.clone();
+    tiny_scale["robust"]["hellinger"]["feature_scale"] = json!(vec![1.0e-320_f64; 355]);
+    fingerprint_bank::validate(&tiny_scale)
+        .expect("positive finite feature scales remain schema-valid");
+    assert_modeltrace_bank_error(
+        &tiny_scale,
+        &version,
+        &input,
+        "subnormal positive Hellinger feature scales",
+    );
+
+    let mut malformed_models = bank.clone();
+    malformed_models["models"] = json!({"fixture":"not-an-array"});
+    let error = fingerprint_bank::validate(&malformed_models)
+        .expect_err("malformed model collection must be rejected");
+    assert_eq!(error.status.as_u16(), 503);
+    assert_eq!(error.detail, "指纹库数据无效");
+    assert_modeltrace_bank_error(
+        &malformed_models,
+        &version,
+        &input,
+        "malformed model collection",
+    );
+
+    let mut malformed_dimension = bank;
+    malformed_dimension["robust"]["hellinger"]["feature_mean"] = json!([0.0]);
+    let error = fingerprint_bank::validate(&malformed_dimension)
+        .expect_err("malformed feature dimension must be rejected");
+    assert_eq!(error.status.as_u16(), 503);
+    assert_eq!(error.detail, "指纹库数据无效");
+    assert_modeltrace_bank_error(
+        &malformed_dimension,
+        &version,
+        &input,
+        "malformed Hellinger feature dimension",
+    );
+}
+
 fn settings_at(directory: &Path, read_only: bool) -> Arc<Settings> {
     Arc::new(Settings {
         database_url: "postgres://example.invalid/sub2ops".into(),
