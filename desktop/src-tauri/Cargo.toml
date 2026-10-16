@@ -1,9 +1,9 @@
 [package]
 name = "sub2ops"
-version = "0.1.42"
+version = "0.1.43"
 description = "Sub2API Ops desktop companion"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.99"
 
 [lib]
 name = "sub2ops_lib"

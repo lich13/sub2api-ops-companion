@@ -42,6 +42,27 @@ def check(root: Path = ROOT) -> list[str]:
     versions = re.findall(r'[0-9]+\.[0-9]+\.[0-9]+', declared.group(1)) if declared else []
     if not verified or versions != verified:
         errors.append("docs/model-catalog.md: verified upstream versions differ from server constant")
+
+    workflow = (root / ".github/workflows/desktop.yml").read_text()
+    desktop_doc = (root / "desktop/README.md").read_text()
+    package = json.loads((root / "desktop/package.json").read_text())
+    rust_image = re.search(r'^FROM rust:([0-9.]+)-', (root / "Dockerfile").read_text(), re.MULTILINE)
+    nodes = re.findall(r"node-version:\s*'([0-9.]+)'", workflow)
+    rust = rust_image.group(1) if rust_image else ""
+    pnpm = package.get("packageManager", "").removeprefix("pnpm@")
+
+    def toolchain(source: str, values: list[str], expected: str) -> None:
+        if not expected or not values or any(value != expected for value in values):
+            errors.append(f"{source}: build toolchain versions differ")
+
+    toolchain("CI Node", nodes, nodes[0] if nodes else "")
+    toolchain("desktop/README.md Node", re.findall(r'Node ([0-9.]+)', desktop_doc), nodes[0] if nodes else "")
+    toolchain("desktop/README.md pnpm", re.findall(r'pnpm ([0-9.]+)', desktop_doc), pnpm)
+    toolchain("CI pnpm", re.findall(r'uses: pnpm/action-setup@[^\n]+\n\s+with:\n\s+version:\s*([0-9.]+)', workflow), pnpm)
+    toolchain("desktop/README.md Rust", re.findall(r'Rust ([0-9.]+)', desktop_doc), rust)
+    toolchain("CI Rust", re.findall(r'rustup (?:toolchain install|override set) ([0-9.]+)', workflow), rust)
+    desktop_rust = tomllib.loads((root / "desktop/src-tauri/Cargo.toml").read_text())["package"].get("rust-version", "")
+    toolchain("desktop Rust minimum", [desktop_rust], ".".join(rust.split(".")[:2]))
     return errors
 
 

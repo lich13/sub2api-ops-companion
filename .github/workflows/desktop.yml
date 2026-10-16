@@ -7,13 +7,16 @@ on:
   pull_request:
     paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example', 'README.md', 'UPGRADING.md', 'docs/**']
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/desktop-v') }}
 permissions:
   contents: read
 env:
   RUSTFLAGS: --remap-path-prefix=/Users/runner=/build --remap-path-prefix=/home/runner=/build
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -23,19 +26,23 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/check_release_versions.py
+      - run: python scripts/server_reference.py
       - run: pip install -r requirements.txt
       - name: Prepare Rust and disposable PostgreSQL
         run: |
           rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
           rustup override set 1.99.0
           sudo apt-get update
-          sudo apt-get install -y postgresql
+          sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: server -> target
+          key: audit-0.22.2
       - name: Audit both locked Rust dependency graphs
         run: |
-          cargo install cargo-audit --version 0.22.2 --locked
+          if [ "$(cargo audit --version 2>/dev/null || true)" != 'cargo-audit 0.22.2' ]; then
+            cargo install cargo-audit --version 0.22.2 --locked --force
+          fi
           cargo audit --file server/Cargo.lock
           cargo audit --file desktop/src-tauri/Cargo.lock
       - run: cargo fetch --locked --manifest-path server/Cargo.toml
@@ -76,7 +83,7 @@ jobs:
           path: companion-artifact/
           if-no-files-found: error
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -90,6 +97,10 @@ jobs:
           cache-dependency-path: desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-1.56.0
       - name: Prepare isolated browser checks
         run: |
           npm install --prefix "$RUNNER_TEMP/sub2ops-browser-qa" --no-save --package-lock=false playwright@1.56.0
@@ -98,6 +109,7 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/sub2ops-browser-qa/node_modules" node scripts/responsive_check.cjs
   macos:
     runs-on: macos-14
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -110,6 +122,10 @@ jobs:
           cache-dependency-path: desktop/pnpm-lock.yaml
       - run: rustup toolchain install 1.99.0 --profile minimal --component clippy --target aarch64-apple-darwin
       - run: rustup override set 1.99.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: macos-aarch64
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
       - run: pnpm test && pnpm build
@@ -128,6 +144,7 @@ jobs:
           path: artifacts/
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -149,6 +166,10 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
       - run: rustup toolchain install 1.99.0 --profile minimal --target aarch64-linux-android
       - run: rustup override set 1.99.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: android-aarch64-ndk-28.2.13676358
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
       - name: Configure release signing
@@ -191,6 +212,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
     needs: [backend, browser, macos, android]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
