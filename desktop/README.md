@@ -50,9 +50,11 @@ Codex 模型测试固定账号、有效凭据、分组精确白名单中的模�
 
 记录页滚动接近底部时自动加载下一页，失败保留当前记录并就地重试。输出 TPS 与 Sub2API 一致，按输出 Token 除以总耗时显示一位小数；不减去首字时间，缺失首字仍显示“—”。
 
+账号状态对当前限流显示琥珀色标签、自动解除倒计时和原因提示；悬浮可查看准确解除时间。仍受限且最近错误后没有成功调用时显示 HTTP 429 入口，点击打开已有错误详情。倒计时到点等待最新状态，不自动判定恢复。
+
 ## 构建
 
-需要 Node 22+、pnpm 10.27.0、Rust 1.94.1+、Xcode Command Line Tools。
+需要 Node 24.21.0、pnpm 12.11.2、Rust 1.99.0、Xcode Command Line Tools。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -65,7 +67,7 @@ pnpm bundle
 
 产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/`。`pnpm dev` 提供明确标记为“预览”的开发数据，只在开发构建中存在；生产客户端只使用 Rust HTTP 通道。
 
-Android 固定工具链：JDK 21、SDK 36、Build Tools 36.0.0、NDK 28.2.13676358、Gradle 8.14.3、Rust 1.94.1 的 `aarch64-linux-android` 标准库。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
+Android 固定工具链：JDK 21、SDK 36、Build Tools 36.0.0、NDK 28.2.13676358、Gradle 8.14.3、Rust 1.99.0 的 `aarch64-linux-android` 标准库。设好 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后：
 
 ```sh
 node ../scripts/android_signing.mjs

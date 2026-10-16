@@ -33,7 +33,7 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 | `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
 | `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`；按分组版本校验。 |
 | `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
-| `BASE_PATH` | 反代路径前缀，默认 `/sub2ops`。 |
+| `BASE_PATH` | 历史兼容字段，默认 `/sub2ops`；外部前缀须由 nginx 配置并剥离，Rust 不据此挂载路由。 |
 | `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。 |
 | `OAUTH_CONFIG_PATH` | OAuth 自动化配置，默认 `/data/oauth-config.json`；JSON 优先于环境变量，环境变量优先于默认值。 |
 | `BARK_CONFIG_PATH` | Bark 配置文件，默认 `/data/bark-config.json`。 |
@@ -50,8 +50,10 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 | `OAUTH_EARLY_PROBE_BATCH_SIZE` | 历史提前探测参数，默认 `8`；保留读取、保存和校验兼容，当前不提前探测，也不用于后台派发上限。 |
 | `OAUTH_RECOVERY_TEST_MODEL_ID` | 恢复测活模型，默认 `gpt-5.6-luna`。 |
 
-`OAUTH_CONFIG_PATH` 中的 JSON 优先于环境变量，环境变量优先于默认值。新建状态和配置文件默认 `0600`，已有权限保持不变。
+`OAUTH_CONFIG_PATH` 中的 JSON 优先于环境变量，环境变量优先于默认值。状态和配置文件在实际写入时统一为 `0600`，不继承旧文件的宽权限；只读检查不修改权限。
 
 ## 安全
 
-Companion 具有账号调度操作权限，不应独立暴露在公网。仅向回环地址或 Docker 内网开放服务，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 保存在 `BARK_CONFIG_PATH`；新文件默认 `0600`，已有文件保留权限并给出安全诊断，密钥不写入 URL、页面、日志或审计明文。不要公开 `.env`、`data/` 或生产日志。
+Companion 具有账号调度操作权限，不应独立暴露在公网。仅向回环地址或 Docker 内网开放服务，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 保存在 `BARK_CONFIG_PATH`；写入文件及使用的文件锁统一为 `0600`，未写入的历史文件仅给出安全诊断，密钥不写入 URL、页面、日志或审计明文。不要公开 `.env`、`data/` 或生产日志。
+
+Bark 的 HTTPS 目标拒绝非公网字面 IP（含 IPv4 映射及数字写法），支持 `api.day.app` 和公网自建服务；现有 HTTP loopback 方式保留。不进行 DNS 解析校验，域名仍需由部署者配置为可信服务。
