@@ -101,8 +101,54 @@ impl Detection {
                     .await?;
             }
         }
-        self.store.transaction(|data| {let value=data["accounts"].as_object_mut().unwrap().entry(id.to_string()).or_insert_with(defaults);if value["generation"]!=disposition["generation"] {return Err(Error::new(409,"人工操作已替代自动处置"));}value["disposition"]=disposition.clone();value["status"]="paused".into();value["reason"]=if disposition["schedule_verified"]==true {json!("已标记降智")}else {disposition.get("reason").cloned().unwrap_or(json!("停调度待核对"))};
-            if !merged && confirmed {if !data["disposition_notifications"].is_object() {data["disposition_notifications"]=json!({});}let at=datetime(self.now());data["disposition_notifications"].as_object_mut().unwrap().entry(string(&disposition["job_id"]).to_owned()).or_insert_with(||json!({"job_id":disposition["job_id"],"account_id":id,"account_name":safe_error(&row["name"],120),"account_type":row["type"],"generation":disposition["generation"],"model_id":disposition["model_id"],"prediction":disposition["prediction"],"probability":disposition["probability"],"triggers":disposition.get("triggers").unwrap_or(&json!([])),"created_at":at,"next_at":at,"attempts":0,"status":"queued"}));}Ok(())})
+        self.store.transaction(|data| {
+            let value = data["accounts"]
+                .as_object_mut()
+                .unwrap()
+                .entry(id.to_string())
+                .or_insert_with(defaults);
+            if value["generation"] != disposition["generation"] {
+                return Err(Error::new(409, "人工操作已替代自动处置"));
+            }
+            value["disposition"] = disposition.clone();
+            value["status"] = "paused".into();
+            value["reason"] = if disposition["schedule_verified"] == true {
+                json!("已标记降智")
+            } else {
+                disposition
+                    .get("reason")
+                    .cloned()
+                    .unwrap_or(json!("停调度待核对"))
+            };
+            if !merged && confirmed {
+                if !data["disposition_notifications"].is_object() {
+                    data["disposition_notifications"] = json!({});
+                }
+                let at = datetime(self.now());
+                data["disposition_notifications"]
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(string(&disposition["job_id"]).to_owned())
+                    .or_insert_with(|| {
+                        json!({
+                            "job_id": disposition["job_id"],
+                            "account_id": id,
+                            "account_name": safe_error(&row["name"], 120),
+                            "account_type": row["type"],
+                            "generation": disposition["generation"],
+                            "model_id": disposition["model_id"],
+                            "prediction": disposition["prediction"],
+                            "probability": disposition["probability"],
+                            "triggers": disposition.get("triggers").unwrap_or(&json!([])),
+                            "created_at": at,
+                            "next_at": at,
+                            "attempts": 0,
+                            "status": "queued"
+                        })
+                    });
+            }
+            Ok(())
+        })
     }
     fn notification_current(&self, event: &Value, current: &Value) -> Result<bool> {
         if !matches!(string(&event["status"]), "queued" | "retry")
