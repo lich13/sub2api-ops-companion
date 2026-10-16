@@ -27,6 +27,7 @@ fn environment(root: &Path, url: &str) -> BTreeMap<String, String> {
         ("USAGE_QUERY_STATE_PATH", "state.json"),
         ("SUB2API_CONFIG_PATH", "connection.json"),
         ("GROUP_MODEL_CONFIG_PATH", "models.json"),
+        ("KEEPALIVE_CONFIG_PATH", "keepalive-state.json"),
     ] {
         env.insert(key.into(), root.join(file).to_string_lossy().into());
     }

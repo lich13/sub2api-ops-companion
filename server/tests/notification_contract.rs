@@ -74,6 +74,7 @@ fn settings(
         fallback_path: root.join("key-fallback-config.json"),
         connection_path: root.join("sub2api-config.json"),
         model_path: root.join("group-model-config.json"),
+        keepalive_path: root.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled": false,
             "oauth_daily_test_enabled": false,
@@ -125,6 +126,10 @@ fn fixture_env(root: &Path, bark_path: &Path) -> BTreeMap<String, String> {
     env.insert(
         "OAUTH_CONFIG_PATH".into(),
         root.join("missing-oauth-config.json").display().to_string(),
+    );
+    env.insert(
+        "KEEPALIVE_CONFIG_PATH".into(),
+        root.join("keepalive-state.json").display().to_string(),
     );
     env
 }

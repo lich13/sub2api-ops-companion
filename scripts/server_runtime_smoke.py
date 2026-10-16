@@ -147,6 +147,7 @@ def service_environment(database_url: str) -> dict[str, str]:
         "KEY_FALLBACK_CONFIG_PATH": "/data/key-fallback-config.json",
         "SUB2API_CONFIG_PATH": "/data/sub2api-config.json",
         "GROUP_MODEL_CONFIG_PATH": "/data/group-model-config.json",
+        "KEEPALIVE_CONFIG_PATH": "/data/keepalive-state.json",
     }
 
 

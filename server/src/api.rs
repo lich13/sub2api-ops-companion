@@ -170,7 +170,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["accounts", _, "operations" | "schedulable" | "recover-state" | "priority" | "test" | "model-tests"
         | "usage-action"] => Some(&["POST"]),
         ["accounts", _, "groups" | "degradation-mark"] => Some(&["PUT"]),
-        ["accounts", _, "model-detection"] => Some(&["GET", "PUT"]),
+        ["accounts", _, "model-detection" | "keepalive"] => Some(&["GET", "PUT"]),
         ["errors" | "usage-records", _] => Some(&["GET"]),
         ["proxies", _, "test" | "quality-check"] => Some(&["POST"]),
         ["account-templates"] => Some(&["GET", "PUT", "POST"]),
@@ -497,6 +497,10 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             crate::model_target::account(&runtime.actions, path_id(id)?).await?;
             runtime.detection.view(path_id(id)?)?
         }
+        ["accounts", id, "keepalive"] if method == Method::GET => {
+            runtime.keepalive.view(path_id(id)?).await?
+        }
+        ["accounts", id, "keepalive"] => runtime.keepalive.save(path_id(id)?, &payload).await?,
         ["accounts", id, "model-detection"] => {
             payload = crate::model_detection::detection_request(&payload)?;
             runtime.detection.save(path_id(id)?, &payload).await?

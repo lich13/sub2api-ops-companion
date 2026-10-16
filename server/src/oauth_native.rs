@@ -136,7 +136,7 @@ pub async fn test(actions: &Actions, id: i64, model: &str, key: &str, seconds: u
     parsed["model_id"] = model.into();
     parsed
 }
-async fn admin(
+pub(crate) async fn admin(
     actions: &Actions,
     id: i64,
     path: &str,

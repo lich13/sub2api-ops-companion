@@ -52,6 +52,7 @@ def safe_environment(state_root: Path, database_url: str, output_root: Path) -> 
     temporary.mkdir(mode=0o700, parents=True, exist_ok=True)
     safe.update({
         "DATABASE_URL": database_url,
+        "KEEPALIVE_CONFIG_PATH": str(state_root / "keepalive-state.json"),
         "STATE_LIFECYCLE_CONTRACT_DIR": str(output_root),
         "RUST_TEST_THREADS": "1",
         "CARGO_NET_OFFLINE": "true",

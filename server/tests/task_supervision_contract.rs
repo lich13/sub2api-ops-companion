@@ -82,6 +82,7 @@ fn fixture_settings(
         fallback_path: directory.join("key-fallback.json"),
         connection_path,
         model_path: directory.join("group-models.json"),
+        keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled":false,
             "oauth_daily_test_enabled":daily_enabled,

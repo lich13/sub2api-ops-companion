@@ -134,6 +134,7 @@ def safe_environment(database_url: str, temporary: Path) -> dict[str, str]:
     env.update(
         {
             "DATABASE_URL": database_url,
+            "KEEPALIVE_CONFIG_PATH": str(temporary / "keepalive-state.json"),
             "TMPDIR": str(scratch),
             "TMP": str(scratch),
             "TEMP": str(scratch),

@@ -46,6 +46,7 @@ fn bank_settings(directory: &std::path::Path, read_only: bool) -> Arc<Settings> 
         fallback_path: directory.join("key-fallback.json"),
         connection_path: directory.join("sub2api-config.json"),
         model_path: directory.join("group-models.json"),
+        keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),
         bark_valid: false,
@@ -632,6 +633,7 @@ impl RuntimeHarness {
             fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
+            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth: json!({
                 "oauth_auto_reset_credit_enabled":false,
                 "oauth_daily_test_enabled":false,

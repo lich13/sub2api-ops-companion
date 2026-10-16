@@ -131,6 +131,7 @@ impl Harness {
             ("USAGE_QUERY_STATE_PATH", "state.json"),
             ("SUB2API_CONFIG_PATH", "connection.json"),
             ("GROUP_MODEL_CONFIG_PATH", "models.json"),
+            ("KEEPALIVE_CONFIG_PATH", "keepalive-state.json"),
         ] {
             env.insert(
                 key.into(),
@@ -523,6 +524,15 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         case!(GET, "accounts/7/settings"),
         case!(GET, "accounts/7/models?purpose=model_test"),
         case!(GET, "accounts/7/model-tests/latest"),
+        case!(GET, "accounts/7/keepalive"),
+        case!(
+            PUT,
+            "accounts/7/keepalive",
+            json!({
+                "enabled":true,
+                "expected_version":version.clone()
+            })
+        ),
         case!(
             POST,
             "accounts/7/operations",
@@ -702,7 +712,7 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
         ),
     ];
-    assert_eq!(cases.len(), 58);
+    assert_eq!(cases.len(), 60);
 
     let mut rejected = Vec::new();
     for (method, route, body) in cases {
@@ -759,6 +769,68 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         no_upstream_business_calls,
         "unauthenticated management and diagnostic requests must not call the upstream"
     );
+}
+
+#[tokio::test]
+async fn keepalive_desktop_api_requires_auth_and_rejects_stale_versions() {
+    let h = Harness::new().await;
+    let account_id = 47_007_i64;
+    sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra) VALUES ($1,'fixture-keepalive-api','openai','oauth','active',true,'{}'::jsonb,'{}'::jsonb)")
+        .bind(account_id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    h.runtime.monitor.store.save_admin_token(ADMIN).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let route = format!("{base}/api/desktop/v1/accounts/{account_id}/keepalive");
+
+    let unauthenticated = client.get(&route).send().await.unwrap();
+    assert_eq!(unauthenticated.status().as_u16(), 401);
+
+    let response = client
+        .get(&route)
+        .header("x-api-key", ADMIN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let current = response.json::<Value>().await.unwrap();
+    assert_eq!(current["enabled"], false);
+    let same_as_current = "a".repeat(64);
+    let stale = if current["version"] == same_as_current {
+        "b".repeat(64)
+    } else {
+        same_as_current
+    };
+    let conflict = client
+        .put(&route)
+        .header("x-api-key", ADMIN)
+        .json(&json!({"enabled":true,"expected_version":stale}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conflict.status().as_u16(), 409);
+
+    let unchanged = client
+        .get(&route)
+        .header("x-api-key", ADMIN)
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(unchanged["enabled"], false);
+    server.abort();
+    let _ = server.await;
+    h.close().await;
 }
 
 #[tokio::test]

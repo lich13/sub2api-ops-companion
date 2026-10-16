@@ -536,6 +536,7 @@ def safe_environment(database_url: str, temporary: Path, export_dir: Path) -> di
     scratch.mkdir(mode=0o700, exist_ok=True)
     env.update({
         "DATABASE_URL": database_url,
+        "KEEPALIVE_CONFIG_PATH": str(temporary / "keepalive-state.json"),
         "TMPDIR": str(scratch),
         "TMP": str(scratch),
         "TEMP": str(scratch),

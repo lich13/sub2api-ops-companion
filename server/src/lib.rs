@@ -23,6 +23,8 @@ pub mod error;
 pub mod error_evidence;
 pub mod execution;
 pub mod fingerprint_bank;
+pub mod keepalive;
+mod keepalive_state;
 pub mod key_fallback;
 pub mod legacy;
 pub mod maintenance;

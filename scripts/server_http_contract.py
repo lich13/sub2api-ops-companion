@@ -894,6 +894,7 @@ class ServiceProcess:
             "BARK_CONFIG_PATH": str(state / "bark-config.json"),
             "KEY_FALLBACK_CONFIG_PATH": str(state / "key-fallback-config.json"),
             "GROUP_MODEL_CONFIG_PATH": str(state / "group-model-config.json"),
+            "KEEPALIVE_CONFIG_PATH": str(state / "keepalive-state.json"),
             "OAUTH_RECOVERY_MONITOR_ENABLED": "false",
             "OAUTH_DAILY_TEST_ENABLED": "false",
             "OAUTH_AUTO_RESET_CREDIT_ENABLED": "false",

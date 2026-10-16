@@ -10,6 +10,7 @@ use crate::{
     error::{Error, Result},
     execution::{DiskLease, TestSlots},
     fingerprint_bank::FingerprintBank,
+    keepalive::Keepalive,
     key_fallback::KeyFallback,
     model_catalog::Catalog,
     model_detection::Detection,
@@ -58,6 +59,7 @@ pub struct Runtime {
     pub monitor: Monitor,
     pub tests: ModelTests,
     pub detection: Detection,
+    pub keepalive: Keepalive,
     pub operations: Arc<Operations>,
     pub catalog: Catalog,
     pub quality: QualityCache,
@@ -95,6 +97,7 @@ impl Runtime {
             ("fallback_config", settings.fallback_path.clone()),
             ("connection_config", settings.connection_path.clone()),
             ("model_config", settings.model_path.clone()),
+            ("keepalive", settings.keepalive_path.clone()),
             ("audit", settings.audit_path.clone()),
             (
                 "operations",
@@ -223,6 +226,7 @@ impl Runtime {
             "operations",
             Operations::new_deferred(actions.clone(), hooks.clone(), budget.clone()),
         )?;
+        let keepalive = Keepalive::new(detection.clone(), operations.clone(), budget.clone());
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
         let mut quality = QualityCache::new(db.clone());
         quality.supervise(actions.supervisor.clone());
@@ -238,6 +242,7 @@ impl Runtime {
             monitor,
             tests,
             detection,
+            keepalive,
             operations,
             catalog,
             quality,
@@ -271,6 +276,7 @@ impl Runtime {
         startup("fallback_config", self.config.fallback.preflight())?;
         startup("model_tests", self.tests.data())?;
         startup("detection", self.detection.store.read())?;
+        startup("keepalive", self.keepalive.store.read())?;
         startup("capacity", self.detection.capacity.store.snapshot())?;
         startup("operations", self.operations.store.read())?;
         startup(
@@ -316,6 +322,7 @@ impl Runtime {
             self.detection.capacity.retire_legacy(chrono::Utc::now()),
         )?;
         startup("detection", self.detection.migrate_dispatches())?;
+        startup("keepalive", self.keepalive.startup())?;
         startup("legacy_templates", self.retire_legacy_templates().await)?;
         startup("monitor", self.monitor.startup().await)?;
         self.detection.capacity.store.transaction(|state| {
@@ -335,6 +342,8 @@ impl Runtime {
             ("fallback", 30000),
             ("capacity", 2000),
             ("detection", 2000),
+            ("keepalive", 2000),
+            ("keepalive_notifications", 2000),
             ("disposition", 2000),
             ("route", 30000),
             ("bank", 300000),
@@ -369,6 +378,8 @@ impl Runtime {
                         "fallback" => runtime.monitor.fallback().await.map(|_| ()),
                         "capacity" => runtime.detection.capacity.poll().await,
                         "detection" => runtime.detection.tick().await,
+                        "keepalive" => runtime.keepalive.tick().await,
+                        "keepalive_notifications" => runtime.keepalive.deliver().await,
                         "disposition" => runtime.detection.deliver_notifications().await,
                         "route" => {
                             runtime.refresh_route().await;
@@ -513,6 +524,7 @@ impl Runtime {
             self.operations.close(),
             self.monitor.drain(55),
             self.tests.close(),
+            self.keepalive.close(),
             self.quality.close(),
             self.requests.close(55),
             self.proxies.close(55),

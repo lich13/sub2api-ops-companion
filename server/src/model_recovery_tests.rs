@@ -21,12 +21,16 @@ use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
     fs,
     sync::{
-        atomic::{AtomicI64, Ordering},
+        atomic::{AtomicI64, AtomicUsize, Ordering},
         Arc, Mutex as StdMutex,
     },
     time::Duration as StdDuration,
 };
-use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
+use tokio::{
+    net::TcpListener,
+    sync::{Notify, Semaphore},
+    task::JoinHandle,
+};
 
 const ADMIN_KEY: &str = "fixture-admin-automation-contract";
 const SUCCESS_TEST_SSE: &str = "data: {\"type\":\"test_start\",\"model\":\"fixture-model\"}\n\ndata: {\"type\":\"test_complete\",\"success\":true}\n\n";
@@ -51,6 +55,8 @@ fn method_name(method: &Method) -> &'static str {
     match *method {
         Method::GET => "GET",
         Method::POST => "POST",
+        Method::DELETE => "DELETE",
+        Method::PUT => "PUT",
         _ => "OTHER",
     }
 }
@@ -77,6 +83,21 @@ impl Gate {
 }
 
 #[derive(Clone)]
+struct BulkGate {
+    entered: Arc<AtomicUsize>,
+    release: Arc<Semaphore>,
+}
+
+impl BulkGate {
+    fn new() -> Self {
+        Self {
+            entered: Arc::new(AtomicUsize::new(0)),
+            release: Arc::new(Semaphore::new(0)),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct MockUpstream {
     pool: PgPool,
     clock: Arc<StdMutex<DateTime<Utc>>>,
@@ -91,6 +112,16 @@ struct MockUpstream {
     model_output: Arc<StdMutex<String>>,
     expected_responses_model: Arc<StdMutex<String>>,
     reset_uncertain: Arc<StdMutex<bool>>,
+    temp_delete: Arc<StdMutex<TempDelete>>,
+    temp_delete_gate: Arc<StdMutex<Option<Gate>>>,
+    bulk_delete_gate: Arc<StdMutex<Option<BulkGate>>>,
+    delete_started: Arc<Notify>,
+}
+
+#[derive(Clone, Copy)]
+struct TempDelete {
+    status: u16,
+    clear_database: bool,
 }
 
 impl MockUpstream {
@@ -109,6 +140,13 @@ impl MockUpstream {
             model_output: Arc::new(StdMutex::new(sample("above_99"))),
             expected_responses_model: Arc::new(StdMutex::new("gpt-6-luna".into())),
             reset_uncertain: Arc::new(StdMutex::new(false)),
+            temp_delete: Arc::new(StdMutex::new(TempDelete {
+                status: 200,
+                clear_database: true,
+            })),
+            temp_delete_gate: Arc::new(StdMutex::new(None)),
+            bulk_delete_gate: Arc::new(StdMutex::new(None)),
+            delete_started: Arc::new(Notify::new()),
         }
     }
 
@@ -147,6 +185,31 @@ impl MockUpstream {
     fn set_expected_responses_model(&self, model: impl Into<String>) {
         *self.expected_responses_model.lock().unwrap() = model.into();
     }
+
+    fn set_temp_delete(&self, status: u16, clear_database: bool) {
+        *self.temp_delete.lock().unwrap() = TempDelete {
+            status,
+            clear_database,
+        };
+    }
+
+    fn set_temp_delete_gate(&self, gate: Option<Gate>) {
+        *self.temp_delete_gate.lock().unwrap() = gate;
+    }
+
+    fn set_bulk_delete_gate(&self, gate: Option<BulkGate>) {
+        *self.bulk_delete_gate.lock().unwrap() = gate;
+    }
+
+    fn temp_delete_ids(&self) -> Vec<i64> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call.method == "DELETE")
+            .filter_map(|call| path_id(&call.path, "/temp-unschedulable"))
+            .collect()
+    }
 }
 
 fn json_response(value: Value) -> Response {
@@ -167,6 +230,49 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     let bytes = to_bytes(body, 2_000_000).await.unwrap_or_default();
     let payload = serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null);
     state.record(&method, &path);
+
+    if method == Method::GET && path == "/api/v1/admin/groups/all" {
+        assert_eq!(parts.headers.get("x-api-key").unwrap(), ADMIN_KEY);
+        return json_response(json!({"code":0,"data":[]}));
+    }
+
+    if method == Method::DELETE && path.ends_with("/temp-unschedulable") {
+        let Some(id) = path_id(&path, "/temp-unschedulable") else {
+            return (StatusCode::NOT_FOUND, Json(json!({"code":1}))).into_response();
+        };
+        assert_eq!(parts.headers.get("x-api-key").unwrap(), ADMIN_KEY);
+        state.delete_started.notify_one();
+        let bulk_delete_gate = state.bulk_delete_gate.lock().unwrap().clone();
+        let delete_gate = state.temp_delete_gate.lock().unwrap().clone();
+        if let Some(gate) = bulk_delete_gate {
+            gate.entered.fetch_add(1, Ordering::SeqCst);
+            gate.release
+                .acquire()
+                .await
+                .expect("bulk DELETE gate remains open")
+                .forget();
+        } else if let Some(gate) = delete_gate {
+            gate.entered.notify_one();
+            gate.release.notified().await;
+        }
+        let mode = *state.temp_delete.lock().unwrap();
+        let status = StatusCode::from_u16(mode.status).expect("fixture HTTP status");
+        if status.is_success() && mode.clear_database {
+            sqlx::query("UPDATE accounts SET temp_unschedulable_until=NULL,temp_unschedulable_reason=NULL,extra=coalesce(extra,'{}'::jsonb)-'model_rate_limits',updated_at=$1 WHERE id=$2")
+                .bind(state.now())
+                .bind(id)
+                .execute(&state.pool)
+                .await
+                .expect("simulate native temp pause and model-limit cleanup");
+        }
+        return Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(format!(
+                "{{\"code\":0,\"data\":{{\"id\":{id}}}}}"
+            )))
+            .expect("fixture temp-unschedulable response");
+    }
 
     if method == Method::GET && path.ends_with("/models") {
         return json_response(json!({
@@ -413,6 +519,7 @@ impl Harness {
             fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
+            keepalive_path: temp.path().join("keepalive-state.json"),
             oauth,
             bark: json!({
                 "enabled": true,
@@ -506,6 +613,10 @@ impl Harness {
     async fn restart(&mut self) {
         let runtime = self.runtime.0.take().unwrap();
         let settings = runtime.settings.as_ref().clone();
+        self.replace_runtime(runtime, settings).await;
+    }
+
+    async fn replace_runtime(&mut self, runtime: Arc<Runtime>, settings: Settings) {
         runtime.close().await;
         drop(runtime);
         let clock = self.clock.clone();
@@ -518,6 +629,11 @@ impl Harness {
             .tests
             .set_test_endpoint(&format!("{}/v1/responses", self.base_url))
             .unwrap();
+    }
+
+    async fn restart_with_settings(&mut self, settings: Settings) {
+        let runtime = self.runtime.0.take().unwrap();
+        self.replace_runtime(runtime, settings).await;
     }
 }
 
@@ -1542,5 +1658,915 @@ async fn credit_model_failed_evidence_read_never_falls_back_or_consumes() {
         true
     );
     assert!(h.runtime.monitor.lease(&row).is_ok());
+    h.close().await;
+}
+
+fn temp_reason(
+    now: DateTime<Utc>,
+    until: DateTime<Utc>,
+    status_code: i64,
+    matched_keyword: &str,
+    rule_index: i64,
+    error_message: &str,
+) -> String {
+    serde_json::to_string(&json!({
+        "until_unix": until.timestamp(),
+        "triggered_at_unix": (now - Duration::seconds(30)).timestamp(),
+        "status_code": status_code,
+        "matched_keyword": matched_keyword,
+        "rule_index": rule_index,
+        "error_message": error_message,
+    }))
+    .unwrap()
+}
+
+fn keepalive_row(now: DateTime<Utc>, until: DateTime<Utc>) -> Value {
+    json!({
+        "id": 7,
+        "deleted_at": null,
+        "status": "active",
+        "schedulable": true,
+        "rate_limited_at": null,
+        "overload_until": null,
+        "temp_unschedulable_until": datetime(until),
+        "temp_unschedulable_reason": temp_reason(
+            now,
+            until,
+            500,
+            "server_error",
+            0,
+            "fixture upstream failure"
+        ),
+    })
+}
+
+async fn seed_keepalive_account(
+    h: &Harness,
+    parent: Option<i64>,
+    include_model_limits: bool,
+) -> i64 {
+    let row = h.seed_account("oauth", true, false).await;
+    let id = integer(&row["id"]).unwrap();
+    let mut extra = json!({});
+    if let Some(parent) = parent {
+        extra["parent_account_id"] = parent.into();
+    }
+    if include_model_limits {
+        extra["model_rate_limits"] = json!({
+            "fixture-model": {
+                "limit": 100,
+                "used": 17,
+                "rate_limit_reset_at": datetime(h.now() + Duration::hours(2))
+            }
+        });
+    }
+    let rate_reset = include_model_limits.then_some(h.now() + Duration::hours(2));
+    sqlx::query(
+        "UPDATE accounts SET parent_account_id=$1,extra=$2,rate_limit_reset_at=$3 WHERE id=$4",
+    )
+    .bind(parent)
+    .bind(SqlJson(extra))
+    .bind(rate_reset)
+    .bind(id)
+    .execute(&h.runtime.db.pool)
+    .await
+    .expect("attach synthetic parent and model-limit fixture data");
+    id
+}
+
+async fn set_keepalive_incident(h: &Harness, id: i64, at: DateTime<Utc>, until: DateTime<Utc>) {
+    let reason = temp_reason(
+        at,
+        until,
+        500,
+        "server_error",
+        0,
+        "fixture upstream failure",
+    );
+    sqlx::query("UPDATE accounts SET temp_unschedulable_until=$1,temp_unschedulable_reason=$2,updated_at=$3 WHERE id=$4")
+        .bind(until)
+        .bind(reason)
+        .bind(at)
+        .bind(id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .expect("seed a native-shaped temporary scheduling pause");
+}
+
+async fn enable_keepalive(h: &Harness, id: i64) -> Value {
+    let view = h.runtime.keepalive.view(id).await.unwrap();
+    h.runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":true,"expected_version":view["version"]}),
+        )
+        .await
+        .unwrap()
+}
+
+async fn wait_control<F>(h: &Harness, id: i64, mut ready: F) -> crate::keepalive_state::Control
+where
+    F: FnMut(&crate::keepalive_state::Control) -> bool,
+{
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let control = h.runtime.keepalive.control(id).unwrap();
+            if ready(&control) {
+                return control;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("keepalive worker should persist its terminal state")
+}
+
+async fn wait_view_status(h: &Harness, id: i64, status: &str) -> Value {
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        loop {
+            let view = h.runtime.keepalive.view(id).await.unwrap();
+            if view["status"] == status {
+                return view;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("keepalive view should leave the transient running state")
+}
+
+async fn wait_delete_started(h: &Harness) {
+    tokio::time::timeout(StdDuration::from_secs(5), h.mock.delete_started.notified())
+        .await
+        .expect("keepalive should send its loopback DELETE request");
+}
+
+async fn wait_delete_count(h: &Harness, expected: usize) {
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        while h.mock.temp_delete_ids().len() < expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("keepalive dispatcher should reach the expected DELETE count");
+}
+
+#[test]
+fn keepalive_requires_six_native_row_conditions_and_exact_reason_shape() {
+    let now = reference_time();
+    let until = now + Duration::minutes(5);
+    let original = keepalive_row(now, until);
+    assert_eq!(crate::keepalive_state::row_reason(&original, now), "");
+    assert_eq!(
+        crate::keepalive_state::eligible_reason(&original),
+        Ok("临时错误策略")
+    );
+
+    let mut deleted = original.clone();
+    deleted["deleted_at"] = datetime(now).into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&deleted, now),
+        "账号已删除"
+    );
+
+    let mut inactive = original.clone();
+    inactive["status"] = "disabled".into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&inactive, now),
+        "账号停用或认证异常"
+    );
+
+    let mut unschedulable = original.clone();
+    unschedulable["schedulable"] = false.into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&unschedulable, now),
+        "调度已关闭"
+    );
+
+    let mut rate_limited = original.clone();
+    rate_limited["rate_limited_at"] = datetime(now).into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&rate_limited, now),
+        "账号限流或过载不参与保活"
+    );
+
+    let mut overloaded = original.clone();
+    overloaded["overload_until"] = datetime(until).into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&overloaded, now),
+        "账号限流或过载不参与保活"
+    );
+
+    let mut expired = original.clone();
+    expired["temp_unschedulable_until"] = datetime(now - Duration::seconds(1)).into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&expired, now),
+        "等待临时不可调度"
+    );
+
+    let mut malformed = original.clone();
+    malformed["temp_unschedulable_reason"] = "{".into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&malformed, now),
+        "暂停原因无法识别"
+    );
+
+    let mut missing_fields = original.clone();
+    missing_fields["temp_unschedulable_reason"] =
+        json!({"status_code":500,"rule_index":0}).to_string().into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&missing_fields, now),
+        "暂停原因无法识别"
+    );
+
+    let mut threshold_missing_fields = original.clone();
+    threshold_missing_fields["temp_unschedulable_reason"] =
+        json!({"source":"account_scheduling_threshold"})
+            .to_string()
+            .into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&threshold_missing_fields, now),
+        "额度阈值暂停不参与保活"
+    );
+
+    let mut mismatched_until = original.clone();
+    let mut reason: Value = serde_json::from_str(
+        mismatched_until["temp_unschedulable_reason"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    reason["until_unix"] = (until.timestamp() + 1).into();
+    mismatched_until["temp_unschedulable_reason"] = reason.to_string().into();
+    assert_eq!(
+        crate::keepalive_state::row_reason(&mismatched_until, now),
+        "暂停原因无法识别"
+    );
+
+    let mut stream_timeout = original;
+    stream_timeout["temp_unschedulable_reason"] = temp_reason(
+        now,
+        until,
+        0,
+        "stream_timeout",
+        -1,
+        "upstream stream exceeded its deadline",
+    )
+    .into();
+    assert_eq!(crate::keepalive_state::row_reason(&stream_timeout, now), "");
+    assert_eq!(
+        crate::keepalive_state::eligible_reason(&stream_timeout),
+        Ok("流响应超时")
+    );
+}
+
+#[tokio::test]
+async fn keepalive_defaults_off_persists_privately_and_preserves_corruption() {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let path = h.runtime.settings.keepalive_path.clone();
+    assert!(
+        !path.exists(),
+        "default keepalive state must not be created"
+    );
+    let initial = h.runtime.keepalive.view(id).await.unwrap();
+    assert_eq!(initial["enabled"], false);
+    assert_eq!(initial["status"], "disabled");
+    assert!(!path.exists(), "reading the default must remain read-only");
+
+    let saved = h
+        .runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":true,"expected_version":initial["version"]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["enabled"], true);
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    let stale = h
+        .runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":false,"expected_version":initial["version"]}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(stale.status.as_u16(), 409);
+
+    h.restart().await;
+    h.runtime.keepalive.startup().unwrap();
+    assert_eq!(h.runtime.keepalive.view(id).await.unwrap()["enabled"], true);
+
+    fs::write(&path, b"{").unwrap();
+    assert!(h.runtime.keepalive.view(id).await.is_err());
+    let corrupt = h
+        .runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":false,"expected_version":"a".repeat(64)}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(corrupt.status.as_u16(), 503);
+    assert_eq!(fs::read(&path).unwrap(), b"{");
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_read_only_mode_does_not_create_default_state_or_dispatch() {
+    let mut h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    set_keepalive_incident(&h, id, h.now(), h.now() + Duration::minutes(5)).await;
+    let mut settings = h.runtime.settings.as_ref().clone();
+    settings.read_only = true;
+    h.restart_with_settings(settings).await;
+
+    let path = h.runtime.settings.keepalive_path.clone();
+    let view = h.runtime.keepalive.view(id).await.unwrap();
+    assert_eq!(view["enabled"], false);
+    assert_eq!(view["read_only"], true);
+    assert!(h
+        .runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":true,"expected_version":view["version"]}),
+        )
+        .await
+        .is_err());
+    h.runtime.keepalive.tick().await.unwrap();
+    assert!(!path.exists());
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_save_failure_leaves_state_unwritten() {
+    let mut h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let blocker = h._temp.path().join("keepalive-parent-blocker");
+    let mut settings = h.runtime.settings.as_ref().clone();
+    settings.keepalive_path = blocker.join("keepalive-state.json");
+    h.restart_with_settings(settings).await;
+    fs::write(&blocker, b"fixture file blocks a state directory").unwrap();
+
+    let failed = h
+        .runtime
+        .keepalive
+        .save(
+            id,
+            &json!({"enabled":true,"expected_version":"b".repeat(64)}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(failed.status.as_u16(), 500);
+    assert_eq!(
+        fs::read(&blocker).unwrap(),
+        b"fixture file blocks a state directory"
+    );
+    assert!(!h.runtime.settings.keepalive_path.exists());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_delete_confirms_temp_pause_and_preserves_account_scheduling() {
+    let h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, true).await;
+    let now = h.now();
+    set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+    let before = h.runtime.monitor.row(id).await.unwrap();
+    enable_keepalive(&h, id).await;
+
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let control = wait_control(&h, id, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(now) && c.restores.len() == 1
+    })
+    .await;
+    assert!(control.enabled);
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+    assert_eq!(h.mock.count("POST", "/schedulable"), 0);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+
+    let after = h.runtime.monitor.row(id).await.unwrap();
+    assert!(after["temp_unschedulable_until"].is_null());
+    assert!(after["temp_unschedulable_reason"].is_null());
+    assert_eq!(after["status"], before["status"]);
+    assert_eq!(after["schedulable"], true);
+    assert_eq!(after["rate_limit_reset_at"], before["rate_limit_reset_at"]);
+    assert!(before["extra"]["model_rate_limits"].is_object());
+    assert!(after["extra"]["model_rate_limits"].is_null());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_unknown_outcome_survives_restart_and_reserves_new_pause_budget() {
+    let mut h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let now = h.now();
+    set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+    enable_keepalive(&h, id).await;
+    h.mock.set_temp_delete(200, false);
+
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let unknown = wait_view_status(&h, id, "needs_confirmation").await;
+    assert_eq!(unknown["enabled"], true);
+    assert_eq!(unknown["budget_used"], 1);
+    let control = h.runtime.keepalive.control(id).unwrap();
+    assert!(control.pending.is_some());
+    assert_eq!(control.reservations.len(), 1);
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    h.restart().await;
+    h.runtime.keepalive.startup().unwrap();
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(id).await.unwrap()["status"],
+        "needs_confirmation"
+    );
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    let next = h.now();
+    set_keepalive_incident(&h, id, next, next + Duration::minutes(6)).await;
+    h.runtime.keepalive.tick().await.unwrap();
+    let superseded = wait_control(&h, id, |c| c.pending.is_none()).await;
+    assert_eq!(superseded.reservations.len(), 1);
+    assert_eq!(
+        h.runtime.keepalive.view(id).await.unwrap()["budget_used"],
+        1
+    );
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    h.set_now(next + Duration::seconds(59));
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    let restore_at = next + Duration::seconds(60);
+    h.set_now(restore_at);
+    h.mock.set_temp_delete(200, true);
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let confirmed = wait_control(&h, id, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(restore_at)
+    })
+    .await;
+    assert_eq!(confirmed.reservations.len(), 1);
+    assert_eq!(confirmed.restores.len(), 1);
+    assert_eq!(
+        h.runtime.keepalive.view(id).await.unwrap()["budget_used"],
+        2
+    );
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_explicit_failure_uses_injected_backoff_without_early_retry() {
+    let h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let now = h.now();
+    set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+    enable_keepalive(&h, id).await;
+    h.mock.set_temp_delete(503, false);
+
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let failed = wait_control(&h, id, |c| c.failures == 1 && c.pending.is_none()).await;
+    assert_eq!(failed.retry_at, Some(now + Duration::seconds(5)));
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    h.set_now(now + Duration::seconds(4));
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    h.set_now(now + Duration::seconds(5));
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let retried = wait_control(&h, id, |c| c.failures == 2 && c.pending.is_none()).await;
+    assert_eq!(retried.retry_at, Some(now + Duration::seconds(35)));
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_spaces_restores_stops_at_five_and_keeps_rolling_budget_after_reenable() {
+    let h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    let start = h.now();
+    set_keepalive_incident(&h, id, start, start + Duration::minutes(5)).await;
+    enable_keepalive(&h, id).await;
+
+    for attempt in 1..=5 {
+        let restore_at = start + Duration::seconds((attempt as i64 - 1) * 60);
+        if attempt > 1 {
+            let preflight = restore_at - Duration::seconds(1);
+            h.set_now(preflight);
+            set_keepalive_incident(&h, id, preflight, preflight + Duration::minutes(5)).await;
+            h.runtime.keepalive.tick().await.unwrap();
+            assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), attempt - 1);
+            h.set_now(restore_at);
+        }
+        h.runtime.keepalive.tick().await.unwrap();
+        wait_delete_started(&h).await;
+        let complete = wait_control(&h, id, |c| {
+            c.pending.is_none()
+                && c.last_restore_at == Some(restore_at)
+                && c.restores.len() == attempt
+        })
+        .await;
+        assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), attempt);
+        if attempt < 5 {
+            assert!(complete.enabled);
+        } else {
+            assert!(!complete.enabled);
+            assert_eq!(complete.paused_reason, "恢复过于频繁");
+        }
+    }
+
+    h.runtime.keepalive.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 1);
+    h.runtime.keepalive.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 1);
+    let stopped = h.runtime.keepalive.control(id).unwrap();
+    assert_eq!(stopped.notifications.last().unwrap().status, "delivered");
+
+    let reenabled_at = start + Duration::seconds(300);
+    h.set_now(reenabled_at);
+    enable_keepalive(&h, id).await;
+    let reenabled = h.runtime.keepalive.control(id).unwrap();
+    assert!(reenabled.enabled);
+    assert_eq!(reenabled.restores.len(), 5);
+    assert_eq!(
+        h.runtime.keepalive.view(id).await.unwrap()["budget_used"],
+        5
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 5);
+
+    let almost_one_hour = start + Duration::seconds(3599);
+    h.set_now(almost_one_hour);
+    set_keepalive_incident(
+        &h,
+        id,
+        almost_one_hour,
+        almost_one_hour + Duration::minutes(5),
+    )
+    .await;
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 5);
+
+    let one_hour = start + Duration::hours(1);
+    h.set_now(one_hour);
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let rolled = wait_control(&h, id, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(one_hour)
+    })
+    .await;
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 6);
+    assert!(
+        !rolled.enabled,
+        "the fifth restore in the new rolling hour pauses again"
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_restart_never_redelivers_an_interrupted_bark_notice() {
+    let mut h = Harness::new().await;
+    let id = seed_keepalive_account(&h, None, false).await;
+    h.runtime
+        .keepalive
+        .store
+        .transaction(|data| {
+            let control = crate::keepalive_state::Control {
+                enabled: false,
+                generation: 3,
+                notifications: vec![crate::keepalive_state::Notice {
+                    id: "fixture-interrupted-notice".into(),
+                    generation: 3,
+                    status: "sending".into(),
+                    attempts: 1,
+                    next_at: None,
+                }],
+                ..Default::default()
+            };
+            data["accounts"][id.to_string()] = serde_json::to_value(control).unwrap();
+            Ok(())
+        })
+        .unwrap();
+
+    h.restart().await;
+    h.runtime.keepalive.startup().unwrap();
+    let control = h.runtime.keepalive.control(id).unwrap();
+    assert_eq!(control.notifications[0].status, "needs_confirmation");
+    h.runtime.keepalive.deliver().await.unwrap();
+    h.runtime.keepalive.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 0);
+    assert_eq!(
+        h.runtime.keepalive.control(id).unwrap().notifications[0].status,
+        "needs_confirmation"
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_blocks_parent_manual_model_and_degradation_recovery_work() {
+    let h = Harness::new().await;
+    let parent = seed_keepalive_account(&h, None, false).await;
+    let child = seed_keepalive_account(&h, Some(parent), false).await;
+    let now = h.now();
+    set_keepalive_incident(&h, child, now, now + Duration::minutes(5)).await;
+    enable_keepalive(&h, child).await;
+
+    let operation_id = "fixture-parent-manual-operation";
+    h.runtime
+        .operations
+        .store
+        .0
+        .transaction(|state| {
+            state["jobs"][operation_id] = json!({
+                "id":operation_id,
+                "account_id":parent,
+                "payload":{},
+                "status":"queued"
+            });
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(child).await.unwrap()["reason"],
+        "等待人工操作完成或核对"
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+
+    h.runtime
+        .operations
+        .store
+        .0
+        .transaction(|state| {
+            state["jobs"][operation_id]["status"] = "completed".into();
+            Ok(())
+        })
+        .unwrap();
+    let model_job = "fixture-parent-model-test";
+    h.runtime
+        .tests
+        .store
+        .transaction(|state| {
+            state["jobs"][model_job] = json!({
+                "id":model_job,
+                "account_id":parent,
+                "status":"queued"
+            });
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(child).await.unwrap()["reason"],
+        "模型测试或复查正在排队或执行"
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+
+    h.runtime
+        .tests
+        .store
+        .transaction(|state| {
+            state["jobs"][model_job]["status"] = "completed".into();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime
+        .detection
+        .update(
+            child,
+            json!({
+                "hold":true,
+                "recheck_recovery":{"status":"pending","job_id":"fixture-recheck"}
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(child).await.unwrap()["reason"],
+        "检测处置未释放，保活暂停"
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+
+    h.runtime
+        .detection
+        .update(child, json!({"hold":false}))
+        .unwrap();
+    h.runtime
+        .detection
+        .capacity
+        .store
+        .transaction(|state| {
+            state["marks"][child.to_string()] = json!({
+                "marked":true,
+                "marked_at":datetime(now),
+                "changed_at":datetime(now)
+            });
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(child).await.unwrap()["reason"],
+        "已判定降智，保活暂停"
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+
+    h.runtime
+        .detection
+        .capacity
+        .store
+        .transaction(|state| {
+            state["marks"][child.to_string()] = json!({
+                "marked":false,
+                "marked_at":null,
+                "changed_at":datetime(now)
+            });
+            Ok(())
+        })
+        .unwrap();
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][parent.to_string()]["recovery_intent"] = json!({"status":"running"});
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        h.runtime.keepalive.view(child).await.unwrap()["reason"],
+        "等待恢复任务完成"
+    );
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 0);
+
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][parent.to_string()]["recovery_intent"]["status"] =
+                "recovered".into();
+            Ok(())
+        })
+        .unwrap();
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let restored = wait_control(&h, child, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(now)
+    })
+    .await;
+    assert!(restored.enabled);
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_sibling_dispatches_share_the_parent_account_lock() {
+    let h = Harness::new().await;
+    let parent = seed_keepalive_account(&h, None, false).await;
+    let first = seed_keepalive_account(&h, Some(parent), false).await;
+    let second = seed_keepalive_account(&h, Some(parent), false).await;
+    let now = h.now();
+    for id in [first, second] {
+        set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+        enable_keepalive(&h, id).await;
+    }
+    let gate = Gate::new();
+    h.mock.set_temp_delete_gate(Some(gate.clone()));
+    h.runtime.keepalive.tick().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
+        .await
+        .expect("first sibling should hold the shared parent lock while dispatching");
+    let dispatched = h.mock.temp_delete_ids();
+    assert_eq!(dispatched.len(), 1);
+    let first_id = dispatched[0];
+    let blocked_id = if first_id == first { second } else { first };
+    let blocked = wait_view_status(&h, blocked_id, "waiting").await;
+    assert_eq!(blocked["enabled"], true);
+    assert_eq!(
+        h.runtime.keepalive.view(first_id).await.unwrap()["status"],
+        "running"
+    );
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 1);
+
+    gate.release.notify_one();
+    let completed = wait_control(&h, first_id, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(now)
+    })
+    .await;
+    assert_eq!(completed.restores.len(), 1);
+    h.mock.set_temp_delete_gate(None);
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_started(&h).await;
+    let sibling_completed = wait_control(&h, blocked_id, |c| {
+        c.pending.is_none() && c.last_restore_at == Some(now)
+    })
+    .await;
+    assert_eq!(sibling_completed.restores.len(), 1);
+    assert_eq!(h.mock.count("DELETE", "/temp-unschedulable"), 2);
+    assert_eq!(h.mock.count("POST", "/schedulable"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn keepalive_dispatch_is_limited_to_eight_and_releases_capacity_and_locks() {
+    let h = Harness::new().await;
+    let mut ids = Vec::new();
+    for _ in 0..9 {
+        let id = seed_keepalive_account(&h, None, false).await;
+        let now = h.now();
+        set_keepalive_incident(&h, id, now, now + Duration::minutes(5)).await;
+        enable_keepalive(&h, id).await;
+        ids.push(id);
+    }
+    let gate = BulkGate::new();
+    h.mock.set_bulk_delete_gate(Some(gate.clone()));
+
+    h.runtime.keepalive.tick().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(5), async {
+        while gate.entered.load(Ordering::SeqCst) < 8 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("first tick should dispatch eight independent account restores");
+    assert_eq!(gate.entered.load(Ordering::SeqCst), 8);
+    assert_eq!(h.mock.temp_delete_ids().len(), 8);
+
+    h.runtime.keepalive.tick().await.unwrap();
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    let mut in_flight = 0;
+    for id in &ids {
+        if h.runtime.keepalive.view(*id).await.unwrap()["status"] == "running" {
+            in_flight += 1;
+        }
+    }
+    assert_eq!(in_flight, 8);
+    assert_eq!(gate.entered.load(Ordering::SeqCst), 8);
+    assert_eq!(h.mock.temp_delete_ids().len(), 8);
+
+    gate.release.add_permits(8);
+    let now = h.now();
+    for id in &ids[..8] {
+        let completed = wait_control(&h, *id, |c| {
+            c.pending.is_none() && c.last_restore_at == Some(now)
+        })
+        .await;
+        assert_eq!(completed.restores.len(), 1);
+        wait_view_status(&h, *id, "waiting").await;
+    }
+
+    h.mock.set_bulk_delete_gate(None);
+    h.runtime.keepalive.tick().await.unwrap();
+    wait_delete_count(&h, 9).await;
+    let completed = wait_control(&h, ids[8], |c| {
+        c.pending.is_none() && c.last_restore_at == Some(now)
+    })
+    .await;
+    assert_eq!(completed.restores.len(), 1);
+    for id in &ids {
+        wait_view_status(&h, *id, "waiting").await;
+    }
+    assert_eq!(h.mock.temp_delete_ids().len(), 9);
+
+    for id in &ids {
+        let view = h.runtime.keepalive.view(*id).await.unwrap();
+        let saved = tokio::time::timeout(
+            StdDuration::from_secs(5),
+            h.runtime.keepalive.save(
+                *id,
+                &json!({"enabled":false,"expected_version":view["version"]}),
+            ),
+        )
+        .await
+        .expect("released keepalive control lock should be reusable")
+        .unwrap();
+        assert_eq!(saved["enabled"], false);
+    }
+    h.runtime.keepalive.tick().await.unwrap();
+    assert_eq!(h.mock.temp_delete_ids().len(), 9);
     h.close().await;
 }

@@ -360,6 +360,7 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
         "OAUTH_CONFIG_PATH": str(oauth_path),
         "BARK_CONFIG_PATH": str(bark_path),
         "KEY_FALLBACK_CONFIG_PATH": str(priority_root / "key-fallback.json"),
+        "KEEPALIVE_CONFIG_PATH": str(priority_root / "keepalive-state.json"),
     }
     with patch.dict(os.environ, env_for_settings, clear=True):
         settings = load_settings()

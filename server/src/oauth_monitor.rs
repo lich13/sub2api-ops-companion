@@ -91,6 +91,12 @@ impl Monitor {
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Acquire) || self.actions.supervisor.is_stopping()
     }
+    pub(crate) fn processing(&self, id: i64) -> bool {
+        self.workers
+            .try_lock()
+            .map(|workers| workers.contains_key(&id))
+            .unwrap_or(true)
+    }
     pub fn state(&self) -> Result<Value> {
         self.store.snapshot()
     }

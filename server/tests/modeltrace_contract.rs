@@ -437,6 +437,7 @@ fn settings_at(directory: &Path, read_only: bool) -> Arc<Settings> {
         fallback_path: directory.join("fallback.json"),
         connection_path: directory.join("connection.json"),
         model_path: directory.join("model.json"),
+        keepalive_path: directory.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),
         bark_valid: false,

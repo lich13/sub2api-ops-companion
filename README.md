@@ -7,9 +7,10 @@ Sub2API 的 Rust 旁路运维服务，提供 OAuth 额度监控、Bark 事件推
 - OAuth 额度监控：等待恢复时间后确认额度，统一限制自动查询并执行恢复后测活。
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
+- 账号保活：按账号选择是否清除符合条件的临时不可调度，所有平台默认关闭；保留人工调度、降智标记及恢复限额。
 - Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key；存在可用 OAuth 时，勾选“OAuth 可用时也启用”的 Key 保持开启，其余关闭。没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
 
-机制说明：[OAuth 监控](docs/oauth-monitoring.md)、[模型检测](docs/model-detection.md)、[自动用卡](docs/automatic-credit.md)、[账号测试](docs/account-operations.md)、[模型目录](docs/model-catalog.md)。升级和回退见 [UPGRADING.md](UPGRADING.md)。
+机制说明：[OAuth 监控](docs/oauth-monitoring.md)、[模型检测](docs/model-detection.md)、[账号保活](docs/keepalive.md)、[自动用卡](docs/automatic-credit.md)、[账号测试](docs/account-operations.md)、[模型目录](docs/model-catalog.md)。升级和回退见 [UPGRADING.md](UPGRADING.md)。
 
 ## 运行
 
@@ -36,12 +37,13 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 | `SUB2API_BASE_URL` | Sub2API 公网根地址。 |
 | `SUB2API_VERIFY_BASE_URL` | 可选的服务端内网校验根地址。 |
 | `GROUP_MODEL_CONFIG_PATH` | 分组思考档位补全文件，默认 `/data/group-model-config.json`；按分组版本校验。 |
+| `KEEPALIVE_CONFIG_PATH` | 账号保活设置、恢复预算和待核对记录，默认 `/data/keepalive-state.json`；所有账号默认关闭。 |
 | `DATABASE_URL` | Sub2API PostgreSQL 连接串。 |
 | `BASE_PATH` | 历史兼容字段，默认 `/sub2ops`；外部前缀须由 nginx 配置并剥离，Rust 不据此挂载路由。 |
 | `USAGE_QUERY_STATE_PATH` | OAuth 快照、管理员 API Key 和调度元数据，默认 `/data/usage-query-state.json`。 |
 | `OAUTH_CONFIG_PATH` | OAuth 自动化配置，默认 `/data/oauth-config.json`；JSON 优先于环境变量，环境变量优先于默认值。 |
 | `BARK_CONFIG_PATH` | Bark 配置文件，默认 `/data/bark-config.json`。 |
-| `BARK_ENABLED` | 是否启用 OAuth 事件的 Bark 推送，默认关闭。 |
+| `BARK_ENABLED` | 是否启用事件 Bark 推送（含账号保活达到频率上限后的暂停通知），默认关闭。 |
 | `BARK_DEVICE_KEY` | Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。 |
 | `BARK_SERVER_URL` | Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。 |
 | `KEY_FALLBACK_CONFIG_PATH` | Key 调度回退配置文件，默认 `/data/key-fallback-config.json`。 |

@@ -715,6 +715,7 @@ fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> 
         fallback_path: root.join("key-fallback-config.json"),
         connection_path,
         model_path: root.join("group-model-config.json"),
+        keepalive_path: root.join("keepalive-state.json"),
         oauth: json!({
             "oauth_auto_reset_credit_enabled": false,
             "oauth_daily_test_enabled": false,

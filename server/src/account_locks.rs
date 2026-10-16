@@ -64,4 +64,9 @@ impl AccountLocks {
             _guards: vec![self.lock(id, true).lock_owned().await],
         }
     }
+    pub fn try_control(&self, id: i64) -> Result<Lease> {
+        Ok(Lease {
+            _guards: vec![self.lock(id, true).try_lock_owned().map_err(|_| busy())?],
+        })
+    }
 }

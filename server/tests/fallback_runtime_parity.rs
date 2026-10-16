@@ -176,6 +176,7 @@ impl Harness {
             fallback_path: root.join("fallback.json"),
             connection_path: root.join("connection.json"),
             model_path: root.join("models.json"),
+            keepalive_path: root.join("keepalive-state.json"),
             oauth: json!({
                 "oauth_recovery_monitor_enabled":true,"oauth_daily_test_enabled":false,
                 "oauth_auto_reset_credit_enabled":false,"oauth_daily_test_time":"06:15",

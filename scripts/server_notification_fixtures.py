@@ -158,6 +158,7 @@ def load_settings_reference(settings_module: Any, root: Path, config_path: Path,
         "DATABASE_URL": SAFE_DATABASE_URL,
         "BARK_CONFIG_PATH": str(config_path),
         "OAUTH_CONFIG_PATH": str(root / "missing-oauth-config.json"),
+        "KEEPALIVE_CONFIG_PATH": str(root / "keepalive-state.json"),
         **extra,
     }
     with patch.dict(os.environ, env, clear=True):
@@ -425,6 +426,7 @@ def build_fixtures(reference_root: Path, work: Path) -> dict[str, Any]:
         "OAUTH_CONFIG_PATH": str(work / "main-oauth-config.json"),
         "USAGE_QUERY_STATE_PATH": str(work / "main-usage-state.json"),
         "AUDIT_PATH": str(work / "main-audit.jsonl"),
+        "KEEPALIVE_CONFIG_PATH": str(work / "keepalive-state.json"),
     }
     with patch.dict(os.environ, main_env, clear=True):
         from app import main as app_main

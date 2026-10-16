@@ -250,6 +250,7 @@ fn settings_for_data_directory(data: &Path) -> Arc<Settings> {
         fallback_path: data.join("key-fallback.json"),
         connection_path: data.join("sub2api-config.json"),
         model_path: data.join("group-models.json"),
+        keepalive_path: data.join("keepalive-state.json"),
         oauth: json!({}),
         bark: json!({}),
         bark_valid: false,

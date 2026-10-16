@@ -28,6 +28,7 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
                     | "groups"
                     | "degradation-mark"
                     | "model-detection"
+                    | "keepalive"
             ]
             | ["account-operations", "batch"]
             | ["account-templates", ..]
@@ -216,6 +217,7 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
         ["accounts", _, "model-detection"] => {
             *value = crate::model_detection::detection_request(value)?;
         }
+        ["accounts", _, "keepalive"] => crate::keepalive::request(value)?,
         ["model-tests", _, "retry"] => {
             fields(value, &["request_id"], &["request_id"])?;
             validation::request_id(&value["request_id"])?;
