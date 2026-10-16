@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, runTest } from "./bridge";
 import TestDialog from "./TestDialog";
 import { QuotaRefresh } from "./AccountControls";
-import type { Account } from "./types";
+import type { Account, TestEvent } from "./types";
 
 vi.mock("./bridge", () => ({ api: vi.fn(), command: vi.fn(), runTest: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-let container: HTMLDivElement, root: Root;
-beforeEach(() => { vi.resetAllMocks(); container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
+let container: HTMLDivElement, root: Root, mounted: boolean;
+beforeEach(() => { vi.resetAllMocks(); container = document.createElement("div"); document.body.append(container); root = createRoot(container); mounted = true; });
+afterEach(async () => { if (mounted) await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 const button = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
 
 describe("test interaction", () => {
@@ -37,6 +37,56 @@ describe("test interaction", () => {
     expect(command).toHaveBeenCalledWith("cancel_test");
     await act(async () => { finish(); await pending; });
     expect(runTest).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report success when the stream ends without a successful terminal event", async () => {
+    vi.mocked(api).mockResolvedValue([{ id: "gpt-6-sol", display_name: "GPT-6 Sol", type: "text" }]);
+    vi.mocked(runTest).mockImplementation(async () => {});
+    await act(async () => root.render(<TestDialog account={{id:1,name:"Fixture account",platform:"openai",version:"fixture-version"} as Account} online close={vi.fn()}/>));
+
+    await act(async () => {
+      button("开始测试").click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(runTest).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("测试通过");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "连接结束，未收到完成结果",
+    );
+  });
+
+  it("ignores late test events after the dialog unmounts", async () => {
+    vi.mocked(api).mockResolvedValue([{ id: "gpt-6-sol", display_name: "GPT-6 Sol", type: "text" }]);
+    let emit: (event: TestEvent) => void = () => {};
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    vi.mocked(runTest).mockImplementation(async (_id, _payload, receive) => {
+      emit = receive;
+      await pending;
+    });
+    await act(async () => root.render(<TestDialog account={{id:1,name:"Fixture account",platform:"openai",version:"fixture-version"} as Account} online close={vi.fn()}/>));
+
+    await act(async () => {
+      button("开始测试").click();
+      await Promise.resolve();
+    });
+    expect(runTest).toHaveBeenCalledOnce();
+
+    await act(async () => root.unmount());
+    mounted = false;
+    expect(command).toHaveBeenCalledWith("cancel_test");
+
+    await act(async () => {
+      emit({ type: "content", text: "late event" });
+      emit({ type: "test_complete", success: true });
+      finish();
+      await pending;
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toBe("");
   });
 });
 
