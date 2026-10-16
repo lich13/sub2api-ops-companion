@@ -60,6 +60,7 @@ import { useConnectionBatch, ConnectionBatchEntry, ConnectionBatchResults } from
 import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
+import AccountStatus from "./AccountStatus";
 import { DeleteAccountsDialog } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
@@ -952,32 +953,7 @@ export default function App() {
                                 )}
                               </td>
                               <td>
-                                <span
-                                  className={`account-status ${a.available ? "good-text" : ""}`}
-                                >
-                                  <i
-                                    className={`status-dot ${a.available ? "good" : "warning"}`}
-                                  />
-                                  {a.available
-                                    ? "可调度"
-                                    : a.blockers
-                                        .map((b) => b.label)
-                                        .join(" / ")}
-                                </span>
-                                {a.blockers
-                                  .filter(
-                                    (b) => b.code === "rate_limit_reset_at",
-                                  )
-                                  .map((b) => (
-                                    <small key={b.code} className="limit-until">
-                                      预计解除{" "}
-                                      {b.until ? (
-                                        <Time at={b.until} />
-                                      ) : (
-                                        "时间未知"
-                                      )}
-                                    </small>
-                                  ))}
+                                <AccountStatus account={a} onError={(id) => void openError(id)}/>
                               </td>
                               <td>
                                 <UsageCell

@@ -9,6 +9,7 @@ import { AccountActionButton, isPrimaryAction, type AccountActionItem } from "./
 import UsageCell from "./UsageCell";
 import { useBackAction } from "./mobile";
 import { DegradationBadge } from "./DegradationMark";
+import AccountStatus from "./AccountStatus";
 
 type Props = {
   accounts: Account[]; online: boolean; selected: Set<number>;
@@ -33,10 +34,9 @@ export default function MobileAccounts(props: Props) {
         </header>
         <div className="mobile-account-status">
           <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
-          <span className={a.available ? "good-text" : ""}>{a.available ? "可调度" : a.blockers.map((b) => b.label).join(" / ")}</span>
+          <AccountStatus account={a} onError={props.error}/>
           {["openai", "grok"].includes(a.platform) && ["oauth", "apikey"].includes(a.type) && <QualityBadge value={a.quality} onClick={() => props.quality(a)}/>}
         </div>
-        {a.blockers.filter((b) => b.code === "rate_limit_reset_at").map((b) => <div className="mobile-limit" key={b.code}>预计解除 {b.until ? fullTime(b.until) : "时间未知"}</div>)}
         <UsageCell account={a} online={props.online} refresh={() => command("refresh")} report={props.report}/>
         <footer>
           {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已成功</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}

@@ -738,6 +738,13 @@ td:last-child {
   gap: 7px;
   align-items: center;
 }
+.account-status-detail { min-width: 0; }
+.account-status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.account-status-line .pill { padding: 3px 7px; border-radius: 12px; white-space: normal; }
+.account-status-help { display: inline-flex; color: var(--warn); cursor: help; }
+.account-status-help:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
+.account-status-code { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 3px 6px; border: 0; }
+.account-status-detail .limit-until { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .good-text {
   color: var(--good);
 }
