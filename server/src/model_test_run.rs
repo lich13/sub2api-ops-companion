@@ -240,7 +240,15 @@ impl ModelTests {
             )
             .await;
         if let Err(failure) = result {
-            self.group(id,&run,index,json!({"status":"failed","error":error_text(failure.code),"retryable":false,"uncertain":failure.uncertain}))?;
+            self.group(
+                id,
+                &run,
+                index,
+                json!({
+                    "status":"failed", "error":error_text(failure.code), "retryable":false,
+                    "uncertain":failure.uncertain
+                }),
+            )?;
             *run.fatal.lock().unwrap_or_else(|e| e.into_inner()) = Some(failure);
         }
         self.group(
@@ -417,7 +425,9 @@ impl ModelTests {
                         "content_filter" => "上游内容过滤，已保留收到的样本",
                         _ => "",
                     };
-                    self.group(id,&run,index,json!({"status":"analyzing","duration_ms":started.elapsed().as_millis(),"error":error})).map_err(internal)?;
+                    self.group(id, &run, index, json!({
+                        "status":"analyzing", "duration_ms":started.elapsed().as_millis(), "error":error
+                    })).map_err(internal)?;
                     let _analysis = run.analysis.lock().await;
                     let analysis_started = Instant::now();
                     let samples = context
@@ -458,7 +468,9 @@ impl ModelTests {
                     } else {
                         report.clone()
                     };
-                    self.group(id,&run,index,json!({"status":"completed","analysis_ms":analysis_started.elapsed().as_millis()})).map_err(internal)?;
+                    self.group(id, &run, index, json!({
+                        "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis()
+                    })).map_err(internal)?;
                     let current = self.get(id).map_err(internal)?;
                     let first_group_valid = if index == 0 {
                         valid_report(&first)
@@ -500,7 +512,9 @@ impl ModelTests {
 
                         *run.disposition.lock().unwrap_or_else(|e| e.into_inner()) =
                             disposition.clone();
-                        self.update(id,json!({"automatic_disposition":disposition,"completion_reason":"automatic_degradation"})).map_err(internal)?;
+                        self.update(id, json!({
+                            "automatic_disposition":disposition, "completion_reason":"automatic_degradation"
+                        })).map_err(internal)?;
                     }
                     if report["probability"]
                         .as_f64()

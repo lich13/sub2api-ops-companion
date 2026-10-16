@@ -201,7 +201,13 @@ impl Detection {
             Ok(())
         })?;
 
-        self.audit("model_detection_recovered",json!({"account_id":id,"job_id":receipt["job_id"],"mark_cleared":true,"schedulable":row["schedulable"]}));
+        self.audit(
+            "model_detection_recovered",
+            json!({
+                "account_id":id, "job_id":receipt["job_id"], "mark_cleared":true,
+                "schedulable":row["schedulable"]
+            }),
+        );
         Ok(receipt)
     }
 }

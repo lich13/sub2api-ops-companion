@@ -199,9 +199,10 @@ impl Detection {
             );
             if valid && !degraded {
                 if let Err(error) = self.guard(&job).await {
-                    return Ok(
-                        json!({"success":false,"error_code":"recovery_state_changed","error":crate::security::safe_error(&error.detail,200)}),
-                    );
+                    return Ok(json!({
+                        "success":false, "error_code":"recovery_state_changed",
+                        "error":crate::security::safe_error(&error.detail,200)
+                    }));
                 }
             }
             let retryable = job["status"] == "failed" && job["can_retry"] == true;

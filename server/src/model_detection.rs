@@ -19,7 +19,11 @@ use std::sync::Arc;
 
 pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
-    json!({"enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","generation":0,"next_at":null,"status":"disabled","reason":"","job_id":null,"hold":false})
+    json!({
+        "enabled":false, "interval_minutes":15, "model_id":"gpt-6-luna",
+        "generation":0, "next_at":null, "status":"disabled", "reason":"",
+        "job_id":null, "hold":false
+    })
 }
 pub fn version(value: &Value) -> String {
     digest(&pick(
@@ -372,9 +376,20 @@ impl Detection {
             parse_datetime(&self.next_allowed_at(id)?).filter(|at| *at > self.now())
         {
             if causes.iter().any(|v| v == "scheduled") {
-                self.update(id,json!({"status":"waiting","next_at":datetime(allowed),"reason":"等待自动检测冷却"}))?;
+                self.update(
+                    id,
+                    json!({
+                        "status":"waiting", "next_at":datetime(allowed), "reason":"等待自动检测冷却"
+                    }),
+                )?;
             }
-            self.audit("model_detection_cooldown",json!({"account_id":id,"triggers":causes,"result":if causes.iter().any(|v|v=="scheduled") {"deferred"}else {"ignored"}}));
+            self.audit(
+                "model_detection_cooldown",
+                json!({
+                    "account_id":id, "triggers":causes,
+                    "result":if causes.iter().any(|v|v=="scheduled") {"deferred"}else {"ignored"}
+                }),
+            );
             self.clue_status(causes, "ignored", "五分钟冷却中", None)?;
             return Ok(Value::Null);
         }
@@ -404,7 +419,13 @@ impl Detection {
             } else {
                 "当前指纹库缺少降智判定模型"
             };
-            self.update(id,json!({"status":"paused","reason":reason,"next_at":null,"candidate_blocked":true,"candidate_recheck_at":datetime(self.now()+Duration::minutes(1))}))?;
+            self.update(
+                id,
+                json!({
+                    "status":"paused", "reason":reason, "next_at":null, "candidate_blocked":true,
+                    "candidate_recheck_at":datetime(self.now()+Duration::minutes(1))
+                }),
+            )?;
             self.clue_status(causes, "failed", reason, None)?;
             return Ok(Value::Null);
         }
@@ -513,7 +534,13 @@ impl Detection {
                     )?;
                 }
             }
-            self.update(id,json!({"hold":true,"disposition":disposition,"recheck_recovery":null,"status":"handling","reason":"正在标记并停止调度"}))?;
+            self.update(
+                id,
+                json!({
+                    "hold":true, "disposition":disposition, "recheck_recovery":null,
+                    "status":"handling", "reason":"正在标记并停止调度"
+                }),
+            )?;
         }
         self.finish_disposition(id).await
     }
