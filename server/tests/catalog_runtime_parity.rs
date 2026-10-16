@@ -45,7 +45,10 @@ async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
         .push(json!({"method":request.method().as_str(),
         "path":request.uri().to_string(),"authorization":header("authorization"),
         "x-real-ip":header("x-real-ip"),"x-api-key":header("x-api-key"),
-        "if-none-match":header("if-none-match")}));
+        "if-none-match":header("if-none-match"),"host":header("host"),
+        "connection":header("connection"),"transfer-encoding":header("transfer-encoding"),
+        "cookie":header("cookie"),"x-unlisted-fixture":header("x-unlisted-fixture"),
+        "user-agent":header("user-agent")}));
     let (status, body) = if path.starts_with("/api/v1/admin/") {
         if header("x-api-key") == ADMIN {
             (200, json!({"code":0,"data":[]}))
@@ -176,6 +179,22 @@ impl Harness {
             .unwrap();
         self.owner.close().await;
     }
+}
+
+async fn desktop_status(
+    client: &reqwest::Client,
+    base: &str,
+    method: reqwest::Method,
+    route: &str,
+    body: Option<Value>,
+) -> reqwest::StatusCode {
+    let request = client.request(method, format!("{base}/api/desktop/v1/{route}"));
+    let request = if let Some(body) = body {
+        request.json(&body)
+    } else {
+        request
+    };
+    request.send().await.unwrap().status()
 }
 
 #[test]
@@ -431,6 +450,388 @@ async fn model_admin_routes_authenticate_and_retired_surfaces_stay_absent() {
     );
     server.abort();
     let _ = server.await;
+    h.close().await;
+}
+
+#[tokio::test]
+async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics() {
+    let h = Harness::new().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let version = "a".repeat(64);
+    let revision = "b".repeat(64);
+    let binding = "c".repeat(64);
+    let request_id = "fixture-request-id-0001".to_owned();
+    let client_id = "fixture-client-id-0001".to_owned();
+    let hex_request_id = "d".repeat(32);
+    let hex_client_id = "e".repeat(32);
+    let custom_id = format!("custom-{}", "a".repeat(24));
+
+    macro_rules! case {
+        ($method:ident, $route:expr) => {
+            (reqwest::Method::$method, ($route).to_owned(), None)
+        };
+        ($method:ident, $route:expr, $body:expr) => {
+            (reqwest::Method::$method, ($route).to_owned(), Some($body))
+        };
+    }
+
+    let cases = vec![
+        case!(GET, "capabilities"),
+        case!(GET, "snapshot"),
+        case!(GET, "errors"),
+        case!(GET, "usage-records"),
+        case!(GET, "usage-record-options?kind=users"),
+        case!(GET, "recoveries"),
+        case!(GET, "proxies"),
+        case!(GET, "config"),
+        case!(GET, "model-groups"),
+        case!(GET, "account-operations"),
+        case!(
+            POST,
+            "account-operations/batch",
+            json!({
+                "action":"delete",
+                "request_id":request_id.clone(),
+                "client_id":client_id.clone(),
+                "accounts":[{"account_id":7,"expected_version":version.clone(),"payload":{}}]
+            })
+        ),
+        case!(
+            GET,
+            "account-operations/00000000-0000-0000-0000-000000000001"
+        ),
+        case!(
+            POST,
+            "account-operations/00000000-0000-0000-0000-000000000001/cancel"
+        ),
+        case!(
+            POST,
+            "account-operations/batches/00000000-0000-0000-0000-000000000002/cancel"
+        ),
+        case!(
+            DELETE,
+            "accounts/7",
+            json!({"expected_version":version.clone()})
+        ),
+        case!(GET, "accounts/7/quality"),
+        case!(GET, "accounts/7/settings"),
+        case!(GET, "accounts/7/models?purpose=model_test"),
+        case!(GET, "accounts/7/model-tests/latest"),
+        case!(
+            POST,
+            "accounts/7/operations",
+            json!({
+                "action":"delete",
+                "expected_version":version.clone(),
+                "request_id":request_id.clone(),
+                "client_id":client_id.clone(),
+                "payload":{}
+            })
+        ),
+        case!(
+            POST,
+            "accounts/7/schedulable",
+            json!({"expected_version":version.clone(),"schedulable":true})
+        ),
+        case!(
+            POST,
+            "accounts/7/recover-state",
+            json!({"expected_version":version.clone()})
+        ),
+        case!(
+            POST,
+            "accounts/7/priority",
+            json!({"expected_version":version.clone(),"priority":0})
+        ),
+        case!(
+            POST,
+            "accounts/7/test",
+            json!({"expected_version":version.clone()})
+        ),
+        case!(
+            POST,
+            "accounts/7/model-tests",
+            json!({
+                "model_id":"fixture-model",
+                "expected_version":version.clone(),
+                "request_id":request_id.clone(),
+                "concurrency":1
+            })
+        ),
+        case!(
+            POST,
+            "accounts/7/usage-action",
+            json!({"expected_version":version.clone(),"action":"query_usage"})
+        ),
+        case!(
+            PUT,
+            "accounts/7/groups",
+            json!({"expected_version":version.clone(),"scope_group_ids":[7],"group_ids":[7]})
+        ),
+        case!(
+            PUT,
+            "accounts/7/degradation-mark",
+            json!({"expected_mark_version":version.clone(),"marked":true})
+        ),
+        case!(GET, "accounts/7/model-detection"),
+        case!(
+            PUT,
+            "accounts/7/model-detection",
+            json!({
+                "expected_version":version.clone(),
+                "enabled":true,
+                "interval_minutes":15,
+                "model_id":"fixture-model"
+            })
+        ),
+        case!(GET, "errors/7"),
+        case!(GET, "usage-records/7"),
+        case!(POST, "proxies/7/test"),
+        case!(POST, "proxies/7/quality-check"),
+        case!(GET, "account-templates"),
+        case!(
+            PUT,
+            "account-templates",
+            json!({
+                "expected_version":version.clone(),
+                "full":{},"degraded":{},"takeover":{}
+            })
+        ),
+        case!(
+            POST,
+            "account-templates",
+            json!({"expected_version":version.clone(),"name":"fixture-template"})
+        ),
+        case!(
+            POST,
+            "account-templates/apply",
+            json!({
+                "template_id":"full",
+                "template_version":version.clone(),
+                "request_id":hex_request_id.clone(),
+                "client_id":hex_client_id.clone(),
+                "accounts":[{"account_id":7,"expected_version":version.clone()}]
+            })
+        ),
+        case!(
+            POST,
+            "account-templates/custom",
+            json!({"expected_version":version.clone(),"name":"fixture-template"})
+        ),
+        case!(
+            PUT,
+            format!("account-templates/{custom_id}"),
+            json!({"expected_version":version.clone(),"name":"fixture-template"})
+        ),
+        case!(
+            DELETE,
+            format!("account-templates/{custom_id}"),
+            json!({"expected_version":version.clone()})
+        ),
+        case!(
+            PUT,
+            format!("account-templates/custom/{custom_id}"),
+            json!({"expected_version":version.clone(),"name":"fixture-template"})
+        ),
+        case!(
+            DELETE,
+            format!("account-templates/custom/{custom_id}"),
+            json!({"expected_version":version.clone()})
+        ),
+        case!(GET, "modeltrace/fingerprint-bank"),
+        case!(POST, "modeltrace/fingerprint-bank/sync"),
+        case!(GET, "model-tests/00000000-0000-0000-0000-000000000003"),
+        case!(
+            POST,
+            "model-tests/00000000-0000-0000-0000-000000000003/cancel"
+        ),
+        case!(
+            POST,
+            "model-tests/00000000-0000-0000-0000-000000000003/retry",
+            json!({"request_id":request_id.clone()})
+        ),
+        case!(GET, "quota-refresh"),
+        case!(POST, "quota-refresh"),
+        case!(
+            PUT,
+            "config/oauth",
+            json!({"expected_revision":version.clone(),"changes":{}})
+        ),
+        case!(
+            PUT,
+            "config/bark",
+            json!({"expected_revision":version.clone(),"changes":{}})
+        ),
+        case!(
+            PUT,
+            "config/key_fallback",
+            json!({"expected_revision":version.clone(),"changes":{}})
+        ),
+        case!(POST, "actions/bark-test"),
+        case!(GET, "model-groups/7/reasoning"),
+        case!(
+            PUT,
+            "model-groups/7/reasoning",
+            json!({
+                "model":"fixture-model",
+                "expected_version":version.clone(),
+                "expected_revision":revision.clone(),
+                "expected_binding":binding.clone(),
+                "efforts":["minimal"],
+                "default_effort":"minimal"
+            })
+        ),
+        case!(
+            DELETE,
+            "model-groups/7/reasoning",
+            json!({
+                "model":"fixture-model",
+                "expected_version":version.clone(),
+                "expected_revision":revision.clone()
+            })
+        ),
+        case!(
+            POST,
+            "model-groups/7/reasoning/resolve",
+            json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
+        ),
+    ];
+    assert_eq!(cases.len(), 58);
+
+    let mut rejected = Vec::new();
+    for (method, route, body) in cases {
+        let status = desktop_status(&client, &base, method.clone(), &route, body).await;
+        if !matches!(status.as_u16(), 401 | 403) {
+            rejected.push(format!("{} {route} returned {}", method, status.as_u16()));
+        }
+    }
+    let diagnostic_response = client
+        .get(format!("{base}/api/desktop/v1/connection-status"))
+        .send()
+        .await
+        .unwrap();
+    let diagnostic_status = diagnostic_response.status().as_u16();
+    let diagnostic = diagnostic_response
+        .json::<Value>()
+        .await
+        .unwrap_or(Value::Null);
+    let public_fields = [
+        "state",
+        "endpoint",
+        "http_status",
+        "message",
+        "retryable",
+        "checked_at",
+    ];
+    let safe_diagnostic = diagnostic.as_object().is_some_and(|fields| {
+        fields.len() == public_fields.len()
+            && public_fields
+                .iter()
+                .all(|field| fields.contains_key(*field))
+            && diagnostic["state"] == "auth_rejected"
+            && diagnostic["endpoint"] == "none"
+            && diagnostic["http_status"] == 401
+            && diagnostic["message"] == "管理员 API Key 无效"
+            && diagnostic["retryable"] == false
+            && diagnostic["checked_at"].as_str().is_some()
+    });
+    let no_upstream_business_calls = h.mock.calls.lock().unwrap().is_empty();
+    server.abort();
+    let _ = server.await;
+    h.close().await;
+    assert!(
+        rejected.is_empty(),
+        "legal desktop management requests without x-api-key must return 401/403: {}",
+        rejected.join(", ")
+    );
+    assert_eq!(diagnostic_status, 200);
+    assert!(
+        safe_diagnostic,
+        "connection-status must return only the static unauthenticated probe fields"
+    );
+    assert!(
+        no_upstream_business_calls,
+        "unauthenticated management and diagnostic requests must not call the upstream"
+    );
+}
+
+#[tokio::test]
+async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication() {
+    let h = Harness::new().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = sub2ops_server::api::router(h.runtime.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let cases = [
+        (
+            reqwest::Method::GET,
+            "accounts/not-an-integer/quality",
+            None,
+        ),
+        (
+            reqwest::Method::GET,
+            "usage-records?limit=not-an-integer",
+            None,
+        ),
+        (
+            reqwest::Method::POST,
+            "accounts/7/schedulable",
+            Some(json!({"schedulable":true})),
+        ),
+    ];
+    let mut statuses = Vec::new();
+    for (method, route, body) in cases {
+        statuses.push(
+            desktop_status(&client, &base, method, route, body)
+                .await
+                .as_u16(),
+        );
+    }
+    server.abort();
+    let _ = server.await;
+    h.close().await;
+    assert_eq!(statuses, [422, 422, 422]);
+}
+
+#[tokio::test]
+async fn catalog_proxy_keeps_allowlist_case_insensitive_and_drops_untrusted_headers() {
+    let h = Harness::new().await;
+    let headers = BTreeMap::from([
+        ("aUtHoRiZaTiOn".into(), "Bearer fixture-caller-7".into()),
+        ("X-aPi-KeY".into(), "fixture-caller-7".into()),
+        ("User-Agent".into(), "fixture-catalog-client".into()),
+        ("hOsT".into(), "spoof.example.invalid".into()),
+        ("cOnNeCtIoN".into(), "close".into()),
+        ("tRaNsFeR-EnCoDiNg".into(), "chunked".into()),
+        ("cOoKiE".into(), "session=fixture-cookie".into()),
+        ("X-Unlisted-Fixture".into(), "fixture-unlisted".into()),
+    ]);
+    let reply = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        h.runtime.catalog.proxy("/v1/models", QUERY, &headers),
+    )
+    .await
+    .expect("catalog proxy must finish against the loopback mock");
+    assert_eq!(reply.status, 200);
+    let calls = h.mock.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["authorization"], "Bearer fixture-caller-7");
+    assert_eq!(calls[0]["x-api-key"], "fixture-caller-7");
+    assert_eq!(calls[0]["user-agent"], "fixture-catalog-client");
+    assert_ne!(calls[0]["host"], "spoof.example.invalid");
+    assert_ne!(calls[0]["connection"], "close");
+    assert_eq!(calls[0]["transfer-encoding"], "");
+    assert_eq!(calls[0]["cookie"], "");
+    assert_eq!(calls[0]["x-unlisted-fixture"], "");
     h.close().await;
 }
 
