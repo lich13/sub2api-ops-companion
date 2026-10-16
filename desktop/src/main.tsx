@@ -71,6 +71,7 @@ import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDi
 import ProxyBatchDialog from "./ProxyBatchDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
+import KeepaliveDialog from "./KeepaliveDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
 import { accountOperation, bindOperationConnection } from "./accountOperations";
 import UsageRecords from "./UsageRecords";
@@ -137,6 +138,7 @@ export default function App() {
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
     [modelDetectionAccount, setModelDetectionAccount] = useState<Account | null>(null),
+    [keepaliveAccount, setKeepaliveAccount] = useState<Account | null>(null),
     [templatesOpen, setTemplatesOpen] = useState(false),
     [templateAccount, setTemplateAccount] = useState<Account | null>(null),
     [templateAccounts, setTemplateAccounts] = useState<Account[] | undefined>(undefined),
@@ -217,6 +219,7 @@ export default function App() {
     closeDetail();
     setTestAccount(null);
     setModelTestAccount(null);
+    setKeepaliveAccount(null);
     setQualityAccount(null);
     setSettingsAccount(null);
     setProxyAccounts(null);
@@ -229,6 +232,7 @@ export default function App() {
   const report = (e: unknown) => { if (!String(e).includes("连接已切换；请求保留在原连接")) setToast(String(e).replace(/^Error: /, "")); };
   const accountActions = useAccountActions({ online: state.online, connectionKey, report,
     modelTest: setModelTestAccount, modelDetection: setModelDetectionAccount, test: setTestAccount,
+    keepalive: setKeepaliveAccount,
     template: (account) => { setTemplateAccounts(undefined); setTemplateAccount(account); setTemplatesOpen(true); },
     remove: (account) => setDeleteAccounts([account]),
     settings: (account, section) => setSettingsAccount({ account, section, connection: connectionKey }),
@@ -312,6 +316,7 @@ export default function App() {
   useEffect(() => {
     const live = new Set(accounts.map((a) => a.id));
     setQualityAccount((old) => (old && !live.has(old.id) ? null : old));
+    setKeepaliveAccount((old) => (old && !live.has(old.id) ? null : old));
     setSelected((old) =>
       [...old].every((id) => live.has(id))
         ? old
@@ -1234,6 +1239,7 @@ export default function App() {
       {templatesOpen && <AccountTemplates key={connectionKey} accounts={accounts} online={state.online} initialAccount={templateAccount} initialAccounts={templateAccounts} close={() => setTemplatesOpen(false)} report={report}/>}
       {proxyAccounts && <ProxyBatchDialog key={connectionKey} accounts={proxyAccounts} online={state.online} connectionKey={connectionKey} close={() => setProxyAccounts(null)} report={report}/>}
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
+      {keepaliveAccount && <KeepaliveDialog key={`${connectionKey}:${keepaliveAccount.id}`} account={accounts.find((a) => a.id === keepaliveAccount.id) ?? keepaliveAccount} online={state.online} connectionKey={connectionKey} close={() => setKeepaliveAccount(null)} report={report}/>}
       {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
       {qualityAccount && (
         <QualityDialog

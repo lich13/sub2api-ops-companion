@@ -1,4 +1,10 @@
 export type DegradationMark = { marked?: boolean; marked_at?: string | null; version?: string; error?: string };
+export type AccountKeepalive = {
+  account_id: number; enabled: boolean; generation: number; version: string;
+  status: string; reason: string; paused_reason: string;
+  last_restore_at: string | null; restore_count: number; budget_used: number;
+  next_allowed_at: string | null; read_only: boolean;
+};
 export type Account = {
   degradation_mark?: DegradationMark;
   recovery_selectable?: boolean;

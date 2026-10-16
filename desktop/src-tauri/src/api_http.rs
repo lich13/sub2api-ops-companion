@@ -526,6 +526,40 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && (data["last_automatic_started_at"].is_null()
                     || data["last_automatic_started_at"].is_string())
         }
+        p if p.ends_with("/keepalive") => {
+            let account_id = p
+                .strip_prefix("/accounts/")
+                .and_then(|p| p.strip_suffix("/keepalive"))
+                .and_then(|id| id.parse::<u64>().ok());
+            account_id.is_some_and(|id| id > 0 && data["account_id"].as_u64() == Some(id))
+                && data["enabled"].is_boolean()
+                && data["read_only"].is_boolean()
+                && data["generation"]
+                    .as_u64()
+                    .is_some_and(|v| v <= 9_007_199_254_740_991)
+                && data["version"]
+                    .as_str()
+                    .is_some_and(|v| v.len() == 64 && v.bytes().all(|c| c.is_ascii_hexdigit()))
+                && data["status"].as_str().is_some_and(|v| {
+                    matches!(
+                        v,
+                        "disabled" | "waiting" | "paused" | "running" | "needs_confirmation"
+                    )
+                })
+                && ["reason", "paused_reason"]
+                    .iter()
+                    .all(|key| data[*key].is_string())
+                && data["restore_count"].as_u64().is_some_and(|count| {
+                    count <= 5
+                        && data["budget_used"]
+                            .as_u64()
+                            .is_some_and(|used| (count..=5).contains(&used))
+                })
+                && ["last_restore_at", "next_allowed_at"].iter().all(|key| {
+                    data.get(*key)
+                        .is_some_and(|v| v.is_null() || v.as_str().is_some_and(|v| !v.is_empty()))
+                })
+        }
         "/modeltrace/fingerprint-bank" | "/modeltrace/fingerprint-bank/sync" => {
             data["version"]["revision"].is_string()
                 && data["version"]["sha256"].is_string()
@@ -1222,6 +1256,82 @@ mod tests {
             "/modeltrace/fingerprint-bank/sync",
             &serde_json::json!({})
         ));
+    }
+
+    #[test]
+    fn keepalive_response_shape_matches_account_and_bounds() {
+        let valid = serde_json::json!({
+            "account_id":7,
+            "enabled":true,
+            "read_only":false,
+            "generation":3,
+            "version":"a".repeat(64),
+            "status":"waiting",
+            "reason":"",
+            "paused_reason":"",
+            "last_restore_at":"2026-10-15T12:30:00Z",
+            "restore_count":2,
+            "budget_used":3,
+            "next_allowed_at":null
+        });
+        assert!(shape_valid("/accounts/7/keepalive", &valid));
+        assert!(!shape_valid("/accounts/8/keepalive", &valid));
+
+        for status in [
+            "disabled",
+            "waiting",
+            "paused",
+            "running",
+            "needs_confirmation",
+        ] {
+            let mut response = valid.clone();
+            response["status"] = serde_json::json!(status);
+            assert!(shape_valid("/accounts/7/keepalive", &response), "{status}");
+        }
+        for (restore_count, budget_used) in [(0, 0), (5, 5)] {
+            let mut response = valid.clone();
+            response["restore_count"] = serde_json::json!(restore_count);
+            response["budget_used"] = serde_json::json!(budget_used);
+            assert!(shape_valid("/accounts/7/keepalive", &response));
+        }
+
+        let mut malformed = Vec::new();
+        let mut response = valid.clone();
+        response["account_id"] = serde_json::json!(8);
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["enabled"] = serde_json::json!("true");
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["version"] = serde_json::json!("not-a-version");
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["generation"] = serde_json::json!(9_007_199_254_740_992_u64);
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["status"] = serde_json::json!("unknown");
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["restore_count"] = serde_json::json!(6);
+        response["budget_used"] = serde_json::json!(6);
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["restore_count"] = serde_json::json!(2);
+        response["budget_used"] = serde_json::json!(1);
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["next_allowed_at"] = serde_json::json!(123);
+        malformed.push(response);
+        let mut response = valid.clone();
+        response["last_restore_at"] = serde_json::json!("");
+        malformed.push(response);
+
+        for response in malformed {
+            assert!(
+                !shape_valid("/accounts/7/keepalive", &response),
+                "{response}"
+            );
+        }
     }
 
     #[test]

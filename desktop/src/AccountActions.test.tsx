@@ -79,7 +79,7 @@ const state = (accounts: Account[] = [account(1)]): ViewState => ({
   },
 });
 
-const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "恢复状态", "应用模板", "模型白名单", "模型映射", "选择代理", "删除"];
+const openAILabels = ["模型测试", "标记降智", "定时检测", "测试连接", "账号保活", "恢复状态", "应用模板", "模型白名单", "模型映射", "选择代理", "删除"];
 let container: HTMLDivElement;
 let root: Root;
 let receive: (next: ViewState) => void;
@@ -130,6 +130,11 @@ beforeEach(() => {
     if (/^\/accounts\/\d+\/models(?:\?purpose=model_test)?$/.test(path)) return [{ id: "fixture-model", type: "text" }] as never;
     if (/^\/accounts\/\d+\/model-tests\/latest$/.test(path)) return null as never;
     if (/^\/accounts\/\d+\/model-detection$/.test(path)) return { enabled: false, interval_minutes: 30, model_id: "fixture-model", version: "detection-version", status: "disabled" } as never;
+    if (/^\/accounts\/\d+\/keepalive$/.test(path)) return {
+      account_id: Number(path.match(/\d+/)?.[0]), enabled: false, generation: 0, version: "a".repeat(64),
+      status: "disabled", reason: "", paused_reason: "", last_restore_at: null, restore_count: 0,
+      budget_used: 0, next_allowed_at: null, read_only: false,
+    } as never;
     if (path === "/modeltrace/fingerprint-bank") return { version: { revision: "fixture-revision", sha256: "fixture-hash", built_at: "2026-10-01T00:00:00Z", analyzer_version: 1 }, source: "bundled", status: "ready" } as never;
     if (path === "/account-templates") return { version: "template-version", configured: false, templates: {}, template_meta: {}, template_order: [] } as never;
     if (path.startsWith("/account-templates?account_id=")) return { account: { id: 1, eligible: true, passthrough: false, version: "config-version", config: { whitelist: [], mappings: [] } } } as never;
@@ -149,7 +154,7 @@ describe("shared account actions", () => {
     expect(labels(panel)).toEqual(openAILabels);
     expect(panel.querySelector(".account-more-trigger")).toBeNull();
     expect([...panel.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([
-      true, true, true, true, true, true, true, true, true, true,
+      true, true, true, true, true, true, true, true, true, true, true,
     ]);
     expect(container.querySelector('[role="group"][aria-label="批量账号操作"]')).toBeNull();
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label="选择 Fixture 1"]')!.click());
@@ -165,6 +170,28 @@ describe("shared account actions", () => {
     expect(vi.mocked(api).mock.calls.every(([method]) => method === "GET")).toBe(true);
   });
 
+  it.each(["macos", "android"] as const)("opens and closes account keepalive from the %s account actions", async (platform) => {
+    await render({ ...state(), platform });
+    let actions: ParentNode;
+    if (platform === "android") {
+      const primary = container.querySelector<HTMLElement>(".mobile-primary-actions")!;
+      expect(labels(primary)).not.toContain("账号保活");
+      await act(async () => container.querySelector<HTMLButtonElement>('.mobile-accounts [aria-label="Fixture 1操作"]')!.click());
+      const sheet = container.querySelector<HTMLElement>(".mobile-action-sheet");
+      expect(sheet).not.toBeNull();
+      actions = sheet!.querySelector<HTMLElement>(".mobile-more-actions")!;
+    } else {
+      actions = container.querySelector<HTMLElement>(".accounts-table .account-actions")!;
+    }
+
+    await act(async () => button("账号保活", actions).click());
+    expect(container.querySelector('[role="dialog"][aria-label="账号保活"]')?.textContent).toContain("Fixture 1");
+    expect(api).toHaveBeenCalledWith("GET", "/accounts/1/keepalive");
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭账号保活"]')!.click());
+    expect(container.querySelector('[role="dialog"][aria-label="账号保活"]')).toBeNull();
+  });
+
   it.each([true, false])("limits a Grok group menu to supported actions with recovery eligibility %s", async (recoverable) => {
     await render(state([account(3, { platform: "grok", group_ids: [3], recoverable })]));
     await openGroups();
@@ -172,8 +199,8 @@ describe("shared account actions", () => {
     await openGroupMenu("Fixture 3");
 
     expect(labels(menu()!)).toEqual(recoverable
-      ? ["测试连接", "恢复状态", "模型白名单", "模型映射", "选择代理", "删除"]
-      : ["测试连接", "模型白名单", "模型映射", "选择代理", "删除"]);
+      ? ["测试连接", "账号保活", "恢复状态", "模型白名单", "模型映射", "选择代理", "删除"]
+      : ["测试连接", "账号保活", "模型白名单", "模型映射", "选择代理", "删除"]);
   });
 
   it("provides the complete group menu on Android and gives it first ownership of Back", async () => {

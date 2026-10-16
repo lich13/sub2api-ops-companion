@@ -330,6 +330,16 @@ fn allowed_request(method: &str, path: &str) -> bool {
             });
         return method == "GET" && !path.contains('?') && (plain == "/proxies" || settings_path);
     }
+    if let Some(id) = plain
+        .strip_prefix("/accounts/")
+        .and_then(|value| value.strip_suffix("/keepalive"))
+    {
+        return !id.is_empty()
+            && id.bytes().all(|byte| byte.is_ascii_digit())
+            && id.parse::<u64>().is_ok_and(|id| id > 0)
+            && matches!(method, "GET" | "PUT")
+            && !path.contains('?');
+    }
     if account_path(plain, "/model-detection") {
         return match method {
             "GET" | "PUT" => !path.contains('?'),
@@ -1695,6 +1705,31 @@ mod tests {
             "/accounts/18446744073709551616/settings",
         ] {
             assert!(!allowed_request("GET", path), "{path}");
+        }
+    }
+
+    #[test]
+    fn account_keepalive_routes_allow_only_exact_get_and_put() {
+        let path = "/accounts/7/keepalive";
+        for method in ["GET", "PUT"] {
+            assert!(allowed_request(method, path), "{method} {path}");
+        }
+        for method in ["POST", "PATCH", "DELETE"] {
+            assert!(!allowed_request(method, path), "{method} {path}");
+        }
+        for malformed in [
+            "/accounts/0/keepalive",
+            "/accounts/-1/keepalive",
+            "/accounts/+7/keepalive",
+            "/accounts/a/keepalive",
+            "/accounts/7/keepalive/",
+            "/accounts/7/keepalive?fixture=1",
+            "/accounts/7/keepalive/../credentials",
+            "/accounts/7%2fkeepalive",
+            "/accounts/18446744073709551616/keepalive",
+        ] {
+            assert!(!allowed_request("GET", malformed), "GET {malformed}");
+            assert!(!allowed_request("PUT", malformed), "PUT {malformed}");
         }
     }
 
