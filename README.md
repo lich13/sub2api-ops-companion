@@ -24,6 +24,10 @@ docker compose up -d --build
 
 Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务默认监听 `0.0.0.0:18081`。生产环境建议通过 nginx 挂载到 Sub2API 同域的 `/sub2ops/`，并关闭该路径的 query access log。nginx 示例见 `deploy/nginx/sub2ops.location.conf`。
 
+直接运行二进制也默认监听所有网卡；仅本机访问时使用 `sub2ops-server serve --host 127.0.0.1 --port 18081`，不要把容器端口发布限制误认为二进制的监听限制。桌面业务管理路由验证管理员 API Key；`connection-status` 沿用 HTTP 200 携带脱敏鉴权失败诊断的契约，不返回地址、密钥或业务数据。`/healthz` 与模型目录入口分别沿用健康检查和客户端鉴权语义。
+
+示例数据库连接的口令必须替换，`sslmode=disable` 仅适用于同一受控 Docker 网络。跨主机连接应启用 TLS、使用可信 CA 并验证服务端主机名（`sslmode=verify-full`）。
+
 ## 环境变量
 
 | 变量 | 说明 |
