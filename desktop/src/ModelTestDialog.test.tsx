@@ -59,7 +59,7 @@ afterEach(async () => {
 });
 
 describe("ModelTestDialog candidates", () => {
-  it("requests and renders the exact group whitelist candidates", async () => {
+  it("requests and renders the current account upstream directory candidates", async () => {
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
     expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/accounts/101/models?purpose=model_test"]);
@@ -81,19 +81,204 @@ describe("ModelTestDialog candidates", () => {
     vi.mocked(api).mockImplementation(async (_method, path) => {
       if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
       if (path === "/accounts/101/models?purpose=model_test") throw new Error("目录失败");
-      if (path === "/accounts/101/model-tests/latest") return null as never;
+      if (path === "/accounts/101/model-tests/latest") return {
+        id: "f".repeat(32), status: "completed", requested_model: "retired-model", forwarded_model: "retired-model",
+        returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200,
+      } as never;
       throw new Error("unexpected " + path);
     });
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("目录失败");
-    const start = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("开始测试"));
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(model.value).toBe("retired-model");
+    expect(model.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    const start = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("重新测试") || button.textContent?.includes("开始测试"));
     expect(start).toBeTruthy();
     expect(start).toHaveProperty("disabled", true);
     const retry = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("重试"));
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
     expect(vi.mocked(api).mock.calls.some((call) => call[1] === "/accounts/101/models?purpose=model_test")).toBe(true);
+  });
+
+  it("keeps an unavailable latest model visible and prevents starting a test", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    const latest = {
+      id: "f".repeat(32), status: "completed", requested_model: "retired-model", forwarded_model: "retired-model",
+      returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200,
+    };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return latest as never;
+      if (path === "/accounts/101/models?purpose=model_test") return [{ id: "current-model", display_name: "Current model", type: "model" }] as never;
+      return original(method, path, body);
+    });
+
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await settle();
+
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(model.value).toBe("retired-model");
+    expect(model.textContent).toContain("retired-model（当前不可用）");
+    expect(container.textContent).toContain("当前账号上游模型目录");
+    const start = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("重新测试") || button.textContent?.includes("开始测试"))!;
+    expect(start.disabled).toBe(true);
+    await act(async () => start.click());
+    expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "POST" && path === "/accounts/101/model-tests")).toBe(false);
+  });
+
+  it("keeps the selected draft when a candidate reload fails", async () => {
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await settle();
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    await act(async () => {
+      model.value = "gpt-6-astra";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/accounts/101/models?purpose=model_test") throw new Error("目录暂不可用");
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online={false} close={() => {}} report={() => {}} />));
+    const offlineModel = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(offlineModel.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await settle();
+
+    const reloadedModel = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(reloadedModel.value).toBe("gpt-6-astra");
+    expect(reloadedModel.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    expect(container.textContent).toContain("目录暂不可用");
+  });
+
+  it("waits for a candidate reread before marking a saved model unavailable", async () => {
+    const latest = {
+      id: "f".repeat(32), status: "completed", requested_model: "retired-model", forwarded_model: "retired-model",
+      returned_models: [], completed_groups: 3, valid_groups: 0, attempts: 3, duration_ms: 200,
+    };
+    let reload = false;
+    let resolveModels!: (value: unknown) => void;
+    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
+      if (path === "/accounts/101/model-tests/latest") return latest as never;
+      if (path === "/accounts/101/models?purpose=model_test") {
+        return (reload ? pendingModels : [{ id: "current-model", display_name: "Current model", type: "model" }]) as never;
+      }
+      throw new Error("unexpected " + path);
+    });
+
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await settle();
+    reload = true;
+    await act(async () => root.render(<ModelTestDialog account={account} online={false} close={() => {}} report={() => {}} />));
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await settle();
+
+    const loadingModel = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(loadingModel.value).toBe("retired-model");
+    expect(loadingModel.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    const start = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("重新测试") || button.textContent?.includes("开始测试"))!;
+    expect(start.disabled).toBe(true);
+
+    await act(async () => resolveModels([]));
+    await settle();
+    const emptyModel = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(emptyModel.textContent).toContain("retired-model（当前不可用）");
+    expect(container.textContent).toContain("所选模型不在当前账号上游模型目录中");
+    expect(start.disabled).toBe(true);
+  });
+
+  it("ignores a late candidate response after switching accounts", async () => {
+    const otherAccount = { ...account, id: 202, name: "Other fixture account", version: "b".repeat(64) };
+    let resolveOldModels!: (value: unknown) => void;
+    const oldModels = new Promise((resolve) => { resolveOldModels = resolve; });
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
+      if (path === "/accounts/101/models?purpose=model_test") return oldModels as never;
+      if (path === "/accounts/101/model-tests/latest") return null as never;
+      if (path === "/accounts/202/models?purpose=model_test") return [{ id: "new-account-model", display_name: "New account model", type: "model" }] as never;
+      if (path === "/accounts/202/model-tests/latest") return null as never;
+      throw new Error("unexpected " + path);
+    });
+
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
+    await act(async () => root.render(<ModelTestDialog account={otherAccount} online close={() => {}} report={() => {}} />));
+    await settle();
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    expect(container.textContent).toContain("Other fixture account");
+    expect(model.value).toBe("new-account-model");
+
+    await act(async () => resolveOldModels([{ id: "stale-account-model", display_name: "Stale account model", type: "model" }]));
+    await settle();
+    expect(model.value).toBe("new-account-model");
+    expect(model.textContent).not.toContain("stale-account-model");
+  });
+
+  it("ignores a late poll response after going offline and reconnecting", async () => {
+    vi.useFakeTimers();
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = {
+      id: "poll-job-101", status: "running", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna",
+      returned_models: [], completed_groups: 0, valid_groups: 0, attempts: 1, duration_ms: 0,
+    };
+    let poll = 0;
+    let resolveLate!: (value: unknown) => void;
+    const latePoll = new Promise((resolve) => { resolveLate = resolve; });
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return job as never;
+      if (path === `/model-tests/${job.id}`) {
+        poll += 1;
+        if (poll === 1) return latePoll as never;
+        return { ...job, status: "completed", completed_groups: 3, valid_groups: 3, attempts: 3, duration_ms: 300 } as never;
+      }
+      return original(method, path, body);
+    });
+
+    let online = true;
+    await act(async () => root.render(<ModelTestDialog account={account} online={online} close={() => {}} report={() => {}} />));
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(poll).toBe(1);
+    online = false;
+    await act(async () => root.render(<ModelTestDialog account={account} online={online} close={() => {}} report={() => {}} />));
+    online = true;
+    await act(async () => root.render(<ModelTestDialog account={account} online={online} close={() => {}} report={() => {}} />));
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(poll).toBe(2);
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("已完成");
+
+    await act(async () => resolveLate({ ...job, status: "running", completed_groups: 0, valid_groups: 0 }));
+    await settle();
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("已完成");
+  });
+
+  it("ignores candidate responses after the dialog is unmounted", async () => {
+    let resolveModels!: (value: unknown) => void;
+    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    const report = vi.fn();
+    const close = vi.fn(() => root.render(null));
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/modeltrace/fingerprint-bank") return fingerprintBank as never;
+      if (path === "/accounts/101/models?purpose=model_test") return pendingModels as never;
+      if (path === "/accounts/101/model-tests/latest") return null as never;
+      throw new Error("unexpected " + path);
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={close} report={report} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭模型测试"]')!.click());
+    expect(close).toHaveBeenCalledOnce();
+    await act(async () => resolveModels([{ id: "late-model", display_name: "Late model", type: "model" }]));
+    await settle();
+    expect(container.textContent).toBe("");
+    expect(report).not.toHaveBeenCalled();
   });
 
   it("submits the selected concurrency and preserves the exact requested model", async () => {
@@ -222,3 +407,10 @@ const fingerprintBank = {
   source: "bundled",
   status: "ready",
 };
+
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}

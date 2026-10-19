@@ -124,6 +124,13 @@ async function renderDialog(
   });
 }
 
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe("scheduled model detection", () => {
   it("shows the last automatic start with the shared full time format", async () => {
     const startedAt = "2026-10-08T00:00:00Z";
@@ -197,8 +204,205 @@ describe("scheduled model detection", () => {
     const model = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
     expect(model.value).toBe("retired-model");
     expect(model.textContent).toContain("retired-model（当前不可用）");
-    expect(container.textContent).toContain("所选模型不在当前分组白名单中");
+    expect(container.textContent).toContain("当前账号上游模型目录");
     expect(button("保存").disabled).toBe(true);
+  });
+
+  it("keeps an edited draft when a directory reread fails", async () => {
+    await renderDialog({ ...baseDetection, enabled: true, model_id: "retired-model" });
+    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      interval.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const model = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    expect(model.value).toBe("retired-model");
+
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/accounts/42/models?purpose=model_test") throw new Error("目录暂不可用");
+      return original(method, path, body);
+    });
+    await act(async () => button("重新读取").click());
+    await settle();
+
+    expect(interval.value).toBe("45");
+    expect(model.value).toBe("retired-model");
+    expect(model.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    expect(container.textContent).toContain("目录暂不可用");
+    expect(button("保存").disabled).toBe(true);
+  });
+
+  it("waits for a candidate reread before marking a saved model unavailable", async () => {
+    const detection = { ...baseDetection, enabled: true, model_id: "retired-model" };
+    let resolveModels!: (value: unknown) => void;
+    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    let reload = false;
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return detection as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") {
+        return (reload ? pendingModels : [models[0]]) as never;
+      }
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await settle();
+
+    reload = true;
+    await act(async () => button("重新读取").click());
+    await settle();
+    const loadingModel = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    expect(loadingModel.value).toBe("retired-model");
+    expect(loadingModel.textContent).not.toContain("当前不可用");
+    expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
+    expect(button("保存").disabled).toBe(true);
+
+    await act(async () => resolveModels([]));
+    await settle();
+    const emptyModel = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    expect(emptyModel.textContent).toContain("retired-model（当前不可用）");
+    expect(container.textContent).toContain("所选模型不在当前账号上游模型目录中");
+    expect(button("保存").disabled).toBe(true);
+  });
+
+  it("adopts the server draft and version after an explicit successful reread", async () => {
+    let refreshed = false;
+    const serverDetection: Detection = {
+      ...baseDetection,
+      interval_minutes: 60,
+      model_id: "gpt-6-luna",
+      version: "detection-version-server",
+    };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return (refreshed ? serverDetection : baseDetection) as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      if (method === "PUT" && path === "/accounts/42/model-detection") return serverDetection as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await settle();
+
+    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      interval.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    refreshed = true;
+    await act(async () => button("重新读取").click());
+    await settle();
+
+    expect(interval.value).toBe("60");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!.value).toBe("gpt-6-luna");
+    await act(async () => button("保存").click());
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
+      expected_version: "detection-version-server",
+      enabled: false,
+      interval_minutes: 60,
+      model_id: "gpt-6-luna",
+    });
+  });
+
+  it("keeps the draft through an offline reconnect reread", async () => {
+    let reconnect = false;
+    let resolveReconnect!: (value: Detection) => void;
+    const pendingReconnect = new Promise<Detection>((resolve) => { resolveReconnect = resolve; });
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return (reconnect ? pendingReconnect : baseDetection) as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return models as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await settle();
+    const interval = container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(interval, "45");
+      interval.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const model = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    model.value = "gpt-6-luna";
+    await act(async () => model.dispatchEvent(new Event("change", { bubbles: true })));
+
+    reconnect = true;
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online={false} close={() => {}} report={() => {}} />,
+    ));
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await act(async () => resolveReconnect({ ...baseDetection, interval_minutes: 15, model_id: "gpt-6-sol", version: "reconnected-version" }));
+    await settle();
+
+    expect(interval.value).toBe("45");
+    expect(model.value).toBe("gpt-6-luna");
+  });
+
+  it("ignores a late settings response after switching accounts", async () => {
+    const otherAccount = { ...account, id: 43, name: "另一个检测账号", version: "account-version-43" };
+    let resolveOldDetection!: (value: Detection) => void;
+    let resolveOldModels!: (value: unknown) => void;
+    const oldDetection = new Promise<Detection>((resolve) => { resolveOldDetection = resolve; });
+    const oldModels = new Promise((resolve) => { resolveOldModels = resolve; });
+    const freshDetection: Detection = { ...baseDetection, interval_minutes: 55, model_id: "gpt-6-luna", version: "fresh-version" };
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method !== "GET") throw new Error("unexpected " + method + " " + path);
+      if (path === "/accounts/42/model-detection") return oldDetection as never;
+      if (path === "/accounts/42/models?purpose=model_test") return oldModels as never;
+      if (path === "/accounts/43/model-detection") return freshDetection as never;
+      if (path === "/accounts/43/models?purpose=model_test") return [models[1]] as never;
+      throw new Error("unexpected " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={() => {}} report={() => {}} />,
+    ));
+    await act(async () => root.render(
+      <ModelDetectionDialog account={otherAccount} online close={() => {}} report={() => {}} />,
+    ));
+    await settle();
+    expect(container.textContent).toContain("另一个检测账号 #43");
+    expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!.value).toBe("gpt-6-luna");
+
+    await act(async () => {
+      resolveOldDetection({ ...baseDetection, interval_minutes: 5, model_id: "gpt-6-sol", version: "stale-version" });
+      resolveOldModels([{ id: "stale-account-model", display_name: "Stale account model" }]);
+    });
+    await settle();
+    expect(container.textContent).toContain("另一个检测账号 #43");
+    expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!.value).toBe("gpt-6-luna");
+  });
+
+  it("ignores settings responses after the dialog is unmounted", async () => {
+    let resolveDetection!: (value: Detection) => void;
+    let resolveModels!: (value: unknown) => void;
+    const pendingDetection = new Promise<Detection>((resolve) => { resolveDetection = resolve; });
+    const pendingModels = new Promise((resolve) => { resolveModels = resolve; });
+    const report = vi.fn();
+    const close = vi.fn(() => root.render(null));
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET" && path === "/accounts/42/model-detection") return pendingDetection as never;
+      if (method === "GET" && path === "/accounts/42/models?purpose=model_test") return pendingModels as never;
+      throw new Error("unexpected " + method + " " + path);
+    });
+    await act(async () => root.render(
+      <ModelDetectionDialog account={account} online close={close} report={report} />,
+    ));
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭定时检测"]')!.click());
+    expect(close).toHaveBeenCalledOnce();
+    await act(async () => {
+      resolveDetection(baseDetection);
+      resolveModels(models);
+    });
+    await settle();
+    expect(container.textContent).toBe("");
+    expect(report).not.toHaveBeenCalled();
   });
 
   it("cancels a queued task and refreshes the terminal task state", async () => {

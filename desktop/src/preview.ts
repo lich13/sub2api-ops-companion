@@ -713,7 +713,11 @@ export async function run(
         : { status: "idle", total: 0, completed: 0, items: [] };
     if (path.split("?", 1)[0].endsWith("/models")) {
       if (path.split("?")[1] === "purpose=model_test") {
-        return [
+        const account = state.snapshot?.accounts.find((item) => item.id === Number(path.split("/")[2]));
+        if (!account) throw new Error("账号不存在");
+        if (account.platform !== "openai") throw new Error("仅支持 Codex 模型测试");
+        // Synthetic per-account admin directory; group allowlists add no items.
+        return (account.type === "apikey" ? ["gpt-6-sol", "gpt-6-luna"] : [
           "gpt-5.6-sol",
           "gpt-5.6-terra",
           "gpt-5.6-luna",
@@ -722,7 +726,7 @@ export async function run(
           "gpt-6-luna",
           "gpt-6-astra",
           "codex-auto-review",
-        ].map((id) => ({ id, display_name: id, type: "model" }));
+        ]).map((id) => ({ id, display_name: id, type: "model" }));
       }
       return [
         "gpt-6-sol",

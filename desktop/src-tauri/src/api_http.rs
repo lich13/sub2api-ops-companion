@@ -675,6 +675,22 @@ pub(crate) async fn http(
         .map_err(String::from)
 }
 
+fn model_directory_request(method: &str, path: &str) -> bool {
+    let Some(account_path) = path.strip_prefix("/accounts/") else {
+        return false;
+    };
+    let Some((id, operation)) = account_path.split_once('/') else {
+        return false;
+    };
+    if id.parse::<u64>().ok().filter(|id| *id > 0).is_none() {
+        return false;
+    }
+    matches!(
+        (method, operation),
+        ("GET", "models?purpose=model_test") | ("POST", "model-tests") | ("PUT", "model-detection")
+    )
+}
+
 pub(crate) async fn http_detailed(
     client: &reqwest::Client,
     base: &str,
@@ -701,6 +717,9 @@ pub(crate) async fn http_detailed(
     }
     if path.starts_with("/model-groups/") {
         req = req.timeout(Duration::from_secs(65));
+    }
+    if model_directory_request(method, path) {
+        req = req.timeout(Duration::from_secs(20));
     }
     if let Some(body) = body {
         req = req.json(&body);
@@ -1129,6 +1148,66 @@ mod tests {
         thread.join().unwrap();
         assert!(result.is_ok(), "{result:?}");
         assert!(!temp.path().join("network.log").exists());
+    }
+
+    #[tokio::test]
+    async fn model_directory_routes_extend_timeout_without_replaying_writes() {
+        for (method, path) in [
+            ("GET", "/accounts/7/models?purpose=model_test"),
+            ("POST", "/accounts/7/model-tests"),
+            ("PUT", "/accounts/7/model-detection"),
+        ] {
+            assert!(model_directory_request(method, path));
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let expected_method = method.to_owned();
+            let thread = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                let size = stream.read(&mut request).unwrap();
+                assert!(String::from_utf8_lossy(&request[..size]).starts_with(&expected_method));
+                std::thread::sleep(Duration::from_millis(200));
+                stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+                listener.set_nonblocking(true).unwrap();
+                std::thread::sleep(Duration::from_millis(50));
+                assert_eq!(
+                    listener.accept().unwrap_err().kind(),
+                    std::io::ErrorKind::WouldBlock
+                );
+            });
+            let directory = tempfile::tempdir().unwrap();
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .retry(reqwest::retry::never())
+                .timeout(Duration::from_millis(100))
+                .build()
+                .unwrap();
+            let error = http_detailed(
+                &client,
+                &base,
+                "fixture-admin-key",
+                method,
+                path,
+                (method != "GET").then(|| serde_json::json!({})),
+                &directory.path().join("network.log"),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                error.message.contains("503"),
+                "extended timeout must receive the HTTP response"
+            );
+            thread.join().unwrap();
+        }
+        for (method, path) in [
+            ("GET", "/accounts/7/models"),
+            ("GET", "/accounts/7/model-detection"),
+            ("POST", "/accounts/7/model-detection"),
+            ("GET", "/snapshot"),
+            ("GET", "/accounts/0/models?purpose=model_test"),
+        ] {
+            assert!(!model_directory_request(method, path));
+        }
     }
 
     #[test]

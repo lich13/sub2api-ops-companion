@@ -23,32 +23,45 @@ export default function ModelTestDialog({ account, online, close, report, concur
 }) {
   const [slots, setSlots] = useState([1, 2, 3].includes(concurrency) ? concurrency : 1);
   const [models, setModels] = useState<Model[]>([]), [model, setModel] = useState("");
-  const modelsRef = useRef<Model[]>([]);
   const selectionTouched = useRef(false), submitted = useRef(false);
+  const scope = useRef(0), activeAccount = useRef(account.id);
   const [job, setJob] = useState<Result | null>(null), [loading, setLoading] = useState(true);
   const [modelError, setModelError] = useState(""), [modelReload, setModelReload] = useState(0);
   const [busy, setBusy] = useState(false), generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reportRef = useRef(report); reportRef.current = report;
-  useBackAction(true, close);
+  const dismiss = () => { ++scope.current; ++generation.current; clearTimeout(timer.current); close(); };
+  useBackAction(true, dismiss);
   useEffect(() => {
-    let alive = true;
+    ++scope.current;
+    if (activeAccount.current !== account.id) {
+      activeAccount.current = account.id;
+      setModels([]); setModel(""); setJob(null);
+      selectionTouched.current = false; submitted.current = false;
+    }
+    setBusy(false);
+    return () => { ++scope.current; };
+  }, [account.id, online]);
+  useEffect(() => {
+    let alive = true; const current = scope.current;
+    if (!online) { setLoading(false); return; }
     setLoading(true); setModelError("");
     void api<Model[]>("GET", `/accounts/${account.id}/models?purpose=model_test`).then((items) => {
-      if (!alive) return;
-      modelsRef.current = items; setModels(items); setModel((old) => old && items.some((item) => item.id === old) ? old : items[0]?.id ?? "");
-    }).catch((e) => { if (alive) { setModels([]); setModel(""); setModelError(e instanceof Error ? e.message : "模型候选读取失败"); reportRef.current(e); } }).finally(() => { if (alive) setLoading(false); });
+      if (!alive || current !== scope.current) return;
+      setModels(items); setModel((old) => old || items[0]?.id || "");
+    }).catch((e) => { if (alive && current === scope.current) { setModelError(e instanceof Error ? e.message : "模型候选读取失败"); reportRef.current(e); } }).finally(() => { if (alive && current === scope.current) setLoading(false); });
     return () => { alive = false; ++generation.current; clearTimeout(timer.current); };
-  }, [account.id, modelReload]);
+  }, [account.id, online, modelReload]);
   useEffect(() => {
-    let alive = true;
+    let alive = true; const current = scope.current;
+    if (!online) return;
     void api<Result | null>("GET", `/accounts/${account.id}/model-tests/latest`).then((value) => {
-      if (alive && value && !submitted.current) {
+      if (alive && current === scope.current && value && !submitted.current) {
         setJob(value);
-        if (!selectionTouched.current) setModel((old) => modelsRef.current.length && !modelsRef.current.some((item) => item.id === value.requested_model) ? old : value.requested_model);
+        if (!selectionTouched.current) setModel(value.requested_model);
       }
     }).catch(() => {});
     return () => { alive = false; };
-  }, [account.id]);
+  }, [account.id, online]);
   useEffect(() => {
     if (!job || terminal.has(job.status) || !online) return;
     const current = ++generation.current;
@@ -63,7 +76,8 @@ export default function ModelTestDialog({ account, online, close, report, concur
     return () => { ++generation.current; clearTimeout(timer.current); };
   }, [job?.id, job?.status, online]);
   async function start() {
-    if (busy || !online || !model) return;
+    if (busy || !online || !model || modelError || !models.some((item) => item.id === model)) return;
+    const current = scope.current;
     submitted.current = true;
     setBusy(true);
     try {
@@ -73,27 +87,31 @@ export default function ModelTestDialog({ account, online, close, report, concur
         concurrency: slots,
         request_id: `${crypto.randomUUID().replaceAll("-", "").slice(0, 32)}`,
       });
-      setJob(next);
-    } catch (e) { reportRef.current(e); } finally { setBusy(false); }
+      if (current === scope.current) setJob(next);
+    } catch (e) { if (current === scope.current) reportRef.current(e); } finally { if (current === scope.current) setBusy(false); }
   }
   async function cancel() {
     if (!job || busy || (terminal.has(job.status) && job.status !== "needs_confirmation")) return;
-    setBusy(true); try { setJob(await api<Result>("POST", `/model-tests/${job.id}/cancel`, {})); } catch (e) { reportRef.current(e); } finally { setBusy(false); }
+    const current = scope.current;
+    setBusy(true); try { const next = await api<Result>("POST", `/model-tests/${job.id}/cancel`, {}); if (current === scope.current) setJob(next); } catch (e) { if (current === scope.current) reportRef.current(e); } finally { if (current === scope.current) setBusy(false); }
   }
   async function retryFailed() {
     if (!job || busy) return;
+    const current = scope.current;
     setBusy(true);
-    try { setJob(await api<Result>("POST", `/model-tests/${job.id}/retry`, { request_id: crypto.randomUUID() })); }
-    catch (e) { reportRef.current(e); } finally { setBusy(false); }
+    try { const next = await api<Result>("POST", `/model-tests/${job.id}/retry`, { request_id: crypto.randomUUID() }); if (current === scope.current) setJob(next); }
+    catch (e) { if (current === scope.current) reportRef.current(e); } finally { if (current === scope.current) setBusy(false); }
   }
   const running = !!job && !terminal.has(job.status);
   const reportResult = job?.report;
-  return <div className="modal-backdrop" onClick={close}><section className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" onClick={(e) => e.stopPropagation()}>
-    <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={close}><X size={18}/></button></header>
+  const available = models.some((item) => item.id === model);
+  return <div className="modal-backdrop" onClick={dismiss}><section className="model-test-dialog" role="dialog" aria-modal="true" aria-label="模型测试" onClick={(e) => e.stopPropagation()}>
+    <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={dismiss}><X size={18}/></button></header>
     <div className="model-test-content">
     <div className="model-test-controls">
-    <label className="model-test-model">模型<select aria-label="测试模型" value={model} disabled={loading || !!modelError || !models.length || running || busy} onChange={(e) => { selectionTouched.current = true; setModel(e.target.value); }}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
+    <label className="model-test-model">模型<select aria-label="测试模型" value={model} disabled={loading || !!modelError || !models.length || running || busy || !online} onChange={(e) => { selectionTouched.current = true; setModel(e.target.value); }}>{model && !available && <option value={model}>{model}{!loading && !modelError && online ? "（当前不可用）" : ""}</option>}{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
       {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
+      {!loading && online && !modelError && model && !available && <span className="bad-text">所选模型不在当前账号上游模型目录中。</span>}
     </label>
     <label className="model-test-model">并发<select aria-label="测试并发" value={slots} disabled={running || busy} onChange={(e) => { const value = Number(e.target.value); setSlots(value); saveConcurrency?.(value); }}>{[1, 2, 3].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
     </div>
@@ -107,6 +125,6 @@ export default function ModelTestDialog({ account, online, close, report, concur
     </div>}
     <FingerprintBankStatus online={online} taskVersion={job?.bank_version}/>
     </div>
-    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || !!modelError || !models.length || busy || !model || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
+    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
   </section></div>;
 }
