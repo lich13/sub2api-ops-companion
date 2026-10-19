@@ -17432,7 +17432,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "candidate 暂不可用时暂停并按一分钟边界重新检查；候选恢复后以完整 interval 重新等待。"
+      "coverage_note": "推进注入的单调时钟使目录缓存过期，确认模型缺失后暂停并按一分钟边界重新检查；候选恢复后以完整 interval 重新等待，检查与派发共享目录刷新。"
     },
     {
       "legacy_test_id": "py:tests.test_model_detection027:_DetectionFixture.test_missing_target_bank_never_dispatches_automatic_requests",

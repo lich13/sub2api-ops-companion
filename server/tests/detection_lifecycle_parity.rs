@@ -545,6 +545,7 @@ struct Harness {
     runtime: Option<Arc<Runtime>>,
     mock: MockUpstream,
     clock: Arc<StdMutex<DateTime<Utc>>>,
+    monotonic_origin: std::time::Instant,
     base_url: String,
     server: Option<JoinHandle<()>>,
 }
@@ -558,6 +559,7 @@ impl Harness {
             .expect("open independent pool for synthetic upstream writes");
         let temp = tempfile::tempdir().expect("create private detection state directory");
         let clock = Arc::new(StdMutex::new(reference_time()));
+        let monotonic_origin = std::time::Instant::now();
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind loopback-only upstream fixture");
@@ -611,7 +613,8 @@ impl Harness {
             verify_url: String::new(),
             read_only: false,
         };
-        let runtime = Self::open_runtime(settings.clone(), clock.clone(), &base_url).await;
+        let runtime =
+            Self::open_runtime(settings.clone(), clock.clone(), monotonic_origin, &base_url).await;
         Self {
             _temp: temp,
             settings,
@@ -619,6 +622,7 @@ impl Harness {
             runtime: Some(runtime),
             mock,
             clock,
+            monotonic_origin,
             base_url,
             server: Some(server),
         }
@@ -627,13 +631,24 @@ impl Harness {
     async fn open_runtime(
         settings: Settings,
         clock: Arc<StdMutex<DateTime<Utc>>>,
+        monotonic_origin: std::time::Instant,
         base_url: &str,
     ) -> Arc<Runtime> {
         let runtime_clock = clock.clone();
-        let runtime =
-            Runtime::new_with_clock(settings, Arc::new(move || *runtime_clock.lock().unwrap()))
-                .await
-                .expect("construct real Runtime over temporary PostgreSQL and injected clock");
+        let monotonic_clock = clock.clone();
+        let wall_origin = reference_time();
+        let runtime = Runtime::new_with_clocks(
+            settings,
+            Arc::new(move || *runtime_clock.lock().unwrap()),
+            Arc::new(move || {
+                let elapsed = (*monotonic_clock.lock().unwrap() - wall_origin)
+                    .to_std()
+                    .expect("fixture wall clock must not move backwards");
+                monotonic_origin + elapsed
+            }),
+        )
+        .await
+        .expect("construct real Runtime over temporary PostgreSQL and injected clock");
         runtime
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
@@ -802,8 +817,13 @@ impl Harness {
         let old = self.runtime.take().expect("Runtime to restart");
         old.close().await;
         drop(old);
-        let runtime =
-            Self::open_runtime(self.settings.clone(), self.clock.clone(), &self.base_url).await;
+        let runtime = Self::open_runtime(
+            self.settings.clone(),
+            self.clock.clone(),
+            self.monotonic_origin,
+            &self.base_url,
+        )
+        .await;
         self.runtime = Some(runtime);
     }
 
@@ -820,8 +840,13 @@ impl Harness {
             serde_json::to_vec(state).expect("serialize synthetic fingerprint bank state"),
         )
         .expect("write synthetic fingerprint bank state in the fixture-owned directory");
-        let runtime =
-            Self::open_runtime(self.settings.clone(), self.clock.clone(), &self.base_url).await;
+        let runtime = Self::open_runtime(
+            self.settings.clone(),
+            self.clock.clone(),
+            self.monotonic_origin,
+            &self.base_url,
+        )
+        .await;
         self.runtime = Some(runtime);
     }
 
@@ -1246,11 +1271,12 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
 
     let models_path = format!("/api/v1/admin/accounts/{id}/models");
     let models_before_tick = harness.mock.count("GET", &models_path);
+    harness.advance(300);
     harness.runtime().detection.tick().await.unwrap();
     let blocked = harness.runtime().detection.control(id).unwrap();
     assert_eq!(blocked["status"], "paused");
     assert_eq!(blocked["candidate_blocked"], true);
-    assert_eq!(blocked["reason"], "所选模型不在当前模型候选中");
+    assert_eq!(blocked["reason"], "所选模型不在当前账号上游模型目录中");
     assert_eq!(
         blocked["candidate_recheck_at"],
         datetime(harness.now() + Duration::minutes(1))
@@ -1303,11 +1329,14 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
     let job = harness.wait_job_terminal(&job_id).await;
     assert_eq!(job["status"], "completed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    // The final scheduled tick performs its own candidate check, then the automatic
-    // worker rechecks the catalog before dispatching the Responses request.
+    harness
+        .mock
+        .wait_for("GET", &models_path, models_before_tick + 3)
+        .await;
+    // The final scheduled tick and its worker share the same controlled refresh.
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_before_tick + 4
+        models_before_tick + 3
     );
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;

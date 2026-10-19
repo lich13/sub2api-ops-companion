@@ -89,6 +89,15 @@ impl Runtime {
         settings: Settings,
         clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
     ) -> Result<Arc<Self>> {
+        Self::new_with_clocks(settings, clock, Arc::new(std::time::Instant::now)).await
+    }
+
+    /// Keep cache expiry monotonic while allowing deterministic lifecycle tests.
+    pub async fn new_with_clocks(
+        settings: Settings,
+        clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
+        monotonic: Arc<dyn Fn() -> std::time::Instant + Send + Sync>,
+    ) -> Result<Arc<Self>> {
         let settings = Arc::new(settings);
         for (resource, path) in [
             ("oauth_state", settings.usage_path.clone()),
@@ -154,13 +163,15 @@ impl Runtime {
             settings.data_dir().join("account-templates.json"),
             settings.read_only,
         );
-        let actions = Actions::new(
+        let mut actions = Actions::new(
             queries.clone(),
             upstream.clone(),
             AccountLocks::default(),
             templates,
             settings.clone(),
         )?;
+        actions.candidates =
+            crate::model_candidates::Candidates::with_clock(actions.supervisor.clone(), monotonic);
         let mut bark = Bark::new(settings.clone())?;
         bark.supervise(actions.supervisor.clone());
         let config = ConfigService::new(
