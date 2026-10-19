@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::Request,
-    http::StatusCode,
+    http::{Method, StatusCode},
     response::{IntoResponse, Response},
     Json, Router,
 };
@@ -41,15 +41,39 @@ use tokio::{
 };
 
 const PANIC_MARKER: &str = "fixture-panic-payload-must-not-appear";
+const FIXTURE_ADMIN_KEY: &str = "fixture-admin-key";
 const CHILD_DIR: &str = "SUB2OPS_SUPERVISION_CHILD_DIR";
 const CHILD_MODE: &str = "SUB2OPS_SUPERVISION_CHILD_MODE";
 static NEXT_ID: AtomicI64 = AtomicI64::new(1);
 static UPSTREAM_CALLS: AtomicUsize = AtomicUsize::new(0);
+static MODEL_DIRECTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+static MODEL_DIRECTORY_ACCOUNT: AtomicI64 = AtomicI64::new(0);
 
 async fn fixture_upstream(request: Request<Body>) -> Response {
     if request.uri().path() == "/api/v1/admin/groups/all" {
         UPSTREAM_CALLS.fetch_add(1, Ordering::AcqRel);
         return Json(json!({"code":0,"data":[]})).into_response();
+    }
+    let account_id = request
+        .uri()
+        .path()
+        .strip_prefix("/api/v1/admin/accounts/")
+        .and_then(|path| path.strip_suffix("/models"))
+        .and_then(|id| id.parse::<i64>().ok());
+    if request.method() == Method::GET
+        && account_id == Some(MODEL_DIRECTORY_ACCOUNT.load(Ordering::Acquire))
+        && request
+            .headers()
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok())
+            == Some(FIXTURE_ADMIN_KEY)
+    {
+        MODEL_DIRECTORY_CALLS.fetch_add(1, Ordering::AcqRel);
+        return Json(json!({
+            "code":0,
+            "data":[{"id":"gpt-6-luna","name":"fixture model"}]
+        }))
+        .into_response();
     }
     StatusCode::NOT_FOUND.into_response()
 }
@@ -518,6 +542,14 @@ async fn model_hook_panic_child(directory: &Path) -> ! {
     let fixture = runtime_fixture(directory, Arc::new(move || fixed), false).await;
     let runtime = fixture.runtime.clone();
     let account = seed_account(&runtime, 1).await[0];
+    runtime
+        .actions
+        .queries
+        .oauth
+        .save_admin_token(FIXTURE_ADMIN_KEY)
+        .unwrap();
+    MODEL_DIRECTORY_ACCOUNT.store(account, Ordering::Release);
+    let model_directory_calls = MODEL_DIRECTORY_CALLS.load(Ordering::Acquire);
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
     let serving = {
@@ -555,6 +587,14 @@ async fn model_hook_panic_child(directory: &Path) -> ! {
         .await
         .unwrap();
     let job_id = started["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        MODEL_DIRECTORY_CALLS.load(Ordering::Acquire),
+        model_directory_calls + 1,
+        "model test must read the current account model directory"
+    );
+    tokio::time::timeout(Duration::from_secs(10), hooks.dispatched.notified())
+        .await
+        .expect("model test did not reach the panic hook");
     tokio::time::timeout(Duration::from_secs(10), runtime.actions.supervisor.failed())
         .await
         .expect("model hook panic did not notify the service supervisor");
