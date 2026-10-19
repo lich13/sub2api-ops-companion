@@ -29,6 +29,7 @@ pub mod key_fallback;
 pub mod legacy;
 pub mod maintenance;
 mod manual_actions;
+mod model_candidates;
 pub mod model_catalog;
 pub mod model_config;
 pub mod model_detection;

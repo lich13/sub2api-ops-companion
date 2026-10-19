@@ -272,11 +272,11 @@ impl Detection {
         }
         if !self
             .actions
-            .model_allowed(&row, string(&value["model_id"]), true)
+            .model_allowed(&row, string(&value["model_id"]))
             .await?
         {
             return Ok(
-                json!({"success":false,"error":"所选模型不在当前分组白名单中","error_code":"model_unavailable"}),
+                json!({"success":false,"error":"所选模型不在当前账号上游模型目录中","error_code":"model_unavailable"}),
             );
         }
         let bank = self.tests.bank.snapshot();

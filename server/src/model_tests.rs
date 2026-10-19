@@ -420,10 +420,10 @@ impl ModelTests {
         if job["automatic"] == true
             && !self
                 .actions
-                .model_allowed(&row, string(&job["requested_model"]), true)
+                .model_allowed(&row, string(&job["requested_model"]))
                 .await?
         {
-            return Err(Error::new(409, "所选模型已不在当前模型候选中"));
+            return Err(Error::new(409, "所选模型已不在当前账号上游模型目录中"));
         }
         let (target, owner) =
             model_target::target(&self.actions, &row, string(&job["requested_model"])).await?;

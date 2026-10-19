@@ -192,10 +192,10 @@ impl Detection {
         if request["enabled"] == true
             && !self
                 .actions
-                .model_allowed(&row, string(&request["model_id"]), true)
+                .model_allowed(&row, string(&request["model_id"]))
                 .await?
         {
-            return Err(Error::new(422, "所选模型不在当前分组白名单中"));
+            return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
         }
         let _guard = self.actions.locks.control(id).await;
         self.store.transaction(|data| {
@@ -409,13 +409,13 @@ impl Detection {
         }
         let allowed = self
             .actions
-            .model_allowed(&row, string(&value["model_id"]), true)
+            .model_allowed(&row, string(&value["model_id"]))
             .await?;
         let bank = self.tests.bank.snapshot();
         let ready = bank_contains(&bank.0, TARGET);
         if !allowed || !ready {
             let reason = if !allowed {
-                "所选模型不在当前模型候选中"
+                "所选模型不在当前账号上游模型目录中"
             } else {
                 "当前指纹库缺少降智判定模型"
             };

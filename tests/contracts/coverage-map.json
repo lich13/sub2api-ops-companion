@@ -10306,16 +10306,17 @@
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_exact_model_test_options_ignore_wildcards_media_and_blanks",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10334,7 +10335,14 @@
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
         ]
       },
-      "coverage_note": "exact candidates preserve live group union order, include absent catalog IDs, and omit wildcard, image, and blank entries"
+      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "replacement": {
+        "legacy_assertions": [
+          "旧候选来自启用分组白名单，保留未出现在上游目录的文本 ID。"
+        ],
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopActionContractTests.test_grok_batch_accepts_only_fresh_complete_billing",
@@ -10366,9 +10374,10 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10449,9 +10458,10 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10474,16 +10484,17 @@
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_candidates_are_full_exact_group_union_without_catalog_intersection",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10502,7 +10513,14 @@
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
         ]
       },
-      "coverage_note": "strict exact group union bypasses upstream catalog lookup and preserves models absent from catalog"
+      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "replacement": {
+        "legacy_assertions": [
+          "旧完整分组白名单绕过账号目录读取，并补入目录未返回的 ID。"
+        ],
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_candidates_fall_back_when_no_group_or_allowlist_disabled",
@@ -10513,9 +10531,10 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10534,20 +10553,21 @@
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
         ]
       },
-      "coverage_note": "no-group and disabled-allowlist requests fetch the unrestricted catalog and filter to text models"
+      "coverage_note": "无分组及禁用白名单均读取当前账号目录并保留文本过滤；0.1.47 此规则对所有分组状态统一适用。"
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_model_test_submission_rechecks_exact_allowlist",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10566,7 +10586,14 @@
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
         ]
       },
-      "coverage_note": "candidate is rechecked against current group allowlist before native test; wildcard/media candidates are denied"
+      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "replacement": {
+        "legacy_assertions": [
+          "旧提交可通过分组白名单判断，不必读取当前账号目录。"
+        ],
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_desktop_actions:DesktopStreamTests.test_models_filters_using_live_group_allowlist_union",
@@ -10577,9 +10604,10 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -10609,9 +10637,10 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
           "assert_eq!(events.last().unwrap()[\"success\"], true)",

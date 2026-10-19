@@ -2659,24 +2659,34 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
         )
         .await;
     assert_eq!(status, 200);
+    // Approved 0.1.47 difference: the pinned Python allowlist union remains
+    // recorded as an oracle, but model tests now use this account's directory.
     assert_eq!(
+        exact,
+        json!([
+            {"id":"fixture-model-a","display_name":"fixture-model-a","type":"text"},
+            {"id":"fixture-model-b","display_name":"fixture-model-b","type":"text"}
+        ])
+    );
+    assert_ne!(
         exact,
         fixtures()["python_oracle"]["desktop_actions"]["exact_candidates"]
     );
-    assert!(
+    assert_eq!(
         harness
             .upstream
             .matching(
                 Method::GET,
                 &format!("/api/v1/admin/accounts/{account_id}/models")
             )
-            .is_empty(),
-        "an enabled complete exact allowlist bypasses catalog intersection"
+            .len(),
+        1,
+        "model tests always read the current account directory, including complete allowlists"
     );
     let row = harness.account(account_id).await;
     for (model, expected) in [
         ("fixture-model-a", true),
-        ("fixture-not-in-catalog", true),
+        ("fixture-not-in-catalog", false),
         ("fixture-model-*", false),
         ("fixture-image-model", false),
     ] {
@@ -2684,11 +2694,11 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
             harness
                 .runtime
                 .actions
-                .model_allowed(&row, model, false)
+                .model_allowed(&row, model)
                 .await
                 .unwrap(),
             expected,
-            "model candidate {model} must be rechecked against the exact live group union"
+            "model candidate {model} must be rechecked against the current account directory"
         );
     }
     let (status, normal, _) = harness

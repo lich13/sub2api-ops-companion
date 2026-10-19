@@ -1873,7 +1873,7 @@
     },
     {
       "covered_assertions": [
-        "exact candidates preserve live group union order, include absent catalog IDs, and omit wildcard, image, and blank entries"
+        "approved 0.1.47 difference: current-account directory replaces group union; absent IDs, wildcards and media are excluded; original Python oracle is preserved"
       ],
       "fixture_anchors": [
         "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
@@ -2060,7 +2060,7 @@
     },
     {
       "covered_assertions": [
-        "strict exact group union bypasses upstream catalog lookup and preserves models absent from catalog"
+        "approved 0.1.47 difference: even complete allowlists require the current-account directory; no absent catalog IDs are added"
       ],
       "fixture_anchors": [
         "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
@@ -2102,7 +2102,7 @@
     },
     {
       "covered_assertions": [
-        "no-group and disabled-allowlist requests fetch the unrestricted catalog and filter to text models"
+        "no-group and disabled-allowlist requests both use the current-account directory and filter to text models"
       ],
       "fixture_anchors": [
         "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",
@@ -2136,7 +2136,7 @@
     },
     {
       "covered_assertions": [
-        "candidate is rechecked against current group allowlist before native test; wildcard/media candidates are denied"
+        "approved 0.1.47 difference: candidate is rechecked against the current-account directory; whitelist-only, wildcard and media IDs are denied"
       ],
       "fixture_anchors": [
         "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",

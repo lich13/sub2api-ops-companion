@@ -528,6 +528,7 @@ impl Runtime {
             self.quality.close(),
             self.requests.close(55),
             self.proxies.close(55),
+            self.actions.candidates.close(),
             self.tests.bank.close(55),
             background
         );

@@ -6,6 +6,7 @@ use crate::{
     credit_ownership,
     db::Param,
     error::{Error, Result},
+    model_candidates::{Candidates, Failure},
     model_rules::admitted,
     queries::{settings_capabilities, Queries},
     security::{clean, safe_error},
@@ -53,6 +54,7 @@ pub struct Actions {
     pub templates: Templates,
     pub settings: Arc<Settings>,
     pub supervisor: crate::supervision::Supervisor,
+    pub(crate) candidates: Candidates,
     client: reqwest::Client,
 }
 pub struct TestRun {
@@ -179,13 +181,15 @@ impl Actions {
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
             .build()?;
+        let supervisor = crate::supervision::Supervisor::default();
         Ok(Self {
             queries,
             upstream,
             locks,
             templates,
             settings,
-            supervisor: Default::default(),
+            candidates: Candidates::new(supervisor.clone()),
+            supervisor,
             client,
         })
     }
@@ -466,15 +470,11 @@ impl Actions {
             .collect())
     }
     pub async fn models(&self, id: i64, key: &str, model_test: bool) -> Result<Vec<Value>> {
+        if model_test {
+            return self.model_test_candidates(id, key, None).await;
+        }
         let row = self.account(id, None).await?;
-        if model_test && row["platform"] != "openai" {
-            return Err(Error::new(422, "仅支持 Codex 模型测试"));
-        }
-        let allowlists = self.allowlists(&row, model_test).await?;
-        if model_test && !allowlists.is_empty() && allowlists.iter().all(|v| truthy(&v["enabled"]))
-        {
-            return Ok(exact_models(&allowlists));
-        }
+        let allowlists = self.allowlists(&row, false).await?;
         let data = self
             .json(
                 reqwest::Method::GET,
@@ -487,37 +487,146 @@ impl Actions {
         let list = data
             .as_array()
             .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
-        let mut values = filter_models(
-            &list[..list.len().min(1000)],
-            if model_test { &[] } else { &allowlists },
-        );
-        if model_test {
-            values.retain(|v| text_model(string(&v["id"])));
-        }
-        Ok(values)
+        Ok(filter_models(&list[..list.len().min(1000)], &allowlists))
     }
-    pub async fn model_allowed(
+    async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
+        let row = self.account(id, None).await?;
+        if row["platform"] != "openai" {
+            return Err(Error::new(422, "仅支持 Codex 模型测试"));
+        }
+        let parent = integer(&row["parent_account_id"])
+            .or_else(|| integer(&row["extra"]["parent_account_id"]))
+            .filter(|id| *id > 0);
+        // Parent metadata invalidates inherited credentials; its directory and
+        // group allowlist are never used to add candidate models.
+        let mut parent_version = if let Some(parent) = parent {
+            self.queries.db.one("SELECT id,platform,type,proxy_id,md5(credentials::text) AS credential_version,extra FROM accounts WHERE id=$1 AND deleted_at IS NULL", &[parent.into()]).await?
+        } else {
+            None
+        };
+        let protocol_fields = [
+            "parent_account_id",
+            "openai_responses_mode",
+            "openai_responses_supported",
+            "openai_passthrough",
+            "openai_oauth_passthrough",
+        ];
+        if let Some(parent) = &mut parent_version {
+            parent["extra"] = crate::compat::pick(&parent["extra"], &protocol_fields);
+        }
+        let base = self.upstream.active_url();
+        if base.is_empty() {
+            return Err(Error::new(502, "未配置 Sub2API 服务地址"));
+        }
+        let identity = crate::compat::digest(&json!([
+            base,
+            crate::compat::sha256(key),
+            crate::compat::pick(
+                &row,
+                &[
+                    "id",
+                    "platform",
+                    "type",
+                    "parent_account_id",
+                    "credential_version",
+                    "proxy_id",
+                    "model_mapping_version",
+                    "model_catalog_version",
+                    "group_ids"
+                ]
+            ),
+            crate::compat::pick(&row["extra"], &protocol_fields),
+            parent_version
+        ]));
+        Ok((identity, base))
+    }
+    async fn model_test_candidates(
         &self,
-        row: &Value,
-        model: &str,
-        candidate_required: bool,
-    ) -> Result<bool> {
+        id: i64,
+        key: &str,
+        required: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        if key.is_empty() {
+            return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
+        }
+        let (identity, base) = self.candidate_source(id, key).await?;
+        let actions = self.clone();
+        let expected = identity.clone();
+        let key = key.to_owned();
+        let fetch = async move {
+            let response = actions
+                .client
+                .get(format!("{base}/api/v1/admin/accounts/{id}/models"))
+                .header("x-api-key", &key)
+                .header("X-Admin-UI-Request", "1")
+                .header("Accept", "application/json")
+                .timeout(Duration::from_secs(8))
+                .send()
+                .await
+                .map_err(|error| {
+                    Failure::temporary(if error.is_timeout() {
+                        Error::new(504, "模型目录读取超时，请稍后重试")
+                    } else {
+                        Error::new(502, "无法读取 Sub2API 模型目录")
+                    })
+                })?;
+            let status = response.status().as_u16();
+            if !(200..300).contains(&status) {
+                let error = Error::new(502, format!("Sub2API 模型目录请求失败 [http_{status}]"));
+                return Err(if status == 429 || status >= 500 {
+                    Failure::temporary(error)
+                } else {
+                    Failure::permanent(error)
+                });
+            }
+            let bytes = read_limited(response, 8_000_000).await.map_err(|error| {
+                if error.detail == "上游响应超过限制" {
+                    Failure::permanent(error)
+                } else {
+                    Failure::temporary(error)
+                }
+            })?;
+            let body: Value = serde_json::from_slice(&bytes)
+                .map_err(|_| Failure::permanent(Error::new(502, "模型列表格式无效")))?;
+            if !body.is_object() || body["code"] != 0 {
+                return Err(Failure::permanent(Error::new(
+                    502,
+                    "Sub2API 未确认模型目录读取成功",
+                )));
+            }
+            let items = body["data"]
+                .as_array()
+                .ok_or_else(|| Failure::permanent(Error::new(502, "模型列表格式无效")))?;
+            let mut values = filter_models(&items[..items.len().min(1000)], &[]);
+            values.retain(|value| text_model(string(&value["id"])));
+            let (current, _) = actions
+                .candidate_source(id, &key)
+                .await
+                .map_err(Failure::permanent)?;
+            if current != expected {
+                return Err(Failure::permanent(Error::new(
+                    503,
+                    "账号或上游连接已变化，请重新读取模型目录",
+                )));
+            }
+            Ok(values)
+        };
+        self.candidates.get(identity, required, fetch).await
+    }
+    pub async fn model_allowed(&self, row: &Value, model: &str) -> Result<bool> {
         if !text_model(model) {
             return Ok(false);
-        }
-        let allowlists = self.allowlists(row, true).await?;
-        if !allowlists.is_empty() && allowlists.iter().all(|v| truthy(&v["enabled"])) {
-            return Ok(exact_models(&allowlists).iter().any(|v| v["id"] == model));
-        }
-        if !candidate_required {
-            return Ok(true);
         }
         let key = self.queries.oauth.admin_token()?;
         if key.is_empty() {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
         Ok(self
-            .models(integer(&row["id"]).ok_or_else(Error::invalid)?, &key, true)
+            .model_test_candidates(
+                integer(&row["id"]).ok_or_else(Error::invalid)?,
+                &key,
+                Some(model),
+            )
             .await?
             .iter()
             .any(|v| v["id"] == model))

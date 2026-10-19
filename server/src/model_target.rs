@@ -139,8 +139,8 @@ pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Targ
     if owner["type"] != row["type"] {
         return Err(Error::new(422, "母账号凭据类型不一致"));
     }
-    if !actions.model_allowed(row, model, false).await? {
-        return Err(Error::new(422, "所选模型不在当前分组白名单中"));
+    if !actions.model_allowed(row, model).await? {
+        return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
     }
     if !crate::account_templates::MODEL_ID.is_match(model)
         || ["image", "dall-e", "tts-", "whisper-", "realtime", "audio"]

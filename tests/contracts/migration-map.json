@@ -1077,11 +1077,11 @@
   ],
   "rust_coverage_policy": {
     "coverage_counts": {
-      "mapped": 877,
+      "mapped": 874,
       "not_collected": 2,
       "partial": 0,
       "passed": 0,
-      "superseded": 5,
+      "superseded": 8,
       "uncovered": 0
     },
     "mapping_input": "tests/contracts/coverage-map.json",
@@ -1251,7 +1251,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1315,7 +1315,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1379,7 +1379,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1435,7 +1435,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3529,
+          "rust_source_line": 3539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1499,7 +1499,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1555,7 +1555,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3529,
+          "rust_source_line": 3539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1619,7 +1619,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1675,7 +1675,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3529,
+          "rust_source_line": 3539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1731,7 +1731,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3529,
+          "rust_source_line": 3539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -1769,7 +1769,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3880,
+          "rust_source_line": 3890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4353,7 +4353,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3043,
+          "rust_source_line": 3053,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4427,7 +4427,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3114,
+              "line": 3124,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
@@ -4507,7 +4507,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3114,
+              "line": 3124,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
@@ -4558,7 +4558,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3043,
+          "rust_source_line": 3053,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4642,7 +4642,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3301,
+              "line": 3311,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children",
@@ -4692,7 +4692,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 2939,
+          "rust_source_line": 2949,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4736,7 +4736,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 2939,
+          "rust_source_line": 2949,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4780,7 +4780,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 2939,
+          "rust_source_line": 2949,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4819,7 +4819,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3903,
+          "rust_source_line": 3913,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4864,7 +4864,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3043,
+          "rust_source_line": 3053,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4903,7 +4903,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3903,
+          "rust_source_line": 3913,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -4989,7 +4989,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3043,
+          "rust_source_line": 3053,
           "supporting_targets": [
             {
               "assertions": [
@@ -5018,7 +5018,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3114,
+              "line": 3124,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "template_http_crud_legacy_put_names_versions_and_deletion_match_python",
@@ -15182,7 +15182,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6318,
+          "rust_source_line": 6328,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15622,7 +15622,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6830,
+          "rust_source_line": 6840,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15682,7 +15682,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6613,
+          "rust_source_line": 6623,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15723,7 +15723,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6771,
+          "rust_source_line": 6781,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15771,7 +15771,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6424,
+          "rust_source_line": 6434,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15831,7 +15831,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6613,
+          "rust_source_line": 6623,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15877,7 +15877,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6714,
+          "rust_source_line": 6724,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15921,7 +15921,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6556,
+          "rust_source_line": 6566,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -15969,7 +15969,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6424,
+          "rust_source_line": 6434,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -16017,7 +16017,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6424,
+          "rust_source_line": 6434,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -16070,7 +16070,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6351,
+          "rust_source_line": 6361,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -16118,7 +16118,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6424,
+          "rust_source_line": 6434,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -17464,9 +17464,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17484,7 +17485,7 @@
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
           ],
-          "coverage_note": "exact candidates preserve live group union order, include absent catalog IDs, and omit wildcard, image, and blank entries",
+          "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -17496,8 +17497,14 @@
         },
         "gap": null,
         "module": "account_mutation_parity",
-        "replacement": null,
-        "status": "mapped",
+        "replacement": {
+          "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+          "legacy_assertions": [
+            "旧候选来自启用分组白名单，保留未出现在上游目录的文本 ID。"
+          ],
+          "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        },
+        "status": "superseded",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
       },
       "service_capability": "desktop_api",
@@ -17534,7 +17541,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 2853,
+          "rust_source_line": 2863,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -17561,9 +17568,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17688,9 +17696,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17742,9 +17751,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17762,7 +17772,7 @@
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
           ],
-          "coverage_note": "strict exact group union bypasses upstream catalog lookup and preserves models absent from catalog",
+          "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -17774,8 +17784,14 @@
         },
         "gap": null,
         "module": "account_mutation_parity",
-        "replacement": null,
-        "status": "mapped",
+        "replacement": {
+          "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+          "legacy_assertions": [
+            "旧完整分组白名单绕过账号目录读取，并补入目录未返回的 ID。"
+          ],
+          "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        },
+        "status": "superseded",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
       },
       "service_capability": "desktop_api",
@@ -17796,9 +17812,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17816,7 +17833,7 @@
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
           ],
-          "coverage_note": "no-group and disabled-allowlist requests fetch the unrestricted catalog and filter to text models",
+          "coverage_note": "无分组及禁用白名单均读取当前账号目录并保留文本过滤；0.1.47 此规则对所有分组状态统一适用。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -17850,9 +17867,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17870,7 +17888,7 @@
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
             "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
           ],
-          "coverage_note": "candidate is rechecked against current group allowlist before native test; wildcard/media candidates are denied",
+          "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -17882,8 +17900,14 @@
         },
         "gap": null,
         "module": "account_mutation_parity",
-        "replacement": null,
-        "status": "mapped",
+        "replacement": {
+          "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
+          "legacy_assertions": [
+            "旧提交可通过分组白名单判断，不必读取当前账号目录。"
+          ],
+          "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        },
+        "status": "superseded",
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle"
       },
       "service_capability": "desktop_api",
@@ -17904,9 +17928,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -17958,9 +17983,10 @@
         "evidence": {
           "assertions": [
             "assert_eq!(status, 200)",
-            "assert_eq!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-            "assert!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .is_empty(),\n        \"an enabled complete exact allowlist bypasses catalog intersection\"\n    )",
-            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model, false)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the exact live group union\"\n        )",
+            "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+            "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
+            "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+            "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
             "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
             "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
             "assert_eq!(events.last().unwrap()[\"success\"], true)",
@@ -18027,7 +18053,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5745,
+          "rust_source_line": 5755,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -18069,7 +18095,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5745,
+          "rust_source_line": 5755,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19027,7 +19053,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6181,
+          "rust_source_line": 6191,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19081,7 +19107,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6127,
+          "rust_source_line": 6137,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19135,7 +19161,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6127,
+          "rust_source_line": 6137,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19177,7 +19203,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6181,
+          "rust_source_line": 6191,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19219,7 +19245,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6181,
+          "rust_source_line": 6191,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19273,7 +19299,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6127,
+          "rust_source_line": 6137,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19394,7 +19420,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5857,
+          "rust_source_line": 5867,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19439,7 +19465,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5793,
+          "rust_source_line": 5803,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19486,7 +19512,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5916,
+          "rust_source_line": 5926,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19533,7 +19559,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5916,
+          "rust_source_line": 5926,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19576,7 +19602,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5857,
+          "rust_source_line": 5867,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19668,7 +19694,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5962,
+          "rust_source_line": 5972,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19714,7 +19740,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6027,
+          "rust_source_line": 6037,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19758,7 +19784,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6068,
+          "rust_source_line": 6078,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19802,7 +19828,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6068,
+          "rust_source_line": 6078,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19843,7 +19869,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5962,
+          "rust_source_line": 5972,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19889,7 +19915,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6239,
+          "rust_source_line": 6249,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -19935,7 +19961,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 6239,
+          "rust_source_line": 6249,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -30802,7 +30828,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1031,
+          "rust_source_line": 1253,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -30881,7 +30907,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1103,
+          "rust_source_line": 1325,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31020,7 +31046,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1223,
+          "rust_source_line": 1445,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31099,7 +31125,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1223,
+          "rust_source_line": 1445,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31160,7 +31186,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1031,
+          "rust_source_line": 1253,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31224,7 +31250,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1119,
+          "rust_source_line": 1341,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31266,7 +31292,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2162,
+          "rust_source_line": 2384,
           "supporting_targets": [
             {
               "assertions": [
@@ -31280,7 +31306,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2087,
+              "line": 2309,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "cancellation_waits_for_pending_progress_write_before_terminal_state",
@@ -31326,7 +31352,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2292,
+          "rust_source_line": 2514,
           "supporting_targets": [
             {
               "assertions": [
@@ -31340,7 +31366,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2043,
+              "line": 2265,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "cancellation_aborts_a_pending_retry_timer_without_late_dispatch",
@@ -31410,7 +31436,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1119,
+          "rust_source_line": 1341,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31453,7 +31479,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1979,
+          "rust_source_line": 2201,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31491,7 +31517,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2439,
+          "rust_source_line": 2661,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31536,7 +31562,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2399,
+          "rust_source_line": 2621,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31575,7 +31601,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2235,
+          "rust_source_line": 2457,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31614,7 +31640,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1886,
+          "rust_source_line": 2108,
           "supporting_targets": [
             {
               "assertions": [
@@ -31634,7 +31660,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 1923,
+              "line": 2145,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "definite_upstream_rejection_retries_only_failed_group_and_releases_slot",
@@ -31691,7 +31717,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1462,
+          "rust_source_line": 1684,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31737,7 +31763,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1555,
+          "rust_source_line": 1777,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31774,7 +31800,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2486,
+          "rust_source_line": 2708,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31821,7 +31847,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1555,
+          "rust_source_line": 1777,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -31862,7 +31888,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 2346,
+          "rust_source_line": 2568,
           "supporting_targets": [
             {
               "assertions": [
@@ -31877,7 +31903,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2292,
+              "line": 2514,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "cancellation_drains_streams_releases_shared_credential_lock_and_prevents_late_writes",
@@ -31921,7 +31947,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1886,
+          "rust_source_line": 2108,
           "supporting_targets": [
             {
               "assertions": [
@@ -31941,7 +31967,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 1923,
+              "line": 2145,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "definite_upstream_rejection_retries_only_failed_group_and_releases_slot",
@@ -32048,7 +32074,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1223,
+          "rust_source_line": 1445,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32142,7 +32168,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1223,
+          "rust_source_line": 1445,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32186,7 +32212,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1462,
+          "rust_source_line": 1684,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32224,7 +32250,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1085,
+          "rust_source_line": 1307,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32332,7 +32358,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1674,
+          "rust_source_line": 1896,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32382,7 +32408,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1823,
+          "rust_source_line": 2045,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32446,7 +32472,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1674,
+          "rust_source_line": 1896,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32510,7 +32536,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1674,
+          "rust_source_line": 1896,
           "supporting_targets": [
             {
               "assertions": [
@@ -32528,7 +32554,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 1886,
+              "line": 2108,
               "module": "modeltrace_runtime_parity",
               "path": "server/tests/modeltrace_runtime_parity.rs",
               "test_name": "uncertain_body_disconnect_is_not_replayed_and_cannot_be_manually_retried",
@@ -32598,7 +32624,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/modeltrace_runtime_parity.rs",
-          "rust_source_line": 1674,
+          "rust_source_line": 1896,
           "verification_command": ".venv/bin/python scripts/server_test.py --test modeltrace_runtime_parity"
         },
         "gap": null,
@@ -32662,7 +32688,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "supporting_targets": [
             {
               "assertions": [
@@ -32701,7 +32727,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3301,
+              "line": 3311,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "native_template_batch_is_atomic_secret_free_idempotent_and_skips_busy_children",
@@ -32771,7 +32797,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -32825,7 +32851,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4756,
+          "rust_source_line": 4766,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -32879,7 +32905,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4756,
+          "rust_source_line": 4766,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -32933,7 +32959,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4756,
+          "rust_source_line": 4766,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -32978,7 +33004,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4350,
+          "rust_source_line": 4360,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33043,7 +33069,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33108,7 +33134,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33162,7 +33188,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33205,7 +33231,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5070,
+          "rust_source_line": 5080,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33259,7 +33285,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33324,7 +33350,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33367,7 +33393,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5070,
+          "rust_source_line": 5080,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33431,7 +33457,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33496,7 +33522,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33537,7 +33563,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4992,
+          "rust_source_line": 5002,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33601,7 +33627,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33655,7 +33681,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "supporting_targets": [
             {
               "assertions": [
@@ -33686,7 +33712,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3529,
+              "line": 3539,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "queued_template_batch_rechecks_changed_targets_but_preserves_frozen_dispatched_target",
@@ -33757,7 +33783,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33811,7 +33837,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -33875,7 +33901,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3301,
+          "rust_source_line": 3311,
           "supporting_targets": [
             {
               "assertions": [
@@ -33914,7 +33940,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 5143,
+              "line": 5153,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states",
@@ -38791,7 +38817,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -38855,7 +38881,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -38919,7 +38945,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -38973,7 +38999,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39038,7 +39064,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "supporting_targets": [
             {
               "assertions": [
@@ -39077,7 +39103,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 5143,
+              "line": 5153,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states",
@@ -39147,7 +39173,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39201,7 +39227,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4440,
+          "rust_source_line": 4450,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39242,7 +39268,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4992,
+          "rust_source_line": 5002,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39287,7 +39313,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 4350,
+          "rust_source_line": 4360,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39352,7 +39378,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 3949,
+          "rust_source_line": 3959,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39416,7 +39442,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5143,
+          "rust_source_line": 5153,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39472,7 +39498,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39528,7 +39554,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39584,7 +39610,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "supporting_targets": [
             {
               "assertions": [
@@ -39604,7 +39630,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 5659,
+              "line": 5669,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay",
@@ -39666,7 +39692,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39711,7 +39737,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5659,
+          "rust_source_line": 5669,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39767,7 +39793,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "supporting_targets": [
             {
               "assertions": [
@@ -39787,7 +39813,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 5659,
+              "line": 5669,
               "module": "account_mutation_parity",
               "path": "server/tests/account_mutation_parity.rs",
               "test_name": "proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay",
@@ -39849,7 +39875,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5509,
+          "rust_source_line": 5519,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,
@@ -39904,7 +39930,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/account_mutation_parity.rs",
-          "rust_source_line": 5456,
+          "rust_source_line": 5466,
           "verification_command": ".venv/bin/python scripts/server_test.py --test account_mutation_parity"
         },
         "gap": null,

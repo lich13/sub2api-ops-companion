@@ -257,7 +257,7 @@ impl Detection {
             }
             let allowed = self
                 .actions
-                .model_allowed(&row, string(&value["model_id"]), true)
+                .model_allowed(&row, string(&value["model_id"]))
                 .await?;
             let bank = self.tests.bank.snapshot();
             if !allowed || !bank_contains(&bank.0, TARGET) {
