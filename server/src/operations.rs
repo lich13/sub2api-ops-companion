@@ -286,7 +286,7 @@ impl Operations {
             }
             let items: Vec<_> = data["batches"][bid]["job_ids"]
                 .as_array()
-                .unwrap()
+                .ok_or_else(|| Error::new(503, "操作状态无法读取"))?
                 .iter()
                 .map(|j| self.public(&data["jobs"][string(j)], false, 0))
                 .collect();
@@ -650,9 +650,24 @@ impl Operations {
             if data["batches"][bid]["request_hash"] != signature {
                 return Err(idempotency("请求 ID 已用于其他批量操作"));
             }
+            let ids = data["batches"][bid]["job_ids"]
+                .as_array()
+                .ok_or_else(|| Error::new(503, "操作状态无法读取"))?;
+            let ids = ids
+                .iter()
+                .map(|jid| {
+                    jid.as_str()
+                        .filter(|jid| {
+                            data["jobs"]
+                                .get(*jid)
+                                .is_some_and(|job| job["batch_id"] == bid)
+                        })
+                        .ok_or_else(|| Error::new(503, "操作状态无法读取"))
+                })
+                .collect::<Result<Vec<_>>>()?;
             let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
-            for jid in data["batches"][bid]["job_ids"].as_array().unwrap() {
-                keys.insert(string(jid).into(), key.into());
+            for jid in ids {
+                keys.insert(jid.into(), key.into());
             }
             drop(keys);
             return self.listing(Some(bid));
@@ -820,7 +835,10 @@ impl Operations {
             if data["batches"][bid]["action"] != "test" {
                 return Err(Error::new(404, "批量测试不存在"));
             }
-            let ids = data["batches"][bid]["job_ids"].as_array().unwrap().clone();
+            let ids = data["batches"][bid]["job_ids"]
+                .as_array()
+                .ok_or_else(|| Error::new(503, "操作状态无法读取"))?
+                .clone();
             for jid in ids {
                 let job = &mut data["jobs"][string(&jid)];
                 if matches!(string(&job["status"]), "queued" | "needs_confirmation")

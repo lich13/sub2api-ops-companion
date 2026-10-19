@@ -74,13 +74,11 @@ pub fn safe_result(action: &str, data: &Value) -> Result<Value> {
         }
         return Ok(result);
     }
-    if number(&data["score"], 100.0).is_null()
-        || !data["grade"].is_string()
-        || data["items"].as_array().is_none_or(|v| v.len() > 32)
-    {
+    let items = data["items"].as_array().ok_or_else(fail)?;
+    if number(&data["score"], 100.0).is_null() || !data["grade"].is_string() || items.len() > 32 {
         return Err(fail());
     }
-    let items=data["items"].as_array().unwrap().iter().map(|item| {
+    let items=items.iter().map(|item| {
         if !item.is_object() || !matches!(string(&item["status"]),"pass"|"warn"|"fail"|"challenge") {return Err(fail());}
         Ok(json!({"target":text(&item["target"],80),"status":item["status"],"http_status":number(&item["http_status"],599.0),"latency_ms":number(&item["latency_ms"],1e12),"message":text(&item["message"],240)}))
     }).collect::<Result<Vec<_>>>()?;

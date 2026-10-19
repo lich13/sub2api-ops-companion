@@ -184,6 +184,11 @@ fn proxy_quality_result_rejects_malformed_items() {
         .expect("well-shaped quality items remain accepted");
     assert_eq!(safe["items"][0]["status"], "pass");
 
+    let exactly_max_items = quality_diagnostic(json!(vec![json!({"status":"pass"}); 32]));
+    let safe = proxy_diagnostics::safe_result("quality-check", &exactly_max_items)
+        .expect("quality responses may contain the configured maximum item count");
+    assert_eq!(safe["items"].as_array().unwrap().len(), 32);
+
     let mut missing_items = valid.clone();
     missing_items.as_object_mut().unwrap().remove("items");
     let too_many_items = quality_diagnostic(json!(vec![json!({"status":"pass"}); 33]));
