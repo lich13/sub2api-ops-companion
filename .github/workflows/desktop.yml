@@ -43,8 +43,8 @@ jobs:
           if [ "$(cargo audit --version 2>/dev/null || true)" != 'cargo-audit 0.22.2' ]; then
             cargo install cargo-audit --version 0.22.2 --locked --force
           fi
-          cargo audit --file server/Cargo.lock
-          cargo audit --file desktop/src-tauri/Cargo.lock
+          python -m unittest discover -s scripts -p test_dependency_audit.py
+          python scripts/server_dependency_audit.py
       - run: cargo fetch --locked --manifest-path server/Cargo.toml
       - name: Fixed Python regression and complete Rust regression
         run: |

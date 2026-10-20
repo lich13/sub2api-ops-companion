@@ -34,8 +34,8 @@ cargo fetch --locked --manifest-path server/Cargo.toml
 python scripts/check_release_versions.py
 python scripts/server_test.py
 cargo clippy --locked --manifest-path server/Cargo.toml --all-targets --features test-fixtures -- -D warnings
-cargo audit --file server/Cargo.lock
-cargo audit --file desktop/src-tauri/Cargo.lock
+python -m unittest discover -s scripts -p test_dependency_audit.py
+python scripts/server_dependency_audit.py
 python scripts/server_reference_tests.py
 python scripts/server_reference_tests.py --filter test_concurrency_one_two_three_peaks_and_no_raw_content_in_summary
 python scripts/server_http_contract.py
@@ -45,6 +45,8 @@ python scripts/server_mutation_contract.py --command-json '["server/target/debug
 ```
 
 `tests/contracts/migration-map.json` 记录旧测试与新断言的对应关系。固定数据向量覆盖跨语言哈希、时间和数值序列化；进程测试覆盖接口、请求次数和未知结果恢复。测试通过与尚未覆盖的范围分别记录。
+
+依赖审计完整扫描两个锁文件，不忽略通告或限定平台。SQLx 0.8 使用的 `webpki-roots 0.26.11` 仅重新导出 1.x 证书数据；针对 `RUSTSEC-2026-0381`，脚本只接受该兼容包与已修复的 `1.0.10` 的精确注册源、校验和及依赖关系。旧根证书、关系变化或其他漏洞仍阻断发布。依据为[兼容包源码](https://docs.rs/webpki-roots/0.26.11/src/webpki_roots/lib.rs.html)和[上游证书修复](https://github.com/rustls/webpki-roots/pull/133)。
 
 测试驱动启用 `test-fixtures`，允许将模型请求的最终地址指向回环模拟服务，保持原有鉴权、账号与配置校验、请求正文和 SSE 处理。正式构建不启用此功能，也不提供运行时覆盖上游地址的配置。
 
