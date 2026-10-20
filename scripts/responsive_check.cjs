@@ -755,8 +755,13 @@ async function eventChecks(h, fixture) {
   await h.navigate("事件", "events");
   const events = page.locator(".events-view");
   const tabs = events.getByRole("tablist", { name: "事件类型" });
-  await h.state(await tabs.getByRole("tab").count() === 3, "event-tab-count", tabs);
-  for (const [id, label] of [["degradation", "降智错误"], ["other", "其他错误"], ["recoveries", "恢复历史"]]) {
+  const expectedTabs = [["degradation", "降智错误"], ["other", "其他错误"], ["recoveries", "恢复历史"], ["logs", "日志"]];
+  await h.state(await tabs.getByRole("tab").count() === expectedTabs.length, "event-tab-count", tabs);
+  await h.state(isDeepStrictEqual(
+    (await tabs.getByRole("tab").allTextContents()).map((label) => label.trim()),
+    expectedTabs.map(([, label]) => label),
+  ), "event-tab-labels", tabs);
+  for (const [id, label] of expectedTabs.slice(0, 3)) {
     h.phase = `events/${id}`;
     const tab = tabs.getByRole("tab", { name: label, exact: true });
     await h.allWithin(tabs.getByRole("tab"), "event-tab", { scroll: false, hit: true });
@@ -817,7 +822,7 @@ async function eventChecks(h, fixture) {
 async function featureChecks(h, baseline) {
   const { page } = h;
   await h.navigate("功能", "features");
-  const oauth = configForm(page, "OAuth 恢复与测活");
+  const oauth = configForm(page, "恢复、测活与模型检测");
   const fallback = configForm(page, "Key 调度回退");
   await h.visible(oauth, "oauth-config-form");
   await h.visible(fallback, "fallback-config-form");
