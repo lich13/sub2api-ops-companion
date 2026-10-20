@@ -12,6 +12,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -99,10 +100,11 @@ def write_operation_history(state_dir: Path) -> dict[str, int]:
     return {"jobs": len(jobs), "bytes": len(encoded)}
 
 
-def write_detection_history(state_dir: Path) -> dict[str, int]:
+def write_detection_history(state_dir: Path) -> dict[str, object]:
     """Completed synthetic jobs include summaries after detailed reports expire."""
     at = datetime.now(timezone.utc)
     jobs = {}
+    needs_confirmation_ids: list[str] = []
     statuses = ("completed", "completed", "failed", "cancelled", "interrupted", "needs_confirmation")
     for number in range(1, DETECTION_COUNT + MANUAL_TEST_COUNT + 1):
         job_id = f"{number:032x}"
@@ -125,11 +127,76 @@ def write_detection_history(state_dir: Path) -> dict[str, int]:
                 "first_downgrade": degraded, "aggregate_downgrade": degraded,
             },
         }
+        if status == "needs_confirmation":
+            needs_confirmation_ids.append(job_id)
     encoded = history_json_bytes({"version": 1, "accounts": {}, "requests": {}, "jobs": jobs})
     path = state_dir / "model-test-results.json"
     path.write_bytes(encoded)
     path.chmod(0o600)
-    return {"automatic_jobs": DETECTION_COUNT, "manual_jobs": MANUAL_TEST_COUNT, "bytes": len(encoded)}
+    return {
+        "automatic_jobs": DETECTION_COUNT,
+        "manual_jobs": MANUAL_TEST_COUNT,
+        "needs_confirmation_model_ids": needs_confirmation_ids,
+        "bytes": len(encoded),
+    }
+
+
+def expected_completed_operation_ids() -> frozenset[str]:
+    """Return the newest completed operation IDs retained by the listing."""
+    return frozenset(f"{number:032x}" for number in range(1, 31))
+
+
+def validate_operation_history(history: dict, expected_model_ids: Collection[str]) -> dict[str, int]:
+    """Validate the mixed operation listing without treating all items as completed."""
+    items = history.get("items")
+    pending = history.get("pending")
+    require(isinstance(items, list), "synthetic operation history items are not a list")
+    require(isinstance(pending, int), "synthetic operation history pending count is invalid")
+
+    expected_completed_ids = expected_completed_operation_ids()
+    expected_model_ids = frozenset(expected_model_ids)
+    completed_items = [
+        item for item in items
+        if isinstance(item, dict) and item.get("action") == "priority"
+    ]
+    model_items = [
+        item for item in items
+        if isinstance(item, dict) and item.get("action") == "model_test"
+    ]
+
+    require(len(completed_items) == len(expected_completed_ids),
+            "runtime operation history did not return exactly 30 priority items")
+    require(all(item.get("status") == "completed" for item in completed_items),
+            "runtime operation history returned a non-completed priority item")
+    completed_ids = [item.get("id") for item in completed_items]
+    require(all(isinstance(job_id, str) for job_id in completed_ids),
+            "runtime operation history returned a priority item without an ID")
+    require(len(completed_ids) == len(set(completed_ids)),
+            "runtime operation history returned duplicate priority items")
+    require(set(completed_ids) == expected_completed_ids,
+            "runtime operation history returned unexpected priority items")
+
+    require(len(model_items) == len(expected_model_ids),
+            "runtime operation history returned an unexpected model-test item count")
+    require(all(item.get("status") == "needs_confirmation" for item in model_items),
+            "runtime operation history returned a model-test item in an unexpected state")
+    model_ids = [item.get("id") for item in model_items]
+    require(all(isinstance(job_id, str) for job_id in model_ids),
+            "runtime operation history returned a model-test item without an ID")
+    require(len(model_ids) == len(set(model_ids)),
+            "runtime operation history returned duplicate model-test items")
+    require(set(model_ids) == expected_model_ids,
+            "runtime operation history omitted or added model-test items")
+
+    require(len(items) == len(completed_items) + len(model_items),
+            "runtime operation history returned an unexpected operation kind")
+    require(pending == len(expected_model_ids),
+            "synthetic operation history pending count differs from expected model tests")
+    return {
+        "returned_completed_items": len(completed_items),
+        "returned_items": len(items),
+        "expected_pending_model_test_items": len(expected_model_ids),
+    }
 
 
 def read_detection_history(client, state_dir: Path) -> tuple[int, list[float]]:
@@ -312,7 +379,18 @@ def measure_runtime(
     state_dir = root / f"state-{implementation}"
     state_dir.mkdir(mode=0o700)
     operation_history = write_operation_history(state_dir)
-    detection_history = write_detection_history(state_dir) if implementation == "rust" else None
+    detection_fixture = write_detection_history(state_dir) if implementation == "rust" else None
+    expected_model_ids = frozenset(
+        detection_fixture["needs_confirmation_model_ids"]
+        if detection_fixture is not None else ()
+    )
+    detection_history = (
+        {
+            key: value for key, value in detection_fixture.items()
+            if key != "needs_confirmation_model_ids"
+        }
+        if detection_fixture is not None else None
+    )
     seed_fingerprint_cache(reference_app, state_dir)
 
     with Native(0.0) as native:
@@ -341,12 +419,8 @@ def measure_runtime(
 
                     history, history_latency = api_get(client, "/account-operations")
                     operation_latencies.append(history_latency)
-                    items = history.get("items")
-                    require(history.get("pending") == 0, "synthetic operation history contains pending work")
-                    require(isinstance(items, list) and len(items) == 30,
-                            "runtime did not read completed operation history")
-                    require(all(item.get("status") == "completed" for item in items),
-                            "runtime operation history returned a non-completed item")
+                    operation_result = validate_operation_history(history, expected_model_ids)
+                    items = history["items"]
 
                     snapshot, snapshot_latency = api_get(client, "/snapshot")
                     snapshot_latencies.append(snapshot_latency)
@@ -443,7 +517,7 @@ def measure_runtime(
         "dataset_counts": dataset,
         "operation_history": {
             **operation_history,
-            "returned_completed_items": len(history["items"]),
+            **operation_result,
             "pending": history["pending"],
             "read_requests": len(operation_latencies),
             "read_latency_ms": distribution(operation_latencies),
