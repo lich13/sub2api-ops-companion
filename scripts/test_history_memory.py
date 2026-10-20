@@ -31,7 +31,9 @@ class HistoryFixtureTests(unittest.TestCase):
     def test_detection_fixture_reports_every_generated_needs_confirmation_job(self) -> None:
         with tempfile.TemporaryDirectory(prefix="history-memory-test-") as directory:
             result = history.write_detection_history(Path(directory))
-            document = json.loads((Path(directory) / "model-test-results.json").read_text())
+            document = json.loads(
+                (Path(directory) / "model-test-results.json").read_text(encoding="utf-8")
+            )
 
         jobs = document["jobs"]
         expected = {
@@ -77,13 +79,15 @@ class HistoryFixtureTests(unittest.TestCase):
 
     def test_listing_rejects_unexpected_pending_status(self) -> None:
         expected = {"00000000000000000000000000000005"}
-        listing = {
-            "pending": 1,
-            "items": completed_items() + [model_item(next(iter(expected)), "queued")],
-        }
+        for status in ("queued", "running"):
+            with self.subTest(status=status):
+                listing = {
+                    "pending": 1,
+                    "items": completed_items() + [model_item(next(iter(expected)), status)],
+                }
 
-        with self.assertRaises(history.CheckFailure):
-            history.validate_operation_history(listing, expected)
+                with self.assertRaises(history.CheckFailure):
+                    history.validate_operation_history(listing, expected)
 
     def test_listing_rejects_missing_model_test_job(self) -> None:
         expected = {
