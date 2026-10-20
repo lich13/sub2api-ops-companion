@@ -24087,8 +24087,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24105,7 +24105,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:RecoveryConfig030Tests.test_invalid_account_ids_cannot_change_recovery_selection",
@@ -24137,8 +24137,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24155,7 +24155,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -24164,7 +24164,7 @@
           "assertions": [
             "assert_eq!(error.status.as_u16(), 409)",
             "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
-            "assert_eq!(h.raw(), expected)"
+            "assert_raw_compat(&h.raw(), &expected, \"save\", \"stale_revision\", 1);"
           ]
         }
       ]
@@ -24199,8 +24199,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24217,7 +24217,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_config030:RecoveryMigration030Tests.test_existing_empty_or_selected_lists_gain_a_seen_baseline_without_selection_changes",
@@ -24234,8 +24234,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24252,7 +24252,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -24266,8 +24266,8 @@
               "name": "scenario",
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24316,8 +24316,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -24334,7 +24334,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_dispatch036:RecoveryDispatcherFixture.test_busy_account_does_not_overwrite_cancelled_method_selection",
@@ -25096,10 +25096,10 @@
         "path": "server/tests/recovery_selection_parity.rs",
         "test_name": "concurrent_reconcile_and_partial_save_preserve_all_fields_without_inventory",
         "assertions": [
-          "assert_eq!(h.raw(), expected)"
+          "assert_raw_compat(&h.raw(), &expected, \"save\", \"concurrent\", 2);"
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_corrupt_or_deleted_existing_config_stops_reconcile_without_replacing_it",
@@ -25148,8 +25148,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -25166,7 +25166,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -25180,8 +25180,8 @@
               "name": "scenario",
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -25236,8 +25236,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -25254,7 +25254,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_old_revision_cannot_overwrite_a_new_automatic_account_and_partial_save_keeps_it",
@@ -25266,10 +25266,10 @@
         "assertions": [
           "assert_eq!(error.status.as_u16(), 409)",
           "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
-          "assert_eq!(h.raw(), expected)"
+          "assert_raw_compat(&h.raw(), &expected, \"save\", \"stale_revision\", 1);"
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_recovery_selection034:RecoverySelection034Tests.test_restart_keeps_seen_watermark_and_does_not_reselect_old_account",
@@ -25300,8 +25300,8 @@
             "name": "scenario",
             "assertions": [
               "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-              "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-              "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+              "assert_initial_snapshot(&h, case);",
+              "assert_raw_compat(",
               "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
               "assert_eq!(reloaded.oauth[C], json!([]))",
               "assert_eq!(reloaded.oauth[M], json!([]))"
@@ -25318,7 +25318,7 @@
           }
         ]
       },
-      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。"
+      "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。"
     },
     {
       "legacy_test_id": "py:tests.test_slow_ttft026:LocalThrottleTests.test_local_limiter_does_not_match_real_capacity_error",

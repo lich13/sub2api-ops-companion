@@ -1,10 +1,12 @@
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
-use sub2ops_server::{db::Database, runtime::Runtime, settings::Settings};
+use sub2ops_server::{compat::config_revision, db::Database, runtime::Runtime, settings::Settings};
 
 const C: &str = "oauth_recovery_connection_account_ids";
 const M: &str = "oauth_recovery_model_account_ids";
 const S: &str = "oauth_recovery_seen_account_ids";
+const D: &str = "model_detection_model_id";
+const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!(
@@ -113,6 +115,73 @@ fn row(id: i64) -> Value {
         "credentials":{"plan_type":"plus"},"extra":{}})
 }
 
+fn without_detection_model(value: &Value) -> Value {
+    let mut projected = value.clone();
+    projected
+        .as_object_mut()
+        .expect("configuration value must be an object")
+        .remove(D);
+    projected
+}
+
+fn assert_snapshot_revision(snapshot: &Value, raw: &Value) {
+    let oauth = snapshot["oauth"]
+        .as_object()
+        .expect("oauth snapshot must be an object");
+    assert_eq!(oauth[D], DEFAULT_DETECTION_MODEL);
+
+    let mut current_view = Value::Object(oauth.clone());
+    let current_revision = current_view
+        .as_object_mut()
+        .unwrap()
+        .remove("revision")
+        .expect("oauth snapshot must include a revision");
+    assert_eq!(
+        current_revision,
+        config_revision(&json!([current_view, raw])),
+        "snapshot revision must include the global detection model"
+    );
+}
+
+fn assert_initial_snapshot(h: &Harness, case: &Value) {
+    let snapshot = h.runtime.config.snapshot(Some("oauth")).unwrap();
+    let raw = h.raw();
+    assert_snapshot_revision(&snapshot, &raw);
+
+    let mut legacy_view = without_detection_model(&snapshot["oauth"]);
+    legacy_view
+        .as_object_mut()
+        .unwrap()
+        .remove("revision")
+        .expect("oauth snapshot must include a revision");
+    let expected_revision = case["initial"]["revision"].clone();
+    assert_eq!(
+        config_revision(&json!([legacy_view, without_detection_model(&raw)])),
+        expected_revision,
+        "legacy revision projection must match the fixed Python vector"
+    );
+
+    let mut projected = without_detection_model(&snapshot["oauth"]);
+    projected["revision"] = expected_revision;
+    assert_eq!(projected, case["initial"]);
+}
+
+fn assert_raw_compat(actual: &Value, expected: &Value, action: &str, name: &str, index: usize) {
+    if action == "save" {
+        assert_eq!(
+            actual[D], DEFAULT_DETECTION_MODEL,
+            "{name} step {index} save must persist the global detection model"
+        );
+    } else if let Some(model) = actual.get(D) {
+        assert_eq!(
+            model, DEFAULT_DETECTION_MODEL,
+            "{name} step {index} persisted global detection model"
+        );
+    }
+    let projected = without_detection_model(actual);
+    assert_eq!(projected, *expected, "{name} step {index}");
+}
+
 async fn scenario(name: &str) {
     let fixture = fixture();
     assert_eq!(
@@ -126,10 +195,7 @@ async fn scenario(name: &str) {
         .find(|case| case["name"] == name)
         .unwrap();
     let h = Harness::new(&case["raw"]).await;
-    assert_eq!(
-        h.runtime.config.snapshot(Some("oauth")).unwrap()["oauth"],
-        case["initial"]
-    );
+    assert_initial_snapshot(&h, case);
     for (index, step) in case["steps"].as_array().unwrap().iter().enumerate() {
         if step["action"] == "reconcile" {
             h.runtime
@@ -150,7 +216,13 @@ async fn scenario(name: &str) {
                 .await
                 .unwrap();
         }
-        assert_eq!(h.raw(), case["expected"][index], "{name} step {index}");
+        assert_raw_compat(
+            &h.raw(),
+            &case["expected"][index],
+            step["action"].as_str().unwrap(),
+            name,
+            index,
+        );
     }
     #[cfg(unix)]
     {
@@ -317,6 +389,7 @@ async fn reloaded_runtime_keeps_seen_watermark_and_manual_removal() {
 async fn stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it() {
     let h = Harness::new(&json!({C:[31,32],M:[],S:[31,32]})).await;
     let stale = h.runtime.config.snapshot(Some("oauth")).unwrap();
+    assert_snapshot_revision(&stale, &h.raw());
     h.runtime
         .config
         .reconcile(&[row(31), row(32), row(39)])
@@ -349,7 +422,7 @@ async fn stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it()
         .find(|case| case["name"] == "stale_revision")
         .unwrap()["expected"][1]
         .clone();
-    assert_eq!(h.raw(), expected);
+    assert_raw_compat(&h.raw(), &expected, "save", "stale_revision", 1);
     h.close().await;
 }
 
@@ -382,7 +455,7 @@ async fn concurrent_reconcile_and_partial_save_preserve_all_fields_without_inven
         .find(|case| case["name"] == "concurrent")
         .unwrap()["expected"][2]
         .clone();
-    assert_eq!(h.raw(), expected);
+    assert_raw_compat(&h.raw(), &expected, "save", "concurrent", 2);
     h.close().await;
 }
 

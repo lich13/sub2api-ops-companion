@@ -41420,7 +41420,7 @@
           "assertions": [
             "scenario(\"partial_save\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -41436,20 +41436,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 199,
+          "rust_source_line": 271,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41486,7 +41486,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 203,
+          "rust_source_line": 275,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41514,7 +41514,7 @@
           "assertions": [
             "scenario(\"partial_save\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -41530,32 +41530,32 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 199,
+          "rust_source_line": 271,
           "supporting_targets": [
             {
               "assertions": [
                 "assert_eq!(error.status.as_u16(), 409)",
                 "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
-                "assert_eq!(h.raw(), expected)"
+                "assert_raw_compat(&h.raw(), &expected, \"save\", \"stale_revision\", 1);"
               ],
               "execution_status": "mapping_only",
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 315,
+              "line": 387,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it",
@@ -41598,7 +41598,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 203,
+          "rust_source_line": 275,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41626,7 +41626,7 @@
           "assertions": [
             "scenario(\"model_mode\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -41642,20 +41642,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 195,
+          "rust_source_line": 267,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41683,7 +41683,7 @@
           "assertions": [
             "scenario(\"explicit_empty\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -41699,20 +41699,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 183,
+          "rust_source_line": 255,
           "supporting_targets": [
             {
               "assertions": [
@@ -41733,18 +41733,18 @@
                 {
                   "assertions": [
                     "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                    "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                    "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                    "assert_initial_snapshot(&h, case);",
+                    "assert_raw_compat(",
                     "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 115,
+                  "line": 184,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 187,
+              "line": 259,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "explicit_selection_keeps_both_modes_and_records_seen_baseline",
@@ -41787,7 +41787,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 388,
+          "rust_source_line": 461,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41815,7 +41815,7 @@
           "assertions": [
             "scenario(\"legacy\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -41831,20 +41831,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 178,
+          "rust_source_line": 250,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43401,16 +43401,16 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "assert_eq!(h.raw(), expected)"
+            "assert_raw_compat(&h.raw(), &expected, \"save\", \"concurrent\", 2);"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 355,
+          "rust_source_line": 428,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43448,7 +43448,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 252,
+          "rust_source_line": 324,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43486,7 +43486,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 232,
+          "rust_source_line": 304,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43514,7 +43514,7 @@
           "assertions": [
             "scenario(\"legacy\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -43530,20 +43530,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 178,
+          "rust_source_line": 250,
           "supporting_targets": [
             {
               "assertions": [
@@ -43564,18 +43564,18 @@
                 {
                   "assertions": [
                     "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                    "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                    "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                    "assert_initial_snapshot(&h, case);",
+                    "assert_raw_compat(",
                     "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 115,
+                  "line": 184,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 191,
+              "line": 263,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "manual_removal_and_reappearance_never_reselect_seen_accounts",
@@ -43651,7 +43651,7 @@
           "assertions": [
             "scenario(\"model_mode\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -43667,20 +43667,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 195,
+          "rust_source_line": 267,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43708,16 +43708,16 @@
           "assertions": [
             "assert_eq!(error.status.as_u16(), 409)",
             "assert_eq!(fs::read(&h.runtime.settings.oauth_path).unwrap(), before)",
-            "assert_eq!(h.raw(), expected)"
+            "assert_raw_compat(&h.raw(), &expected, \"save\", \"stale_revision\", 1);"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 315,
+          "rust_source_line": 387,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43753,7 +43753,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 285,
+          "rust_source_line": 357,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43781,7 +43781,7 @@
           "assertions": [
             "scenario(\"explicit_empty\").await;"
           ],
-          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。",
+          "coverage_note": "固定0.1.39断言已通过；在临时业务PostgreSQL和真实Rust配置服务中核对对应选择列表、版本冲突、落盘及重载行为。场景对比完整旧版状态，故障场景检查原文件和有效配置保持不变。0.1.48差异：显式核对默认 model_detection_model_id=gpt-6-luna、新 revision 哈希及 raw optional 字段投影，未放宽其他字段比较。",
           "execution_status": "mapping_only",
           "fixtures": [
             {
@@ -43797,20 +43797,20 @@
             {
               "assertions": [
                 "assert_eq!(\n        fixture[\"reference_sha\"],\n        \"6be7c291ed38dcc337cb88f693639040a3463899\"\n    )",
-                "assert_eq!(\n        h.runtime.config.snapshot(Some(\"oauth\")).unwrap()[\"oauth\"],\n        case[\"initial\"]\n    )",
-                "assert_eq!(h.raw(), case[\"expected\"][index], \"{name} step {index}\")",
+                "assert_initial_snapshot(&h, case);",
+                "assert_raw_compat(",
                 "assert_eq!(\n            fs::metadata(h.runtime.settings.oauth_path.clone())\n                .unwrap()\n                .permissions()\n                .mode()\n                & 0o777,\n            0o600\n        )",
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 115,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 183,
+          "rust_source_line": 255,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
