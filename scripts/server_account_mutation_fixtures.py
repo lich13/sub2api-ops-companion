@@ -646,7 +646,7 @@ def run_rust(args: argparse.Namespace) -> int:
         "test_source_sha256": sha256_bytes((ROOT / "server/tests/account_mutation_parity.rs").read_bytes()),
         "fixture_sha256": sha256_bytes(FIXTURE_PATH.read_bytes()),
         "migration_sha256": sha256_bytes(MIGRATION_PATH.read_bytes()),
-        "command": "cargo test --manifest-path server/Cargo.toml --locked --offline --test account_mutation_parity -- --test-threads=1 --nocapture",
+        "command": "cargo test --manifest-path server/Cargo.toml --locked --offline --features test-fixtures --test account_mutation_parity -- --test-threads=1 --nocapture",
     }
     postgres: Any | None = None
     with tempfile.TemporaryDirectory(prefix="server-account-mutation-contract-040-") as name:
@@ -663,6 +663,8 @@ def run_rust(args: argparse.Namespace) -> int:
                     "server/Cargo.toml",
                     "--locked",
                     "--offline",
+                    "--features",
+                    "test-fixtures",
                     "--test",
                     "account_mutation_parity",
                     "--",

@@ -802,7 +802,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 env = safe_environment(postgres.url, temporary, export_dir)
                 command = [
                     "cargo", "test", "--manifest-path", "server/Cargo.toml",
-                    "--locked", "--offline", "--test", "automation_runtime_contract",
+                    "--locked", "--offline", "--features", "test-fixtures",
+                    "--test", "automation_runtime_contract",
                     "--", "--test-threads=1", "--nocapture",
                 ]
                 process = subprocess.Popen(
