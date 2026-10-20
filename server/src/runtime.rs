@@ -20,7 +20,6 @@ use crate::{
     oauth_state::OAuthState,
     operations::Operations,
     proxy_diagnostics::ProxyDiagnostics,
-    quality_cache::QualityCache,
     queries::Queries,
     runtime_hooks::Hooks,
     settings::Settings,
@@ -62,7 +61,6 @@ pub struct Runtime {
     pub keepalive: Keepalive,
     pub operations: Arc<Operations>,
     pub catalog: Catalog,
-    pub quality: QualityCache,
     pub proxies: ProxyDiagnostics,
     pub slots: TestSlots,
     pub budget: Arc<Semaphore>,
@@ -239,8 +237,6 @@ impl Runtime {
         )?;
         let keepalive = Keepalive::new(detection.clone(), operations.clone(), budget.clone());
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
-        let mut quality = QualityCache::new(db.clone());
-        quality.supervise(actions.supervisor.clone());
         let proxies = ProxyDiagnostics::new(actions.clone());
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         let (stop, _) = watch::channel(false);
@@ -256,7 +252,6 @@ impl Runtime {
             keepalive,
             operations,
             catalog,
-            quality,
             proxies,
             slots,
             budget,
@@ -536,7 +531,6 @@ impl Runtime {
             self.monitor.drain(55),
             self.tests.close(),
             self.keepalive.close(),
-            self.quality.close(),
             self.requests.close(55),
             self.proxies.close(55),
             self.actions.candidates.close(),

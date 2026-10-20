@@ -27,6 +27,9 @@ use std::{
 use tokio::sync::{watch, Mutex, Semaphore};
 
 pub trait RecoveryHooks: Hooks {
+    fn model_notification(&self, _job_id: &str, _suppressed: bool) -> Result<()> {
+        Ok(())
+    }
     fn model_recovery(
         &self,
         id: i64,
@@ -732,6 +735,11 @@ impl Monitor {
             if !config.enabled {
                 self.store
                     .mark_delivered(std::slice::from_ref(event), true)?;
+                if let Some(job) = event["model_test_job_id"].as_str() {
+                    if self.hooks.model_notification(job, true).is_err() {
+                        eprintln!("detection_log_diagnostic reason=notification_write_failed");
+                    }
+                }
             } else {
                 let delivered = self
                     .config
@@ -739,6 +747,13 @@ impl Monitor {
                     .notify_oauth(std::slice::from_ref(event), Some(&config))
                     .await;
                 self.store.mark_delivered(&delivered, false)?;
+                for event in &delivered {
+                    if let Some(job) = event["model_test_job_id"].as_str() {
+                        if self.hooks.model_notification(job, false).is_err() {
+                            eprintln!("detection_log_diagnostic reason=notification_write_failed");
+                        }
+                    }
+                }
             }
         }
         Ok(())

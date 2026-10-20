@@ -86,23 +86,11 @@ impl Runtime {
             cache.stats_at = Some(Instant::now());
             cache.stats_signature = signature;
         }
-        let ids = accounts
-            .iter()
-            .filter(|a| {
-                matches!(string(&a["platform"]), "openai" | "grok")
-                    && matches!(string(&a["type"]), "oauth" | "apikey")
-            })
-            .filter_map(|a| integer(&a["id"]))
-            .collect::<Vec<_>>();
-        let qualities = self.quality.get(&ids, false);
         let marks = self.detection.capacity.store.snapshot();
         for account in &mut accounts {
             let id = integer(&account["id"]).unwrap();
             usage::attach_stats(id, &mut account["usage"], &cache.stats, 500_000);
             account["usage_windows"] = account["usage"]["windows"].clone();
-            if let Some(quality) = qualities.get(&id) {
-                account["quality"] = quality.clone();
-            }
             if account["platform"] == "openai"
                 && matches!(string(&account["type"]), "oauth" | "apikey")
             {
@@ -142,23 +130,6 @@ impl Runtime {
             .find(|row| row["id"] == id)
             .cloned()
             .unwrap_or(Value::Null))
-    }
-    pub async fn quality_detail(&self, id: i64) -> Result<Value> {
-        if self
-            .db
-            .one(
-                &format!(
-                    "SELECT id FROM accounts WHERE id=$1 AND {}",
-                    crate::sql::QUALITY_SUPPORTED
-                ),
-                &[id.into()],
-            )
-            .await?
-            .is_none()
-        {
-            return Err(Error::new(404, "账号不存在或不支持质量评分"));
-        }
-        Ok(self.quality.get(&[id], true).remove(&id).unwrap())
     }
     pub async fn error_detail(&self, id: i64, category: Option<&str>) -> Result<Value> {
         let mut result = self.actions.queries.error_detail(id, category).await?;

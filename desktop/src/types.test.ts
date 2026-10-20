@@ -4,7 +4,6 @@ import {
   filterAccounts,
   sortPriority,
   sortRecentCall,
-  sortQuality,
   currentGroups,
   type Account,
   type Group,
@@ -38,17 +37,6 @@ const group = (id: number, fields: Partial<Group> = {}): Group => ({
 });
 
 describe("account evidence", () => {
-  it("sorts quality in both directions with unknowns last and stable ID ties", () => {
-    const data = [
-      { id: 4, quality: { score: null } },
-      { id: 3, quality: { score: 90 } },
-      { id: 2, quality: { score: 35 } },
-      { id: 1, quality: { score: 90 } },
-      { id: 5 },
-    ] as Account[];
-    expect(sortQuality(data).map((a) => a.id)).toEqual([2, 1, 3, 4, 5]);
-    expect(sortQuality(data, false).map((a) => a.id)).toEqual([1, 3, 2, 4, 5]);
-  });
   it("never invents timestamps", () => {
     expect(fullTime(null)).toBe("暂无记录");
     expect(fullTime("bad")).toBe("时间未知");

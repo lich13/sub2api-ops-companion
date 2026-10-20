@@ -215,6 +215,24 @@ def fixture_document(
             "app/model_detection.py": hashlib.sha256(app_source).hexdigest(),
         },
         "oracle": pinned_oracle(reference_root),
+        "rust_differences_0_1_48": {
+            "automatic_model": {
+                "config_key": "model_detection_model_id",
+                "default": "gpt-6-luna",
+                "model_source": "global",
+                "legacy_account_model_is_authoritative": False,
+                "existing_job_keeps_requested_model": True,
+                "config_change_during_candidate_validation_status": 409,
+            },
+            "directory_source": "current_account_provider",
+            "automatic_log": {
+                "includes_manual_tasks": False,
+                "summary_is_business_input": False,
+                "state_version": 1,
+                "default_limit": 50,
+                "maximum_limit": 100,
+            },
+        },
     }
 
 
@@ -225,7 +243,6 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--check", action="store_true", help="compare the deterministic oracle JSON")
     args = parser.parse_args(argv)
 
-    require((ROOT / ".venv/bin/python").exists(), "repository Python virtualenv is required")
     try:
         with tempfile.TemporaryDirectory(prefix="sub2ops-detection040-reference-") as temporary:
             temp_dir = Path(temporary)

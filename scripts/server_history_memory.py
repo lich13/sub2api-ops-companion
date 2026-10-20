@@ -40,14 +40,14 @@ USAGE_COUNT = 100_000
 ERROR_COUNT = 3_000
 OPERATIONS_COUNT = 4_000
 OPERATIONS_TARGET_BYTES = 1_700_000
+DETECTION_COUNT = 4_000
+MANUAL_TEST_COUNT = 400
 IDLE_SECONDS = 30.0
-REFRESH_COUNT = 3
-MIN_REFRESH_INTERVAL_SECONDS = 31.0
-REFRESH_TIMEOUT_SECONDS = 90.0
+READ_ROUND_COUNT = 3
+MIN_READ_ROUND_INTERVAL_SECONDS = 31.0
 DEFAULT_RUST_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 GROWTH_ABSOLUTE_TOLERANCE_BYTES = 64 * 1024 * 1024
 GROWTH_RELATIVE_TOLERANCE = 0.10
-EXPECTED_USAGE_PER_ACCOUNT = USAGE_COUNT // ACCOUNT_COUNT
 HISTORY_FIXTURE_SPAN_SECONDS = 600_000
 
 
@@ -97,6 +97,74 @@ def write_operation_history(state_dir: Path) -> dict[str, int]:
     path.write_bytes(encoded)
     path.chmod(0o600)
     return {"jobs": len(jobs), "bytes": len(encoded)}
+
+
+def write_detection_history(state_dir: Path) -> dict[str, int]:
+    """Completed synthetic jobs include summaries after detailed reports expire."""
+    at = datetime.now(timezone.utc)
+    jobs = {}
+    statuses = ("completed", "completed", "failed", "cancelled", "interrupted", "needs_confirmation")
+    for number in range(1, DETECTION_COUNT + MANUAL_TEST_COUNT + 1):
+        job_id = f"{number:032x}"
+        stamp = (at - timedelta(seconds=number // 2)).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        status = statuses[number % len(statuses)]
+        analyzed = status == "completed"
+        degraded = analyzed and number % 2 == 0
+        jobs[job_id] = {
+            "id": job_id, "account_id": (number - 1) % ACCOUNT_COUNT + 1,
+            "account_name": "fixture-detection-account", "requested_model": "gpt-6-luna",
+            "automatic": number <= DETECTION_COUNT, "status": status,
+            "queued_at": stamp, "started_at": stamp, "completed_at": stamp,
+            "triggers": ["scheduled"], "groups": [], "report": None,
+            "result_summary": {
+                "outcome": "degraded" if degraded else "normal" if analyzed else status,
+                "analysis_available": analyzed,
+                "prediction": "gpt-5.6-luna" if degraded else "gpt-6-luna" if analyzed else None,
+                "first_prediction": "gpt-5.6-luna" if degraded else "gpt-6-luna" if analyzed else None,
+                "probability": 0.95 if analyzed else None, "used_outputs": 3 if analyzed else None,
+                "first_downgrade": degraded, "aggregate_downgrade": degraded,
+            },
+        }
+    encoded = history_json_bytes({"version": 1, "accounts": {}, "requests": {}, "jobs": jobs})
+    path = state_dir / "model-test-results.json"
+    path.write_bytes(encoded)
+    path.chmod(0o600)
+    return {"automatic_jobs": DETECTION_COUNT, "manual_jobs": MANUAL_TEST_COUNT, "bytes": len(encoded)}
+
+
+def read_detection_history(client, state_dir: Path) -> tuple[int, list[float]]:
+    path = state_dir / "model-test-results.json"
+    before = hashlib.sha256(path.read_bytes()).digest()
+    cursor = None
+    seen = set()
+    previous_key = None
+    latencies = []
+    while True:
+        suffix = "" if cursor is None else "&before=" + cursor
+        page, latency = api_get(client, "/detection-logs?limit=100" + suffix)
+        latencies.append(latency)
+        items = page.get("items")
+        require(isinstance(items, list) and 0 < len(items) <= 100, "detection log page has invalid size")
+        for item in items:
+            job_id = item.get("job_id")
+            require(isinstance(job_id, str) and job_id not in seen, "detection log contains duplicate jobs")
+            require(1 <= int(job_id, 16) <= DETECTION_COUNT, "detection log contains manual or unknown jobs")
+            key = (item.get("created_at"), job_id)
+            require(previous_key is None or key < previous_key, "detection log pagination is not strictly ordered")
+            previous_key = key
+            seen.add(job_id)
+            require(isinstance(item.get("summary"), dict) and item.get("details_available") is False,
+                    "detection log lost its summary after report cleanup")
+        next_cursor = page.get("next_cursor")
+        if next_cursor is None:
+            break
+        require(isinstance(next_cursor, str) and next_cursor and next_cursor != cursor,
+                "detection log continuation cursor did not advance")
+        require(len(seen) < DETECTION_COUNT, "detection log cursor extends past the fixture")
+        cursor = next_cursor
+    require(len(seen) == DETECTION_COUNT, "detection log pagination omitted automatic jobs")
+    require(hashlib.sha256(path.read_bytes()).digest() == before, "reading detection logs changed persisted jobs")
+    return len(seen), latencies
 
 
 def seed_synthetic_dataset(database_url: str) -> dict[str, int]:
@@ -197,18 +265,6 @@ def assert_synthetic_dataset(database_url: str) -> dict[str, int]:
     }
 
 
-def parse_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (ValueError, OverflowError):
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
 def api_get(client, path: str) -> tuple[dict, float]:
     started = time.monotonic()
     response = client.request("GET", API + path, headers={"x-api-key": ADMIN_KEY})
@@ -216,74 +272,6 @@ def api_get(client, path: str) -> tuple[dict, float]:
     require(response.status == 200, "synthetic history API GET returned an unexpected status")
     require(isinstance(response.body, dict), "synthetic history API did not return an object")
     return response.body, elapsed_ms
-
-
-def assert_quality_result(
-    value: dict,
-    *,
-    trigger_time: datetime,
-    expected_computed_at: str | None = None,
-) -> tuple[str, str]:
-    require(value.get("diagnostic") is None, "quality refresh returned a diagnostic")
-    require(value.get("data_status") == "fresh", "quality refresh result is not fresh")
-    require(value.get("sample_status") == "complete", "quality sample set is incomplete")
-    computed_at = parse_timestamp(value.get("computed_at"))
-    period_end = parse_timestamp(value.get("period", {}).get("end"))
-    require(computed_at is not None and period_end is not None, "quality refresh omitted its calculation period")
-    require(computed_at > trigger_time and period_end >= computed_at, "quality period does not match the refresh trigger")
-    computed_text = value["computed_at"]
-    period_text = value["period"]["end"]
-    if expected_computed_at is not None:
-        require(computed_text == expected_computed_at, "quality accounts do not share the same completed refresh")
-
-    reliability = value.get("reliability")
-    ttft = value.get("ttft")
-    throughput = value.get("throughput")
-    require(isinstance(reliability, dict) and isinstance(ttft, dict) and isinstance(throughput, dict),
-            "quality refresh omitted usage evidence totals")
-    require(reliability.get("successes") == EXPECTED_USAGE_PER_ACCOUNT,
-            "quality refresh did not retain every synthetic usage success")
-    require(ttft.get("samples") == EXPECTED_USAGE_PER_ACCOUNT,
-            "quality refresh did not retain every synthetic TTFT sample")
-    require(throughput.get("samples") == EXPECTED_USAGE_PER_ACCOUNT,
-            "quality refresh did not retain every synthetic throughput sample")
-    return computed_text, period_text
-
-
-def quality_refresh_round(client, account_ids: list[int], trigger_time: datetime) -> dict:
-    deadline = time.monotonic() + REFRESH_TIMEOUT_SECONDS
-    quality_latencies: list[float] = []
-    while True:
-        first, latency = api_get(client, f"/accounts/{account_ids[0]}/quality")
-        quality_latencies.append(latency)
-        if first.get("diagnostic") is not None:
-            raise CheckFailure("quality refresh returned a diagnostic")
-        computed = parse_timestamp(first.get("computed_at"))
-        if computed is not None and computed > trigger_time:
-            computed_text, period_text = assert_quality_result(first, trigger_time=trigger_time)
-            break
-        require(time.monotonic() < deadline, "quality refresh did not publish a new result before timeout")
-        time.sleep(0.2)
-
-    for account_id in account_ids[1:]:
-        value, latency = api_get(client, f"/accounts/{account_id}/quality")
-        quality_latencies.append(latency)
-        actual_computed, actual_period = assert_quality_result(
-            value, trigger_time=trigger_time, expected_computed_at=computed_text
-        )
-        require(actual_period == period_text, "quality accounts do not share the same evidence period")
-
-    return {
-        "accounts_complete": len(account_ids),
-        "usage_successes_per_account": EXPECTED_USAGE_PER_ACCOUNT,
-        "ttft_samples_per_account": EXPECTED_USAGE_PER_ACCOUNT,
-        "throughput_samples_per_account": EXPECTED_USAGE_PER_ACCOUNT,
-        "computed_at": computed_text,
-        "period_end": period_text,
-        "quality_request_total_ms": round(sum(quality_latencies), 3),
-        "quality_request_latency_ms": distribution(quality_latencies),
-        "quality_requests": len(quality_latencies),
-    }
 
 
 def sampler_rows(sampler: Sampler, start: float, finish: float) -> list[tuple[float, int, int]]:
@@ -324,6 +312,7 @@ def measure_runtime(
     state_dir = root / f"state-{implementation}"
     state_dir.mkdir(mode=0o700)
     operation_history = write_operation_history(state_dir)
+    detection_history = write_detection_history(state_dir) if implementation == "rust" else None
     seed_fingerprint_cache(reference_app, state_dir)
 
     with Native(0.0) as native:
@@ -340,19 +329,25 @@ def measure_runtime(
                 idle = resource_window(sampler, sampler_start, idle_finish)
 
                 phase_start = sampler.mark()
-                history, history_latency = api_get(client, "/account-operations")
-                items = history.get("items")
-                require(history.get("pending") == 0, "synthetic operation history contains pending work")
-                require(isinstance(items, list) and len(items) == 30, "runtime did not read completed operation history")
-                require(all(item.get("status") == "completed" for item in items),
-                        "runtime operation history returned a non-completed item")
-
                 snapshot_latencies: list[float] = []
+                operation_latencies: list[float] = []
+                usage_latencies: list[float] = []
+                error_latencies: list[float] = []
+                detection_latencies: list[float] = []
                 rounds: list[dict] = []
                 expected_ids = list(range(1, ACCOUNT_COUNT + 1))
-                for index in range(1, REFRESH_COUNT + 1):
-                    trigger_time = datetime.now(timezone.utc)
+                for index in range(1, READ_ROUND_COUNT + 1):
                     trigger_started = sampler.mark()
+
+                    history, history_latency = api_get(client, "/account-operations")
+                    operation_latencies.append(history_latency)
+                    items = history.get("items")
+                    require(history.get("pending") == 0, "synthetic operation history contains pending work")
+                    require(isinstance(items, list) and len(items) == 30,
+                            "runtime did not read completed operation history")
+                    require(all(item.get("status") == "completed" for item in items),
+                            "runtime operation history returned a non-completed item")
+
                     snapshot, snapshot_latency = api_get(client, "/snapshot")
                     snapshot_latencies.append(snapshot_latency)
                     accounts = snapshot.get("accounts")
@@ -361,15 +356,47 @@ def measure_runtime(
                     actual_ids = sorted(account.get("id") for account in accounts)
                     require(actual_ids == expected_ids, "snapshot account IDs differ from the synthetic dataset")
 
-                    refreshed = quality_refresh_round(client, expected_ids, trigger_time)
+                    usage, usage_latency = api_get(client, "/usage-records?account_id=1&limit=100")
+                    usage_latencies.append(usage_latency)
+                    usage_items = usage.get("items")
+                    require(isinstance(usage_items, list) and len(usage_items) == 100,
+                            "usage query did not return the expected synthetic page")
+                    require(all(item.get("account_id") == 1 for item in usage_items),
+                            "usage query returned a row outside the requested account")
+                    require(usage.get("next_cursor") is not None,
+                            "usage query did not expose a continuation cursor for the synthetic history")
+
+                    errors, error_latency = api_get(client, "/errors?account_id=1&limit=100")
+                    error_latencies.append(error_latency)
+                    error_items = errors.get("items")
+                    require(isinstance(error_items, list) and len(error_items) == 100,
+                            "error query did not return the expected synthetic page")
+                    require(all(item.get("account_id") == 1 for item in error_items),
+                            "error query returned a row outside the requested account")
+                    require(errors.get("next_cursor") is not None,
+                            "error query did not expose a continuation cursor for the synthetic history")
+
+                    detection_items = None
+                    if implementation == "rust":
+                        detection_items, page_latencies = read_detection_history(client, state_dir)
+                        detection_latencies.extend(page_latencies)
+
                     completion_time = time.monotonic()
-                    due = trigger_started + MIN_REFRESH_INTERVAL_SECONDS
+                    due = trigger_started + MIN_READ_ROUND_INTERVAL_SECONDS
                     wait_until(due)
                     round_finish = sampler.mark()
                     rounds.append({
                         "round": index,
                         "snapshot_latency_ms": round(snapshot_latency, 3),
-                        "quality_refresh": refreshed,
+                        "operation_history_latency_ms": round(history_latency, 3),
+                        "operation_history_items": len(items),
+                        "usage_latency_ms": round(usage_latency, 3),
+                        "usage_items": len(usage_items),
+                        "usage_next_cursor_present": True,
+                        "error_latency_ms": round(error_latency, 3),
+                        "error_items": len(error_items),
+                        "error_next_cursor_present": True,
+                        "detection_log_items": detection_items,
                         "completion_seconds": round(completion_time - trigger_started, 3),
                         "resource_window": resource_window(sampler, trigger_started, round_finish),
                         "trigger_interval_seconds": round(round_finish - trigger_started, 3),
@@ -389,11 +416,11 @@ def measure_runtime(
                 )
                 growth_passed = second_p95 <= first_p95 + growth_tolerance
 
-                require(len(rounds) == REFRESH_COUNT, "quality refresh count differs from the requested rounds")
-                require(all(round_row["quality_refresh"]["accounts_complete"] == ACCOUNT_COUNT for round_row in rounds),
-                        "not all synthetic account quality results completed")
-                require(all(round_row["trigger_interval_seconds"] >= MIN_REFRESH_INTERVAL_SECONDS for round_row in rounds),
-                        "quality refresh attempts were too close together")
+                require(len(rounds) == READ_ROUND_COUNT, "read round count differs from the requested rounds")
+                require(all(round_row["usage_items"] == 100 and round_row["error_items"] == 100 for round_row in rounds),
+                        "a repeated usage or error query returned an incomplete synthetic page")
+                require(all(round_row["trigger_interval_seconds"] >= MIN_READ_ROUND_INTERVAL_SECONDS for round_row in rounds),
+                        "read rounds were too close together")
                 if implementation == "rust":
                     require(overall["memory_peak_bytes"] <= memory_limit_bytes,
                             "Rust cgroup memory peak exceeded the configured limit")
@@ -416,14 +443,19 @@ def measure_runtime(
         "dataset_counts": dataset,
         "operation_history": {
             **operation_history,
-            "returned_completed_items": len(items),
+            "returned_completed_items": len(history["items"]),
             "pending": history["pending"],
-            "read_latency_ms": round(history_latency, 3),
+            "read_requests": len(operation_latencies),
+            "read_latency_ms": distribution(operation_latencies),
         },
         "idle": idle,
+        "detection_history": detection_history,
+        "detection_log_page_latency_ms": distribution(detection_latencies),
         "snapshot_request_latency_ms": distribution(snapshot_latencies),
-        "quality_refresh_successes": len(rounds),
-        "quality_refreshes": rounds,
+        "usage_query_request_latency_ms": distribution(usage_latencies),
+        "error_query_request_latency_ms": distribution(error_latencies),
+        "read_round_successes": len(rounds),
+        "read_rounds": rounds,
         "resource_overall": overall,
         "memory_growth": {
             "first_half_p95_bytes": first_p95,
@@ -470,18 +502,18 @@ def run(args: argparse.Namespace) -> dict:
         "synthetic_dataset": {
             "accounts": ACCOUNT_COUNT,
             "usage_rows": USAGE_COUNT,
-            "usage_rows_per_account": EXPECTED_USAGE_PER_ACCOUNT,
             "usage_rows_all_stream_samples": True,
             "error_rows": ERROR_COUNT,
             "completed_operation_jobs": OPERATIONS_COUNT,
             "operation_history_bytes": OPERATIONS_TARGET_BYTES,
+            "rust_automatic_detection_jobs": DETECTION_COUNT,
+            "rust_excluded_manual_jobs": MANUAL_TEST_COUNT,
             "seven_day_window_counts_asserted": True,
         },
         "procedure": {
             "idle_seconds": IDLE_SECONDS,
-            "quality_refreshes_per_runtime": REFRESH_COUNT,
-            "minimum_refresh_interval_seconds": MIN_REFRESH_INTERVAL_SECONDS,
-            "refresh_completion_timeout_seconds": REFRESH_TIMEOUT_SECONDS,
+            "read_rounds_per_runtime": READ_ROUND_COUNT,
+            "minimum_read_round_interval_seconds": MIN_READ_ROUND_INTERVAL_SECONDS,
             "rust_memory_peak_limit_bytes": memory_limit_bytes,
             "rust_second_half_growth_allowance": {
                 "absolute_bytes": GROWTH_ABSOLUTE_TOLERANCE_BYTES,

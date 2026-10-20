@@ -34,7 +34,6 @@ import {
   currentGroups,
   sortPriority,
   sortRecentCall,
-  sortQuality,
   fullTime,
   initialState,
   type Account,
@@ -63,7 +62,6 @@ import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
 import { DeleteAccountsDialog } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
-import QualityDialog, { QualityBadge, SlowWarningBadge } from "./AccountQuality";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
 import SchedulingParameters from "./SchedulingParameters";
@@ -71,6 +69,7 @@ import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDi
 import ProxyBatchDialog from "./ProxyBatchDialog";
 import AccountActions, { useAccountActions } from "./AccountActions";
 import ModelDetectionDialog from "./ModelDetectionDialog";
+import DetectionLogs from "./DetectionLogs";
 import KeepaliveDialog from "./KeepaliveDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
 import { accountOperation, bindOperationConnection } from "./accountOperations";
@@ -130,11 +129,9 @@ export default function App() {
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
     [ascending, setAscending] = useState(false),
-    [sortBy, setSortBy] = useState<"recent" | "priority" | "quality">("recent"),
-    [qualityFilter, setQualityFilter] = useState(""),
+    [sortBy, setSortBy] = useState<"recent" | "priority">("recent"),
     [settingsAccount, setSettingsAccount] = useState<{ account: Account; section: SettingsSection; connection: string } | null>(null),
     [nameExpanded, setNameExpanded] = useState(() => { try { return localStorage.getItem("sub2ops-account-name-expanded") === "true"; } catch { return false; } }),
-    [qualityAccount, setQualityAccount] = useState<Account | null>(null),
     [testAccount, setTestAccount] = useState<Account | null>(null),
     [modelTestAccount, setModelTestAccount] = useState<Account | null>(null),
     [modelDetectionAccount, setModelDetectionAccount] = useState<Account | null>(null),
@@ -157,7 +154,7 @@ export default function App() {
     [config, setConfig] = useState<Config | null>(null),
     [runtimeVersion, setRuntimeVersion] = useState<string | null>(null),
     [recoveryCount, setRecoveryCount] = useState(0),
-    [eventTab, setEventTab] = useState<ErrorCategory | "recoveries">("degradation"),
+    [eventTab, setEventTab] = useState<ErrorCategory | "recoveries" | "logs">("degradation"),
     [selected, setSelected] = useState<Set<number>>(new Set()),
     [removedIds, setRemovedIds] = useState<Set<number>>(new Set()),
     [deleteAccounts, setDeleteAccounts] = useState<Account[] | null>(null),
@@ -205,7 +202,6 @@ export default function App() {
     platform,
     filter,
     type,
-    qualityFilter,
   ]);
   useEffect(() => {
     setSelected(new Set());
@@ -220,7 +216,6 @@ export default function App() {
     setTestAccount(null);
     setModelTestAccount(null);
     setKeepaliveAccount(null);
-    setQualityAccount(null);
     setSettingsAccount(null);
     setProxyAccounts(null);
     setConfirm(null);
@@ -305,17 +300,14 @@ export default function App() {
   );
   const filteredAccounts = useMemo(
     () =>
-      (sortBy === "recent" ? sortRecentCall : sortBy === "quality" ? sortQuality : sortPriority)(
-        filterAccounts(accounts, query, group, platform, filter, type).filter(
-          (a) => !qualityFilter || a.quality?.grade === qualityFilter,
-        ),
+      (sortBy === "recent" ? sortRecentCall : sortPriority)(
+        filterAccounts(accounts, query, group, platform, filter, type),
         ascending,
       ),
     [accounts, filterKey, ascending, sortBy],
   );
   useEffect(() => {
     const live = new Set(accounts.map((a) => a.id));
-    setQualityAccount((old) => (old && !live.has(old.id) ? null : old));
     setKeepaliveAccount((old) => (old && !live.has(old.id) ? null : old));
     setSelected((old) =>
       [...old].every((id) => live.has(id))
@@ -324,7 +316,10 @@ export default function App() {
     );
   }, [accounts]);
   const eventRows = (quick ? errors : eventFeed.items).slice().sort((a, b) => b.id - a.id);
-  const eventCount = eventTab === "recoveries" ? recoveryCount : eventRows.length;
+  const countTab = useRef<ErrorCategory | "recoveries">("degradation");
+  if (eventTab !== "logs") countTab.current = eventTab;
+  const eventCount = countTab.current === "recoveries" ? recoveryCount
+    : quick ? errors.length : (countTab.current === "other" ? otherFeed : degradationFeed).items.length;
   async function prefs(patch: Partial<Preferences>) {
     try {
       await command("preferences", {
@@ -420,7 +415,7 @@ export default function App() {
                       <strong className={restriction ? 'quick-account-restricted' : undefined} title={[call.account_name, restriction].filter(Boolean).join(' · ')}>
                         {call.account_name}
                         <QuickRestriction reason={restriction}/>
-                        {a && <><DegradationBadge account={a} compact /><SlowWarningBadge value={a.quality} compact /></>}
+                        {a && <><DegradationBadge account={a} compact /></>}
                       </strong>
                       {a && <MiniUsage account={a} />}
                     </div>
@@ -701,7 +696,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -761,21 +756,11 @@ export default function App() {
                         <option value="managed">回退托管</option>
                         <option value="error">曾有错误</option>
                       </select>
-                      <select
-                        aria-label="质量筛选"
-                        value={qualityFilter}
-                        onChange={(e) => setQualityFilter(e.target.value)}
-                      >
-                        <option value="">全部质量</option>
-                        <option value="green">绿色 · 良好</option>
-                        <option value="yellow">黄色 · 关注</option>
-                        <option value="red">红色 · 异常</option>
-                      </select>
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
                     {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
-                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority" | "quality"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option><option value="quality:desc">质量 ↓</option><option value="quality:asc">质量 ↑</option></select></div>}
+                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">
                         <div className="selection-summary">
@@ -799,8 +784,8 @@ export default function App() {
                         </div>
                       </div>}
                       <ConnectionBatchResults control={connectionBatch}/>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} quality={setQualityAccount} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
-                        <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-quality"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
+                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
+                        <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
                             <th className="select-cell">
@@ -864,32 +849,6 @@ export default function App() {
                                   : ""}
                               </button>
                             </th>
-                            <th
-                              aria-sort={
-                                sortBy === "quality"
-                                  ? ascending
-                                    ? "ascending"
-                                    : "descending"
-                                  : "none"
-                              }
-                            >
-                              <button
-                                className="sort-button"
-                                onClick={() => {
-                                  setSortBy("quality");
-                                  setAscending(
-                                    sortBy === "quality" ? !ascending : false,
-                                  );
-                                }}
-                              >
-                                质量{" "}
-                                {sortBy === "quality"
-                                  ? ascending
-                                    ? "↑"
-                                    : "↓"
-                                  : ""}
-                              </button>
-                            </th>
                             <th>当前状态</th>
                             <th>用量窗口</th>
                             <th>最近报错</th>
@@ -945,17 +904,6 @@ export default function App() {
                                   online={state.online}
                                   report={report}
                                 />
-                              </td>
-                              <td className="quality-cell">
-                                {["openai", "grok"].includes(a.platform) &&
-                                ["oauth", "apikey"].includes(a.type) ? (
-                                  <QualityBadge
-                                    value={a.quality}
-                                    onClick={() => setQualityAccount(a)}
-                                  />
-                                ) : (
-                                  "—"
-                                )}
                               </td>
                               <td>
                                 <AccountStatus account={a} onError={(id) => void openError(id)}/>
@@ -1018,16 +966,17 @@ export default function App() {
                 {page === "events" && (
                   <div className="events-view">
                     <nav className="event-tabs" role="tablist" aria-label="事件类型">
-                      {([['degradation', '降智错误'], ['other', '其他错误'], ['recoveries', '恢复历史']] as const).map(([id, label]) =>
+                      {([['degradation', '降智错误'], ['other', '其他错误'], ['recoveries', '恢复历史'], ['logs', '日志']] as const).map(([id, label]) =>
                         <button key={id} role="tab" id={`${id}-tab`} aria-selected={eventTab === id} aria-controls={`${id}-panel`} onClick={() => setEventTab(id)}>{label}</button>)}
                     </nav>
                     <div className="event-panels">
-                      {eventTab !== "recoveries" && <section id={`${eventTab}-panel`} className="event-panel" role="tabpanel" aria-labelledby={`${eventTab}-tab`}>
+                      {(eventTab === "degradation" || eventTab === "other") && <section id={`${eventTab}-panel`} className="event-panel" role="tabpanel" aria-labelledby={`${eventTab}-tab`}>
                         <div className="section-heading"><span>{eventRows.length} 条记录</span><button className="text-button" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents()}>刷新记录</button></div>
                         {eventFeed.error && <p className="bad-text" role="alert">{eventFeed.error} <button onClick={() => void loadEvents()}>重试</button></p>}
                         <div className="error-list">{eventRows.map(error => errorRow(error, false, eventTab))}{!eventRows.length && <Empty text={eventFeed.loading ? "正在读取" : eventFeed.error ? "记录暂不可用" : "暂无错误记录"}/>}</div>
                         {eventFeed.cursor !== null && <button className="load-more" disabled={!state.online || eventFeed.loading} onClick={() => void loadEvents("more")}>加载更早记录</button>}
                       </section>}
+                      <section id="logs-panel" className="event-panel" role="tabpanel" aria-labelledby="logs-tab" hidden={eventTab !== "logs"}><DetectionLogs key={connectionKey} active={page === "events" && eventTab === "logs"} online={state.online} connectionKey={connectionKey}/></section>
                       <section id="recoveries-panel" className="event-panel" role="tabpanel" aria-labelledby="recoveries-tab" hidden={eventTab !== "recoveries"}>
                         <RecoveryHistory key={connectionKey} latest={snap.recoveries ?? []} accounts={accounts} online={state.online} active={eventTab === "recoveries"} onCount={setRecoveryCount} report={report}/>
                       </section>
@@ -1241,13 +1190,6 @@ export default function App() {
       {modelDetectionAccount && <ModelDetectionDialog key={`${connectionKey}:${modelDetectionAccount.id}`} account={accounts.find((a) => a.id === modelDetectionAccount.id) ?? modelDetectionAccount} online={state.online} close={() => setModelDetectionAccount(null)} showResult={() => { setModelTestAccount(modelDetectionAccount); setModelDetectionAccount(null); }} report={report}/>}
       {keepaliveAccount && <KeepaliveDialog key={`${connectionKey}:${keepaliveAccount.id}`} account={accounts.find((a) => a.id === keepaliveAccount.id) ?? keepaliveAccount} online={state.online} connectionKey={connectionKey} close={() => setKeepaliveAccount(null)} report={report}/>}
       {settingsAccount?.connection === connectionKey && <AccountSettingsDialog key={`${connectionKey}:${settingsAccount.account.id}:${settingsAccount.section}`} account={settingsAccount.account} initialSection={settingsAccount.section} online={state.online} close={() => setSettingsAccount(null)}/>}
-      {qualityAccount && (
-        <QualityDialog
-          key={`${connectionKey}:${qualityAccount.id}`}
-          account={qualityAccount}
-          onClose={() => setQualityAccount(null)}
-        />
-      )}
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>
@@ -1341,6 +1283,7 @@ const oauthLabels: Record<string, string> = {
   oauth_recovery_test_concurrency: "测活并发",
   oauth_early_probe_batch_size: "单轮账号上限",
   oauth_recovery_test_model_id: "测活模型",
+  model_detection_model_id: "自动检测模型",
 };
 function SettingsPage({
   page,
@@ -1382,7 +1325,7 @@ function SettingsPage({
         <>
           <ConfigForm
             section="oauth"
-            title="OAuth 恢复与测活"
+            title="恢复、测活与模型检测"
             value={config.oauth}
             online={state.online}
             onChange={onChange}
@@ -1391,7 +1334,7 @@ function SettingsPage({
           >
             {(draft, set) => (
               <>
-                {Object.entries(oauthLabels).map(([key, label]) => (
+                {Object.entries(oauthLabels).filter(([key]) => key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string").map(([key, label]) => (
                   <Field
                     key={key}
                     label={label}
@@ -1400,7 +1343,8 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
-                <RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/>
+                {typeof config.oauth.model_detection_model_id === "string" ? <p className="muted">当前 Companion 连接内统一使用此模型进行定时检测、错误与慢首字检测、降智复查及恢复模型验证；新建任务生效，已有任务保持原模型。</p> : <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
+                <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>
               </>
             )}
           </ConfigForm>

@@ -190,7 +190,13 @@ def build(reference: Path) -> dict:
             try:
                 model.model_validate(payload)
             except ValidationError:
-                invalid_http.append({"id": f"{model.__name__}/{label}", "method": method, "path": path, "payload": payload, "expected_status": 422})
+                item = {"id": f"{model.__name__}/{label}", "method": method, "path": path, "payload": payload, "expected_status": 422}
+                if model is DetectionRequest and label.startswith("model_id-"):
+                    item["rust_difference"] = {
+                        "release": "0.1.48", "behavior": "legacy_model_id_accepted_and_ignored",
+                        "coverage": "server/tests/detection_lifecycle_parity.rs",
+                    }
+                invalid_http.append(item)
     return {"reference_sha": REFERENCE_SHA, "cases": result, "template_integer_cases": integer_cases, "invalid_http_cases": invalid_http}
 
 

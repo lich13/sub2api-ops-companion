@@ -471,6 +471,7 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
             "bark_config": bark_config,
             "env": env,
             "expected": jsonable(priority_expected),
+            "rust_additions_0_1_48": {"model_detection_model_id": "gpt-6-luna"},
         },
         "key_fallback": {
             "legacy_input": fallback_input,

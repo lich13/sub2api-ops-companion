@@ -3,38 +3,24 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::{any, post},
     Json, Router,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures_util::FutureExt;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
     sync::{Arc, Mutex as StdMutex},
-    time::{Duration as StdDuration, Instant as StdInstant},
+    time::Duration as StdDuration,
 };
 use sub2ops_server::{
-    account_locks::AccountLocks,
-    account_templates,
-    actions::Actions,
-    capacity_alerts,
-    capacity_alerts::CapacityAlerts,
-    compat,
-    db::{Database, Param},
-    error_evidence, key_fallback, model_catalog,
-    model_config::ModelConfig,
-    model_reasoning, model_rules, model_target,
-    oauth_state::OAuthState,
-    quality,
-    quality_cache::QualityCache,
-    queries::Queries,
-    quota, recovery_rules,
-    runtime::Runtime,
-    settings::Settings,
-    upstream::Upstream,
-    usage,
+    account_locks::AccountLocks, account_templates, actions::Actions, capacity_alerts,
+    capacity_alerts::CapacityAlerts, compat, db::Database, error_evidence, key_fallback,
+    model_catalog, model_config::ModelConfig, model_reasoning, model_rules, model_target,
+    oauth_state::OAuthState, queries::Queries, quota, recovery_rules, runtime::Runtime,
+    settings::Settings, slow_ttft, upstream::Upstream, usage,
 };
 
 const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
@@ -57,8 +43,6 @@ struct ProjectionHttpCall {
     key: String,
     body: Value,
 }
-
-type ProjectionGroupCallLog = Arc<StdMutex<Vec<(String, String)>>>;
 
 #[derive(Clone)]
 struct ProjectionHttpState {
@@ -685,108 +669,6 @@ fn at(value: &Value) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-fn projection_sample(value: Option<quality::Sample>) -> Value {
-    let Some(value) = value else {
-        return Value::Null;
-    };
-    json!({
-        "account_id": value.account_id,
-        "at": compat::datetime(value.at),
-        "cohort": value.cohort,
-        "ttft": value.ttft,
-        "tps": value.tps,
-    })
-}
-
-fn quality_projection(summary: &Value) -> Value {
-    fn pick(source: &Value, keys: &[&str]) -> Value {
-        let mut output = Map::new();
-        for key in keys {
-            output.insert((*key).to_owned(), source[*key].clone());
-        }
-        Value::Object(output)
-    }
-
-    json!({
-        "account_id": summary["account_id"],
-        "score": summary["score"],
-        "grade": summary["grade"],
-        "reasons": summary["reasons"],
-        "sample_status": summary["sample_status"],
-        "cap": summary["cap"],
-        "consecutive_failures": summary["consecutive_failures"],
-        "coverage": summary["coverage"],
-        "reliability": pick(&summary["reliability"], &["successes", "failures", "total", "causes", "mode", "score", "effective_rate", "missing_reason"]),
-        "ttft": pick(&summary["ttft"], &["samples", "compared", "coverage", "score", "p50", "tail", "missing_reason", "mode"]),
-        "throughput": pick(&summary["throughput"], &["samples", "compared", "coverage", "score", "p50", "tail", "missing_reason", "mode"]),
-        "warnings": summary["warnings"],
-    })
-}
-
-fn usage_rows_from_spec(spec: &Value, at: DateTime<Utc>) -> Vec<Value> {
-    let account_id = spec["account"].as_i64().unwrap_or(1);
-    let count = spec["count"].as_u64().unwrap_or(30) as usize;
-    let first = spec.get("first").cloned().unwrap_or(json!(2000));
-    let first_number = first.as_f64();
-    let tps = spec["tps"].as_f64().unwrap_or(40.0);
-    let hours = spec["hours"].as_f64().unwrap_or(2.0);
-    let offset = spec["id_offset"].as_i64().unwrap_or(0);
-    let overrides = spec["overrides"].as_object();
-    (0..count)
-        .map(|index| {
-            let duration = first_number
-                .map(|value| value + 1_000_000.0 / tps)
-                .unwrap_or(27_000.0);
-            let time =
-                at - Duration::seconds((hours * 3600.0) as i64) - Duration::seconds(index as i64);
-            let mut row = json!({
-                "id": account_id * 10_000 + index as i64 + offset,
-                "account_id": account_id,
-                "created_at": compat::datetime(time),
-                "model": "requested",
-                "upstream_model": "gpt-6-sol",
-                "stream": true,
-                "first_token_ms": first,
-                "duration_ms": duration,
-                "output_tokens": 1000,
-                "input_tokens": 4096,
-                "cache_read_tokens": 0,
-                "cache_creation_tokens": 0,
-                "reasoning_effort": "max",
-                "service_tier": "default",
-            });
-            if let Some(overrides) = overrides {
-                for (key, value) in overrides {
-                    row[key] = value.clone();
-                }
-            }
-            row
-        })
-        .collect()
-}
-
-fn error_from_spec(spec: &Value, at: DateTime<Utc>) -> Value {
-    let id = spec["id"].as_i64().unwrap_or(1);
-    let account_id = spec["account"].as_i64().unwrap_or(1);
-    let minutes = spec["minutes"].as_i64().unwrap_or(3);
-    let mut row = json!({
-        "id": id,
-        "account_id": account_id,
-        "request_id": format!("request-{id}"),
-        "created_at": compat::datetime(at - Duration::minutes(minutes)),
-        "error_owner": "provider",
-        "error_phase": "upstream",
-        "upstream_status_code": 502,
-        "error_message": "upstream failed",
-    });
-    if let Some(overrides) = spec["overrides"].as_object() {
-        for (key, value) in overrides {
-            row[key] = value.clone();
-        }
-    }
-    row
-}
-
 fn stats_from_entries(entries: &Value) -> usage::Stats {
     entries
         .as_array()
@@ -891,26 +773,6 @@ async fn insert_account(
     .expect("insert synthetic projection account row");
 }
 
-async fn projection_upstream_groups(
-    State(calls): State<ProjectionGroupCallLog>,
-    headers: HeaderMap,
-) -> Response {
-    let key = headers
-        .get("x-api-key")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
-    calls
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .push(("/api/v1/admin/groups/all".into(), key.clone()));
-    if key == "invalid-fixture-key" {
-        StatusCode::UNAUTHORIZED.into_response()
-    } else {
-        Json(json!({"code":0,"data":[]})).into_response()
-    }
-}
-
 async fn projection_template_bulk_update(
     State(state): State<TemplateUpstreamState>,
     uri: axum::http::Uri,
@@ -943,30 +805,6 @@ async fn projection_template_bulk_update(
             Json(json!({"code":0,"data":{"updated":result.rows_affected()}})).into_response()
         }
         _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
-}
-
-async fn wait_for_quality_value(
-    cache: &QualityCache,
-    id: i64,
-    timeout: StdDuration,
-    predicate: impl Fn(&Value) -> bool,
-) -> Value {
-    let started = tokio::time::Instant::now();
-    loop {
-        let current = cache
-            .get(&[id], true)
-            .get(&id)
-            .cloned()
-            .expect("quality cache returns every requested account");
-        if predicate(&current) {
-            return current;
-        }
-        assert!(
-            started.elapsed() < timeout,
-            "quality cache did not reach expected state within {timeout:?}; last value: {current}"
-        );
-        tokio::time::sleep(StdDuration::from_millis(40)).await;
     }
 }
 
@@ -1036,9 +874,10 @@ fn every_selected_legacy_test_has_a_precise_projection_mapping() {
 
     let mut statuses = BTreeMap::<&str, usize>::new();
     for mapping in mappings {
+        let legacy_id = mapping["legacy_test_id"].as_str().expect("legacy test ID");
         let status = mapping["status"].as_str().expect("mapping status");
         assert!(
-            matches!(status, "mapped" | "partial"),
+            matches!(status, "mapped" | "partial" | "superseded"),
             "unexpected status {status}"
         );
         *statuses.entry(status).or_default() += 1;
@@ -1056,670 +895,49 @@ fn every_selected_legacy_test_has_a_precise_projection_mapping() {
         assert!(mapping["coverage_note"]
             .as_str()
             .is_some_and(|value| !value.trim().is_empty()));
+        if legacy_id.contains(":tests.test_account_quality:") {
+            assert_eq!(
+                status, "superseded",
+                "account quality assertions are removed"
+            );
+            assert_eq!(name, "account_quality_detail_route_is_removed");
+            assert!(target["assertions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| {
+                    value.as_str().is_some_and(|assertion| {
+                        assertion.contains("reqwest::StatusCode::NOT_FOUND")
+                    })
+                }));
+            let replacement = mapping["replacement"]
+                .as_object()
+                .expect("replacement contract");
+            for field in [
+                "legacy_assertions",
+                "approved_requirement",
+                "replacement_contract",
+            ] {
+                assert!(
+                    replacement.get(field).is_some_and(|value| {
+                        value.as_str().is_some_and(|text| !text.trim().is_empty())
+                            || value.as_array().is_some_and(|items| !items.is_empty())
+                    }),
+                    "superseded mapping lacks {field}: {legacy_id}"
+                );
+            }
+        } else if status == "superseded" {
+            panic!("only account quality mappings may be superseded here: {legacy_id}");
+        }
         if status == "partial" {
             assert!(mapping["uncovered_assertions"]
                 .as_array()
                 .is_some_and(|values| !values.is_empty()));
         }
     }
-    assert_eq!(statuses.get("mapped").copied().unwrap_or_default(), 75);
+    assert_eq!(statuses.get("mapped").copied().unwrap_or_default(), 47);
+    assert_eq!(statuses.get("superseded").copied().unwrap_or_default(), 28);
     assert_eq!(statuses.get("partial").copied().unwrap_or_default(), 0);
-}
-
-#[test]
-fn quality_evidence_performance_and_scoring_match_pinned_python() {
-    let document = fixtures();
-    let input = &document["quality"];
-    let now = at(&input["at"]);
-
-    for case in input["failure_cause_cases"].as_array().unwrap() {
-        let actual = quality::failure_cause(&case["row"])
-            .map(Value::from)
-            .unwrap_or(Value::Null);
-        assert_eq!(
-            actual, case["expected"],
-            "failure-cause case {}",
-            case["id"]
-        );
-    }
-
-    let accounts = input["accounts"].as_array().unwrap().clone();
-    let account_by_id: BTreeMap<i64, Value> = accounts
-        .iter()
-        .filter_map(|account| Some((account["id"].as_i64()?, account.clone())))
-        .collect();
-    for case in input["evidence_cases"].as_array().unwrap() {
-        let actual = quality::failures(
-            case["rows"].as_array().unwrap(),
-            &case["accounts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter_map(|account| Some((account["id"].as_i64()?, account.clone())))
-                .collect(),
-            now,
-        )
-        .into_iter()
-        .map(|failure| {
-            json!({
-                "account_id": failure.account_id,
-                "at": compat::datetime(failure.at),
-                "cause": failure.cause,
-                "request_known": failure.request_known,
-            })
-        })
-        .collect::<Vec<_>>();
-        assert_eq!(
-            Value::Array(actual),
-            case["expected"],
-            "failure evidence {}",
-            case["id"]
-        );
-
-        let recovered_usage = [1, 2, 3]
-            .into_iter()
-            .flat_map(|account| usage_rows_from_spec(&json!({"account":account}), now))
-            .collect::<Vec<_>>();
-        let (summary, _) = quality::calculate(
-            case["accounts"].as_array().unwrap(),
-            &recovered_usage,
-            case["rows"].as_array().unwrap(),
-            now,
-            None,
-        );
-        let expected = case["summary_expected"].as_object().unwrap();
-        assert_eq!(
-            summary.len(),
-            expected.len(),
-            "quality evidence account scope {}",
-            case["id"]
-        );
-        for (account_id, expected) in expected {
-            let account_id = account_id.parse::<i64>().unwrap();
-            assert_json_numbers_equal(
-                &quality_projection(summary.get(&account_id).unwrap()),
-                expected,
-                &format!("quality evidence summary {}/{}", case["id"], account_id),
-            );
-        }
-    }
-
-    for case in input["performance_cases"].as_array().unwrap() {
-        let actual = projection_sample(quality::performance(&case["row"], &case["account"]));
-        assert_eq!(
-            actual, case["expected"],
-            "performance sample {}",
-            case["id"]
-        );
-    }
-
-    for suite in input["scoring_cases"].as_array().unwrap() {
-        for scenario in suite["scenarios"].as_array().unwrap() {
-            let mut scenario_accounts = suite["accounts"].as_array().unwrap().clone();
-            if let Some(overrides) = scenario["platform_overrides"].as_object() {
-                for (id, platform) in overrides {
-                    let id = id.parse::<i64>().expect("platform override account ID");
-                    let account = scenario_accounts
-                        .iter_mut()
-                        .find(|account| account["id"].as_i64() == Some(id))
-                        .expect("platform override account exists");
-                    account["platform"] = platform.clone();
-                }
-            }
-            let rows = scenario["usage_groups"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .flat_map(|spec| usage_rows_from_spec(spec, now))
-                .collect::<Vec<_>>();
-            let errors = scenario["errors"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|spec| error_from_spec(spec, now))
-                .collect::<Vec<_>>();
-            let (output, _) = quality::calculate(&scenario_accounts, &rows, &errors, now, None);
-            let account_id = scenario["target_id"].as_i64().unwrap();
-            let actual_target =
-                quality_projection(output.get(&account_id).expect("target quality row"));
-            assert_json_numbers_equal(
-                &actual_target,
-                &scenario["expected"],
-                &format!("score scenario {}/{}", suite["id"], scenario["id"]),
-            );
-            if scenario["id"] == "distinct_real_components_round_to_65" {
-                let components = &actual_target;
-                let weighted = 0.5 * components["reliability"]["score"].as_f64().unwrap()
-                    + 0.25 * components["ttft"]["score"].as_f64().unwrap()
-                    + 0.25 * components["throughput"]["score"].as_f64().unwrap();
-                assert_eq!(
-                    components["score"].as_i64(),
-                    Some((weighted + 0.5).floor() as i64)
-                );
-                assert_eq!(components["score"], 65);
-            }
-            if let Some(compare_id) = scenario["compare_id"].as_i64() {
-                assert_json_numbers_equal(
-                    &quality_projection(output.get(&compare_id).expect("comparison quality row")),
-                    &scenario["compare_expected"],
-                    &format!("comparison scenario {}/{}", suite["id"], scenario["id"]),
-                );
-            }
-            if scenario.get("all_ids").is_some() {
-                for (account_id, expected) in scenario["all_expected"].as_object().unwrap() {
-                    let account_id = account_id.parse::<i64>().unwrap();
-                    assert_json_numbers_equal(
-                        &quality_projection(output.get(&account_id).unwrap()),
-                        expected,
-                        &format!("complete evidence summary {}/{}", suite["id"], account_id),
-                    );
-                }
-            }
-        }
-    }
-
-    let dedup = &input["dedup_case"];
-    let (dedup_output, _) =
-        quality::calculate(&accounts, dedup["rows"].as_array().unwrap(), &[], now, None);
-    assert_json_numbers_equal(
-        &quality_projection(dedup_output.get(&1).unwrap()),
-        &dedup["expected"],
-        "repeated usage IDs and invalid event dates are filtered",
-    );
-    for case in input["quantile_cases"].as_array().unwrap() {
-        let values = case["values"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_f64().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            quality::quantile(&values, case["p"].as_f64().unwrap()),
-            case["expected"].as_f64(),
-            "quantile case {}",
-            case["id"]
-        );
-    }
-
-    for case in input["error_curve_cases"].as_array().unwrap() {
-        let curve_at = now - Duration::days(2);
-        let recent = now - Duration::days(1);
-        let successes = vec![curve_at; case["successes"].as_u64().unwrap() as usize];
-        let errors = (0..case["failures"].as_u64().unwrap())
-            .map(|_| quality::Failure {
-                account_id: 1,
-                at: curve_at,
-                cause: "upstream",
-                request_known: true,
-            })
-            .collect::<Vec<_>>();
-        assert_json_numbers_equal(
-            &quality::reliability(&successes, &errors, recent),
-            &case["expected"],
-            &format!("reliability error curve {}", case["id"]),
-        );
-    }
-
-    let curve_cohort = input["performance_curve_cohort"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|part| part.as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    let curve_peers = input["performance_curve_peer_samples"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|sample| quality::Sample {
-            account_id: sample["account_id"].as_i64().unwrap(),
-            at: now - Duration::days(2),
-            cohort: curve_cohort.clone(),
-            ttft: sample["ttft"].as_f64(),
-            tps: sample["tps"].as_f64(),
-        })
-        .collect::<Vec<_>>();
-    let curve_baselines = quality::build_baselines(&curve_peers);
-    for case in input["performance_curve_cases"].as_array().unwrap() {
-        let metric = case["metric"].as_str().unwrap();
-        let observed = case["observed"].as_f64().unwrap();
-        let samples = (0..case["sample_count"].as_u64().unwrap())
-            .map(|_| quality::Sample {
-                account_id: 1,
-                at: now - Duration::hours(2),
-                cohort: curve_cohort.clone(),
-                ttft: (metric == "ttft").then_some(observed),
-                tps: (metric == "tps").then_some(observed),
-            })
-            .collect::<Vec<_>>();
-        let actual = quality::metric_window(&samples, metric, &curve_baselines);
-        let expected = &case["expected"];
-        for field in ["samples", "compared", "coverage", "p50", "tail"] {
-            assert_eq!(actual[field], expected[field], "{} {field}", case["id"]);
-        }
-        let actual_score = actual["score"].as_f64().unwrap();
-        let expected_score = expected["score"].as_f64().unwrap();
-        assert!(
-            (actual_score - expected_score).abs() <= 1e-10,
-            "performance curve {}: expected {expected_score}, got {actual_score}",
-            case["id"]
-        );
-        assert_eq!(actual["cohorts"].as_array().unwrap().len(), 1);
-        let actual_cohort = &actual["cohorts"][0];
-        let expected_cohort = &expected["cohorts"][0];
-        for field in [
-            "platform",
-            "model",
-            "reasoning_effort",
-            "service_tier",
-            "transport",
-            "input_bucket",
-            "samples",
-            "baseline_accounts",
-            "baseline_samples",
-        ] {
-            assert_eq!(
-                actual_cohort[field], expected_cohort[field],
-                "{} cohort {field}",
-                case["id"]
-            );
-        }
-        for field in ["p50", "tail", "baseline_p50", "baseline_tail", "score"] {
-            let actual_value = actual_cohort[field].as_f64().unwrap();
-            let expected_value = expected_cohort[field].as_f64().unwrap();
-            assert!(
-                (actual_value - expected_value).abs() <= 1e-10,
-                "{} cohort {field}: expected {expected_value}, got {actual_value}",
-                case["id"]
-            );
-        }
-    }
-    assert_eq!(account_by_id.len(), 3);
-}
-
-#[test]
-fn quality_reader_sql_contract_matches_pinned_python_query_observations() {
-    let expected = &fixtures()["quality"]["reader_contract"];
-    let source = include_str!("../src/quality_cache.rs");
-    let contains_query_fragment = |fragment: &str| {
-        if let Some(field) = fragment.strip_prefix("u.") {
-            source.contains("format!(\"u.{field}\")") && source.contains(&format!("\"{field}\","))
-        } else if let Some(field) = fragment.strip_prefix("NULL AS ") {
-            source.contains("format!(\"NULL AS {field}\")")
-                && source.contains(&format!("\"{field}\","))
-        } else {
-            source.contains(fragment)
-        }
-    };
-    for fragment in expected["required_fragments"].as_array().unwrap() {
-        let fragment = fragment.as_str().unwrap();
-        assert!(
-            contains_query_fragment(fragment),
-            "reader SQL must retain the literal or field-template equivalent of {fragment}"
-        );
-    }
-    for fragment in expected["forbidden_fragments"].as_array().unwrap() {
-        let fragment = fragment.as_str().unwrap();
-        assert!(
-            !source.contains(fragment),
-            "reader SQL must not inspect or write {fragment}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn quality_nonfinite_python_inputs_are_rejected_by_bigint_storage_boundary() {
-    let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
-    let quality_fixtures = fixtures()["quality"].clone();
-    for case in quality_fixtures["performance_cases"].as_array().unwrap() {
-        let actual = projection_sample(quality::performance(&case["row"], &case["account"]));
-        assert_eq!(
-            actual, case["expected"],
-            "legacy timing, cached-input, exclusion, and boundary case {}",
-            case["id"]
-        );
-    }
-
-    let expected = quality_fixtures["nonfinite_inputs"].clone();
-    let fields = expected
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|case| case["field"].as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    let db = open_test_database("projection-nonfinite-boundary").await;
-    let columns = db
-        .all(
-            "SELECT column_name,data_type FROM information_schema.columns \
-             WHERE table_schema=current_schema() AND table_name='usage_logs' \
-             AND column_name=ANY($1)",
-            &[Param::Texts(fields.clone())],
-        )
-        .await
-        .expect("read the temporary test schema's timing/token types");
-    let types = columns
-        .into_iter()
-        .map(|row| {
-            (
-                row["column_name"].as_str().unwrap().to_owned(),
-                row["data_type"].clone(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(types.len(), fields.len());
-    for (index, case) in expected.as_array().unwrap().iter().enumerate() {
-        let field = case["field"].as_str().unwrap();
-        assert_eq!(types[field], "bigint", "{field} has no NaN storage form");
-        match field {
-            "cache_creation_tokens" | "duration_ms" => {
-                assert!(case["old_python_expected"].is_null());
-            }
-            "first_token_ms" => {
-                assert!(!case["old_python_expected"].is_null());
-                assert!(case["old_python_expected"]["ttft"].is_null());
-            }
-            _ => panic!("unexpected non-finite fixture field {field}"),
-        }
-        let id = 967_900_000 + index as i64;
-        let column = match field {
-            "cache_creation_tokens" | "first_token_ms" | "duration_ms" => field,
-            _ => unreachable!(),
-        };
-        let control = format!("INSERT INTO usage_logs (id,{column}) VALUES ($1,0)");
-        sqlx::query(&control)
-            .bind(id)
-            .execute(&db.pool)
-            .await
-            .expect("the same nullable BIGINT field accepts an ordinary integer");
-        sqlx::query("DELETE FROM usage_logs WHERE id=$1")
-            .bind(id)
-            .execute(&db.pool)
-            .await
-            .expect("remove the ordinary integer control row");
-        let sql = format!("INSERT INTO usage_logs (id,{column}) VALUES ($1,'NaN')");
-        assert!(
-            sqlx::query(&sql).bind(id).execute(&db.pool).await.is_err(),
-            "PostgreSQL must reject NaN before it can enter the Rust Value boundary for {field}"
-        );
-    }
-    db.close().await;
-}
-
-#[tokio::test]
-async fn quality_cache_coalesces_refresh_retains_timeout_results_and_recovers() {
-    let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
-    const ACCOUNT_ID: i64 = 967_211;
-    let db = open_test_database("projection-quality-cache").await;
-    for account_id in ACCOUNT_ID..=ACCOUNT_ID + 2 {
-        let account_type = if account_id == ACCOUNT_ID {
-            "oauth"
-        } else {
-            "apikey"
-        };
-        insert_account(
-            &db.pool,
-            account_id,
-            "openai",
-            account_type,
-            json!({}),
-            false,
-        )
-        .await;
-    }
-    for (offset, account_id) in (ACCOUNT_ID..=ACCOUNT_ID + 2).enumerate() {
-        let base_id = 967_211_000_i64 + (offset as i64 * 1000);
-        sqlx::query(
-            "INSERT INTO usage_logs (id,account_id,created_at,model,upstream_model,input_tokens,output_tokens,stream,duration_ms,first_token_ms,reasoning_effort,service_tier) \
-             SELECT $1 + generated.n,$2,now() - interval '2 hours' - generated.n * interval '1 second','requested','gpt-6-sol',4096,1000,true,27000,2000,'max','default' \
-             FROM generate_series(1,30) AS generated(n)",
-        )
-        .bind(base_id)
-        .bind(account_id)
-        .execute(&db.pool)
-        .await
-        .expect("insert synthetic successful usage for a comparable quality baseline");
-    }
-
-    let clock = Arc::new(StdMutex::new(StdInstant::now()));
-    let cache_clock = clock.clone();
-    let cache = QualityCache::new_with_clock(
-        db.clone(),
-        Arc::new(move || {
-            *cache_clock
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-        }),
-    );
-    let pending = cache.get(&[ACCOUNT_ID], true);
-    assert_eq!(pending[&ACCOUNT_ID]["sample_status"], "pending");
-    let initial = wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(10), |value| {
-        value["data_status"] == "fresh"
-            && value["sample_status"] == "complete"
-            && value["score"].is_number()
-            && !value["computed_at"].is_null()
-    })
-    .await;
-    let expected_success = &fixtures()["quality"]["cache_expected"]["success"];
-    assert_eq!(initial["score"], expected_success["score"]);
-    assert_eq!(initial["reliability"]["total"], 30);
-    assert!(initial["ttft"]["samples"].as_i64().unwrap() >= 10);
-    assert!(initial["throughput"]["samples"].as_i64().unwrap() >= 10);
-
-    *clock.lock().unwrap_or_else(|error| error.into_inner()) += StdDuration::from_secs(31);
-    let refresh_started_at = Utc::now();
-    let blocker = open_test_database("projection-quality-cache-blocker").await;
-    let observer = open_test_database("projection-quality-cache-observer").await;
-    let mut blocker_transaction = blocker
-        .pool
-        .begin()
-        .await
-        .expect("begin isolated table-lock transaction");
-    sqlx::query("LOCK TABLE usage_logs IN ACCESS EXCLUSIVE MODE")
-        .execute(&mut *blocker_transaction)
-        .await
-        .expect("hold only the synthetic usage relation while the reader times out");
-
-    let still_fresh = cache.get(&[ACCOUNT_ID], true);
-    assert_eq!(still_fresh[&ACCOUNT_ID]["score"], initial["score"]);
-    let mut blocked_reader_count = 0_i64;
-    let wait_for_reader = tokio::time::Instant::now();
-    while wait_for_reader.elapsed() < StdDuration::from_secs(3) {
-        blocked_reader_count = sqlx::query_scalar(
-            "SELECT count(*)::bigint FROM pg_stat_activity WHERE datname=current_database() \
-             AND state='active' AND wait_event_type='Lock' \
-             AND query LIKE '%FROM usage_logs u JOIN accounts a%'",
-        )
-        .fetch_one(&observer.pool)
-        .await
-        .expect("observe the cache reader waiting on the fixture lock");
-        if blocked_reader_count > 0 {
-            break;
-        }
-        tokio::time::sleep(StdDuration::from_millis(50)).await;
-    }
-    assert_eq!(
-        blocked_reader_count, 1,
-        "only one in-flight reader is coalesced"
-    );
-    let observed_query: Option<String> = sqlx::query_scalar(
-        "SELECT query FROM pg_stat_activity WHERE datname=current_database() \
-         AND state='active' AND wait_event_type='Lock' \
-         AND query LIKE '%FROM usage_logs u JOIN accounts a%' \
-         ORDER BY query_start DESC LIMIT 1",
-    )
-    .fetch_optional(&observer.pool)
-    .await
-    .expect("read the SQL text of the active quality evidence statement");
-    let observed_query = observed_query.expect("the locked reader exposes its executed SQL");
-    assert!(observed_query.contains("u.upstream_model"));
-    assert!(observed_query.contains("u.cache_creation_tokens"));
-    assert!(observed_query.contains("LIMIT 250001"));
-    assert!(!observed_query.contains("request_body"));
-    for _ in 0..4 {
-        let value = cache.get(&[ACCOUNT_ID], true);
-        assert_eq!(value[&ACCOUNT_ID]["data_status"], "fresh");
-        assert_eq!(value[&ACCOUNT_ID]["score"], initial["score"]);
-        tokio::time::sleep(StdDuration::from_millis(80)).await;
-    }
-    let delayed = wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(8), |value| {
-        value["data_status"] == "delayed"
-    })
-    .await;
-    assert_json_numbers_equal(
-        &delayed["reliability"],
-        &initial["reliability"],
-        "a delayed refresh retains prior reliability results",
-    );
-    assert_json_numbers_equal(
-        &delayed["ttft"],
-        &initial["ttft"],
-        "a delayed refresh retains prior TTFT results",
-    );
-    assert_json_numbers_equal(
-        &delayed["throughput"],
-        &initial["throughput"],
-        "a delayed refresh retains prior throughput results",
-    );
-    assert_eq!(delayed["score"], initial["score"]);
-    assert_eq!(delayed["computed_at"], initial["computed_at"]);
-    assert_eq!(delayed["diagnostic"]["stage"], "usage");
-    assert_eq!(delayed["diagnostic"]["kind"], "query_timeout");
-    assert_eq!(delayed["reasons"], json!(["统计更新失败"]));
-    assert_eq!(delayed["warnings"], json!([]));
-    let checked_at = DateTime::parse_from_rfc3339(
-        delayed["diagnostic"]["checked_at"]
-            .as_str()
-            .expect("query failure carries an ISO timestamp"),
-    )
-    .expect("query failure timestamp is ISO-8601")
-    .with_timezone(&Utc);
-    assert!(checked_at >= refresh_started_at);
-    assert!(checked_at <= Utc::now() + Duration::seconds(1));
-
-    *clock.lock().unwrap_or_else(|error| error.into_inner()) += StdDuration::from_secs(270);
-    let stale = cache.get(&[ACCOUNT_ID], true);
-    let stale = &stale[&ACCOUNT_ID];
-    let expected_stale = &fixtures()["quality"]["cache_expected"]["stale"];
-    assert_eq!(stale["data_status"], expected_stale["data_status"]);
-    assert_eq!(stale["reasons"], expected_stale["reasons"]);
-    assert_eq!(stale["score"], initial["score"]);
-    assert_eq!(stale["computed_at"], initial["computed_at"]);
-    assert_json_numbers_equal(
-        &stale["reliability"],
-        &initial["reliability"],
-        "a stale cache retains prior reliability results",
-    );
-    assert_json_numbers_equal(
-        &stale["ttft"],
-        &initial["ttft"],
-        "a stale cache retains prior TTFT results",
-    );
-    assert_json_numbers_equal(
-        &stale["throughput"],
-        &initial["throughput"],
-        "a stale cache retains prior throughput results",
-    );
-    assert_eq!(stale["diagnostic"]["stage"], "usage");
-    assert_eq!(stale["diagnostic"]["kind"], "query_timeout");
-
-    blocker_transaction
-        .rollback()
-        .await
-        .expect("release the fixture table lock before recovery");
-    let recovered =
-        wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(8), |value| {
-            value["data_status"] == "fresh"
-                && value["diagnostic"].is_null()
-                && value["score"].is_number()
-                && value["computed_at"] != initial["computed_at"]
-        })
-        .await;
-    assert_eq!(recovered["score"], initial["score"]);
-    assert_eq!(recovered["sample_status"], "complete");
-
-    cache.close().await;
-    observer.close().await;
-    blocker.close().await;
-    db.close().await;
-    quality_cache_reuses_and_rebuilds_baselines_on_injected_clock_boundaries().await;
-}
-
-async fn quality_cache_reuses_and_rebuilds_baselines_on_injected_clock_boundaries() {
-    const ACCOUNT_ID: i64 = 967_221;
-    let db = open_test_database("projection-quality-baselines").await;
-    for account_id in ACCOUNT_ID..=ACCOUNT_ID + 2 {
-        insert_account(&db.pool, account_id, "openai", "oauth", json!({}), false).await;
-        sqlx::query(
-            "INSERT INTO usage_logs (id,account_id,created_at,model,upstream_model,input_tokens,output_tokens,stream,duration_ms,first_token_ms,reasoning_effort,service_tier) \
-             SELECT $1 + generated.n,$2,now() - generated.n * interval '1 minute','projection-baseline-model','projection-baseline-model',4096,1000,true,27000,2000,'max','default' \
-             FROM generate_series(1,30) AS generated(n)",
-        )
-        .bind(account_id * 10_000)
-        .bind(account_id)
-        .execute(&db.pool)
-        .await
-        .expect("seed three comparable synthetic throughput cohorts");
-    }
-
-    let clock = Arc::new(StdMutex::new(StdInstant::now()));
-    let cache_clock = clock.clone();
-    let cache = QualityCache::new_with_clock(
-        db.clone(),
-        Arc::new(move || {
-            *cache_clock
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-        }),
-    );
-    cache.get(&[ACCOUNT_ID], true);
-    let initial = wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(8), |value| {
-        value["data_status"] == "fresh" && value["sample_status"] == "complete"
-    })
-    .await;
-    let initial_baseline = initial["throughput"]["cohorts"][0]["baseline_p50"].clone();
-    let expected = &fixtures()["quality"]["cache_baseline_expected"];
-    assert_eq!(initial_baseline, expected["initial_tps_baseline"]);
-
-    let updated_peers =
-        sqlx::query("UPDATE usage_logs SET duration_ms=13500 WHERE account_id=ANY($1)")
-            .bind(vec![ACCOUNT_ID + 1, ACCOUNT_ID + 2])
-            .execute(&db.pool)
-            .await
-            .expect("change peer throughput after the first baseline is cached");
-    assert_eq!(updated_peers.rows_affected(), 60);
-
-    *clock.lock().unwrap_or_else(|error| error.into_inner()) += StdDuration::from_secs(31);
-    cache.get(&[ACCOUNT_ID], true);
-    let after_31_seconds =
-        wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(8), |value| {
-            value["data_status"] == "fresh" && value["computed_at"] != initial["computed_at"]
-        })
-        .await;
-    let reused_baseline = after_31_seconds["throughput"]["cohorts"][0]["baseline_p50"].clone();
-    assert_eq!(
-        reused_baseline, expected["after_31s_tps_baseline"],
-        "a refresh after 31 seconds keeps the five-minute baseline"
-    );
-    assert_eq!(reused_baseline, initial_baseline);
-
-    *clock.lock().unwrap_or_else(|error| error.into_inner()) += StdDuration::from_secs(270);
-    cache.get(&[ACCOUNT_ID], true);
-    let rebuilt_baseline_expected = expected["after_301s_tps_baseline"].clone();
-    let after_301_seconds =
-        wait_for_quality_value(&cache, ACCOUNT_ID, StdDuration::from_secs(8), |value| {
-            value["data_status"] == "fresh"
-                && value["computed_at"] != after_31_seconds["computed_at"]
-                && value["throughput"]["cohorts"][0]["baseline_p50"] == rebuilt_baseline_expected
-        })
-        .await;
-    let rebuilt_baseline = after_301_seconds["throughput"]["cohorts"][0]["baseline_p50"].clone();
-    assert_eq!(
-        rebuilt_baseline, expected["after_301s_tps_baseline"],
-        "a refresh after 301 seconds rebuilds the baseline from current PostgreSQL evidence"
-    );
-    assert_ne!(rebuilt_baseline, initial_baseline);
-
-    cache.close().await;
-    db.close().await;
 }
 
 #[tokio::test]
@@ -2023,33 +1241,18 @@ fn reasoning_store_preserves_unrelated_overrides_and_rejects_stale_revisions() {
 }
 
 #[tokio::test]
-async fn quality_detail_http_auth_filters_deleted_accounts_without_scoring_upstream() {
+async fn account_quality_detail_route_is_removed() {
     let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
-    let api_database_url = database_url_for("projection-quality-http");
-    let seed = open_test_database("projection-quality-http-seed").await;
-    insert_account(&seed.pool, 967_101, "openai", "apikey", json!({}), false).await;
-    insert_account(&seed.pool, 967_102, "openai", "apikey", json!({}), true).await;
-    seed.close().await;
-
-    let calls = Arc::new(StdMutex::new(Vec::new()));
-    let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind local fixture upstream");
-    let upstream_address = upstream_listener.local_addr().unwrap();
-    let upstream_app = Router::new()
-        .route("/api/v1/admin/groups/all", get(projection_upstream_groups))
-        .with_state(calls.clone());
-    let upstream_task = tokio::spawn(async move {
-        axum::serve(upstream_listener, upstream_app)
-            .await
-            .expect("serve local fixture upstream");
-    });
-    let upstream_url = format!("http://{upstream_address}");
-    let directory = tempfile::tempdir().expect("create owned quality API state directory");
-    let settings = test_settings(directory.path(), api_database_url, &upstream_url, true);
+    let directory = tempfile::tempdir().expect("create owned API state directory");
+    let settings = test_settings(
+        directory.path(),
+        database_url_for("projection-account-quality-removed"),
+        "http://127.0.0.1:9",
+        true,
+    );
     let runtime = Runtime::new(settings.as_ref().clone())
         .await
-        .expect("create read-only runtime against temporary PostgreSQL and loopback upstream");
+        .expect("create read-only runtime against temporary PostgreSQL");
 
     let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -2068,65 +1271,18 @@ async fn quality_detail_http_auth_filters_deleted_accounts_without_scoring_upstr
         .no_proxy()
         .build()
         .expect("build loopback-only API client");
-    let quality_url = format!("http://{api_address}/api/desktop/v1/accounts/967101/quality");
-    let first = client
-        .get(&quality_url)
-        .header("x-api-key", "fixture")
-        .send()
-        .await
-        .expect("request quality for the supported synthetic account");
-    assert_eq!(first.status(), reqwest::StatusCode::OK);
-    let first_value = first.json::<Value>().await.unwrap();
-    assert_eq!(first_value["sample_status"], "pending");
-
-    let second = client
-        .get(&quality_url)
-        .header("x-api-key", "fixture")
-        .send()
-        .await
-        .expect("repeat quality read with cached authentication");
-    assert_eq!(second.status(), reqwest::StatusCode::OK);
-
-    let deleted = client
+    let response = client
         .get(format!(
-            "http://{api_address}/api/desktop/v1/accounts/967102/quality"
+            "http://{api_address}/api/desktop/v1/accounts/967101/quality"
         ))
-        .header("x-api-key", "fixture")
         .send()
         .await
-        .expect("request quality for a deleted account");
-    assert_eq!(deleted.status(), reqwest::StatusCode::NOT_FOUND);
+        .expect("request the retired account quality route");
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
 
-    let unauthorized = client
-        .get(&quality_url)
-        .header("x-api-key", "invalid-fixture-key")
-        .send()
-        .await
-        .expect("request with a key rejected by the loopback upstream");
-    assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
-
-    let observed_calls = calls
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .clone();
-    assert_eq!(
-        observed_calls,
-        vec![
-            ("/api/v1/admin/groups/all".into(), "fixture".into()),
-            (
-                "/api/v1/admin/groups/all".into(),
-                "invalid-fixture-key".into(),
-            ),
-        ],
-        "GET authenticates with fresh=false; quality calculation reads PostgreSQL and never requests upstream scoring"
-    );
-
-    runtime.quality.close().await;
     runtime.close().await;
     api_task.abort();
     let _ = api_task.await;
-    upstream_task.abort();
-    let _ = upstream_task.await;
 }
 
 #[test]
@@ -4250,10 +3406,10 @@ fn slow_ttft_and_local_capacity_evidence_match_pinned_python() {
             .as_array()
             .unwrap()
             .iter()
-            .filter_map(|row| quality::slow_sample(row, &case["account"]))
+            .filter_map(|row| slow_ttft::slow_sample(row, &case["account"]))
             .collect::<Vec<_>>();
         assert_eq!(
-            quality::slow_warning(&samples, now).unwrap_or(Value::Null),
+            slow_ttft::slow_warning(&samples, now).unwrap_or(Value::Null),
             case["expected_warning"],
             "slow warning {}",
             case["id"]
@@ -4265,7 +3421,7 @@ fn slow_ttft_and_local_capacity_evidence_match_pinned_python() {
             .cloned()
             .unwrap_or_else(|| json!({"id":1,"platform":"openai","type":"oauth"}));
         assert_eq!(
-            quality::slow_sample(&case["row"], &account).is_some(),
+            slow_ttft::slow_sample(&case["row"], &account).is_some(),
             !case["expected"].is_null(),
             "slow sample inclusion {}",
             case["id"]
@@ -4296,26 +3452,6 @@ fn slow_ttft_and_local_capacity_evidence_match_pinned_python() {
             case["id"]
         );
     }
-    for case in input["failure_cause_cases"].as_array().unwrap() {
-        let actual = quality::failure_cause(&case["row"])
-            .map(Value::from)
-            .unwrap_or(Value::Null);
-        assert_eq!(
-            actual, case["expected"],
-            "slow module error cause {}",
-            case["id"]
-        );
-    }
-
-    let warning_case = &input["warning_cases"][0];
-    let warning_accounts = [json!({"id":1,"platform":"openai","type":"oauth","deleted_at":null})];
-    let warning_rows = warning_case["inputs"].as_array().unwrap();
-    let (summary, _) = quality::calculate(&warning_accounts, warning_rows, &[], now, None);
-    assert_json_numbers_equal(
-        &summary[&1]["warnings"],
-        &input["calculate_warning_expected"],
-        "warning results from saved quality calculation",
-    );
 }
 
 #[test]

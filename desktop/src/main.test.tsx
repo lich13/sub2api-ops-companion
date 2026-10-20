@@ -231,7 +231,7 @@ describe("main page surface ownership", () => {
 });
 
 describe("categorized event history", () => {
-  it("switches all three tabs and paginates each error category without duplicate IDs or snapshot rows", async () => {
+  it("switches all four tabs and paginates each error category without duplicate IDs or snapshot rows", async () => {
     const initial = state();
     initial.snapshot!.errors = [error(999, "仅快照错误")];
     vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
@@ -244,6 +244,8 @@ describe("categorized event history", () => {
     };
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (pages[path]) return pages[path] as never;
+      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
+      if (path === "/detection-logs?limit=50") return { items: [], next_cursor: null } as never;
       if (path === "/recoveries") return {
         items: [{ id: 1, account_id: 1, account_name: "恢复记录账号", model_id: "fixture-model", test_completed_at: null, recovered_at: null, legacy: true }],
         next_cursor: null,
@@ -252,7 +254,7 @@ describe("categorized event history", () => {
     });
     await act(async () => root.render(<App />));
     await act(async () => nav("事件").click());
-    expect([...container.querySelectorAll('.events-view [role="tab"]')].map((node) => node.textContent)).toEqual(["降智错误", "其他错误", "恢复历史"]);
+    expect([...container.querySelectorAll('.events-view [role="tab"]')].map((node) => node.textContent)).toEqual(["降智错误", "其他错误", "恢复历史", "日志"]);
     expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
     expect(container.textContent).not.toContain("仅快照错误");
     expect(vi.mocked(api).mock.calls.filter(([, path]) => path.startsWith("/errors?")).map(([, path]) => path)).toEqual(["/errors?category=degradation"]);
@@ -274,6 +276,11 @@ describe("categorized event history", () => {
       "/errors?category=degradation", "/errors?category=degradation&before_id=11",
       "/errors?category=other", "/errors?category=other&before_id=8",
     ]);
+    await act(async () => eventTab("日志").click());
+    expect(container.querySelector("#logs-panel")?.hasAttribute("hidden")).toBe(false);
+    expect(container.querySelector("#logs-panel")?.textContent).toContain("暂无自动检测记录");
+    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/capabilities"]);
+    expect(vi.mocked(api).mock.calls).toContainEqual(["GET", "/detection-logs?limit=50"]);
     await act(async () => eventTab("降智错误").click());
     expect(eventNames()).toEqual(["降智最新", "降智分页边界"]);
     expect(container.querySelector("#recoveries-panel")?.hasAttribute("hidden")).toBe(true);
@@ -343,7 +350,7 @@ describe("categorized event history", () => {
 });
 
 describe("account sorting and Android connection settings", () => {
-  it("defaults Android accounts to recent calls and keeps priority and quality sorting", async () => {
+  it("defaults Android accounts to recent calls and keeps priority sorting", async () => {
     const initial = state();
     initial.platform = "android";
     initial.snapshot!.accounts = [
@@ -361,7 +368,7 @@ describe("account sorting and Android connection settings", () => {
     const sort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
     expect(sort.value).toBe("recent:desc");
     expect([...sort.options].map((option) => option.value)).toEqual([
-      "recent:desc", "recent:asc", "priority:asc", "priority:desc", "quality:desc", "quality:asc",
+      "recent:desc", "recent:asc", "priority:asc", "priority:desc",
     ]);
     await act(async () => {
       sort.value = "priority:asc";

@@ -124,6 +124,7 @@ impl Detection {
             receipt["reason"] = reason.into();
             receipt["mark_cleared"] = adopted.into();
             self.update(id, json!({"recheck_recovery":receipt}))?;
+            self.log_receipt(string(&receipt["job_id"]), "recovery", &receipt);
             return Ok(receipt);
         }
         if !adopted {
@@ -201,6 +202,7 @@ impl Detection {
             Ok(())
         })?;
 
+        self.log_receipt(string(&receipt["job_id"]), "recovery", &receipt);
         self.audit(
             "model_detection_recovered",
             json!({

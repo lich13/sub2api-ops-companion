@@ -1873,7 +1873,7 @@
     },
     {
       "covered_assertions": [
-        "approved 0.1.47 difference: current-account directory replaces group union; absent IDs, wildcards and media are excluded; original Python oracle is preserved"
+        "approved 0.1.47 candidate rule and 0.1.48 directory fix: read the current account provider with its effective credentials and proxy, bypass the mapped admin catalog; absent IDs, wildcards and media are excluded; original Python oracle is preserved"
       ],
       "fixture_anchors": [
         "server/tests/account_mutation_parity.rs#Harness (fresh synthetic PostgreSQL rows and real readback)",

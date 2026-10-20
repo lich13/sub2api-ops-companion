@@ -151,6 +151,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["capabilities"
         | "connection-status"
         | "snapshot"
+        | "detection-logs"
         | "errors"
         | "usage-records"
         | "usage-record-options"
@@ -165,8 +166,9 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
             Some(&["POST"])
         }
         ["accounts", _] => Some(&["DELETE"]),
-        ["accounts", _, "quality" | "settings" | "models"]
-        | ["accounts", _, "model-tests", "latest"] => Some(&["GET"]),
+        ["accounts", _, "settings" | "models"] | ["accounts", _, "model-tests", "latest"] => {
+            Some(&["GET"])
+        }
         ["accounts", _, "operations" | "schedulable" | "recover-state" | "priority" | "test" | "model-tests"
         | "usage-action"] => Some(&["POST"]),
         ["accounts", _, "groups" | "degradation-mark"] => Some(&["PUT"]),
@@ -225,6 +227,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let integer_queries: &[&str] = match path.as_slice() {
         ["errors"] => &["account_id", "before_id", "limit"],
         ["recoveries"] => &["before_id", "limit"],
+        ["detection-logs"] => &["limit"],
         ["usage-records"] => &["account_id", "api_key_id", "user_id", "after_id", "limit"],
         ["usage-record-options"] => &["user_id", "limit"],
         ["account-templates"] => &["account_id"],
@@ -270,7 +273,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let result: Value = match path.as_slice() {
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
         ["errors"] => {
@@ -290,6 +293,10 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 .error_detail(path_id(id)?, category(&query)?)
                 .await?
         }
+        ["detection-logs"] => runtime.detection.logs(
+            get_string(&query, "before"),
+            number(&query, "limit", 1, 100)?.unwrap_or(50) as usize,
+        )?,
         ["recoveries"] => {
             runtime
                 .actions
@@ -336,13 +343,6 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             crate::usage_records::UsageRecords(runtime.db.clone())
                 .detail(path_id(id)?)
                 .await?
-        }
-        ["accounts", id, "quality"] => {
-            let id = path_id(id)?;
-            if id < 1 {
-                return Err(Error::new(422, "账号编号无效"));
-            }
-            runtime.quality_detail(id).await?
         }
         ["account-operations"] => runtime.operations.listing(get_string(&query, "batch_id"))?,
         ["account-operations", "batch"] => {

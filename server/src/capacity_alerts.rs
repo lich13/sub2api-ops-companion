@@ -3,7 +3,7 @@ use crate::{
     db::Database,
     error::{Error, Result},
     error_evidence,
-    quality::{slow_sample, slow_warning},
+    slow_ttft::{slow_sample, slow_warning},
     sql,
     store::Store,
 };

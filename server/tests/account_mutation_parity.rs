@@ -298,6 +298,12 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_owned();
+    let authorization = request
+        .headers()
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
     let bytes = to_bytes(request.into_body(), 16_000_000)
         .await
         .unwrap_or_default();
@@ -323,6 +329,22 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     if let Some(gate) = gate {
         gate.entered.notify_one();
         gate.release.notified().await;
+    }
+
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(
+            api_key.is_empty(),
+            "provider model reads never use admin auth"
+        );
+        assert_eq!(authorization, "Bearer fixture-account-secret");
+        return response(
+            StatusCode::OK,
+            json!({"data":[
+                {"id":"fixture-model-a"},
+                {"id":"fixture-model-b"},
+                {"id":"fixture-image-model"}
+            ]}),
+        );
     }
 
     if path == "/api/v1/admin/groups/all" && method == Method::GET {
@@ -735,6 +757,7 @@ impl Harness {
             .await
             .expect("bind loopback upstream");
         let upstream_url = format!("http://{}", upstream_listener.local_addr().unwrap());
+        let directory_endpoint = format!("{upstream_url}/fixture-models");
         let connection_path = temp.path().join("sub2api-config.json");
         fs::write(
             &connection_path,
@@ -773,12 +796,16 @@ impl Harness {
             },
             bark: json!({"enabled":false}),
             bark_valid: true,
-            base_url: upstream_url,
+            base_url: upstream_url.clone(),
             verify_url: String::new(),
             read_only: false,
         })
         .await
         .expect("construct Rust runtime against temporary PostgreSQL");
+        runtime
+            .actions
+            .set_model_directory_endpoint(&directory_endpoint)
+            .expect("use the loopback-only upstream model-directory fixture");
         let upstream = MockUpstream::new(runtime.db.pool.clone());
         let upstream_state = upstream.clone();
         let upstream_task = tokio::spawn(async move {
@@ -879,7 +906,20 @@ impl Harness {
         .bind(format!("fixture-account-{id}"))
         .bind(platform)
         .bind(account_type)
-        .bind(SqlJson(json!({"access_token":"fixture-account-secret","model_mapping":mapping})))
+        .bind(SqlJson({
+            let mut credentials = json!({"model_mapping":mapping});
+            if account_type == "apikey" {
+                credentials["api_key"] = "fixture-account-secret".into();
+                credentials["base_url"] = format!(
+                    "{}/v1",
+                    self.runtime.actions.settings.base_url.trim_end_matches('/')
+                )
+                .into();
+            } else {
+                credentials["access_token"] = "fixture-account-secret".into();
+            }
+            credentials
+        }))
         .bind(SqlJson(extra))
         .bind(parent)
         .execute(&self.runtime.db.pool)
@@ -2664,8 +2704,8 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
     assert_eq!(
         exact,
         json!([
-            {"id":"fixture-model-a","display_name":"fixture-model-a","type":"text"},
-            {"id":"fixture-model-b","display_name":"fixture-model-b","type":"text"}
+            {"id":"fixture-model-a","display_name":"fixture-model-a","type":"model"},
+            {"id":"fixture-model-b","display_name":"fixture-model-b","type":"model"}
         ])
     );
     assert_ne!(
@@ -2675,13 +2715,21 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
     assert_eq!(
         harness
             .upstream
+            .matching(Method::GET, &format!("/fixture-models/{account_id}"))
+            .len(),
+        1,
+        "model tests read the current provider directory, including complete allowlists"
+    );
+    assert_eq!(
+        harness
+            .upstream
             .matching(
                 Method::GET,
                 &format!("/api/v1/admin/accounts/{account_id}/models")
             )
             .len(),
-        1,
-        "model tests always read the current account directory, including complete allowlists"
+        0,
+        "model tests do not use the mapped Sub2API admin model directory"
     );
     let row = harness.account(account_id).await;
     for (model, expected) in [
@@ -2812,8 +2860,8 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
     assert_eq!(
         no_group_fallback.1,
         json!([
-            {"id":"fixture-model-a","display_name":"fixture-model-a","type":"text"},
-            {"id":"fixture-model-b","display_name":"fixture-model-b","type":"text"}
+            {"id":"fixture-model-a","display_name":"fixture-model-a","type":"model"},
+            {"id":"fixture-model-b","display_name":"fixture-model-b","type":"model"}
         ])
     );
     let disabled_group = harness
@@ -2846,7 +2894,7 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
                 &format!("/api/v1/admin/accounts/{no_group_account}/models"),
             )
             .len(),
-        1
+        0
     );
     assert_eq!(
         harness
@@ -2856,8 +2904,18 @@ async fn desktop_model_options_live_allowlists_and_sse_payload_match_python_orac
                 &format!("/api/v1/admin/accounts/{disabled_account}/models"),
             )
             .len(),
-        1
+        0
     );
+    for account in [no_group_account, disabled_account] {
+        assert_eq!(
+            harness
+                .upstream
+                .matching(Method::GET, &format!("/fixture-models/{account}"))
+                .len(),
+            1,
+            "model candidates come from each account's direct provider endpoint"
+        );
+    }
     harness.finish().await;
 }
 

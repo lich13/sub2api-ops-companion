@@ -300,23 +300,6 @@ describe("group manager drafts", () => {
     expect(vi.mocked(api)).not.toHaveBeenCalled();
   });
 
-  it("shows the compact slow first-token warning only for an active account", async () => {
-    const flagged = {
-      ...account(1, "慢账号", [1]),
-      quality: {
-        score: 55,
-        grade: "yellow" as const,
-        reasons: ["首字偏慢"],
-        sample_status: "complete" as const,
-        data_status: "fresh" as const,
-        computed_at: null,
-        warnings: [{ kind: "slow_ttft" as const, sample_count: 10, slow_count: 8, threshold_ms: 10000, active: true }],
-      },
-    };
-    await act(async () => render([flagged, account(2, "快账号", [1])]));
-    expect(container.querySelector('[aria-label="首字慢"]')).toBeTruthy();
-  });
-
   it("keeps an existing selection intact when opening and using another account's portal menu", async () => {
     const accounts = [account(1, "Alpha", [1]), account(2, "Beta", [2])];
     const run = vi.fn();

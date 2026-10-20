@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::Request,
-    http::{Method, StatusCode},
+    http::{header, Method, StatusCode},
     response::{IntoResponse, Response},
     Json, Router,
 };
@@ -57,20 +57,19 @@ async fn fixture_upstream(request: Request<Body>) -> Response {
     let account_id = request
         .uri()
         .path()
-        .strip_prefix("/api/v1/admin/accounts/")
-        .and_then(|path| path.strip_suffix("/models"))
+        .strip_prefix("/fixture-models/")
         .and_then(|id| id.parse::<i64>().ok());
     if request.method() == Method::GET
         && account_id == Some(MODEL_DIRECTORY_ACCOUNT.load(Ordering::Acquire))
+        && !request.headers().contains_key("x-api-key")
         && request
             .headers()
-            .get("x-api-key")
+            .get(header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
-            == Some(FIXTURE_ADMIN_KEY)
+            == Some("Bearer fixture-api-key")
     {
         MODEL_DIRECTORY_CALLS.fetch_add(1, Ordering::AcqRel);
         return Json(json!({
-            "code":0,
             "data":[{"id":"gpt-6-luna","name":"fixture model"}]
         }))
         .into_response();
@@ -172,8 +171,13 @@ async fn runtime_fixture(
     let upstream = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
+    let directory_endpoint = format!("{upstream_url}/fixture-models");
     let settings = fixture_settings(directory, database_url, upstream_url, daily_enabled);
     let runtime = Runtime::new_with_clock(settings, clock).await.unwrap();
+    runtime
+        .actions
+        .set_model_directory_endpoint(&directory_endpoint)
+        .expect("use the loopback-only provider directory fixture");
     RuntimeFixture { runtime, upstream }
 }
 
@@ -356,6 +360,9 @@ fn operation_actions(runtime: &Runtime, directory: &Path) -> Actions {
         settings,
     )
     .unwrap();
+    actions
+        .set_model_directory_endpoint(&format!("{}/fixture-models", actions.settings.base_url))
+        .expect("use the loopback-only provider directory fixture for independent Actions");
     actions.supervisor = runtime.actions.supervisor.clone();
     actions
 }

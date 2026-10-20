@@ -9920,6 +9920,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": null
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9932,6 +9937,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": true
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9944,6 +9954,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": false
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9956,6 +9971,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": 0
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9968,6 +9988,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": 1
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9980,6 +10005,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": 1.0
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -9992,6 +10022,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": {}
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -10004,6 +10039,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": []
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -10016,6 +10056,11 @@
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "interval_minutes": 15,
         "model_id": ""
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -10030,6 +10075,11 @@
         "model_id": [
           "1"
         ]
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -10044,6 +10094,11 @@
         "model_id": [
           true
         ]
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {
@@ -10058,6 +10113,11 @@
         "model_id": [
           1.0
         ]
+      },
+      "rust_difference": {
+        "behavior": "legacy_model_id_accepted_and_ignored",
+        "coverage": "server/tests/detection_lifecycle_parity.rs",
+        "release": "0.1.48"
       }
     },
     {

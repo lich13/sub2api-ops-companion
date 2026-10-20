@@ -485,6 +485,7 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
     let cases = vec![
         case!(GET, "capabilities"),
         case!(GET, "snapshot"),
+        case!(GET, "detection-logs"),
         case!(GET, "errors"),
         case!(GET, "usage-records"),
         case!(GET, "usage-record-options?kind=users"),
@@ -520,7 +521,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             "accounts/7",
             json!({"expected_version":version.clone()})
         ),
-        case!(GET, "accounts/7/quality"),
         case!(GET, "accounts/7/settings"),
         case!(GET, "accounts/7/models?purpose=model_test"),
         case!(GET, "accounts/7/model-tests/latest"),
@@ -846,11 +846,6 @@ async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication(
     let cases = [
         (
             reqwest::Method::GET,
-            "accounts/not-an-integer/quality",
-            None,
-        ),
-        (
-            reqwest::Method::GET,
             "usage-records?limit=not-an-integer",
             None,
         ),
@@ -871,7 +866,7 @@ async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication(
     server.abort();
     let _ = server.await;
     h.close().await;
-    assert_eq!(statuses, [422, 422, 422]);
+    assert_eq!(statuses, [422, 422]);
 }
 
 #[tokio::test]

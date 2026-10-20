@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub const OAUTH_FIELDS: &[&str] = &[
+    "model_detection_model_id",
     "oauth_auto_reset_credit_enabled",
     "oauth_daily_test_enabled",
     "oauth_daily_test_time",
@@ -38,6 +39,28 @@ pub struct Settings {
     pub base_url: String,
     pub verify_url: String,
     pub read_only: bool,
+}
+
+pub const DEFAULT_DETECTION_MODEL: &str = "gpt-6-luna";
+
+pub fn detection_model(value: &Value) -> Result<String> {
+    let model = if value.is_null() {
+        ""
+    } else {
+        value
+            .as_str()
+            .ok_or_else(|| Error::new(422, "自动检测模型无效"))?
+    }
+    .trim();
+    let model = if model.is_empty() {
+        DEFAULT_DETECTION_MODEL
+    } else {
+        model
+    };
+    if !crate::account_templates::MODEL_ID.is_match(model) {
+        return Err(Error::new(422, "自动检测模型无效"));
+    }
+    Ok(model.to_owned())
 }
 
 pub fn bool_value(value: &Value, default: bool) -> bool {
@@ -146,6 +169,8 @@ impl Settings {
         oauth["oauth_daily_test_time"] = daily_time(&configured("oauth_daily_test_time"))
             .unwrap_or_else(|_| "05:00".into())
             .into();
+        oauth["model_detection_model_id"] =
+            detection_model(&configured("model_detection_model_id"))?.into();
         let model = configured("oauth_recovery_test_model_id");
         let model = string(&model).trim();
         oauth["oauth_recovery_test_model_id"] = if model.is_empty() {

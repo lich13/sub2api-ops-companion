@@ -52,7 +52,7 @@ CI 在同一 Linux x86_64 主机构建两个完整服务镜像，使用相同账
 
 `scripts/server_runtime_smoke.py` 使用临时 PostgreSQL、合成配置和隔离容器验证非 root 运行、Compose 健康检查及后台故障后非零退出与重启。故障来自单独编译的 `supervision_fixture`，该测试程序不会进入正式镜像或其归档层；生产服务没有故障注入开关。结果保存在 `runtime-smoke.json`。
 
-`scripts/server_history_memory.py` 另用十万条合成用量、三千条错误和已完成操作历史，对比两个完整服务连续刷新质量统计时的资源开销。检查统计确实完成、没有额外业务请求，并限制 Rust 的内存峰值及刷新后的持续增长；结果保存在同一成品的 `history-memory.json`。
+`scripts/server_history_memory.py` 另用十万条合成用量、三千条错误和已完成操作历史，对比两个完整服务反复读取快照、操作历史、用量和错误历史的资源开销，并检查自动检测摘要及分页的合成负载。确认没有额外业务请求，并限制 Rust 的内存峰值及持续增长；结果保存在同一成品的 `history-memory.json`。
 
 镜像体积统一读取同一 CI 主机的 `docker image inspect Size`；不同 Docker 存储后端的这个值可能与 `docker system df` 不同，不能用它推算主机实际磁盘占用。部署后的磁盘统计需单独测量，共享层也不能重复相加。
 

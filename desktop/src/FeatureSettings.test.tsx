@@ -41,6 +41,7 @@ beforeEach(() => {
       revision: "oauth-r1", oauth_recovery_monitor_enabled: true, oauth_auto_reset_credit_enabled: false,
       oauth_daily_test_enabled: false, oauth_daily_test_time: "09:00", oauth_usage_refresh_concurrency: 3,
       oauth_recovery_test_concurrency: 2, oauth_early_probe_batch_size: 5, oauth_recovery_test_model_id: "fixture-model",
+      model_detection_model_id: "gpt-6-luna",
       oauth_recovery_connection_account_ids: [1], oauth_recovery_model_account_ids: [2],
     },
     key_fallback: { revision: "key-r1", openai_enabled: true, grok_enabled: false, managed_account_ids: [11], coexist_account_ids: [] },
@@ -134,7 +135,7 @@ describe("feature settings drafts", () => {
 
   it("saves mutually exclusive recovery modes together without changing the automatic card-use setting", async () => {
     await openFeatures();
-    const target = form("OAuth 恢复与测活");
+    const target = form("恢复、测活与模型检测");
     const columns = () => [...target.querySelectorAll(".recovery-columns fieldset")];
     const input = (column: number, name: string) => [...columns()[column].querySelectorAll("label")]
       .find((node) => node.textContent?.includes(name))!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -160,5 +161,37 @@ describe("feature settings drafts", () => {
     }]]);
     expect(target.querySelector('[aria-label="7d 100% 且 429 时自动用卡"]')?.getAttribute("aria-checked")).toBe("false");
     expect(saveButton(target).disabled).toBe(true);
+  });
+
+  it("defaults and saves the global automatic detection model in feature settings", async () => {
+    await openFeatures();
+    const target = form("恢复、测活与模型检测");
+    const field = [...target.querySelectorAll<HTMLLabelElement>("label.field")]
+      .find((node) => node.textContent?.includes("自动检测模型"))!;
+    const model = field.querySelector<HTMLInputElement>("input")!;
+    expect(model.value).toBe("gpt-6-luna");
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(model, "fixture-model");
+      model.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(writes()).toEqual([]);
+    expect(config.oauth.model_detection_model_id).toBe("gpt-6-luna");
+
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (method === "PUT" && path === "/config/oauth") return {
+        ...config.oauth, revision: "oauth-r2", model_detection_model_id: "fixture-model",
+      } as never;
+      return original(method, path, body);
+    });
+    await act(async () => saveButton(target).click());
+
+    expect(writes()).toEqual([["PUT", "/config/oauth", {
+      expected_revision: "oauth-r1", changes: { model_detection_model_id: "fixture-model" },
+    }]]);
+    expect(config.oauth.model_detection_model_id).toBe("gpt-6-luna");
+    expect(saveButton(target).disabled).toBe(true);
+    expect(target.querySelector("fieldset")?.disabled).toBe(false);
   });
 });

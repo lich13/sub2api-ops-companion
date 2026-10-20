@@ -188,9 +188,6 @@
 .app.mobile .mobile-account-status > span {
   overflow-wrap: anywhere;
 }
-.app.mobile .mobile-account-status .quality-badge {
-  padding-left: 0;
-}
 .app.mobile .usage-stats,
 .app.mobile .usage-progress,
 .app.mobile .usage-expiry,
@@ -684,16 +681,10 @@
   overflow: visible;
 }
 .app.mobile .delete-dialog,
-.app.mobile .quality-dialog,
 .app.mobile .test-dialog,
 .app.mobile .reasoning-modal {
   overflow-wrap: anywhere;
 }
-.app.mobile .quality-meta,
-.app.mobile .quality-tools {
-  flex-wrap: wrap;
-}
-.app.mobile .quality-dialog header strong,
 .app.mobile .test-dialog header strong,
 .app.mobile .delete-list strong {
   white-space: normal;

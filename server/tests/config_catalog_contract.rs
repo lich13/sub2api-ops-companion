@@ -383,9 +383,19 @@ fn settings_priority_and_key_fallback_legacy_parsing_match_pinned_python() {
     env.insert("BARK_CONFIG_PATH".into(), bark_path.display().to_string());
     let settings = Settings::from_env(&env, false).expect("synthetic settings should parse");
     assert_eq!(
-        settings.oauth,
+        settings.oauth["model_detection_model_id"],
+        priority["rust_additions_0_1_48"]["model_detection_model_id"],
+        "the newly approved detection model key should use its default"
+    );
+    let mut legacy_projection = settings.oauth.clone();
+    legacy_projection
+        .as_object_mut()
+        .unwrap()
+        .remove("model_detection_model_id");
+    assert_eq!(
+        legacy_projection,
         priority["expected"],
-        "persisted config should override environment, while absent fields use environment or defaults"
+        "persisted config should override environment, while absent fields use environment or defaults; the added detection-model key is an approved difference"
     );
     assert_eq!(fs::read(&oauth_path).unwrap(), oauth_before);
     assert_eq!(fs::read(&bark_path).unwrap(), bark_before);

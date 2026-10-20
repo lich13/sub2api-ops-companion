@@ -212,6 +212,7 @@ struct MockUpstream {
     output: Arc<StdMutex<String>>,
     model_outputs: Arc<StdMutex<VecDeque<String>>>,
     models: Arc<StdMutex<Vec<Value>>>,
+    model_directory_gate: Arc<StdMutex<Option<Gate>>>,
     model_gate: Arc<StdMutex<Option<Gate>>>,
     schedulable_gate: Arc<StdMutex<Option<Gate>>>,
     schedulable_write_before_gate: Arc<StdMutex<bool>>,
@@ -237,6 +238,7 @@ impl MockUpstream {
                 json!({"id":"gpt-5.6-luna","name":"fixture target"}),
                 json!({"id":"claude-sonnet-4-6","name":"fixture alternative"}),
             ])),
+            model_directory_gate: Arc::new(StdMutex::new(None)),
             model_gate: Arc::new(StdMutex::new(None)),
             schedulable_gate: Arc::new(StdMutex::new(None)),
             schedulable_write_before_gate: Arc::new(StdMutex::new(false)),
@@ -257,6 +259,10 @@ impl MockUpstream {
 
     fn set_model_gate(&self, gate: Option<Gate>) {
         *self.model_gate.lock().unwrap() = gate;
+    }
+
+    fn set_model_directory_gate(&self, gate: Option<Gate>) {
+        *self.model_directory_gate.lock().unwrap() = gate;
     }
 
     fn set_schedulable_gate(&self, gate: Option<Gate>) {
@@ -431,6 +437,22 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         native_codex_payload,
     });
 
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(
+            !admin_header_present,
+            "provider model reads use account credentials"
+        );
+        assert!(
+            bearer_authorized,
+            "provider model reads use account credentials"
+        );
+        let directory_gate = { state.model_directory_gate.lock().unwrap().clone() };
+        if let Some(gate) = directory_gate {
+            gate.entered.notify_one();
+            gate.release.notified().await;
+        }
+        return json_response(json!({"data":state.models.lock().unwrap().clone()}));
+    }
     if method == Method::GET && path.ends_with("/models") {
         return json_response(json!({"code":0,"data":state.models.lock().unwrap().clone()}));
     }
@@ -596,6 +618,7 @@ impl Harness {
                 "oauth_auto_reset_credit_enabled":false,
                 "oauth_daily_test_enabled":true,
                 "oauth_daily_test_time":"14:08",
+                "oauth_early_probe_batch_size":1,
                 "oauth_recovery_connection_account_ids":[],
                 "oauth_recovery_model_account_ids":[],
                 "oauth_recovery_monitor_enabled":true,
@@ -653,6 +676,10 @@ impl Harness {
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
             .expect("use the loopback-only ModelTrace endpoint for this test Runtime");
+        runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{base_url}/fixture-models"))
+            .expect("use the loopback-only provider directory fixture");
         runtime
             .monitor
             .store
@@ -776,7 +803,8 @@ impl Harness {
         interval_minutes: i64,
         model_id: &str,
     ) -> Value {
-        let control = self.runtime().detection.control(id).unwrap();
+        self.set_detection_model(model_id).await;
+        let control = self.runtime().detection.view(id).unwrap();
         self.runtime()
             .detection
             .save(
@@ -785,11 +813,33 @@ impl Harness {
                     "enabled":true,
                     "interval_minutes":interval_minutes,
                     "model_id":model_id,
-                    "expected_version":model_detection::version(&control)
+                    "expected_version":control["version"]
                 }),
             )
             .await
             .expect("save detection schedule through real Runtime control")
+    }
+
+    async fn set_detection_model(&self, model_id: &str) {
+        self.save_detection_model_value(json!(model_id))
+            .await
+            .expect("configure the global automatic detection model");
+    }
+
+    async fn save_detection_model_value(
+        &self,
+        model_id: Value,
+    ) -> sub2ops_server::error::Result<Value> {
+        let snapshot = self.runtime().config.snapshot(Some("oauth")).unwrap();
+        self.runtime()
+            .config
+            .save(
+                "oauth",
+                &json!({"model_detection_model_id":model_id}),
+                "fixture",
+                snapshot["oauth"]["revision"].as_str(),
+            )
+            .await
     }
 
     async fn wait_job_terminal(&self, id: &str) -> Value {
@@ -975,6 +1025,219 @@ fn completed_recheck_job(
         "error_code":null,
         "can_retry":false
     })
+}
+
+#[tokio::test]
+async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
+    harness.mock.set_models(vec![
+        json!({"id":"gpt-6-luna"}),
+        json!({"id":"gpt-6-astra"}),
+        json!({"id":"gpt-6-sol"}),
+    ]);
+    let row = harness.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    assert_eq!(
+        harness.runtime().detection.model_id().unwrap(),
+        "gpt-6-luna"
+    );
+
+    let persisted_legacy = "fixture-per-account-model";
+    harness
+        .runtime()
+        .detection
+        .update(id, json!({"model_id":persisted_legacy}))
+        .unwrap();
+    let initial = harness.runtime().detection.view(id).unwrap();
+    assert_eq!(initial["model_id"], "gpt-6-luna");
+    assert_eq!(initial["model_source"], "global");
+    assert_eq!(
+        harness.runtime().detection.control(id).unwrap()["model_id"],
+        persisted_legacy
+    );
+
+    harness.set_detection_model("gpt-6-astra").await;
+    let changed = harness.runtime().detection.view(id).unwrap();
+    assert_eq!(changed["model_id"], "gpt-6-astra");
+    assert_eq!(changed["model_source"], "global");
+    assert_ne!(changed["version"], initial["version"]);
+
+    for (index, legacy_model) in [
+        json!("old-string-model"),
+        Value::Null,
+        json!({"model":"old-object-model"}),
+        json!(["old-array-model"]),
+        json!(true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let current = harness.runtime().detection.view(id).unwrap();
+        let saved = harness
+            .runtime()
+            .detection
+            .save(
+                id,
+                &json!({
+                    "enabled":true,
+                    "interval_minutes":index as i64 + 1,
+                    "model_id":legacy_model,
+                    "expected_version":current["version"]
+                }),
+            )
+            .await
+            .expect("legacy PUT model_id is accepted and ignored regardless of JSON type");
+        assert_eq!(saved["model_id"], "gpt-6-astra");
+        assert_eq!(saved["model_source"], "global");
+        assert_eq!(
+            harness.runtime().detection.control(id).unwrap()["model_id"],
+            persisted_legacy,
+            "legacy per-account model is preserved while PUT ignores it"
+        );
+    }
+
+    let current = harness.runtime().detection.view(id).unwrap();
+    for payload in [
+        json!({
+            "enabled":"true",
+            "interval_minutes":30,
+            "model_id":null,
+            "expected_version":current["version"]
+        }),
+        json!({
+            "enabled":true,
+            "interval_minutes":0,
+            "model_id":{},
+            "expected_version":current["version"]
+        }),
+        json!({
+            "enabled":true,
+            "interval_minutes":30,
+            "model_id":null,
+            "expected_version":"not-a-version"
+        }),
+    ] {
+        assert_eq!(
+            harness
+                .runtime()
+                .detection
+                .save(id, &payload)
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            422,
+            "enabled, interval and version inputs retain their validation"
+        );
+    }
+    let stale = harness
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({
+                "enabled":false,
+                "interval_minutes":30,
+                "model_id":{"ignored":true},
+                "expected_version":"0".repeat(64)
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(stale.status.as_u16(), 409);
+    assert_eq!(
+        harness.runtime().detection.view(id).unwrap()["model_id"],
+        "gpt-6-astra"
+    );
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn global_detection_model_normalizes_and_changed_model_rejects_pending_candidate_save() {
+    let harness = Harness::new(sample_text("above_99", 0)).await;
+    let id = integer(&harness.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let initial = harness.runtime().config.snapshot(Some("oauth")).unwrap();
+    assert_eq!(initial["oauth"]["model_detection_model_id"], "gpt-6-luna");
+    let recovery_model = initial["oauth"]["oauth_recovery_test_model_id"].clone();
+
+    for empty in [json!(""), json!(" \t "), Value::Null] {
+        let saved = harness
+            .save_detection_model_value(empty)
+            .await
+            .expect("empty global model values normalize to the default");
+        assert_eq!(saved["model_detection_model_id"], "gpt-6-luna");
+    }
+    let trimmed = harness
+        .save_detection_model_value(json!("  gpt-6-astra \t"))
+        .await
+        .expect("valid global model names are trimmed");
+    assert_eq!(trimmed["model_detection_model_id"], "gpt-6-astra");
+    for invalid in [
+        json!("model id with spaces"),
+        json!({"id":"gpt-6-luna"}),
+        json!(42),
+        json!(false),
+    ] {
+        let before = harness.runtime().config.snapshot(Some("oauth")).unwrap();
+        let error = harness
+            .save_detection_model_value(invalid)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status.as_u16(), 422);
+        let after = harness.runtime().config.snapshot(Some("oauth")).unwrap();
+        assert_eq!(
+            after["oauth"]["model_detection_model_id"], before["oauth"]["model_detection_model_id"],
+            "invalid global model values leave configuration unchanged"
+        );
+    }
+    assert_eq!(
+        harness.runtime().config.snapshot(Some("oauth")).unwrap()["oauth"]
+            ["oauth_recovery_test_model_id"],
+        recovery_model,
+        "changing the detection model never rewrites the OAuth recovery model"
+    );
+
+    harness.set_detection_model("gpt-6-luna").await;
+    let before_control = harness.runtime().detection.control(id).unwrap();
+    let before_view = harness.runtime().detection.view(id).unwrap();
+    let gate = Gate::new();
+    harness.mock.set_model_directory_gate(Some(gate.clone()));
+    let runtime = Arc::clone(harness.runtime());
+    let payload = json!({
+        "enabled":true,
+        "interval_minutes":30,
+        "model_id":"ignored-legacy-model",
+        "expected_version":before_view["version"]
+    });
+    let pending = tokio::spawn(async move { runtime.detection.save(id, &payload).await });
+    tokio::time::timeout(StdDuration::from_secs(10), gate.entered.notified())
+        .await
+        .expect("candidate model directory request reaches the held fixture");
+    let directory_path = format!("/fixture-models/{id}");
+    assert_eq!(harness.mock.count("GET", &directory_path), 1);
+
+    harness.set_detection_model("gpt-6-astra").await;
+    gate.release.notify_one();
+    let error = tokio::time::timeout(StdDuration::from_secs(10), pending)
+        .await
+        .expect("pending detection save resumes after provider directory fixture release")
+        .unwrap()
+        .unwrap_err();
+    harness.mock.set_model_directory_gate(None);
+    assert_eq!(error.status.as_u16(), 409);
+    assert_eq!(
+        harness.runtime().detection.control(id).unwrap(),
+        before_control,
+        "a stale candidate response cannot persist the prior model selection"
+    );
+    let after_view = harness.runtime().detection.view(id).unwrap();
+    assert_eq!(after_view["model_id"], "gpt-6-astra");
+    assert_eq!(after_view["model_source"], "global");
+    assert_eq!(after_view["enabled"], false);
+    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
+    assert_eq!(harness.mock.unexpected(), Vec::<String>::new());
+    harness.close().await;
 }
 
 #[tokio::test]
@@ -1269,7 +1532,7 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
         )
         .unwrap();
 
-    let models_path = format!("/api/v1/admin/accounts/{id}/models");
+    let models_path = format!("/fixture-models/{id}");
     let models_before_tick = harness.mock.count("GET", &models_path);
     harness.advance(300);
     harness.runtime().detection.tick().await.unwrap();
@@ -1360,7 +1623,7 @@ async fn missing_fingerprint_target_pauses_candidate_without_dispatch_or_recheck
         )
         .unwrap();
 
-    let models_path = format!("/api/v1/admin/accounts/{id}/models");
+    let models_path = format!("/fixture-models/{id}");
     let models_count_before_tick = harness.mock.count("GET", &models_path);
     harness.runtime().detection.tick().await.unwrap();
     let blocked = harness.runtime().detection.control(id).unwrap();
@@ -2053,6 +2316,11 @@ async fn automatic_sol_prediction_uses_requested_astra_model_and_stops_after_fir
     harness
         .enable_detection_with_model(id, 1, "gpt-6-astra")
         .await;
+    harness
+        .runtime()
+        .detection
+        .update(id, json!({"model_id":"fixture-old-account-model"}))
+        .unwrap();
     let budget = harness
         .runtime()
         .budget
@@ -2076,6 +2344,23 @@ async fn automatic_sol_prediction_uses_requested_astra_model_and_stops_after_fir
     let queued = harness.runtime().tests.get(&job_id).unwrap();
     assert_eq!(queued["requested_model"], "gpt-6-astra");
     assert_eq!(queued["forwarded_model"], "gpt-6-astra");
+    let visible = harness.runtime().detection.view(id).unwrap();
+    assert_eq!(visible["model_id"], "gpt-6-astra");
+    assert_eq!(visible["model_source"], "global");
+    assert_eq!(
+        harness.runtime().detection.control(id).unwrap()["model_id"],
+        "fixture-old-account-model"
+    );
+    harness.set_detection_model("gpt-6-luna").await;
+    let reused = harness
+        .runtime()
+        .detection
+        .trigger(id, &["automatic-api".into()])
+        .await
+        .unwrap();
+    assert_eq!(reused["id"], job_id);
+    assert_eq!(reused["requested_model"], "gpt-6-astra");
+    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     harness
         .runtime()
         .tests
@@ -4566,10 +4851,12 @@ async fn missing_admin_authorization_preserves_the_mark_without_schedule_or_bark
     assert_eq!(model_calls.len(), 1);
     assert!(model_calls[0].bearer_authorized);
     assert!(!model_calls[0].admin_header_present);
-    let catalog_path = format!("/api/v1/admin/accounts/{id}/models");
+    let catalog_path = format!("/fixture-models/{id}");
     let catalog_calls = harness.mock.calls("GET", &catalog_path);
     assert!(!catalog_calls.is_empty());
-    assert!(catalog_calls.iter().all(|call| call.admin_authorized));
+    assert!(catalog_calls
+        .iter()
+        .all(|call| !call.admin_header_present && call.bearer_authorized));
     harness
         .runtime()
         .monitor

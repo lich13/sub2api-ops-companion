@@ -66,61 +66,8 @@ def jsonable(value: Any) -> Any:
     return value
 
 
-def projection(summary: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "account_id": summary["account_id"],
-        "score": summary["score"],
-        "grade": summary["grade"],
-        "reasons": summary["reasons"],
-        "sample_status": summary["sample_status"],
-        "cap": summary["cap"],
-        "consecutive_failures": summary["consecutive_failures"],
-        "coverage": summary["coverage"],
-        "reliability": {
-            key: summary["reliability"].get(key)
-            for key in ("successes", "failures", "total", "causes", "mode", "score", "effective_rate")
-        },
-        "ttft": {
-            key: summary["ttft"].get(key)
-            for key in ("samples", "compared", "coverage", "score", "p50", "tail", "missing_reason")
-        },
-        "throughput": {
-            key: summary["throughput"].get(key)
-            for key in ("samples", "compared", "coverage", "score", "p50", "tail", "missing_reason")
-        },
-    }
-
-
-def sample_projection(sample: dict[str, Any] | None) -> dict[str, Any] | None:
-    if sample is None:
-        return None
-    sample = dict(sample)
-    sample["cohort"] = list(sample["cohort"])
-    return jsonable(sample)
-
-
-def make_usage_row(account_id: int, row_id: int, created_at: datetime) -> dict[str, Any]:
-    return {
-        "id": row_id,
-        "account_id": account_id,
-        "created_at": created_at.isoformat(),
-        "stream": True,
-        "inbound_endpoint": "/v1/responses",
-        "model": "gpt-5.6-luna",
-        "upstream_model": "gpt-5.6-luna",
-        "input_tokens": 1200,
-        "cache_read_tokens": 0,
-        "cache_creation_tokens": 0,
-        "output_tokens": 100,
-        "first_token_ms": 450,
-        "duration_ms": 1250,
-        "openai_ws_mode": False,
-    }
-
-
 def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
     sys.path.insert(0, str(app_root))
-    from app.account_quality import calculate, failure_cause, failures, performance
     from app.atomic_config import write_json
     from app.auto_reset import validate_state
     from app.desktop_usage import project_usage
@@ -175,149 +122,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         "oauth_expected_projection": jsonable(project_usage(oauth_row, AT, None)),
         "apikey_row": apikey_row,
         "apikey_expected_projection": jsonable(project_usage(apikey_row, AT, None)),
-    }
-
-    accounts = [
-        {"id": 73, "platform": "openai", "type": "oauth", "deleted_at": None},
-        {"id": 74, "platform": "openai", "type": "apikey", "deleted_at": None},
-        {"id": 75, "platform": "anthropic", "type": "oauth", "deleted_at": None},
-        {"id": 76, "platform": "openai", "type": "oauth", "deleted_at": "2031-04-05T06:07:08+00:00"},
-    ]
-    quality_usage: list[dict[str, Any]] = []
-    for account_id, start_id in ((73, 73000), (74, 74000)):
-        rows = [make_usage_row(account_id, start_id + index, AT - timedelta(minutes=30, seconds=index)) for index in range(25)]
-        quality_usage.extend(rows)
-        if account_id == 73:
-            quality_usage.append(copy.deepcopy(rows[0]))
-    quality_usage.extend(
-        [
-            make_usage_row(75, 75000, AT - timedelta(minutes=2)),
-            make_usage_row(76, 76000, AT - timedelta(minutes=2)),
-        ]
-    )
-
-    error_cases = [
-        {
-            "name": "auth",
-            "row": {
-                "id": 9101,
-                "account_id": 73,
-                "request_id": "synthetic-auth-1",
-                "created_at": (AT - timedelta(minutes=5)).isoformat(),
-                "error_owner": "provider",
-                "error_phase": "upstream",
-                "upstream_status_code": 401,
-                "message": "invalid_api_key",
-            },
-        },
-        {
-            "name": "generic_rate_limit",
-            "row": {
-                "id": 9102,
-                "account_id": 73,
-                "request_id": "synthetic-rate-1",
-                "created_at": (AT - timedelta(minutes=4)).isoformat(),
-                "error_owner": "provider",
-                "error_phase": "upstream",
-                "upstream_status_code": 429,
-                "message": "gateway temporarily overloaded",
-            },
-        },
-        {
-            "name": "quota_excluded",
-            "row": {
-                "id": 9103,
-                "account_id": 73,
-                "request_id": "synthetic-quota-1",
-                "created_at": (AT - timedelta(minutes=3)).isoformat(),
-                "error_owner": "provider",
-                "error_phase": "upstream",
-                "upstream_status_code": 429,
-                "message": "usage_limit_reached",
-            },
-        },
-        {
-            "name": "local_concurrency_excluded",
-            "row": {
-                "id": 9104,
-                "account_id": 73,
-                "request_id": "synthetic-local-1",
-                "created_at": (AT - timedelta(minutes=2)).isoformat(),
-                "error_owner": "client",
-                "error_phase": "concurrency",
-                "upstream_status_code": 429,
-                "message": "Too many concurrent requests for API key",
-            },
-        },
-        {
-            "name": "client_cancelled_excluded",
-            "row": {
-                "id": 9105,
-                "account_id": 73,
-                "request_id": "synthetic-cancel-1",
-                "created_at": (AT - timedelta(minutes=1)).isoformat(),
-                "error_owner": "provider",
-                "error_phase": "upstream",
-                "upstream_status_code": 499,
-                "message": "client cancelled request",
-            },
-        },
-        {
-            "name": "content_policy_excluded",
-            "row": {
-                "id": 9106,
-                "account_id": 73,
-                "request_id": "synthetic-policy-1",
-                "created_at": (AT - timedelta(seconds=30)).isoformat(),
-                "error_owner": "provider",
-                "error_phase": "upstream",
-                "upstream_status_code": 400,
-                "message": "content policy violation",
-            },
-        },
-    ]
-    error_rows = [case["row"] for case in error_cases]
-    expected_failure_rows = failures(error_rows, {account["id"]: account for account in accounts}, AT)
-    quality_summaries, _ = calculate(accounts, quality_usage, error_rows, AT)
-    performance_account = accounts[0]
-    performance_base = quality_usage[0]
-    missing_cache_counter = dict(performance_base)
-    missing_cache_counter.pop("cache_read_tokens")
-    image_excluded = {**performance_base, "image_count": 1}
-    performance_cases = [
-        {"name": "valid", "row": performance_base},
-        {"name": "missing_cache_counter", "row": missing_cache_counter},
-        {"name": "image_excluded", "row": image_excluded},
-    ]
-    quality = {
-        "accounts": accounts,
-        "usage_rows": quality_usage,
-        "failure_cases": [
-            {"name": case["name"], "row": case["row"], "expected_cause": failure_cause(case["row"])}
-            for case in error_cases
-        ],
-        "expected_failures": [
-            {
-                "account_id": item["account_id"],
-                "at": jsonable(item["at"]),
-                "cause": item["cause"],
-                "request_known": item["request_known"],
-            }
-            for item in expected_failure_rows
-        ],
-        "performance_cases": [
-            {
-                "name": case["name"],
-                "row": case["row"],
-                "expected": sample_projection(performance(case["row"], performance_account)),
-            }
-            for case in performance_cases
-        ],
-        "expected_summaries": {
-            str(account_id): projection(summary)
-            for account_id, summary in quality_summaries.items()
-        },
-        "excluded_account_ids": [75, 76],
     }
 
     valid_credit_state = {
@@ -435,7 +239,12 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         "version_vector_ids": sorted(actual_vector_ids),
         "at": AT.isoformat(),
         "usage": usage,
-        "quality": quality,
+        "account_quality_removed": {
+            "status": "removed",
+            "route": "GET /api/desktop/v1/accounts/{id}/quality",
+            "expected_status": 404,
+            "replacements": ["proxy quality-check", "capacity slow_ttft evidence"],
+        },
         "credit_state": {
             "valid_state": valid_credit_state,
             "valid_expected_error": None,

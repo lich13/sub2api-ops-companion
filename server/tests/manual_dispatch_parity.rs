@@ -216,6 +216,20 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     let payload = serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null);
     state.record(&method, &path);
 
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(!parts.headers.contains_key("x-api-key"));
+        assert!(parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("Bearer fixture-")));
+        return json_response(json!({
+            "data": [
+                {"id":"fixture-model","name":"fixture model"},
+                {"id":"gpt-6-luna","name":"fixture default model"}
+            ]
+        }));
+    }
     if method == Method::GET && path.ends_with("/models") {
         return json_response(json!({
             "code": 0,
@@ -439,6 +453,10 @@ impl Harness {
         .await
         .expect("construct real Runtime with deterministic clock and loopback upstream");
         runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{base_url}/fixture-models"))
+            .expect("use the loopback-only provider directory fixture");
+        runtime
             .monitor
             .store
             .save_admin_token(ADMIN_KEY)
@@ -538,6 +556,10 @@ impl Harness {
         )
         .await
         .expect("restart Runtime against the same temporary database and state files");
+        runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{}/fixture-models", self.settings.base_url))
+            .expect("retain the loopback-only provider directory fixture after restart");
         runtime
             .monitor
             .store

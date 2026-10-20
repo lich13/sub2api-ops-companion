@@ -159,30 +159,7 @@ for (const account of accounts) {
   account.concurrency = 2; account.load_factor = null;
   account.operation_versions = Object.fromEntries(['priority', 'concurrency', 'load_factor', 'model_config', 'proxy', 'sync_models', 'groups', 'recover', 'usage', 'reset_quota', 'delete', 'test', 'schedulable', 'model_test'].map((key) => [key, account.version]));
   if (account.platform === 'openai' && ['oauth', 'apikey'].includes(account.type)) account.degradation_mark = { marked: account.id === 102, version: 'f'.repeat(64) };
-  account.quality = {
-    score:
-      account.id === 101
-        ? 93
-        : account.id === 102
-          ? 39
-          : account.id === 201
-            ? 73
-            : null,
-    grade: account.id === 101 ? "green" : account.id === 102 ? "red" : "yellow",
-    reasons: [
-      account.id === 101
-        ? "表现良好"
-        : account.id === 102
-          ? "连续失败"
-          : account.id === 201
-            ? "首字偏慢"
-            : "样本不足",
-    ],
-    sample_status: account.type === "apikey" ? "insufficient" : "complete",
-    data_status: "fresh",
-    computed_at: now,
-    warnings: account.id === 201 ? [{ kind: "slow_ttft", sample_count: 10, slow_count: 8, threshold_ms: 10000, active: true, latest_first_token_ms: 12400 }] : [],
-  };
+
   account.usage = {
     branch:
       account.type === "apikey"
@@ -416,6 +393,7 @@ const config: Config = {
     oauth_recovery_test_concurrency: 2,
     oauth_early_probe_batch_size: 8,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
+    model_detection_model_id: "gpt-6-luna",
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
   key_fallback: {
@@ -532,6 +510,8 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (args.path === "/capabilities") return { api_version: 1, features: { detection_logs: true, global_detection_model: true } };
+    if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
     if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {
       if (args.path.endsWith("/test")) return { success: true, message: "连接成功", latency_ms: 85, ip_address: "192.0.2.1", city: "", region: "", country: "示例地区", country_code: "" };
       return { score: 90, grade: "A", summary: "原生质量检测通过", exit_ip: "192.0.2.1", country: "示例地区", country_code: "", base_latency_ms: 85, passed_count: 1, warn_count: 0, failed_count: 0, challenge_count: 0, checked_at: Math.floor(Date.now() / 1000), items: [{ target: "OpenAI", status: "pass", http_status: 200, latency_ms: 90, message: "通过" }] };
@@ -544,7 +524,7 @@ export async function run(
     }
     if (args.path === "/connection-status") return { state: "ok", endpoint: "verify", http_status: 200, message: "Sub2API 管理权限已验证", retryable: false, checked_at: new Date().toISOString() };
     if (/^\/accounts\/[1-9]\d*\/keepalive$/.test(String(args.path))) return (await import('./keepalivePreview')).keepalivePreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
-    if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
+    if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], String(config.oauth.model_detection_model_id));
     if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) return (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
     if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {
@@ -576,75 +556,7 @@ export async function run(
         detach_managed: boolean;
         priority: number;
       } | null;
-    if (path.endsWith("/quality")) {
-      const account = state.snapshot?.accounts.find(
-        (a) => a.id === Number(path.split("/")[2]),
-      );
-      if (!account) throw new Error("账号不存在");
-      const metric = (p50: number, tail: number, score: number) => {
-        const window = {
-          score,
-          samples: 180,
-          compared: 170,
-          coverage: 170 / 180,
-          p50,
-          tail,
-          cohorts: [
-            {
-              platform: account.platform,
-              model: account.platform === "grok" ? "grok-4.7" : "gpt-6-sol",
-              reasoning_effort: "max",
-              service_tier: "default",
-              transport: "sse",
-              input_bucket: "≤8K",
-              samples: 170,
-              p50,
-              tail,
-              baseline_p50: p50,
-              baseline_tail: tail,
-              baseline_accounts: 3,
-              baseline_samples: 900,
-              score,
-            },
-          ],
-        };
-        return {
-          ...window,
-          mode: "70/30",
-          recent: window,
-          history: window,
-          all: window,
-        };
-      };
-      return {
-        ...account.quality,
-        account_id: account.id,
-        period: {
-          start: "2026-09-19T08:00:00Z",
-          end: now,
-          recent_start: before,
-        },
-        cap: account.id === 102 ? 39 : 100,
-        coverage: 0.94,
-        consecutive_failures: account.id === 102 ? 3 : 0,
-        reliability: {
-          score: 98,
-          rate: 0.002,
-          effective_rate: 0.002,
-          successes: account.id === 102 ? 997 : 998,
-          failures: account.id === 102 ? 3 : 2,
-          total: 1000,
-          mode: "70/30",
-          causes: { upstream: 2 },
-        },
-        ttft: metric(
-          account.id === 201 ? 19.2 : 3.2,
-          10,
-          account.id === 201 ? 50 : 85,
-        ),
-        throughput: metric(42.5, 28.2, 85),
-      };
-    }
+
     if (args.method === "DELETE" && /^\/accounts\/\d+$/.test(path)) {
       const id = Number(path.split("/")[2]);
       const account = state.snapshot?.accounts.find((a) => a.id === id);

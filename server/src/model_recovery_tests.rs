@@ -19,6 +19,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{json, Value};
 use sqlx::{types::Json as SqlJson, PgPool};
 use std::{
+    collections::BTreeMap,
     fs,
     sync::{
         atomic::{AtomicI64, AtomicUsize, Ordering},
@@ -49,6 +50,39 @@ fn sample(name: &str) -> String {
         .as_str()
         .unwrap()
         .into()
+}
+
+#[test]
+fn global_detection_model_has_its_own_default() {
+    let temp = tempfile::tempdir().unwrap();
+    let oauth_path = temp.path().join("oauth-config.json");
+    let bark_path = temp.path().join("bark-config.json");
+    fs::write(&oauth_path, "{}").unwrap();
+    fs::write(&bark_path, "{}").unwrap();
+    let mut env = BTreeMap::new();
+    env.insert(
+        "DATABASE_URL".into(),
+        "postgres://example.invalid/sub2ops".into(),
+    );
+    env.insert(
+        "OAUTH_CONFIG_PATH".into(),
+        oauth_path.to_string_lossy().into_owned(),
+    );
+    env.insert(
+        "BARK_CONFIG_PATH".into(),
+        bark_path.to_string_lossy().into_owned(),
+    );
+
+    let settings = Settings::from_env(&env, false).unwrap();
+    assert_eq!(settings.oauth["model_detection_model_id"], "gpt-6-luna");
+    assert_eq!(
+        settings.oauth["oauth_recovery_test_model_id"],
+        crate::model_downgrade::DEFAULT_TEST_MODEL
+    );
+    assert_ne!(
+        settings.oauth["model_detection_model_id"],
+        settings.oauth["oauth_recovery_test_model_id"]
+    );
 }
 
 fn method_name(method: &Method) -> &'static str {
@@ -234,6 +268,24 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     if method == Method::GET && path == "/api/v1/admin/groups/all" {
         assert_eq!(parts.headers.get("x-api-key").unwrap(), ADMIN_KEY);
         return json_response(json!({"code":0,"data":[]}));
+    }
+
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(!parts.headers.contains_key("x-api-key"));
+        assert!(parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("Bearer fixture-")));
+        return json_response(json!({
+            "data": [
+                {"id":"gpt-6-astra","name":"fixture requested model"},
+                {"id":"gpt-6-sol","name":"fixture lower tier"},
+                {"id":"gpt-6-luna","name":"fixture model"},
+                {"id":"gpt-5.6-luna","name":"fixture reference"},
+                {"id":"fixture-model","name":"fixture recovery model"}
+            ]
+        }));
     }
 
     if method == Method::DELETE && path.ends_with("/temp-unschedulable") {
@@ -537,6 +589,10 @@ impl Harness {
                 .await
                 .expect("construct real Runtime against synthetic schema and deterministic clock");
         runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{base_url}/fixture-models"))
+            .expect("use the loopback-only provider directory fixture");
+        runtime
             .tests
             .set_test_endpoint(&format!("{base_url}/v1/responses"))
             .unwrap();
@@ -625,6 +681,10 @@ impl Harness {
                 .await
                 .unwrap(),
         );
+        self.runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{}/fixture-models", self.base_url))
+            .expect("retain the loopback-only provider directory fixture after restart");
         self.runtime
             .tests
             .set_test_endpoint(&format!("{}/v1/responses", self.base_url))
@@ -730,6 +790,7 @@ async fn seed_recovery_with_model(
         .config
         .oauth
         .transaction(|raw| {
+            raw["model_detection_model_id"] = model_id.into();
             raw["oauth_recovery_connection_account_ids"] = json!([]);
             raw["oauth_recovery_model_account_ids"] = json!([id]);
             raw["oauth_recovery_test_model_id"] = "fixture-model".into();
@@ -1398,6 +1459,84 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
             .is_ok());
         h.close().await;
     }
+}
+
+#[tokio::test]
+async fn credit_reuses_pending_recovery_request_after_global_model_change() {
+    let h = Harness::new().await;
+    let (id, _) = seed_credit(&h).await;
+    h.runtime
+        .config
+        .oauth
+        .transaction(|raw| {
+            raw["model_detection_model_id"] = "gpt-6-astra".into();
+            Ok(())
+        })
+        .unwrap();
+    h.mock.set_expected_responses_model("gpt-6-astra");
+    h.runtime
+        .detection
+        .update(id, json!({"model_id":"fixture-old-account-model"}))
+        .unwrap();
+
+    let slot = h
+        .runtime
+        .tests
+        .jobs
+        .clone()
+        .acquire_many_owned(2)
+        .await
+        .unwrap();
+    let (queued, context) = queue_credit(&h, id).await;
+    let job_id = queued["id"].as_str().unwrap().to_owned();
+    assert_eq!(queued["requested_model"], "gpt-6-astra");
+    let requests_before = h.runtime.tests.data().unwrap()["requests"].clone();
+    let registrations = requests_before
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, registered_job)| registered_job.as_str() == Some(&job_id))
+        .count();
+    assert_eq!(
+        registrations, 1,
+        "the recovery attempt has one registered request"
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+
+    h.runtime
+        .config
+        .oauth
+        .transaction(|raw| {
+            raw["model_detection_model_id"] = "gpt-6-luna".into();
+            Ok(())
+        })
+        .unwrap();
+    credit_cycle(&h, id).await;
+    let reused = h.runtime.tests.latest(id).unwrap();
+    assert_eq!(reused["id"], job_id);
+    assert_eq!(reused["requested_model"], "gpt-6-astra");
+    assert_eq!(
+        h.runtime.tests.data().unwrap()["requests"],
+        requests_before,
+        "a global model change does not register another model test for the same attempt"
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    assert_eq!(h.mock.count("POST", "/reset-quota"), 0);
+    assert!(h.runtime.monitor.credits.state(id).unwrap()["attempt_at"].is_null());
+
+    drop(slot);
+    h.runtime
+        .tests
+        .wait_and_run(&queued, Some(context))
+        .await
+        .unwrap();
+    let completed = h.runtime.tests.get(&job_id).unwrap();
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["requested_model"], "gpt-6-astra");
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
+    assert_eq!(h.mock.count("POST", "/reset-quota"), 1);
+    assert!(h.mock.unexpected().is_empty());
+    h.close().await;
 }
 
 #[tokio::test]

@@ -70,7 +70,7 @@ jobs:
         run: python scripts/server_runtime_smoke.py --image sub2ops-companion:ci --fixture server/target/debug/examples/supervision_fixture > ci-results/runtime-smoke.json
       - name: Compare two complete runtimes on the same x86_64 host
         run: python scripts/server_benchmark.py --python-image sub2ops-companion:python-reference --rust-image sub2ops-companion:ci > ci-results/full-runtime-benchmark.json
-      - name: Check repeated quality refreshes with large synthetic history
+      - name: Check repeated history reads and detection log pagination
         run: python scripts/server_history_memory.py --python-image sub2ops-companion:python-reference --rust-image sub2ops-companion:ci > ci-results/history-memory.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

@@ -413,6 +413,9 @@ impl CreditController {
         finished.as_object_mut().unwrap().extend(json!({"revision":integer(&task["revision"]).unwrap_or(0)+1,"stage":"recovered","owns_pause":false,"recovered_at":completed,"error_code":"","next_at":null,"outcome":"restored","completed_at":completed,"result_reason":""}).as_object().unwrap().clone());
         let key = format!("reset-credit:{id}:{}", string(&task["episode"]));
         let mut history = json!({"account_id":id,"account_name":string(&row["name"]),"model_id":task["model_id"],"legacy":false,"kind":"quota_recovery","test_completed_at":task["test_completed_at"],"recovered_at":completed});
+        if task["model_test_job_id"].is_string() {
+            history["model_test_job_id"] = task["model_test_job_id"].clone();
+        }
         if task["consumed"] == true && truthy(&task["reset_completed_at"]) {
             history["kind"] = "reset_credit".into();
             history["reset_credit"] = json!({"consumed":true,"completed_at":task["reset_completed_at"],"verification_method":if truthy(&task["verification_method"]) {string(&task["verification_method"])} else {"connection"}});
@@ -530,7 +533,7 @@ impl CreditController {
         if !truthy(&task["policy_version"]) || task["model_test_job_id"] != job_id {
             return Ok(false);
         }
-        let fields = json!({"degradation_confirmed":truthy(&disposition["marked"]) && truthy(&disposition["schedule_verified"]),"model_id":disposition["model_id"],"prediction":disposition["prediction"],"probability":disposition["probability"]});
+        let fields = json!({"job_id":job_id,"degradation_confirmed":truthy(&disposition["marked"]) && truthy(&disposition["schedule_verified"]),"model_id":disposition["model_id"],"prediction":disposition["prediction"],"probability":disposition["probability"]});
         if task["stage"] != "finished" {
             self.finish(id, &task, "detection_held", self.now(), row, false, &fields)
                 .await?;

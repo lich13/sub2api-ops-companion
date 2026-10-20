@@ -129,7 +129,7 @@ beforeEach(() => {
     if (path === "/account-operations") return { items: [] } as never;
     if (/^\/accounts\/\d+\/models(?:\?purpose=model_test)?$/.test(path)) return [{ id: "fixture-model", type: "text" }] as never;
     if (/^\/accounts\/\d+\/model-tests\/latest$/.test(path)) return null as never;
-    if (/^\/accounts\/\d+\/model-detection$/.test(path)) return { enabled: false, interval_minutes: 30, model_id: "fixture-model", version: "detection-version", status: "disabled" } as never;
+    if (/^\/accounts\/\d+\/model-detection$/.test(path)) return { enabled: false, interval_minutes: 30, model_id: "fixture-model", model_source: "global", version: "detection-version", status: "disabled" } as never;
     if (/^\/accounts\/\d+\/keepalive$/.test(path)) return {
       account_id: Number(path.match(/\d+/)?.[0]), enabled: false, generation: 0, version: "a".repeat(64),
       status: "disabled", reason: "", paused_reason: "", last_restore_at: null, restore_count: 0,

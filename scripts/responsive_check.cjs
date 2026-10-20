@@ -603,14 +603,6 @@ async function accountChecks(h, fixture) {
   await accountActionButtons(h, card.locator(".mobile-primary-actions"), actions.primary, "mobile-primary-action");
   await h.layout();
 
-  h.phase = "accounts/quality-detail";
-  await h.click(card.locator(".quality-badge"), "quality-badge");
-  const quality = page.getByRole("dialog", { name: "账号质量明细", exact: true });
-  await h.within(quality, "quality-dialog", { touch: false, scroll: false });
-  await h.layout();
-  await h.click(quality.getByRole("button", { name: "关闭评分", exact: true }), "quality-close");
-  await quality.waitFor({ state: "hidden" });
-
   h.phase = "accounts/action-sheet";
   await h.click(card.getByRole("button", { name: `${account.name}操作`, exact: true }), "account-actions-trigger");
   const sheet = page.getByRole("dialog", { name: "账号操作", exact: true });
@@ -1394,7 +1386,7 @@ async function desktopActionChecks(h, table, fixture) {
       };
     });
     await h.state(grid.width > 0 && grid.minWidth >= 95.5 && grid.maxRight <= grid.right + 1
-      && (h.scenario.viewport.width < 1440 || grid.columns >= 2)
+      && (h.scenario.viewport.width < 1310 || grid.columns >= 2)
       && grid.gridTemplateColumns !== "none" && grid.justify.every((value) => value === "flex-start")
       && grid.whiteSpace.every((value) => value === "normal"),
     "desktop-account-action-grid-not-filled", panel);
@@ -1406,6 +1398,9 @@ async function desktopMenuChecks(h, fixture) {
   h.phase = "desktop/table";
   const table = page.locator(".accounts-table");
   await h.visible(table, "desktop-account-table");
+  const baseColumnsWidth = await table.locator("col:not(.col-name):not(.col-actions)").evaluateAll((columns) =>
+    Math.round(columns.reduce((total, column) => total + column.getBoundingClientRect().width, 0)));
+  await h.state(baseColumnsWidth === 734, "account-table-base-columns-width", table);
   await h.layout();
   h.phase = "desktop/account-column-preference";
   let columnToggle = table.getByRole("button", { name: "展开账号列", exact: true });
@@ -1533,7 +1528,7 @@ async function main() {
   ];
   let total = 0;
   for (const mobile of [true, false]) {
-    for (const viewport of mobile ? viewports : [{ width: 960, height: 540 }, { width: 1440, height: 900 }]) {
+    for (const viewport of mobile ? viewports : [{ width: 900, height: 540 }, { width: 1310, height: 900 }]) {
       for (const theme of ["light", "dark"]) {
         for (const largeFont of [false, true]) {
           const name = `${mobile ? "mobile" : "desktop"}-${viewport.width}x${viewport.height}-${theme}-font${largeFont ? "125" : "default"}`;

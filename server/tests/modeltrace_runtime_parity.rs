@@ -20,8 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 use sub2ops_server::{
-    compat::account_version, fingerprint_bank::FingerprintBank, model_target, model_test_stream,
-    modeltrace, runtime::Runtime, settings::Settings,
+    compat::account_version, fingerprint_bank::FingerprintBank, model_directory, model_target,
+    model_test_stream, modeltrace, runtime::Runtime, settings::Settings,
 };
 use tokio::{net::TcpListener, sync::Semaphore, task::JoinHandle};
 
@@ -407,7 +407,10 @@ impl Scenario {
 
 struct MockState {
     directories: Mutex<HashMap<i64, Value>>,
+    directory_statuses: Mutex<HashMap<i64, u16>>,
     directory_calls: Mutex<Vec<i64>>,
+    directory_authorizations: Mutex<Vec<(i64, String)>>,
+    admin_directory_calls: Mutex<Vec<i64>>,
     directory_gate: Mutex<Option<Arc<Semaphore>>>,
     requests: Mutex<Vec<CapturedRequest>>,
     scenario: Mutex<Scenario>,
@@ -420,7 +423,10 @@ impl MockState {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             directories: Default::default(),
+            directory_statuses: Default::default(),
             directory_calls: Default::default(),
+            directory_authorizations: Default::default(),
+            admin_directory_calls: Default::default(),
             directory_gate: Default::default(),
             requests: Mutex::new(Vec::new()),
             scenario: Mutex::new(Scenario::single(responses_json("1, 2, 3"))),
@@ -538,24 +544,63 @@ async fn mock_model_upstream(State(state): State<Arc<MockState>>, request: Reque
     let path = parts.uri.path().to_owned();
     let method = parts.method;
     let headers = parts.headers;
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(!headers.contains_key("x-api-key"));
+        let id = path
+            .strip_prefix("/fixture-models/")
+            .unwrap()
+            .parse::<i64>()
+            .unwrap();
+        state.directory_calls.lock().unwrap().push(id);
+        let authorization = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        state
+            .directory_authorizations
+            .lock()
+            .unwrap()
+            .push((id, authorization));
+        let gate = state.directory_gate.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
+        if let Some(status) = state.directory_statuses.lock().unwrap().get(&id).copied() {
+            return (
+                StatusCode::from_u16(status).unwrap(),
+                "fixture provider error",
+            )
+                .into_response();
+        }
+        let payload = state
+            .directories
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or(json!({"data":[{"id":"gpt-6-luna"}]}));
+        return axum::Json(payload).into_response();
+    }
     if method == Method::GET
         && path.starts_with("/api/v1/admin/accounts/")
         && path.ends_with("/models")
     {
         assert_eq!(headers.get("x-api-key").unwrap(), "fixture-model-admin-key");
         let id = path.split('/').nth(5).unwrap().parse::<i64>().unwrap();
-        state.directory_calls.lock().unwrap().push(id);
-        let gate = state.directory_gate.lock().unwrap().clone();
-        if let Some(gate) = gate {
-            gate.acquire().await.unwrap().forget();
-        }
-        let models = state
+        state.admin_directory_calls.lock().unwrap().push(id);
+        let payload = state
             .directories
             .lock()
             .unwrap()
             .get(&id)
             .cloned()
-            .unwrap_or(json!([{"id":"gpt-6-luna"}]));
+            .unwrap_or(json!({"data":[{"id":"gpt-6-luna"}]}));
+        let models = payload
+            .get("data")
+            .or_else(|| payload.get("models"))
+            .cloned()
+            .unwrap_or(payload);
         return axum::Json(json!({"code":0,"data":models})).into_response();
     }
     let bytes = to_bytes(body, 2_000_000).await.unwrap_or_default();
@@ -623,21 +668,36 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
         .seed_account("apikey", Some(parent), json!({}))
         .await;
     let other = harness.seed_account("apikey", None, json!({})).await;
+    let parent_proxy = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let proxy_port = harness
+        .upstream_url
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    sqlx::query("INSERT INTO proxies(id,protocol,host,port) VALUES($1,'http','localhost',$2)")
+        .bind(parent_proxy)
+        .bind(proxy_port)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
     harness.seed_model_allowlist(parent).await;
     harness.seed_model_allowlist(child).await;
     harness.state.directories.lock().unwrap().insert(
         child,
-        json!([
+        json!({"data":[
             {"id":"fixture-child","display_name":"Child"}, {"id":"fixture-child"},
-            {"id":"fixture-image"}, {"id":"whisper-fixture"}, {"id":7}, null
-        ]),
+            {"slug":"gpt-6-luna","display_name":"Raw provider model"},
+            {"id":"fixture-image"}, {"id":"whisper-fixture"}
+        ]}),
     );
     harness
         .state
         .directories
         .lock()
         .unwrap()
-        .insert(other, json!([{"id":"fixture-other"}]));
+        .insert(other, json!({"models":["fixture-other"]}));
     let actions = &harness.runtime.actions;
     let values = actions
         .models(child, "fixture-model-admin-key", true)
@@ -645,17 +705,57 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
         .unwrap();
     assert_eq!(
         values,
-        vec![json!({"id":"fixture-child","display_name":"Child","type":""})]
+        vec![
+            json!({"id":"fixture-child","display_name":"Child","type":"model"}),
+            json!({"id":"gpt-6-luna","display_name":"Raw provider model","type":"model"})
+        ]
     );
     let row = model_target::account(actions, child).await.unwrap();
     assert!(actions.model_allowed(&row, "fixture-child").await.unwrap());
-    assert!(!actions.model_allowed(&row, "gpt-6-luna").await.unwrap());
+    assert!(actions.model_allowed(&row, "gpt-6-luna").await.unwrap());
     let (target, owner) = model_target::target(actions, &row, "fixture-child")
         .await
         .unwrap();
     assert_eq!(target.model, "fixture-child");
     assert_eq!(owner["id"], parent);
     assert_eq!(*harness.state.directory_calls.lock().unwrap(), vec![child]);
+    assert_eq!(
+        harness.state.directory_authorizations.lock().unwrap()[0],
+        (child, format!("Bearer fixture-api-key-{parent}")),
+        "a shared child uses the parent account's provider credentials"
+    );
+    assert!(values.iter().any(|model| model["id"] == "gpt-6-luna"));
+    assert!(!values
+        .iter()
+        .any(|model| model["id"] == "fixture-mapped-model"));
+    sqlx::query("UPDATE accounts SET proxy_id=$1 WHERE id=$2")
+        .bind(parent_proxy)
+        .bind(parent)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        actions
+            .models(child, "fixture-model-admin-key", true)
+            .await
+            .unwrap(),
+        values,
+        "proxy identity change refreshes the raw provider directory"
+    );
+    let row_after_proxy = model_target::account(actions, child).await.unwrap();
+    let (proxied_target, proxied_owner) =
+        model_target::target(actions, &row_after_proxy, "fixture-child")
+            .await
+            .unwrap();
+    assert_eq!(proxied_owner["id"], parent);
+    assert_eq!(
+        proxied_target.proxy.as_deref(),
+        Some(format!("http://localhost:{proxy_port}/").as_str())
+    );
+    assert_eq!(
+        *harness.state.directory_calls.lock().unwrap(),
+        vec![child, child]
+    );
     assert!(actions
         .models(child, "fixture-model-admin-key", false)
         .await
@@ -664,6 +764,10 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
     assert_eq!(
         *harness.state.directory_calls.lock().unwrap(),
         vec![child, child]
+    );
+    assert_eq!(
+        *harness.state.admin_directory_calls.lock().unwrap(),
+        vec![child]
     );
     sqlx::query("UPDATE groups SET model_allowlist=$1 WHERE id IN (SELECT group_id FROM account_groups WHERE account_id=$2)")
         .bind(SqlJson(json!({"enabled":false,"models":["fixture-only-whitelist"]}))).bind(child).execute(&harness.runtime.db.pool).await.unwrap();
@@ -680,18 +784,41 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
         .directories
         .lock()
         .unwrap()
-        .insert(child, json!([]));
+        .insert(child, json!({"data":[]}));
     sqlx::query("UPDATE accounts SET credentials=$1 WHERE id=$2")
         .bind(SqlJson(json!({"revision":"fixture-next"})))
         .bind(child)
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
-    assert!(actions
+    let empty = actions
         .models(child, "fixture-model-admin-key", true)
         .await
-        .unwrap()
-        .is_empty());
+        .unwrap();
+    assert!(
+        empty.is_empty(),
+        "a valid empty provider directory stays empty"
+    );
+    let detection = harness.runtime.detection.view(child).unwrap();
+    let missing = harness
+        .runtime
+        .detection
+        .save(
+            child,
+            &json!({
+                "enabled":true,
+                "interval_minutes":30,
+                "model_id":"gpt-6-luna",
+                "expected_version":detection["version"]
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.status.as_u16(), 422);
+    assert_eq!(
+        missing.detail, "所选模型不在当前账号上游模型目录中",
+        "an empty success is distinct from a failed or malformed directory"
+    );
     sqlx::query("UPDATE accounts SET platform='grok' WHERE id=$1")
         .bind(child)
         .execute(&harness.runtime.db.pool)
@@ -731,6 +858,121 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
 }
 
 #[tokio::test]
+async fn oauth_parent_directory_uses_inherited_credentials_proxy_and_codex_identity() {
+    let harness = RuntimeHarness::new().await;
+    let parent = harness.seed_account("oauth", None, json!({})).await;
+    let child = harness.seed_account("oauth", Some(parent), json!({})).await;
+    let proxy_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
+    let proxy_port = harness
+        .upstream_url
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    sqlx::query("INSERT INTO proxies(id,protocol,host,port) VALUES($1,'http','localhost',$2)")
+        .bind(proxy_id)
+        .bind(proxy_port)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET proxy_id=$1 WHERE id=$2")
+        .bind(proxy_id)
+        .bind(parent)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    harness
+        .seed_identity_values(
+            "codex_app/0.144.0 (macOS 15.6; arm64) iTerm (codex_app; 0.144.0)",
+            "0.159.3",
+        )
+        .await;
+    harness
+        .state
+        .directories
+        .lock()
+        .unwrap()
+        .insert(child, json!({"models":[{"slug":"gpt-6-luna"}]}));
+
+    let actions = &harness.runtime.actions;
+    let initial = actions
+        .models(child, "fixture-model-admin-key", true)
+        .await
+        .unwrap();
+    assert_eq!(initial[0]["id"], "gpt-6-luna");
+    assert_eq!(initial[0]["type"], "model");
+    assert_eq!(
+        harness.state.directory_authorizations.lock().unwrap()[0],
+        (child, format!("Bearer fixture-access-token-{parent}")),
+        "a shared OAuth child uses the parent's actual provider token"
+    );
+    assert_eq!(*harness.state.directory_calls.lock().unwrap(), vec![child]);
+
+    let row = model_target::account(actions, child).await.unwrap();
+    let (initial_target, owner) = model_target::target(actions, &row, "gpt-6-luna")
+        .await
+        .unwrap();
+    assert_eq!(owner["id"], parent);
+    assert_eq!(
+        initial_target.proxy.as_deref(),
+        Some(format!("http://localhost:{proxy_port}/").as_str())
+    );
+    let initial_url = model_directory::endpoint(&initial_target).unwrap();
+    assert_eq!(initial_url.path(), "/backend-api/codex/models");
+    assert_eq!(
+        initial_url
+            .query_pairs()
+            .find(|(key, _)| key == "client_version")
+            .map(|(_, value)| value.into_owned())
+            .as_deref(),
+        Some("0.159.3"),
+        "Codex model discovery follows the resolved client version"
+    );
+
+    harness
+        .state
+        .directories
+        .lock()
+        .unwrap()
+        .insert(child, json!({"models":[{"slug":"gpt-6-astra"}]}));
+    harness
+        .seed_identity_values(
+            "codex_app/0.144.0 (macOS 15.6; arm64) iTerm (codex_app; 0.144.0)",
+            "0.200.0",
+        )
+        .await;
+    let refreshed = actions
+        .models(child, "fixture-model-admin-key", true)
+        .await
+        .unwrap();
+    assert_eq!(refreshed[0]["id"], "gpt-6-astra");
+    assert_eq!(
+        *harness.state.directory_calls.lock().unwrap(),
+        vec![child, child],
+        "changing Codex client identity invalidates the cached upstream directory"
+    );
+    let (refreshed_target, _) = model_target::target(actions, &row, "gpt-6-astra")
+        .await
+        .unwrap();
+    let refreshed_url = model_directory::endpoint(&refreshed_target).unwrap();
+    assert_eq!(
+        refreshed_url
+            .query_pairs()
+            .find(|(key, _)| key == "client_version")
+            .map(|(_, value)| value.into_owned())
+            .as_deref(),
+        Some("0.200.0")
+    );
+    assert_eq!(
+        *harness.state.admin_directory_calls.lock().unwrap(),
+        Vec::<i64>::new(),
+        "the candidate directory never consults the admin account-model route"
+    );
+    harness.runtime.close().await;
+}
+
+#[tokio::test]
 async fn account_model_candidates_reject_malformed_directories_and_late_changed_sources() {
     let harness = RuntimeHarness::new().await;
     let id = harness.seed_account("apikey", None, json!({})).await;
@@ -739,7 +981,7 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
         .directories
         .lock()
         .unwrap()
-        .insert(id, json!({"models":[]}));
+        .insert(id, json!({"models":"invalid"}));
     let error = harness
         .runtime
         .actions
@@ -747,7 +989,7 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 502);
-    assert_eq!(error.detail, "模型列表格式无效");
+    assert_eq!(error.detail, "上游模型列表格式无效");
     let before = harness.runtime.detection.control(id).unwrap();
     let detection = harness.runtime.detection.view(id).unwrap();
     let error = harness.runtime.detection.save(id, &json!({"enabled":true,"interval_minutes":30,"model_id":"gpt-6-luna","expected_version":detection["version"]})).await.unwrap_err();
@@ -757,6 +999,26 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
         before,
         "directory failure cannot mark a model absent or rewrite configuration"
     );
+    for status in [429, 503] {
+        let transient_id = harness.seed_account("apikey", None, json!({})).await;
+        harness
+            .state
+            .directory_statuses
+            .lock()
+            .unwrap()
+            .insert(transient_id, status);
+        let transient = harness
+            .runtime
+            .actions
+            .models(transient_id, "fixture-model-admin-key", true)
+            .await
+            .unwrap_err();
+        assert_eq!(transient.status.as_u16(), 502);
+        assert_eq!(
+            transient.detail,
+            format!("上游模型目录请求失败 [http_{status}]")
+        );
+    }
     let next = harness.seed_account("apikey", None, json!({})).await;
     let gate = Arc::new(Semaphore::new(0));
     *harness.state.directory_gate.lock().unwrap() = Some(gate.clone());
@@ -785,23 +1047,41 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
     gate.add_permits(1);
     assert_eq!(waiting.await.unwrap().unwrap_err().status.as_u16(), 503);
     *harness.state.directory_gate.lock().unwrap() = None;
-    let models: Vec<_> = (0..1001)
-        .map(|index| json!({"id":format!("fixture-text-{index}")}))
+    let models: Vec<_> = (0..10_000)
+        .map(|index| json!({"slug":format!("fixture-text-{index}")}))
         .collect();
     harness
         .state
         .directories
         .lock()
         .unwrap()
-        .insert(next, json!(models));
+        .insert(next, json!({"models":models}));
     let values = harness
         .runtime
         .actions
         .models(next, "fixture-model-admin-key", true)
         .await
         .unwrap();
-    assert_eq!(values.len(), 1000);
-    assert_eq!(values.last().unwrap()["id"], "fixture-text-999");
+    assert_eq!(values.len(), 10_000);
+    assert_eq!(values.last().unwrap()["id"], "fixture-text-9999");
+    let over_limit = harness.seed_account("apikey", None, json!({})).await;
+    let too_many: Vec<_> = (0..10_001)
+        .map(|index| json!({"id":format!("fixture-over-limit-{index}")}))
+        .collect();
+    harness
+        .state
+        .directories
+        .lock()
+        .unwrap()
+        .insert(over_limit, json!({"data":too_many}));
+    let error = harness
+        .runtime
+        .actions
+        .models(over_limit, "fixture-model-admin-key", true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.status.as_u16(), 502);
+    assert_eq!(error.detail, "上游模型列表格式无效或超过限制");
     harness.runtime.close().await;
 }
 
@@ -875,6 +1155,10 @@ impl RuntimeHarness {
         let runtime = Runtime::new(settings)
             .await
             .expect("construct real Runtime with temporary PostgreSQL and loopback provider");
+        runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{upstream_url}/fixture-models"))
+            .expect("use the loopback-only provider directory fixture");
         runtime
             .actions
             .queries
@@ -1891,6 +2175,60 @@ async fn raw_99_boundary_early_stream_cancellation_and_automatic_first_group_mat
         .iter()
         .skip(1)
         .all(|group| group["status"] == "skipped"));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn new_task_clears_automatic_report_but_preserves_requested_model_summary() {
+    let harness = RuntimeHarness::new().await;
+    let fixture = runtime_fixtures()["modeltrace_runtime"]["automatic_first_group"].clone();
+    let automatic_text = output_from_fixture(&fixture, 0);
+    harness
+        .state
+        .set_scenario(Scenario::sampled(&[automatic_text], responses_sse, None));
+    let account_id = harness.seed_account("apikey", None, json!({})).await;
+    let automatic = harness.start_automatic(account_id).await;
+    let automatic_id = automatic["id"].as_str().unwrap().to_owned();
+    let completed = harness.wait_for_terminal(&automatic_id).await;
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["requested_model"], "gpt-6-luna");
+    assert!(completed["report"].is_object());
+    assert!(!completed["groups"].as_array().unwrap().is_empty());
+    let saved_summary = completed["result_summary"].clone();
+    assert_eq!(saved_summary["first_downgrade"], true);
+    assert_eq!(saved_summary["aggregate_downgrade"], true);
+    assert_eq!(
+        saved_summary["first_prediction"],
+        completed["first_group_prediction"]
+    );
+    assert_eq!(
+        saved_summary["prediction"],
+        completed["report"]["prediction"]
+    );
+    assert_eq!(
+        saved_summary["first_probability"],
+        completed["first_group_probability"]
+    );
+    assert_eq!(
+        saved_summary["probability"],
+        completed["report"]["probability"]
+    );
+
+    let new_manual = harness.start_manual(account_id, 1).await;
+    let manual_id = new_manual["id"].as_str().unwrap().to_owned();
+    let cleared_old = harness.runtime.tests.get(&automatic_id).unwrap();
+    assert!(cleared_old["report"].is_null());
+    assert_eq!(cleared_old["groups"], json!([]));
+    assert_eq!(cleared_old["requested_model"], "gpt-6-luna");
+    assert_eq!(
+        cleared_old["result_summary"], saved_summary,
+        "cleanup retains the original requested-model judgment and match values"
+    );
+    assert_eq!(
+        harness.runtime.tests.get(&manual_id).unwrap()["account_id"],
+        account_id
+    );
+    harness.wait_for_terminal(&manual_id).await;
     harness.close().await;
 }
 

@@ -139,15 +139,46 @@ impl Detection {
 
         let mut identity = context.clone();
         identity.as_object_mut().unwrap().shift_remove("consume");
-        let request = digest(&json!([
-            "recovery",
-            identity,
-            value["generation"],
-            value["model_id"]
-        ]))[..32]
-            .to_owned();
+        // A config change must not create another job for an already registered
+        // recovery attempt, including requests persisted by older releases.
         let jobs = self.tests.data()?;
-        if let Some(previous) = jobs["requests"].get(&request).and_then(|v| v.as_str()) {
+        let registered = jobs["requests"].as_object().ok_or_else(Error::internal)?;
+        let registered_jobs = registered
+            .values()
+            .filter_map(Value::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        let previous = jobs["jobs"]
+            .as_object()
+            .ok_or_else(Error::internal)?
+            .values()
+            .filter(|job| {
+                job["automatic"] == true
+                    && job["account_id"] == id
+                    && job["detection_generation"] == value["generation"]
+                    && [
+                        "account_id",
+                        "kind",
+                        "fingerprint",
+                        "control_generation",
+                        "method_generation",
+                        "attempt",
+                    ]
+                    .iter()
+                    .all(|key| job["recovery_context"][*key] == identity[*key])
+                    && registered_jobs.contains(string(&job["id"]))
+            })
+            .max_by_key(|job| (parse_datetime(&job["queued_at"]), string(&job["id"])));
+        let request = previous
+            .and_then(|job| {
+                registered
+                    .iter()
+                    .find(|(_, key)| *key == &job["id"])
+                    .map(|(key, _)| key.clone())
+            })
+            .unwrap_or_else(|| {
+                digest(&json!(["recovery", identity, value["generation"]]))[..32].to_owned()
+            });
+        if let Some(previous) = previous.and_then(|job| job["id"].as_str()) {
             let job = self.tests.get(previous)?;
             if ACTIVE.contains(&string(&job["status"])) {
                 return Ok(self.recovery_wait(
@@ -199,6 +230,7 @@ impl Detection {
             );
             if valid && !degraded {
                 if let Err(error) = self.guard(&job).await {
+                    self.log_receipt(string(&job["id"]), "verification", &json!({"status":"failed","reason":crate::security::safe_error(&error.detail,200),"completed_at":datetime(self.now())}));
                     return Ok(json!({
                         "success":false, "error_code":"recovery_state_changed",
                         "error":crate::security::safe_error(&error.detail,200)
@@ -241,6 +273,7 @@ impl Detection {
             } else {
                 "模型验证未获得有效样本"
             };
+            self.log_receipt(string(&job["id"]), "verification", &json!({"status":if valid && !degraded {"passed"} else {"failed"},"reason":default_error,"completed_at":job["completed_at"]}));
             return Ok(json!({
                 "success": valid && !degraded,
                 "error_code": result_code,
@@ -270,11 +303,8 @@ impl Detection {
         if !reason.is_empty() {
             return Ok(json!({"success":false,"error":reason,"error_code":"recovery_ineligible"}));
         }
-        if !self
-            .actions
-            .model_allowed(&row, string(&value["model_id"]))
-            .await?
-        {
+        let model = self.model_id()?;
+        if !self.actions.model_allowed(&row, &model).await? {
             return Ok(
                 json!({"success":false,"error":"所选模型不在当前账号上游模型目录中","error_code":"model_unavailable"}),
             );
@@ -286,12 +316,16 @@ impl Detection {
             );
         }
         let mark = self.mark(id)?;
+        let _config = self.monitor.config.lock.lock().await;
+        if self.model_id()? != model {
+            return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
+        }
         let job = self
             .tests
             .start(
                 id,
                 &json!({
-                    "model_id": value["model_id"],
+                    "model_id": model,
                     "expected_version": "0".repeat(64),
                     "expected_operation_version": operation_versions(&row, false)["model_test"],
                     "request_id": request,

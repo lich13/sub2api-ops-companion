@@ -489,6 +489,7 @@ impl ModelTests {
                         "report": report,
                         "first_group_valid": first_group_valid,
                         "first_group_prediction": first_group_prediction,
+                        "first_group_probability": if index == 0 { &first["probability"] } else { &current["first_group_probability"] },
                     })).map_err(internal)?;
                     if index == 0
                         && job["automatic"] == true

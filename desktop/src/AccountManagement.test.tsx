@@ -93,6 +93,7 @@ async function openAutoResetSettings(
       oauth_recovery_test_concurrency: 2,
       oauth_early_probe_batch_size: 5,
       oauth_recovery_test_model_id: "fixture-model",
+      model_detection_model_id: "gpt-6-luna",
     },
     key_fallback: {
       revision: "key-r1",

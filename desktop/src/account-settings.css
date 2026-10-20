@@ -56,8 +56,6 @@
 .numeric-editor > p { margin: 8px 12px; overflow-wrap: anywhere; }
 .numeric-editor > footer { padding: 10px 12px; }
 .numeric-editor > footer button { font-size: 12px; min-height: 30px; padding: 5px 10px; gap: 5px; }
-.quality-badge.neutral { color: var(--muted); }
-.quality-missing { color: var(--muted); font-size: 12px; margin: 10px 0; }
 @media (max-width: 600px), (pointer: coarse) {
   .account-settings-dialog > header, .account-settings-dialog > footer { padding: 8px 12px; }
   .account-settings-body { padding: 10px 12px; }

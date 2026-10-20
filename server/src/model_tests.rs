@@ -81,8 +81,11 @@ fn validate(value: &Value) -> Result<()> {
         || value.get("requests").is_some_and(|v| !v.is_object())
         || value.get("jobs").is_some_and(|v| {
             v.as_object().is_none_or(|rows| {
-                rows.values()
-                    .any(|v| !v.is_object() || string(&v["id"]).is_empty())
+                rows.values().any(|v| {
+                    !v.is_object()
+                        || string(&v["id"]).is_empty()
+                        || !crate::detection_logs::valid_summary(&v["result_summary"])
+                })
             })
         })
     {
@@ -204,6 +207,7 @@ impl ModelTests {
             job.as_object_mut()
                 .ok_or_else(Error::internal)?
                 .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
+            crate::detection_logs::preserve_summary(job);
             let job = job.clone();
             let aid = integer(&job["account_id"])
                 .ok_or_else(Error::internal)?
@@ -219,7 +223,7 @@ impl ModelTests {
         if self.actions.settings.read_only {
             return Ok(());
         }
-        self.transaction(|data| {let mut changed=vec![];for job in data["jobs"].as_object_mut().unwrap().values_mut() {if matches!(string(&job["status"]),"running"|"retrying") {job.as_object_mut().unwrap().extend(json!({"status":"interrupted","error":"服务重启，测试已中断","completed_at":crate::compat::now(),"can_retry":false,"uncertain":true}).as_object().unwrap().clone());changed.push(job.clone());}}
+        self.transaction(|data| {let mut changed=vec![];for job in data["jobs"].as_object_mut().unwrap().values_mut() {if matches!(string(&job["status"]),"running"|"retrying") {job.as_object_mut().unwrap().extend(json!({"status":"interrupted","error":"服务重启，测试已中断","completed_at":crate::compat::now(),"can_retry":false,"uncertain":true}).as_object().unwrap().clone());crate::detection_logs::preserve_summary(job);changed.push(job.clone());}}
         for job in changed {let aid=integer(&job["account_id"]).ok_or_else(Error::internal)?.to_string();if data["accounts"][&aid]["id"]==job["id"] {data["accounts"][aid]=job;}}Ok(())})
     }
     pub fn resume(&self) -> Result<()> {
@@ -258,8 +262,23 @@ impl ModelTests {
         let data = self.data()?;
         if let Some(previous) = data["requests"].get(request) {
             let old = self.get(string(previous))?;
+            let same_recovery = automatic.is_some_and(|auto| {
+                old["automatic"] == true
+                    && old["recovery_context"].is_object()
+                    && old["detection_generation"] == auto["detection_generation"]
+                    && [
+                        "account_id",
+                        "kind",
+                        "fingerprint",
+                        "control_generation",
+                        "method_generation",
+                        "attempt",
+                    ]
+                    .iter()
+                    .all(|key| old["recovery_context"][*key] == auto["recovery_context"][*key])
+            });
             if old["account_id"] != id
-                || old["requested_model"] != model
+                || old["requested_model"] != model && !same_recovery
                 || old.get("concurrency").unwrap_or(&json!(1)) != &payload["concurrency"]
             {
                 return Err(Error::new(
@@ -290,6 +309,7 @@ impl ModelTests {
         ] {
             job[key] = auto[key].clone();
         }
+        crate::detection_logs::preserve_summary(&mut job);
         self.transaction(|data| {
             for old in data["jobs"]
                 .as_object_mut()
@@ -297,6 +317,7 @@ impl ModelTests {
                 .values_mut()
                 .filter(|old| old["account_id"] == id && !ACTIVE.contains(&string(&old["status"])))
             {
+                crate::detection_logs::preserve_summary(old);
                 old["report"] = Value::Null;
                 old["groups"] = json!([]);
                 old["can_retry"] = false.into();

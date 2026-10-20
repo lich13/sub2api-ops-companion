@@ -484,6 +484,9 @@
       "oauth_recovery_monitor_enabled": false,
       "oauth_recovery_test_model_id": "fixture-file-model",
       "oauth_usage_refresh_concurrency": "5"
+    },
+    "rust_additions_0_1_48": {
+      "model_detection_model_id": "gpt-6-luna"
     }
   },
   "templates": {

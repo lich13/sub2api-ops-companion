@@ -448,7 +448,6 @@ ROUTE_PROBES = [
     RouteProbe("GET", API + "/usage-records"),
     RouteProbe("GET", API + "/usage-record-options?kind=users"),
     RouteProbe("GET", API + "/usage-records/91001"),
-    RouteProbe("GET", API + "/accounts/4001/quality"),
     RouteProbe("GET", API + "/errors/92001"),
     RouteProbe("POST", API + "/accounts/4001/operations", {} , (401, 422)),
     RouteProbe("GET", API + "/account-operations"),
@@ -512,9 +511,16 @@ NOT_COVERED = [
 
 
 class ContractSuite:
-    def __init__(self, client: HttpClient, mocks: ExternalMocks | None = None) -> None:
+    def __init__(
+        self,
+        client: HttpClient,
+        mocks: ExternalMocks | None = None,
+        *,
+        rust_runtime: bool = False,
+    ) -> None:
         self.client = client
         self.mocks = mocks
+        self.rust_runtime = rust_runtime
         self.cases: list[dict[str, object]] = []
         self.request_ids: set[str] = set()
 
@@ -552,7 +558,9 @@ class ContractSuite:
         self.case("admin_auth_rejected", self._auth_rejected)
         self.case("admin_auth_accepted", self._auth_accepted)
         self.case("snapshot_shape_and_credential_redaction", self._snapshot)
+        self.case("account_quality_reference_and_rust_difference", self._account_quality_route)
         self.case("config_shape_and_secret_redaction", self._config)
+        self.case("automatic_log_reference_and_rust_difference", self._detection_logs)
         self.case("error_list_and_detail_redaction", self._errors)
         self.case("usage_query_and_detail_privacy", self._usage)
         self.case("usage_record_options_privacy", self._usage_options)
@@ -593,6 +601,9 @@ class ContractSuite:
         if response.body.get("implementation") == "rust":
             require(response.body.get("platforms") == ["macos", "android"],
                     "Rust capabilities must advertise both supported clients")
+            require(response.body.get("features", {}).get("detection_logs") is True
+                    and response.body.get("features", {}).get("global_detection_model") is True,
+                    "Rust capabilities must advertise logs and global detection configuration")
         return {"status": response.status, "api_version": 1}
 
     def _snapshot(self) -> dict[str, object]:
@@ -609,6 +620,8 @@ class ContractSuite:
         require(not any(marker in text for marker in forbidden), "snapshot returned a fixture credential or private body")
         account = next(row for row in accounts if row.get("id") == 4001)
         require("credentials" not in account, "account DTO exposed credentials")
+        if self.rust_runtime:
+            require(all("quality" not in row for row in accounts), "retired account score remains in snapshot")
         return {"account_count": len(accounts), "synthetic_account_present": True, "private_markers_returned": 0}
 
     def _config(self) -> dict[str, object]:
@@ -622,7 +635,33 @@ class ContractSuite:
         text = json.dumps(value, ensure_ascii=False)
         forbidden = (ADMIN_KEY, CLIENT_KEY, ACCOUNT_TOKEN, PRIVATE_PASSWORD, "fixture-bark-device-key-040")
         require(not any(marker in text for marker in forbidden), "config response exposed a secret value")
+        if self.rust_runtime:
+            require(value["oauth"].get("model_detection_model_id") == "gpt-6-luna",
+                    "global automatic detection model default differs")
         return {"sections": sorted(value), "secret_markers_returned": 0}
+
+    def _detection_logs(self) -> dict[str, object]:
+        path = API + "/detection-logs"
+        self.expect_status("GET", path, (401 if self.rust_runtime else 404,))
+        if not self.rust_runtime:
+            return {"behavior": "unavailable_in_pinned_reference", "status": 404}
+        calls_before = self.mocks.snapshot() if self.mocks else None
+        response = self.expect_status("GET", path, (200,), headers=self.admin_headers())
+        require(response.body == {"items": [], "next_cursor": None},
+                "new log feed must return an empty page without inventing tasks")
+        for query in ("?limit=0", "?limit=101", "?limit=invalid", "?before=invalid"):
+            invalid = self.expect_status("GET", path + query, (422,), headers=self.admin_headers())
+            require(response_detail_shape(invalid.body), "invalid log pagination lacks a structured error")
+        self.expect_status("POST", path, (405,), body={}, headers=self.admin_headers())
+        calls_after = self.mocks.snapshot() if self.mocks else None
+        # Auth may refresh its cache, but log reads must never perform upstream
+        # inference, recover accounts or send notifications.
+        for name in ("model_directory", "sub2api_admin", "sse", "bark"):
+            if calls_before is not None:
+                require(calls_before.get(name, 0) == calls_after.get(name, 0),
+                        "reading logs caused a business-side HTTP request")
+        return {"behavior": "read_only_automatic_log", "default_limit": 50,
+                "maximum_limit": 100, "empty_page": True, "invalid_pagination_status": 422}
 
     def _errors(self) -> dict[str, object]:
         headers = self.admin_headers()
@@ -731,7 +770,12 @@ class ContractSuite:
     def _request_schema_rejections(self) -> dict[str, object]:
         fixture = json.loads((ROOT / "tests/contracts/request-fixtures.json").read_text())
         require(fixture["reference_sha"] == REFERENCE_SHA, "request schema reference changed")
-        cases = fixture["invalid_http_cases"]
+        all_cases = fixture["invalid_http_cases"]
+        # The pinned Python schema still rejects legacy model_id types. The
+        # global-model API accepts and ignores that field; lifecycle contracts
+        # verify the effective model on a real fixture account instead.
+        cases = [case for case in all_cases if not (self.rust_runtime
+                 and case.get("rust_difference", {}).get("behavior") == "legacy_model_id_accepted_and_ignored")]
         state_before = self.expect_status("GET", API + "/account-operations", (200,),
                                           headers=self.admin_headers()).body
         calls_before = self.mocks.snapshot() if self.mocks else None
@@ -750,6 +794,7 @@ class ContractSuite:
         require(state_before == state_after, "invalid requests changed the operation state")
         require(calls_before == calls_after, "schema rejection must precede authentication and domain HTTP")
         return {"pinned_invalid_requests": len(cases), "private_input_echoed": False,
+                "approved_global_model_differences": len(all_cases) - len(cases),
                 "state_unchanged": True, "external_calls": 0 if calls_before is not None else "unmeasured"}
 
     def _unknown_route(self) -> dict[str, object]:
@@ -768,7 +813,7 @@ class ContractSuite:
     def _numeric_paths(self) -> dict[str, object]:
         paths = [
             ("/accounts/{id}/settings", 422),
-            ("/accounts/{id}/quality", 422),
+            ("/accounts/{id}/quality", 404 if self.rust_runtime else 422),
             ("/accounts/{id}/models", 404),
             ("/accounts/{id}/model-tests/latest", 200),
             ("/errors/{id}", 404),
@@ -781,7 +826,22 @@ class ContractSuite:
                                               headers=self.admin_headers())
                 if status == 200:
                     require(response.body is None, "an unknown account has no latest model test")
-        return {"requests": len(paths) * 3, "domain_validation_preserved": True}
+        return {
+            "requests": len(paths) * 3,
+            "domain_validation_preserved": True,
+            "account_quality_numeric_status": paths[1][1],
+        }
+
+    def _account_quality_route(self) -> dict[str, object]:
+        expected = 404 if self.rust_runtime else 401
+        response = self.expect_status("GET", API + "/accounts/4001/quality", (expected,))
+        require(response_detail_shape(response.body), "account quality route response lacks a structured error")
+        return {
+            "observed_status": response.status,
+            "python_reference_status": 401,
+            "rust_status": 404,
+            "behavior": "route_removed" if self.rust_runtime else "legacy_route_requires_authentication",
+        }
 
     def _retired_routes(self) -> dict[str, object]:
         paths = (
@@ -825,9 +885,10 @@ def run_base_url(base_url: str, allow_nonloopback: bool) -> dict[str, object]:
             "base URL must not embed credentials, query parameters, or fragments")
     if not allow_nonloopback:
         require(url_is_loopback(base_url), "base URL must be loopback unless --allow-nonloopback-base-url is set")
-    suite = ContractSuite(HttpClient(base_url), None)
+    suite = ContractSuite(HttpClient(base_url), None, rust_runtime=True)
     suite.case("healthz", suite._health)
     suite.case("admin_auth_required", suite._auth_required)
+    suite.case("account_quality_reference_and_rust_difference", suite._account_quality_route)
     suite.case("unknown_route_semantics", suite._unknown_route)
     suite.case("all_declared_http_routes_resolve", suite._route_inventory)
     failed = any(case["status"] == "failed" for case in suite.cases)
@@ -1045,7 +1106,11 @@ def run_owned(args: argparse.Namespace) -> dict[str, object]:
                 result["service"] = {"owned_by_runner": True, "host": "127.0.0.1", "pid": None}
                 service.start()
                 result["service"]["pid"] = service.process.pid if service.process else None
-                suite = ContractSuite(HttpClient(service.server_url), mocks)
+                suite = ContractSuite(
+                    HttpClient(service.server_url),
+                    mocks,
+                    rust_runtime=bool(args.command_json),
+                )
                 suite.run_primary()
                 result["cases"] = suite.cases
                 failed = [case for case in suite.cases if case["status"] == "failed"]

@@ -56,6 +56,8 @@ pub struct Actions {
     pub supervisor: crate::supervision::Supervisor,
     pub(crate) candidates: Candidates,
     client: reqwest::Client,
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub(crate) directory_endpoint: Arc<std::sync::Mutex<Option<String>>>,
 }
 pub struct TestRun {
     receiver: mpsc::Receiver<Value>,
@@ -191,7 +193,27 @@ impl Actions {
             candidates: Candidates::new(supervisor.clone()),
             supervisor,
             client,
+            #[cfg(any(test, feature = "test-fixtures"))]
+            directory_endpoint: Default::default(),
         })
+    }
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn set_model_directory_endpoint(&self, endpoint: &str) -> Result<()> {
+        let url = reqwest::Url::parse(endpoint).map_err(|_| Error::invalid())?;
+        if url.scheme() != "http"
+            || !matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(Error::invalid());
+        }
+        *self
+            .directory_endpoint
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(endpoint.into());
+        Ok(())
     }
     pub async fn request(
         &self,
@@ -500,7 +522,7 @@ impl Actions {
         // Parent metadata invalidates inherited credentials; its directory and
         // group allowlist are never used to add candidate models.
         let mut parent_version = if let Some(parent) = parent {
-            self.queries.db.one("SELECT id,platform,type,proxy_id,md5(credentials::text) AS credential_version,extra FROM accounts WHERE id=$1 AND deleted_at IS NULL", &[parent.into()]).await?
+            self.queries.db.one("SELECT id,platform,type,proxy_id,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,md5(credentials::text) AS credential_version,extra FROM accounts WHERE id=$1 AND deleted_at IS NULL", &[parent.into()]).await?
         } else {
             None
         };
@@ -514,6 +536,21 @@ impl Actions {
         if let Some(parent) = &mut parent_version {
             parent["extra"] = crate::compat::pick(&parent["extra"], &protocol_fields);
         }
+        let proxy_id = integer(&row["proxy_id"]).filter(|id| *id > 0).or_else(|| {
+            parent_version
+                .as_ref()
+                .and_then(|v| integer(&v["proxy_id"]).filter(|id| *id > 0))
+        });
+        let proxy_version = if let Some(proxy) = proxy_id {
+            self.queries.db.one("SELECT md5(row(protocol,host,port,username,password)::text) AS version FROM proxies WHERE id=$1 AND deleted_at IS NULL", &[proxy.into()]).await?
+        } else {
+            None
+        };
+        let client_identity = if row["type"] == "oauth" {
+            self.queries.db.all("SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced') ORDER BY key", &[]).await?
+        } else {
+            vec![]
+        };
         let base = self.upstream.active_url();
         if base.is_empty() {
             return Err(Error::new(502, "未配置 Sub2API 服务地址"));
@@ -536,7 +573,9 @@ impl Actions {
                 ]
             ),
             crate::compat::pick(&row["extra"], &protocol_fields),
-            parent_version
+            parent_version,
+            proxy_version,
+            client_identity
         ]));
         Ok((identity, base))
     }
@@ -549,56 +588,12 @@ impl Actions {
         if key.is_empty() {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
-        let (identity, base) = self.candidate_source(id, key).await?;
+        let (identity, _) = self.candidate_source(id, key).await?;
         let actions = self.clone();
         let expected = identity.clone();
         let key = key.to_owned();
         let fetch = async move {
-            let response = actions
-                .client
-                .get(format!("{base}/api/v1/admin/accounts/{id}/models"))
-                .header("x-api-key", &key)
-                .header("X-Admin-UI-Request", "1")
-                .header("Accept", "application/json")
-                .timeout(Duration::from_secs(8))
-                .send()
-                .await
-                .map_err(|error| {
-                    Failure::temporary(if error.is_timeout() {
-                        Error::new(504, "模型目录读取超时，请稍后重试")
-                    } else {
-                        Error::new(502, "无法读取 Sub2API 模型目录")
-                    })
-                })?;
-            let status = response.status().as_u16();
-            if !(200..300).contains(&status) {
-                let error = Error::new(502, format!("Sub2API 模型目录请求失败 [http_{status}]"));
-                return Err(if status == 429 || status >= 500 {
-                    Failure::temporary(error)
-                } else {
-                    Failure::permanent(error)
-                });
-            }
-            let bytes = read_limited(response, 8_000_000).await.map_err(|error| {
-                if error.detail == "上游响应超过限制" {
-                    Failure::permanent(error)
-                } else {
-                    Failure::temporary(error)
-                }
-            })?;
-            let body: Value = serde_json::from_slice(&bytes)
-                .map_err(|_| Failure::permanent(Error::new(502, "模型列表格式无效")))?;
-            if !body.is_object() || body["code"] != 0 {
-                return Err(Failure::permanent(Error::new(
-                    502,
-                    "Sub2API 未确认模型目录读取成功",
-                )));
-            }
-            let items = body["data"]
-                .as_array()
-                .ok_or_else(|| Failure::permanent(Error::new(502, "模型列表格式无效")))?;
-            let mut values = filter_models(&items[..items.len().min(1000)], &[]);
-            values.retain(|value| text_model(string(&value["id"])));
+            let values = crate::model_directory::fetch(&actions, id).await?;
             let (current, _) = actions
                 .candidate_source(id, &key)
                 .await

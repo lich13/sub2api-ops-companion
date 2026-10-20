@@ -3,7 +3,6 @@ import { useState, type ReactNode } from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { command } from "./bridge";
 import { fullTime, type Account } from "./types";
-import { QualityBadge } from "./AccountQuality";
 import SchedulingParameters from "./SchedulingParameters";
 import { AccountActionButton, isPrimaryAction, type AccountActionItem } from "./AccountActions";
 import UsageCell from "./UsageCell";
@@ -15,7 +14,7 @@ type Props = {
   accounts: Account[]; online: boolean; selected: Set<number>;
   select: (id: number, checked: boolean) => void;
   schedule: (account: Account) => ReactNode;
-  quality: (account: Account) => void; error: (id: number) => void;
+  error: (id: number) => void;
   report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[];
 };
 
@@ -35,7 +34,6 @@ export default function MobileAccounts(props: Props) {
         <div className="mobile-account-status">
           <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
           <AccountStatus account={a} onError={props.error}/>
-          {["openai", "grok"].includes(a.platform) && ["oauth", "apikey"].includes(a.type) && <QualityBadge value={a.quality} onClick={() => props.quality(a)}/>}
         </div>
         <UsageCell account={a} online={props.online} refresh={() => command("refresh")} report={props.report}/>
         <footer>

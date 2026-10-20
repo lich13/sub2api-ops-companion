@@ -171,6 +171,22 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     let payload = serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null);
     state.record(&method, &path);
 
+    if method == Method::GET && path.starts_with("/fixture-models/") {
+        assert!(!parts.headers.contains_key("x-api-key"));
+        assert!(parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("Bearer fixture-")));
+        return json_response(json!({
+            "data": [
+                {"id":"gpt-6-luna","name":"fixture model"},
+                {"id":"gpt-5.6-luna","name":"fixture reference"},
+                {"id":"fixture-model","name":"fixture recovery model"}
+            ]
+        }));
+    }
+
     if method == Method::GET && path.ends_with("/models") {
         return json_response(json!({
             "code": 0,
@@ -369,6 +385,10 @@ impl Harness {
             Runtime::new_with_clock(settings, Arc::new(move || *monitor_clock.lock().unwrap()))
                 .await
                 .expect("construct real Runtime against synthetic schema and deterministic clock");
+        runtime
+            .actions
+            .set_model_directory_endpoint(&format!("{base_url}/fixture-models"))
+            .expect("use the loopback-only provider directory fixture");
         runtime
             .monitor
             .store

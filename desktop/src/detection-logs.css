@@ -1,0 +1,6 @@
+.detection-log-list { display: grid; gap: 8px; }
+.detection-log-row { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; padding: 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; overflow-wrap: anywhere; }
+.detection-log-row > span:first-child { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; width: 100%; }
+.detection-log-row small { color: var(--muted); }
+.detection-log-detail { max-height: 85dvh; overflow: auto; }
+.detection-log-detail dd { overflow-wrap: anywhere; }

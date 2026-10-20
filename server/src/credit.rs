@@ -408,7 +408,7 @@ impl CreditController {
         } else {
             string(&task["error_code"])
         };
-        json!({"episode":task["episode"],"account_id":id,"account_name":if truthy(&row["name"]) {string(&row["name"])} else {string(&task["account_name"])},"outcome":task["outcome"],"reason":credit_rules::reason(code),"reason_code":code,"trigger_at":task["trigger_at"],"attempt_at":task["attempt_at"],"reset_completed_at":task["reset_completed_at"],"completed_at":datetime(at),"verification_method":if truthy(&task["verification_method"]) {&task["verification_method"]} else {&task["policy_method"]},"model_id":task["model_id"],"status":"pending","attempts":0,"next_at":datetime(at)})
+        json!({"job_id":task["model_test_job_id"],"episode":task["episode"],"account_id":id,"account_name":if truthy(&row["name"]) {string(&row["name"])} else {string(&task["account_name"])},"outcome":task["outcome"],"reason":credit_rules::reason(code),"reason_code":code,"trigger_at":task["trigger_at"],"attempt_at":task["attempt_at"],"reset_completed_at":task["reset_completed_at"],"completed_at":datetime(at),"verification_method":if truthy(&task["verification_method"]) {&task["verification_method"]} else {&task["policy_method"]},"model_id":task["model_id"],"status":"pending","attempts":0,"next_at":datetime(at)})
     }
     #[expect(
         clippy::too_many_arguments,

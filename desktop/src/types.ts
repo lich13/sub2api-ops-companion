@@ -37,7 +37,6 @@ export type Account = {
   success_after_error: boolean;
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
-  quality?: Quality;
   recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null } | null;
   auto_reset_credit?: {
     trigger_at?: string | null;
@@ -57,76 +56,6 @@ export type Account = {
     test_completed_at?: string | null;
     recovered_at?: string | null;
   } | null;
-};
-export type Quality = {
-  score: number | null;
-  grade: "red" | "yellow" | "green";
-  reasons: string[];
-  sample_status: "complete" | "insufficient" | "empty" | "pending";
-  data_status: "fresh" | "delayed" | "stale";
-  computed_at: string | null;
-  warnings?: SlowTTFTWarning[];
-  diagnostic?: { stage: string; kind: string; checked_at: string } | null;
-};
-export type SlowTTFTWarning = {
-  kind: "slow_ttft";
-  sample_count: number;
-  slow_count: number;
-  threshold_ms: number;
-  active: boolean;
-  latest_sample_id?: number;
-  latest_first_token_ms?: number;
-  latest_at?: string;
-};
-export type QualityCohort = {
-  platform: string;
-  model: string;
-  reasoning_effort: string;
-  service_tier: string;
-  transport: string;
-  input_bucket: string;
-  samples: number;
-  p50: number;
-  tail: number;
-  baseline_p50: number;
-  baseline_tail: number;
-  baseline_accounts: number;
-  baseline_samples: number;
-  score: number;
-};
-export type QualityMetric = {
-  missing_reason?: string | null;
-  score: number | null;
-  samples: number;
-  compared: number;
-  coverage: number;
-  p50: number | null;
-  tail: number | null;
-  mode: string;
-  cohorts: QualityCohort[];
-  recent: QualityMetric;
-  history: QualityMetric;
-  all: QualityMetric;
-};
-export type QualityDetail = Quality & {
-  account_id: number;
-  cap?: number;
-  coverage?: number;
-  consecutive_failures?: number;
-  period?: { start: string; end: string; recent_start: string };
-  reliability?: {
-    missing_reason?: string | null;
-    score: number | null;
-    rate: number | null;
-    effective_rate: number | null;
-    successes: number;
-    failures: number;
-    total: number;
-    mode: string;
-    causes: Record<string, number>;
-  };
-  ttft?: QualityMetric;
-  throughput?: QualityMetric;
 };
 export type UsageAction =
   | "query_usage"
@@ -316,15 +245,6 @@ export function sortPriority(accounts: Account[], ascending = true): Account[] {
   return [...accounts].sort(
     (a, b) => (ascending ? 1 : -1) * (a.priority - b.priority) || a.id - b.id,
   );
-}
-export function sortQuality(accounts: Account[], ascending = true): Account[] {
-  return [...accounts].sort((a, b) => {
-    const left = a.quality?.score,
-      right = b.quality?.score;
-    if (left == null) return right == null ? a.id - b.id : 1;
-    if (right == null) return -1;
-    return (ascending ? 1 : -1) * (left - right) || a.id - b.id;
-  });
 }
 export type TestEvent = {
   type: string;

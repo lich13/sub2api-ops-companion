@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
     json!({
-        "enabled":false, "interval_minutes":15, "model_id":"gpt-6-luna",
+        "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL,
         "generation":0, "next_at":null, "status":"disabled", "reason":"",
         "job_id":null, "hold":false
     })
@@ -90,6 +90,16 @@ impl Detection {
             notice_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
+    pub fn model_id(&self) -> Result<String> {
+        crate::settings::detection_model(
+            &self.monitor.config.current()?["model_detection_model_id"],
+        )
+    }
+    fn effective_version(value: &Value, model: &str) -> String {
+        let mut effective = value.clone();
+        effective["model_id"] = model.into();
+        version(&effective)
+    }
     pub fn now(&self) -> DateTime<Utc> {
         (self.clock)()
     }
@@ -146,7 +156,10 @@ impl Detection {
             .get(id.to_string())
             .cloned()
             .unwrap_or_else(defaults);
-        value["version"] = version(&value).into();
+        let model = self.model_id()?;
+        value["version"] = Self::effective_version(&value, &model).into();
+        value["model_id"] = model.into();
+        value["model_source"] = "global".into();
         value["account_id"] = id.into();
         value["last_automatic_started_at"] =
             data["automatic_starts"][id.to_string()]["started_at"].clone();
@@ -188,13 +201,18 @@ impl Detection {
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         let request = detection_request(payload)?;
+        let model = self.model_id()?;
         let row = model_target::account(&self.actions, id).await?;
-        if request["enabled"] == true
-            && !self
-                .actions
-                .model_allowed(&row, string(&request["model_id"]))
-                .await?
-        {
+        let allowed = if request["enabled"] == true {
+            self.actions.model_allowed(&row, &model).await
+        } else {
+            Ok(true)
+        };
+        let _config = self.monitor.config.lock.lock().await;
+        if self.model_id()? != model {
+            return Err(Error::new(409, "自动检测模型已变化，请重新读取"));
+        }
+        if !allowed? {
             return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
         }
         let _guard = self.actions.locks.control(id).await;
@@ -204,7 +222,7 @@ impl Detection {
                 .unwrap()
                 .entry(id.to_string())
                 .or_insert_with(defaults);
-            if version(value) != request["expected_version"] {
+            if Self::effective_version(value, &model) != request["expected_version"] {
                 return Err(Error::new(409, "检测设置已变化，请重新读取"));
             }
             value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
@@ -219,7 +237,6 @@ impl Detection {
             let changes = json!({
                 "enabled": request["enabled"],
                 "interval_minutes": request["interval_minutes"],
-                "model_id": request["model_id"],
                 "pending_request_id": null,
                 "candidate_blocked": false,
                 "candidate_recheck_at": null,
@@ -359,6 +376,20 @@ impl Detection {
     }
     pub async fn trigger(&self, id: i64, causes: &[String]) -> Result<Value> {
         let value = self.control(id)?;
+        if let Some(request) = value["pending_request_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+        {
+            let jobs = self.tests.data()?;
+            if let Some(job_id) = jobs["requests"][request].as_str() {
+                let job = self.tests.get(job_id)?;
+                if job["account_id"] != id || job["automatic"] != true {
+                    return Err(Error::new(503, "自动检测幂等状态无效"));
+                }
+                self.update(id, json!({"job_id":job["id"],"pending_request_id":null,"status":job["status"],"reason":job["error"]}))?;
+                return Ok(job);
+            }
+        }
         if let Some(job) = value["job_id"]
             .as_str()
             .and_then(|id| self.tests.get(id).ok())
@@ -407,10 +438,13 @@ impl Detection {
             self.clue_status(causes, "ignored", &reason, None)?;
             return Ok(Value::Null);
         }
-        let allowed = self
-            .actions
-            .model_allowed(&row, string(&value["model_id"]))
-            .await?;
+        let request = value["pending_request_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+        let model = self.model_id()?;
+        let allowed = self.actions.model_allowed(&row, &model).await?;
         let bank = self.tests.bank.snapshot();
         let ready = bank_contains(&bank.0, TARGET);
         if !allowed || !ready {
@@ -429,11 +463,6 @@ impl Detection {
             self.clue_status(causes, "failed", reason, None)?;
             return Ok(Value::Null);
         }
-        let request = value["pending_request_id"]
-            .as_str()
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
         self.update(
             id,
             json!({
@@ -447,12 +476,16 @@ impl Detection {
             }),
         )?;
 
+        let _config = self.monitor.config.lock.lock().await;
+        if self.model_id()? != model {
+            return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
+        }
         let job = self
             .tests
             .start(
                 id,
                 &json!({
-                    "model_id": value["model_id"],
+                    "model_id": model,
                     "expected_version": "0".repeat(64),
                     "expected_operation_version": operation_versions(&row, false)["model_test"],
                     "request_id": request,
@@ -656,16 +689,20 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
         return Err(Error::invalid());
     }
     let mut value = payload.clone();
-    if value.get("model_id").is_none() {
-        value["model_id"] = "gpt-6-luna".into();
+    if value
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("model_id")
+        .is_some()
+    {
+        eprintln!("model_detection_diagnostic level=debug reason=legacy_model_ignored");
     }
     if value.get("interval_minutes").is_none() {
         value["interval_minutes"] = 15.into();
     }
-    if !crate::account_templates::MODEL_ID.is_match(string(&value["model_id"]))
-        || !value["interval_minutes"]
-            .as_i64()
-            .is_some_and(|v| (1..=525600).contains(&v))
+    if !value["interval_minutes"]
+        .as_i64()
+        .is_some_and(|v| (1..=525600).contains(&v))
     {
         return Err(Error::invalid());
     }

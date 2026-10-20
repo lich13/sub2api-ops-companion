@@ -84,9 +84,6 @@ LEFT JOIN LATERAL (
 ) s ON true
 "####;
 
-pub const QUALITY_SUPPORTED: &str =
-    r####"deleted_at IS NULL AND platform IN ('openai','grok') AND type IN ('oauth','apikey')"####;
-
 pub const LEGACY_LEGACY_RECOVERY_PLAN_CLEANUP_SQL: &str = r####"
 DELETE FROM scheduled_test_plans
 WHERE cron_expression = '* * * * *'

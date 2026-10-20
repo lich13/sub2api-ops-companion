@@ -128,26 +128,36 @@ pub async fn account(actions: &Actions, id: i64) -> Result<Value> {
     .ok_or_else(|| Error::new(422, "仅支持 Codex OAuth 和 Key 账号"))
 }
 pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Target, Value)> {
-    let owner = if let Some(parent) = integer(&row["parent_account_id"]).filter(|id| *id > 0) {
+    let target = connection(actions, row, model).await?;
+    if !actions.model_allowed(row, model).await? {
+        return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
+    }
+    if !crate::actions::text_model(model) {
+        return Err(Error::new(422, "请选择该账号支持的文本模型"));
+    }
+    Ok(target)
+}
+
+/// Resolve the same credentials, protocol and proxy for discovery and inference.
+/// Discovery does not validate its own candidate list recursively.
+pub(crate) async fn connection(
+    actions: &Actions,
+    row: &Value,
+    model: &str,
+) -> Result<(Target, Value)> {
+    let owner = if let Some(parent) = integer(&row["parent_account_id"])
+        .or_else(|| integer(&row["extra"]["parent_account_id"]))
+        .filter(|id| *id > 0)
+    {
         account(actions, parent).await?
     } else {
         row.clone()
     };
-    if truthy(&owner["parent_account_id"]) {
+    if truthy(&owner["parent_account_id"]) || truthy(&owner["extra"]["parent_account_id"]) {
         return Err(Error::new(422, "母账号关系无效"));
     }
     if owner["type"] != row["type"] {
         return Err(Error::new(422, "母账号凭据类型不一致"));
-    }
-    if !actions.model_allowed(row, model).await? {
-        return Err(Error::new(422, "所选模型不在当前账号上游模型目录中"));
-    }
-    if !crate::account_templates::MODEL_ID.is_match(model)
-        || ["image", "dall-e", "tts-", "whisper-", "realtime", "audio"]
-            .iter()
-            .any(|v| model.to_lowercase().contains(v))
-    {
-        return Err(Error::new(422, "请选择该账号支持的文本模型"));
     }
     let oauth = owner["type"] == "oauth";
     let credentials = &owner["credentials"];

@@ -225,6 +225,36 @@ fn allowed_request(method: &str, path: &str) -> bool {
     if plain == "/connection-status" {
         return method == "GET" && path == plain;
     }
+    if plain == "/detection-logs" {
+        return method == "GET"
+            && path.split_once('?').is_none_or(|(_, query)| {
+                if query.is_empty() {
+                    return false;
+                }
+                let mut seen = std::collections::HashSet::new();
+                query.split('&').all(|pair| {
+                    let Some((key, value)) = pair.split_once('=') else {
+                        return false;
+                    };
+                    if !seen.insert(key) || value.is_empty() {
+                        return false;
+                    }
+                    match key {
+                        "limit" => {
+                            value.bytes().all(|c| c.is_ascii_digit())
+                                && value.parse::<usize>().is_ok_and(|n| (1..=100).contains(&n))
+                        }
+                        "before" => {
+                            value.len() <= 512
+                                && value
+                                    .bytes()
+                                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+                        }
+                        _ => false,
+                    }
+                })
+            });
+    }
     let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
     if plain.starts_with("/account-operations") {
         let query_ok = path.split_once('?').is_none_or(|(_, q)| {
@@ -387,7 +417,6 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .strip_prefix("/errors/")
                     .is_some_and(|s| s.parse::<u64>().is_ok())
                 || model_options_path(path)
-                || account_path(plain, "/quality")
                 || plain
                     .strip_prefix("/accounts/")
                     .and_then(|s| s.strip_suffix("/model-tests/latest"))
@@ -1409,7 +1438,7 @@ fn fit_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
-        let width = (1440. * scale).min((area.size.width as f64 - 24. * scale).max(1.));
+        let width = (1310. * scale).min((area.size.width as f64 - 24. * scale).max(1.));
         let height = (860. * scale).min((area.size.height as f64 - 24. * scale).max(1.));
         window.set_min_size(Some(tauri::PhysicalSize::new(
             (900. * scale).min(width) as u32,
@@ -2077,6 +2106,38 @@ mod tests {
         assert!(!allowed_request("DELETE", "/model-groups/7"));
         assert!(allowed_request("POST", "/accounts/7/schedulable"));
         assert!(allowed_request("GET", "/errors?account_id=7"));
+        assert!(allowed_request("GET", "/detection-logs"));
+        assert!(allowed_request("GET", "/detection-logs?limit=1"));
+        assert!(allowed_request(
+            "GET",
+            "/detection-logs?before=YWJj&limit=100"
+        ));
+        assert!(allowed_request(
+            "GET",
+            &format!("/detection-logs?before={}", "a".repeat(512))
+        ));
+        for path in [
+            "/detection-logs?",
+            "/detection-logs?limit=",
+            "/detection-logs?limit=0",
+            "/detection-logs?limit=101",
+            "/detection-logs?limit=lots",
+            "/detection-logs?limit=1&limit=2",
+            "/detection-logs?before=",
+            "/detection-logs?before=ab+c",
+            "/detection-logs?before=ab/c",
+            "/detection-logs?before=YWJj&before=ZGVm",
+            "/detection-logs?before=YWJj&unknown=1",
+            "/detection-logs?limit=1&unknown=1",
+        ] {
+            assert!(!allowed_request("GET", path), "{path}");
+        }
+        assert!(!allowed_request(
+            "GET",
+            &format!("/detection-logs?before={}", "a".repeat(513))
+        ));
+        assert!(!allowed_request("POST", "/detection-logs"));
+        assert!(!allowed_request("GET", "/detection-logs/1"));
         assert!(allowed_request("GET", "/accounts/7/models"));
         assert!(allowed_request(
             "GET",
@@ -2093,7 +2154,7 @@ mod tests {
         }
         assert!(allowed_request("DELETE", "/accounts/7"));
         assert!(allowed_request("POST", "/accounts/7/recover-state"));
-        assert!(allowed_request("GET", "/accounts/7/quality"));
+        assert!(!allowed_request("GET", "/accounts/7/quality"));
         assert!(allowed_request("POST", "/accounts/7/model-tests"));
         assert!(allowed_request("GET", "/accounts/7/model-tests/latest"));
         assert!(allowed_request(

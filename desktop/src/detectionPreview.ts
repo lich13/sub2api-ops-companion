@@ -9,7 +9,7 @@ let templates = { configured: true, version: '9'.repeat(64), templates: structur
 const accountProfiles = new Map<number, Profile>();
 const detections = new Map<number, Record<string, unknown>>();
 const bank = { version: { revision: 'a'.repeat(40), sha256: 'b'.repeat(64), built_at: '2026-09-30T22:05:57Z', analyzer_version: 1 }, source: 'bundled', status: 'idle', result: 'up-to-date', checked_at: Date.now()/1000, synced_at: 0 };
-export function detectionPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[]) {
+export function detectionPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], model = "gpt-6-luna") {
   if (path === '/account-templates/apply' && method === 'POST') {
     const id = String(body.template_id), profile = templates.templates[id];
     if (!profile || body.template_version !== templates.template_versions[id]) throw new Error('模板内容已变化');
@@ -54,9 +54,12 @@ export function detectionPreview(method: string, path: string, body: Record<stri
   let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
+  if (value.model_id !== model) value = { ...value, version: version() };
+  value = { ...value, model_id: model, model_source: "global" };
+  detections.set(aid, value);
   if (method === 'PUT') {
     if (body.expected_version !== value.version) throw new Error('检测设置已变化');
-    value = { ...value, ...body, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };
+    value = { ...value, enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };
     detections.set(aid, value);
   }
   return structuredClone(value);

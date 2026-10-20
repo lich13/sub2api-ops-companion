@@ -466,12 +466,93 @@ fn proxy_diagnostic_valid(path: &str, data: &Value) -> bool {
         })
 }
 
+fn detection_logs_valid(data: &Value) -> bool {
+    let optional_text = |v: &Value| v.is_null() || v.is_string();
+    let receipt = |v: &Value| {
+        v.is_null()
+            || v.is_object()
+                && v["status"].is_string()
+                && v["reason"].is_string()
+                && optional_text(&v["completed_at"])
+                && ["marked", "schedule_verified", "mark_cleared"]
+                    .iter()
+                    .all(|k| v[*k].is_null() || v[*k].is_boolean())
+    };
+    data.is_object()
+        && data.get("next_cursor").is_some_and(|v| {
+            v.is_null() || v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 512)
+        })
+        && data["items"].as_array().is_some_and(|items| {
+            items.len() <= 100
+                && items.iter().all(|item| {
+                    item["job_id"].as_str().is_some_and(|id| {
+                        id.len() == 32 && id.bytes().all(|c| c.is_ascii_hexdigit())
+                    }) && item["account_id"].as_u64().is_some_and(|id| id > 0)
+                        && ["account_name", "model_id", "created_at", "error"]
+                            .iter()
+                            .all(|key| item[*key].is_string())
+                        && matches!(
+                            item["status"].as_str(),
+                            Some(
+                                "completed"
+                                    | "failed"
+                                    | "cancelled"
+                                    | "interrupted"
+                                    | "needs_confirmation"
+                            )
+                        )
+                        && ["started_at", "completed_at"]
+                            .iter()
+                            .all(|key| optional_text(&item[*key]))
+                        && item["triggers"]
+                            .as_array()
+                            .is_some_and(|values| values.iter().all(Value::is_string))
+                        && item["details_available"].is_boolean()
+                        && item["summary"]["outcome"].is_string()
+                        && item["summary"]["analysis_available"].is_boolean()
+                        && ["first_prediction", "prediction"]
+                            .iter()
+                            .all(|key| item["summary"][*key].is_string())
+                        && (item["summary"]["probability"].is_null()
+                            || item["summary"]["probability"]
+                                .as_f64()
+                                .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)))
+                        && (item["summary"]["first_probability"].is_null()
+                            || item["summary"]["first_probability"]
+                                .as_f64()
+                                .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)))
+                        && (item["summary"]["used_outputs"].is_null()
+                            || item["summary"]["used_outputs"].is_u64())
+                        && ["first_downgrade", "aggregate_downgrade"]
+                            .iter()
+                            .all(|key| {
+                                item["summary"][*key].is_null()
+                                    || item["summary"][*key].is_boolean()
+                            })
+                        && ["disposition", "recovery", "verification", "restoration"]
+                            .iter()
+                            .all(|key| receipt(&item["summary"][*key]))
+                        && (item["notification"].is_null()
+                            || item["notification"].is_object()
+                                && item["notification"]["status"].is_string()
+                                && item["notification"]["merged"].is_boolean()
+                                && item["notification"]["reason"].is_string()
+                                && optional_text(&item["notification"]["delivered_at"]))
+                })
+        })
+}
+
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
-        "/config" => ["oauth", "bark", "key_fallback"]
-            .iter()
-            .all(|k| data[*k]["revision"].is_string()),
+        "/config" => {
+            ["oauth", "bark", "key_fallback"]
+                .iter()
+                .all(|k| data[*k]["revision"].is_string())
+                && data["oauth"]
+                    .get("model_detection_model_id")
+                    .is_none_or(Value::is_string)
+        }
         "/capabilities" => {
             data["api_version"].as_u64() == Some(1)
                 && (data["upstream_connection"].is_null()
@@ -481,6 +562,7 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/proxies" => proxies_valid(data),
         p if p.starts_with("/proxies/") => proxy_diagnostic_valid(p, data),
         p if p.ends_with("/settings") => settings_valid(data),
+        "/detection-logs" => detection_logs_valid(data),
         "/errors" => data["items"].is_array(),
         "/recoveries" => recoveries_valid(&data["items"]),
         "/account-operations" => {
@@ -522,6 +604,7 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["enabled"].is_boolean()
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
                 && data["model_id"].is_string()
+                && data.get("model_source").is_none_or(|v| v == "global")
                 && data["status"].is_string()
                 && (data["last_automatic_started_at"].is_null()
                     || data["last_automatic_started_at"].is_string())
@@ -1311,6 +1394,26 @@ mod tests {
     fn detection_templates_and_bank_response_guards() {
         let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
+        let mut global_detection = detection.clone();
+        global_detection["model_source"] = serde_json::json!("global");
+        assert!(shape_valid(
+            "/accounts/1/model-detection",
+            &global_detection
+        ));
+        for invalid_source in [serde_json::json!("account"), serde_json::json!(true)] {
+            let mut invalid = detection.clone();
+            invalid["model_source"] = invalid_source;
+            assert!(!shape_valid("/accounts/1/model-detection", &invalid));
+        }
+        let config = serde_json::json!({
+            "oauth":{"revision":"fixture","model_detection_model_id":"gpt-6-luna"},
+            "bark":{"revision":"fixture"},
+            "key_fallback":{"revision":"fixture"}
+        });
+        assert!(shape_valid("/config", &config));
+        let mut invalid_config = config.clone();
+        invalid_config["oauth"]["model_detection_model_id"] = serde_json::json!(7);
+        assert!(!shape_valid("/config", &invalid_config));
         for at in [
             serde_json::Value::Null,
             serde_json::json!("2026-10-01T02:30:00Z"),
@@ -1335,6 +1438,81 @@ mod tests {
             "/modeltrace/fingerprint-bank/sync",
             &serde_json::json!({})
         ));
+    }
+
+    #[test]
+    fn detection_log_response_guard_accepts_the_projection_and_rejects_bad_fields() {
+        let valid = serde_json::json!({
+            "items":[{
+                "job_id":"0123456789abcdef0123456789abcdef",
+                "account_id":7,
+                "account_name":"fixture account",
+                "model_id":"gpt-6-sol",
+                "status":"completed",
+                "created_at":"2026-10-20T12:00:00Z",
+                "started_at":null,
+                "completed_at":"2026-10-20T12:00:00Z",
+                "triggers":["scheduled"],
+                "error":"",
+                "details_available":false,
+                "summary":{
+                    "outcome":"unavailable",
+                    "analysis_available":false,
+                    "first_prediction":"",
+                    "prediction":"",
+                    "probability":null,
+                    "first_probability":null,
+                    "used_outputs":null,
+                    "first_downgrade":null,
+                    "aggregate_downgrade":null,
+                    "disposition":null,
+                    "recovery":null,
+                    "verification":null,
+                    "restoration":null
+                },
+                "notification":{
+                    "status":"delivered",
+                    "merged":false,
+                    "delivered_at":"2026-10-20T12:00:01Z",
+                    "reason":""
+                }
+            }],
+            "next_cursor":"eyJmaXh0dXJlIjoxfQ"
+        });
+        assert!(shape_valid("/detection-logs", &valid));
+
+        let mut malformed = Vec::new();
+        let mut row = valid.clone();
+        row["items"][0]["status"] = serde_json::json!("running");
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["items"][0]["summary"]["analysis_available"] = serde_json::json!("false");
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["items"][0]["summary"]["probability"] = serde_json::json!(1.01);
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["items"][0]["notification"]["merged"] = serde_json::json!("false");
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["items"][0]["summary"]["recovery"] = serde_json::json!({
+            "status":"completed","reason":"fixture","completed_at":123,
+            "marked":true,"schedule_verified":true,"mark_cleared":true
+        });
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["items"][0]["job_id"] = serde_json::json!("invalid");
+        malformed.push(row);
+        let mut row = valid.clone();
+        row["next_cursor"] = serde_json::json!("");
+        malformed.push(row);
+
+        for response in malformed {
+            assert!(
+                !shape_valid("/detection-logs", &response),
+                "accepted malformed detection log response: {response}"
+            );
+        }
     }
 
     #[test]

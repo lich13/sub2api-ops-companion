@@ -55,8 +55,8 @@ impl ConfigService {
             lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
-    pub fn oauth_values(&self, raw: &Value) -> Value {
-        OAUTH_FIELDS
+    pub fn oauth_values(&self, raw: &Value) -> Result<Value> {
+        let mut values: Value = OAUTH_FIELDS
             .iter()
             .map(|key| {
                 (
@@ -64,10 +64,15 @@ impl ConfigService {
                     raw.get(*key).unwrap_or(&self.settings.oauth[*key]).clone(),
                 )
             })
-            .collect()
+            .collect();
+        values["model_detection_model_id"] =
+            crate::settings::detection_model(&values["model_detection_model_id"])
+                .map_err(|_| Error::new(503, "自动检测模型配置无效"))?
+                .into();
+        Ok(values)
     }
     pub fn current(&self) -> Result<Value> {
-        Ok(self.oauth_values(&self.oauth.read()?))
+        self.oauth_values(&self.oauth.read()?)
     }
     pub async fn migrate_legacy(&self) -> Result<()> {
         if self.settings.read_only {
@@ -100,7 +105,7 @@ impl ConfigService {
             json!({})
         };
         let oauth = if section.is_none_or(|s| s == "oauth") {
-            self.oauth_values(&raw)
+            self.oauth_values(&raw)?
         } else {
             json!({})
         };
@@ -206,7 +211,7 @@ impl ConfigService {
                     return Err(Error::new(422, "未知 OAuth 设置"));
                 }
                 let raw = self.oauth.read()?;
-                let mut values = self.oauth_values(&raw);
+                let mut values = self.oauth_values(&raw)?;
                 for (key, value) in changes {
                     if key != "oauth_7d_probe_interval_seconds" {
                         values[key] = value.clone();
@@ -234,6 +239,8 @@ impl ConfigService {
                         return Err(Error::new(422, format!("{key} 必须在 {low}–{high} 之间")));
                     }
                 }
+                values["model_detection_model_id"] =
+                    crate::settings::detection_model(&values["model_detection_model_id"])?.into();
                 let model = text(&values["oauth_recovery_test_model_id"])
                     .trim()
                     .to_owned();

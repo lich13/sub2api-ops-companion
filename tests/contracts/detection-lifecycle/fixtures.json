@@ -473,5 +473,23 @@
   "reference_sources": {
     "app/model_detection.py": "cb5711c75ffd484fe44dd5c4e31eefef82eef7269adf2b79942cd500a88fbfcb"
   },
+  "rust_differences_0_1_48": {
+    "automatic_log": {
+      "default_limit": 50,
+      "includes_manual_tasks": false,
+      "maximum_limit": 100,
+      "state_version": 1,
+      "summary_is_business_input": false
+    },
+    "automatic_model": {
+      "config_change_during_candidate_validation_status": 409,
+      "config_key": "model_detection_model_id",
+      "default": "gpt-6-luna",
+      "existing_job_keeps_requested_model": true,
+      "legacy_account_model_is_authoritative": false,
+      "model_source": "global"
+    },
+    "directory_source": "current_account_provider"
+  },
   "schema_version": 1
 }

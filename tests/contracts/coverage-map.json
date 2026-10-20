@@ -674,809 +674,591 @@
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:CacheTests.test_detail_auth_deleted_filter_and_no_upstream_scoring",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_detail_http_auth_filters_deleted_accounts_without_scoring_upstream",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_eq!(first.status(), reqwest::StatusCode::OK)",
-          "assert_eq!(deleted.status(), reqwest::StatusCode::NOT_FOUND)",
-          "assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED)",
-          "observed_calls"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
         "fixtures": []
       },
-      "coverage_note": "通过实际 Rust Desktop HTTP router 请求合成账号，验证认证结果、deleted account 404 与数据库质量读取不访问 scoring upstream；loopback 连接计数只含 group 认证读取。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:CacheTests.test_query_failure_retains_results_then_expires_and_recovers",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_cache_coalesces_refresh_retains_timeout_results_and_recovers",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_eq!(stale[\"data_status\"], expected_stale[\"data_status\"]);",
-          "assert_eq!(stale[\"score\"], initial[\"score\"]);",
-          "assert_eq!(stale[\"computed_at\"], initial[\"computed_at\"]);",
-          "assert_eq!(stale[\"reasons\"], expected_stale[\"reasons\"]);",
-          "assert_eq!(stale[\"diagnostic\"][\"kind\"], \"query_timeout\");",
-          "&stale[\"throughput\"],",
-          "assert_eq!(recovered[\"sample_status\"], \"complete\");"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.cache_expected.success",
-              "quality.cache_expected.stale"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "真实 PostgreSQL 表锁强制读超时；注入单调时钟跨过 31 秒刷新与 301 秒 stale 边界，核对旧分数、指标、computed_at、失败原因/诊断，并释放锁验证恢复。checked_at 验证为失败窗口内的 RFC3339 时间，旧测试固定 NOW 的字面值不适用于实时边界。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:CacheTests.test_read_transaction_is_readonly_bounded_and_whitelisted",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_reader_sql_contract_matches_pinned_python_query_observations",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert!(contains_query_fragment(fragment),",
-          "assert!(!source.contains(fragment),"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.reader_contract"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "固定旧 reader_contract 逐项校验 Rust 实际 read_evidence 源的 READ ONLY、5s statement timeout、字段白名单/缺列回退和禁止隐私字段或写语句；真实锁超时另外由 QualityCache PostgreSQL 集成测试执行。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:CacheTests.test_single_inflight_nonblocking_30s_refresh_and_5min_baselines",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_cache_coalesces_refresh_retains_timeout_results_and_recovers",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_eq!(pending[&ACCOUNT_ID][\"sample_status\"], \"pending\");",
-          "assert_eq!(blocked_reader_count, 1,",
-          "assert_eq!(still_fresh[&ACCOUNT_ID][\"score\"], initial[\"score\"]);",
-          "quality_cache_reuses_and_rebuilds_baselines_on_injected_clock_boundaries().await;"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.cache_baseline_expected"
-            ]
-          }
-        ],
-        "helper_assertions": [
-          {
-            "name": "quality_cache_reuses_and_rebuilds_baselines_on_injected_clock_boundaries",
-            "assertions": [
-              "assert_eq!(initial_baseline, expected[\"initial_tps_baseline\"]);",
-              "reused_baseline, expected[\"after_31s_tps_baseline\"],",
-              "rebuilt_baseline, expected[\"after_301s_tps_baseline\"],",
-              "assert_ne!(rebuilt_baseline, initial_baseline);"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "在真实 PostgreSQL 查询等待期间观察到唯一一个活动 reader，并在 31 秒后复用固定 Python oracle 的 baseline 值、301 秒后因同一临时 PG 对照账号吞吐变化而重建值。旧 Python 内部对象 identity 不暴露为 Rust API，按可观察 baseline 结果验证。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_account_attribution_retry_dedup_and_recovered_success",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust evidence/scoring vectors 比较重试事件归属、重复 request 去重、恢复成功次数和 1/31 失败率。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_context_buckets_include_cached_input",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_nonfinite_python_inputs_are_rejected_by_bigint_storage_boundary",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_eq!(\n            actual, case[\"expected\"],",
-          "assert_eq!(types[field], \"bigint\", \"{field} has no NaN storage form\");",
-          "assert!(case[\"old_python_expected\"].is_null());",
-          "assert!(sqlx::query(&sql).bind(id).execute(&db.pool).await.is_err(),"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.performance_cases",
-              "quality.nonfinite_inputs"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "同一目标用固定 Python `performance_cases` 逐项比较普通缓存输入桶和非法值输出；NaN 的 Python 期望保留在 fixture，临时 PostgreSQL 实证 `cache_creation_tokens` 为 BIGINT 且拒绝 NaN，按真实输入域边界替代不可达的内存对象输入，不改 schema。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_detail_array_without_account_never_falls_back_to_envelope",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust failure event vectors 将非空 detail array 与 envelope account 分离，并逐条比较归因结果。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_detail_event_timestamp_and_request_namespace",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust failure vectors 逐字段比对 account、事件时间、cause 与 request namespace 标记。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_duplicate_usage_ids_and_invalid_dates",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust calculate 向量逐字段比较固定旧实现输出，覆盖重复 usage ID 和无效日期过滤。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_exclusions_are_specific_not_all_429_or_all_400",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust failure-cause 矢量分别验证额度/客户端错误排除及普通 429/400 等 provider failure 分类。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_missing_or_null_optional_cache_counts_keep_timing_and_mark_unknown_input",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust performance 矢量覆盖缓存计数字段缺失、null、时序保留与未知输入桶。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_platform_errors_deleted_accounts_and_out_of_range_are_excluded",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust failure 与 calculate summary 矢量覆盖 platform log、deleted account、未知账户、七日外事件过滤。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:EvidenceTests.test_tps_uses_total_duration_and_rejects_invalid_or_media",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_nonfinite_python_inputs_are_rejected_by_bigint_storage_boundary",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_eq!(\n            actual, case[\"expected\"],",
-          "assert_eq!(types[field], \"bigint\", \"{field} has no NaN storage form\");",
-          "assert!(!case[\"old_python_expected\"].is_null());",
-          "assert!(case[\"old_python_expected\"][\"ttft\"].is_null());",
-          "assert!(sqlx::query(&sql).bind(id).execute(&db.pool).await.is_err(),"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.performance_cases",
-              "quality.nonfinite_inputs"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "同一目标用固定 Python `performance_cases` 覆盖有限时长、TTFT/TPS 边界、媒体排除和普通非法值；NaN first_token_ms 的 Python 期望仍明确保留，临时 PostgreSQL 实证 `first_token_ms`/`duration_ms` 为 BIGINT 且拒绝 NaN，按生产输入域边界替代内存 NaN 输入，不改 schema。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_absolute_severe_performance_caps_without_a_baseline",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 覆盖无 baseline 的绝对 TTFT/TPS 严重上限和同 cohort 79 分上限。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_curves_percentiles_and_boundaries",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::quantile(",
-          "quality::reliability(&successes, &errors, recent)",
-          "quality::build_baselines(&curve_peers)",
-          "quality::metric_window(&samples, metric, &curve_baselines)"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.quantile_cases",
-              "quality.error_curve_cases",
-              "quality.performance_curve_peer_samples",
-              "quality.performance_curve_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust 公有 reliability 与 metric_window API 对旧 ERROR_CURVE/PERF_CURVE 锚点、中间点和边界做向量比较，并核对 quantile。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_equal_performance_scores_and_oauth_key_same_standard",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 比较 OAuth/Key 相同性能基准、93 分和绿色等级。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_fast_errors_cannot_hide_failure_ratio",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring vectors 使用同一批快速成功样本分别叠加 1/4 个失败，比较 score cap 与原因。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_heavy_and_light_models_normalize_independently",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 对 heavy/light cohort 分别建基准并比较两账号 score。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_missing_ttft_does_not_become_fast_zero_or_drop_tps",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust calculate projection 逐字段比较缺失 TTFT 与保留吞吐量、missing_reason 和不造分行为。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_model_effort_service_transport_and_platform_never_cross",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring vectors 隔离 upstream model、reasoning、service tier、transport 与平台 cohort。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_normal_quota_does_not_lower_quality",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 将 usage quota error 排除后与固定旧实现质量摘要逐字段比较。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_only_input_bucket_fallback_and_equal_account_weight_baseline",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring projection 比较全输入规模 fallback、account 等权 baseline 样本数和中位数。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_quality_score_keeps_50_25_25_weights",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "assert_json_numbers_equal(",
-          "if scenario[\"id\"] == \"distinct_real_components_round_to_65\"",
-          "assert_eq!(components[\"score\"], 65);"
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "ids": [
-              "ScoringTests.test_quality_score_keeps_50_25_25_weights"
-            ],
-            "json_paths": [
-              "quality.scoring_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "用固定旧实现生成的真实 reliability/TTFT/throughput 结果计算评分，精确验证 50/25/25 权重及 round-to-65；不再靠 Python monkey patch 注入中间结果。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_recent_unknown_model_is_not_hidden_by_comparable_old_history",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 比较未知新模型的 24h mode、coverage 和 missing reason。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_recent_weight_and_insufficient_recent_fall_back",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring fixture 比较 recent/history 70/30 权重及近期样本不足回退到 7d。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_sample_gates_and_coverage",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring vectors 比较 empty/19 个样本、低覆盖、重复 ID 与新模型 0.5 coverage 门槛。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_three_distinct_failures_force_red_with_insufficient_samples",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust scoring vectors 比较三类失败、成功恢复、request 去重和未知 request 结果。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_quality:ScoringTests.test_unavailable_throughput_is_reported_without_fabricating_a_score",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
-        "test_name": "quality_evidence_performance_and_scoring_match_pinned_python",
+        "test_name": "account_quality_detail_route_is_removed",
         "assertions": [
-          "quality::failure_cause(&case[\"row\"])",
-          "quality::failures(",
-          "quality::performance(",
-          "quality::calculate(",
-          "quality::quantile("
+          "assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);"
         ],
-        "fixtures": [
-          {
-            "path": "tests/contracts/projection/fixtures.json",
-            "json_paths": [
-              "quality.failure_cause_cases",
-              "quality.evidence_cases",
-              "quality.performance_cases",
-              "quality.scoring_cases",
-              "quality.dedup_case",
-              "quality.quantile_cases"
-            ]
-          }
-        ]
+        "fixtures": []
       },
-      "coverage_note": "Rust calculate projection 验证无可用 TPS 样本时不生成质量分并报告原因。"
+      "coverage_note": "按批准的 0.1.48 变更将账号质量评分契约标记为 superseded；固定 Python 对照保持不变，实际 Rust 路由的 404 替代契约明确覆盖接口移除，slow_ttft 与代理质量检查另行保留。",
+      "replacement": {
+        "legacy_assertions": [
+          "固定 Python account_quality 的评分、证据归因、缓存刷新/过期、只读查询与详情路由断言已整体退役。"
+        ],
+        "approved_requirement": "移除账号质量评分、quality_cache、Runtime.quality、account.quality 与 GET /accounts/:id/quality；保留代理 quality-check 与容量 slow_ttft 线索。",
+        "replacement_contract": "Rust 实际路由对未认证 GET /api/desktop/v1/accounts/{id}/quality 返回 404；slow_ttft 证据与代理诊断分别保留直接测试，固定 Python 对照及旧测试 ID 保持原样。"
+      }
     },
     {
       "legacy_test_id": "py:tests.test_account_settings035:OperationsContracts035Tests.test_busy_settings_operation_remains_queued_then_runs_once",
@@ -10313,9 +10095,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10328,20 +10110,22 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
-      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "coverage_note": "0.1.47 的当前账号候选规则继续保留；0.1.48 修复目录来源，直接读取该账号实际提供商目录，保留固定 Python 预期并明确验证差异。普通模型查询与原生 SSE 行为继续对照。",
       "replacement": {
         "legacy_assertions": [
           "旧候选来自启用分组白名单，保留未出现在上游目录的文本 ID。"
         ],
-        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
-        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；0.1.48 通过实际凭据、父账号关系及代理读取提供商目录，避免后台模型映射和默认回退干扰。所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号提供商目录恰好一次，且不访问后台映射目录；候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
       }
     },
     {
@@ -10374,9 +10158,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10389,11 +10173,13 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
       "coverage_note": "live group union filters provider catalogue in exact Python-derived order and deduplicates duplicate model IDs"
@@ -10458,9 +10244,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10473,11 +10259,13 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
       "coverage_note": "missing and legacy true confirmation both work; unknown mode returns 422 before native request"
@@ -10491,9 +10279,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10506,20 +10294,22 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
-      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "coverage_note": "0.1.47 的当前账号候选规则继续保留；0.1.48 修复目录来源，直接读取该账号实际提供商目录，保留固定 Python 预期并明确验证差异。普通模型查询与原生 SSE 行为继续对照。",
       "replacement": {
         "legacy_assertions": [
           "旧完整分组白名单绕过账号目录读取，并补入目录未返回的 ID。"
         ],
-        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
-        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；0.1.48 通过实际凭据、父账号关系及代理读取提供商目录，避免后台模型映射和默认回退干扰。所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号提供商目录恰好一次，且不访问后台映射目录；候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
       }
     },
     {
@@ -10531,9 +10321,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10546,11 +10336,13 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
       "coverage_note": "无分组及禁用白名单均读取当前账号目录并保留文本过滤；0.1.47 此规则对所有分组状态统一适用。"
@@ -10564,9 +10356,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10579,20 +10371,22 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
-      "coverage_note": "0.1.47 批准的候选规则变更；保留固定 Python 原始预期并明确断言差异，普通模型查询与原生 SSE 行为继续对照。",
+      "coverage_note": "0.1.47 的当前账号候选规则继续保留；0.1.48 修复目录来源，直接读取该账号实际提供商目录，保留固定 Python 预期并明确验证差异。普通模型查询与原生 SSE 行为继续对照。",
       "replacement": {
         "legacy_assertions": [
           "旧提交可通过分组白名单判断，不必读取当前账号目录。"
         ],
-        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；所有提交校验复用该目录。",
-        "replacement_contract": "真实路由读取当前账号目录恰好一次，候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
+        "approved_requirement": "0.1.47 模型测试仅使用当前账号上游目录的文本模型，不补白名单、不查其他账号；0.1.48 通过实际凭据、父账号关系及代理读取提供商目录，避免后台模型映射和默认回退干扰。所有提交校验复用该目录。",
+        "replacement_contract": "真实路由读取当前账号提供商目录恰好一次，且不访问后台映射目录；候选为 fixture-model-a/b，拒绝仅白名单中的 fixture-not-in-catalog、通配符及媒体模型；model_allowed 复用同一缓存；普通查询和原生测试 SSE 继续匹配固定 Python。"
       }
     },
     {
@@ -10604,9 +10398,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10619,11 +10413,13 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
       "coverage_note": "live group allowlist union filters the provider catalog; actual API performs one upstream model request"
@@ -10637,9 +10433,9 @@
         "test_name": "desktop_model_options_live_allowlists_and_sse_payload_match_python_oracle",
         "assertions": [
           "assert_eq!(status, 200)",
-          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        exact,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_ne!(\n        exact,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"exact_candidates\"]\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        1,\n        \"model tests always read the current account directory, including complete allowlists\"\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/fixture-models/{account_id}\")\n            )\n            .len(),\n        1,\n        \"model tests read the current provider directory, including complete allowlists\"\n    )",
           "assert_eq!(\n            harness\n                .runtime\n                .actions\n                .model_allowed(&row, model)\n                .await\n                .unwrap(),\n            expected,\n            \"model candidate {model} must be rechecked against the current account directory\"\n        )",
           "assert_eq!(\n        normal,\n        fixtures()[\"python_oracle\"][\"desktop_actions\"][\"filtered_model_options\"]\n    )",
           "assert_eq!(\n        content,\n        expected_content\n            .iter()\n            .map(String::as_str)\n            .collect::<Vec<_>>(),\n        \"unexpected synthetic SSE stream: {stream:?}; parsed events: {events:?}\"\n    )",
@@ -10652,11 +10448,13 @@
           "assert_eq!(unknown_mode.0, 422)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::POST,\n                &format!(\"/api/v1/admin/accounts/{account_id}/test\")\n            )\n            .len(),\n        2,\n        \"invalid test modes are rejected before contacting Sub2API\"\n    )",
           "assert_eq!(no_group_fallback.0, 200)",
-          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"text\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"text\"}\n        ])\n    )",
+          "assert_eq!(\n        no_group_fallback.1,\n        json!([\n            {\"id\":\"fixture-model-a\",\"display_name\":\"fixture-model-a\",\"type\":\"model\"},\n            {\"id\":\"fixture-model-b\",\"display_name\":\"fixture-model-b\",\"type\":\"model\"}\n        ])\n    )",
           "assert_eq!(disabled_fallback.0, 200)",
           "assert_eq!(disabled_fallback.1, no_group_fallback.1)",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        1\n    )",
-          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        1\n    )"
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{no_group_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{disabled_account}/models\"),\n            )\n            .len(),\n        0\n    )",
+          "assert_eq!(\n        harness\n            .upstream\n            .matching(\n                Method::GET,\n                &format!(\"/api/v1/admin/accounts/{account_id}/models\")\n            )\n            .len(),\n        0,\n        \"model tests do not use the mapped Sub2API admin model directory\"\n    )",
+          "assert_eq!(\n            harness\n                .upstream\n                .matching(Method::GET, &format!(\"/fixture-models/{account}\"))\n                .len(),\n            1,\n            \"model candidates come from each account's direct provider endpoint\"\n        )"
         ]
       },
       "coverage_note": "exact Python SSE content chunks retain whitespace/newlines; test can be repeated without confirmation after lock release"
@@ -25556,8 +25354,8 @@
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "slow_ttft_and_local_capacity_evidence_match_pinned_python",
         "assertions": [
-          "quality::slow_warning(",
-          "quality::slow_sample(",
+          "slow_ttft::slow_warning(",
+          "slow_ttft::slow_sample(",
           "error_evidence::local_throttle(",
           "error_evidence::match_message("
         ],
@@ -25568,9 +25366,7 @@
               "slow.warning_cases",
               "slow.sample_exclusions",
               "slow.throttle_cases",
-              "slow.capacity_cases",
-              "slow.failure_cause_cases",
-              "slow.calculate_warning_expected"
+              "slow.capacity_cases"
             ]
           }
         ]
@@ -25609,8 +25405,8 @@
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "slow_ttft_and_local_capacity_evidence_match_pinned_python",
         "assertions": [
-          "quality::slow_warning(",
-          "quality::slow_sample(",
+          "slow_ttft::slow_warning(",
+          "slow_ttft::slow_sample(",
           "error_evidence::local_throttle(",
           "error_evidence::match_message("
         ],
@@ -25621,9 +25417,7 @@
               "slow.warning_cases",
               "slow.sample_exclusions",
               "slow.throttle_cases",
-              "slow.capacity_cases",
-              "slow.failure_cause_cases",
-              "slow.calculate_warning_expected"
+              "slow.capacity_cases"
             ]
           }
         ]
@@ -25638,8 +25432,8 @@
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "slow_ttft_and_local_capacity_evidence_match_pinned_python",
         "assertions": [
-          "quality::slow_warning(",
-          "quality::slow_sample(",
+          "slow_ttft::slow_warning(",
+          "slow_ttft::slow_sample(",
           "error_evidence::local_throttle(",
           "error_evidence::match_message("
         ],
@@ -25650,9 +25444,7 @@
               "slow.warning_cases",
               "slow.sample_exclusions",
               "slow.throttle_cases",
-              "slow.capacity_cases",
-              "slow.failure_cause_cases",
-              "slow.calculate_warning_expected"
+              "slow.capacity_cases"
             ]
           }
         ]
@@ -25667,8 +25459,8 @@
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "slow_ttft_and_local_capacity_evidence_match_pinned_python",
         "assertions": [
-          "quality::slow_warning(",
-          "quality::slow_sample(",
+          "slow_ttft::slow_warning(",
+          "slow_ttft::slow_sample(",
           "error_evidence::local_throttle(",
           "error_evidence::match_message("
         ],
@@ -25679,9 +25471,7 @@
               "slow.warning_cases",
               "slow.sample_exclusions",
               "slow.throttle_cases",
-              "slow.capacity_cases",
-              "slow.failure_cause_cases",
-              "slow.calculate_warning_expected"
+              "slow.capacity_cases"
             ]
           }
         ]
@@ -25696,8 +25486,8 @@
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "slow_ttft_and_local_capacity_evidence_match_pinned_python",
         "assertions": [
-          "quality::slow_warning(",
-          "quality::slow_sample(",
+          "slow_ttft::slow_warning(",
+          "slow_ttft::slow_sample(",
           "error_evidence::local_throttle(",
           "error_evidence::match_message("
         ],
@@ -25708,9 +25498,7 @@
               "slow.warning_cases",
               "slow.sample_exclusions",
               "slow.throttle_cases",
-              "slow.capacity_cases",
-              "slow.failure_cause_cases",
-              "slow.calculate_warning_expected"
+              "slow.capacity_cases"
             ]
           }
         ]

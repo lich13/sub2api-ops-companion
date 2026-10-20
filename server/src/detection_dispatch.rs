@@ -148,7 +148,9 @@ impl Detection {
                     });
             }
             Ok(())
-        })
+        })?;
+        self.log_receipt(string(&disposition["job_id"]), "disposition", disposition);
+        Ok(())
     }
     fn notification_current(&self, event: &Value, current: &Value) -> Result<bool> {
         if !matches!(string(&event["status"]), "queued" | "retry")

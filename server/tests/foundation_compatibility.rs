@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use sub2ops_server::{
     compat, model_catalog, model_config, model_rules,
     oauth_state::{self, OAuthState, Update},
-    quality, quota, store, usage,
+    quota, store, usage,
 };
 
 const VERSION_VECTORS: &str = include_str!("../../tests/contracts/version-vectors.json");
@@ -257,148 +257,20 @@ fn quota_windows_and_read_only_usage_projections_match_python() {
     );
 }
 
-fn sample_value(sample: Option<quality::Sample>) -> Value {
-    match sample {
-        Some(sample) => json!({
-            "account_id": sample.account_id,
-            "at": compat::datetime(sample.at),
-            "cohort": sample.cohort,
-            "ttft": sample.ttft,
-            "tps": sample.tps,
-        }),
-        None => Value::Null,
-    }
-}
-
-fn quality_projection(summary: &Value) -> Value {
-    let fields = |source: &Value, keys: &[&str]| {
-        Value::Object(
-            keys.iter()
-                .map(|key| ((*key).to_owned(), source[*key].clone()))
-                .collect(),
-        )
-    };
-    json!({
-        "account_id": summary["account_id"],
-        "score": summary["score"],
-        "grade": summary["grade"],
-        "reasons": summary["reasons"],
-        "sample_status": summary["sample_status"],
-        "cap": summary["cap"],
-        "consecutive_failures": summary["consecutive_failures"],
-        "coverage": summary["coverage"],
-        "reliability": fields(&summary["reliability"], &["successes", "failures", "total", "causes", "mode", "score", "effective_rate"]),
-        "ttft": fields(&summary["ttft"], &["samples", "compared", "coverage", "score", "p50", "tail", "missing_reason"]),
-        "throughput": fields(&summary["throughput"], &["samples", "compared", "coverage", "score", "p50", "tail", "missing_reason"]),
-    })
-}
-
-fn assert_json_close(actual: &Value, expected: &Value, context: &str) {
-    if actual.is_number() && expected.is_number() {
-        if let (Some(actual), Some(expected)) = (actual.as_f64(), expected.as_f64()) {
-            assert!(
-                (actual - expected).abs() <= 1e-9,
-                "{context}: expected {expected}, got {actual}"
-            );
-            return;
-        }
-    }
-    match (actual, expected) {
-        (Value::Object(actual), Value::Object(expected)) => {
-            assert_eq!(
-                actual.keys().collect::<BTreeSet<_>>(),
-                expected.keys().collect::<BTreeSet<_>>(),
-                "{context} keys"
-            );
-            for (key, expected_value) in expected {
-                assert_json_close(&actual[key], expected_value, &format!("{context}.{key}"));
-            }
-        }
-        (Value::Array(actual), Value::Array(expected)) => {
-            assert_eq!(actual.len(), expected.len(), "{context} length");
-            for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
-                assert_json_close(actual, expected, &format!("{context}[{index}]"));
-            }
-        }
-        _ => assert_eq!(actual, expected, "{context}"),
-    }
-}
-
 #[test]
-fn quality_scoring_exclusions_and_performance_samples_match_python() {
+fn account_quality_removal_contract_is_explicit() {
     let document = fixture();
-    let quality_fixture = &document["quality"];
-    let at = datetime(&document["at"]);
-    let accounts = quality_fixture["accounts"].as_array().unwrap();
-    let mut account_map = BTreeMap::new();
-    for account in accounts {
-        account_map.insert(account["id"].as_i64().unwrap(), account.clone());
-    }
-
-    for case in quality_fixture["failure_cases"].as_array().unwrap() {
-        let actual = quality::failure_cause(&case["row"])
-            .map(Value::from)
-            .unwrap_or(Value::Null);
-        assert_eq!(
-            actual, case["expected_cause"],
-            "failure cause case {}",
-            case["name"]
-        );
-    }
-    let errors: Vec<Value> = quality_fixture["failure_cases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|case| case["row"].clone())
-        .collect();
-    let failures = quality::failures(&errors, &account_map, at);
-    let expected_failures = quality_fixture["expected_failures"].as_array().unwrap();
+    let contract = &document["account_quality_removed"];
+    assert_eq!(contract["status"], "removed");
     assert_eq!(
-        failures.len(),
-        expected_failures.len(),
-        "quota/local/client noise must be excluded"
+        contract["route"],
+        "GET /api/desktop/v1/accounts/{id}/quality"
     );
-    for (actual, expected) in failures.iter().zip(expected_failures) {
-        assert_eq!(actual.account_id, expected["account_id"].as_i64().unwrap());
-        assert_eq!(
-            compat::datetime(actual.at),
-            expected["at"].as_str().unwrap()
-        );
-        assert_eq!(actual.cause, expected["cause"].as_str().unwrap());
-        assert_eq!(
-            actual.request_known,
-            expected["request_known"].as_bool().unwrap()
-        );
-    }
-
-    for case in quality_fixture["performance_cases"].as_array().unwrap() {
-        let actual = sample_value(quality::performance(&case["row"], &accounts[0]));
-        assert_eq!(
-            actual, case["expected"],
-            "performance case {}",
-            case["name"]
-        );
-    }
-
-    let usage_rows = quality_fixture["usage_rows"].as_array().unwrap();
-    let (summaries, _) = quality::calculate(accounts, usage_rows, &errors, at, None);
-    let expected = quality_fixture["expected_summaries"].as_object().unwrap();
+    assert_eq!(contract["expected_status"], 404);
     assert_eq!(
-        summaries.len(),
-        expected.len(),
-        "deleted/non-target platform accounts are excluded"
+        contract["replacements"],
+        json!(["proxy quality-check", "capacity slow_ttft evidence"])
     );
-    for (account_id, expected_summary) in expected {
-        let account_id = account_id.parse::<i64>().unwrap();
-        let actual = summaries
-            .get(&account_id)
-            .expect("expected eligible account summary");
-        assert_json_close(
-            &quality_projection(actual),
-            expected_summary,
-            &format!("account {account_id}"),
-        );
-    }
 }
 
 #[test]

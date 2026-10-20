@@ -97,6 +97,11 @@ impl credit::Hooks for Hooks {
     }
 }
 impl oauth_monitor::RecoveryHooks for Hooks {
+    fn model_notification(&self, job_id: &str, suppressed: bool) -> Result<()> {
+        self.runtime()?
+            .detection
+            .log_notification(job_id, suppressed)
+    }
     fn model_recovery(
         &self,
         id: i64,

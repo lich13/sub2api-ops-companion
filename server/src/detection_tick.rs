@@ -255,10 +255,7 @@ impl Detection {
             if parse_datetime(&value["candidate_recheck_at"]).is_some_and(|at| self.now() < at) {
                 return Ok(());
             }
-            let allowed = self
-                .actions
-                .model_allowed(&row, string(&value["model_id"]))
-                .await?;
+            let allowed = self.actions.model_allowed(&row, &self.model_id()?).await?;
             let bank = self.tests.bank.snapshot();
             if !allowed || !bank_contains(&bank.0, TARGET) {
                 self.update(

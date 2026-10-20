@@ -502,6 +502,9 @@ impl Monitor {
         };
         let key = format!("recovery:{id}:{fingerprint}:{suffix}");
         let mut event = json!({"account_id":id,"account_name":row["name"].as_str().filter(|v|!v.is_empty()).unwrap_or("-"),"plan_type":quota::account_plan(row),"window_labels":intent["window_keys"].as_array().into_iter().flatten().map(|v|string(v).trim_start_matches("codex_")).collect::<Vec<_>>(),"status":status,"stage":if status=="auth_failed" {"account_test"} else {"recovery"},"checked_at":datetime(at),"model_id":test["model_id"],"duration_ms":test["duration_ms"],"test_success":truthy(&test["success"]),"error_code":code,"error":safe_error(&test["error"],800),"dedupe_key":key,"reset_at":intent["due_at"],"reset_source":intent["source"],"fingerprint":fingerprint,"remaining_summary":summary["remaining_summary"]});
+        if test["job_id"].is_string() {
+            event["model_test_job_id"] = test["job_id"].clone();
+        }
         for key in [
             "early_reset_detected",
             "old_7d_used_percent",
@@ -649,7 +652,7 @@ impl Monitor {
         if !recovery_events::known(&key, id, &self.state()?) {
             update.pending.insert(key.clone(), event);
         }
-        update.history.insert(key,json!({"account_id":id,"account_name":row["name"],"model_id":test["model_id"],"legacy":false,"test_completed_at":test["completed_at"],"recovered_at":datetime(at)}));
+        update.history.insert(key,json!({"account_id":id,"account_name":row["name"],"model_test_job_id":test["job_id"],"model_id":test["model_id"],"legacy":false,"test_completed_at":test["completed_at"],"recovered_at":datetime(at)}));
         update.generations = Some(BTreeMap::from([(id, generation)]));
         update.methods = Some(BTreeMap::from([(id, method_generation)]));
         self.store.commit(update)?;

@@ -42,7 +42,6 @@ const props = (overrides: Partial<ComponentProps<typeof MobileAccounts>> = {}) =
   selected: new Set<number>(),
   select: vi.fn(),
   schedule: () => null,
-  quality: vi.fn(),
   error: vi.fn(),
   report: vi.fn(),
   accountActions: () => [] as AccountActionItem[],
