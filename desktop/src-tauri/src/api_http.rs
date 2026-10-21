@@ -558,6 +558,9 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["features"]
                     .get("account_priority_ordering")
                     .is_none_or(Value::is_boolean)
+                && data["features"]
+                    .get("account_priority_per_platform")
+                    .is_none_or(Value::is_boolean)
                 && (data["upstream_connection"].is_null()
                     || connection_valid(&data["upstream_connection"]))
         }
@@ -566,10 +569,26 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         p if p.starts_with("/proxies/") => proxy_diagnostic_valid(p, data),
         p if p.ends_with("/settings") => settings_valid(data),
         "/detection-logs" => detection_logs_valid(data),
-        "/account-priorities" => crate::priority_api::list(data),
-        "/account-priority-orders" => crate::priority_api::task(data, true),
+        "/account-priorities" => {
+            if crate::priority_api::is_v2(path) {
+                crate::priority_api::list_v2(data)
+            } else {
+                crate::priority_api::list(data)
+            }
+        }
+        "/account-priority-orders" => {
+            if crate::priority_api::is_v2(path) {
+                crate::priority_api::task_v2(data, true)
+            } else {
+                crate::priority_api::task(data, true)
+            }
+        }
         p if p.starts_with("/account-priority-orders/") => {
-            crate::priority_api::task(data, true) && p.split('/').nth(2) == data["id"].as_str()
+            (if crate::priority_api::is_v2(path) {
+                crate::priority_api::task_v2(data, !crate::priority_api::is_summary(path))
+            } else {
+                crate::priority_api::task(data, true)
+            }) && p.split('/').nth(2) == data["id"].as_str()
         }
         "/errors" => data["items"].is_array(),
         "/recoveries" => recoveries_valid(&data["items"]),

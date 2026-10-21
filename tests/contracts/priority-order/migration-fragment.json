@@ -2,7 +2,7 @@
   "schema_version": 1,
   "feature": "account-priority-ordering",
   "fixture": "tests/contracts/priority-order/fixtures.json",
-  "approved_requirement": "0.1.50 approved plan extension: durable account priority ordering contracts are covered by native Rust integration tests.",
+  "approved_requirement": "0.1.51 approved plan extension: platform-scoped one-based ordering, legacy protocol and active-task retirement, restart-safe dispatch, full history retention, and summary polling are verified by native Rust contracts. The fixed 0.1.50 fixture remains unchanged.",
   "verification_command": ".venv/bin/python scripts/server_test.py --test priority_order_contract",
   "target": {
     "kind": "rust_integration_test",
@@ -159,6 +159,90 @@
         "assert_eq!(submit.status.as_u16(), 409);",
         "assert_eq!(status, 503, \"corrupt state must fail explicitly: {text}\");"
       ]
+    },
+    {
+      "contract": "legacy list keeps its exact field set while schema 2 groups complete live accounts by platform",
+      "test": "priority_v2_view_is_platform_scoped_and_legacy_list_stays_read_only",
+      "assertions": [
+        "assert_eq!(keys, vec![\"active_task\", \"legacy_last_task\", \"platforms\"]);",
+        "assert_eq!(item[\"platform\"], platform[\"platform\"]);"
+      ]
+    },
+    {
+      "contract": "schema 2 submission starts execution immediately and summary reads exclude individual items",
+      "test": "priority_v2_submit_starts_without_tick_and_details_zero_is_summary_only",
+      "assertions": [
+        "assert_eq!(accepted[\"base\"], 1);",
+        "assert!(summary.get(\"items\").is_none(), \"details=0 must omit items\");"
+      ]
+    },
+    {
+      "contract": "busy accounts wait while dispatch remains serial and only changed items are written",
+      "test": "priority_v2_busy_items_wait_and_progress_with_one_dispatched_item",
+      "assertions": [
+        "assert!(dispatched <= 1, \"at most one item may be dispatched\");",
+        "assert_eq!(harness.upstream.count_method(Method::PUT), 3);"
+      ]
+    },
+    {
+      "contract": "more than twenty completed tasks retain every history entry and idempotency registration in a separate v2 file",
+      "test": "priority_v2_history_is_not_trimmed_and_legacy_store_is_separate",
+      "assertions": [
+        "assert!(state[\"jobs\"].as_object().unwrap().len() >= 21);",
+        "assert!(state[\"requests\"].as_object().unwrap().len() >= 21);"
+      ]
+    },
+    {
+      "contract": "restarting after an applied write preserves its verified result without another PUT",
+      "test": "priority_v2_restart_does_not_replay_a_verified_write",
+      "assertions": [
+        "assert_eq!(after[\"status\"], \"completed\");",
+        "assert_eq!(harness.upstream.count_put_for(id), 1);"
+      ]
+    },
+    {
+      "contract": "upgrade retires legacy active work and legacy global submission explicitly requires a newer client",
+      "test": "priority_v2_retires_legacy_active_state_and_rejects_legacy_post",
+      "assertions": [
+        "assert_eq!(value[\"detail\"][\"code\"], \"client_upgrade_required\");",
+        "assert!(legacy[\"active_task\"].is_null());"
+      ]
+    },
+    {
+      "contract": "platform membership changes stop pending writes before any cross-platform dispatch",
+      "test": "platform_migration_stops_remaining_order_without_cross_platform_dispatch",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(harness.upstream.count_method(Method::PUT), 0);"
+      ]
+    },
+    {
+      "contract": "mixed or incomplete platform collections are rejected while unknown platforms use one-based numbering",
+      "test": "priority_v2_rejects_mixed_or_incomplete_sets_and_accepts_unknown_platforms",
+      "assertions": [
+        "assert_eq!(status, 409, \"mixed-platform order must be rejected: {text}\");",
+        "assert_eq!(accepted[\"items\"][0][\"target_priority\"], 1);"
+      ]
+    },
+    {
+      "contract": "unavailable worker authorization stops pending writes for confirmation",
+      "test": "priority_v2_missing_worker_auth_stops_before_dispatch",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(harness.upstream.count_put_for(id), 0);"
+      ]
+    },
+    {
+      "contract": "legacy dispatched writes are reconciled on upgrade without replay or priority rollback",
+      "test": "priority_legacy_retirement_reconciles_dispatched_without_replay",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(harness.upstream.count_put_for(account_id), 0);"
+      ]
     }
+  ],
+  "additional_fixtures": [
+    "tests/contracts/priority-order/fixtures-v2.json",
+    "tests/contracts/priority-order/legacy-active.json"
   ]
 }

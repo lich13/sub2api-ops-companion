@@ -460,6 +460,9 @@ impl Actions {
                     &credit_ownership::account(&self.queries.db, id).await?,
                 )?;
             }
+            if action == "priority" {
+                self.priorities.after_write(id, &actual)?;
+            }
             let mut result = current_value(&actual, action)?;
             result["verified"] = true.into();
             let versions = operation_versions(&actual, false);

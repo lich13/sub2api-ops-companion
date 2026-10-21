@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "active_id": "0123456789abcdef0123456789abcdef",
+  "last_id": "0123456789abcdef0123456789abcdef",
+  "jobs": {
+    "0123456789abcdef0123456789abcdef": {
+      "id": "0123456789abcdef0123456789abcdef",
+      "status": "queued",
+      "reason": "等待执行",
+      "cancel_requested": false,
+      "request_id": "fixture-legacy-active-0001",
+      "client_id": "fixture-priority-order-client",
+      "request_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "completed_at": null,
+      "items": [
+        {
+          "account_id": 1,
+          "account_name": "legacy-fixture-account",
+          "original_priority": 0,
+          "target_priority": 0,
+          "expected_version": "0000000000000000000000000000000000000000000000000000000000000000",
+          "identity": "0000000000000000000000000000000000000000000000000000000000000000",
+          "capability": {"editable": true, "reason": ""},
+          "status": "unchanged",
+          "observed_priority": 0
+        }
+      ]
+    }
+  },
+  "requests": {
+    "fixture-legacy-active-0001": "0123456789abcdef0123456789abcdef"
+  }
+}

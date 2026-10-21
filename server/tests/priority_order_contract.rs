@@ -26,12 +26,17 @@ use sub2ops_server::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 
 const FIXTURES: &str = include_str!("../../tests/contracts/priority-order/fixtures.json");
+const FIXTURES_V2: &str = include_str!("../../tests/contracts/priority-order/fixtures-v2.json");
 const ADMIN_KEY: &str = "fixture-priority-order-admin";
 const CLIENT_ID: &str = "fixture-priority-order-client";
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(950_000_000);
 
 fn fixtures() -> Value {
     serde_json::from_str(FIXTURES).expect("priority-order fixture JSON must parse")
+}
+
+fn fixtures_v2() -> Value {
+    serde_json::from_str(FIXTURES_V2).expect("priority-order v2 fixture JSON must parse")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,6 +125,13 @@ impl MockUpstream {
 
     fn max_active_writes(&self) -> usize {
         self.max_active_writes.load(Ordering::Acquire)
+    }
+
+    fn count_method(&self, method: Method) -> usize {
+        self.calls()
+            .iter()
+            .filter(|call| call.method == method)
+            .count()
     }
 }
 
@@ -383,6 +395,14 @@ impl Harness {
         value
     }
 
+    async fn v2_view(&self) -> Value {
+        let (status, value, text) = self
+            .request(Method::GET, "account-priorities?schema=2", None)
+            .await;
+        assert_eq!(status, 200, "priority v2 view failed: {text}");
+        value
+    }
+
     async fn insert_account(&self, platform: &str, account_type: &str, priority: i64) -> i64 {
         let id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
         let credentials = if account_type == "apikey" {
@@ -432,10 +452,32 @@ impl Harness {
     }
 
     async fn submit(&self, ids: &[i64], version: &str, request_id: &str) -> (u16, Value, String) {
+        let platform = sqlx::query_scalar::<_, String>(
+            "SELECT platform FROM accounts WHERE id=$1 AND deleted_at IS NULL",
+        )
+        .bind(
+            ids.first()
+                .copied()
+                .expect("priority submit has an account"),
+        )
+        .fetch_one(&self.runtime.db.pool)
+        .await
+        .expect("read priority submit platform");
+        self.v2_submit(&platform, ids, version, request_id).await
+    }
+
+    async fn v2_submit(
+        &self,
+        platform: &str,
+        ids: &[i64],
+        version: &str,
+        request_id: &str,
+    ) -> (u16, Value, String) {
         self.request(
             Method::POST,
-            "account-priority-orders",
+            "account-priority-orders?schema=2",
             Some(json!({
+                "platform": platform,
                 "ordered_account_ids": ids,
                 "expected_version": version,
                 "request_id": request_id,
@@ -443,6 +485,50 @@ impl Harness {
             })),
         )
         .await
+    }
+
+    async fn v2_detail(&self, id: &str, details: bool) -> (u16, Value, String) {
+        let path = if details {
+            format!("account-priority-orders/{id}?schema=2")
+        } else {
+            format!("account-priority-orders/{id}?schema=2&details=0")
+        };
+        self.request(Method::GET, &path, None).await
+    }
+
+    async fn wait_v2_task(&self, id: &str) -> Value {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                let (status, value, text) = self.v2_detail(id, true).await;
+                assert_eq!(status, 200, "priority v2 task read failed: {text}");
+                if value["status"].as_str().is_some_and(|status| {
+                    ["completed", "failed", "cancelled", "needs_confirmation"].contains(&status)
+                }) {
+                    return value;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("priority v2 task should reach a terminal state")
+    }
+
+    async fn wait_v2_waiting(&self, id: &str, account_id: i64) -> Value {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                let (status, value, text) = self.v2_detail(id, true).await;
+                assert_eq!(status, 200, "priority v2 waiting task read failed: {text}");
+                let waiting_ids = value["waiting_account_ids"].as_array();
+                if waiting_ids
+                    .is_some_and(|ids| ids.iter().any(|id| id.as_i64() == Some(account_id)))
+                {
+                    return value;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("priority v2 task should expose its waiting account")
     }
 
     async fn tick(&self) {
@@ -456,9 +542,7 @@ impl Harness {
     async fn wait_task(&self, id: &str) -> Value {
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
-                let (status, value, text) = self
-                    .request(Method::GET, &format!("account-priority-orders/{id}"), None)
-                    .await;
+                let (status, value, text) = self.v2_detail(id, true).await;
                 assert_eq!(status, 200, "priority task read failed: {text}");
                 if value["status"].as_str().is_some_and(|status| {
                     ["completed", "failed", "cancelled", "needs_confirmation"].contains(&status)
@@ -494,6 +578,10 @@ impl Harness {
             (
                 old_usage.with_file_name("account-priority-orders.json"),
                 new_usage.with_file_name("account-priority-orders.json"),
+            ),
+            (
+                old_usage.with_file_name("account-priority-orders-v2.json"),
+                new_usage.with_file_name("account-priority-orders-v2.json"),
             ),
             (
                 old_usage.with_file_name("account-operations.json"),
@@ -623,8 +711,9 @@ async fn priority_view_is_cross_platform_versioned_and_excludes_deleted_accounts
 async fn priority_submit_is_idempotent_and_rejects_busy_or_conflicting_requests() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 0).await;
-    let b = harness.insert_account("grok", "apikey", 0).await;
-    let c = harness.insert_account("anthropic", "oauth", 0).await;
+    let b = harness.insert_account("openai", "apikey", 0).await;
+    let c = harness.insert_account("openai", "oauth", 0).await;
+    let _lease = harness.runtime.actions.locks.account(c).await;
     let view = harness.view().await;
     let version = view["version"].as_str().unwrap().to_owned();
     let ordered = vec![c, b, a];
@@ -636,15 +725,25 @@ async fn priority_submit_is_idempotent_and_rejects_busy_or_conflicting_requests(
     assert_eq!(id.len(), 32);
     assert_eq!(first["status"], "queued");
     assert_eq!(first["total"], 3);
-    assert_eq!(first["change_count"], 2);
-    assert_eq!(first["verified_count"], 1);
+    assert_eq!(first["change_count"], 3);
+    assert_eq!(first["verified_count"], 0);
 
     let (status, replay, text) = harness
         .submit(&ordered, &version, "fixture-priority-submit-0001")
         .await;
     assert_eq!(status, 200, "idempotent replay failed: {text}");
     assert_eq!(replay["id"], id);
-    assert_eq!(replay["items"], first["items"]);
+    assert_eq!(replay["platform"], first["platform"]);
+    assert_eq!(replay["total"], first["total"]);
+    assert_eq!(replay["change_count"], first["change_count"]);
+    assert_eq!(
+        replay["items"][0]["account_id"],
+        first["items"][0]["account_id"]
+    );
+    assert_eq!(
+        replay["items"][0]["target_priority"],
+        first["items"][0]["target_priority"]
+    );
 
     let mut conflicting = ordered.clone();
     conflicting.swap(0, 2);
@@ -674,25 +773,34 @@ async fn priority_submit_is_idempotent_and_rejects_busy_or_conflicting_requests(
 async fn concurrent_clients_admit_one_order_and_keep_the_other_busy() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 3).await;
-    let b = harness.insert_account("grok", "apikey", 4).await;
-    let view = harness.view().await;
-    let version = view["version"].as_str().unwrap().to_owned();
+    let b = harness.insert_account("openai", "apikey", 4).await;
+    let platform = "openai";
+    let v2_version = harness.v2_view().await["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["platform"] == platform)
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let body = |request_id: &str| {
         json!({
+            "platform":platform,
             "ordered_account_ids":[b,a],
-            "expected_version":version,
+            "expected_version":v2_version,
             "request_id":request_id,
             "client_id":CLIENT_ID
         })
     };
     let first = harness.request(
         Method::POST,
-        "account-priority-orders",
+        "account-priority-orders?schema=2",
         Some(body("fixture-priority-concurrent-a-0001")),
     );
     let second = harness.request(
         Method::POST,
-        "account-priority-orders",
+        "account-priority-orders?schema=2",
         Some(body("fixture-priority-concurrent-b-0001")),
     );
     let (first, second) = tokio::join!(first, second);
@@ -710,8 +818,8 @@ async fn concurrent_clients_admit_one_order_and_keep_the_other_busy() {
 async fn priority_order_writes_changed_items_serially_and_finishes_after_full_readback() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 7).await;
-    let b = harness.insert_account("grok", "apikey", 4).await;
-    let c = harness.insert_account("anthropic", "oauth", 2).await;
+    let b = harness.insert_account("openai", "apikey", 4).await;
+    let c = harness.insert_account("openai", "oauth", 2).await;
     let before = harness.view().await;
     let credentials_before =
         sqlx::query_scalar::<_, Value>("SELECT credentials FROM accounts WHERE id=$1")
@@ -743,9 +851,9 @@ async fn priority_order_writes_changed_items_serially_and_finishes_after_full_re
         .unwrap()
         .iter()
         .all(|item| item["status"] == "verified"));
-    assert_eq!(harness.priority(a).await, 2);
-    assert_eq!(harness.priority(b).await, 1);
-    assert_eq!(harness.priority(c).await, 0);
+    assert_eq!(harness.priority(a).await, 3);
+    assert_eq!(harness.priority(b).await, 2);
+    assert_eq!(harness.priority(c).await, 1);
     assert_eq!(harness.upstream.put_ids().len(), 3);
     assert_eq!(
         harness
@@ -756,7 +864,7 @@ async fn priority_order_writes_changed_items_serially_and_finishes_after_full_re
             .len(),
         3
     );
-    assert_eq!(harness.upstream.put_priorities(), vec![0, 1, 2]);
+    assert_eq!(harness.upstream.put_priorities(), vec![1, 2, 3]);
     assert_eq!(harness.upstream.max_active_writes(), 1);
     assert_eq!(
         sqlx::query_scalar::<_, Value>("SELECT credentials FROM accounts WHERE id=$1")
@@ -774,9 +882,17 @@ async fn priority_order_writes_changed_items_serially_and_finishes_after_full_re
             .unwrap(),
         extra_before
     );
-    let after = harness.view().await;
+    let after = harness.v2_view().await;
     assert!(after["active_task"].is_null());
-    assert_eq!(after["last_task"]["status"], "completed");
+    assert_eq!(
+        after["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["platform"] == "openai")
+            .unwrap()["last_task"]["status"],
+        "completed"
+    );
     harness.finish().await;
 }
 
@@ -784,7 +900,8 @@ async fn priority_order_writes_changed_items_serially_and_finishes_after_full_re
 async fn external_priority_change_stops_remaining_order_without_dispatch() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
-    let b = harness.insert_account("grok", "apikey", 7).await;
+    let b = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(b).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -799,6 +916,7 @@ async fn external_priority_change_stops_remaining_order_without_dispatch() {
         .execute(&harness.runtime.db.pool)
         .await
         .unwrap();
+    drop(lease);
     harness.tick().await;
     let detail = harness.wait_task(accepted["id"].as_str().unwrap()).await;
     assert_eq!(detail["status"], "needs_confirmation");
@@ -809,10 +927,62 @@ async fn external_priority_change_stops_remaining_order_without_dispatch() {
 }
 
 #[tokio::test]
+async fn platform_migration_stops_remaining_order_without_cross_platform_dispatch() {
+    let mut harness = Harness::new().await;
+    let first = harness.insert_account("openai", "oauth", 6).await;
+    let second = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(first).await;
+    let view = harness.v2_view().await;
+    let openai_version = view["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "openai",
+            &[first, second],
+            &openai_version,
+            "fixture-priority-platform-migration-0001",
+        )
+        .await;
+    assert_eq!(status, 200, "priority submit failed: {text}");
+    let order_id = accepted["id"].as_str().unwrap().to_owned();
+    sqlx::query("UPDATE accounts SET platform='grok',updated_at=now() WHERE id=$1")
+        .bind(second)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .expect("migrate the remaining account to another platform");
+    drop(lease);
+    for _ in 0..100 {
+        harness.tick().await;
+        let (_, detail, _) = harness.v2_detail(&order_id, true).await;
+        if matches!(
+            detail["status"].as_str(),
+            Some("needs_confirmation") | Some("failed")
+        ) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let detail = harness.wait_v2_task(&order_id).await;
+    assert_eq!(detail["status"], "needs_confirmation");
+    assert_eq!(harness.upstream.count_method(Method::PUT), 0);
+    assert_eq!(harness.priority(first).await, 6);
+    assert_eq!(harness.priority(second).await, 7);
+    harness.finish().await;
+}
+
+#[tokio::test]
 async fn account_addition_and_deletion_stop_orders_before_dispatch() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
-    let b = harness.insert_account("grok", "apikey", 7).await;
+    let b = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(b).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -823,7 +993,8 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
         .await;
     assert_eq!(status, 200, "priority submit failed: {text}");
     let first_id = accepted["id"].as_str().unwrap().to_owned();
-    let added = harness.insert_account("anthropic", "oauth", 9).await;
+    let added = harness.insert_account("openai", "oauth", 9).await;
+    drop(lease);
     harness.tick().await;
     let first = harness.wait_task(&first_id).await;
     assert_eq!(first["status"], "needs_confirmation");
@@ -853,7 +1024,8 @@ async fn account_addition_and_deletion_stop_orders_before_dispatch() {
 async fn cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
-    let b = harness.insert_account("grok", "apikey", 7).await;
+    let b = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(b).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -867,13 +1039,14 @@ async fn cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close() 
     let (status, cancelled, text) = harness
         .request(
             Method::POST,
-            &format!("account-priority-orders/{id}/cancel"),
+            &format!("account-priority-orders/{id}/cancel?schema=2"),
             None,
         )
         .await;
     assert_eq!(status, 200, "priority cancel failed: {text}");
     assert_eq!(cancelled["cancel_requested"], true);
     drop(cancelled);
+    drop(lease);
     harness.tick().await;
     let detail = harness.wait_task(&id).await;
     assert_eq!(detail["status"], "cancelled");
@@ -887,7 +1060,8 @@ async fn cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close() 
 async fn cancel_after_dispatch_does_not_replay_or_cancel_the_inflight_item() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
-    let b = harness.insert_account("grok", "apikey", 7).await;
+    let b = harness.insert_account("openai", "apikey", 7).await;
+    let gate = harness.upstream.set_gate(b);
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -898,29 +1072,19 @@ async fn cancel_after_dispatch_does_not_replay_or_cancel_the_inflight_item() {
         .await;
     assert_eq!(status, 200, "priority submit failed: {text}");
     let id = accepted["id"].as_str().unwrap().to_owned();
-    let gate = harness.upstream.set_gate(b);
-    let runtime = harness.runtime.clone();
-    let tick_task = tokio::spawn(async move {
-        runtime
-            .priorities
-            .tick()
-            .await
-            .expect("start gated priority tick");
-    });
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
         .await
         .expect("priority write should reach upstream once");
     let (status, cancelled, text) = harness
         .request(
             Method::POST,
-            &format!("account-priority-orders/{id}/cancel"),
+            &format!("account-priority-orders/{id}/cancel?schema=2"),
             None,
         )
         .await;
     assert_eq!(status, 200, "priority cancel failed: {text}");
     assert_eq!(cancelled["cancel_requested"], true);
     gate.release.notify_one();
-    tick_task.await.expect("gated priority tick task");
     let detail = harness.wait_task(&id).await;
     assert_eq!(detail["status"], "cancelled");
     assert_eq!(harness.upstream.count_put_for(b), 1);
@@ -987,7 +1151,7 @@ async fn unknown_write_that_was_applied_is_verified_without_a_second_put() {
     let detail = harness.wait_task(accepted["id"].as_str().unwrap()).await;
     assert_eq!(detail["status"], "completed");
     assert_eq!(harness.upstream.count_put_for(id), 1);
-    assert_eq!(harness.priority(id).await, 0);
+    assert_eq!(harness.priority(id).await, 1);
     assert_eq!(detail["items"][0]["status"], "verified");
     harness.finish().await;
 }
@@ -1076,7 +1240,8 @@ async fn restart_marks_an_unapplied_dispatched_write_for_confirmation_without_re
 async fn restart_continues_only_the_never_dispatched_remaining_item() {
     let mut harness = Harness::new().await;
     let first = harness.insert_account("openai", "oauth", 6).await;
-    let second = harness.insert_account("grok", "apikey", 7).await;
+    let second = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(second).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -1116,6 +1281,7 @@ async fn restart_continues_only_the_never_dispatched_remaining_item() {
             Ok(())
         })
         .expect("persist verified first item fixture");
+    drop(lease);
     harness.restart_runtime().await;
     let detail = harness.wait_task(&order_id).await;
     assert_eq!(detail["status"], "completed");
@@ -1132,6 +1298,7 @@ async fn parent_child_lock_blocks_the_child_then_resumes_without_parallel_writes
     let parent = harness.insert_account("openai", "oauth", 0).await;
     let child = harness.insert_account("openai", "oauth", 1).await;
     harness.set_parent(child, parent).await;
+    let parent_lease = harness.runtime.actions.locks.account(parent).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -1142,13 +1309,12 @@ async fn parent_child_lock_blocks_the_child_then_resumes_without_parallel_writes
         .await;
     assert_eq!(status, 200, "priority submit failed: {text}");
     let order_id = accepted["id"].as_str().unwrap().to_owned();
-    let parent_lease = harness.runtime.actions.locks.account(parent).await;
     harness.tick().await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let (status, active, text) = harness
         .request(
             Method::GET,
-            &format!("account-priority-orders/{order_id}"),
+            &format!("account-priority-orders/{order_id}?schema=2"),
             None,
         )
         .await;
@@ -1162,7 +1328,7 @@ async fn parent_child_lock_blocks_the_child_then_resumes_without_parallel_writes
     harness.tick().await;
     let detail = harness.wait_task(&order_id).await;
     assert_eq!(detail["status"], "completed");
-    assert_eq!(harness.upstream.count_put_for(child), 1);
+    assert_eq!(harness.upstream.count_put_for(child), 0);
     assert_eq!(harness.upstream.count_put_for(parent), 1);
     assert_eq!(harness.upstream.max_active_writes(), 1);
     harness.finish().await;
@@ -1268,7 +1434,8 @@ async fn queued_legacy_priority_operation_blocks_a_new_order() {
 async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
     let mut harness = Harness::new().await;
     let a = harness.insert_account("openai", "oauth", 6).await;
-    let b = harness.insert_account("grok", "apikey", 7).await;
+    let b = harness.insert_account("openai", "apikey", 7).await;
+    let lease = harness.runtime.actions.locks.account(a).await;
     let view = harness.view().await;
     let (status, accepted, text) = harness
         .submit(
@@ -1301,10 +1468,11 @@ async fn legacy_priority_write_is_mutually_exclusive_with_active_order() {
     harness
         .request(
             Method::POST,
-            &format!("account-priority-orders/{order_id}/cancel"),
+            &format!("account-priority-orders/{order_id}/cancel?schema=2"),
             None,
         )
         .await;
+    drop(lease);
     harness.tick().await;
     let _ = harness.wait_task(order_id).await;
     let current = harness
@@ -1344,7 +1512,7 @@ async fn read_only_startup_only_reads_priority_order_state() {
             "fixture-priority-readonly-0001",
         )
         .await;
-    let _ = accepted;
+    let _ = harness.wait_task(accepted["id"].as_str().unwrap()).await;
     let path = harness.runtime.priorities.store.path().to_path_buf();
     let before = fs::read(&path).expect("priority-order state exists");
     let mut settings = (*harness.runtime.settings).clone();
@@ -1381,7 +1549,7 @@ async fn corrupt_priority_state_fails_explicitly_and_missing_read_only_state_sta
         .expect("read-only startup should be a no-op");
     let view = read_only
         .priorities
-        .view()
+        .view(false)
         .await
         .expect("read-only view should use in-memory defaults");
     assert!(view["items"].is_array());
@@ -1407,4 +1575,618 @@ async fn corrupt_priority_state_fails_explicitly_and_missing_read_only_state_sta
         .await;
     assert_eq!(status, 503, "corrupt state must fail explicitly: {text}");
     harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_view_is_platform_scoped_and_legacy_list_stays_read_only() {
+    assert_eq!(fixtures_v2()["schema_version"], 2);
+    assert_eq!(fixtures_v2()["storage"]["version"], 2);
+    assert_eq!(
+        fixtures_v2()["storage"]["legacy_is_readonly"],
+        "read-only after active task retirement"
+    );
+
+    let mut harness = Harness::new().await;
+    let openai_a = harness.insert_account("openai", "oauth", 2).await;
+    let openai_b = harness.insert_account("openai", "oauth", 0).await;
+    let grok = harness.insert_account("grok", "apikey", 1).await;
+    let deleted = harness.insert_account("openai", "oauth", 4).await;
+    harness.delete_account(deleted).await;
+
+    let legacy = harness.view().await;
+    let mut legacy_keys = legacy
+        .as_object()
+        .expect("legacy priority list object")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    legacy_keys.sort();
+    assert_eq!(
+        legacy_keys,
+        vec!["active_task", "items", "last_task", "version"]
+    );
+
+    let view = harness.v2_view().await;
+    let mut keys = view
+        .as_object()
+        .expect("priority v2 view object")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    keys.sort();
+    assert_eq!(keys, vec!["active_task", "legacy_last_task", "platforms"]);
+    assert!(view["active_task"].is_null());
+    assert!(view["legacy_last_task"].is_null());
+    let platforms = view["platforms"].as_array().expect("platform list");
+    assert_eq!(platforms.len(), 2);
+    for platform in platforms {
+        assert!(platform["platform"].is_string());
+        assert!(platform["version"].as_str().is_some_and(|v| v.len() == 64));
+        assert!(platform["items"].is_array());
+        assert!(platform.get("last_task").is_some());
+        for item in platform["items"].as_array().unwrap() {
+            assert_eq!(item["platform"], platform["platform"]);
+            assert!(item["version"].as_str().is_some_and(|v| v.len() == 64));
+        }
+    }
+    let openai = platforms
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .expect("openai platform projection");
+    assert_eq!(
+        openai["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![openai_a, openai_b]
+    );
+    assert!(!openai["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == deleted));
+    assert!(platforms
+        .iter()
+        .find(|platform| platform["platform"] == "grok")
+        .unwrap()["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == grok));
+
+    let openai_version = platforms
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let grok_version = platforms
+        .iter()
+        .find(|platform| platform["platform"] == "grok")
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sqlx::query("UPDATE accounts SET priority=11,updated_at=now() WHERE id=$1")
+        .bind(grok)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .expect("change only the grok platform priority");
+    let isolated = harness.v2_view().await;
+    assert_eq!(
+        isolated["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["platform"] == "openai")
+            .unwrap()["version"],
+        openai_version
+    );
+    assert_ne!(
+        isolated["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["platform"] == "grok")
+            .unwrap()["version"],
+        grok_version
+    );
+    for path in [
+        "account-priorities?schema=2&schema=2",
+        "account-priorities?schema=3",
+        "account-priority-orders/00000000000000000000000000000000?schema=2&details=1",
+    ] {
+        let (status, _, text) = harness.request(Method::GET, path, None).await;
+        assert_eq!(
+            status, 422,
+            "invalid priority query must be rejected: {text}"
+        );
+    }
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_rejects_mixed_or_incomplete_sets_and_accepts_unknown_platforms() {
+    let mut harness = Harness::new().await;
+    let openai_a = harness.insert_account("openai", "oauth", 2).await;
+    let _openai_b = harness.insert_account("openai", "oauth", 4).await;
+    let grok = harness.insert_account("grok", "apikey", 1).await;
+    let unknown = harness
+        .insert_account("fixture-unknown-platform", "oauth", 3)
+        .await;
+    let view = harness.v2_view().await;
+    let platform_version = |name: &str| {
+        view["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["platform"] == name)
+            .unwrap()["version"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let openai_version = platform_version("openai");
+    let (status, _, text) = harness
+        .v2_submit(
+            "openai",
+            &[openai_a, grok],
+            &openai_version,
+            "fixture-priority-v2-mixed-0001",
+        )
+        .await;
+    assert_eq!(status, 409, "mixed-platform order must be rejected: {text}");
+    let (status, _, text) = harness
+        .v2_submit(
+            "openai",
+            &[openai_a],
+            &openai_version,
+            "fixture-priority-v2-incomplete-0001",
+        )
+        .await;
+    assert_eq!(
+        status, 409,
+        "incomplete platform collection must be rejected: {text}"
+    );
+
+    let unknown_version = platform_version("fixture-unknown-platform");
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "fixture-unknown-platform",
+            &[unknown],
+            &unknown_version,
+            "fixture-priority-v2-unknown-platform-0001",
+        )
+        .await;
+    assert_eq!(
+        status, 200,
+        "unknown platform order should be numbered: {text}"
+    );
+    assert_eq!(accepted["platform"], "fixture-unknown-platform");
+    assert_eq!(accepted["base"], 1);
+    assert_eq!(accepted["items"][0]["target_priority"], 1);
+    let detail = harness.wait_v2_task(accepted["id"].as_str().unwrap()).await;
+    assert_eq!(detail["status"], "completed");
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_submit_starts_without_tick_and_details_zero_is_summary_only() {
+    let mut harness = Harness::new().await;
+    let first = harness.insert_account("openai", "oauth", 2).await;
+    let second = harness.insert_account("openai", "oauth", 0).await;
+    let view = harness.v2_view().await;
+    let platform = view["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap();
+    let version = platform["version"].as_str().unwrap();
+    let lease = harness.runtime.actions.locks.account(first).await;
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "openai",
+            &[first, second],
+            version,
+            "fixture-priority-v2-submit-0001",
+        )
+        .await;
+    assert_eq!(status, 200, "priority v2 submit failed: {text}");
+    for key in ["platform", "base", "waiting_reason", "waiting_account_ids"] {
+        assert!(accepted.get(key).is_some(), "task missing {key}");
+    }
+    assert_eq!(accepted["platform"], "openai");
+    assert_eq!(accepted["base"], 1);
+    assert!(accepted["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["platform"] == "openai"));
+    let id = accepted["id"].as_str().unwrap().to_owned();
+    let (status, summary, text) = harness.v2_detail(&id, false).await;
+    assert_eq!(status, 200, "priority v2 summary failed: {text}");
+    assert!(summary.get("items").is_none(), "details=0 must omit items");
+    assert_eq!(summary["platform"], "openai");
+    let waiting = harness.wait_v2_waiting(&id, first).await;
+    assert!(waiting["waiting_reason"]
+        .as_str()
+        .is_some_and(|reason| !reason.is_empty()));
+    drop(lease);
+    harness.tick().await;
+    let detail = harness.wait_v2_task(&id).await;
+    assert_eq!(detail["status"], "completed");
+    assert!(harness.upstream.count_put_for(first) <= 1);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_busy_items_wait_and_progress_with_one_dispatched_item() {
+    let mut harness = Harness::new().await;
+    let first = harness.insert_account("openai", "oauth", 3).await;
+    let second = harness.insert_account("openai", "oauth", 4).await;
+    let third = harness.insert_account("openai", "oauth", 1).await;
+    let view = harness.v2_view().await;
+    let platform = view["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap();
+    let lease = harness.runtime.actions.locks.account(first).await;
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "openai",
+            &[first, second, third],
+            platform["version"].as_str().unwrap(),
+            "fixture-priority-v2-busy-0001",
+        )
+        .await;
+    assert_eq!(status, 200, "priority v2 busy submit failed: {text}");
+    let id = accepted["id"].as_str().unwrap();
+    let waiting = harness.wait_v2_waiting(id, first).await;
+    let dispatched = waiting["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["status"] == "dispatched")
+        .count();
+    assert!(dispatched <= 1, "at most one item may be dispatched");
+    assert!(waiting["waiting_account_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item.as_i64() == Some(first)));
+    assert_eq!(
+        waiting["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["account_id"] == second)
+            .unwrap()["status"],
+        "verified",
+        "a later pending item should complete while the first account is busy"
+    );
+    drop(lease);
+    harness.tick().await;
+    let detail = harness.wait_v2_task(id).await;
+    assert_eq!(detail["status"], "completed");
+    assert_eq!(harness.upstream.count_method(Method::PUT), 3);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_missing_worker_auth_stops_before_dispatch() {
+    let mut harness = Harness::new().await;
+    let id = harness.insert_account("openai", "oauth", 4).await;
+    let lease = harness.runtime.actions.locks.account(id).await;
+    let view = harness.v2_view().await;
+    let version = view["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "openai",
+            &[id],
+            &version,
+            "fixture-priority-v2-missing-auth-0001",
+        )
+        .await;
+    assert_eq!(status, 200, "priority submit failed: {text}");
+    let order_id = accepted["id"].as_str().unwrap().to_owned();
+    let _ = harness.wait_v2_waiting(&order_id, id).await;
+    harness
+        .runtime
+        .actions
+        .queries
+        .oauth
+        .transaction(|state| {
+            state["settings"]["sub2api_admin_token"] = Value::Null;
+            Ok(())
+        })
+        .expect("clear the worker admin token");
+    drop(lease);
+    harness.tick().await;
+    let detail = harness.wait_v2_task(&order_id).await;
+    assert_eq!(detail["status"], "needs_confirmation");
+    assert_eq!(detail["reason"], "管理员授权不可用，请重新连接后核对");
+    assert_eq!(harness.upstream.count_put_for(id), 0);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_history_is_not_trimmed_and_legacy_store_is_separate() {
+    let mut harness = Harness::new().await;
+    let first = harness.insert_account("openai", "oauth", 0).await;
+    let second = harness.insert_account("openai", "oauth", 1).await;
+    let first_request_id = "fixture-priority-v2-history-0000";
+    let mut first_version = String::new();
+    let mut first_task_id = String::new();
+    for index in 0..21 {
+        let view = harness.v2_view().await;
+        let platform = view["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["platform"] == "openai")
+            .unwrap();
+        let ordered = if index % 2 == 0 {
+            vec![second, first]
+        } else {
+            vec![first, second]
+        };
+        let request_id = format!("fixture-priority-v2-history-{index:04}");
+        if index == 0 {
+            first_version = platform["version"].as_str().unwrap().to_owned();
+        }
+        let (status, accepted, text) = harness
+            .v2_submit(
+                "openai",
+                &ordered,
+                platform["version"].as_str().unwrap(),
+                &request_id,
+            )
+            .await;
+        assert_eq!(status, 200, "history submit {index} failed: {text}");
+        if index == 0 {
+            first_task_id = accepted["id"].as_str().unwrap().to_owned();
+        }
+        let detail = harness.wait_v2_task(accepted["id"].as_str().unwrap()).await;
+        assert_eq!(detail["status"], "completed", "history task {index}");
+    }
+    let v2_path = harness.runtime.priorities.store.path().to_path_buf();
+    let state: Value = serde_json::from_slice(&fs::read(&v2_path).expect("v2 state file exists"))
+        .expect("v2 state is JSON");
+    assert_eq!(state["version"], 2);
+    assert!(state["jobs"].as_object().unwrap().len() >= 21);
+    assert!(state["requests"].as_object().unwrap().len() >= 21);
+    let legacy_path = v2_path.with_file_name("account-priority-orders.json");
+    if legacy_path.exists() {
+        let legacy = fs::read_to_string(legacy_path).expect("read legacy state");
+        assert!(!legacy.contains("fixture-priority-v2-history-"));
+    }
+    let (status, replay, text) = harness
+        .v2_submit("openai", &[second, first], &first_version, first_request_id)
+        .await;
+    assert_eq!(
+        status, 200,
+        "first historical request should replay: {text}"
+    );
+    assert_eq!(replay["id"], first_task_id);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_restart_does_not_replay_a_verified_write() {
+    let mut harness = Harness::new().await;
+    let id = harness.insert_account("openai", "oauth", 4).await;
+    harness.upstream.set_mode(id, WriteMode::UnknownApplied);
+    let view = harness.v2_view().await;
+    let platform = view["platforms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|platform| platform["platform"] == "openai")
+        .unwrap();
+    let (status, accepted, text) = harness
+        .v2_submit(
+            "openai",
+            &[id],
+            platform["version"].as_str().unwrap(),
+            "fixture-priority-v2-restart-0001",
+        )
+        .await;
+    assert_eq!(status, 200, "priority v2 restart submit failed: {text}");
+    let order_id = accepted["id"].as_str().unwrap().to_owned();
+    let before = harness.wait_v2_task(&order_id).await;
+    assert_eq!(before["status"], "completed");
+    assert_eq!(harness.upstream.count_put_for(id), 1);
+    harness.restart_runtime().await;
+    let after = harness.wait_v2_task(&order_id).await;
+    assert_eq!(after["status"], "completed");
+    assert_eq!(harness.upstream.count_put_for(id), 1);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_v2_retires_legacy_active_state_and_rejects_legacy_post() {
+    let mut harness = Harness::new().await;
+    let legacy_fixture: Value = serde_json::from_str(include_str!(
+        "../../tests/contracts/priority-order/legacy-active.json"
+    ))
+    .expect("legacy active fixture JSON");
+    let legacy_id = legacy_fixture["active_id"]
+        .as_str()
+        .expect("legacy active fixture id")
+        .to_owned();
+    let legacy_path = harness
+        .runtime
+        .priorities
+        .store
+        .path()
+        .with_file_name("account-priority-orders.json");
+    fs::write(
+        &legacy_path,
+        include_bytes!("../../tests/contracts/priority-order/legacy-active.json"),
+    )
+    .expect("write legacy active state fixture");
+    harness.restart_runtime().await;
+    let view = harness.v2_view().await;
+    assert!(view["active_task"].is_null());
+    assert!(view["legacy_last_task"].is_object());
+    let (status, value, text) = harness
+        .request(
+            Method::POST,
+            "account-priority-orders",
+            Some(json!({
+                "platform":"openai",
+                "ordered_account_ids":[],
+                "expected_version":"0000000000000000000000000000000000000000000000000000000000000000",
+                "request_id":"fixture-priority-legacy-post-0001",
+                "client_id":CLIENT_ID
+            })),
+        )
+        .await;
+    assert_eq!(status, 422, "legacy POST must require schema=2: {text}");
+    assert_eq!(value["detail"]["code"], "client_upgrade_required");
+    let legacy = harness.view().await;
+    assert!(legacy["active_task"].is_null());
+    assert!(legacy["last_task"].is_object());
+    let (status, detail, text) = harness
+        .request(
+            Method::GET,
+            &format!("account-priority-orders/{legacy_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, 200, "legacy detail should remain readable: {text}");
+    let mut detail_keys = detail
+        .as_object()
+        .expect("legacy task detail object")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    detail_keys.sort();
+    assert_eq!(
+        detail_keys,
+        vec![
+            "cancel_requested",
+            "change_count",
+            "completed_at",
+            "created_at",
+            "id",
+            "items",
+            "reason",
+            "status",
+            "total",
+            "updated_at",
+            "verified_count"
+        ]
+    );
+    assert!(detail["items"][0].get("platform").is_none());
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn priority_legacy_retirement_reconciles_dispatched_without_replay() {
+    for (applied, suffix) in [(true, "applied"), (false, "unapplied")] {
+        let mut harness = Harness::new().await;
+        let account_id = harness.insert_account("openai", "oauth", 4).await;
+        let row = harness
+            .runtime
+            .actions
+            .account(account_id, None)
+            .await
+            .expect("read legacy retirement account");
+        let original_priority = row["priority"].as_i64().expect("legacy original priority");
+        let target_priority = 0;
+        let expected_version = operation_versions(&row, false)["priority"].clone();
+        let mut identity_row = row.clone();
+        identity_row["priority"] = 0.into();
+        let identity = operation_versions(&identity_row, false)["priority"].clone();
+        if applied {
+            sqlx::query("UPDATE accounts SET priority=$1,updated_at=now() WHERE id=$2")
+                .bind(target_priority)
+                .bind(account_id)
+                .execute(&harness.runtime.db.pool)
+                .await
+                .expect("apply legacy dispatched fixture before restart");
+        }
+        let task_id = if applied {
+            "0123456789abcdef0123456789abcde1"
+        } else {
+            "0123456789abcdef0123456789abcde2"
+        };
+        let request_id = format!("fixture-legacy-dispatched-{suffix}-0001");
+        let timestamp = now();
+        let state = json!({
+            "version": 1,
+            "active_id": task_id,
+            "last_id": task_id,
+            "jobs": {
+                task_id: {
+                    "id": task_id,
+                    "status": "running",
+                    "reason": "正在保存",
+                    "cancel_requested": false,
+                    "request_id": request_id,
+                    "client_id": CLIENT_ID,
+                    "request_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "completed_at": null,
+                    "items": [{
+                        "account_id": account_id,
+                        "account_name": row["name"],
+                        "original_priority": original_priority,
+                        "target_priority": target_priority,
+                        "expected_version": expected_version,
+                        "identity": identity,
+                        "capability": {"editable": true, "reason": ""},
+                        "status": "dispatched",
+                        "started_at": timestamp,
+                        "observed_priority": null
+                    }]
+                }
+            },
+            "requests": {request_id: task_id}
+        });
+        fs::write(
+            harness.runtime.priorities.legacy.path(),
+            serde_json::to_vec(&state).expect("serialize legacy dispatched fixture"),
+        )
+        .expect("write legacy dispatched fixture");
+        harness.restart_runtime().await;
+        let (status, detail, text) = harness
+            .request(
+                Method::GET,
+                &format!("account-priority-orders/{task_id}"),
+                None,
+            )
+            .await;
+        assert_eq!(
+            status, 200,
+            "legacy dispatched detail should be readable: {text}"
+        );
+        assert_eq!(detail["status"], "needs_confirmation");
+        assert_eq!(
+            detail["items"][0]["status"],
+            if applied { "verified" } else { "dispatched" }
+        );
+        assert_eq!(harness.upstream.count_put_for(account_id), 0);
+        assert_eq!(
+            harness.priority(account_id).await,
+            if applied { 0 } else { 4 }
+        );
+        harness.finish().await;
+    }
 }

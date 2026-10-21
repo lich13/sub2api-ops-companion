@@ -1607,9 +1607,15 @@ def native_extensions() -> list[dict[str, Any]]:
             or not fragment.get("approved_requirement")
             or fragment.get("verification_command") != ".venv/bin/python scripts/server_test.py --test priority_order_contract"
             or fragment.get("target") != {"kind": "rust_integration_test", "path": "server/tests/priority_order_contract.rs"}
-            or fragment.get("fixture") != "tests/contracts/priority-order/fixtures.json"):
+            or fragment.get("fixture") != "tests/contracts/priority-order/fixtures.json"
+            or fragment.get("additional_fixtures") != [
+                "tests/contracts/priority-order/fixtures-v2.json",
+                "tests/contracts/priority-order/legacy-active.json",
+            ]):
         raise InventoryError("priority ordering extension declaration is incomplete")
     json.loads((REPO_ROOT / fragment["fixture"]).read_text(encoding="utf-8"))
+    for fixture in fragment["additional_fixtures"]:
+        json.loads((REPO_ROOT / fixture).read_text(encoding="utf-8"))
     mappings = fragment.get("mappings")
     if not isinstance(mappings, list) or not mappings:
         raise InventoryError("priority ordering extension has no executable targets")

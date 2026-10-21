@@ -221,6 +221,32 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         return Ok(response);
     }
     let query = params(&request)?;
+    let priority_route = matches!(
+        path.first().copied(),
+        Some("account-priorities" | "account-priority-orders")
+    );
+    let priority_v2 = query.get("schema").is_some_and(|value| value == "2");
+    let priority_summary = query.get("details").is_some_and(|value| value == "0");
+    if priority_route {
+        let pairs = Query::<Vec<(String, String)>>::try_from_uri(request.uri())
+            .map_err(|_| Error::invalid())?
+            .0;
+        if pairs.len() != query.len() || request.uri().query().is_some_and(str::is_empty) {
+            return Err(Error::invalid());
+        }
+        let detail_get =
+            method == Method::GET && matches!(path.as_slice(), ["account-priority-orders", _]);
+        if query.iter().any(|(key, value)| match key.as_str() {
+            "schema" => value != "2",
+            "details" => !priority_v2 || !detail_get || value != "0",
+            _ => true,
+        }) {
+            return Err(Error::invalid());
+        }
+        if method == Method::POST && path == ["account-priority-orders"] && !priority_v2 {
+            return Err(crate::priority_orders::upgrade_required());
+        }
+    }
     let key = request
         .headers()
         .get("x-api-key")
@@ -288,13 +314,21 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let result: Value = match path.as_slice() {
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
-        ["account-priorities"] => runtime.priorities.view().await?,
-        ["account-priority-orders"] => runtime.priorities.submit(&payload).await?,
-        ["account-priority-orders", id] => runtime.priorities.get(id)?,
-        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id).await?,
+        ["account-priorities"] => runtime.priorities.view(priority_v2).await?,
+        ["account-priority-orders"] => {
+            let result = runtime.priorities.submit(&payload).await?;
+            runtime.priorities.tick().await?;
+            result
+        }
+        ["account-priority-orders", id] => {
+            runtime.priorities.get(id, priority_v2, !priority_summary)?
+        }
+        ["account-priority-orders", id, "cancel"] => {
+            runtime.priorities.cancel(id, priority_v2).await?
+        }
         ["errors"] => {
             runtime
                 .actions

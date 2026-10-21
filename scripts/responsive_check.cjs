@@ -1542,8 +1542,19 @@ async function desktopMenuChecks(h, fixture) {
   const priorityManager = page.getByRole("region", { name: "全局优先级管理", exact: true });
   await h.visible(priorityManager, "desktop-priority-surface");
   await h.within(priorityManager, "desktop-priority-manager", { touch: false, scroll: false, vertical: false });
-  await h.visible(priorityManager.locator(".priority-list > li").first(), "desktop-priority-list");
-  await h.allWithin(priorityManager.locator(".priority-moves button"), "desktop-priority-move-control", { touch: false, vertical: false });
+  await h.visible(priorityManager.locator(".priority-column:visible .priority-list > li").first(), "desktop-priority-list");
+  await h.allWithin(priorityManager.locator(".priority-column:visible .priority-moves button"), "desktop-priority-move-control", { touch: false, vertical: false });
+  const priorityLayout = await priorityManager.evaluate(element => {
+    const groups = element.querySelector('.priority-platforms');
+    const panels = [...element.querySelectorAll('.priority-column:not([hidden])')];
+    return { width: element.getBoundingClientRect().width, columns: groups.classList.contains('is-columns'), count: element.querySelectorAll('.priority-column').length,
+      panels: panels.map(panel => ({ width: panel.getBoundingClientRect().width, scroll: getComputedStyle(panel.querySelector('.priority-list')).overflowY })),
+      numbers: panels.map(panel => [...panel.querySelectorAll('.priority-number span:last-child b')].map(value => Number(value.textContent))) };
+  });
+  await h.state(priorityLayout.columns === (priorityLayout.count > 1 && priorityLayout.count <= 3 && priorityLayout.width >= Math.max(960, priorityLayout.count * 320 + (priorityLayout.count - 1) * 12))
+    && priorityLayout.panels.every(panel => (!priorityLayout.columns || panel.width >= 320) && panel.scroll === 'auto')
+    && priorityLayout.numbers.every(numbers => numbers.every((value, index) => value === index + 1)), 'priority-platform-layout-or-numbering-mismatch', priorityManager);
+  await h.state(!(await priorityManager.textContent()).includes('全部平台统一排序'), 'priority-description-still-present', priorityManager);
   await h.layout();
   await h.click(sidebar.getByRole("button", { name: "账号", exact: true }), "desktop-priority-return", { touch: false });
   h.phase = "desktop/table";
@@ -1853,6 +1864,13 @@ async function runScenario(scenario) {
     await h.state(fixture.platform === (scenario.mobile ? "android" : "macos"), "unexpected-preview-platform");
     if (scenario.mobile) {
       await accountChecks(h, fixture);
+      h.phase = "mobile/priorities";
+      await h.click(page.getByRole("button", { name: "优先级管理", exact: true }), "mobile-priority-entry");
+      const priority = page.getByRole("region", { name: "全局优先级管理", exact: true });
+      await h.visible(priority, "mobile-priority-surface");
+      await h.state(await priority.locator('.priority-platforms.is-columns').count() === 0, "mobile-priority-must-use-tabs", priority);
+      await h.allWithin(priority.locator('.priority-column:visible .priority-moves button'), "mobile-priority-controls");
+      await h.click(priority.getByRole('button', { name: '返回账号', exact: true }), "mobile-priority-return");
       await connectionBatchChecks(h, fixture);
       await recordChecks(h);
       await eventChecks(h, fixture);
