@@ -510,7 +510,8 @@ export async function run(
     return;
   }
   if (name === "api_request") {
-    if (args.path === "/capabilities") return { api_version: 1, features: { detection_logs: true, global_detection_model: true } };
+    if (args.path === "/capabilities") return { api_version: 1, features: { detection_logs: true, global_detection_model: true, account_priority_ordering: true } };
+    if (args.path === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
     if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {
       if (args.path.endsWith("/test")) return { success: true, message: "连接成功", latency_ms: 85, ip_address: "192.0.2.1", city: "", region: "", country: "示例地区", country_code: "" };

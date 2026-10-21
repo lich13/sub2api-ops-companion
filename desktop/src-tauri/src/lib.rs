@@ -25,6 +25,7 @@ use tokio::sync::{oneshot, watch, Mutex, Notify};
 
 mod api_http;
 mod credentials;
+mod priority_api;
 use api_http::{http, http_detailed, HttpFailure};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
@@ -273,6 +274,28 @@ fn allowed_request(method: &str, path: &str) -> bool {
             });
     }
     let job_id = |s: &str| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit());
+    if plain == "/account-priorities" || plain.starts_with("/account-priority-orders") {
+        if path != plain {
+            return false;
+        }
+        let id = |s: &str| job_id(s) && s.bytes().all(|c| !c.is_ascii_uppercase());
+        return match method {
+            "GET" => {
+                path == "/account-priorities"
+                    || path
+                        .strip_prefix("/account-priority-orders/")
+                        .is_some_and(id)
+            }
+            "POST" => {
+                path == "/account-priority-orders"
+                    || path
+                        .strip_prefix("/account-priority-orders/")
+                        .and_then(|s| s.strip_suffix("/cancel"))
+                        .is_some_and(id)
+            }
+            _ => false,
+        };
+    }
     if plain.starts_with("/account-operations") {
         let query_ok = path.split_once('?').is_none_or(|(_, q)| {
             q.strip_prefix("after_event=").is_some_and(|v| {

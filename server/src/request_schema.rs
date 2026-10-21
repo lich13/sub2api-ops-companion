@@ -31,6 +31,8 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
                     | "keepalive"
             ]
             | ["account-operations", "batch"]
+            | ["account-priority-orders"]
+            | ["account-priority-orders", _, "cancel"]
             | ["account-templates", ..]
             | ["model-tests", _, "retry"]
             | ["config", _]
@@ -171,6 +173,8 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
     match path {
         ["account-operations", "batch"] => batch(value, false)?,
         ["account-templates", "apply"] => batch(value, true)?,
+        ["account-priority-orders"] => crate::priority_orders::validate_request(value)?,
+        ["account-priority-orders", _, "cancel"] => fields(value, &[], &[])?,
         ["accounts", _, "operations"] => {
             fields(
                 value,

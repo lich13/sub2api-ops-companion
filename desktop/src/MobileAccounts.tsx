@@ -38,7 +38,7 @@ export default function MobileAccounts(props: Props) {
         <UsageCell account={a} online={props.online} refresh={() => command("refresh")} report={props.report}/>
         <footer>
           {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已成功</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}
-          <button className="text-button" onClick={() => setActiveId(a.id)}>优先级 {a.priority}</button>
+          <span className="priority-value">优先级 {a.priority}</span>
         </footer>
         {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <div className="mobile-primary-actions">
           {props.accountActions(a).filter(isPrimaryAction).map((item) => <AccountActionButton key={item.id} item={item}/>)}

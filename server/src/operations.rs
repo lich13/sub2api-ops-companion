@@ -482,6 +482,11 @@ impl Operations {
                 .insert(jid.into(), key.into());
             return Ok(self.public(old, false, 0));
         }
+        let _priority = if action == "priority" {
+            Some(self.actions.priorities.enter().await?)
+        } else {
+            None
+        };
         let row = self.actions.account(aid, None).await?;
         let jid = id();
         let mut job = json!({"id":jid,"account_id":aid,"account_name":row["name"],"action":action,"payload":payload,"expected_version":expected,"client_id":client,"request_id":rid,"request_hash":signature,"parent_account_id":row["parent_account_id"],"created_at":now(),"updated_at":now(),"status":"queued","reason":"等待执行","result":null});

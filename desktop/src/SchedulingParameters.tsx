@@ -9,8 +9,8 @@ import { useDialogFocus } from "./dialogFocus";
 import type { Account } from "./types";
 import "./account-settings.css";
 
-export type SchedulingField = "priority" | "concurrency" | "load_factor";
-const labels = { priority: "优先级", concurrency: "并发", load_factor: "负载因子" };
+export type SchedulingField = "concurrency" | "load_factor";
+const labels = { concurrency: "并发", load_factor: "负载因子" };
 export function NumericEditor({ account, field, online, close, anchor }: { account: Account; field: SchedulingField; online: boolean; close: () => void; anchor: DOMRect }) {
   const initial = useRef({ value: account[field], version: account.operation_versions?.[field] });
   const [value, setValue] = useState(String(initial.current.value ?? "")), [automatic, setAutomatic] = useState(field === "load_factor" && initial.current.value == null);
@@ -18,7 +18,7 @@ export function NumericEditor({ account, field, online, close, anchor }: { accou
   const alive = useRef(true), running = useRef(false), input = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLFormElement>(null);
   useDialogFocus(dialog);
-  const min = field === "priority" ? 0 : 1, max = field === "load_factor" ? 10000 : 2147483647;
+  const min = 1, max = field === "load_factor" ? 10000 : 2147483647;
   function edit(value: string) { setValue(value); setNotice(""); }
   useEffect(() => { alive.current = true; input.current?.focus(); input.current?.select(); return () => { alive.current = false; }; }, []);
   useBackAction(true, close);
@@ -58,7 +58,8 @@ export function NumericEditor({ account, field, online, close, anchor }: { accou
 export default function SchedulingParameters({ account, online }: { account: Account; online: boolean; report?: (error: unknown) => void }) {
   const [editing, setEditing] = useState<{ field: SchedulingField; anchor: DOMRect; trigger: HTMLButtonElement } | null>(null);
   return <div className="scheduling-parameters">
-    {(["priority", "concurrency", "load_factor"] as const).map(field => <div key={field}><span>{labels[field]}</span><button type="button" aria-label={`编辑${account.name}${labels[field]}`} disabled={!online || !account.operation_versions?.[field] || account.settings_capabilities?.[field]?.editable === false} onClick={e => setEditing({ field, anchor: e.currentTarget.getBoundingClientRect(), trigger: e.currentTarget })}>{field === "load_factor" && account[field] == null ? "自动" : account[field] ?? "—"}</button></div>)}
+    <div><span>优先级</span><span className="priority-value" aria-label={`${account.name}优先级`}>{account.priority}</span></div>
+    {(["concurrency", "load_factor"] as const).map(field => <div key={field}><span>{labels[field]}</span><button type="button" aria-label={`编辑${account.name}${labels[field]}`} disabled={!online || !account.operation_versions?.[field] || account.settings_capabilities?.[field]?.editable === false} onClick={e => setEditing({ field, anchor: e.currentTarget.getBoundingClientRect(), trigger: e.currentTarget })}>{field === "load_factor" && account[field] == null ? "自动" : account[field] ?? "—"}</button></div>)}
     {editing && <NumericEditor account={account} online={online} {...editing} close={() => { editing.trigger.focus({ preventScroll: true }); setEditing(null); }}/>}
   </div>;
 }

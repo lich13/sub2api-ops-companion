@@ -1598,6 +1598,38 @@ def build_version_vectors(sources: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def native_extensions() -> list[dict[str, Any]]:
+    """Explicit new contracts do not count toward pinned Python coverage."""
+    path = "tests/contracts/priority-order/migration-fragment.json"
+    fragment = json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))
+    if (fragment.get("schema_version") != 1
+            or fragment.get("feature") != "account-priority-ordering"
+            or not fragment.get("approved_requirement")
+            or fragment.get("verification_command") != ".venv/bin/python scripts/server_test.py --test priority_order_contract"
+            or fragment.get("target") != {"kind": "rust_integration_test", "path": "server/tests/priority_order_contract.rs"}
+            or fragment.get("fixture") != "tests/contracts/priority-order/fixtures.json"):
+        raise InventoryError("priority ordering extension declaration is incomplete")
+    json.loads((REPO_ROOT / fragment["fixture"]).read_text(encoding="utf-8"))
+    mappings = fragment.get("mappings")
+    if not isinstance(mappings, list) or not mappings:
+        raise InventoryError("priority ordering extension has no executable targets")
+    seen = set()
+    for mapping in mappings:
+        name = mapping.get("test")
+        if not name or name in seen or not mapping.get("contract"):
+            raise InventoryError("priority ordering extension has duplicate or incomplete targets")
+        seen.add(name)
+        body, _ = _rust_test_body(fragment["target"]["path"], name)
+        anchors = mapping.get("assertions")
+        if not isinstance(anchors, list) or not anchors:
+            raise InventoryError(f"priority ordering extension lacks assertions: {name}")
+        for anchor in anchors:
+            if (not isinstance(anchor, str) or "assert" not in anchor
+                    or _normalize_source(anchor) not in _normalize_source(body)):
+                raise InventoryError(f"priority ordering extension assertion missing: {name}")
+    return [{"input": path, **fragment}]
+
+
 def build_migration_map(
     test_sources: dict[str, str],
     app_sources: dict[str, str],
@@ -1638,6 +1670,7 @@ def build_migration_map(
         "tests": tests,
         "routes": routes,
         "route_compatibility_groups": compatibility_groups,
+        "native_extensions": native_extensions(),
     }
 
 

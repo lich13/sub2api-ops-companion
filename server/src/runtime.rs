@@ -60,6 +60,7 @@ pub struct Runtime {
     pub detection: Detection,
     pub keepalive: Keepalive,
     pub operations: Arc<Operations>,
+    pub priorities: Arc<crate::priority_orders::PriorityOrders>,
     pub catalog: Catalog,
     pub proxies: ProxyDiagnostics,
     pub slots: TestSlots,
@@ -106,6 +107,12 @@ impl Runtime {
             ("model_config", settings.model_path.clone()),
             ("keepalive", settings.keepalive_path.clone()),
             ("audit", settings.audit_path.clone()),
+            (
+                "priority_orders",
+                settings
+                    .usage_path
+                    .with_file_name("account-priority-orders.json"),
+            ),
             (
                 "operations",
                 settings
@@ -236,6 +243,11 @@ impl Runtime {
             Operations::new_deferred(actions.clone(), hooks.clone(), budget.clone()),
         )?;
         let keepalive = Keepalive::new(detection.clone(), operations.clone(), budget.clone());
+        let priorities = crate::priority_orders::PriorityOrders::new(
+            actions.clone(),
+            operations.clone(),
+            budget.clone(),
+        );
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
         let proxies = ProxyDiagnostics::new(actions.clone());
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
@@ -251,6 +263,7 @@ impl Runtime {
             detection,
             keepalive,
             operations,
+            priorities,
             catalog,
             proxies,
             slots,
@@ -285,6 +298,7 @@ impl Runtime {
         startup("keepalive", self.keepalive.store.read())?;
         startup("capacity", self.detection.capacity.store.snapshot())?;
         startup("operations", self.operations.store.read())?;
+        startup("priority_orders", self.priorities.store.read())?;
         startup(
             "templates",
             self.actions
@@ -320,6 +334,7 @@ impl Runtime {
         }
         startup("oauth_config", self.config.migrate_legacy().await)?;
         startup("operations", self.operations.store.recover_startup())?;
+        startup("priority_orders", self.priorities.recover_startup())?;
         startup("legacy_recovery", self.migrate_legacy_recovery().await)?;
         startup("model_tests", self.tests.startup())?;
         startup("key_fallback", self.config.fallback.migrate())?;
@@ -341,6 +356,7 @@ impl Runtime {
         self.tests.resume()?;
         for (kind, milliseconds) in [
             ("operations", 250),
+            ("priority_orders", 1000),
             ("oauth", 2000),
             ("daily", 1000),
             ("notifications", 2000),
@@ -365,6 +381,7 @@ impl Runtime {
                     let started = std::time::Instant::now();
                     let result: Result<()> = match kind {
                         "operations" => runtime.operations.tick().await,
+                        "priority_orders" => runtime.priorities.tick().await,
                         "oauth" => runtime.monitor.tick().await,
                         "daily" => runtime.config.current().and_then(|config| {
                             runtime

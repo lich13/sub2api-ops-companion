@@ -85,6 +85,14 @@ describe("mobile accounts", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
+  it("keeps the footer priority value read-only", async () => {
+    await render(props());
+    const footer = container.querySelector<HTMLElement>(".mobile-account footer")!;
+    expect(footer.textContent).toContain("优先级 50");
+    expect([...footer.querySelectorAll("button")].some((button) => button.textContent?.includes("优先级"))).toBe(false);
+    expect(actionSheet()).toBeNull();
+  });
+
   it("closes the action sheet after an operation and when its account disappears", async () => {
     const run = vi.fn();
     const action: AccountActionItem = {

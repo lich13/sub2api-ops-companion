@@ -51,6 +51,7 @@ pub mod oauth_native;
 pub mod oauth_queries;
 pub mod oauth_state;
 pub mod operations;
+pub mod priority_orders;
 pub mod proxy_diagnostics;
 pub mod queries;
 pub mod quota;

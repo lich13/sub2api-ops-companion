@@ -370,7 +370,9 @@ async function cancelDeleteAction(h, source, account) {
 
 async function schedulingChecks(h, sheet, account) {
   const { page } = h;
-  const fields = [["priority", "优先级"], ["concurrency", "并发"], ["load_factor", "负载因子"]];
+  await h.state(await sheet.getByRole("button", { name: `编辑${account.name}优先级`, exact: true }).count() === 0,
+    "priority-remains-editable-in-scheduling-parameters", sheet);
+  const fields = [["concurrency", "并发"], ["load_factor", "负载因子"]];
   for (const [field, label] of fields) {
     h.phase = `accounts/scheduling/${field}`;
     const trigger = sheet.getByRole("button", { name: `编辑${account.name}${label}`, exact: true });
@@ -614,7 +616,11 @@ async function accountChecks(h, fixture) {
   const { page } = h;
   h.phase = "accounts";
   const surface = page.locator('.page-surface[data-page="accounts"]');
-  await h.allWithin(page.locator(".bottom-nav button"), "bottom-navigation", { scroll: false, hit: true });
+  const bottomNavigation = page.locator(".bottom-nav button");
+  await h.state(await bottomNavigation.count() === 5
+    && isDeepStrictEqual((await bottomNavigation.allTextContents()).map((label) => label.trim()), ["账号", "记录", "事件", "功能", "设置"]),
+  "mobile-navigation-count-or-order", bottomNavigation);
+  await h.allWithin(bottomNavigation, "bottom-navigation", { scroll: false, hit: true });
   const mobileSort = surface.locator(".mobile-sort");
   await h.within(mobileSort, "mobile-account-sort", { touch: false, vertical: false });
   const mobileSortTypography = await measureTypography(page, {
@@ -637,6 +643,11 @@ async function accountChecks(h, fixture) {
   await h.visible(card, "mobile-account");
   await h.state(await card.count() === 1, "account-search-not-specific", card);
   await h.within(card.locator(".mobile-identity strong"), "long-account-name", { touch: false, vertical: false });
+  const priorityFooter = card.locator("footer");
+  await h.visible(priorityFooter, "mobile-account-footer");
+  await h.state((await priorityFooter.textContent() || "").includes(`优先级 ${account.priority}`)
+    && await priorityFooter.locator("button").filter({ hasText: "优先级" }).count() === 0,
+  "mobile-account-priority-is-editable", priorityFooter);
   const actions = fixtureAccountActions(account);
   await accountActionButtons(h, card.locator(".mobile-primary-actions"), actions.primary, "mobile-primary-action");
   await h.layout();
@@ -731,6 +742,13 @@ async function recordChecks(h) {
     && compactLayout.scrollHeight <= compactLayout.clientHeight + 1
     && compactLayout.scrollWidth <= compactLayout.clientWidth + 1,
   "record-type-badges-clipped-or-overflowing", compactType);
+  const mobileBadgeStyle = await compactType.locator(".record-type-badge").first().evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { fontSize: computed.fontSize, padding: [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft] };
+  });
+  await h.state(mobileBadgeStyle.fontSize === "11px"
+    && isDeepStrictEqual(mobileBadgeStyle.padding, ["1px", "6px", "1px", "6px"]),
+  "mobile-record-badge-density-mismatch", compactType);
   const syncCompactRecord = records.locator(".mobile-record").filter({
     has: page.locator('.mobile-record-open[aria-label="查看记录 #199"]'),
   });
@@ -819,6 +837,13 @@ async function recordChecks(h) {
   const detail = page.getByRole("dialog", { name: "调用记录详情", exact: true });
   await h.within(detail, "record-detail", { touch: false, scroll: false });
   await h.visible(detail.locator(".record-detail-section").first(), "record-detail-content");
+  const detailBadgeStyle = await detail.locator(".record-type-badge").first().evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { fontSize: computed.fontSize, padding: [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft] };
+  });
+  await h.state(detailBadgeStyle.fontSize === "11px"
+    && isDeepStrictEqual(detailBadgeStyle.padding, ["1px", "6px", "1px", "6px"]),
+  "record-detail-badge-density-mismatch", detail.locator(".record-type-badge").first());
   const tpsValue = detail.locator("dt").filter({ hasText: /^输出 TPS$/ }).locator("xpath=following-sibling::dd[1]");
   await h.state(((await tpsValue.textContent()) || "").replace(/\s+/g, " ").trim() === listTps,
     "detail-list-tps-mismatch", tpsValue);
@@ -894,6 +919,38 @@ async function eventChecks(h, fixture) {
     }
     await h.layout();
   }
+
+  h.phase = "events/logs";
+  const logsTab = tabs.getByRole("tab", { name: "日志", exact: true });
+  await h.click(logsTab, "event-log-tab");
+  await h.state(await logsTab.getAttribute("aria-selected") === "true", "event-log-tab-not-selected", logsTab);
+  const logsPanel = events.locator("#logs-panel");
+  await h.visible(logsPanel, "detection-log-panel");
+  const logTable = logsPanel.locator("table");
+  await h.visible(logTable, "detection-log-table");
+  const logHeaders = await logTable.locator("thead th").allTextContents();
+  await h.state(isDeepStrictEqual(logHeaders.map((label) => label.trim()),
+    ["结果时间", "账号", "模型", "触发", "执行", "结论", "预测", "匹配度", "处置／恢复", "通知"]),
+  "detection-log-column-labels", logTable);
+  const logRows = logTable.locator("tbody tr.detection-log-row");
+  await h.visible(logRows.first(), "detection-log-row");
+  await h.state(await logRows.count() > 0 && await logRows.first().locator("td").count() === 10,
+    "detection-log-column-count", logRows.first());
+  const firstLog = logRows.first();
+  const firstLogCells = firstLog.locator("td");
+  await h.state((await firstLogCells.nth(4).textContent() || "").includes("已完成")
+    && (await firstLogCells.nth(5).textContent() || "").includes("未确认降智")
+    && await firstLogCells.nth(4).locator("span").count() > 0,
+  "detection-log-status-or-conclusion-mismatch", firstLog);
+  const accountOpen = firstLogCells.nth(1).getByRole("button");
+  await h.visible(accountOpen, "detection-log-account-button");
+  await accountOpen.click();
+  const logDetail = page.getByRole("dialog", { name: "自动检测日志详情", exact: true });
+  await h.within(logDetail, "detection-log-detail", { touch: false, scroll: false });
+  await h.state((await logDetail.textContent() || "").includes("未确认降智"), "detection-log-detail-conclusion-missing", logDetail);
+  await h.layout();
+  await h.click(logDetail.getByRole("button", { name: "关闭日志详情", exact: true }), "detection-log-detail-close");
+  await logDetail.waitFor({ state: "hidden" });
 }
 
 async function featureChecks(h, baseline) {
@@ -1477,6 +1534,18 @@ async function desktopActionChecks(h, table, fixture) {
 
 async function desktopMenuChecks(h, fixture) {
   const { page } = h;
+  h.phase = "desktop/priorities";
+  const sidebar = page.locator(".sidebar nav");
+  const priorityEntry = sidebar.getByRole("button", { name: "优先级", exact: true });
+  await h.visible(priorityEntry, "desktop-priority-entry");
+  await h.click(priorityEntry, "desktop-priority-entry", { touch: false });
+  const priorityManager = page.getByRole("region", { name: "全局优先级管理", exact: true });
+  await h.visible(priorityManager, "desktop-priority-surface");
+  await h.within(priorityManager, "desktop-priority-manager", { touch: false, scroll: false, vertical: false });
+  await h.visible(priorityManager.locator(".priority-list > li").first(), "desktop-priority-list");
+  await h.allWithin(priorityManager.locator(".priority-moves button"), "desktop-priority-move-control", { touch: false, vertical: false });
+  await h.layout();
+  await h.click(sidebar.getByRole("button", { name: "账号", exact: true }), "desktop-priority-return", { touch: false });
   h.phase = "desktop/table";
   const table = page.locator(".accounts-table");
   await h.visible(table, "desktop-account-table");
@@ -1552,6 +1621,7 @@ async function desktopMenuChecks(h, fixture) {
   await h.click(page.locator(".sidebar nav").getByRole("button", { name: "记录", exact: true }), "desktop-record-entry", { touch: false });
   const records = page.getByRole("region", { name: "调用记录", exact: true });
   await h.visible(records.locator(".records-table"), "desktop-record-table");
+  await h.visible(records.locator(".records-table tbody tr").first(), "desktop-record-row");
   const recordsDensity = await records.evaluate((section) => {
     const style = (element) => {
       if (!element) return null;
@@ -1577,6 +1647,26 @@ async function desktopMenuChecks(h, fixture) {
       dateTrigger: style(section.querySelector(".records-date-trigger")),
       head: style(section.querySelector(".records-table thead th")),
       cell: style(section.querySelector(".records-table tbody td")),
+      columns: Object.fromEntries([
+        ["user", [".records-table th.record-user", ".records-table td.record-user"]],
+        ["key", [".records-table th.record-col-api_key", ".records-table td.record-col-api_key"]],
+        ["account", [".records-table th.record-col-account", ".records-table td.record-col-account"]],
+        ["model", [".records-table th.record-col-model", ".records-table td.record-col-model"]],
+        ["type", [".records-table th.record-col-type", ".records-table td.record-col-type"]],
+        ["tokens", [".records-table th.record-col-tokens", ".records-table td.record-col-tokens .record-tokens"]],
+        ["money", [".records-table th.record-col-cost", ".records-table td.record-col-cost .record-money"]],
+        ["latency", [".records-table th.record-col-latency", ".records-table td.record-col-latency .record-latency"]],
+        ["userAgent", [".records-table th.record-col-user_agent", ".records-table td.record-col-user_agent"]],
+        ["ip", [".records-table th.record-col-ip", ".records-table td.record-col-ip"]],
+      ].map(([key, selectors]) => {
+        const header = section.querySelector(selectors[0]);
+        const content = section.querySelector(selectors[1]);
+        const measure = (element) => element ? {
+          minWidth: getComputedStyle(element).minWidth,
+          width: Math.round(element.getBoundingClientRect().width),
+        } : null;
+        return [key, { header: measure(header), content: measure(content), button: measure(content?.querySelector("button")) }];
+      })),
     };
   });
   await h.state(recordsDensity.filterGap === "6px"
@@ -1585,14 +1675,27 @@ async function desktopMenuChecks(h, fixture) {
     && recordsDensity.dateTrigger?.rectHeight >= 27.5
     && recordsDensity.dateTrigger?.minHeight === "28px"
     && recordsDensity.head?.height === "26px"
-    && recordsDensity.head?.paddingTop === "4px"
-    && recordsDensity.head?.paddingRight === "6px"
-    && recordsDensity.head?.paddingBottom === "4px"
-    && recordsDensity.head?.paddingLeft === "6px"
-    && recordsDensity.cell?.paddingTop === "4px"
-    && recordsDensity.cell?.paddingRight === "6px"
-    && recordsDensity.cell?.paddingBottom === "4px"
-    && recordsDensity.cell?.paddingLeft === "6px",
+    && recordsDensity.head?.paddingTop === "3px"
+    && recordsDensity.head?.paddingRight === "4px"
+    && recordsDensity.head?.paddingBottom === "3px"
+    && recordsDensity.head?.paddingLeft === "4px"
+    && recordsDensity.cell?.rectHeight >= 32
+    && recordsDensity.cell?.paddingTop === "3px"
+    && recordsDensity.cell?.paddingRight === "4px"
+    && recordsDensity.cell?.paddingBottom === "3px"
+    && recordsDensity.cell?.paddingLeft === "4px"
+    && recordsDensity.columns.user?.header?.minWidth === "110px"
+    && recordsDensity.columns.user?.content?.width >= 110
+    && recordsDensity.columns.user?.button?.width === 96
+    && recordsDensity.columns.key?.header?.minWidth === "88px"
+    && recordsDensity.columns.account?.header?.minWidth === "88px"
+    && recordsDensity.columns.model?.header?.minWidth === "124px"
+    && recordsDensity.columns.type?.header?.minWidth === "72px"
+    && recordsDensity.columns.tokens?.content?.minWidth === "118px"
+    && recordsDensity.columns.money?.content?.minWidth === "80px"
+    && recordsDensity.columns.latency?.content?.minWidth === "104px"
+    && recordsDensity.columns.userAgent?.header?.minWidth === "120px"
+    && recordsDensity.columns.ip?.header?.minWidth === "108px",
   "desktop-record-density-mismatch", records.locator(".records-table"));
   const compactRecord = records.locator("tbody tr").filter({ has: page.locator('button[title="查看记录 #200"]') });
   await h.visible(compactRecord, "desktop-record-compact-row");
@@ -1624,6 +1727,28 @@ async function desktopMenuChecks(h, fixture) {
     && cellLayout.scrollWidth <= cellLayout.clientWidth + 1
     && cellLayout.scrollHeight <= cellLayout.clientHeight + 1,
   "desktop-record-type-badges-clipped-or-overflowing", typeCell);
+  const desktopBadgeStyle = await typeCell.locator(".record-type-badge").first().evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { fontSize: computed.fontSize, padding: [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft] };
+  });
+  await h.state(desktopBadgeStyle.fontSize === "10px"
+    && isDeepStrictEqual(desktopBadgeStyle.padding, ["0px", "5px", "0px", "5px"]),
+  "desktop-record-badge-density-mismatch", typeCell);
+  h.phase = "desktop/record-column-widths";
+  const columnMenu = records.locator("details.records-column-menu");
+  await h.click(columnMenu.locator("summary"), "desktop-record-columns-open", { touch: false, vertical: false });
+  for (const label of ["请求 ID", "上游 ID"]) {
+    const option = columnMenu.locator("label").filter({ hasText: label });
+    const checkbox = option.getByRole("checkbox");
+    if (!(await checkbox.isChecked())) {
+      await checkbox.click({ force: true });
+      await page.waitForFunction(() => [...document.querySelectorAll(".records-column-menu input")].every((input) => !(input instanceof HTMLInputElement) || !input.disabled));
+    }
+  }
+  await h.state(await records.locator("th.record-col-request_id").evaluate((element) => getComputedStyle(element).minWidth) === "130px"
+    && await records.locator("th.record-col-upstream_id").evaluate((element) => getComputedStyle(element).minWidth) === "130px",
+  "desktop-record-request-id-width-mismatch", records.locator(".records-table"));
+  await h.click(columnMenu.locator("summary"), "desktop-record-columns-close", { touch: false, vertical: false });
   const multilineLayout = await compactRecord.evaluate((row) => {
     const within = (parent, child) => {
       const parentRect = parent.getBoundingClientRect();

@@ -109,14 +109,20 @@ async function rerender({
 }
 
 function rowNames() {
-  return [...container.querySelectorAll(".detection-log-row strong")].map((node) => node.textContent);
+  return [...container.querySelectorAll(".detection-log-row")].map((node) => node.querySelector("td:nth-child(2) button span")?.textContent || node.querySelector("td:nth-child(2)")?.textContent || "");
+}
+
+function row(name: string) {
+  const match = [...container.querySelectorAll<HTMLTableRowElement>(".detection-log-row")]
+    .find((node) => node.textContent?.includes(name));
+  if (!match) throw new Error(`missing log row: ${name}`);
+  return match;
 }
 
 function rowButton(name: string) {
-  const row = [...container.querySelectorAll<HTMLButtonElement>(".detection-log-row")]
-    .find((node) => node.textContent?.includes(name));
-  if (!row) throw new Error(`missing log row: ${name}`);
-  return row;
+  const button = row(name).querySelector<HTMLButtonElement>("td:nth-child(2) button");
+  if (!button) throw new Error(`missing log account button: ${name}`);
+  return button;
 }
 
 function fact(label: string, scope: ParentNode = container) {
@@ -163,6 +169,43 @@ describe("automatic detection log feed", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it("renders each result as a ten-column table row with a dedicated status badge and account opener", async () => {
+    const jobId = "fixture-job-table";
+    const item = log(jobId, "表格账号", {
+      triggers: ["scheduled", "recovery"],
+      summary: { prediction: "汇总预测", probability: 0.84 },
+    });
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
+      if (path === "/detection-logs?limit=50") return page([item]) as never;
+      if (path === `/model-tests/${jobId}`) return { id: jobId, groups: [] } as never;
+      throw new Error(`Unexpected fixture request: ${path}`);
+    });
+
+    await render();
+    const table = container.querySelector("table")!;
+    const headers = [...table.querySelectorAll("thead th")].map((cell) => cell.textContent?.trim());
+    expect(headers).toEqual(["结果时间", "账号", "模型", "触发", "执行", "结论", "预测", "匹配度", "处置／恢复", "通知"]);
+    const resultRow = row("表格账号");
+    expect(resultRow.tagName).toBe("TR");
+    expect(resultRow.parentElement?.tagName).toBe("TBODY");
+    const cells = resultRow.querySelectorAll("td");
+    expect(cells).toHaveLength(10);
+    const accountButton = cells[1].querySelector<HTMLButtonElement>("button");
+    expect(accountButton).not.toBeNull();
+    expect(accountButton?.textContent).toContain("表格账号");
+    const status = cells[4].querySelector("span");
+    expect(status?.textContent).toBe("已完成");
+    expect(status?.className).toMatch(/status|badge/);
+    expect(cells[5].textContent).toContain("未确认降智");
+    expect(cells[6].textContent).toContain("汇总预测");
+    expect(cells[7].textContent).toContain("84.0%");
+
+    await act(async () => accountButton!.click());
+    await settle();
+    expect(api).toHaveBeenCalledWith("GET", `/model-tests/${jobId}`);
+  });
+
   it.each([
     { status: "completed", statusLabel: "已完成", noticeStatus: "delivered", noticeLabel: "已推送" },
     { status: "failed", statusLabel: "失败", noticeStatus: "failed", noticeLabel: "投递失败" },
@@ -194,14 +237,14 @@ describe("automatic detection log feed", () => {
     });
 
     await render();
-    expect(rowButton(`账号 ${status}`).textContent).toContain("未确认降智");
+    expect(rowButton(`账号 ${status}`).closest("tr")?.querySelector("td:nth-child(6)")?.textContent).toContain("未确认降智");
     await act(async () => rowButton(`账号 ${status}`).click());
     await settle();
 
     const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
     expect(fact("执行状态", dialog)).toBe(statusLabel);
     expect(fact("检测结论", dialog)).toBe("未确认降智");
-    expect(fact("复查恢复", dialog)).toBe("已取消降智标记 · 调度保持不变");
+    expect(fact("复查恢复", dialog)).toBe("已取消降智标记");
     expect(fact("恢复验证", dialog)).toBe("模型验证通过");
     expect(fact("调度恢复", dialog)).toContain("已恢复调度");
     expect(fact("通知", dialog)).toContain(noticeLabel);
@@ -231,7 +274,7 @@ describe("automatic detection log feed", () => {
     await settle();
     const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
     expect(fact("检测结论", dialog)).toBe("未确认降智");
-    expect(fact("复查恢复", dialog)).toBe("已取消降智标记 · 调度保持不变");
+    expect(fact("复查恢复", dialog)).toBe("已取消降智标记");
     expect(fact("恢复验证", dialog)).toBe("验证回执不可用");
     expect(fact("调度恢复", dialog)).toContain("恢复待核对");
     expect(dialog.textContent).not.toContain("模型验证通过");

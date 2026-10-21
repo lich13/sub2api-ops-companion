@@ -116,6 +116,7 @@ async function renderPanel(connectionKey: string) {
         report={() => {}}
         modelTest={() => {}}
         template={() => {}}
+        priorities={() => {}}
       />,
     );
   });
@@ -285,6 +286,7 @@ describe("operation panel batch history", () => {
           report={() => {}}
           modelTest={() => {}}
           template={() => {}}
+          priorities={() => {}}
         />,
       );
     });
@@ -326,6 +328,7 @@ describe("operation panel batch history", () => {
           report={() => {}}
           modelTest={() => {}}
           template={template}
+          priorities={() => {}}
         />,
       );
     });

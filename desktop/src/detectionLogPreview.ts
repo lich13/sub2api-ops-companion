@@ -7,10 +7,13 @@ const records: DetectionLog[] = Array.from({ length: 54 }, (_, index) => {
     status, created_at: at, started_at: at, completed_at: at, triggers: [index % 3 ? "scheduled" : "recovery"], error: "", details_available: false,
     summary: { outcome: status === "completed" ? degraded ? "degraded" : "normal" : status,
       analysis_available: status === "completed", first_prediction: status === "completed" ? "预览模型" : "", prediction: "",
-      probability: status === "completed" ? 0.92 : null, used_outputs: status === "completed" ? 3 : null,
+      probability: status === "completed" && index % 3 ? 0.92 : null, first_probability: status === "completed" ? 0.89 : null, used_outputs: status === "completed" ? 3 : null,
       first_downgrade: status === "completed" ? degraded : null, aggregate_downgrade: status === "completed" ? degraded : null,
-      disposition: degraded ? { status: "completed", marked: true, schedule_verified: true, mark_cleared: null, reason: "", completed_at: at } : null, recovery: null },
-    notification: degraded ? { status: "delivered", merged: false, delivered_at: at, reason: "" } : null };
+      disposition: degraded ? { status: "completed", marked: true, schedule_verified: index % 2 === 1, mark_cleared: null, reason: "", completed_at: at } : null,
+      recovery: index % 6 === 0 ? { status: "completed", marked: null, schedule_verified: null, mark_cleared: true, reason: "", completed_at: at } : null,
+      verification: index % 3 === 0 ? { status: "passed", marked: null, schedule_verified: null, mark_cleared: null, reason: "", completed_at: at } : null,
+      restoration: index % 12 === 0 ? { status: "restored", marked: null, schedule_verified: null, mark_cleared: null, reason: "", completed_at: at } : null },
+    notification: degraded ? { status: ["delivered", "retry", "failed"][Math.floor(index / 6) % 3], merged: index % 12 === 1, delivered_at: at, reason: "" } : null };
 });
 export function detectionLogPreview(path: string) {
   const params = new URLSearchParams(path.split("?")[1]);

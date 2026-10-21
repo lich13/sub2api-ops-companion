@@ -73,7 +73,7 @@ const change = async (element: HTMLInputElement, value: string) => {
   });
 };
 
-const editor = () => document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="编辑优先级"]');
+const editor = (label: string) => document.body.querySelector<HTMLElement>(`[role="dialog"][aria-label="编辑${label}"]`);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -99,30 +99,39 @@ afterEach(async () => {
 });
 
 describe("scheduling parameters", () => {
-  it("opens a full numeric value, allows transient clearing, and applies step buttons", async () => {
+  it("keeps priority read-only and edits only the concurrency and load factor fields", async () => {
     await act(async () => root.render(<SchedulingParameters account={account()} online />));
-    const value = container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account优先级"]')!;
-    expect(value.textContent).toBe("12");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account优先级"]')).toBeNull();
+    expect(container.textContent).toContain("优先级");
+    expect(container.textContent).toContain("12");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account并发"]')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account负载因子"]')).not.toBeNull();
+  });
+
+  it("opens a full concurrency value, allows transient clearing, and applies step buttons", async () => {
+    await act(async () => root.render(<SchedulingParameters account={account()} online />));
+    const value = container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account并发"]')!;
+    expect(value.textContent).toBe("4");
 
     await click(value);
-    const form = editor()!;
-    const input = form.querySelector<HTMLInputElement>('input[aria-label="优先级"]')!;
-    expect(input.value).toBe("12");
+    const form = editor("并发")!;
+    const input = form.querySelector<HTMLInputElement>('input[aria-label="并发"]')!;
+    expect(input.value).toBe("4");
 
     await change(input, "");
     expect(input.value).toBe("");
-    await click(form.querySelector<HTMLButtonElement>('[aria-label="增加优先级"]')!);
+    await click(form.querySelector<HTMLButtonElement>('[aria-label="增加并发"]')!);
     expect(input.value).toBe("1");
-    await click(form.querySelector<HTMLButtonElement>('[aria-label="减少优先级"]')!);
-    expect(input.value).toBe("0");
+    await click(form.querySelector<HTMLButtonElement>('[aria-label="减少并发"]')!);
+    expect(input.value).toBe("1");
 
     await change(input, "");
     await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    expect(form.querySelector('[role="alert"]')?.textContent).toContain("优先级必须");
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain("并发必须");
     expect(submitOperation).not.toHaveBeenCalled();
 
     await act(async () => form.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(editor()).toBeNull();
+    expect(editor("并发")).toBeNull();
   });
 
   it("shows queued feedback until the operation is confirmed and then refreshes", async () => {
@@ -133,8 +142,8 @@ describe("scheduling parameters", () => {
       return pending as never;
     });
     await act(async () => root.render(<SchedulingParameters account={account()} online />));
-    await click(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account优先级"]')!);
-    const form = editor()!;
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account并发"]')!);
+    const form = editor("并发")!;
     await click(form.querySelector<HTMLButtonElement>('button[type="submit"]')!);
     expect(form.querySelector('[role="status"]')?.textContent).toContain("已排队");
     expect(command).not.toHaveBeenCalledWith("refresh");
@@ -144,18 +153,18 @@ describe("scheduling parameters", () => {
     expect(command).toHaveBeenCalledWith("refresh");
     expect(submitOperation).toHaveBeenCalledWith(
       expect.objectContaining({ id: 101 }),
-      "priority",
-      { priority: 12 },
-      "priority-version",
+      "concurrency",
+      { concurrency: 4 },
+      "concurrency-version",
     );
   });
 
   it("retains the entered value and exposes a failed save", async () => {
     vi.mocked(followOperation).mockRejectedValue(new Error("fixture save failed"));
     await act(async () => root.render(<SchedulingParameters account={account()} online />));
-    await click(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account优先级"]')!);
-    const form = editor()!;
-    const input = form.querySelector<HTMLInputElement>('input[aria-label="优先级"]')!;
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="编辑Fixture account并发"]')!);
+    const form = editor("并发")!;
+    const input = form.querySelector<HTMLInputElement>('input[aria-label="并发"]')!;
     await change(input, "99");
     await click(form.querySelector<HTMLButtonElement>('button[type="submit"]')!);
 

@@ -51,6 +51,7 @@ pub struct Actions {
     pub queries: Queries,
     pub upstream: Upstream,
     pub locks: AccountLocks,
+    pub priorities: crate::priority_orders::PriorityGate,
     pub templates: Templates,
     pub settings: Arc<Settings>,
     pub supervisor: crate::supervision::Supervisor,
@@ -189,6 +190,7 @@ impl Actions {
             upstream,
             locks,
             templates,
+            priorities: crate::priority_orders::PriorityGate::new(&settings),
             settings,
             candidates: Candidates::new(supervisor.clone()),
             supervisor,
@@ -337,6 +339,11 @@ impl Actions {
         if self.settings.read_only {
             return Err(Error::read_only());
         }
+        let _priority = if action == "priority" {
+            Some(self.priorities.enter().await?)
+        } else {
+            None
+        };
         let mut row = self.account(id, None).await?;
         let original_parent = row["parent_account_id"].clone();
         if !truthy(&row["parent_account_id"]) {
@@ -377,6 +384,19 @@ impl Actions {
                 action,
                 &payload[action],
             )?;
+        }
+        if action == "priority" {
+            if let Err(error) = self
+                .priorities
+                .before_write(&self.queries.db, id, expected, &payload[action])
+                .await
+            {
+                credit_ownership::reconcile(
+                    &self.queries.oauth,
+                    &credit_ownership::account(&self.queries.db, id).await?,
+                )?;
+                return Err(error);
+            }
         }
         let result = if action == "sync_models" {
             let data = self

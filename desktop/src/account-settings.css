@@ -43,6 +43,7 @@
 .scheduling-parameters { display: grid; gap: 2px; min-width: 0; font-size: 11px; }
 .scheduling-parameters > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 3px; }
 .scheduling-parameters > div > span { color: var(--muted); white-space: nowrap; text-align: left; }
+.scheduling-parameters > div > .priority-value { color: var(--ink); text-align: right; padding: 2px 4px; min-height: 23px; line-height: 17px; font-variant-numeric: tabular-nums; }
 .scheduling-parameters > div > button { min-width: 0; min-height: 23px; padding: 2px 4px; width: 100%; border-color: transparent; background: transparent; justify-content: flex-end; font-size: 11px; line-height: 17px; font-variant-numeric: tabular-nums; }
 .scheduling-parameters > div > button:hover { background: var(--hover); border-color: var(--line); }
 .numeric-editor-backdrop { position: fixed; inset: 0; z-index: 350; background: transparent; }

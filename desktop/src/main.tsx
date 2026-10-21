@@ -77,17 +77,19 @@ import { accountOperation, bindOperationConnection } from "./accountOperations";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
+import PriorityManager from "./PriorityManager";
 import DegradationAction, { DegradationBadge } from "./DegradationMark";
 import { listenBack, useBackAction } from "./mobile";
 import { version as appVersion } from "../package.json";
 import { getVersion as getRuntimeVersion } from "@tauri-apps/api/app";
 import "./mobile-layout.css";
 
-type Page = "accounts" | "groups" | "records" | "events" | "features" | "settings";
+type Page = "accounts" | "groups" | "priorities" | "records" | "events" | "features" | "settings";
 const quick = new URLSearchParams(location.search).get("panel") === "quick";
 const pages: { id: Page; label: string; icon: typeof Activity }[] = [
   { id: "accounts", label: "账号", icon: Users },
   { id: "groups", label: "分组", icon: Layers3 },
+  { id: "priorities", label: "优先级", icon: ListOrdered },
   { id: "records", label: "记录", icon: ListOrdered },
   { id: "events", label: "事件", icon: Bell },
   { id: "features", label: "功能", icon: SlidersHorizontal },
@@ -161,6 +163,7 @@ export default function App() {
     [filtersOpen, setFiltersOpen] = useState(false),
     [groupsOpen, setGroupsOpen] = useState(false),
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
+    [priorityChanges, setPriorityChanges] = useState(0),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
@@ -180,7 +183,7 @@ export default function App() {
   }
   async function beforeConnectionChange() {
     if (groupChanges.busy) { setToast("分组正在保存，请等待结果"); return false; }
-    if (!groupChanges.count) return true;
+    if (!groupChanges.count && !priorityChanges) return true;
     return new Promise<boolean>((resolve) => setLeaveGroups(() => resolve));
   }
   const mobile = state.platform === "android" || (preview && new URLSearchParams(location.search).has("mobile"));
@@ -589,7 +592,7 @@ export default function App() {
           <div className="top-actions">
             {preview && !quick && <span className="preview-label">预览</span>}
             {status()}
-            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
+            <AccountOperations accounts={accounts} online={state.online} connectionKey={connectionKey} report={report} modelTest={setModelTestAccount} priorities={() => setPage("priorities")} template={(a) => { setTemplateAccounts(undefined); setTemplateAccount(a); setTemplatesOpen(true); }} />
             {!quick && !preview && !mobile && (
               <button
                 className="icon-button"
@@ -688,7 +691,8 @@ export default function App() {
             ) : (
               <>
                 <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
-                <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page}>
+                <PriorityManager key={`priorities:${connectionKey}`} connectionKey={connectionKey} active={page === "priorities"} accounts={accounts} mobile={mobile} online={state.online} back={() => setPage("accounts")} changed={setPriorityChanges}/>
+                <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page} hidden={page === "groups" || page === "priorities"}>
                   <div className="page-heading">
                     <div>
                       <h1>{pages.find((p) => p.id === page)?.label}</h1>
@@ -704,7 +708,7 @@ export default function App() {
                 {page === "accounts" && (
                   <>
                     {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
-                    {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
+                    {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
                         <Search size={15} />
@@ -1024,8 +1028,8 @@ export default function App() {
           </footer>
         )}
       </main>
-      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups").map((p) => <button key={p.id} className={page === p.id || page === "groups" && p.id === "accounts" ? "active" : ""} aria-current={page === p.id ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>)}</nav>}
-      {leaveGroups && <div className="modal-backdrop"><section className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label="未应用的分组修改"><h2>放弃分组草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
+      {mobile && <nav className="bottom-nav" aria-label="主导航">{pages.filter((p) => p.id !== "groups" && p.id !== "priorities").map((p) => { const selected = page === p.id || ["groups", "priorities"].includes(page) && p.id === "accounts"; return <button key={p.id} className={selected ? "active" : ""} aria-current={selected ? "page" : undefined} onClick={() => setPage(p.id)}><p.icon size={21}/><span>{p.label}</span></button>; })}</nav>}
+      {leaveGroups && <div className="modal-backdrop"><section className="discard-groups-dialog" role="dialog" aria-modal="true" aria-label={priorityChanges ? "未应用的优先级修改" : "未应用的分组修改"}><h2>放弃{groupChanges.count ? "分组" : ""}{groupChanges.count && priorityChanges ? "和" : ""}{priorityChanges ? "优先级" : ""}草稿并更换连接？</h2><div><button onClick={() => { leaveGroups(false); setLeaveGroups(null); }}>保留草稿</button><button className="primary" onClick={() => { leaveGroups(true); setLeaveGroups(null); }}>放弃并继续</button></div></section></div>}
       {mobile && groupsOpen && <div className="mobile-groups-surface" role="dialog" aria-modal="true" aria-label="分组动态"><header><h2>分组动态</h2><button className="icon-button" aria-label="关闭分组动态" onClick={() => setGroupsOpen(false)}><X size={20}/></button></header><div className="quick-groups">{visibleGroups.map((g) => groupRow(g, true))}{!groups.length && <Empty text="没有分组记录"/>}</div></div>}
       {deleteAccounts && (
         <DeleteAccountsDialog

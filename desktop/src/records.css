@@ -725,3 +725,29 @@
     --record-output: #b18af7;
   }
 }
+
+/* Desktop table density. Cards and detail typography keep their own sizing. */
+.app:not(.mobile) .records-table th { height: 26px; padding: 3px 4px; }
+.app:not(.mobile) .records-table td { height: 32px; padding: 3px 4px; }
+.app:not(.mobile) .records-table .record-user { width: 110px; min-width: 110px; max-width: 110px; }
+.app:not(.mobile) .records-table .record-user button { width: 96px; }
+.app:not(.mobile) .records-table .record-ellipsis { width: 100%; max-width: 100px; }
+.app:not(.mobile) .records-table .record-col-account,
+.app:not(.mobile) .records-table .record-col-api_key { min-width: 88px; }
+.app:not(.mobile) .records-table .record-col-account .record-ellipsis,
+.app:not(.mobile) .records-table .record-key { width: 80px; }
+.app:not(.mobile) .records-table .record-col-model { min-width: 124px; }
+.app:not(.mobile) .records-table .record-route { width: 116px; }
+.app:not(.mobile) .records-table .record-route > div { min-width: 0; }
+.app:not(.mobile) .records-table .record-route > div > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app:not(.mobile) .records-table .record-route small { flex-shrink: 0; }
+.app:not(.mobile) .records-table .record-col-type { min-width: 72px; }
+.app:not(.mobile) .records-table .record-type-badges { max-width: 92px; }
+.app:not(.mobile) .records-table .record-type-badge { font-size: 10px; padding: 0 5px; }
+.app:not(.mobile) .records-table .record-tokens { min-width: 118px; font-size: 11px; }
+.app:not(.mobile) .records-table .record-money { min-width: 80px; white-space: nowrap; }
+.app:not(.mobile) .records-table .record-latency { min-width: 104px; }
+.app:not(.mobile) .records-table .record-col-user_agent { min-width: 120px; }
+.app:not(.mobile) .records-table .record-col-ip { min-width: 108px; }
+.app:not(.mobile) .records-table .record-col-request_id,
+.app:not(.mobile) .records-table .record-col-upstream_id { min-width: 130px; }

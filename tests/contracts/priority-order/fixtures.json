@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "storage": {
+    "filename": "account-priority-orders.json",
+    "version": 1,
+    "active_key": "active_id",
+    "last_key": "last_id",
+    "jobs_key": "jobs",
+    "requests_key": "requests"
+  },
+  "account_scope": {
+    "deleted": "excluded",
+    "platforms": ["openai", "grok", "anthropic"],
+    "target_priority": "ordered index starting at zero"
+  },
+  "statuses": {
+    "active": ["queued", "running", "checking"],
+    "terminal": ["completed", "failed", "cancelled", "needs_confirmation"],
+    "item_pending": ["pending", "unchanged", "dispatched", "verified"]
+  },
+  "request_contract": {
+    "required": ["ordered_account_ids", "expected_version", "request_id", "client_id"],
+    "idempotency": "request_id plus exact ordered ids, expected version, and client id",
+    "external_change": "collection, priority, identity, or editability changes stop remaining writes",
+    "concurrent_submit": "one active order is admitted; a second client receives busy, and the same request id cannot change content"
+  },
+  "write_contract": {
+    "only_changed_items": true,
+    "serialized": true,
+    "final_readback_required": true,
+    "unknown_result_is_not_replayed": true,
+    "cancel_keeps_dispatched_items": true,
+    "parent_child_lock": "parent and child account leases gate each write and release permits a later tick",
+    "credit_pause_reconciliation": "owned pause records a parameter edit before write and clears it after a successful readback",
+    "legacy_priority_queue": "pending legacy priority operations block a new order admission"
+  },
+  "recovery_contract": {
+    "restart_source": "state is mutated only after an accepted submit so all required fields remain production-shaped",
+    "dispatched_applied": "verify observed target after restart without another upstream write",
+    "dispatched_unapplied": "record observed mismatch and finish needs_confirmation without replay",
+    "pending_remaining": "continue never-dispatched items exactly once after restart"
+  },
+  "read_only_and_failure": {
+    "missing_state": "read-only startup and view use defaults without creating account-priority-orders.json",
+    "corrupt_state": "invalid persisted JSON returns an explicit 503",
+    "submit": "read-only submit returns read_only conflict",
+    "collection": "adding or deleting a live account stops an active order before dispatch"
+  }
+}

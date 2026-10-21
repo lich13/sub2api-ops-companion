@@ -125,6 +125,7 @@ beforeEach(() => {
   vi.mocked(api).mockImplementation(async (_method, path) => {
     if (path.startsWith("/usage-records")) return recordPage() as never;
     if (path.startsWith("/errors?category=") || path === "/recoveries") return { items: [], next_cursor: null } as never;
+    if (path === "/account-priorities") return { items: [], version: "fixture-priority-version", active_task: null, last_task: null } as never;
     if (path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     throw new Error(`Unexpected fixture request: ${path}`);
   });
@@ -137,6 +138,25 @@ afterEach(async () => {
 });
 
 describe("main page surface ownership", () => {
+  it("adds a desktop priority page while keeping five mobile navigation items", async () => {
+    await act(async () => root.render(<App />));
+    expect([...container.querySelectorAll<HTMLButtonElement>("aside nav button")].map((button) => button.textContent?.trim())).toEqual([
+      "账号", "分组", "优先级", "记录", "事件", "功能", "设置",
+    ]);
+    await act(async () => nav("优先级").click());
+    expect(container.querySelectorAll('[data-page="priorities"]')).toHaveLength(1);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    const mobileState = state();
+    mobileState.platform = "android";
+    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? mobileState as never : undefined as never);
+    await act(async () => root.render(<App />));
+    expect([...container.querySelectorAll<HTMLButtonElement>(".bottom-nav button")].map((button) => button.textContent?.trim())).toEqual([
+      "账号", "记录", "事件", "功能", "设置",
+    ]);
+  });
+
   it("unmounts records and events surfaces across repeated navigation", async () => {
     await act(async () => root.render(<App />));
 

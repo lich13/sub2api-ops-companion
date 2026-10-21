@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "feature": "account-priority-ordering",
+  "fixture": "tests/contracts/priority-order/fixtures.json",
+  "approved_requirement": "0.1.50 approved plan extension: durable account priority ordering contracts are covered by native Rust integration tests.",
+  "verification_command": ".venv/bin/python scripts/server_test.py --test priority_order_contract",
+  "target": {
+    "kind": "rust_integration_test",
+    "path": "server/tests/priority_order_contract.rs"
+  },
+  "mappings": [
+    {
+      "contract": "cross-platform live account projection excludes deleted rows and exposes versioned item DTOs",
+      "test": "priority_view_is_cross_platform_versioned_and_excludes_deleted_accounts",
+      "assertions": [
+        "assert_eq!(ids_from_view(&view), vec![openai, grok, anthropic]);",
+        "assert!(item[\"version\"].as_str().is_some_and(|v| v.len() == 64));"
+      ]
+    },
+    {
+      "contract": "exact request replay is idempotent; conflicting request ids and concurrent active orders are rejected",
+      "test": "priority_submit_is_idempotent_and_rejects_busy_or_conflicting_requests",
+      "assertions": [
+        "assert_eq!(replay[\"id\"], id);",
+        "assert_eq!(\n        status, 409,\n        \"second active order should be rejected: {text}\"\n    );"
+      ]
+    },
+    {
+      "contract": "changed accounts are written serially and completion requires every final priority readback",
+      "test": "priority_order_writes_changed_items_serially_and_finishes_after_full_readback",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"completed\");",
+        "assert_eq!(harness.upstream.max_active_writes(), 1);"
+      ]
+    },
+    {
+      "contract": "external priority changes stop the order before any stale write is dispatched",
+      "test": "external_priority_change_stops_remaining_order_without_dispatch",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(harness.upstream.put_ids().len(), 0);"
+      ]
+    },
+    {
+      "contract": "account addition and deletion invalidate an active order before dispatch",
+      "test": "account_addition_and_deletion_stop_orders_before_dispatch",
+      "assertions": [
+        "assert_eq!(first[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(second[\"status\"], \"needs_confirmation\");"
+      ]
+    },
+    {
+      "contract": "cancellation leaves unissued items untouched and a submitted task continues after client response",
+      "test": "cancel_before_dispatch_keeps_accounts_unchanged_and_client_can_close",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"cancelled\");",
+        "assert_eq!(harness.upstream.put_ids().len(), 0);"
+      ]
+    },
+    {
+      "contract": "cancellation after dispatch does not retract or replay the in-flight write",
+      "test": "cancel_after_dispatch_does_not_replay_or_cancel_the_inflight_item",
+      "assertions": [
+        "assert_eq!(harness.upstream.count_put_for(b), 1);",
+        "assert_eq!(harness.upstream.count_put_for(a), 0);"
+      ]
+    },
+    {
+      "contract": "an unknown upstream result is reconciled once without replay, whether applied or not",
+      "test": "unknown_write_is_checked_once_and_never_replayed",
+      "assertions": [
+        "assert_eq!(harness.upstream.count_put_for(id), 1);",
+        "assert_eq!(detail[\"items\"][0][\"status\"], \"dispatched\");"
+      ]
+    },
+    {
+      "contract": "an unknown result that reached the upstream is verified without a second write",
+      "test": "unknown_write_that_was_applied_is_verified_without_a_second_put",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"completed\");",
+        "assert_eq!(harness.upstream.count_put_for(id), 1);"
+      ]
+    },
+    {
+      "contract": "a persisted dispatched item already applied upstream is verified after Runtime restart without replay",
+      "test": "restart_reconciles_a_dispatched_applied_write_without_replay",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"completed\");",
+        "assert_eq!(harness.upstream.count_put_for(id), 0);"
+      ]
+    },
+    {
+      "contract": "a persisted dispatched item not reflected upstream stops for confirmation without replay",
+      "test": "restart_marks_an_unapplied_dispatched_write_for_confirmation_without_replay",
+      "assertions": [
+        "assert_eq!(detail[\"status\"], \"needs_confirmation\");",
+        "assert_eq!(harness.upstream.count_put_for(id), 0);"
+      ]
+    },
+    {
+      "contract": "Runtime restart continues only never-dispatched remaining items",
+      "test": "restart_continues_only_the_never_dispatched_remaining_item",
+      "assertions": [
+        "assert_eq!(harness.upstream.count_put_for(second), 0);",
+        "assert_eq!(harness.upstream.count_put_for(first), 1);"
+      ]
+    },
+    {
+      "contract": "concurrent clients admit one active order and reject the other",
+      "test": "concurrent_clients_admit_one_order_and_keep_the_other_busy",
+      "assertions": [
+        "assert!(statuses.contains(&200));",
+        "assert!(statuses.contains(&409));"
+      ]
+    },
+    {
+      "contract": "parent and child account leases block the child until the parent lease is released and writes remain serial",
+      "test": "parent_child_lock_blocks_the_child_then_resumes_without_parallel_writes",
+      "assertions": [
+        "assert_eq!(harness.upstream.put_ids().len(), 0);",
+        "assert_eq!(harness.upstream.max_active_writes(), 1);"
+      ]
+    },
+    {
+      "contract": "a successful priority write reconciles owned credit pause state and clears parameter_edit",
+      "test": "credit_pause_ownership_is_reconciled_after_priority_write",
+      "assertions": [
+        "assert_eq!(task[\"owns_pause\"], true);",
+        "assert!(task[\"parameter_edit\"].is_null());"
+      ]
+    },
+    {
+      "contract": "queued legacy priority operations block creation of a new order",
+      "test": "queued_legacy_priority_operation_blocks_a_new_order",
+      "assertions": [
+        "assert_eq!(queued[\"status\"], \"queued\");",
+        "assert_eq!(\n        status, 409,\n        \"queued legacy priority must block order: {text}\"\n    );"
+      ]
+    },
+    {
+      "contract": "legacy single-account priority writes are mutually exclusive with an active order",
+      "test": "legacy_priority_write_is_mutually_exclusive_with_active_order",
+      "assertions": [
+        "assert_eq!(status, 409, \"legacy priority write must be blocked: {text}\");",
+        "assert_eq!(harness.priority(a).await, 10);"
+      ]
+    },
+    {
+      "contract": "read-only startup validates persisted order state without rewriting it",
+      "test": "read_only_startup_only_reads_priority_order_state",
+      "assertions": [
+        "assert_eq!(\n        before, after,\n        \"read-only startup must not rewrite priority state\"\n    );"
+      ]
+    },
+    {
+      "contract": "corrupt priority state fails explicitly; missing state remains absent in read-only mode and submit is rejected",
+      "test": "corrupt_priority_state_fails_explicitly_and_missing_read_only_state_stays_missing",
+      "assertions": [
+        "assert_eq!(submit.status.as_u16(), 409);",
+        "assert_eq!(status, 503, \"corrupt state must fail explicitly: {text}\");"
+      ]
+    }
+  ]
+}

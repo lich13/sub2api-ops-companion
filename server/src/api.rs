@@ -22,9 +22,16 @@ use std::{collections::BTreeMap, convert::Infallible, panic::AssertUnwindSafe, s
 const MAX_REQUEST_BODY_BYTES: usize = 36 * 1024 * 1024;
 
 async fn json_payload(body: Body) -> Result<Value> {
+    json_payload_optional(body, false).await
+}
+
+async fn json_payload_optional(body: Body, empty_object: bool) -> Result<Value> {
     let raw = to_bytes(body, MAX_REQUEST_BODY_BYTES)
         .await
         .map_err(|_| Error::invalid())?;
+    if empty_object && raw.is_empty() {
+        return Ok(json!({}));
+    }
     serde_json::from_slice(&raw).map_err(|_| Error::invalid())
 }
 
@@ -151,6 +158,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["capabilities"
         | "connection-status"
         | "snapshot"
+        | "account-priorities"
         | "detection-logs"
         | "errors"
         | "usage-records"
@@ -160,6 +168,9 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         | "config"
         | "model-groups"] => Some(&["GET"]),
         ["account-operations"] => Some(&["GET"]),
+        ["account-priority-orders"] => Some(&["POST"]),
+        ["account-priority-orders", _] => Some(&["GET"]),
+        ["account-priority-orders", _, "cancel"] => Some(&["POST"]),
         ["account-operations", "batch"] => Some(&["POST"]),
         ["account-operations", _] => Some(&["GET"]),
         ["account-operations", _, "cancel"] | ["account-operations", "batches", _, "cancel"] => {
@@ -253,7 +264,11 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     }
     let mut payload = json!({});
     if crate::request_schema::has_body(&path, method.as_str()) {
-        payload = json_payload(request.into_body()).await?;
+        payload = if matches!(path.as_slice(), ["account-priority-orders", _, "cancel"]) {
+            json_payload_optional(request.into_body(), true).await?
+        } else {
+            json_payload(request.into_body()).await?
+        };
         crate::request_schema::validate(&path, method.as_str(), &mut payload)?;
     }
     if path == ["connection-status"] {
@@ -273,9 +288,13 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let result: Value = match path.as_slice() {
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
+        ["account-priorities"] => runtime.priorities.view().await?,
+        ["account-priority-orders"] => runtime.priorities.submit(&payload).await?,
+        ["account-priority-orders", id] => runtime.priorities.get(id)?,
+        ["account-priority-orders", id, "cancel"] => runtime.priorities.cancel(id).await?,
         ["errors"] => {
             runtime
                 .actions
