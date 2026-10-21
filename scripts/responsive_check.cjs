@@ -263,6 +263,31 @@ async function fixtureData(page) {
   });
 }
 
+async function measureTypography(page, selectors) {
+  return page.evaluate((entries) => {
+    const measure = (node) => {
+      if (!node) return null;
+      const computed = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      const nativeSelect = node.tagName === "SELECT";
+      // Native selects can report normal despite the declared 20px line height.
+      const allowsNormalLineHeight = nativeSelect && ["auto", "menulist"].includes(computed.appearance);
+      return {
+        fontSize: computed.fontSize,
+        lineHeight: computed.lineHeight,
+        lineHeightOk: computed.lineHeight === "20px"
+          || allowsNormalLineHeight && computed.lineHeight === "normal",
+        appearance: computed.appearance,
+        height: Math.round(rect.height * 100) / 100,
+      };
+    };
+    return Object.fromEntries(Object.entries(entries).map(([key, selector]) => [
+      key,
+      [...document.querySelectorAll(selector)].map(measure),
+    ]));
+  }, selectors);
+}
+
 async function accountSettingsData(page, accountId) {
   return page.evaluate(async (id) => {
     const preview = await import("/src/preview.ts");
@@ -592,20 +617,17 @@ async function accountChecks(h, fixture) {
   await h.allWithin(page.locator(".bottom-nav button"), "bottom-navigation", { scroll: false, hit: true });
   const mobileSort = surface.locator(".mobile-sort");
   await h.within(mobileSort, "mobile-account-sort", { touch: false, vertical: false });
-  const mobileSortTypography = await mobileSort.evaluate((element) => {
-    const label = element.querySelector("span");
-    const select = element.querySelector("select");
-    const style = (node) => node ? getComputedStyle(node) : null;
-    return {
-      labelFont: style(label)?.fontSize || "",
-      selectFont: style(select)?.fontSize || "",
-      selectLine: style(select)?.lineHeight || "",
-    };
+  const mobileSortTypography = await measureTypography(page, {
+    count: '.page-surface[data-page="accounts"] .mobile-sort > span',
+    select: '.page-surface[data-page="accounts"] .mobile-sort > select',
   });
-  await h.state(mobileSortTypography.labelFont === "12px"
-    && mobileSortTypography.selectFont === "12px"
-    && mobileSortTypography.selectLine === "20px",
+  const mobileCount = mobileSortTypography.count[0];
+  const mobileSelect = mobileSortTypography.select[0];
+  await h.state(mobileCount?.fontSize === "12px"
+    && mobileSelect?.fontSize === "12px"
+    && mobileSelect?.lineHeightOk,
   "mobile-account-sort-typography-mismatch", mobileSort);
+  await h.state(mobileSelect?.height >= 48, "mobile-account-sort-select-under-48px", mobileSort);
   const search = surface.getByPlaceholder("搜索名称或账号 ID", { exact: true });
   await h.within(search, "account-search");
   const account = fixture.accounts.find((item) => item.id === 102);
@@ -1466,31 +1488,26 @@ async function desktopMenuChecks(h, fixture) {
   await h.within(sortSelect, "desktop-account-sort-dropdown", { touch: false, vertical: false });
   await h.allWithin(accountToolbar.locator("button"), "desktop-account-toolbar-button", { touch: false, vertical: false });
   await h.allWithin(accountFilterSelects, "desktop-account-filter", { touch: false, vertical: false });
-  const accountTypography = await page.evaluate(() => {
-    const style = (selector) => {
-      const node = document.querySelector(selector);
-      if (!node) return null;
-      const computed = getComputedStyle(node);
-      return { fontSize: computed.fontSize, lineHeight: computed.lineHeight };
-    };
-    return {
-      sort: style('.page-surface[data-page="accounts"] .account-sort'),
-      dropdown: style('.page-surface[data-page="accounts"] select[aria-label="账号排序"]'),
-      toolbar: [...document.querySelectorAll('.page-surface[data-page="accounts"] .account-toolbar > button')]
-        .map((node) => ({ fontSize: getComputedStyle(node).fontSize, lineHeight: getComputedStyle(node).lineHeight })),
-      filters: [...document.querySelectorAll('.page-surface[data-page="accounts"] .filters select')]
-        .map((node) => ({ fontSize: getComputedStyle(node).fontSize, lineHeight: getComputedStyle(node).lineHeight })),
-    };
+  const accountTypography = await measureTypography(page, {
+    sort: '.page-surface[data-page="accounts"] .account-sort',
+    dropdown: '.page-surface[data-page="accounts"] select[aria-label="账号排序"]',
+    toolbar: '.page-surface[data-page="accounts"] .account-toolbar > button',
+    filters: '.page-surface[data-page="accounts"] .filters select',
   });
-  await h.state(accountTypography.sort?.fontSize === "12px"
-    && accountTypography.sort?.lineHeight === "20px"
-    && accountTypography.dropdown?.fontSize === "12px"
-    && accountTypography.dropdown?.lineHeight === "20px"
+  const desktopSort = accountTypography.sort[0];
+  const desktopDropdown = accountTypography.dropdown[0];
+  await h.state(desktopSort?.fontSize === "12px"
+    && desktopSort?.lineHeight === "20px"
+    && desktopDropdown?.fontSize === "12px"
+    && desktopDropdown?.lineHeightOk
     && accountTypography.toolbar.length > 0
     && accountTypography.toolbar.every((item) => item.fontSize === "12px" && item.lineHeight === "20px")
     && accountTypography.filters.length > 0
-    && accountTypography.filters.every((item) => item.fontSize === "12px" && item.lineHeight === "20px"),
+    && accountTypography.filters.every((item) => item.fontSize === "12px" && item.lineHeightOk),
   "desktop-account-sort-typography-mismatch", accountToolbar);
+  await h.state(desktopDropdown?.height >= 30
+    && accountTypography.filters.every((item) => item.height >= 30),
+  "desktop-account-select-under-30px", accountToolbar);
   const baseColumnsWidth = await table.locator("col:not(.col-name):not(.col-actions)").evaluateAll((columns) =>
     Math.round(columns.reduce((total, column) => total + column.getBoundingClientRect().width, 0)));
   await h.state(baseColumnsWidth === 734, "account-table-base-columns-width", table);
