@@ -22,6 +22,7 @@ import {
   money,
   normalizeRecordColumns,
   recordColumns,
+  requestType,
   requestTypes,
   tokenCount,
   formatUsageOutputRate,
@@ -116,6 +117,17 @@ function Latency({ row }: { row: UsageRecord }) {
     </div>
   );
 }
+function TypeBadges({ row }: { row: UsageRecord }) {
+  const kind = requestType(row);
+  return (
+    <span className="record-type-badges">
+      <span className={`record-type-badge is-${kind}`}>{requestTypes[kind]}</span>
+      {row.native_compaction_v2 === true && (
+        <span className="record-type-badge is-compact">压缩</span>
+      )}
+    </span>
+  );
+}
 function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
   switch (column) {
     case "api_key":
@@ -141,6 +153,8 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
       );
     case "model":
       return <Route row={row} />;
+    case "type":
+      return <TypeBadges row={row} />;
     case "reasoning":
       return <Reasoning row={row} />;
     case "tokens":
@@ -384,7 +398,7 @@ function RecordDetail({
                   "分组",
                   row.group_name || (row.group_id ? `#${row.group_id}` : "—"),
                 )}
-                {pair("类型", requestTypes[row.request_type])}
+                {pair("类型", <TypeBadges row={row} />)}
                 {pair("服务等级", row.service_tier || "—")}
                 {pair("入站端点", <CopyValue value={row.inbound_endpoint} />)}
                 {pair("上游端点", <CopyValue value={row.upstream_endpoint} />)}

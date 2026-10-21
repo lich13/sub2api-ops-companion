@@ -6,8 +6,11 @@ import {
   latencyTone,
   modelRoute,
   money,
+  normalizeRecordColumns,
   tokenCount,
   formatUsageOutputRate,
+  requestType,
+  requestTypes,
   type UsageRecord,
 } from "./records";
 
@@ -199,11 +202,12 @@ describe("record performance metrics", () => {
     expect(outputRate(fields)).toBe("—");
   });
 
-  it("uses the nine explicit default columns without the removed type column", () => {
+  it("keeps type in defaults while preserving custom and empty selections", () => {
     expect(defaultRecordColumns).toEqual([
       "api_key",
       "account",
       "model",
+      "type",
       "reasoning",
       "tokens",
       "cost",
@@ -211,6 +215,42 @@ describe("record performance metrics", () => {
       "user_agent",
       "ip",
     ]);
+    expect(normalizeRecordColumns(["model", "cost"])).toEqual([
+      "model",
+      "cost",
+    ]);
+    expect(normalizeRecordColumns([])).toEqual([]);
+    expect(normalizeRecordColumns(undefined)).toEqual(defaultRecordColumns);
+    expect(normalizeRecordColumns(null)).toEqual(defaultRecordColumns);
+  });
+});
+
+describe("record request type", () => {
+  const kind = (fields: Record<string, unknown>) =>
+    requestType(fields as Parameters<typeof requestType>[0]);
+
+  it.each([
+    [{ native_request_type: "cyber", request_type: "stream" }, "cyber"],
+    [{ native_request_type: "live", request_type: "sync" }, "live"],
+    [{ native_request_type: "invalid", request_type: "stream" }, "stream"],
+    [{ native_request_type: "invalid", request_type: "unknown" }, "unknown"],
+    [{ request_type: "invalid", openai_ws_mode: true }, "ws_v2"],
+    [{ request_type: "invalid", openai_ws_mode: false, stream: true }, "stream"],
+    [{ request_type: "invalid", openai_ws_mode: false, stream: false }, "sync"],
+    [{}, "sync"],
+  ] as const)("resolves %o to %s", (fields, expected) => {
+    expect(kind(fields)).toBe(expected);
+  });
+
+  it("exposes the user-facing labels for every request kind", () => {
+    expect(requestTypes).toEqual({
+      sync: "同步",
+      stream: "流式",
+      ws_v2: "WebSocket",
+      cyber: "安全策略",
+      live: "Live",
+      unknown: "未知",
+    });
   });
 });
 

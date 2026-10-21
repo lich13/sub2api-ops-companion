@@ -102,10 +102,6 @@ function lastDetectionTime() {
     ?.nextElementSibling?.textContent;
 }
 
-function modelField() {
-  return container.querySelector<HTMLElement>('[aria-label="检测模型"]');
-}
-
 async function renderDialog(
   detection: Detection = baseDetection,
   candidates = models,
@@ -165,7 +161,7 @@ describe("scheduled model detection", () => {
     await renderDialog();
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
     expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')?.value).toBe("30");
-    expect(modelField()?.textContent).toBe("gpt-6-sol（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("等待下次检测");
 
     await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
@@ -201,7 +197,7 @@ describe("scheduled model detection", () => {
 
   it("shows an unavailable global model and prevents enabling detection", async () => {
     await renderDialog({ ...baseDetection, enabled: true, model_id: "retired-model" }, [models[0]]);
-    expect(modelField()?.textContent).toBe("retired-model（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("当前账号上游模型目录");
     expect(button("保存").disabled).toBe(true);
   });
@@ -300,13 +296,13 @@ describe("scheduled model detection", () => {
     reload = true;
     await act(async () => button("重新读取").click());
     await settle();
-    expect(modelField()?.textContent).toBe("retired-model（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).not.toContain("所选模型不在当前账号上游模型目录中");
     expect(button("保存").disabled).toBe(true);
 
     await act(async () => resolveModels([]));
     await settle();
-    expect(modelField()?.textContent).toBe("retired-model（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     expect(container.textContent).toContain("所选模型不在当前账号上游模型目录中");
     expect(button("保存").disabled).toBe(true);
   });
@@ -340,7 +336,7 @@ describe("scheduled model detection", () => {
     await settle();
 
     expect(interval.value).toBe("60");
-    expect(modelField()?.textContent).toBe("gpt-6-luna（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
     await act(async () => button("保存").click());
     expect(vi.mocked(api).mock.calls.find(([method]) => method === "PUT")?.[2]).toEqual({
       expected_version: "detection-version-server",
@@ -378,7 +374,7 @@ describe("scheduled model detection", () => {
     await settle();
 
     expect(interval.value).toBe("45");
-    expect(modelField()?.textContent).toBe("gpt-6-sol（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
   });
 
   it("ignores a late settings response after switching accounts", async () => {
@@ -405,7 +401,7 @@ describe("scheduled model detection", () => {
     await settle();
     expect(container.textContent).toContain("另一个检测账号 #43");
     expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
-    expect(modelField()?.textContent).toBe("gpt-6-luna（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
 
     await act(async () => {
       resolveOldDetection({ ...baseDetection, interval_minutes: 5, model_id: "gpt-6-sol", version: "stale-version" });
@@ -414,7 +410,7 @@ describe("scheduled model detection", () => {
     await settle();
     expect(container.textContent).toContain("另一个检测账号 #43");
     expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe("55");
-    expect(modelField()?.textContent).toBe("gpt-6-luna（在功能中修改）");
+    expect(container.querySelector('[aria-label="检测模型"]')).toBeNull();
   });
 
   it("ignores settings responses after the dialog is unmounted", async () => {

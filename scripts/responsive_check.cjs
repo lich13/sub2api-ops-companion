@@ -590,6 +590,22 @@ async function accountChecks(h, fixture) {
   h.phase = "accounts";
   const surface = page.locator('.page-surface[data-page="accounts"]');
   await h.allWithin(page.locator(".bottom-nav button"), "bottom-navigation", { scroll: false, hit: true });
+  const mobileSort = surface.locator(".mobile-sort");
+  await h.within(mobileSort, "mobile-account-sort", { touch: false, vertical: false });
+  const mobileSortTypography = await mobileSort.evaluate((element) => {
+    const label = element.querySelector("span");
+    const select = element.querySelector("select");
+    const style = (node) => node ? getComputedStyle(node) : null;
+    return {
+      labelFont: style(label)?.fontSize || "",
+      selectFont: style(select)?.fontSize || "",
+      selectLine: style(select)?.lineHeight || "",
+    };
+  });
+  await h.state(mobileSortTypography.labelFont === "12px"
+    && mobileSortTypography.selectFont === "12px"
+    && mobileSortTypography.selectLine === "20px",
+  "mobile-account-sort-typography-mismatch", mobileSort);
   const search = surface.getByPlaceholder("搜索名称或账号 ID", { exact: true });
   await h.within(search, "account-search");
   const account = fixture.accounts.find((item) => item.id === 102);
@@ -663,6 +679,45 @@ async function recordChecks(h) {
   await h.navigate("记录", "records");
   const records = page.getByRole("region", { name: "调用记录", exact: true });
   await h.visible(records.locator(".mobile-record").first(), "mobile-record");
+  const compactRecord = records.locator(".mobile-record").filter({
+    has: page.locator('.mobile-record-open[aria-label="查看记录 #200"]'),
+  });
+  await h.visible(compactRecord, "record-compact-row");
+  const compactType = compactRecord.locator(".mobile-record-type");
+  await h.within(compactType, "record-type-badges", { touch: false, vertical: false });
+  const compactBadges = compactType.locator(".record-type-badge");
+  await h.state(await compactBadges.count() === 2
+    && await compactType.locator(".record-type-badge.is-compact").count() === 1
+    && await compactType.locator(".record-type-badge.is-stream, .record-type-badge.is-sync").count() === 1,
+  "record-type-badges-missing-or-duplicated", compactType);
+  const compactLayout = await compactType.evaluate((element) => {
+    const badges = [...element.querySelectorAll(".record-type-badge")];
+    const parent = element.getBoundingClientRect();
+    const rects = badges.map((badge) => badge.getBoundingClientRect());
+    return {
+      parent: { width: parent.width, height: parent.height },
+      rects: rects.map((rect) => ({ left: rect.left - parent.left, right: rect.right - parent.left, top: rect.top - parent.top, bottom: rect.bottom - parent.top })),
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    };
+  });
+  await h.state(compactLayout.parent.width > 0
+    && compactLayout.parent.height > 0
+    && compactLayout.rects.every((rect) => rect.left >= 0 && rect.right <= compactLayout.parent.width + 1)
+    && compactLayout.scrollHeight <= compactLayout.clientHeight + 1
+    && compactLayout.scrollWidth <= compactLayout.clientWidth + 1,
+  "record-type-badges-clipped-or-overflowing", compactType);
+  const syncCompactRecord = records.locator(".mobile-record").filter({
+    has: page.locator('.mobile-record-open[aria-label="查看记录 #199"]'),
+  });
+  await h.visible(syncCompactRecord, "record-sync-compact-row");
+  const syncCompactType = syncCompactRecord.locator(".mobile-record-type");
+  await h.state(await syncCompactType.locator(".record-type-badge").count() === 2
+    && await syncCompactType.locator(".record-type-badge.is-sync").count() === 1
+    && await syncCompactType.locator(".record-type-badge.is-compact").count() === 1,
+  "record-sync-compact-badges-missing-or-duplicated", syncCompactType);
   await h.layout();
 
   h.phase = "records/pagination";
@@ -1403,6 +1458,39 @@ async function desktopMenuChecks(h, fixture) {
   h.phase = "desktop/table";
   const table = page.locator(".accounts-table");
   await h.visible(table, "desktop-account-table");
+  const accountToolbar = page.locator('.page-surface[data-page="accounts"] .account-toolbar');
+  const accountSort = page.locator('.page-surface[data-page="accounts"] .account-sort');
+  const sortSelect = page.locator('.page-surface[data-page="accounts"] select[aria-label="账号排序"]');
+  const accountFilterSelects = page.locator('.page-surface[data-page="accounts"] .filters select');
+  await h.within(accountSort, "desktop-account-sort", { touch: false, vertical: false });
+  await h.within(sortSelect, "desktop-account-sort-dropdown", { touch: false, vertical: false });
+  await h.allWithin(accountToolbar.locator("button"), "desktop-account-toolbar-button", { touch: false, vertical: false });
+  await h.allWithin(accountFilterSelects, "desktop-account-filter", { touch: false, vertical: false });
+  const accountTypography = await page.evaluate(() => {
+    const style = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const computed = getComputedStyle(node);
+      return { fontSize: computed.fontSize, lineHeight: computed.lineHeight };
+    };
+    return {
+      sort: style('.page-surface[data-page="accounts"] .account-sort'),
+      dropdown: style('.page-surface[data-page="accounts"] select[aria-label="账号排序"]'),
+      toolbar: [...document.querySelectorAll('.page-surface[data-page="accounts"] .account-toolbar > button')]
+        .map((node) => ({ fontSize: getComputedStyle(node).fontSize, lineHeight: getComputedStyle(node).lineHeight })),
+      filters: [...document.querySelectorAll('.page-surface[data-page="accounts"] .filters select')]
+        .map((node) => ({ fontSize: getComputedStyle(node).fontSize, lineHeight: getComputedStyle(node).lineHeight })),
+    };
+  });
+  await h.state(accountTypography.sort?.fontSize === "12px"
+    && accountTypography.sort?.lineHeight === "20px"
+    && accountTypography.dropdown?.fontSize === "12px"
+    && accountTypography.dropdown?.lineHeight === "20px"
+    && accountTypography.toolbar.length > 0
+    && accountTypography.toolbar.every((item) => item.fontSize === "12px" && item.lineHeight === "20px")
+    && accountTypography.filters.length > 0
+    && accountTypography.filters.every((item) => item.fontSize === "12px" && item.lineHeight === "20px"),
+  "desktop-account-sort-typography-mismatch", accountToolbar);
   const baseColumnsWidth = await table.locator("col:not(.col-name):not(.col-actions)").evaluateAll((columns) =>
     Math.round(columns.reduce((total, column) => total + column.getBoundingClientRect().width, 0)));
   await h.state(baseColumnsWidth === 734, "account-table-base-columns-width", table);
@@ -1442,6 +1530,137 @@ async function desktopMenuChecks(h, fixture) {
   const manager = page.locator(".group-manager");
   await h.visible(manager, "group-manager");
   await groupMenuChecks(h, reloadedFixture, manager);
+
+  h.phase = "desktop/records-type-badges";
+  await h.click(page.locator(".sidebar nav").getByRole("button", { name: "记录", exact: true }), "desktop-record-entry", { touch: false });
+  const records = page.getByRole("region", { name: "调用记录", exact: true });
+  await h.visible(records.locator(".records-table"), "desktop-record-table");
+  const recordsDensity = await records.evaluate((section) => {
+    const style = (element) => {
+      if (!element) return null;
+      const computed = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        height: computed.height,
+        minHeight: computed.minHeight,
+        rectHeight: rect.height,
+        paddingTop: computed.paddingTop,
+        paddingRight: computed.paddingRight,
+        paddingBottom: computed.paddingBottom,
+        paddingLeft: computed.paddingLeft,
+      };
+    };
+    const filterBar = section.querySelector(".records-filter-bar");
+    const controls = [...section.querySelectorAll(
+      ".records-toolbar input:not([type=checkbox]), .records-toolbar select, .records-toolbar .record-filter-trigger, .records-toolbar > button[type=submit]",
+    )];
+    return {
+      filterGap: filterBar ? getComputedStyle(filterBar).gap : "",
+      controls: controls.map((element) => style(element)),
+      dateTrigger: style(section.querySelector(".records-date-trigger")),
+      head: style(section.querySelector(".records-table thead th")),
+      cell: style(section.querySelector(".records-table tbody td")),
+    };
+  });
+  await h.state(recordsDensity.filterGap === "6px"
+    && recordsDensity.controls.length > 0
+    && recordsDensity.controls.every((control) => control?.rectHeight >= 27.5 && control?.rectHeight <= 28.5)
+    && recordsDensity.dateTrigger?.rectHeight >= 27.5
+    && recordsDensity.dateTrigger?.minHeight === "28px"
+    && recordsDensity.head?.height === "26px"
+    && recordsDensity.head?.paddingTop === "4px"
+    && recordsDensity.head?.paddingRight === "6px"
+    && recordsDensity.head?.paddingBottom === "4px"
+    && recordsDensity.head?.paddingLeft === "6px"
+    && recordsDensity.cell?.paddingTop === "4px"
+    && recordsDensity.cell?.paddingRight === "6px"
+    && recordsDensity.cell?.paddingBottom === "4px"
+    && recordsDensity.cell?.paddingLeft === "6px",
+  "desktop-record-density-mismatch", records.locator(".records-table"));
+  const compactRecord = records.locator("tbody tr").filter({ has: page.locator('button[title="查看记录 #200"]') });
+  await h.visible(compactRecord, "desktop-record-compact-row");
+  const typeCell = compactRecord.locator(".record-col-type");
+  await h.within(typeCell, "desktop-record-type-cell", { touch: false, vertical: false });
+  const badges = typeCell.locator(".record-type-badge");
+  await h.state(await badges.count() === 2
+    && await typeCell.locator(".record-type-badge.is-compact").count() === 1
+    && await typeCell.locator(".record-type-badge.is-stream").count() === 1,
+  "desktop-record-type-badges-missing-or-duplicated", typeCell);
+  const cellLayout = await typeCell.evaluate((element) => {
+    const cell = element.getBoundingClientRect();
+    const rects = [...element.querySelectorAll(".record-type-badge")].map((badge) => {
+      const rect = badge.getBoundingClientRect();
+      return { left: rect.left - cell.left, right: rect.right - cell.left, top: rect.top - cell.top, bottom: rect.bottom - cell.top };
+    });
+    return {
+      width: cell.width,
+      height: cell.height,
+      rects,
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    };
+  });
+  await h.state(cellLayout.width > 0 && cellLayout.height > 0
+    && cellLayout.rects.every((rect) => rect.left >= 0 && rect.right <= cellLayout.width + 1)
+    && cellLayout.scrollWidth <= cellLayout.clientWidth + 1
+    && cellLayout.scrollHeight <= cellLayout.clientHeight + 1,
+  "desktop-record-type-badges-clipped-or-overflowing", typeCell);
+  const multilineLayout = await compactRecord.evaluate((row) => {
+    const within = (parent, child) => {
+      const parentRect = parent.getBoundingClientRect();
+      const childRect = child.getBoundingClientRect();
+      return childRect.top >= parentRect.top - 1
+        && childRect.bottom <= parentRect.bottom + 1
+        && childRect.left >= parentRect.left - 1
+        && childRect.right <= parentRect.right + 1;
+    };
+    const measure = (selector, childSelector) => {
+      const node = row.querySelector(selector);
+      const cell = node?.closest("td");
+      if (!node || !cell) return null;
+      return {
+        childCount: node.querySelectorAll(childSelector).length,
+        withinCell: within(cell, node),
+        scrollHeight: node.scrollHeight,
+        clientHeight: node.clientHeight,
+        scrollWidth: node.scrollWidth,
+        clientWidth: node.clientWidth,
+        overflowY: getComputedStyle(node).overflowY,
+        childBounds: [...node.querySelectorAll(childSelector)].map((child) => within(node, child)),
+      };
+    };
+    return {
+      route: measure(".record-col-model .record-route", ":scope > div"),
+      tokens: measure(".record-col-tokens .record-tokens", ":scope > span"),
+      latency: measure(".record-col-latency .record-latency", ":scope > div > *"),
+    };
+  });
+  await h.state(multilineLayout.route?.childCount >= 2
+    && multilineLayout.route.withinCell
+    && multilineLayout.route.overflowY !== "hidden"
+    && multilineLayout.route.scrollHeight <= multilineLayout.route.clientHeight + 1
+    && multilineLayout.route.childBounds.every(Boolean)
+    && multilineLayout.tokens?.childCount >= 4
+    && multilineLayout.tokens.withinCell
+    && multilineLayout.tokens.overflowY !== "hidden"
+    && multilineLayout.tokens.scrollHeight <= multilineLayout.tokens.clientHeight + 1
+    && multilineLayout.tokens.childBounds.every(Boolean)
+    && multilineLayout.latency?.childCount >= 6
+    && multilineLayout.latency.withinCell
+    && multilineLayout.latency.overflowY !== "hidden"
+    && multilineLayout.latency.scrollHeight <= multilineLayout.latency.clientHeight + 1
+    && multilineLayout.latency.childBounds.every(Boolean),
+  "desktop-record-multiline-content-clipped-or-overflowing", compactRecord);
+  const syncCompactRecord = records.locator("tbody tr").filter({ has: page.locator('button[title="查看记录 #199"]') });
+  await h.visible(syncCompactRecord, "desktop-record-sync-compact-row");
+  const syncCompactTypeCell = syncCompactRecord.locator(".record-col-type");
+  await h.state(await syncCompactTypeCell.locator(".record-type-badge").count() === 2
+    && await syncCompactTypeCell.locator(".record-type-badge.is-sync").count() === 1
+    && await syncCompactTypeCell.locator(".record-type-badge.is-compact").count() === 1,
+  "desktop-record-sync-compact-badges-missing-or-duplicated", syncCompactTypeCell);
+  await h.layout();
 }
 
 async function runScenario(scenario) {

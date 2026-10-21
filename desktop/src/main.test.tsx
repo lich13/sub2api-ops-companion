@@ -113,6 +113,7 @@ function recordPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.removeItem("sub2ops-account-sort");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -131,6 +132,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  localStorage.removeItem("sub2ops-account-sort");
   container.remove();
 });
 
@@ -353,6 +355,7 @@ describe("account sorting and Android connection settings", () => {
   it("defaults Android accounts to recent calls and keeps priority sorting", async () => {
     const initial = state();
     initial.platform = "android";
+    localStorage.setItem("sub2ops-account-sort", "invalid-sort");
     initial.snapshot!.accounts = [
       Object.assign(account(1), { last_called_at: null, last_success_at: "2026-10-06T00:00:00Z" }),
       Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
@@ -370,11 +373,114 @@ describe("account sorting and Android connection settings", () => {
     expect([...sort.options].map((option) => option.value)).toEqual([
       "recent:desc", "recent:asc", "priority:asc", "priority:desc",
     ]);
+    for (const value of ["recent:desc", "recent:asc", "priority:asc", "priority:desc"]) {
+      await act(async () => {
+        sort.value = value;
+        sort.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(sort.value).toBe(value);
+      expect(localStorage.getItem("sub2ops-account-sort")).toBe(value);
+    }
     await act(async () => {
       sort.value = "priority:asc";
       sort.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(names()).toEqual(["账号 1", "账号 2", "账号 3"]);
+    expect(sort.value).toBe("priority:asc");
+    expect(localStorage.getItem("sub2ops-account-sort")).toBe("priority:asc");
+
+    await act(async () => {
+      sort.value = "priority:desc";
+      sort.dispatchEvent(new Event("change", { bubbles: true }));
+      sort.value = "recent:asc";
+      sort.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(sort.value).toBe("recent:asc");
+    expect(localStorage.getItem("sub2ops-account-sort")).toBe("recent:asc");
+  });
+
+  it("shares the saved sort between desktop controls and restores it after remount", async () => {
+    const initial = state();
+    initial.platform = "macos";
+    let receive!: (value: ViewState) => void;
+    vi.mocked(subscribe).mockImplementation(async (callback) => {
+      receive = callback;
+      return () => {};
+    });
+    initial.snapshot!.accounts = [
+      Object.assign(account(1), { last_called_at: "2026-10-06T00:00:00Z" }),
+      Object.assign(account(2), { last_called_at: "2026-10-07T00:00:00Z" }),
+      Object.assign(account(3), { last_called_at: "2026-10-05T00:00:00Z" }),
+    ];
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    await act(async () => root.render(<App />));
+    const desktopSort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    expect(desktopSort.value).toBe("recent:desc");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".sort-button")!.click(),
+    );
+    expect(desktopSort.value).toBe("priority:asc");
+    expect(container.querySelector('th[aria-sort="ascending"]')).not.toBeNull();
+    await act(async () => {
+      desktopSort.value = "priority:desc";
+      desktopSort.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(desktopSort.value).toBe("priority:desc");
+    expect(localStorage.getItem("sub2ops-account-sort")).toBe("priority:desc");
+    await act(async () => nav("记录").click());
+    await act(async () => nav("账号").click());
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("priority:desc");
+    await act(async () => receive({ ...initial, connection_revision: 1 }));
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("priority:desc");
+
+    for (const value of ["recent:desc", "recent:asc", "priority:asc", "priority:desc"] as const) {
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      initial.platform = "android";
+      localStorage.setItem("sub2ops-account-sort", value);
+      await act(async () => root.render(<App />));
+      const mobileSort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+      expect(mobileSort.value).toBe(value);
+      expect(localStorage.getItem("sub2ops-account-sort")).toBe(value);
+    }
+  });
+
+  it("falls back to recent descending when localStorage cannot be read", async () => {
+    const initial = state();
+    initial.platform = "android";
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    await act(async () => root.render(<App />));
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')?.value).toBe("recent:desc");
+    getItem.mockRestore();
+  });
+
+  it("updates the selected sort even when localStorage rejects the write", async () => {
+    const initial = state();
+    initial.platform = "android";
+    vi.mocked(command).mockImplementation(async (name) =>
+      name === "get_state" ? (initial as never) : (undefined as never),
+    );
+    const originalSetItem = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, value) => {
+      if (key === "sub2ops-account-sort") throw new Error("storage unavailable");
+      return originalSetItem.call(localStorage, key, value);
+    });
+    await act(async () => root.render(<App />));
+    const sort = container.querySelector<HTMLSelectElement>('select[aria-label="账号排序"]')!;
+    await act(async () => {
+      sort.value = "priority:asc";
+      sort.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(sort.value).toBe("priority:asc");
+    expect(setItem).toHaveBeenCalledWith("sub2ops-account-sort", "priority:asc");
+    setItem.mockRestore();
   });
 
   it("shows Android release-page copy and distinct upstream diagnostics with manual retry", async () => {

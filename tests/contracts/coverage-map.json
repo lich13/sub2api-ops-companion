@@ -26502,7 +26502,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26532,7 +26534,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26562,7 +26566,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26592,7 +26598,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26622,7 +26630,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26652,7 +26662,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26682,7 +26694,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26712,7 +26726,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26742,7 +26758,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26772,7 +26790,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26802,7 +26822,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -26832,7 +26854,9 @@
           {
             "name": "replay_direct_case",
             "assertions": [
-              "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+              "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+              "let comparable = strip_native_compaction_record(&actual);",
+              "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
               "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
             ]
           }
@@ -29207,7 +29231,45 @@
           }
         ]
       },
-      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 detail 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。"
+      "coverage_note": "从固定 SHA 旧测试逐次捕获 1 个 detail 观测，Rust 在隔离 PostgreSQL/loopback 上以相同输入和各调用前数据库快照回放；成功响应比较稳定字段完整 JSON，错误比较 HTTP 状态，另核对只读 SQL 与隐私边界。",
+      "supporting_targets": [
+        {
+          "kind": "rust_test",
+          "path": "server/tests/usage_records_parity.rs",
+          "test_name": "native_compaction_v2_is_schema_compatible_and_read_only",
+          "assertions": [
+            "assert_eq!(missing_false_count, missing_items.len());",
+            "assert_eq!(missing_detail[\"native_compaction_v2\"], json!(false));",
+            "assert_eq!(present_values, vec![(1, true), (2, false), (3, false)]);",
+            "assert_eq!(list_item, &detail);",
+            "assert_eq!(error_status(failed), Err(500));"
+          ],
+          "helper_assertions": [
+            {
+              "name": "assert_read_only_queries",
+              "assertions": [
+                "sql.starts_with(\"select \")",
+                "!sql.contains(\"credentials\")",
+                "!sql.contains(\"request_body\")"
+              ]
+            },
+            {
+              "name": "assert_native_compaction_probe",
+              "assertions": [
+                "assert_eq!(probes, 1, \"{context}: expected one native compaction catalog probe\");"
+              ]
+            }
+          ],
+          "fixtures": [
+            {
+              "path": "tests/contracts/usage/fixtures.json",
+              "ids": [
+                "d013e5a949e6bbab592a8504abed01c6a07a0b6ae17caefd85ff13f78a776e9f"
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "legacy_test_id": "py:tests.test_usage_records:UsageRecordsTests.test_detail_preserves_history_when_related_rows_are_missing",

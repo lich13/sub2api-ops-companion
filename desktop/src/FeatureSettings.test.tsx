@@ -169,6 +169,8 @@ describe("feature settings drafts", () => {
     const field = [...target.querySelectorAll<HTMLLabelElement>("label.field")]
       .find((node) => node.textContent?.includes("自动检测模型"))!;
     const model = field.querySelector<HTMLInputElement>("input")!;
+    expect(field.textContent).toContain("自动检测模型");
+    expect(target.textContent).not.toContain("当前 Companion 连接内统一使用此模型");
     expect(model.value).toBe("gpt-6-luna");
 
     await act(async () => {
@@ -193,5 +195,14 @@ describe("feature settings drafts", () => {
     expect(config.oauth.model_detection_model_id).toBe("gpt-6-luna");
     expect(saveButton(target).disabled).toBe(true);
     expect(target.querySelector("fieldset")?.disabled).toBe(false);
+  });
+
+  it("keeps the upgrade warning and disables recovery controls on an old service", async () => {
+    delete config.oauth.model_detection_model_id;
+    await openFeatures();
+    const target = form("恢复、测活与模型检测");
+    expect(target.textContent).toContain("请升级服务端以配置全局自动检测模型。");
+    expect(target.querySelector(".bad-text")).not.toBeNull();
+    expect(target.querySelector<HTMLFieldSetElement>("fieldset.recovery-compatibility")?.disabled).toBe(true);
   });
 });

@@ -41,16 +41,33 @@ struct Preferences {
     favorites: Vec<i64>,
     launch_at_login: bool,
     pinned: bool,
-    #[serde(deserialize_with = "read_record_columns")]
     record_columns: Option<Vec<String>>,
     model_test_concurrency: Option<u8>,
 }
 
-fn read_record_columns<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Vec<String>>, D::Error> {
-    let columns = Option::<Vec<String>>::deserialize(deserializer)?;
-    Ok(columns.map(|values| values.into_iter().filter(|value| value != "type").collect()))
+fn normalize_record_columns(columns: Vec<String>) -> Vec<String> {
+    let allowed = [
+        "api_key",
+        "account",
+        "model",
+        "type",
+        "reasoning",
+        "tokens",
+        "cost",
+        "latency",
+        "user_agent",
+        "ip",
+        "endpoint",
+        "group",
+        "billing",
+        "request_id",
+        "upstream_id",
+    ];
+    allowed
+        .iter()
+        .filter(|c| columns.iter().any(|v| v == **c))
+        .map(|c| c.to_string())
+        .collect()
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -936,29 +953,7 @@ async fn preferences(
     prefs.pinned = cfg!(desktop) && pinned;
     prefs.launch_at_login = cfg!(desktop) && launch_at_login;
     if let Some(columns) = record_columns {
-        let allowed = [
-            "api_key",
-            "account",
-            "model",
-            "reasoning",
-            "tokens",
-            "cost",
-            "latency",
-            "user_agent",
-            "ip",
-            "endpoint",
-            "group",
-            "billing",
-            "request_id",
-            "upstream_id",
-        ];
-        prefs.record_columns = Some(
-            allowed
-                .iter()
-                .filter(|c| columns.iter().any(|v| v == **c))
-                .map(|c| c.to_string())
-                .collect(),
-        );
+        prefs.record_columns = Some(normalize_record_columns(columns));
     }
     save_preferences(&state.path, &prefs)?;
     #[cfg(desktop)]
@@ -2303,27 +2298,44 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("prefs.json");
         let changed = Preferences {
-            record_columns: Some(vec!["model".into(), "cost".into()]),
+            record_columns: Some(normalize_record_columns(vec![
+                "model".into(),
+                "type".into(),
+                "cost".into(),
+                "invalid".into(),
+            ])),
             ..old
         };
         save_preferences(&p, &changed).unwrap();
         let restored: Preferences = serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap();
         assert_eq!(restored.record_columns, changed.record_columns);
+        assert_eq!(
+            restored.record_columns,
+            Some(vec!["model".into(), "type".into(), "cost".into()])
+        );
         assert_eq!(restored.base_url, "https://example.com");
         assert_eq!(restored.favorites, vec![7]);
         assert!(restored.pinned && restored.launch_at_login);
     }
 
     #[test]
-    fn retired_type_column_is_removed_without_resetting_preferences() {
+    fn type_column_and_empty_choices_survive_preference_reload() {
         let prefs: Preferences = serde_json::from_str(r#"{"base_url":"https://example.com","favorites":[7],"pinned":true,"launch_at_login":true,"record_columns":["ip","type","model"]}"#).unwrap();
         assert_eq!(
             prefs.record_columns,
-            Some(vec!["ip".into(), "model".into()])
+            Some(vec!["ip".into(), "type".into(), "model".into()])
         );
         assert_eq!(prefs.favorites, vec![7]);
         assert!(prefs.pinned && prefs.launch_at_login);
-        let empty: Preferences = serde_json::from_str(r#"{"record_columns":["type"]}"#).unwrap();
-        assert_eq!(empty.record_columns, Some(vec![]));
+        for columns in [vec!["type".into()], vec![]] {
+            let changed = Preferences {
+                record_columns: Some(normalize_record_columns(columns.clone())),
+                ..Preferences::default()
+            };
+            let restored: Preferences =
+                serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
+            assert_eq!(restored.record_columns, Some(columns));
+        }
+        assert!(normalize_record_columns(vec!["invalid".into()]).is_empty());
     }
 }

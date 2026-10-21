@@ -20,6 +20,9 @@ export type UsageRecord = {
   requested_reasoning_effort: string | null;
   request_type: "sync" | "stream" | "ws_v2";
   native_request_type?: string;
+  stream?: boolean | null;
+  openai_ws_mode?: boolean | null;
+  native_compaction_v2?: boolean;
   input_tokens: number | null;
   output_tokens: number | null;
   cache_creation_tokens: number | null;
@@ -81,6 +84,7 @@ export const recordColumns = [
   ["api_key", "API 密钥"],
   ["account", "账户"],
   ["model", "模型"],
+  ["type", "类型"],
   ["reasoning", "推理强度"],
   ["tokens", "Token"],
   ["cost", "费用"],
@@ -98,6 +102,7 @@ export const defaultRecordColumns: string[] = [
   "api_key",
   "account",
   "model",
+  "type",
   "reasoning",
   "tokens",
   "cost",
@@ -111,10 +116,25 @@ export function normalizeRecordColumns(columns: string[] | null | undefined) {
     : columns.filter((column) => recordColumns.some(([key]) => key === column));
 }
 export const requestTypes = {
-  sync: "非流式",
+  sync: "同步",
   stream: "流式",
   ws_v2: "WebSocket",
-};
+  cyber: "安全策略",
+  live: "Live",
+  unknown: "未知",
+} as const;
+export type RequestType = keyof typeof requestTypes;
+export function requestType(record: {
+  native_request_type?: string | null;
+  request_type?: string | null;
+  openai_ws_mode?: boolean | null;
+  stream?: boolean | null;
+}): RequestType {
+  for (const kind of [record.native_request_type, record.request_type]) {
+    if (kind && Object.hasOwn(requestTypes, kind)) return kind as RequestType;
+  }
+  return record.openai_ws_mode ? "ws_v2" : record.stream ? "stream" : "sync";
+}
 export function modelRoute(record: UsageRecord) {
   const steps: { model: string; labels: string[] }[] = [];
   const add = (model: string | null, label: string) => {

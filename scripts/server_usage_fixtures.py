@@ -31,6 +31,14 @@ DATE_BOUNDARY_MATRIX_TEST_ID = (
     "py:tests.test_usage_records:UsageRecordDateTests."
     "test_year_boundary_uses_next_calendar_day_for_end"
 )
+NATIVE_COMPACTION_HOST_LEGACY_ID = (
+    "py:tests.test_usage_records:UsageRecordsTests."
+    "test_detail_joins_names_without_dropping_soft_deleted_account"
+)
+NATIVE_COMPACTION_TEST_NAME = "native_compaction_v2_is_schema_compatible_and_read_only"
+NATIVE_COMPACTION_SNAPSHOT_ID = (
+    "d013e5a949e6bbab592a8504abed01c6a07a0b6ae17caefd85ff13f78a776e9f"
+)
 CONTRACT_DIR = ROOT / "tests" / "contracts" / "usage"
 FIXTURE_PATH = CONTRACT_DIR / "fixtures.json"
 FRAGMENT_PATH = CONTRACT_DIR / "migration-fragment.json"
@@ -498,6 +506,43 @@ def rust_test_call_anchor(source: str, test_name: str, helper: str, legacy_id: s
     return anchor
 
 
+def native_compaction_supporting_target() -> dict[str, Any]:
+    return {
+        "kind": "rust_test",
+        "path": "server/tests/usage_records_parity.rs",
+        "test_name": NATIVE_COMPACTION_TEST_NAME,
+        "assertions": [
+            "assert_eq!(missing_false_count, missing_items.len());",
+            'assert_eq!(missing_detail["native_compaction_v2"], json!(false));',
+            "assert_eq!(present_values, vec![(1, true), (2, false), (3, false)]);",
+            "assert_eq!(list_item, &detail);",
+            "assert_eq!(error_status(failed), Err(500));",
+        ],
+        "helper_assertions": [
+            {
+                "name": "assert_read_only_queries",
+                "assertions": [
+                    'sql.starts_with("select ")',
+                    '!sql.contains("credentials")',
+                    '!sql.contains("request_body")',
+                ],
+            },
+            {
+                "name": "assert_native_compaction_probe",
+                "assertions": [
+                    'assert_eq!(probes, 1, "{context}: expected one native compaction catalog probe");',
+                ],
+            },
+        ],
+        "fixtures": [
+            {
+                "path": "tests/contracts/usage/fixtures.json",
+                "ids": [NATIVE_COMPACTION_SNAPSHOT_ID],
+            }
+        ],
+    }
+
+
 def create_migration_fragment(reference: Path, fixture: dict[str, Any]) -> dict[str, Any]:
     tests = legacy_test_ids(reference)
     query_fragment = json.loads(
@@ -552,7 +597,9 @@ def create_migration_fragment(reference: Path, fixture: dict[str, Any]) -> dict[
                 {
                     "name": helper,
                     "assertions": [
-                        'assert_eq!(actual, event["expected"], "legacy projection {legacy_id}");',
+                        'assert_native_compaction_record(&actual, &format!("legacy projection {legacy_id}"));',
+                        'let comparable = strip_native_compaction_record(&actual);',
+                        'assert_eq!(comparable, event["expected"], "legacy projection {legacy_id}");',
                         'assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        "legacy timestamp {legacy_id}"\n                    );',
                     ],
                 }
@@ -669,6 +716,14 @@ def create_migration_fragment(reference: Path, fixture: dict[str, Any]) -> dict[
                 ),
             }
         )
+        if legacy_id == NATIVE_COMPACTION_HOST_LEGACY_ID:
+            mappings[-1]["target"]["supporting_targets"] = [
+                native_compaction_supporting_target()
+            ]
+            mappings[-1]["coverage_note"] += (
+                " Supporting Rust coverage probes the compatibility column on every list/detail read, "
+                "covers absent/true/false/NULL schemas, list/detail parity, read-only SQL, and propagated SQL errors."
+            )
     require(len(mappings) == 70, f"migration mapping count changed: {len(mappings)}")
     require(len({row["legacy_test_id"] for row in mappings}) == 70, "migration fragment has duplicate legacy IDs")
     return {

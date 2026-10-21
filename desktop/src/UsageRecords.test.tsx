@@ -343,7 +343,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
 describe("record feed lifecycle", () => {
   it("loads once in StrictMode and polls every ten seconds after completion", async () => {
     await renderFeed();
@@ -656,7 +655,6 @@ describe("record feed lifecycle", () => {
     ).toBe(true);
   });
 });
-
 describe("record view", () => {
   it("uses the records scroll container as the pagination observer and handles a short first page", async () => {
     const cursor = "first-history-page";
@@ -1014,9 +1012,11 @@ describe("record view", () => {
     expect(api).toHaveBeenCalledTimes(3);
   });
 
-  it("renders every selected record field in mobile cards and retains request type only in details", async () => {
+  it("renders the same request type badges in mobile cards and details", async () => {
     const row = record(100, {
-      request_type: "ws_v2",
+      request_type: "stream",
+      native_request_type: "cyber",
+      native_compaction_v2: true,
       output_tokens: 120,
       cache_read_tokens: 127100,
       cache_creation_tokens: 1250000,
@@ -1031,6 +1031,7 @@ describe("record view", () => {
         "api_key",
         "account",
         "model",
+        "type",
         "reasoning",
         "tokens",
         "cost",
@@ -1042,7 +1043,6 @@ describe("record view", () => {
         "billing",
         "request_id",
         "upstream_id",
-        "type",
       ],
     });
     expect(container.querySelector(".records-table")).toBeNull();
@@ -1055,6 +1055,7 @@ describe("record view", () => {
       "API 密钥",
       "账户",
       "模型",
+      "类型",
       "推理强度",
       "Token",
       "延迟",
@@ -1115,11 +1116,22 @@ describe("record view", () => {
     expect(card.querySelector(".mobile-record-billing")?.textContent).toBe(
       "计费模式Token",
     );
-    expect(card.querySelector(".mobile-record-type")).toBeNull();
-    expect(card.textContent).not.toContain("WebSocket");
+    expect(card.querySelector(".record-type-badge.is-cyber")?.textContent).toBe(
+      "安全策略",
+    );
+    expect(card.querySelector(".record-type-badge.is-compact")?.textContent).toBe(
+      "压缩",
+    );
+    expect(card.querySelectorAll(".record-type-badge")).toHaveLength(2);
     expect(saveColumns).not.toHaveBeenCalled();
     await click("查看记录 #100");
-    expect(detailValue("类型")).toBe("WebSocket");
+    expect(detailValue("类型")).toContain("安全策略");
+    expect(
+      container.querySelector(".record-detail .record-type-badge.is-cyber"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".record-detail .record-type-badge.is-compact"),
+    ).not.toBeNull();
     expect(detailValue("用户实扣")).toBe("$9007199254740993.1234567890");
     const fallback = vi.fn();
     await act(async () => handleBack(fallback));
@@ -1140,7 +1152,7 @@ describe("record view", () => {
           ".mobile-record:first-child .mobile-record-label",
         ),
       ].map((node) => node.textContent);
-    expect(labels()).toEqual(["模型", "User-Agent"]);
+    expect(labels()).toEqual(["模型", "类型", "User-Agent"]);
     expect(
       container.querySelector(".mobile-record .record-money"),
     ).not.toBeNull();
@@ -1156,6 +1168,7 @@ describe("record view", () => {
     expect(saveColumns).toHaveBeenCalledExactlyOnceWith([
       "model",
       "user_agent",
+      "type",
     ]);
     await renderView({ ...props, columns: ["model", "user_agent"] });
     expect(container.querySelector(".mobile-record .record-money")).toBeNull();
@@ -1768,6 +1781,7 @@ describe("record view", () => {
       "API 密钥",
       "账户",
       "模型",
+      "类型",
       "推理强度",
       "Token",
       "费用",
@@ -1799,12 +1813,11 @@ describe("record view", () => {
     expect(saveColumns).toHaveBeenCalledTimes(2);
   });
 
-  it("migrates saved type-column preferences without losing the user's remaining columns", async () => {
+  it("preserves saved type-column preferences without losing the user's remaining columns", async () => {
     await renderView({ columns: ["type", "model", "cost", "user_agent"] });
     expect(
       [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "模型", "费用", "User-Agent", "时间"]);
-    expect(container.querySelector('[aria-label="请求类型"]')).toBeNull();
+    ).toEqual(["用户", "模型", "类型", "费用", "User-Agent", "时间"]);
     const options = [
       ...container.querySelectorAll<HTMLLabelElement>(
         ".records-column-options label",
@@ -1814,7 +1827,7 @@ describe("record view", () => {
       options.some(
         (label) => label.querySelector("span")?.textContent === "类型",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       options.some((label) =>
         ["用户", "时间"].includes(
@@ -1829,6 +1842,7 @@ describe("record view", () => {
         .click(),
     );
     expect(saveColumns).toHaveBeenLastCalledWith([
+      "type",
       "model",
       "cost",
       "user_agent",
@@ -1836,21 +1850,26 @@ describe("record view", () => {
     ]);
   });
 
-  it.each([{ columns: [] }, { columns: ["type"] }])(
-    "preserves a saved selection with no remaining optional columns: $columns",
-    async ({ columns }) => {
-      await renderView({ columns });
-      expect(
-        [...container.querySelectorAll("th")].map((node) => node.textContent),
-      ).toEqual(["用户", "时间"]);
-      expect(saveColumns).not.toHaveBeenCalled();
-    },
-  );
+  it("preserves an empty saved selection without restoring defaults", async () => {
+    await renderView({ columns: [] });
+    expect(
+      [...container.querySelectorAll("th")].map((node) => node.textContent),
+    ).toEqual(["用户", "时间"]);
+    expect(saveColumns).not.toHaveBeenCalled();
+  });
+
+  it("renders a saved type-only selection as a type column", async () => {
+    await renderView({ columns: ["type"] });
+    expect(
+      [...container.querySelectorAll("th")].map((node) => node.textContent),
+    ).toEqual(["用户", "类型", "时间"]);
+    expect(saveColumns).not.toHaveBeenCalled();
+  });
 
   it("keeps the legacy request type in details after removing the table column and type filter", async () => {
     const row = record(100, { request_type: "ws_v2" });
     serve((path) => (path === "/usage-records/100" ? row : page([row])));
-    await renderView();
+    await renderView({ columns: ["model", "cost"] });
     expect(container.querySelector(".record-col-type")).toBeNull();
     expect(container.querySelector('[aria-label="请求类型"]')).toBeNull();
     await act(async () =>
@@ -1858,7 +1877,57 @@ describe("record view", () => {
         .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
         .click(),
     );
-    expect(detailValue("类型")).toBe("WebSocket");
+    expect(detailValue("类型")).toContain("WebSocket");
+    expect(
+      container.querySelector(".record-detail .record-type-badge.is-ws_v2"),
+    ).not.toBeNull();
+  });
+
+  it("falls back to sync for an old response with no type fields", async () => {
+    const row = record(100, { request_type: undefined });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView({ columns: ["type"] });
+    expect(container.querySelector(".record-type-badge.is-sync")?.textContent).toBe(
+      "同步",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[title="查看记录 #100"]')!
+        .click(),
+    );
+    expect(detailValue("类型")).toContain("同步");
+  });
+
+  it("keeps an explicit unknown request type instead of applying legacy fallback", async () => {
+    const row = record(100, { request_type: "unknown" as never });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView({ columns: ["type"] });
+    expect(container.querySelector(".record-type-badge.is-unknown")?.textContent).toBe(
+      "未知",
+    );
+  });
+
+  it("keeps compact and type badges beside unchanged cost and TPS values", async () => {
+    const row = record(100, {
+      request_type: "stream",
+      native_request_type: "stream",
+      native_compaction_v2: true,
+      output_tokens: 120,
+      duration_ms: 70000,
+    });
+    serve((path) => (path === "/usage-records/100" ? row : page([row])));
+    await renderView({ columns: ["type", "cost", "latency"] });
+    const cell = container.querySelector("tbody .record-col-type")!;
+    expect(cell.querySelector(".record-type-badge.is-stream")?.textContent).toBe(
+      "流式",
+    );
+    expect(cell.querySelector(".record-type-badge.is-compact")?.textContent).toBe(
+      "压缩",
+    );
+    expect(container.querySelector('[title="用户实扣"]')?.textContent).toBe(
+      "$9007199254740993.123457",
+    );
+    expect(container.querySelector(".record-tps")?.textContent).toBe("1.7 tok/s");
   });
 
   it("blocks overlapping column writes until the pending preference save settles", async () => {

@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { api, command, preview, subscribe, updates } from "./bridge";
+import { isAccountSort, readAccountSort, saveAccountSort } from "./accountSort";
 import {
   filterAccounts,
   currentGroups,
@@ -128,8 +129,7 @@ export default function App() {
   const [state, setState] = useState<ViewState>(initialState),
     [ready, setReady] = useState(false),
     [page, setPage] = useState<Page>("accounts"),
-    [ascending, setAscending] = useState(false),
-    [sortBy, setSortBy] = useState<"recent" | "priority">("recent"),
+    [accountSort, setAccountSort] = useState(readAccountSort),
     [settingsAccount, setSettingsAccount] = useState<{ account: Account; section: SettingsSection; connection: string } | null>(null),
     [nameExpanded, setNameExpanded] = useState(() => { try { return localStorage.getItem("sub2ops-account-name-expanded") === "true"; } catch { return false; } }),
     [testAccount, setTestAccount] = useState<Account | null>(null),
@@ -164,6 +164,13 @@ export default function App() {
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
+  const sortBy = accountSort.startsWith("recent:") ? "recent" : "priority";
+  const ascending = accountSort.endsWith(":asc");
+  function updateAccountSort(value: string) {
+    if (!isAccountSort(value)) return;
+    setAccountSort(value);
+    saveAccountSort(value);
+  }
   function closeDetail() {
     detailAbort.current?.abort();
     detailAbort.current = null;
@@ -696,7 +703,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -760,7 +767,7 @@ export default function App() {
                       </div>
                     </div>
                     {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
-                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={`${sortBy}:${ascending ? "asc" : "desc"}`} onChange={(e) => { const [by, order] = e.target.value.split(":"); setSortBy(by as "recent" | "priority"); setAscending(order === "asc"); }}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
+                    {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">
                         <div className="selection-summary">
@@ -835,10 +842,8 @@ export default function App() {
                               <button
                                 className="sort-button"
                                 onClick={() => {
-                                  setSortBy("priority");
-                                  setAscending(
-                                    sortBy === "priority" ? !ascending : true,
-                                  );
+                                  updateAccountSort(sortBy === "priority" && ascending
+                                    ? "priority:desc" : "priority:asc");
                                 }}
                               >
                                 调度参数{" "}
@@ -1343,7 +1348,7 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
-                {typeof config.oauth.model_detection_model_id === "string" ? <p className="muted">当前 Companion 连接内统一使用此模型进行定时检测、错误与慢首字检测、降智复查及恢复模型验证；新建任务生效，已有任务保持原模型。</p> : <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
+                {typeof config.oauth.model_detection_model_id !== "string" && <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
                 <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>
               </>
             )}

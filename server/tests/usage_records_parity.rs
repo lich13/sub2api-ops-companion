@@ -30,6 +30,8 @@ use tokio::{net::TcpListener, task::JoinHandle};
 const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const USAGE_SCHEMA: &str = "usage_records_parity";
 const CONCURRENT_WRITE_LEGACY_ID: &str = "py:tests.test_usage_records:UsageRecordSummaryTests.test_summary_and_rows_share_read_transaction_and_watermark_during_concurrent_write";
+const NATIVE_COMPACTION_SNAPSHOT_ID: &str =
+    "d013e5a949e6bbab592a8504abed01c6a07a0b6ae17caefd85ff13f78a776e9f";
 const ADMIN_KEY: &str = "fixture-admin-key";
 const FIXTURES: &str = include_str!("../../tests/contracts/usage/fixtures.json");
 const USAGE_SCHEMA_SQL: &str = include_str!("../../tests/contracts/usage/schema.sql");
@@ -286,6 +288,64 @@ fn assert_read_only_queries(statements: &[String], context: &str) {
     }
 }
 
+fn assert_native_compaction_probe(statements: &[String], context: &str) {
+    let probes = statements
+        .iter()
+        .filter(|statement| {
+            statement.contains("pg_catalog.pg_attribute")
+                && statement.contains("to_regclass('usage_logs')")
+                && statement.contains("native_compaction_v2")
+        })
+        .count();
+    assert_eq!(
+        probes, 1,
+        "{context}: expected one native compaction catalog probe"
+    );
+}
+
+fn assert_native_compaction_record(value: &Value, context: &str) {
+    let field = value
+        .get("native_compaction_v2")
+        .unwrap_or_else(|| panic!("{context}: record lacks native_compaction_v2"));
+    assert_eq!(
+        field,
+        &json!(false),
+        "{context}: legacy native_compaction_v2 must remain false"
+    );
+}
+
+fn assert_native_compaction_response(value: &Value, context: &str) {
+    if let Some(items) = value.get("items").and_then(Value::as_array) {
+        for (index, item) in items.iter().enumerate() {
+            assert_native_compaction_record(item, &format!("{context}; item {index}"));
+        }
+    } else if value.get("id").is_some() {
+        assert_native_compaction_record(value, context);
+    }
+}
+
+fn strip_native_compaction_record(value: &Value) -> Value {
+    let Value::Object(object) = value else {
+        panic!("native compaction response record must be an object")
+    };
+    let mut record = object.clone();
+    record.remove("native_compaction_v2");
+    Value::Object(record)
+}
+
+fn strip_native_compaction_response(value: &Value) -> Value {
+    if let Some(items) = value.get("items").and_then(Value::as_array) {
+        let mut response = value.clone();
+        response["items"] =
+            Value::Array(items.iter().map(strip_native_compaction_record).collect());
+        response
+    } else if value.get("id").is_some() {
+        strip_native_compaction_record(value)
+    } else {
+        value.clone()
+    }
+}
+
 fn rfc3339(value: &Value) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(value.as_str().expect("fixture timestamp is text"))
         .expect("fixture timestamp has a timezone")
@@ -333,7 +393,12 @@ async fn replay_direct_case(legacy_id: &str) {
         match operation {
             "project" => {
                 let actual = project(&event["input"]).expect("project legacy row");
-                assert_eq!(actual, event["expected"], "legacy projection {legacy_id}");
+                assert_native_compaction_record(&actual, &format!("legacy projection {legacy_id}"));
+                let comparable = strip_native_compaction_record(&actual);
+                assert_eq!(
+                    comparable, event["expected"],
+                    "legacy projection {legacy_id}"
+                );
                 assert!(
                     !actual.to_string().contains("PRIVATE_"),
                     "projection leaked a fixture secret"
@@ -417,6 +482,15 @@ async fn replay_direct_case(legacy_id: &str) {
                     );
                 } else {
                     let actual = result.expect("Rust usage service response");
+                    let actual = if matches!(operation, "list" | "detail") {
+                        assert_native_compaction_response(
+                            &actual,
+                            &format!("legacy operation {legacy_id}"),
+                        );
+                        strip_native_compaction_response(&actual)
+                    } else {
+                        actual
+                    };
                     assert_eq!(
                         actual, event["expected"],
                         "legacy operation {legacy_id}; input={:?}",
@@ -886,6 +960,17 @@ async fn replay_route_case(legacy_id: &str) {
         };
         let after_barrier = sql_log_barrier(&runtime.db.pool, application_name).await;
         if expected_status == 200 {
+            let actual_body = if path == "/api/desktop/v1/usage-records"
+                || path.starts_with("/api/desktop/v1/usage-records/")
+            {
+                assert_native_compaction_response(
+                    &actual_body,
+                    &format!("legacy route {legacy_id}: {path}"),
+                );
+                strip_native_compaction_response(&actual_body)
+            } else {
+                actual_body
+            };
             assert_eq!(
                 stable_response(&actual_body),
                 stable_response(&event["expected_body"]),
@@ -936,6 +1021,161 @@ async fn replay_route_case(legacy_id: &str) {
     runtime.close().await;
     mock_server.abort();
     let _ = mock_server.await;
+    seed.close().await;
+    remove_schema(&admin).await;
+    admin.close().await;
+}
+
+#[tokio::test]
+async fn native_compaction_v2_is_schema_compatible_and_read_only() {
+    let fixture = fixtures();
+    let (admin, seed) = prepare_schema().await;
+    seed_snapshot(&seed, &fixture, NATIVE_COMPACTION_SNAPSHOT_ID).await;
+    let database = Database::open(&database_url("usage-parity-native-compaction"), true)
+        .await
+        .expect("open an isolated read-only usage database");
+    let service = UsageRecords(database.clone());
+    let at = rfc3339(&json!("2026-09-30T12:00:00+00:00"));
+    let filter = Filter {
+        from_at: Some("2026-09-30T11:00:00+00:00".into()),
+        to_at: Some("2026-09-30T12:00:00+00:00".into()),
+        limit: Some(10),
+        ..Filter::default()
+    };
+    let application_name = "usage-parity-native-compaction";
+
+    let before = sql_log_barrier(&database.pool, application_name).await;
+    let missing_list = service
+        .list_at(&filter, at)
+        .await
+        .expect("list succeeds when the compatibility column is absent");
+    let after = sql_log_barrier(&database.pool, application_name).await;
+    let missing_statements = operation_statements(application_name, &before, &after);
+    assert_read_only_queries(
+        &missing_statements,
+        "native_compaction_v2 missing-column list",
+    );
+    assert_native_compaction_probe(
+        &missing_statements,
+        "native_compaction_v2 missing-column list",
+    );
+    let missing_items = missing_list["items"]
+        .as_array()
+        .expect("missing-column list items");
+    assert!(!missing_items.is_empty());
+    let missing_false_count = missing_items
+        .iter()
+        .filter(|row| row["native_compaction_v2"] == json!(false))
+        .count();
+    assert_eq!(missing_false_count, missing_items.len());
+
+    let before = sql_log_barrier(&database.pool, application_name).await;
+    let missing_detail = service
+        .detail(1)
+        .await
+        .expect("detail succeeds when the compatibility column is absent");
+    let after = sql_log_barrier(&database.pool, application_name).await;
+    let missing_detail_statements = operation_statements(application_name, &before, &after);
+    assert_read_only_queries(
+        &missing_detail_statements,
+        "native_compaction_v2 missing-column detail",
+    );
+    assert_native_compaction_probe(
+        &missing_detail_statements,
+        "native_compaction_v2 missing-column detail",
+    );
+    assert_eq!(missing_detail["native_compaction_v2"], json!(false));
+    let missing_list_item = missing_items
+        .iter()
+        .find(|row| row["id"] == json!(1))
+        .expect("missing-column list contains detail row");
+    assert_eq!(missing_list_item, &missing_detail);
+
+    sqlx::query("ALTER TABLE usage_logs ADD COLUMN native_compaction_v2 boolean")
+        .execute(&seed)
+        .await
+        .expect("add compatibility column to the owned schema");
+    seed_snapshot(&seed, &fixture, NATIVE_COMPACTION_SNAPSHOT_ID).await;
+    sqlx::query(
+        "UPDATE usage_logs SET native_compaction_v2 = CASE id \
+         WHEN 1 THEN TRUE WHEN 2 THEN FALSE WHEN 3 THEN NULL ELSE FALSE END",
+    )
+    .execute(&seed)
+    .await
+    .expect("seed true, false, and NULL compatibility values");
+
+    let before = sql_log_barrier(&database.pool, application_name).await;
+    let present_list = service
+        .list_at(&filter, at)
+        .await
+        .expect("list succeeds when the compatibility column exists");
+    let after = sql_log_barrier(&database.pool, application_name).await;
+    let present_statements = operation_statements(application_name, &before, &after);
+    assert_read_only_queries(
+        &present_statements,
+        "native_compaction_v2 present-column list",
+    );
+    assert_native_compaction_probe(
+        &present_statements,
+        "native_compaction_v2 present-column list",
+    );
+    let present_items = present_list["items"]
+        .as_array()
+        .expect("present-column list items");
+    let mut present_values = present_items
+        .iter()
+        .filter_map(|row| {
+            let id = row["id"].as_i64()?;
+            (1..=3).contains(&id).then(|| {
+                (
+                    id,
+                    row["native_compaction_v2"]
+                        .as_bool()
+                        .expect("present compatibility value is boolean"),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    present_values.sort_by_key(|(id, _)| *id);
+    assert_eq!(present_values, vec![(1, true), (2, false), (3, false)]);
+
+    for (id, expected) in [(1, true), (2, false), (3, false)] {
+        let before = sql_log_barrier(&database.pool, application_name).await;
+        let detail = service
+            .detail(id)
+            .await
+            .expect("detail succeeds for a present compatibility column");
+        let after = sql_log_barrier(&database.pool, application_name).await;
+        let statements = operation_statements(application_name, &before, &after);
+        assert_read_only_queries(&statements, "native_compaction_v2 present-column detail");
+        assert_native_compaction_probe(&statements, "native_compaction_v2 present-column detail");
+        assert_eq!(detail["native_compaction_v2"], json!(expected));
+        let list_item = present_items
+            .iter()
+            .find(|row| row["id"] == json!(id))
+            .expect("present-column list contains detail row");
+        assert_eq!(list_item, &detail);
+    }
+
+    sqlx::query("DROP TABLE usage_logs")
+        .execute(&seed)
+        .await
+        .expect("remove the owned usage table to exercise SQL error propagation");
+    let before = sql_log_barrier(&database.pool, application_name).await;
+    let failed = service.detail(1).await;
+    let after = sql_log_barrier(&database.pool, application_name).await;
+    let failed_statements = operation_statements(application_name, &before, &after);
+    assert_eq!(error_status(failed), Err(500));
+    assert_read_only_queries(
+        &failed_statements,
+        "native_compaction_v2 missing-table error",
+    );
+    assert_native_compaction_probe(
+        &failed_statements,
+        "native_compaction_v2 missing-table error",
+    );
+
+    database.close().await;
     seed.close().await;
     remove_schema(&admin).await;
     admin.close().await;

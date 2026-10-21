@@ -45819,17 +45819,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 943,
+          "rust_source_line": 1183,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -45871,17 +45873,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 948,
+          "rust_source_line": 1188,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -45923,17 +45927,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 953,
+          "rust_source_line": 1193,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -45975,17 +45981,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 958,
+          "rust_source_line": 1198,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46027,17 +46035,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 963,
+          "rust_source_line": 1203,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46079,17 +46089,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 971,
+          "rust_source_line": 1211,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46131,17 +46143,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 976,
+          "rust_source_line": 1216,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46183,17 +46197,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 981,
+          "rust_source_line": 1221,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46235,17 +46251,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 986,
+          "rust_source_line": 1226,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46287,17 +46305,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 991,
+          "rust_source_line": 1231,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46339,17 +46359,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 996,
+          "rust_source_line": 1236,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46391,17 +46413,19 @@
           "helper_assertions": [
             {
               "assertions": [
-                "assert_eq!(actual, event[\"expected\"], \"legacy projection {legacy_id}\");",
+                "assert_native_compaction_record(&actual, &format!(\"legacy projection {legacy_id}\"));",
+                "let comparable = strip_native_compaction_record(&actual);",
+                "assert_eq!(comparable, event[\"expected\"], \"legacy projection {legacy_id}\");",
                 "assert_eq!(\n                        actual.map_err(|error| error.status.as_u16()),\n                        Err(status as u16),\n                        \"legacy timestamp {legacy_id}\"\n                    );"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1004,
+          "rust_source_line": 1244,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46496,7 +46520,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46504,7 +46528,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46513,21 +46537,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1097,
+          "rust_source_line": 1337,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46574,7 +46598,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46582,7 +46606,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46591,21 +46615,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1102,
+          "rust_source_line": 1342,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46652,7 +46676,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46660,7 +46684,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46669,21 +46693,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1107,
+          "rust_source_line": 1347,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46730,7 +46754,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46738,7 +46762,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46747,21 +46771,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1112,
+          "rust_source_line": 1352,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46811,7 +46835,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46819,7 +46843,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46828,14 +46852,14 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             },
             {
@@ -46844,14 +46868,14 @@
                 "assert_eq!(cases.len(), 12);",
                 "assert_eq!(actual, expected, \"boundary case {case_id}; input={input}\");"
               ],
-              "line": 1119,
+              "line": 1359,
               "name": "pinned_date_window_timestamp_boundary_matrix"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1150,
+          "rust_source_line": 1390,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46898,7 +46922,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46906,7 +46930,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46915,21 +46939,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1198,
+          "rust_source_line": 1438,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -46976,7 +47000,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -46984,7 +47008,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -46993,21 +47017,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1203,
+          "rust_source_line": 1443,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47054,7 +47078,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47062,7 +47086,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47071,21 +47095,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1208,
+          "rust_source_line": 1448,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47132,7 +47156,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47140,7 +47164,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47149,21 +47173,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1213,
+          "rust_source_line": 1453,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47210,7 +47234,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47218,7 +47242,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47227,21 +47251,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1218,
+          "rust_source_line": 1458,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47288,7 +47312,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47296,7 +47320,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47305,21 +47329,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1223,
+          "rust_source_line": 1463,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47366,7 +47390,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47374,7 +47398,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47383,21 +47407,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1229,
+          "rust_source_line": 1469,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47444,7 +47468,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47452,7 +47476,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47461,21 +47485,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1234,
+          "rust_source_line": 1474,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47522,7 +47546,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47530,7 +47554,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47539,21 +47563,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1239,
+          "rust_source_line": 1479,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47600,7 +47624,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47608,7 +47632,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47617,21 +47641,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1244,
+          "rust_source_line": 1484,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47678,7 +47702,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47686,7 +47710,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47695,21 +47719,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1249,
+          "rust_source_line": 1489,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47756,7 +47780,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47764,7 +47788,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47773,21 +47797,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1254,
+          "rust_source_line": 1494,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47834,7 +47858,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47842,7 +47866,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47851,21 +47875,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1156,
+          "rust_source_line": 1396,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47912,7 +47936,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47920,7 +47944,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -47929,21 +47953,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1161,
+          "rust_source_line": 1401,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -47990,7 +48014,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -47998,7 +48022,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48007,21 +48031,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1167,
+          "rust_source_line": 1407,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48068,7 +48092,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -48076,7 +48100,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48085,14 +48109,14 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             },
             {
@@ -48108,14 +48132,14 @@
                 "assert_eq!(new_count[\"latest_id\"], 3);",
                 "assert_eq!(refreshed[\"summary\"][\"actual_cost\"], \"103.1\");"
               ],
-              "line": 465,
+              "line": 539,
               "name": "assert_summary_snapshot_with_concurrent_write"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1172,
+          "rust_source_line": 1412,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48162,7 +48186,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -48170,7 +48194,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48179,21 +48203,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1178,
+          "rust_source_line": 1418,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48240,7 +48264,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -48248,7 +48272,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48257,21 +48281,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1183,
+          "rust_source_line": 1423,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48318,7 +48342,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -48326,7 +48350,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48335,21 +48359,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1188,
+          "rust_source_line": 1428,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48396,7 +48420,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -48404,7 +48428,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48413,21 +48437,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1193,
+          "rust_source_line": 1433,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48476,7 +48500,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48484,7 +48508,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48493,21 +48517,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1260,
+          "rust_source_line": 1500,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48556,7 +48580,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48564,7 +48588,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48573,21 +48597,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1265,
+          "rust_source_line": 1505,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48636,7 +48660,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48644,7 +48668,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48653,21 +48677,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1270,
+          "rust_source_line": 1510,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48716,7 +48740,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48724,7 +48748,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48733,21 +48757,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1275,
+          "rust_source_line": 1515,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48796,7 +48820,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48804,7 +48828,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48813,21 +48837,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1280,
+          "rust_source_line": 1520,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48876,7 +48900,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48884,7 +48908,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48893,21 +48917,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1285,
+          "rust_source_line": 1525,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -48956,7 +48980,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -48964,7 +48988,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -48973,21 +48997,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1290,
+          "rust_source_line": 1530,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49036,7 +49060,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -49044,7 +49068,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49053,21 +49077,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1295,
+          "rust_source_line": 1535,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49116,7 +49140,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -49124,7 +49148,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49133,21 +49157,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1300,
+          "rust_source_line": 1540,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49196,7 +49220,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -49204,7 +49228,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49213,21 +49237,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1305,
+          "rust_source_line": 1545,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49276,7 +49300,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -49284,7 +49308,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49293,21 +49317,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1310,
+          "rust_source_line": 1550,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49356,7 +49380,7 @@
                 "assert_eq!(\n                statements.len(),\n                0,\n                \"legacy route rejected before database reads: {legacy_id}; path={path}; params={:?}\",\n                event[\"params\"]\n            );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 778,
+              "line": 852,
               "name": "replay_route_case"
             },
             {
@@ -49364,7 +49388,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49373,21 +49397,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1315,
+          "rust_source_line": 1555,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49470,7 +49494,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49478,7 +49502,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49487,21 +49511,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1009,
+          "rust_source_line": 1249,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49548,7 +49572,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49556,7 +49580,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49565,21 +49589,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1014,
+          "rust_source_line": 1254,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49626,7 +49650,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49634,7 +49658,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49643,21 +49667,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1019,
+          "rust_source_line": 1259,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49704,7 +49728,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49712,7 +49736,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49721,21 +49745,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1024,
+          "rust_source_line": 1264,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49836,7 +49860,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49844,7 +49868,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49853,21 +49877,66 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1029,
+          "rust_source_line": 1269,
+          "supporting_targets": [
+            {
+              "assertions": [
+                "assert_eq!(missing_false_count, missing_items.len());",
+                "assert_eq!(missing_detail[\"native_compaction_v2\"], json!(false));",
+                "assert_eq!(present_values, vec![(1, true), (2, false), (3, false)]);",
+                "assert_eq!(list_item, &detail);",
+                "assert_eq!(error_status(failed), Err(500));"
+              ],
+              "execution_status": "mapping_only",
+              "fixtures": [
+                {
+                  "ids": [
+                    "d013e5a949e6bbab592a8504abed01c6a07a0b6ae17caefd85ff13f78a776e9f"
+                  ],
+                  "json_paths": [],
+                  "path": "tests/contracts/usage/fixtures.json"
+                }
+              ],
+              "helper_assertions": [
+                {
+                  "assertions": [
+                    "sql.starts_with(\"select \")",
+                    "!sql.contains(\"credentials\")",
+                    "!sql.contains(\"request_body\")"
+                  ],
+                  "line": 247,
+                  "name": "assert_read_only_queries"
+                },
+                {
+                  "assertions": [
+                    "assert_eq!(probes, 1, \"{context}: expected one native compaction catalog probe\");"
+                  ],
+                  "line": 290,
+                  "name": "assert_native_compaction_probe"
+                }
+              ],
+              "kind": "rust_test",
+              "line": 1028,
+              "module": "usage_records_parity",
+              "path": "server/tests/usage_records_parity.rs",
+              "test_name": "native_compaction_v2_is_schema_compatible_and_read_only",
+              "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
+            }
+          ],
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49914,7 +49983,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -49922,7 +49991,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -49931,21 +50000,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1034,
+          "rust_source_line": 1274,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -49992,7 +50061,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50000,7 +50069,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50009,21 +50078,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1039,
+          "rust_source_line": 1279,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50070,7 +50139,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50078,7 +50147,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50087,21 +50156,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1044,
+          "rust_source_line": 1284,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50148,7 +50217,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50156,7 +50225,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50165,21 +50234,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1052,
+          "rust_source_line": 1292,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50276,7 +50345,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50284,7 +50353,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50293,21 +50362,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1057,
+          "rust_source_line": 1297,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50354,7 +50423,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50362,7 +50431,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50371,21 +50440,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1062,
+          "rust_source_line": 1302,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50432,7 +50501,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50440,7 +50509,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50449,21 +50518,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1067,
+          "rust_source_line": 1307,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50510,7 +50579,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50518,7 +50587,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50527,21 +50596,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1072,
+          "rust_source_line": 1312,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50588,7 +50657,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50596,7 +50665,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50605,21 +50674,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1077,
+          "rust_source_line": 1317,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50666,7 +50735,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50674,7 +50743,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50683,21 +50752,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1082,
+          "rust_source_line": 1322,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50744,7 +50813,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50752,7 +50821,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50761,21 +50830,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1087,
+          "rust_source_line": 1327,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,
@@ -50822,7 +50891,7 @@
                 "assert_eq!(\n                        error_status(result),\n                        Err(status as u16),\n                        \"legacy service error {legacy_id}; input={:?}\",\n                        event[\"input\"]\n                    );",
                 "assert_read_only_queries(&statements, &context);"
               ],
-              "line": 298,
+              "line": 358,
               "name": "replay_direct_case"
             },
             {
@@ -50830,7 +50899,7 @@
                 "assert!(before < after, \"SQL log barriers are out of order\");",
                 ".filter(|statement| !is_pool_session_setup_statement(statement))"
               ],
-              "line": 223,
+              "line": 225,
               "name": "operation_statements"
             },
             {
@@ -50839,21 +50908,21 @@
                 "!sql.contains(\"credentials\")",
                 "!sql.contains(\"request_body\")"
               ],
-              "line": 245,
+              "line": 247,
               "name": "assert_read_only_queries"
             },
             {
               "assertions": [
                 "matches!(\n        statement,\n        \"set time zone 'utc'\" | \"set default_transaction_read_only = on\"\n    )"
               ],
-              "line": 216,
+              "line": 218,
               "name": "is_pool_session_setup_statement"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/usage_records_parity.rs",
-          "rust_source_line": 1092,
+          "rust_source_line": 1332,
           "verification_command": ".venv/bin/python scripts/server_test.py --test usage_records_parity"
         },
         "gap": null,

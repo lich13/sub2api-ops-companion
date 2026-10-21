@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use sqlx::types::BigDecimal;
 use std::str::FromStr;
 
-const FIELDS:&str="id user_id api_key_id account_id group_id request_id upstream_request_id model requested_model upstream_model upstream_response_model model_mapping_chain upstream_model_mismatch reasoning_effort requested_reasoning_effort request_type stream openai_ws_mode input_tokens output_tokens cache_creation_tokens cache_read_tokens cache_creation_5m_tokens cache_creation_1h_tokens input_cost output_cost cache_creation_cost cache_read_cost total_cost actual_cost account_stats_cost account_rate_multiplier rate_multiplier first_token_ms duration_ms created_at user_agent ip_address inbound_endpoint upstream_endpoint billing_type billing_mode service_tier image_count image_output_tokens image_output_cost image_input_tokens image_input_cost video_count video_duration_seconds video_resolution user_name user_email api_key_name account_name group_name";
+const FIELDS:&str="id user_id api_key_id account_id group_id request_id upstream_request_id model requested_model upstream_model upstream_response_model model_mapping_chain upstream_model_mismatch reasoning_effort requested_reasoning_effort request_type stream openai_ws_mode native_compaction_v2 input_tokens output_tokens cache_creation_tokens cache_read_tokens cache_creation_5m_tokens cache_creation_1h_tokens input_cost output_cost cache_creation_cost cache_read_cost total_cost actual_cost account_stats_cost account_rate_multiplier rate_multiplier first_token_ms duration_ms created_at user_agent ip_address inbound_endpoint upstream_endpoint billing_type billing_mode service_tier image_count image_output_tokens image_output_cost image_input_tokens image_input_cost video_count video_duration_seconds video_resolution user_name user_email api_key_name account_name group_name";
 const MONEY:&str="input_cost output_cost cache_creation_cost cache_read_cost total_cost actual_cost account_stats_cost account_rate_multiplier rate_multiplier image_output_cost image_input_cost";
 pub fn timestamp(value: &str) -> Result<DateTime<Utc>> {
     let invalid = || Error::new(422, "时间必须包含时区");
@@ -115,6 +115,7 @@ pub fn decimal_text(value: &BigDecimal, force_fixed: bool) -> String {
 }
 pub fn project(row: &Value) -> Result<Value> {
     let mut result = pick(row, &FIELDS.split_whitespace().collect::<Vec<_>>());
+    result["native_compaction_v2"] = truthy(&row["native_compaction_v2"]).into();
     for field in MONEY.split_whitespace() {
         if !result[field].is_null() {
             result[field] = text(&result[field]).into();
@@ -188,6 +189,24 @@ fn escaped(value: &str) -> String {
             .replace('%', "\\%")
             .replace('_', "\\_")
     )
+}
+async fn usage_selection(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<String> {
+    // Resolve the same relation as the page/detail query, including its search_path.
+    // Check on each read so an upstream migration takes effect without a restart.
+    let has_compaction: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = pg_catalog.to_regclass('usage_logs') AND attname = 'native_compaction_v2' AND attnum > 0 AND NOT attisdropped)",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    let compaction = if has_compaction {
+        "COALESCE(u.native_compaction_v2, false)"
+    } else {
+        "false"
+    };
+    Ok(format!(
+        "{}, {compaction} AS native_compaction_v2",
+        sql::USAGE_SELECT
+    ))
 }
 fn decode_cursor(value: &str) -> Result<Value> {
     if value.len() > 2048 {
@@ -436,7 +455,8 @@ impl UsageRecords {
             ));
         }
         params.push(((limit + 1) as i64).into());
-        let rows=bind(&format!("SELECT {} FROM usage_logs u {} WHERE {} ORDER BY u.created_at DESC,u.id DESC LIMIT ${}",sql::USAGE_SELECT,sql::USAGE_JOINS,clauses.join(" AND "),params.len()),&params).fetch_all(&mut *tx).await?.into_iter().map(row_value).collect::<Result<Vec<_>>>()?;
+        let selection = usage_selection(&mut tx).await?;
+        let rows=bind(&format!("SELECT {} FROM usage_logs u {} WHERE {} ORDER BY u.created_at DESC,u.id DESC LIMIT ${}",selection,sql::USAGE_JOINS,clauses.join(" AND "),params.len()),&params).fetch_all(&mut *tx).await?.into_iter().map(row_value).collect::<Result<Vec<_>>>()?;
         tx.commit().await?;
         let items = rows
             .iter()
@@ -564,10 +584,11 @@ impl UsageRecords {
             return Err(Error::new(422, "记录编号无效"));
         }
         let mut tx = self.begin(false).await?;
+        let selection = usage_selection(&mut tx).await?;
         let row = bind(
             &format!(
                 "SELECT {} FROM usage_logs u {} WHERE u.id=$1",
-                sql::USAGE_SELECT,
+                selection,
                 sql::USAGE_JOINS
             ),
             &[id.into()],
