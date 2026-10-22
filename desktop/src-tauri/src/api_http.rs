@@ -274,10 +274,21 @@ fn proxy_batch_valid(data: &Value) -> bool {
                                     })
                                 })
                         }
+                        Some("recover") => recovery_operation_valid(row),
                         _ => false,
                     })
             })
         })
+}
+
+fn recovery_operation_valid(row: &Value) -> bool {
+    row["requested"]
+        .as_object()
+        .is_some_and(|fields| fields.is_empty())
+        && (row["result"].is_null()
+            || row["result"].is_object()
+                && row["result"]["verified"].is_boolean()
+                && row["result"].get("unchanged").is_none_or(Value::is_boolean))
 }
 
 fn connection_test_result_valid(data: &Value) -> bool {
@@ -597,9 +608,10 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 batch_valid(data)
                     && data["items"].as_array().is_some_and(|items| {
                         items.iter().all(|item| {
-                            item["action"] != "test"
-                                || item["result"].is_null()
-                                || connection_test_result_valid(&item["result"])
+                            (item["action"] != "recover" || recovery_operation_valid(item))
+                                && (item["action"] != "test"
+                                    || item["result"].is_null()
+                                    || connection_test_result_valid(&item["result"]))
                         })
                     })
             } else {
@@ -631,7 +643,11 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["enabled"].is_boolean()
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
                 && data["model_id"].is_string()
-                && data.get("model_source").is_none_or(|v| v == "global")
+                && data
+                    .get("model_source")
+                    .is_none_or(|v| v == "global" || v == "account")
+                && (data["model_override"].is_null() || data["model_override"].is_string())
+                && data.get("global_model_id").is_none_or(Value::is_string)
                 && data["status"].is_string()
                 && (data["last_automatic_started_at"].is_null()
                     || data["last_automatic_started_at"].is_string())
@@ -1427,7 +1443,20 @@ mod tests {
             "/accounts/1/model-detection",
             &global_detection
         ));
-        for invalid_source in [serde_json::json!("account"), serde_json::json!(true)] {
+        let mut account_detection = global_detection.clone();
+        account_detection["model_source"] = serde_json::json!("account");
+        account_detection["model_override"] = serde_json::json!("fixture-provider-model");
+        account_detection["global_model_id"] = serde_json::json!("gpt-6-luna");
+        assert!(shape_valid(
+            "/accounts/1/model-detection",
+            &account_detection
+        ));
+        account_detection["model_override"] = serde_json::json!(false);
+        assert!(!shape_valid(
+            "/accounts/1/model-detection",
+            &account_detection
+        ));
+        for invalid_source in [serde_json::json!("other"), serde_json::json!(true)] {
             let mut invalid = detection.clone();
             invalid["model_source"] = invalid_source;
             assert!(!shape_valid("/accounts/1/model-detection", &invalid));
@@ -1865,6 +1894,35 @@ mod tests {
         default_mode["items"][0]["requested"]["model_id"] = serde_json::json!("");
         default_mode["items"][0]["result"]["requested_model"] = serde_json::json!("");
         assert!(shape_valid("/account-operations/batch", &default_mode));
+    }
+
+    #[test]
+    fn recovery_batch_accepts_empty_requests_and_typed_results() {
+        let mut batch = connection_test_batch_fixture();
+        batch["items"][0]["action"] = serde_json::json!("recover");
+        batch["items"][0]["requested"] = serde_json::json!({});
+        batch["items"][0]["result"] = serde_json::json!({"verified":true,"unchanged":true});
+        for path in [
+            "/account-operations/batch",
+            "/account-operations?batch_id=0123456789abcdef0123456789abcdef",
+        ] {
+            assert!(shape_valid(path, &batch));
+            for invalid in [
+                serde_json::json!({"verified":"true"}),
+                serde_json::json!({"verified":true,"unchanged":"true"}),
+            ] {
+                let mut bad = batch.clone();
+                bad["items"][0]["result"] = invalid;
+                assert!(!shape_valid(path, &bad));
+            }
+            let mut bad = batch.clone();
+            bad["items"][0]["requested"] = serde_json::json!({"schedulable":true});
+            assert!(!shape_valid(path, &bad));
+            let mut queued = batch.clone();
+            queued["items"][0]["status"] = serde_json::json!("queued");
+            queued["items"][0]["result"] = Value::Null;
+            assert!(shape_valid(path, &queued));
+        }
     }
 
     #[test]

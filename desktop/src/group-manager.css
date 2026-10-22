@@ -1,7 +1,7 @@
 .group-manager { --group-left: var(--accent); --group-right: #387f8b; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .group-manager[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { .group-manager { --group-right: #78bac4; } }
-.group-manager button:focus-visible, .membership-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.group-manager button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .group-manager-toolbar { display: flex; align-items: center; gap: 12px; }
 .group-platforms { display: flex; padding: 3px; background: var(--canvas); border: 1px solid var(--line); border-radius: 10px; }
 .group-platforms button { border: 0; background: transparent; padding: 8px 24px; color: var(--muted); }
@@ -32,20 +32,19 @@
 .membership-zone > header > span { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .zone-both > header h3 { color: var(--accent); font-weight: 600; }
 .membership-accounts { display: flex; flex-direction: column; gap: 9px; }
-.membership-zone.can-drop { cursor: pointer; }
-.membership-zone.can-drop:hover, .membership-zone.drop-over { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: 2px dashed var(--accent); outline-offset: 2px; }
+.membership-zone.drop-over { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: 2px dashed var(--accent); outline-offset: 2px; }
 .group-account { display: flex; align-items: center; min-width: 0; padding: 10px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px #00000004; }
-.group-account.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .group-account.dirty { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
 .group-account.dragging { opacity: .35; border-style: dashed; }
 .group-grip { flex-shrink: 0; touch-action: none; cursor: grab; }
 .group-grip:active { cursor: grabbing; }
-.group-account .group-grip, .group-account-select { background: none; border: none; padding: 3px; border-radius: 5px; color: var(--muted); box-shadow: none; }
-.group-account-select { text-align: left; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start; gap: 5px; flex: 1; min-width: 0; color: var(--ink); white-space: normal; }
-.group-account-select strong { width: 100%; font-weight: 550; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.group-account .group-grip, .group-account-identity { background: none; border: none; padding: 3px; border-radius: 5px; color: var(--muted); box-shadow: none; }
+.group-account-identity { text-align: left; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start; gap: 5px; flex: 1; min-width: 0; color: var(--ink); white-space: normal; }
+.group-account-identity strong { width: 100%; font-weight: 550; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .group-account-meta { width: 100%; min-width: 0; line-height: 1.5; display: flex; align-items: center; gap: 4px 7px; flex-wrap: wrap; color: var(--muted); font-size: 10px; }
 .group-account-status { color: var(--warn); }
 .group-dirty-label { color: var(--accent); }
+.group-account > .switch-cell { flex-shrink: 0; margin-inline: 5px; }
 .group-account-menu { align-self: flex-start; position: relative; flex-shrink: 0; }
 .group-account-menu > .account-more-trigger { display: flex; align-items: center; justify-content: center; width: 26px; height: 28px; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; }
 .group-empty { padding: 24px 0; text-align: center; color: var(--muted); font-size: 12px; }
@@ -54,9 +53,6 @@
 .group-pool .membership-zone > header h3 { color: var(--ink); font-size: 14px; font-weight: 600; }
 .group-pool .membership-accounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .group-pool .group-empty { grid-column: 1 / -1; text-align: left; padding: 6px 3px; }
-.group-destination-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); }
-.group-destination-bar > span { flex-basis: 100%; font-weight: 600; overflow-wrap: anywhere; }
-.group-destination-bar button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .group-draft-panel { position: sticky; bottom: -16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; box-shadow: 0 -3px 18px #00000008; z-index: 10; }
 .group-draft-toolbar, .group-draft-toolbar > div { display: flex; align-items: center; gap: 8px; }
 .group-draft-toolbar { justify-content: space-between; flex-wrap: wrap; }
@@ -98,8 +94,8 @@
 .mobile .zone-both { border-block: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent); padding-block: 18px; }
 .mobile .group-account { padding: 6px 2px; min-height: 64px; }
 .mobile .group-grip { min-width: 48px; min-height: 48px; }
-.mobile .group-account-select { min-height: 48px; }
-.mobile .group-account-select strong { font-size: 14px; }
+.mobile .group-account-identity { min-height: 48px; }
+.mobile .group-account-identity strong { font-size: 14px; }
 .mobile .group-account-meta { font-size: 11px; }
 .mobile .group-account-menu > .account-more-trigger { width: 48px; min-height: 48px; }
 .mobile .group-pool .membership-accounts { grid-template-columns: minmax(0, 1fr); }

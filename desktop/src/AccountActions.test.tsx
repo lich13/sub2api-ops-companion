@@ -113,8 +113,21 @@ async function openGroups() {
 }
 
 async function moveTo(name: string, destination: string) {
-  await act(async () => groupCard(name).querySelector<HTMLButtonElement>(".group-account-select")!.click());
-  await act(async () => button(destination, container.querySelector(".group-destination-bar")!).click());
+  const target = container.querySelector<HTMLElement>(`.zone-${({ "Codex 左": "left", "Codex 右": "right", "左组": "left", "右组": "right", "两组共有": "both", "移出当前分组": "none" } as Record<string, string>)[destination]}`)!;
+  const grip = groupCard(name).querySelector<HTMLElement>(".group-grip")!;
+  const previous = document.elementFromPoint;
+  document.elementFromPoint = () => target;
+  Object.defineProperty(grip, "setPointerCapture", { value: vi.fn(), configurable: true });
+  const pointer = (type: string, x: number) => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: 10 });
+    Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: "mouse" } });
+    grip.dispatchEvent(event);
+  };
+  try {
+    await act(async () => pointer("pointerdown", 10));
+    await act(async () => pointer("pointermove", 30));
+    await act(async () => pointer("pointerup", 30));
+  } finally { document.elementFromPoint = previous; }
 }
 
 beforeEach(() => {
@@ -159,7 +172,7 @@ describe("shared account actions", () => {
     expect(container.querySelector('[role="group"][aria-label="批量账号操作"]')).toBeNull();
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label="选择 Fixture 1"]')!.click());
     const bulk = container.querySelector<HTMLElement>('[role="group"][aria-label="批量账号操作"]')!;
-    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true, true]);
+    expect([...bulk.querySelectorAll("button")].map((node) => !!node.querySelector("svg"))).toEqual([true, true, true, true, true]);
 
     await openGroups();
     await openGroupMenu();
@@ -394,5 +407,66 @@ describe("shared account actions", () => {
     await act(async () => actions.find((item) => item.dataset.action === "model_mapping")!.click());
     await act(async () => actions.find((item) => item.dataset.action === "proxy")!.click());
     expect(settings.mock.calls.map(([, section]) => section)).toEqual(["whitelist", "mappings", "proxy"]);
+  });
+});
+
+
+describe("shared scheduling in groups and priorities", () => {
+  async function openPanel(page: "分组" | "优先级", items: Account[]) {
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
+      if (path === "/account-priorities?schema=2") return { platforms: [{ platform: "openai", version: "fixture-priority-version", last_task: null,
+        items: items.map(item => ({ ...item, version: `priority-${item.id}`, editable: true, reason: "" })) }], active_task: null, legacy_last_task: null } as never;
+      return original(method, path, body);
+    });
+    await render(state(items));
+    await act(async () => navigation(page).click());
+    if (page === "分组") await moveTo("Fixture 1", "右组");
+    else await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="下移 Fixture 1"]')!.click());
+  }
+  const panelSwitch = (page: string) => container.querySelector<HTMLButtonElement>(
+    `${page === "分组" ? ".group-manager" : ".priority-manager"} [role="switch"][aria-label="Fixture 1调度"]`)!;
+  const draftState = (page: string) => page === "分组"
+    ? groupCard("Fixture 1").closest("[data-drop-zone]")?.getAttribute("data-drop-zone")
+    : [...container.querySelectorAll("[data-priority-id]")].map(row => row.getAttribute("data-priority-id"));
+
+  it.each(["分组", "优先级"] as const)("%s confirms managed scheduling, uses its own operation version and preserves drafts", async (page) => {
+    const pending = deferred<unknown>();
+    const items = [account(1, { managed: true, operation_versions: { schedulable: "schedule-version-1", priority: "priority-1", groups: "groups-1" } }), account(2)];
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/accounts/1/operations" ? pending.promise as never : original(method, path, body));
+    await openPanel(page, items);
+    const draft = draftState(page);
+    expect(draft).toEqual(page === "分组" ? "right" : ["2", "1"]);
+    expect(panelSwitch(page).getAttribute("aria-checked")).toBe("true");
+    await act(async () => panelSwitch(page).click());
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(0);
+    await act(async () => button("解除托管并关闭").click());
+    expect(panelSwitch(page).disabled).toBe(true);
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toMatchObject({
+      action: "schedulable", payload: { schedulable: false, detach_managed: true }, expected_version: "schedule-version-1",
+    });
+    await act(async () => pending.resolve({ id: "fixture-schedule", account_id: 1, action: "schedulable", status: "completed", requested: {}, result: { verified: true } }));
+    await act(async () => receive(state([{ ...items[0], schedulable: false, managed: false }, items[1]])));
+    expect(panelSwitch(page).getAttribute("aria-checked")).toBe("false");
+    expect(draftState(page)).toEqual(draft);
+    expect(command).toHaveBeenCalledWith("refresh");
+    await act(async () => receive({ ...state(items), online: false }));
+    expect(panelSwitch(page).disabled).toBe(true);
+  });
+
+  it.each(["分组", "优先级"] as const)("%s keeps the last readback and refreshes after an unconfirmed schedule write", async (page) => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/accounts/1/schedulable" ? { verified: false } as never : original(method, path, body));
+    await openPanel(page, [account(1), account(2)]);
+    const draft = draftState(page);
+    await act(async () => panelSwitch(page).click());
+    expect(container.textContent).toContain("调度写入未确认");
+    expect(container.textContent).not.toContain("Fixture 1：已关闭调度");
+    expect(panelSwitch(page).getAttribute("aria-checked")).toBe("true");
+    expect(draftState(page)).toEqual(draft);
+    expect(command).toHaveBeenCalledWith("refresh");
   });
 });

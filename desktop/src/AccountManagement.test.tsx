@@ -3,7 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import { DeleteAccountsDialog, RecoverStateButton } from "./AccountManagement";
+import { DeleteAccountsDialog, RecoverStateButton, RecoverSelectedButton } from "./AccountManagement";
+import { bindOperationConnection } from "./accountOperations";
 import { RecoveryHistory } from "./AccountControls";
 import App from "./main";
 import type {
@@ -549,6 +550,7 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   expect(summary.textContent).toContain("已选 1 个账号");
   expect(actionButtons.map((element) => element.textContent?.trim())).toEqual([
     "测试连接",
+    "恢复状态",
     "选择代理",
     "应用模板",
     "删除所选",
@@ -588,4 +590,44 @@ it("keeps batch actions adjacent and requires confirmation before deleting selec
   await act(async () => button("取消").click());
   expect(container.querySelector('[aria-labelledby="delete-title"]')).toBeNull();
   expect(vi.mocked(api).mock.calls.filter(([method]) => method === "DELETE")).toHaveLength(0);
+});
+
+it("recovers only eligible selected accounts, guards repeated clicks, and reports partial outcomes", async () => {
+  bindOperationConnection("recover-selected-fixture");
+  let resolve!: (value: unknown) => void;
+  vi.mocked(api).mockReturnValue(new Promise(done => { resolve = done; }));
+  const report = vi.fn();
+  const accounts = [1, 2, 3, 4, 5].map(id => ({ ...account(id), recoverable: id !== 5, operation_versions: { recover: `recover-${id}` } }));
+  await act(async () => root.render(<RecoverSelectedButton accounts={accounts} online report={report}/>));
+  await act(async () => { button("恢复状态").click(); button("恢复状态").click(); });
+  expect(button("恢复状态").disabled).toBe(true);
+  expect(api).toHaveBeenCalledExactlyOnceWith("POST", "/account-operations/batch", expect.objectContaining({
+    action: "recover", payload: {}, accounts: [1, 2, 3, 4].map(id => ({ account_id: id, expected_version: `recover-${id}` })),
+  }));
+  await act(async () => resolve({ batch_id: "b".repeat(32), pending: 1, items: [
+    { id: "1", account_id: 1, status: "completed", result: { verified: true } },
+    { id: "2", account_id: 2, status: "completed", result: { verified: true, unchanged: true } },
+    { id: "3", account_id: 3, status: "failed" },
+    { id: "4", account_id: 4, status: "needs_confirmation" },
+  ] }));
+  expect(report).toHaveBeenCalledExactlyOnceWith("已恢复 1 个 · 无需恢复 2 个 · 失败 1 个 · 待核对 1 个");
+  expect(button("恢复状态").disabled).toBe(false);
+  await act(async () => root.render(<RecoverSelectedButton accounts={[accounts[4]]} online report={report}/>));
+  expect(button("恢复状态").disabled).toBe(true);
+  await act(async () => root.render(<RecoverSelectedButton accounts={accounts} online={false} report={report}/>));
+  expect(button("恢复状态").disabled).toBe(true);
+});
+
+it("ignores late recovery results after changing connections", async () => {
+  bindOperationConnection("recover-old-connection");
+  let resolve!: (value: unknown) => void;
+  vi.mocked(api).mockReturnValue(new Promise(done => { resolve = done; }));
+  const report = vi.fn(), accounts = [{ ...account(1), recoverable: true, operation_versions: { recover: "fixture-version" } }];
+  await act(async () => root.render(<RecoverSelectedButton key="old" accounts={accounts} online report={report}/>));
+  await act(async () => button("恢复状态").click());
+  bindOperationConnection("recover-new-connection");
+  await act(async () => root.render(<RecoverSelectedButton key="new" accounts={accounts} online report={report}/>));
+  await act(async () => resolve({ batch_id: "c".repeat(32), pending: 0, items: [{ id: "1", account_id: 1, status: "completed", result: { verified: true } }] }));
+  expect(report).not.toHaveBeenCalled();
+  expect(button("恢复状态").disabled).toBe(false);
 });

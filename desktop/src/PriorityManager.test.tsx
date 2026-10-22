@@ -82,6 +82,7 @@ const props = (overrides: Partial<Parameters<typeof PriorityManager>[0]> = {}) =
   connectionKey: "fixture-connection",
   back: vi.fn(),
   changed: vi.fn(),
+  schedule: vi.fn(() => null),
   ...overrides,
 });
 
@@ -230,12 +231,12 @@ describe("platform priority manager", () => {
       client_id: "fixture-client",
       request_id: expect.any(String),
     }));
-    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(1);
+    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(0);
     expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priorities?schema=2")).toHaveLength(2);
     expect(vi.mocked(command).mock.calls.filter(([name]) => name === "refresh")).toHaveLength(1);
   });
 
-  it("polls task summaries, fetches full detail only when expanded, and shows waiting accounts", async () => {
+  it("polls summaries and shows waiting accounts without a detail panel", async () => {
     vi.useFakeTimers();
     const pending = task("queued", { waiting_reason: "等待上游请求结束", waiting_account_ids: [101] });
     let summaryCalls = 0;
@@ -255,13 +256,11 @@ describe("platform priority manager", () => {
     expect(summaryCalls).toBe(1);
     expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(0);
 
-    await act(async () => button("逐项详情").click());
-    await settle();
-    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(1);
-    expect(container.textContent).toContain("Alpha #101");
+    expect(button("逐项详情")).toBeUndefined();
+    expect(container.querySelector("progress")).toBeNull();
   });
 
-  it("finishes a terminal poll with one detail read, one list read, and one refresh", async () => {
+  it("finishes a terminal poll with one list read and one refresh", async () => {
     vi.useFakeTimers();
     const pending = task("queued");
     const completed = task("completed", { verified_count: 2, reason: "全部已确认" });
@@ -277,7 +276,7 @@ describe("platform priority manager", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     await settle();
     expect(summaryCalls).toBe(1);
-    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(1);
+    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(0);
     expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priorities?schema=2")).toHaveLength(2);
     expect(vi.mocked(command).mock.calls.filter(([name]) => name === "refresh")).toHaveLength(1);
   });
@@ -296,7 +295,7 @@ describe("platform priority manager", () => {
     finished = true;
     await render({ active: true });
     await settle();
-    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(1);
+    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(0);
     expect(vi.mocked(api).mock.calls.filter(([, path]) => path === "/account-priorities?schema=2")).toHaveLength(2);
     expect(vi.mocked(command).mock.calls.filter(([name]) => name === "refresh")).toHaveLength(1);
   });
@@ -420,4 +419,47 @@ describe("platform priority manager", () => {
     expect(container.querySelector('[role="tablist"]')).not.toBeNull();
     expect(container.querySelector<HTMLElement>('[data-priority-platform="grok"]')!.hidden).toBe(true);
   });
+});
+
+it.each(["completed", "failed", "cancelled", "needs_confirmation"])("dismisses %s priority results after three seconds without replaying history", async status => {
+  vi.useFakeTimers();
+  const terminal = task(status, { verified_count: 1, reason: "fixture result" });
+  let finished = false;
+  vi.mocked(api).mockImplementation(async (method, path) => {
+    if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+    if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", openaiItems, "openai-version", finished ? terminal : null)] }) as never;
+    if (method === "POST") { finished = true; return terminal as never; }
+    if (path === "/account-priority-orders/fixture-task?schema=2") return terminal as never;
+    throw new Error(path);
+  });
+  await render();
+  await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="下移 Alpha"]')!.click());
+  await act(async () => button("应用变更").click());
+  await settle();
+  expect(container.querySelector(".priority-result")?.textContent).toContain("fixture result");
+  expect(container.querySelector("progress")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+  expect(container.querySelector(".priority-result")).not.toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(container.querySelector(".priority-result")).toBeNull();
+  await rerender({ active: false });
+  await rerender({ active: true });
+  expect(container.querySelector(".priority-result")).toBeNull();
+  if (status !== "completed") {
+    expect(button("重新核对")).toBeTruthy();
+    await act(async () => button("重新核对").click());
+    expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === "GET" && path === "/account-priority-orders/fixture-task?schema=2")).toHaveLength(1);
+  }
+});
+
+it("renders scheduling from live accounts while retaining a priority draft", async () => {
+  const schedule = vi.fn((account: Account) => <button role="switch" aria-label={`${account.name}调度`} aria-checked={account.schedulable}/>);
+  await render({ schedule });
+  await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="下移 Alpha"]')!.click());
+  const changed = allItems.map(account).map(value => value.id === 101 ? { ...value, schedulable: false } : value);
+  await rerender({ schedule, accounts: changed });
+  expect(order()).toEqual([102, 101]);
+  expect(list().querySelector('[aria-label="Alpha调度"]')?.getAttribute("aria-checked")).toBe("false");
+  expect(list().querySelector('[data-priority-id="101"]')?.textContent).toContain("不可调度");
+  expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
 });

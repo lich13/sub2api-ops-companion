@@ -55,3 +55,33 @@ fn template_account_integer_normalization_matches_pinned_python() {
         }
     }
 }
+
+#[test]
+fn key_detection_overrides_validate_the_new_contract() {
+    use serde_json::json;
+    use sub2ops_server::model_detection::detection_request;
+    let base = json!({"expected_version":"a".repeat(64), "enabled":false, "interval_minutes":15});
+    for (model, normalized) in [
+        (json!(null), json!(null)),
+        (json!("  fixture-model  "), json!("fixture-model")),
+    ] {
+        let mut payload = base.clone();
+        payload["model_override"] = model;
+        assert_eq!(
+            detection_request(&payload).unwrap()["model_override"],
+            normalized
+        );
+    }
+    for model in [
+        json!(false),
+        json!({}),
+        json!([]),
+        json!(""),
+        json!("bad model"),
+        json!("*"),
+    ] {
+        let mut payload = base.clone();
+        payload["model_override"] = model;
+        assert!(detection_request(&payload).is_err());
+    }
+}

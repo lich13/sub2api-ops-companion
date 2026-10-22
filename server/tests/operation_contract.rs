@@ -401,6 +401,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
 }
 
 struct FixtureBackend {
+    pool: sqlx::PgPool,
+    recover_calls: Mutex<Vec<i64>>,
+    recover_failures: Mutex<BTreeSet<i64>>,
     test_model: Mutex<String>,
     test_concurrency: AtomicI64,
     delete_lock: Arc<AsyncMutex<()>>,
@@ -417,11 +420,23 @@ impl Backend for FixtureBackend {
 
     fn dispatch<'a>(
         &'a self,
-        _row: &'a Value,
-        _job: &'a Value,
+        row: &'a Value,
+        job: &'a Value,
         _key: &'a str,
     ) -> BoxFuture<'a, Result<Value>> {
-        Box::pin(async { Err(Error::invalid()) })
+        Box::pin(async move {
+            if job["action"] != "recover" {
+                return Err(Error::invalid());
+            }
+            let id = row["id"].as_i64().unwrap();
+            self.recover_calls.lock().unwrap().push(id);
+            if self.recover_failures.lock().unwrap().contains(&id) {
+                return Err(Error::new(502, "fixture recovery reply lost"));
+            }
+            sqlx::query("UPDATE accounts SET status='active',error_message='',rate_limit_reset_at=NULL,overload_until=NULL,temp_unschedulable_until=NULL WHERE id=$1")
+                .bind(id).execute(&self.pool).await.unwrap();
+            Ok(json!({"verified":true,"account_id":id}))
+        })
     }
 
     fn model_get(&self, _id: &str) -> Result<Value> {
@@ -525,6 +540,9 @@ impl Harness {
         )
         .expect("construct operation actions");
         let backend = Arc::new(FixtureBackend {
+            pool: db.pool.clone(),
+            recover_calls: Mutex::new(Vec::new()),
+            recover_failures: Mutex::new(BTreeSet::new()),
             test_model: Mutex::new(
                 fixture["connection_test"]["requested_model"]
                     .as_str()
@@ -2283,5 +2301,107 @@ async fn connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemera
     assert!(!fs::read_to_string(harness.operations.store.0.path())
         .unwrap()
         .contains(CONTENT_MARKER));
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replays_unknown_writes() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(4, json!({})).await;
+    sqlx::query("UPDATE accounts SET schedulable=false,status=CASE WHEN id=ANY($1) THEN 'error' ELSE 'active' END WHERE id=ANY($2)")
+        .bind(&ids[..3]).bind(&ids).execute(&harness.db.pool).await.unwrap();
+    harness
+        .backend
+        .recover_failures
+        .lock()
+        .unwrap()
+        .insert(ids[1]);
+    let mut request = harness
+        .batch_request(&ids, "recover", json!({}), "fixture-recover-batch-0001")
+        .await;
+    request["accounts"][2]["expected_version"] = "f".repeat(64).into();
+    let missing = ids[3] + 9;
+    request["accounts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"account_id":missing,"expected_version":"0".repeat(64)}));
+    let initial = harness
+        .operations
+        .submit_batch(&request, ADMIN_KEY, false)
+        .await
+        .unwrap();
+    let replay = harness
+        .operations
+        .submit_batch(&request, ADMIN_KEY, false)
+        .await
+        .unwrap();
+    assert_eq!(initial["batch_id"], replay["batch_id"]);
+    let bid = initial["batch_id"].as_str().unwrap();
+    assert_eq!(initial["items"][0]["status"], "queued");
+    assert_eq!(initial["items"][1]["status"], "queued");
+    assert_eq!(initial["items"][2]["status"], "needs_confirmation");
+    assert_eq!(initial["items"][3]["result"]["unchanged"], true);
+    assert_eq!(initial["items"][4]["status"], "failed");
+    let done = harness.wait_batch_settled(bid).await;
+    assert_eq!(done["items"][0]["status"], "completed");
+    assert_eq!(done["items"][0]["result"]["verified"], true);
+    assert_eq!(done["items"][1]["status"], "needs_confirmation");
+    let mut called = harness.backend.recover_calls.lock().unwrap().clone();
+    called.sort();
+    assert_eq!(called, ids[..2]);
+    for id in &ids {
+        let account = harness.actions.account(*id, None).await.unwrap();
+        assert_eq!(
+            account["schedulable"], false,
+            "recovery must not enable scheduling"
+        );
+    }
+    assert!(harness.mock.test_calls().is_empty());
+    assert!(harness
+        .mock
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|call| call.method == Method::GET));
+    harness.restart().await;
+    let replay = harness
+        .operations
+        .submit_batch(&request, ADMIN_KEY, false)
+        .await
+        .unwrap();
+    assert_eq!(replay["batch_id"], initial["batch_id"]);
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.backend.recover_calls.lock().unwrap().len(), 2);
+    for payload in [
+        json!({"schedulable":true}),
+        json!({"confirmed":true}),
+        json!([]),
+    ] {
+        let mut invalid = request.clone();
+        invalid["payload"] = payload;
+        assert_eq!(
+            harness
+                .operations
+                .submit_batch(&invalid, ADMIN_KEY, false)
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    let mut conflict = request.clone();
+    conflict["accounts"][0]["expected_version"] = "e".repeat(64).into();
+    assert_eq!(
+        harness
+            .operations
+            .submit_batch(&conflict, ADMIN_KEY, false)
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        409
+    );
     harness.finish().await;
 }

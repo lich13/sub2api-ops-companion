@@ -1154,6 +1154,135 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
 }
 
 #[tokio::test]
+async fn key_detection_override_uses_shared_candidates_and_survives_global_changes() {
+    let mut harness = Harness::new(sample_text("above_99", 0)).await;
+    harness
+        .mock
+        .set_models(vec![json!({"id":"gpt-6-sol"}), json!({"id":"gpt-6-luna"})]);
+    let id = integer(&harness.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let initial = harness.runtime().detection.view(id).unwrap();
+    assert!(initial["model_override"].is_null());
+    let saved = harness
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({
+                "expected_version":initial["version"], "enabled":true, "interval_minutes":1,
+                "model_override":"  gpt-6-sol  "
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["model_override"], "gpt-6-sol");
+    assert_eq!(saved["model_id"], "gpt-6-sol");
+    assert_eq!(saved["model_source"], "account");
+    assert_eq!(saved["global_model_id"], "gpt-6-luna");
+    assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
+    harness.set_detection_model("gpt-6-astra").await;
+    let current = harness.runtime().detection.view(id).unwrap();
+    assert_eq!(current["version"], saved["version"]);
+    assert_eq!(current["model_id"], "gpt-6-sol");
+    assert_eq!(current["global_model_id"], "gpt-6-astra");
+    let missing = harness
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({
+                "expected_version":current["version"], "enabled":true, "interval_minutes":1,
+                "model_override":"missing-model"
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.status.as_u16(), 422);
+    assert_eq!(
+        harness.runtime().detection.view(id).unwrap()["version"],
+        current["version"]
+    );
+    let stale = harness
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({
+                "expected_version":initial["version"], "enabled":false, "interval_minutes":1,
+                "model_override":null
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(stale.status.as_u16(), 409);
+    harness.restart_runtime().await;
+    assert_eq!(
+        harness.runtime().detection.view(id).unwrap()["model_override"],
+        "gpt-6-sol"
+    );
+    let budget = harness
+        .runtime()
+        .budget
+        .clone()
+        .acquire_many_owned(24)
+        .await
+        .unwrap();
+    harness
+        .runtime()
+        .detection
+        .update(
+            id,
+            json!({
+                "candidate_blocked":true, "candidate_recheck_at":null,
+                "next_at":datetime(harness.now()-Duration::seconds(1))
+            }),
+        )
+        .unwrap();
+    harness.runtime().detection.tick().await.unwrap();
+    let control = harness.runtime().detection.control(id).unwrap();
+    let job_id = control["job_id"].as_str().unwrap().to_owned();
+    let queued = harness.runtime().tests.get(&job_id).unwrap();
+    assert_eq!(queued["requested_model"], "gpt-6-sol");
+    assert_eq!(queued["forwarded_model"], "gpt-6-sol");
+    drop(budget);
+    let done = harness.wait_job_terminal(&job_id).await;
+    assert_eq!(done["status"], "completed");
+    assert_eq!(done["requested_model"], "gpt-6-sol");
+    let current = harness.runtime().detection.view(id).unwrap();
+    let following = harness
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({
+                "expected_version":current["version"], "enabled":false, "interval_minutes":1,
+                "model_override":null
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(following["model_override"].is_null());
+    assert_eq!(following["model_id"], "gpt-6-astra");
+    assert_eq!(following["model_source"], "global");
+    let oauth = integer(&harness.seed_account("oauth", true, json!({})).await["id"]).unwrap();
+    let current = harness.runtime().detection.view(oauth).unwrap();
+    let error = harness
+        .runtime()
+        .detection
+        .save(
+            oauth,
+            &json!({
+                "expected_version":current["version"], "enabled":false, "interval_minutes":1,
+                "model_override":"gpt-6-sol"
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status.as_u16(), 422);
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn global_detection_model_normalizes_and_changed_model_rejects_pending_candidate_save() {
     let harness = Harness::new(sample_text("above_99", 0)).await;
     let id = integer(&harness.seed_account("apikey", true, json!({})).await["id"]).unwrap();

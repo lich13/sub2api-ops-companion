@@ -88,14 +88,15 @@ function render(accounts: Account[], overrides: Partial<React.ComponentProps<typ
       back={vi.fn()}
       report={vi.fn()}
       accountActions={() => [{ id: "test", label: "测试连接", run: vi.fn() }]}
+      schedule={() => null}
       changed={vi.fn()}
       {...overrides}
     />,
   );
 }
 
-const accountButton = (name: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>(".group-account-select")].find(
+const accountIdentity = (name: string) =>
+  [...container.querySelectorAll<HTMLElement>(".group-account-identity")].find(
     (node) => node.querySelector("strong")?.textContent === name,
   )!;
 
@@ -105,17 +106,27 @@ const draftApplyButton = () =>
   )!;
 
 const menuTrigger = (name: string) =>
-  accountButton(name).closest(".group-account")!.querySelector<HTMLButtonElement>(".account-more-trigger")!;
+  accountIdentity(name).closest(".group-account")!.querySelector<HTMLButtonElement>(".account-more-trigger")!;
 
 const menu = () => document.body.querySelector<HTMLElement>(".account-action-popup");
 
-async function moveTo(name: string, destination: string) {
-  await act(async () => accountButton(name).click());
-  await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-      .find((node) => node.textContent === destination)!
-      .click(),
-  );
+async function moveTo(name: string, destination: string, touch = false) {
+  const target = container.querySelector<HTMLElement>(`.zone-${({ "左组": "left", "右组": "right", "两组共有": "both", "移出当前分组": "none" } as Record<string, string>)[destination]}`)!;
+  const grip = accountIdentity(name).closest(".group-account")!.querySelector<HTMLElement>(".group-grip")!;
+  const previous = document.elementFromPoint;
+  document.elementFromPoint = () => target;
+  Object.defineProperty(grip, "setPointerCapture", { value: vi.fn(), configurable: true });
+  const pointer = (type: string, x: number) => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: 10 });
+    Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: touch ? "touch" : "mouse" } });
+    grip.dispatchEvent(event);
+  };
+  try {
+    await act(async () => pointer("pointerdown", 10));
+    if (touch) await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    await act(async () => pointer("pointermove", 30));
+    await act(async () => pointer("pointerup", 30));
+  } finally { document.elementFromPoint = previous; }
 }
 
 beforeEach(() => {
@@ -129,10 +140,11 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 describe("group manager drafts", () => {
-  it("routes point selections to the left, right, intersection, and unassigned destinations", async () => {
+  it("drags accounts to the left, right, intersection, and unassigned destinations", async () => {
     const accounts = [
       account(1, "Alpha", [1]),
       account(2, "Beta", [2]),
@@ -140,28 +152,12 @@ describe("group manager drafts", () => {
       account(4, "Pending", []),
     ];
     await act(async () => render(accounts));
-    const choose = async (name: string) => {
-      await act(async () => accountButton(name).click());
-    };
-    const destination = async (name: string) => {
-      await act(async () =>
-        [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-          .find((node) => node.textContent === name)!
-          .click(),
-      );
-    };
-
-    await choose("Alpha");
-    await destination("右组");
-    await choose("Beta");
-    await destination("左组");
-    await choose("Both");
-    await destination("两组共有");
+    await moveTo("Alpha", "右组");
+    await moveTo("Beta", "左组");
+    await moveTo("Both", "两组共有");
     expect(container.textContent).toContain("2 个账号待应用");
-    await choose("Both");
-    await destination("移出当前分组");
-    await choose("Pending");
-    await destination("两组共有");
+    await moveTo("Both", "移出当前分组");
+    await moveTo("Pending", "两组共有");
 
     expect(container.textContent).toContain("4 个账号待应用");
     expect([...container.querySelectorAll(".group-account.dirty strong")].map((node) => node.textContent).sort()).toEqual([
@@ -201,18 +197,8 @@ describe("group manager drafts", () => {
     });
 
     await act(async () => render(accounts));
-    await act(async () => accountButton("Alpha").click());
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-        .find((node) => node.textContent === "右组")!
-        .click(),
-    );
-    await act(async () => accountButton("Beta").click());
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-        .find((node) => node.textContent === "左组")!
-        .click(),
-    );
+    await moveTo("Alpha", "右组");
+    await moveTo("Beta", "左组");
 
     expect(vi.mocked(api).mock.calls).toEqual([]);
     expect(container.textContent).toContain("2 个账号待应用");
@@ -234,16 +220,13 @@ describe("group manager drafts", () => {
     expect(command).toHaveBeenCalledWith("refresh");
   });
 
-  it("supports keyboard destinations, undo, discard, and preserves drafts across platforms", async () => {
+  it("supports touch dragging, undo, discard, and preserves drafts across platforms", async () => {
     const accounts = [account(1, "Alpha", [1]), account(2, "Grok", [3], "grok")];
     await act(async () => render(accounts));
-    await act(async () => accountButton("Alpha").click());
-
-    const rightZone = container.querySelector<HTMLElement>(".zone-right")!;
-    expect(rightZone.tabIndex).toBe(0);
-    await act(async () => rightZone.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    vi.useFakeTimers();
+    await moveTo("Alpha", "右组", true);
     expect(container.textContent).toContain("1 个账号待应用");
-    expect(accountButton("Alpha").closest(".group-account")?.className).toContain("dirty");
+    expect(accountIdentity("Alpha").closest(".group-account")?.className).toContain("dirty");
 
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>(".group-draft-toolbar button")]
@@ -252,12 +235,7 @@ describe("group manager drafts", () => {
     );
     expect(container.textContent).not.toContain("个账号待应用");
 
-    await act(async () => accountButton("Alpha").click());
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-        .find((node) => node.textContent === "右组")!
-        .click(),
-    );
+    await moveTo("Alpha", "右组");
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>("[role=tab]")]
         .find((node) => node.textContent === "Grok")!
@@ -276,12 +254,7 @@ describe("group manager drafts", () => {
   it("blocks applying a stale draft and allows dropping the conflict explicitly", async () => {
     const initial = account(1, "Alpha", [1]);
     await act(async () => render([initial]));
-    await act(async () => accountButton("Alpha").click());
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>(".group-destination-bar button")]
-        .find((node) => node.textContent === "右组")!
-        .click(),
-    );
+    await moveTo("Alpha", "右组");
 
     await act(async () => render([{ ...initial, version: "version-changed" }]));
     expect(container.textContent).toContain("冲突");
@@ -300,18 +273,20 @@ describe("group manager drafts", () => {
     expect(vi.mocked(api)).not.toHaveBeenCalled();
   });
 
-  it("keeps an existing selection intact when opening and using another account's portal menu", async () => {
+  it("does not move accounts when clicking names, zones, or another account's portal menu", async () => {
     const accounts = [account(1, "Alpha", [1]), account(2, "Beta", [2])];
     const run = vi.fn();
     const accountActions = vi.fn((value: Account) => [
       { id: "test", label: "测试连接", run: () => run(value.id) },
     ]);
     await act(async () => render(accounts, { accountActions }));
-    await act(async () => accountButton("Alpha").click());
+    await act(async () => accountIdentity("Alpha").click());
+    await act(async () => container.querySelector<HTMLElement>(".zone-right")!.click());
     await act(async () => menuTrigger("Beta").click());
 
     expect(menu()?.parentElement).toBe(document.body);
-    expect(accountButton("Alpha").getAttribute("aria-pressed")).toBe("true");
+    expect(accountIdentity("Alpha").tagName).toBe("DIV");
+    expect(accountIdentity("Alpha").hasAttribute("aria-pressed")).toBe(false);
     expect(container.querySelectorAll(".group-account.dirty")).toHaveLength(0);
 
     const option = menu()!.querySelector<HTMLButtonElement>("button")!;
@@ -321,7 +296,8 @@ describe("group manager drafts", () => {
 
     expect(run).toHaveBeenCalledExactlyOnceWith(2);
     expect(menu()).toBeNull();
-    expect(accountButton("Alpha").getAttribute("aria-pressed")).toBe("true");
+    expect(accountIdentity("Alpha").tagName).toBe("DIV");
+    expect(accountIdentity("Alpha").hasAttribute("aria-pressed")).toBe(false);
     expect(container.querySelectorAll(".group-account.dirty")).toHaveLength(0);
     expect(api).not.toHaveBeenCalled();
   });

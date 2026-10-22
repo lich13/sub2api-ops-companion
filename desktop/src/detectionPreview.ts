@@ -1,5 +1,6 @@
 import type { Account } from './types';
 import { templateBatchPreview } from './operationPreview';
+import { modelTestCandidates } from './modelTestPreview';
 const version = () => crypto.randomUUID().replaceAll('-', '').repeat(2);
 const values = { full: { whitelist: ['gpt-6-sol', 'gpt-6-astra', 'gpt-6.1-sol'], mappings: [] }, degraded: { whitelist: ['gpt-6-luna'], mappings: [{ source: 'gpt-5.6-luna', target: 'gpt-6-luna' }, { source: 'gpt-5.6-terra', target: 'gpt-6-luna' }] }, takeover: { whitelist: ['gpt-6-luna'], mappings: [{ source: 'gpt-5.6-luna', target: 'gpt-6-luna' }, { source: 'gpt-5.6-terra', target: 'gpt-6-luna' }] } };
 type Profile = { whitelist: string[]; mappings: { source: string; target: string }[] };
@@ -54,12 +55,20 @@ export function detectionPreview(method: string, path: string, body: Record<stri
   let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
-  if (value.model_id !== model) value = { ...value, version: version() };
-  value = { ...value, model_id: model, model_source: "global" };
+  const effectiveModel = value.model_override ?? model;
+  if (value.model_id !== effectiveModel) value = { ...value, version: version() };
+  value = { ...value, model_id: effectiveModel, model_source: value.model_override ? "account" : "global", model_override: value.model_override ?? null, global_model_id: model };
   detections.set(aid, value);
   if (method === 'PUT') {
     if (body.expected_version !== value.version) throw new Error('检测设置已变化');
-    value = { ...value, enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };
+    const account = accounts.find((a) => a.id === aid);
+    if (body.model_override !== undefined && (account?.platform !== "openai" || account.type !== "apikey")) throw new Error('仅 OpenAI Key 账号可单独指定检测模型');
+    const requested = body.model_override !== undefined ? body.model_override : value.model_override;
+    const override = typeof requested === "string" ? requested.trim() : requested;
+    if (override !== null && (typeof override !== "string" || !/^[A-Za-z0-9._:/-]{1,200}$/.test(override))) throw new Error('检测模型无效');
+    const selected = override ?? model;
+    if (body.enabled && (!account || !modelTestCandidates(account).some((m) => m.id === selected))) throw new Error('所选模型不在当前账号上游模型目录中');
+    value = { ...value, model_override: override, model_id: selected, model_source: override ? "account" : "global", enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };
     detections.set(aid, value);
   }
   return structuredClone(value);

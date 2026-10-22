@@ -414,3 +414,37 @@ async function settle() {
     await Promise.resolve();
   });
 }
+
+
+describe("Key model test preference", () => {
+  it("prefers the saved detection model over a completed historical test", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/model-detection")) return { model_override: "gpt-6-astra" } as never;
+      if (path.endsWith("/latest")) return { id: "fixture-previous", status: "completed", requested_model: "gpt-6-luna", returned_models: [], completed_groups: 1, valid_groups: 1, duration_ms: 10 } as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
+    await settle();
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!.value).toBe("gpt-6-astra");
+    const start = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("重新测试"))!;
+    vi.mocked(api).mockResolvedValueOnce({ id: "fixture-new", status: "completed", requested_model: "gpt-6-astra", returned_models: [], completed_groups: 1, valid_groups: 1, duration_ms: 10 } as never);
+    await act(async () => start.click());
+    expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toMatchObject({ model_id: "gpt-6-astra" });
+  });
+
+  it("preserves a manual model selection when the detection preference arrives late", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise(done => { resolve = done; });
+    vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/model-detection") ? pending as never : original(method, path, body));
+    await act(async () => root.render(<ModelTestDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
+    const model = container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!;
+    await act(async () => { model.value = "gpt-6-sol"; model.dispatchEvent(new Event("change", { bubbles: true })); });
+    const start = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("开始测试"))!;
+    expect(start.disabled).toBe(true);
+    await act(async () => resolve({ model_override: "gpt-6-astra" }));
+    expect(model.value).toBe("gpt-6-sol");
+    expect(start.disabled).toBe(false);
+  });
+});

@@ -61,7 +61,7 @@ import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccou
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
-import { DeleteAccountsDialog } from "./AccountManagement";
+import { DeleteAccountsDialog, RecoverSelectedButton } from "./AccountManagement";
 import { useQuickHeight } from "./useQuickHeight";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
@@ -73,7 +73,7 @@ import ModelDetectionDialog from "./ModelDetectionDialog";
 import DetectionLogs from "./DetectionLogs";
 import KeepaliveDialog from "./KeepaliveDialog";
 import AccountOperations, { AccountOperationStatus } from "./OperationPanel";
-import { accountOperation, bindOperationConnection } from "./accountOperations";
+import { accountOperation, bindOperationConnection, operationEpoch } from "./accountOperations";
 import UsageRecords from "./UsageRecords";
 import MobileAccounts from "./MobileAccounts";
 import GroupManager from "./GroupManager";
@@ -165,6 +165,7 @@ export default function App() {
     [groupChanges, setGroupChanges] = useState({ count: 0, busy: false }),
     [priorityChanges, setPriorityChanges] = useState(0),
     [leaveGroups, setLeaveGroups] = useState<((proceed: boolean) => void) | null>(null),
+    schedulePending = useRef(false),
     detailGeneration = useRef(0),
     detailAbort = useRef<AbortController | null>(null);
   const sortBy = accountSort.startsWith("recent:") ? "recent" : "priority";
@@ -229,6 +230,7 @@ export default function App() {
     setSettingsAccount(null);
     setProxyAccounts(null);
     setConfirm(null);
+    schedulePending.current = false; setBusy(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
     setConfig(null);
@@ -345,22 +347,28 @@ export default function App() {
     }
   }
   async function toggle(a: Account, detach = false) {
+    if (!state.online || schedulePending.current) return;
     if (a.managed && !detach) {
       setConfirm(a);
       return;
     }
     setConfirm(null);
-    setBusy(a.id);
+    const epoch = operationEpoch();
+    schedulePending.current = true; setBusy(a.id);
     try {
-      await accountOperation(a, "schedulable", {
+      const result = await accountOperation<{ verified: boolean }>(a, "schedulable", {
         schedulable: !a.schedulable,
         detach_managed: detach,
       });
-      setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
+      if (!result.verified) throw new Error("调度写入未确认，请刷新查看实际状态");
+      if (operationEpoch() === epoch) {
+        if (!a.operation_versions) void command("refresh");
+        setToast(`${a.name}：${a.schedulable ? "已关闭" : "已打开"}调度`);
+      }
     } catch (e) {
-      report(e);
+      if (operationEpoch() === epoch) { report(e); void command("refresh"); }
     } finally {
-      setBusy(null);
+      if (operationEpoch() === epoch) { schedulePending.current = false; setBusy(null); }
     }
   }
   async function openError(id: number, category?: ErrorCategory) {
@@ -388,13 +396,13 @@ export default function App() {
     if (account?.last_error_id === error.id && !error.resolved && !account.success_after_error) return "当前";
     return error.resolved ? "已解决" : "历史";
   }
-  function schedule(a: Account) {
+  function schedule(a: Account, disabled = false) {
     return (
       <div className="switch-cell">
         {busy === a.id ? <LoaderCircle size={14} className="spin" /> : null}
         <Switch
           on={a.schedulable}
-          disabled={!state.online || busy !== null}
+          disabled={disabled || !state.online || busy !== null}
           label={`${a.name}调度`}
           onChange={() => void toggle(a)}
         />
@@ -690,8 +698,8 @@ export default function App() {
               </>
             ) : (
               <>
-                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
-                <PriorityManager key={`priorities:${connectionKey}`} connectionKey={connectionKey} active={page === "priorities"} accounts={accounts} mobile={mobile} online={state.online} back={() => setPage("accounts")} changed={setPriorityChanges}/>
+                <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} schedule={schedule} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
+                <PriorityManager key={`priorities:${connectionKey}`} connectionKey={connectionKey} active={page === "priorities"} accounts={accounts} mobile={mobile} online={state.online} back={() => setPage("accounts")} schedule={schedule} changed={setPriorityChanges}/>
                 <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page} hidden={page === "groups" || page === "priorities"}>
                   <div className="page-heading">
                     <div>
@@ -779,6 +787,7 @@ export default function App() {
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
                         <button disabled={!state.online || selected.size === 0 || connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
+                        <RecoverSelectedButton key={connectionKey} accounts={accounts.filter(a => selected.has(a.id))} online={state.online} report={report}/>
                         <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
                         <button

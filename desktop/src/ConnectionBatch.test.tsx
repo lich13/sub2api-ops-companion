@@ -288,7 +288,7 @@ describe("connection batch tests", () => {
     });
     await renderHarness({ accounts: [account(1), account(2)] });
     await click("start");
-    await advance();
+    await advance(1000);
 
     expect(api).toHaveBeenCalledWith("GET", "/account-operations?batch_id=batch-follow");
     expect(resultRow(account(1).name).textContent).toContain("通过");
@@ -386,7 +386,7 @@ describe("connection batch tests", () => {
     });
     await renderHarness({ storageKey, connectionKey: "persist:1" });
     await click("start");
-    await advance();
+    await advance(1000);
     expect(resultRow(account(1).name).textContent).toContain("通过");
     await clickResultButton("关闭结果");
     expectHiddenResult();
@@ -404,7 +404,7 @@ describe("connection batch tests", () => {
     await act(async () => root.unmount());
     root = createRoot(container);
     await renderHarness({ storageKey, connectionKey: "persist:2", accounts: [] });
-    await advance();
+    await advance(1000);
 
     expect(submissions()).toHaveLength(1);
     expect(api).toHaveBeenCalledWith("GET", `/account-operations?batch_id=${savedBatchId}`);
@@ -440,7 +440,7 @@ describe("connection batch tests", () => {
     root = createRoot(container);
 
     await renderHarness({ storageKey, connectionKey: "legacy:2", accounts: [] });
-    await advance();
+    await advance(1000);
 
     expect(submissions()).toHaveLength(1);
     expect(container.querySelector('section[aria-label="批量测试连接"]')).toBeTruthy();
@@ -610,7 +610,7 @@ describe("connection batch tests", () => {
 
     finish = true;
     await renderHarness({ active: true });
-    await advance();
+    await advance(1000);
     expect(reads().length).toBeGreaterThan(beforePause);
     expect(resultRow(account(1).name).textContent).toContain("通过");
   });
@@ -734,4 +734,50 @@ describe("connection batch tests", () => {
     expect(container.textContent).not.toContain(account(3).name);
     expect(output("batch-id")).toBe("batch-snapshot");
   });
+});
+
+it.each(["completed", "failed", "cancelled", "needs_confirmation", "superseded"])("auto-closes a terminal %s batch once and lets users reopen it", async status => {
+  const result = batch("b".repeat(32), [completed(1, { status })]);
+  vi.mocked(api).mockResolvedValue(result as never);
+  await renderHarness(); await click("start");
+  await advance(2999);
+  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  await advance(1);
+  expectHiddenResult();
+  expect(persistedStates()[0].value.visible).toBe(false);
+  await clickEntry(); await advance(5000);
+  expect(container.querySelector('.connection-batch')).not.toBeNull();
+});
+
+it("keeps unfinished batches open and clears terminal timers when a new batch starts", async () => {
+  let result = batch("c".repeat(32), [operation(1)]);
+  vi.mocked(api).mockImplementation(async () => result as never);
+  await renderHarness(); await click("start"); await advance(4000);
+  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  result = batch("c".repeat(32), [completed(1)]);
+  await advance(1000); await advance(2000);
+  result = batch("d".repeat(32), [operation(1)]);
+  await click("start"); await advance(1000);
+  expect(output("batch-id")).toBe("d".repeat(32));
+  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  await renderHarness({ connectionKey: "connection-b:1", storageKey: "https://connection-b.example.invalid" });
+  await advance(4000); expectHiddenResult();
+});
+
+
+it("keeps an unconfirmed new submission visible when the prior batch completion timer expires", async () => {
+  let attempted = false;
+  const done = batch("e".repeat(32), [completed(1)]);
+  vi.mocked(api).mockImplementation(async (method) => {
+    if (method === "POST" && attempted) throw new Error("fixture submission unknown");
+    if (method === "POST") attempted = true;
+    return done as never;
+  });
+  await renderHarness(); await click("start"); await advance(2000);
+  await click("start"); await advance(5000);
+  expect(output("busy")).toBe("true");
+  expect(output("error")).toBe("fixture submission unknown");
+  expect(container.querySelector('.connection-batch')).not.toBeNull();
+  expect(container.querySelector('.connection-batch [role="status"]')?.textContent).toBe("提交结果待确认");
+  expect(container.querySelectorAll('.connection-batch tbody tr')).toHaveLength(0);
 });

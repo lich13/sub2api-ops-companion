@@ -1,13 +1,22 @@
 import type { Account } from './types';
 import type { Operation } from './accountOperations';
 import { applySettingsPreview, isSettingsAction, previewProxies, settingsPreview } from './settingsPreview';
+function recoverPreview(account: Account) {
+  const wasError = account.status === 'error';
+  if (wasError) account.status = 'active';
+  account.blockers = account.blockers.filter(blocker => !(wasError && blocker.code === 'status') && !['rate_limit_reset_at', 'overload_until', 'temp_unschedulable_until'].includes(blocker.code));
+  account.recoverable = false; account.error_message = '';
+  account.available = account.schedulable && account.status === 'active' && account.blockers.length === 0;
+  if (account.operation_versions) account.operation_versions.recover = crypto.randomUUID().replaceAll('-', '').repeat(2);
+}
 const jobs = new Map<string, Operation>();
 const requests = new Map<string, string>();
 const batches = new Map<string, string[]>();
 const batchRequests = new Map<string, { id: string; signature: string }>();
 export async function operationPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], emit: () => void) {
   if (method === 'POST' && path === '/account-operations/batch') {
-    if (!['proxy', 'delete', 'groups', 'test'].includes(String(body.action))) throw new Error('批量操作类型无效');
+    if (!['proxy', 'delete', 'groups', 'test', 'recover'].includes(String(body.action))) throw new Error('批量操作类型无效');
+    if (body.action === 'recover' && (!body.payload || typeof body.payload !== 'object' || Object.keys(body.payload).length)) throw new Error('恢复参数无效');
     if (body.action === 'delete' && (body.payload as Record<string, unknown>)?.confirmed !== true) throw new Error('请先确认删除');
     if (body.action === 'test' && (body.payload as Record<string, unknown>)?.confirmed !== true) throw new Error('请先确认连接测试');
     const signature = JSON.stringify(body), old = batchRequests.get(String(body.request_id));
@@ -20,17 +29,17 @@ export async function operationPreview(method: string, path: string, body: Recor
         const account = accounts.find(a => a.id === target.account_id);
         const action = String(body.action), payload = (action === 'test'
           ? { confirmed: true, mode: account?.platform === 'grok' ? 'text' : 'default', model_id: account?.platform === 'grok' ? '' : 'gpt-6-luna' }
-          : action === 'proxy' ? body.payload : target.payload) as Record<string, unknown>;
+          : ['proxy', 'recover'].includes(action) ? body.payload : target.payload) as Record<string, unknown>;
         const available = action !== 'proxy' || payload.proxy_id === null || previewProxies.some(p => p.id === payload.proxy_id && p.status === 'active');
         const settings = account ? settingsPreview(account) : null;
         const eligible = action === 'proxy' ? !!settings?.capabilities.proxy.editable : action === 'test'
           ? !!account && ['openai', 'grok'].includes(account.platform) && ['oauth', 'apikey'].includes(account.type) : !!account;
-        const unchanged = action === 'proxy' && eligible && settings?.proxy_id === payload.proxy_id;
         const conflict = (action === 'proxy' ? settings?.versions.proxy : account?.operation_versions?.[action] ?? account?.version) !== target.expected_version;
+        const unchanged = action === 'proxy' && eligible && settings?.proxy_id === payload.proxy_id || action === 'recover' && eligible && !conflict && !account?.recoverable;
         const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), batch_id: bid, account_id: target.account_id,
-          account_name: account?.name ?? '账号', action, requested: payload, execution_mode: 'native',
+          account_name: account?.name ?? '账号', action, requested: payload, ...(['proxy', 'delete', 'groups'].includes(action) ? { execution_mode: 'native' as const } : {}),
           status: !eligible ? 'failed' : unchanged ? 'completed' : conflict || !available ? 'needs_confirmation' : 'queued',
-          reason: !eligible ? settings?.capabilities.proxy.reason ?? '账号不存在' : unchanged ? '无变化' : !available ? '所选代理不可用' : conflict ? '代理配置已变化' : '等待执行',
+          reason: !eligible ? settings?.capabilities.proxy.reason ?? '账号不存在' : unchanged ? '无变化' : !available ? '所选代理不可用' : conflict ? '账号相关状态已变化' : '等待执行',
           ...(unchanged ? { result: { verified: true, unchanged: true } } : {}) };
         jobs.set(job.id, job);
         if (job.status === 'queued') setTimeout(() => {
@@ -39,6 +48,7 @@ export async function operationPreview(method: string, path: string, body: Recor
             if (action === 'test') job.result = { requested_model: payload.model_id,
               actual_model: account.platform === 'grok' ? 'grok' : 'gpt-6-luna', success: account.status !== 'error',
               duration_ms: 360, completed_at: new Date().toISOString(), ...(account.status === 'error' ? { error: '测试请求失败 [http_401]' } : {}) };
+            else if (action === 'recover') { recoverPreview(account); job.result = { verified: true, account_id: account.id }; }
             else if (action === 'proxy') job.result = applySettingsPreview(account, 'proxy', payload, target.expected_version);
             else if (action === 'groups') {
               const scope = payload.scope_group_ids as number[], targetGroups = payload.group_ids as number[];
@@ -89,7 +99,14 @@ export async function operationPreview(method: string, path: string, body: Recor
         try { settingsResult = applySettingsPreview(account, action, payload, String(body.expected_version)); }
         catch (e) { job.status = 'needs_confirmation'; job.reason = String(e).replace(/^Error: /, ''); emit(); return; }
       }
-      if (action === 'schedulable') account.schedulable = Boolean(payload.schedulable);
+      if (action === 'schedulable') {
+        account.schedulable = Boolean(payload.schedulable);
+        if (payload.detach_managed) account.managed = false;
+        account.blockers = account.blockers.filter(blocker => blocker.code !== 'disabled');
+        if (!account.schedulable) account.blockers.push({ code: 'disabled', label: '调度已关闭' });
+        account.available = account.status === 'active' && account.blockers.length === 0;
+      }
+      if (action === 'recover') recoverPreview(account);
       if (action === 'groups') {
         const scope = payload.scope_group_ids as number[], target = payload.group_ids as number[];
         account.group_ids = [...new Set([...account.group_ids.filter((id) => !scope.includes(id)), ...target])];

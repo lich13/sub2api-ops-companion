@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Check, GripVertical, RefreshCw, Search, Undo2 } from "lucide-react";
 import { api, command } from "./bridge";
 import { clientId } from "./accountOperations";
@@ -6,31 +6,32 @@ import { groupPriorityAccounts, movePriority, priorityOrder, priorityPending, pr
 import type { Account } from "./types";
 import "./priority-manager.css";
 
-type Props = { accounts: Account[]; active: boolean; online: boolean; mobile: boolean; connectionKey: string; back: () => void; changed: (count: number) => void };
+type Props = { accounts: Account[]; active: boolean; online: boolean; mobile: boolean; connectionKey: string; back: () => void; schedule: (account: Account, disabled?: boolean) => ReactNode; changed: (count: number) => void };
 type Drag = { id: number; platform: string; x: number; y: number; target: number | null };
 type Drafts = Record<string, PriorityDraft | undefined>;
 type Caps = { account_priority_ordering?: boolean; account_priority_per_platform?: boolean };
 const taskLabels: Record<string, string> = { queued: "等待执行", running: "正在保存", checking: "正在核对", completed: "全部已确认", needs_confirmation: "需要重新核对", failed: "保存失败", cancelled: "已停止" };
-const itemLabels: Record<string, string> = { pending: "尚未派发", unchanged: "无需修改", dispatched: "已派发，待核对", verified: "已确认" };
 const cleanError = (error: unknown) => String(error).replace(/^Error: /, "");
 const taskPath = (id: string, summary = false) => `/account-priority-orders/${id}?schema=2${summary ? "&details=0" : ""}`;
 export default function PriorityManager(props: Props) {
   const { active, online, mobile, connectionKey } = props;
   const [view, setView] = useState<PriorityView | null>(null), [supported, setSupported] = useState<boolean | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({}), [history, setHistory] = useState<Record<string, (PriorityDraft | undefined)[]>>({});
-  const [details, setDetails] = useState<Record<string, PriorityTask>>({}), [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [results, setResults] = useState<Record<string, string>>({});
+  const resultTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [query, setQuery] = useState(""), [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(false), [submitting, setSubmitting] = useState("");
   const [error, setError] = useState(""), [notices, setNotices] = useState<Record<string, string>>({});
   const [readRevision, setReadRevision] = useState(0), [width, setWidth] = useState(0), [visible, setVisible] = useState(!document.hidden);
   const [drag, setDrag] = useState<Drag | null>(null);
   const generation = useRef(0), alive = useRef(true), submittingRef = useRef(false), latest = useRef(props), caps = useRef<Caps | null>(null);
-  const draftsRef = useRef(drafts), viewRef = useRef(view), detailsRef = useRef(details), expandedRef = useRef(expanded), dragRef = useRef(drag), section = useRef<HTMLElement>(null);
+  const draftsRef = useRef(drafts), viewRef = useRef(view), dragRef = useRef(drag), section = useRef<HTMLElement>(null);
   const lists = useRef(new Map<string, HTMLOListElement>());
   const pointer = useRef<(Drag & { ready: boolean; timer?: ReturnType<typeof setTimeout> }) | null>(null);
   const requests = useRef<Record<string, { signature: string; body: Record<string, unknown> }>>({});
   const completed = useRef(new Set<string>());
-  latest.current = props; draftsRef.current = drafts; viewRef.current = view; detailsRef.current = details; expandedRef.current = expanded; dragRef.current = drag;
+  latest.current = props; draftsRef.current = drafts; viewRef.current = view; dragRef.current = drag;
+  const liveAccounts = new Map(props.accounts.map(account => [account.id, account]));
   const fallback: PriorityAccount[] = props.accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? "", editable: false, reason: "请升级服务端以按平台管理优先级", status: a.status, schedulable: a.schedulable }));
   const groups = [...(view?.platforms ?? groupPriorityAccounts(fallback))];
   for (const [platform, draft] of Object.entries(drafts)) if (draft && !groups.some(group => group.platform === platform)) groups.push({ platform, items: [], version: "", last_task: null });
@@ -42,7 +43,7 @@ export default function PriorityManager(props: Props) {
   const connected = () => alive.current && latest.current.connectionKey === connectionKey;
   const current = (epoch: number) => connected() && epoch === generation.current && latest.current.active && latest.current.online && !document.hidden;
   useEffect(() => { props.changed(changedCount); }, [changedCount]);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; ++generation.current; clearTimeout(pointer.current?.timer); }; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; ++generation.current; clearTimeout(pointer.current?.timer); resultTimers.current.forEach(clearTimeout); }; }, []);
   function stopDrag() { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); }
   useEffect(() => { stopDrag(); }, [active, online, columns, selectedPlatform]);
   useEffect(() => {
@@ -59,17 +60,20 @@ export default function PriorityManager(props: Props) {
   }, [active]);
   useEffect(() => {
     ++generation.current; caps.current = null; completed.current.clear(); requests.current = {};
-    setView(null); setSupported(null); setSubmitting(""); submittingRef.current = false; setDrafts({}); setHistory({}); setDetails({}); setExpanded({}); setNotices({}); setError(""); setSelected(""); stopDrag();
+    setView(null); setSupported(null); setSubmitting(""); submittingRef.current = false; setDrafts({}); setHistory({}); resultTimers.current.forEach(clearTimeout); resultTimers.current.clear(); setResults({}); setNotices({}); setError(""); setSelected(""); stopDrag();
   }, [connectionKey]);
   useEffect(() => {
     const hidden = () => { setVisible(!document.hidden); if (document.hidden) { ++generation.current; stopDrag(); } };
     document.addEventListener("visibilitychange", hidden); return () => document.removeEventListener("visibilitychange", hidden);
   }, []);
   useEffect(() => { const cancel = (event: KeyboardEvent) => { if (active && event.key === "Escape") stopDrag(); }; window.addEventListener("keydown", cancel); return () => window.removeEventListener("keydown", cancel); }, [active]);
-  async function fetchDetail(task: PriorityTask, epoch: number) {
-    const next = await api<PriorityTask>("GET", taskPath(task.id));
-    if (current(epoch)) setDetails(old => ({ ...old, [task.id]: next }));
-    return next;
+  function showResult(platform: string, message: string) {
+    clearTimeout(resultTimers.current.get(platform));
+    setResults(old => ({ ...old, [platform]: message }));
+    resultTimers.current.set(platform, setTimeout(() => {
+      resultTimers.current.delete(platform);
+      setResults(old => { const next = { ...old }; delete next[platform]; return next; });
+    }, 3000));
   }
   async function read(reprepare?: string, refreshCaps = false) {
     if (!active || !online || document.hidden) return;
@@ -98,7 +102,7 @@ export default function PriorityManager(props: Props) {
         const group = next.platforms.find(group => group.platform === reprepare);
         const previous = draftsRef.current[reprepare];
         let task = group?.last_task;
-        if (!previous && task) task = await fetchDetail(task, epoch);
+        if (!previous && task) task = await api<PriorityTask>("GET", taskPath(task.id));
         if (!current(epoch)) return;
         const target = previous?.ids ?? task?.items?.map(item => item.account_id);
         const same = !!group && !!target && samePriorityAccounts(target, group.items);
@@ -119,10 +123,11 @@ export default function PriorityManager(props: Props) {
   }
   async function finishTask(task: PriorityTask, epoch: number, loaded?: PriorityView) {
     if (completed.current.has(task.id) || !current(epoch)) return;
-    const detail = await fetchDetail(task, epoch);
     const next = loaded ?? await api<PriorityView>("GET", "/account-priorities?schema=2");
     if (!current(epoch)) return;
-    completed.current.add(task.id); setDetails(old => ({ ...old, [task.id]: detail })); setView(next);
+    completed.current.add(task.id); setView(next);
+    const label = taskLabels[task.status] ?? "待核对";
+    if (task.platform) showResult(task.platform, `${label} · ${task.verified_count}/${task.total} 已确认${task.reason && task.reason !== label ? ` · ${task.reason}` : ""}`);
     void command("refresh").catch(error => { if (current(epoch)) setError(cleanError(error)); });
   }
   useEffect(() => {
@@ -135,7 +140,6 @@ export default function PriorityManager(props: Props) {
         if (disposed || !current(epoch)) return;
         if (!priorityPending(next)) { await finishTask(next, epoch); return; }
         updateTask(next); setError("");
-        if (expandedRef.current[id] && detailsRef.current[id]?.updated_at !== next.updated_at) await fetchDetail(next, epoch);
       } catch (error) { if (!disposed && current(epoch)) setError(cleanError(error)); }
       if (!disposed && current(epoch)) timer = setTimeout(() => void poll(), 1000);
     };
@@ -215,9 +219,9 @@ export default function PriorityManager(props: Props) {
       const next = await api<PriorityTask>("POST", "/account-priority-orders?schema=2", requests.current[platform].body);
       if (!connected()) return;
       const epoch = ++generation.current; setLoading(false); setReadRevision(revision => revision + 1);
-      updateTask(next); setDetails(old => ({ ...old, [next.id]: next })); setDrafts(old => ({ ...old, [platform]: undefined })); setHistory(old => ({ ...old, [platform]: [] })); delete requests.current[platform];
+      updateTask(next); setDrafts(old => ({ ...old, [platform]: undefined })); setHistory(old => ({ ...old, [platform]: [] })); delete requests.current[platform];
       if (!priorityPending(next) && current(epoch)) await finishTask(next, epoch);
-    } catch (error) { if (connected()) setError(cleanError(error)); }
+    } catch (error) { if (connected()) showResult(platform, cleanError(error)); }
     finally { if (connected()) { submittingRef.current = false; setSubmitting(""); } }
   }
   async function cancel(task: PriorityTask) {
@@ -226,22 +230,17 @@ export default function PriorityManager(props: Props) {
     try { const next = await api<PriorityTask>("POST", `/account-priority-orders/${task.id}/cancel?schema=2`, {}); if (current(epoch)) { updateTask(next); if (!priorityPending(next)) await finishTask(next, epoch); } }
     catch (error) { if (current(epoch)) setError(cleanError(error)); }
   }
-  async function toggleDetails(task: PriorityTask) {
-    const open = !expanded[task.id]; setExpanded(old => ({ ...old, [task.id]: open }));
-    if (!open || !online) return;
-    const epoch = generation.current;
-    try { await fetchDetail(task, epoch); } catch (error) { if (current(epoch)) setError(cleanError(error)); }
-  }
-  function progress(task: PriorityTask) {
-    const detail = details[task.id], known = new Map(platforms.flatMap(group => group.items).map(a => [a.id, a.name]));
-    return <section className="priority-progress" aria-label={task.base === 0 ? "旧版排序任务" : "排序任务"}>
-      <header><strong>{task.base === 0 ? "旧版全局排序（从 0 编号） · " : ""}{taskLabels[task.status] ?? "待核对"}</strong><span>{task.verified_count}/{task.total} 已确认</span></header>
-      <progress aria-label="已确认账号" value={task.verified_count} max={Math.max(task.total, 1)}/>
-      {task.reason && <p>{task.reason}</p>}
-      {task.waiting_reason && <p role="status" className="priority-waiting">{task.waiting_reason}{task.waiting_account_ids.length > 0 && `：${task.waiting_account_ids.map(id => `${known.get(id) ?? "账号"} #${id}`).join("、")}`}</p>}
-      <div className="priority-task-actions"><button onClick={() => void toggleDetails(task)} aria-expanded={!!expanded[task.id]}>逐项详情</button>{priorityPending(task) && task.base === 1 && <button disabled={!online || task.cancel_requested} onClick={() => void cancel(task)}>停止剩余修改</button>}{!priorityPending(task) && task.base === 1 && task.platform && task.status !== "completed" && <button disabled={!online || loading || busy || filtered} onClick={() => void read(task.platform!)}>重新核对</button>}</div>
-      {expanded[task.id] && (detail?.items ? <ul>{detail.items.map(item => <li key={item.account_id}><span>{item.account_name} #{item.account_id}</span><span>{item.original_priority} → {item.target_priority}</span><span>{itemLabels[item.status] ?? "待核对"}</span><span>核验 {item.observed_priority ?? "—"}</span></li>)}</ul> : <p>正在读取详情</p>)}
-    </section>;
+  function taskState(task: PriorityTask) {
+    if (task.base !== 1 || !task.platform || task.status === "completed") return null;
+    const known = new Map(platforms.flatMap(group => group.items).map(account => [account.id, account.name]));
+    return <div className="priority-task-state">
+      {priorityPending(task) ? <>
+        <span role="status">{taskLabels[task.status]} · {task.verified_count}/{task.total} 已确认
+          {task.waiting_reason && ` · ${task.waiting_reason}${task.waiting_account_ids.length ? `：${task.waiting_account_ids.map(id => `${known.get(id) ?? "账号"} #${id}`).join("、")}` : ""}`}
+        </span>
+        <button disabled={!online || task.cancel_requested} onClick={() => void cancel(task)}>停止剩余修改</button>
+      </> : <button disabled={!online || loading || busy || filtered} onClick={() => void read(task.platform!)}>重新核对</button>}
+    </div>;
   }
   if (!active) return null;
   return <section ref={section} className="priority-manager" aria-label="全局优先级管理">
@@ -265,11 +264,13 @@ export default function PriorityManager(props: Props) {
             if (filtered && !`${a.name} #${a.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return null;
             const dragging = drag?.platform === platform && drag.id === a.id, insertion = drag?.platform === platform && drag.target === index && drag.id !== a.id;
             const before = insertion && s.ids.indexOf(drag!.id) > index;
+            const live = liveAccounts.get(a.id), status = live?.status ?? a.status, schedulable = live?.schedulable ?? a.schedulable;
             return <li key={a.id} data-priority-id={a.id} data-platform={platform} className={`${dragging ? "dragging " : ""}${insertion ? before ? "insert-before" : "insert-after" : ""}`}>
               <button className="priority-grip" aria-label={`拖动 ${a.name}`} disabled={!s.editing || !a.editable} onPointerDown={e => pointerDown(e, platform, a.id)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={stopDrag} onKeyDown={e => { if (["ArrowUp", "ArrowDown"].includes(e.key)) { e.preventDefault(); move(platform, a.id, index + (e.key === "ArrowUp" ? -1 : 1)); } }}><GripVertical size={17}/></button>
-              <div className="priority-identity"><strong title={a.name}>{a.name}</strong><small><span>#{a.id}</span><span>{a.type}</span></small>{(!a.schedulable || !a.editable || a.status !== "active") && <small className="priority-account-reason">{!a.editable ? a.reason : !a.schedulable ? "不可调度" : a.status}</small>}</div>
+              <div className="priority-identity"><strong title={a.name}>{a.name}</strong><small><span>#{a.id}</span><span>{a.type}</span></small>{(!schedulable || !a.editable || status !== "active") && <small className="priority-account-reason">{!a.editable ? a.reason : !schedulable ? "不可调度" : status}</small>}</div>
               <div className={`priority-number${a.priority !== index + 1 ? " is-changed" : ""}`}><span>当前 <b>{a.priority}</b></span><span>目标 <b>{index + 1}</b></span></div>
-              <div className="priority-moves"><button className="icon-button" aria-label={`上移 ${a.name}`} disabled={!s.editing || !a.editable || index === 0} onClick={() => move(platform, a.id, index - 1)}><ArrowUp size={15}/></button><button className="icon-button" aria-label={`下移 ${a.name}`} disabled={!s.editing || !a.editable || index === s.rows.length - 1} onClick={() => move(platform, a.id, index + 1)}><ArrowDown size={15}/></button></div>
+              <div className="priority-account-controls">{live ? props.schedule(live, !!drag) : <span className="muted">调度状态待刷新</span>}
+              <div className="priority-moves"><button className="icon-button" aria-label={`上移 ${a.name}`} disabled={!s.editing || !a.editable || index === 0} onClick={() => move(platform, a.id, index - 1)}><ArrowUp size={15}/></button><button className="icon-button" aria-label={`下移 ${a.name}`} disabled={!s.editing || !a.editable || index === s.rows.length - 1} onClick={() => move(platform, a.id, index + 1)}><ArrowDown size={15}/></button></div></div>
             </li>;
           })}</ol>
           {filtered && !s.rows.some(a => `${a.name} #${a.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && <p className="priority-empty">无匹配账号</p>}
@@ -279,11 +280,11 @@ export default function PriorityManager(props: Props) {
             {priorityPending(activeTask) && activeTask?.platform !== platform && <p>其他平台排序任务进行中，草稿已保留。</p>}
           </div>}
           {notices[platform] && <p role="status" className="muted">{notices[platform]}</p>}
-          {task && progress(task)}
+          {task && taskState(task)}
+          {results[platform] && <p role="status" className="priority-result">{results[platform]}</p>}
         </section>;
       })}
     </div>
-    {view?.legacy_last_task && progress(view.legacy_last_task)}
     {drag && <div className="priority-drag-ghost" style={{ left: drag.x + 12, top: drag.y + 12 }}>{platforms.find(group => group.platform === drag.platform)?.items.find(a => a.id === drag.id)?.name}</div>}
   </section>;
 }

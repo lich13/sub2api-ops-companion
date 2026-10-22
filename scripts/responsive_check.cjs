@@ -49,8 +49,10 @@ async function startServer() {
     probe.listen(PORT, "127.0.0.1", resolve);
   });
   await new Promise((resolve) => probe.close(resolve));
-  server = spawn("pnpm", ["dev", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
-    cwd: path.resolve(__dirname, "../desktop"),
+  const desktop = path.resolve(__dirname, "../desktop");
+  const vite = path.join(path.dirname(require.resolve("vite/package.json", { paths: [desktop] })), "bin/vite.js");
+  server = spawn(process.execPath, [vite, "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
+    cwd: desktop,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -102,7 +104,7 @@ async function cleanup() {
           const exited = serverExit ? Promise.resolve() : once(server, "exit").catch(() => {});
           signalServer("SIGTERM");
           await Promise.race([exited, delay(5000)]);
-          // The detached process group also contains pnpm's Vite child.
+          // Vite and its children share this owned process group.
           try {
             process.kill(-server.pid, 0);
             signalServer("SIGKILL");
@@ -563,7 +565,7 @@ async function groupMenuChecks(h, fixture, manager) {
       await search.fill(String(account.id));
       const card = manager.locator(".group-account");
       await h.state(await card.count() === 1, "group-menu-search-not-specific", card);
-      await h.within(card.locator(".group-account-select strong"), "group-account-name", { touch: false, vertical: false });
+      await h.within(card.locator(".group-account-identity strong"), "group-account-name", { touch: false, vertical: false });
       const { trigger, popup } = await open(account);
       const actions = fixtureAccountActions(account);
       await accountActionButtons(h, popup, [...actions.primary, ...actions.more], "group-account-action");
@@ -604,8 +606,7 @@ async function groupMenuChecks(h, fixture, manager) {
     const action = await open(accounts[0]);
     await cancelDeleteAction(h, action.popup, accounts[0]);
     await h.state(await menus.count() === 0 && await action.trigger.getAttribute("aria-expanded") === "false", "group-menu-action-still-open", action.trigger);
-    await h.state(await manager.locator('.group-account-select[aria-pressed="true"]').count() === 0
-      && await manager.locator(".group-draft-panel").count() === 0, "group-menu-changed-membership-draft", manager);
+    await h.state(await manager.locator(".group-draft-panel").count() === 0, "group-menu-changed-membership-draft", manager);
     await search.fill("");
     await h.layout();
   }
@@ -695,12 +696,13 @@ async function accountChecks(h, fixture) {
   const groupSearch = manager.getByRole("textbox", { name: "搜索分组账号" });
   await h.within(groupSearch, "group-account-search");
   await groupSearch.fill("101");
-  const choice = manager.locator(".group-account-select");
-  await h.state(await choice.count() === 1, "group-search-not-specific", choice);
-  await h.click(choice, "group-account-select");
-  await h.allWithin(manager.locator(".group-destination-bar button"), "group-draft-destination");
+  const identity = manager.locator(".group-account-identity");
+  await h.state(await identity.count() === 1, "group-search-not-specific", identity);
+  await h.within(identity, "group-account-identity", { touch: false, vertical: false });
+  await identity.click();
+  await h.state(await manager.locator(".group-draft-panel").count() === 0, "group-name-click-moved-account", manager);
+  await h.allWithin(manager.getByRole("switch"), "group-account-scheduling");
   await h.layout();
-  await h.click(manager.getByRole("button", { name: "取消选择", exact: true }), "group-selection-cancel");
   await groupSearch.fill("");
   await groupMenuChecks(h, fixture, manager);
   await h.click(manager.getByRole("button", { name: "返回账号", exact: true }), "group-back");
@@ -1123,6 +1125,7 @@ async function templateChecks(h) {
   const selectionSummary = selectionBar.locator(".selection-summary");
   const selectionActions = selectionBar.locator(".selection-actions");
   const testConnectionAction = selectionActions.getByRole("button", { name: "测试连接", exact: true });
+  const recoverAction = selectionActions.getByRole("button", { name: "恢复状态", exact: true });
   const proxyAction = selectionActions.getByRole("button", { name: "选择代理", exact: true });
   const applyTemplateAction = selectionActions.getByRole("button", { name: "应用模板", exact: true });
   const deleteSelectedAction = selectionActions.getByRole("button", { name: "删除所选", exact: true });
@@ -1143,30 +1146,31 @@ async function templateChecks(h) {
     const rects = buttons.map((button) => button.getBoundingClientRect());
     const style = getComputedStyle(element);
     const rows = [[0, 1], [2, 3]];
-    const columns = [[0, 2], [1, 3]];
+    const columns = [[0, 2], [1, 3], [2, 4]];
     return {
       count: buttons.length,
       labels: buttons.map((button) => button.textContent?.trim()),
-      adjacent: buttons.length === 4 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
-      sameRows: rects.length === 4 && rows.every(([left, right]) => Math.abs(rects[left].top - rects[right].top) < 1
+      adjacent: buttons.length === 5 && buttons.every((button, index) => index === 0 || button.previousElementSibling === buttons[index - 1]),
+      sameRows: rects.length === 5 && rows.every(([left, right]) => Math.abs(rects[left].top - rects[right].top) < 1
         && Math.abs(rects[left].bottom - rects[right].bottom) < 1),
-      sameColumns: rects.length === 4 && columns.every(([top, bottom]) => Math.abs(rects[top].left - rects[bottom].left) < 1
+      sameColumns: rects.length === 5 && columns.every(([top, bottom]) => Math.abs(rects[top].left - rects[bottom].left) < 1
         && Math.abs(rects[top].right - rects[bottom].right) < 1),
       display: style.display,
       columnGap: style.columnGap,
       rowGap: style.rowGap,
-      actualColumnGaps: rects.length === 4 ? rows.map(([left, right]) => rects[right].left - rects[left].right) : [],
-      actualRowGaps: rects.length === 4 ? columns.map(([top, bottom]) => rects[bottom].top - rects[top].bottom) : [],
+      actualColumnGaps: rects.length === 5 ? rows.map(([left, right]) => rects[right].left - rects[left].right) : [],
+      actualRowGaps: rects.length === 5 ? columns.map(([top, bottom]) => rects[bottom].top - rects[top].bottom) : [],
     };
   });
-  await h.state(actionLayout.count === 4
-    && isDeepStrictEqual(actionLayout.labels, ["测试连接", "选择代理", "应用模板", "删除所选"])
+  await h.state(actionLayout.count === 5
+    && isDeepStrictEqual(actionLayout.labels, ["测试连接", "恢复状态", "选择代理", "应用模板", "删除所选"])
     && actionLayout.adjacent && actionLayout.sameRows && actionLayout.sameColumns && actionLayout.display === "grid"
     && actionLayout.columnGap === "8px" && actionLayout.rowGap === "8px"
     && actionLayout.actualColumnGaps.length === 2 && actionLayout.actualColumnGaps.every((gap) => Math.abs(gap - 8) < 1)
-    && actionLayout.actualRowGaps.length === 2 && actionLayout.actualRowGaps.every((gap) => Math.abs(gap - 8) < 1),
+    && actionLayout.actualRowGaps.length === 3 && actionLayout.actualRowGaps.every((gap) => Math.abs(gap - 8) < 1),
   "batch-actions-not-adjacent-at-eight-pixels", selectionActions);
   await h.within(testConnectionAction, "batch-connection-entry", { vertical: false });
+  await h.within(recoverAction, "batch-recover-entry", { vertical: false });
   await h.within(proxyAction, "batch-proxy-entry", { vertical: false });
   await h.within(applyTemplateAction, "batch-template-entry", { vertical: false });
   await h.within(deleteSelectedAction, "batch-delete-entry", { vertical: false });
@@ -1297,6 +1301,9 @@ async function connectionBatchChecks(h, fixture) {
   await h.click(entry, "batch-connection-restart");
   await h.state(await entry.isDisabled(), "batch-connection-repeat-entry-enabled", entry);
   await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 2" }), "batch-connection-finished-summary");
+  await results.waitFor({ state: "hidden" });
+  await h.click(surface.getByRole("button", { name: "查看测活结果", exact: true }), "batch-connection-reopen");
+  await h.visible(results, "batch-connection-manually-reopened");
   await h.within(results, "batch-connection-inline-results", { touch: false, vertical: false });
   await h.state(await page.getByRole("dialog").count() === 0, "batch-connection-opened-dialog", results);
   await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-replaced-account-list", accountRows);

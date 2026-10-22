@@ -1,4 +1,10 @@
 import type { Account } from "./types";
+export function modelTestCandidates(account: Account) {
+  if (account.platform !== "openai") throw new Error("仅支持 Codex 模型测试");
+  return (account.type === "apikey" ? ["gpt-6-sol", "gpt-6-luna"] : [
+    "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "codex-auto-review",
+  ]).map((id) => ({ id, display_name: id, type: "model" }));
+}
 type Job = { id: string; request_id: string; account_id: number; account_name: string; requested_model: string; forwarded_model: string; returned_models: string[]; status: string; completed_groups: number; valid_groups: number; attempts: number; duration_ms: number; concurrency: number; started: number; error: string; groups: { index: number; status: string; attempts: number; ttft_ms: number | null; duration_ms: number | null; diagnostics?: Record<string, string | number> }[]; report?: { prediction_name: string; probability: number; used_outputs: number } };
 const jobs = new Map<number, Job>();
 export function modelTestPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[]) {

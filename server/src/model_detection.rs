@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub use crate::model_downgrade::LEGACY_TARGET as TARGET;
 pub fn defaults() -> Value {
     json!({
-        "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL,
+        "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL, "model_override":null,
         "generation":0, "next_at":null, "status":"disabled", "reason":"",
         "job_id":null, "hold":false
     })
@@ -28,7 +28,13 @@ pub fn defaults() -> Value {
 pub fn version(value: &Value) -> String {
     digest(&pick(
         value,
-        &["enabled", "interval_minutes", "model_id", "generation"],
+        &[
+            "enabled",
+            "interval_minutes",
+            "model_id",
+            "model_override",
+            "generation",
+        ],
     ))
 }
 fn validate(value: &Value) -> Result<()> {
@@ -43,6 +49,8 @@ fn validate(value: &Value) -> Result<()> {
                 .as_i64()
                 .is_some_and(|n| (1..=525600).contains(&n))
             || !crate::account_templates::MODEL_ID.is_match(string(&control["model_id"]))
+            || (!control["model_override"].is_null()
+                && !crate::account_templates::MODEL_ID.is_match(string(&control["model_override"])))
         {
             return Err(Error::new(503, "模型检测控制状态无效"));
         }
@@ -94,6 +102,12 @@ impl Detection {
         crate::settings::detection_model(
             &self.monitor.config.current()?["model_detection_model_id"],
         )
+    }
+    pub(crate) fn effective_model(&self, value: &Value) -> Result<String> {
+        match value["model_override"].as_str() {
+            Some(model) => Ok(model.to_owned()),
+            None => self.model_id(),
+        }
     }
     fn effective_version(value: &Value, model: &str) -> String {
         let mut effective = value.clone();
@@ -156,10 +170,17 @@ impl Detection {
             .get(id.to_string())
             .cloned()
             .unwrap_or_else(defaults);
-        let model = self.model_id()?;
+        let model = self.effective_model(&value)?;
         value["version"] = Self::effective_version(&value, &model).into();
         value["model_id"] = model.into();
-        value["model_source"] = "global".into();
+        value["model_source"] = if value["model_override"].is_string() {
+            "account"
+        } else {
+            "global"
+        }
+        .into();
+        value["model_override"] = value["model_override"].clone();
+        value["global_model_id"] = self.model_id()?.into();
         value["account_id"] = id.into();
         value["last_automatic_started_at"] =
             data["automatic_starts"][id.to_string()]["started_at"].clone();
@@ -201,15 +222,26 @@ impl Detection {
     }
     pub async fn save(&self, id: i64, payload: &Value) -> Result<Value> {
         let request = detection_request(payload)?;
-        let model = self.model_id()?;
         let row = model_target::account(&self.actions, id).await?;
+        if request.get("model_override").is_some() && row["type"] != "apikey" {
+            return Err(Error::new(422, "仅 OpenAI Key 账号可单独指定检测模型"));
+        }
+        let current = self.control(id)?;
+        let previous_model = self.effective_model(&current)?;
+        let mut candidate = current.clone();
+        if let Some(model) = request.get("model_override") {
+            candidate["model_override"] = model.clone();
+        }
+        let model = self.effective_model(&candidate)?;
         let allowed = if request["enabled"] == true {
             self.actions.model_allowed(&row, &model).await
         } else {
             Ok(true)
         };
         let _config = self.monitor.config.lock.lock().await;
-        if self.model_id()? != model {
+        if self.effective_model(&candidate)? != model
+            || self.effective_model(&current)? != previous_model
+        {
             return Err(Error::new(409, "自动检测模型已变化，请重新读取"));
         }
         if !allowed? {
@@ -222,7 +254,9 @@ impl Detection {
                 .unwrap()
                 .entry(id.to_string())
                 .or_insert_with(defaults);
-            if Self::effective_version(value, &model) != request["expected_version"] {
+            if Self::effective_version(value, &self.effective_model(value)?)
+                != request["expected_version"]
+            {
                 return Err(Error::new(409, "检测设置已变化，请重新读取"));
             }
             value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
@@ -237,6 +271,7 @@ impl Detection {
             let changes = json!({
                 "enabled": request["enabled"],
                 "interval_minutes": request["interval_minutes"],
+                "model_override": candidate["model_override"],
                 "pending_request_id": null,
                 "candidate_blocked": false,
                 "candidate_recheck_at": null,
@@ -443,7 +478,7 @@ impl Detection {
             .filter(|v| !v.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-        let model = self.model_id()?;
+        let model = self.effective_model(&value)?;
         let allowed = self.actions.model_allowed(&row, &model).await?;
         let bank = self.tests.bank.snapshot();
         let ready = bank_contains(&bank.0, TARGET);
@@ -477,7 +512,7 @@ impl Detection {
         )?;
 
         let _config = self.monitor.config.lock.lock().await;
-        if self.model_id()? != model {
+        if self.effective_model(&self.control(id)?)? != model {
             return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
         }
         let job = self
@@ -679,6 +714,7 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
             "enabled",
             "interval_minutes",
             "model_id",
+            "model_override",
         ]
         .contains(&key.as_str())
     }) || payload["expected_version"]
@@ -689,6 +725,15 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
         return Err(Error::invalid());
     }
     let mut value = payload.clone();
+    if let Some(model) = value.get_mut("model_override") {
+        if !model.is_null() {
+            let normalized = model.as_str().map(str::trim).ok_or_else(Error::invalid)?;
+            if !crate::account_templates::MODEL_ID.is_match(normalized) {
+                return Err(Error::invalid());
+            }
+            *model = normalized.into();
+        }
+    }
     if value
         .as_object_mut()
         .unwrap()

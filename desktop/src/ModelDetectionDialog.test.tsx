@@ -39,7 +39,9 @@ type Detection = {
   enabled: boolean;
   interval_minutes: number;
   model_id: string;
-  model_source?: "global";
+  model_source?: "global" | "account";
+  model_override?: string | null;
+  global_model_id?: string;
   version: string;
   generation?: number;
   next_at?: string | null;
@@ -599,5 +601,56 @@ describe("scheduled model detection", () => {
     expect(meta.textContent).not.toContain("已取消降智标记 · 调度保持不变");
     expect(meta.textContent).toContain("标记已保存 · 停调度已确认");
     expect(meta.textContent).toContain("待重试");
+  });
+});
+
+
+describe("OpenAI Key detection models", () => {
+  it("saves an upstream model override and can return to the global model", async () => {
+    let current: Detection = { ...baseDetection, model_override: null, global_model_id: "gpt-6-sol" };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/models?purpose=model_test")) return models as never;
+      if (path.endsWith("/model-detection")) {
+        if (method === "PUT") {
+          const override = (body as { model_override: string | null }).model_override;
+          current = { ...current, model_override: override, model_id: override ?? "gpt-6-sol", model_source: override ? "account" : "global", version: "saved-version" };
+        }
+        return current as never;
+      }
+      throw new Error("unexpected " + path);
+    });
+    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    expect([...select.options].map(option => option.value)).toEqual(["", ...models.map(model => model.id)]);
+    await act(async () => { select.value = "gpt-6-luna"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(button("保存").disabled).toBe(false);
+    await act(async () => button("保存").click());
+    expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
+      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "gpt-6-luna",
+    });
+    expect(select.value).toBe("gpt-6-luna");
+    await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => button("保存").click());
+    expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
+      expected_version: "saved-version", enabled: false, interval_minutes: 30, model_override: null,
+    });
+    expect(select.value).toBe("");
+    expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
+  });
+
+  it("keeps an unavailable custom model and allows disabling it without a model substitution", async () => {
+    const current: Detection = { ...baseDetection, enabled: true, model_id: "retired-model", model_source: "account", model_override: "retired-model", global_model_id: "gpt-6-sol" };
+    vi.mocked(api).mockImplementation(async (_method, path) => path.endsWith("/model-detection") ? current as never : models as never);
+    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    expect(select.value).toBe("retired-model");
+    expect(select.textContent).toContain("retired-model（当前不可用）");
+    expect(button("保存").disabled).toBe(true);
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    expect(button("保存").disabled).toBe(false);
+    await act(async () => button("保存").click());
+    expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
+      expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "retired-model",
+    });
   });
 });

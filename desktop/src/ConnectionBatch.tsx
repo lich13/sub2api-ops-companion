@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, LoaderCircle, RefreshCw, Square, X } from 'lucide-react';
 import { api, command } from './bridge';
-import { clientId, getOperations, setOperations, type Operation, type OperationBatch } from './accountOperations';
+import { clientId, getOperations, operationTerminal, setOperations, type Operation, type OperationBatch } from './accountOperations';
 import type { Account } from './types';
 import './connection-batch.css';
 
@@ -38,11 +38,13 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   const [visible, setVisible] = useState(true);
   const visibility = useRef(true);
   const focusTarget = useRef<string | null>(null);
+  const dismissed = useRef(new Set<string>());
   const generation = useRef(0), revision = useRef(0), guard = useRef(false), submission = useRef<Submission | null>(null);
   const batch = view.scope === connectionKey ? view.batch : null;
   useEffect(() => {
     ++generation.current; ++revision.current; guard.current = false;
     focusTarget.current = null;
+    dismissed.current.clear();
     const saved = readSaved(key); submission.current = saved.request ?? null;
     visibility.current = saved.visible !== false; setVisible(visibility.current);
     setView({ scope: connectionKey, batch: null }); setBatchId(saved.batchId ?? null); setStarting(false); setStopping(false);
@@ -104,13 +106,26 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
     if (submission.current) await send(submission.current);
     else setRefresh(value => value + 1);
   }
-  function changeVisibility(next: boolean) {
-    focusTarget.current = next ? 'connection-batch-results' : 'connection-batch-entry';
+  function changeVisibility(next: boolean, automatic = false) {
+    if (!next && batch?.items.every(item => operationTerminal.has(item.status))) dismissed.current.add(batch.batch_id);
+    if (!automatic || document.getElementById('connection-batch-results')?.contains(document.activeElement))
+      focusTarget.current = next ? 'connection-batch-results' : 'connection-batch-entry';
     visibility.current = next; setVisible(next);
     try {
       remember(key, { ...(submission.current ? { request: submission.current } : batchId ? { batchId } : {}), visible: next });
     } catch { /* Closing a result must remain possible when storage is unavailable. */ }
   }
+  const terminalId = batch?.items.length && batch.items.every(item => operationTerminal.has(item.status)) ? batch.batch_id : null;
+  useEffect(() => {
+    if (!terminalId) return;
+    if (!visible) { dismissed.current.add(terminalId); return; }
+    if (!active || starting || submission.current || error || dismissed.current.has(terminalId)) return;
+    const token = generation.current;
+    const timer = setTimeout(() => {
+      if (token === generation.current) changeVisibility(false, true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [connectionKey, terminalId, visible, active, starting, error]);
   async function stop() {
     if (!online || !batchId || stopping) return;
     const token = generation.current; ++revision.current; setStopping(true); setError('');
@@ -130,7 +145,8 @@ export type ConnectionBatchControl = ReturnType<typeof useConnectionBatch>;
 
 function progress(control: ConnectionBatchControl) {
   if (control.starting) return '正在提交';
-  if (!control.batch) return control.recoverSubmission ? '提交结果待确认' : '等待读取结果';
+  if (control.recoverSubmission) return '提交结果待确认';
+  if (!control.batch) return '等待读取结果';
   const items = control.batch.items;
   const unfinished = items.filter(j => ['queued', 'running', 'checking'].includes(j.status)).length;
   const passed = items.filter(j => j.status === 'completed' && j.result?.success === true).length;
@@ -154,7 +170,7 @@ function status(job: Operation) {
 export function ConnectionBatchResults({ control }: { control: ConnectionBatchControl }) {
   const { batch, starting, stopping, error, online } = control;
   if (!control.hasResult || !control.visible) return null;
-  const items = batch?.items ?? [];
+  const items = starting || control.recoverSubmission ? [] : batch?.items ?? [];
   const canStop = items.some(j => ['queued', 'needs_confirmation'].includes(j.status) && !j.started_at);
   return <section id="connection-batch-results" tabIndex={-1} className="connection-batch" aria-label="批量测试连接">
     <header><strong>测试连接</strong><span role="status">{progress(control)}</span><div className="connection-batch-actions">

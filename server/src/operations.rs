@@ -539,7 +539,10 @@ impl Operations {
         crate::request_schema::batch(request, template)?;
         let mut normalized = request.clone();
         if !template
-            && matches!(string(&normalized["action"]), "delete" | "groups")
+            && matches!(
+                string(&normalized["action"]),
+                "delete" | "groups" | "recover"
+            )
             && normalized.get("payload").is_none()
         {
             normalized["payload"] = json!({});
@@ -552,7 +555,7 @@ impl Operations {
         };
         if !matches!(
             action,
-            "test" | "proxy" | "delete" | "groups" | "account_template"
+            "test" | "proxy" | "delete" | "groups" | "recover" | "account_template"
         ) {
             return Err(Error::invalid());
         }
@@ -634,7 +637,7 @@ impl Operations {
             validation::operation_payload("proxy", payload)?;
         }
         if action == "delete" && *payload != json!({"confirmed":true})
-            || action == "groups" && *payload != json!({})
+            || matches!(action, "groups" | "recover") && *payload != json!({})
         {
             return Err(Error::new(422, "请确认删除，或核对批量操作参数"));
         }
@@ -799,6 +802,16 @@ impl Operations {
                 } else if self.fingerprint(row, &job)? != string(&item["expected_version"]) {
                     change = Some(("needs_confirmation", "代理或继承关系已变化，请重新预览"));
                     job["current"] = json!({"proxy_id":row["proxy_id"]});
+                }
+            } else if action == "recover" {
+                if row.is_null() || truthy(&row["deleted_at"]) {
+                    change = Some(("failed", "账号已删除或不存在"));
+                } else if self.fingerprint(row, &job)? != string(&item["expected_version"]) {
+                    change = Some(("needs_confirmation", "账号恢复状态已变化，请刷新后重新选择"));
+                } else if !recoverable(row, chrono::Utc::now()) {
+                    job["status"] = "completed".into();
+                    job["reason"] = "无需恢复".into();
+                    job["result"] = json!({"verified":true,"account_id":aid,"unchanged":true});
                 }
             } else if native_reached(rows.get(&aid), &job) {
                 job["status"] = "completed".into();
@@ -1092,6 +1105,9 @@ impl Operations {
                 json!({"deleted":true})
             };
             result["verified"] = true.into();
+            if job["action"] == "recover" && job["status"] == "queued" {
+                result["unchanged"] = true.into();
+            }
             if let Some(row) = &row {
                 result["version"] = account_version(row).into();
                 if job["action"] == "degradation_mark" {

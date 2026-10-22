@@ -26,6 +26,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
   const selectionTouched = useRef(false), submitted = useRef(false);
   const scope = useRef(0), activeAccount = useRef(account.id);
   const [job, setJob] = useState<Result | null>(null), [loading, setLoading] = useState(true);
+  const [defaultsLoading, setDefaultsLoading] = useState(account.type === "apikey");
   const [modelError, setModelError] = useState(""), [modelReload, setModelReload] = useState(0);
   const [busy, setBusy] = useState(false), generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reportRef = useRef(report); reportRef.current = report;
@@ -54,12 +55,25 @@ export default function ModelTestDialog({ account, online, close, report, concur
   useEffect(() => {
     let alive = true; const current = scope.current;
     if (!online) return;
-    void api<Result | null>("GET", `/accounts/${account.id}/model-tests/latest`).then((value) => {
-      if (alive && current === scope.current && value && !submitted.current) {
-        setJob(value);
-        if (!selectionTouched.current) setModel(value.requested_model);
+    const keyAccount = account.platform === "openai" && account.type === "apikey";
+    setDefaultsLoading(keyAccount);
+    void Promise.allSettled([
+      api<Result | null>("GET", `/accounts/${account.id}/model-tests/latest`),
+      keyAccount ? api<{ model_override?: string | null }>("GET", `/accounts/${account.id}/model-detection`) : Promise.resolve(null),
+    ]).then(([latest, detection]) => {
+      if (!alive || current !== scope.current) return;
+      const value = latest.status === "fulfilled" ? latest.value : null;
+      const preferred = detection.status === "fulfilled" ? detection.value?.model_override : null;
+      if (!submitted.current) {
+        if (value) setJob(value);
+        if (!selectionTouched.current) {
+          if (value && !terminal.has(value.status)) setModel(value.requested_model);
+          else if (preferred) setModel(preferred);
+          else if (value) setModel(value.requested_model);
+        }
       }
-    }).catch(() => {});
+      setDefaultsLoading(false);
+    });
     return () => { alive = false; };
   }, [account.id, online]);
   useEffect(() => {
@@ -76,7 +90,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
     return () => { ++generation.current; clearTimeout(timer.current); };
   }, [job?.id, job?.status, online]);
   async function start() {
-    if (busy || !online || !model || modelError || !models.some((item) => item.id === model)) return;
+    if (busy || defaultsLoading || !online || !model || modelError || !models.some((item) => item.id === model)) return;
     const current = scope.current;
     submitted.current = true;
     setBusy(true);
@@ -125,6 +139,6 @@ export default function ModelTestDialog({ account, online, close, report, concur
     </div>}
     <FingerprintBankStatus online={online} taskVersion={job?.bank_version}/>
     </div>
-    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
+    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || defaultsLoading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
   </section></div>;
 }

@@ -1,5 +1,5 @@
 .priority-manager { max-width: 1120px; margin: 0 auto; padding: 22px 0 36px; }
-.priority-heading, .priority-filters, .priority-draft > div, .priority-progress header, .priority-column-heading { display: flex; align-items: center; gap: 10px; }
+.priority-heading, .priority-filters, .priority-draft > div, .priority-column-heading { display: flex; align-items: center; gap: 10px; }
 .priority-heading h1 { flex: 1; margin: 0; font-size: 23px; }
 .priority-manager > p { margin: 8px 0; font-size: 12px; }
 .priority-filters { margin: 16px 0; }
@@ -20,7 +20,7 @@
 .priority-tabs button > span { font-variant-numeric: tabular-nums; color: var(--muted); }
 .priority-tabs i { display: block; height: 5px; width: 5px; border-radius: 50%; background: var(--accent); }
 .priority-list { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: min(56vh, max(96px, calc(100dvh - 380px)), 640px); overscroll-behavior: contain; scrollbar-gutter: stable; }
-.priority-list > li { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 26px; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); min-height: 64px; }
+.priority-list > li { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto minmax(34px, auto); align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); min-height: 64px; }
 .priority-list > li:last-child { border-bottom: 0; }
 .priority-list > li:hover { background: var(--hover); }
 .priority-list > li.dragging { opacity: .45; }
@@ -38,25 +38,11 @@
 .priority-moves { display: flex; flex-direction: column; gap: 2px; }
 .priority-moves .icon-button { width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 3px; border-color: transparent; background: transparent; }
 .priority-draft { padding: 12px; background: var(--surface); border-top: 1px solid var(--line); }
-.priority-draft p, .priority-progress p { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
+.priority-draft p { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
 .priority-draft > div { flex-wrap: wrap; gap: 6px; }
 .priority-draft button { gap: 4px; padding: 6px 8px; font-size: 12px; }
 .priority-draft .primary { margin-left: auto; }
 .priority-draft > div + p { margin: 8px 0 0; }
-.priority-progress { padding: 12px; border-top: 1px solid var(--line); }
-.priority-manager > .priority-progress { margin-top: 18px; border: 1px solid var(--line); border-radius: 9px; }
-.priority-progress header { flex-wrap: wrap; gap: 5px; font-size: 12px; }
-.priority-progress header strong { flex: 1; }
-.priority-progress header > span { color: var(--muted); font-variant-numeric: tabular-nums; }
-.priority-progress progress { display: block; width: 100%; height: 4px; margin: 10px 0; accent-color: var(--accent); border: 0; border-radius: 2px; overflow: hidden; }
-.priority-progress progress::-webkit-progress-bar { background: var(--line); }
-.priority-progress progress::-webkit-progress-value { background: var(--accent); }
-.priority-progress .priority-waiting { color: var(--warn); }
-.priority-task-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.priority-task-actions button { font-size: 12px; padding: 5px 8px; }
-.priority-progress ul { list-style: none; padding: 0; margin: 10px 0 0; font-size: 12px; max-height: 240px; overflow: auto; }
-.priority-progress li { display: flex; gap: 4px 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-.priority-progress li > span:first-child { width: 100%; overflow-wrap: anywhere; }
 .priority-empty { padding: 20px 12px; color: var(--muted); }
 .priority-drag-ghost { position: fixed; pointer-events: none; z-index: 120; max-width: 260px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 8px 25px #0002; overflow-wrap: anywhere; }
 .app.mobile .priority-manager { padding: 10px 0 24px; }
@@ -69,5 +55,11 @@
 .app.mobile .priority-list > li { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 4px 6px; padding: 8px; }
 .app.mobile .priority-moves { grid-column: 2 / -1; flex-direction: row; justify-content: flex-end; gap: 6px; }
 .app.mobile .priority-draft button { padding: 6px 10px; }
-.app.mobile .priority-progress header { align-items: flex-start; }
 @media (prefers-reduced-motion: reduce) { .priority-manager *, .priority-drag-ghost { scroll-behavior: auto; transition: none; } }
+
+.priority-account-controls { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.priority-task-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; font-size: 12px; }
+.priority-task-state > span { flex: 1; overflow-wrap: anywhere; color: var(--muted); }
+.priority-task-state button { font-size: 12px; padding: 5px 8px; }
+.priority-result { overflow-wrap: anywhere; }
+.app.mobile .priority-account-controls { grid-column: 2 / -1; flex-direction: row; justify-content: flex-end; }

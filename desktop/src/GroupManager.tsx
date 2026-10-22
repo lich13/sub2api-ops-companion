@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, RefreshCw, Search, Undo2, X } from "lucide-react";
 import { followAccountBatch, operationEpoch, operationTerminal, submitAccountBatch } from "./accountOperations";
 import type { Account, Group } from "./types";
@@ -6,17 +6,16 @@ import { command } from "./bridge";
 import { DegradationBadge } from "./DegradationMark";
 import AccountActions, { type AccountActionItem } from "./AccountActions";
 import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts, type Zone } from "./groupDraft";
-import { useBackAction } from "./mobile";
 import "./group-manager.css";
 
-type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[]; changed: (count: number, busy: boolean) => void };
+type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[]; schedule: (account: Account, disabled?: boolean) => ReactNode; changed: (count: number, busy: boolean) => void };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
 export default function GroupManager(props: Props) {
   const { accounts, groups, online, mobile, active } = props;
   const [platform, setPlatform] = useState("openai"), [query, setQuery] = useState("");
   const [pairs, setPairs] = useState<Record<string, number[]>>({});
   const [drafts, setDrafts] = useState<Drafts>({}), [history, setHistory] = useState<Drafts[]>([]);
-  const [selected, setSelected] = useState<number | null>(null), [drag, setDrag] = useState<Drag | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
   const [busy, setBusy] = useState(false), [expanded, setExpanded] = useState(false), [message, setMessage] = useState("");
   const mounted = useRef(true), latest = useRef(props), draftRef = useRef(drafts), dragRef = useRef<Drag | null>(null);
   const pointer = useRef<{ id: number; x: number; y: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
@@ -32,7 +31,7 @@ export default function GroupManager(props: Props) {
   const matches = (a: Account) => !query.trim() || `${a.name} #${a.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   useEffect(() => { props.changed(pending.length, busy); }, [pending.length, busy]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(pointer.current?.timer); }; }, []);
-  useEffect(() => { if (!active) { setSelected(null); setDrag(null); } }, [active]);
+  useEffect(() => { if (!active) { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); } }, [active]);
   useEffect(() => {
     const ids = new Set(accounts.map((account) => account.id));
     const keepLive = (value: Drafts): Drafts => Object.values(value).every((draft) => ids.has(draft.id))
@@ -40,19 +39,17 @@ export default function GroupManager(props: Props) {
     if (Object.values(draftRef.current).some((draft) => !ids.has(draft.id))) setMessage("已删除账号的分组草稿已失效");
     setDrafts(keepLive);
     setHistory((values) => values.map(keepLive));
-    setSelected((id) => id !== null && !ids.has(id) ? null : id);
   }, [accounts]);
-  useBackAction(active && selected !== null, () => setSelected(null));
 
   function move(id: number, zone: Zone) {
     const account = latest.current.accounts.find((a) => a.id === id);
     if (!account || !latest.current.online || busy) return;
     const before = draftRef.current, next = moveAccount(before, account, pairRef.current, zone);
     if (JSON.stringify(before) !== JSON.stringify(next)) { setHistory((h) => [...h, before]); setDrafts(next); }
-    setSelected(null); setMessage("");
+    setMessage("");
   }
   useEffect(() => {
-    const escape = (event: KeyboardEvent) => { if (active && event.key === "Escape") { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); setSelected(null); } };
+    const escape = (event: KeyboardEvent) => { if (active && event.key === "Escape") { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); } };
     window.addEventListener("keydown", escape); return () => window.removeEventListener("keydown", escape);
   }, [active]);
   useEffect(() => {
@@ -89,7 +86,6 @@ export default function GroupManager(props: Props) {
     const current = dragRef.current;
     const zone = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-drop-zone]")?.dataset.dropZone as Zone | undefined;
     if (current && item && zone) move(item.id, zone);
-    else if (item && !current) setSelected(item.id);
     setDrag(null);
   }
   async function apply() {
@@ -127,18 +123,18 @@ export default function GroupManager(props: Props) {
   }
   function card(a: Account) {
     const dirty = drafts[a.id], conflict = dirty && draftConflict(dirty, accounts, groups);
-    return <article key={a.id} className={`group-account${selected === a.id ? " selected" : ""}${dirty ? " dirty" : ""}${drag?.id === a.id ? " dragging" : ""}`}>
+    return <article key={a.id} className={`group-account${dirty ? " dirty" : ""}${drag?.id === a.id ? " dragging" : ""}`}>
       <button className="group-grip" aria-label={`拖动 ${a.name} #${a.id}`} disabled={!online || busy} onPointerDown={(e) => pointerDown(e, a.id)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); }} onClick={(e) => e.stopPropagation()}><GripVertical size={16}/></button>
-      <button className="group-account-select" disabled={!online || busy} aria-pressed={selected === a.id} onClick={(e) => { e.stopPropagation(); setSelected(selected === a.id ? null : a.id); }}>
+      <div className="group-account-identity">
         <strong>{a.name}</strong><span className="group-account-meta"><span>#{a.id}</span><span>{a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span><DegradationBadge account={a}/>{!a.available && <span className="group-account-status">{a.blockers[0]?.label || "不可调度"}</span>}{dirty && <span className={conflict ? "bad-text" : "group-dirty-label"}>{conflict ? "冲突" : "待应用"}</span>}</span>
-      </button>
+      </div>
+      {props.schedule(a, busy || !!drag)}
       <AccountActions items={props.accountActions(a)} label={`${a.name}操作`} mode="group" active={active}
         contextKey={`${props.connectionKey}:${platform}:${pair.join(",")}`} disabled={busy || !!drag}/>
     </article>;
   }
   function zone(zone: Zone, label: string, values: Account[], extra = "") {
-    return <section className={`membership-zone zone-${zone} ${extra}${drag?.zone === zone ? " drop-over" : ""}${selected !== null ? " can-drop" : ""}`} data-drop-zone={pair.length ? zone : undefined} tabIndex={pair.length && selected !== null ? 0 : -1} role="group" aria-label={label}
-      onClick={() => { if (selected !== null) move(selected, zone); }} onKeyDown={(e) => { if (selected !== null && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); move(selected, zone); } }}>
+    return <section className={`membership-zone zone-${zone} ${extra}${drag?.zone === zone ? " drop-over" : ""}`} data-drop-zone={pair.length ? zone : undefined} role="group" aria-label={label}>
       <header><h3>{label}</h3><span>{values.length}</span></header>
       <div className="membership-accounts">{values.filter(matches).map(card)}{!values.filter(matches).length && <span className="group-empty">{query ? "无匹配账号" : "暂无账号"}</span>}</div>
     </section>;
@@ -150,12 +146,11 @@ export default function GroupManager(props: Props) {
   return <section className="group-manager" hidden={!active} aria-hidden={!active}>
     <div className="group-manager-toolbar">
       {mobile && <button className="icon-button" aria-label="返回账号" onClick={props.back}><ArrowLeft size={20}/></button>}
-      <div className="group-platforms" role="tablist" aria-label="分组平台">{[["openai", "Codex"], ["grok", "Grok"]].map(([id, label]) => <button key={id} role="tab" aria-selected={platform === id} className={platform === id ? "active" : ""} disabled={busy || !!drag} onClick={() => { setPlatform(id); setSelected(null); setQuery(""); }}>{label}</button>)}</div>
+      <div className="group-platforms" role="tablist" aria-label="分组平台">{[["openai", "Codex"], ["grok", "Grok"]].map(([id, label]) => <button key={id} role="tab" aria-selected={platform === id} className={platform === id ? "active" : ""} disabled={busy || !!drag} onClick={() => { setPlatform(id); setQuery(""); }}>{label}</button>)}</div>
       <label className="group-search"><Search size={16}/><input value={query} placeholder="搜索名称或账号 ID" aria-label="搜索分组账号" onChange={(e) => setQuery(e.target.value)}/></label>
       <button className="icon-button" aria-label="刷新分组" disabled={!online || busy} onClick={() => void command("refresh").catch(props.report)}><RefreshCw size={17}/></button>
     </div>
-    {available.length > 2 && <div className="group-pair-selectors">{[0, 1].map((side) => <label key={side}>{side ? "右侧分组" : "左侧分组"}<select value={pair[side]} disabled={busy} onChange={(e) => { const next = [...pair]; next[side] = Number(e.target.value); setPairs({ ...pairs, [platform]: next }); setSelected(null); }}>{available.filter((g) => g.id !== pair[1 - side]).map((g) => <option key={g.id} value={g.id}>{g.name} #{g.id}</option>)}</select></label>)}</div>}
-    {selected !== null && <div className="group-destination-bar"><span>{accounts.find((a) => a.id === selected)?.name}</span>{pair.length > 0 && <button onClick={() => move(selected, "left")}>{groupName(pair[0])}</button>}{pair.length > 1 && <><button onClick={() => move(selected, "both")}>两组共有</button><button onClick={() => move(selected, "right")}>{groupName(pair[1])}</button></>}<button onClick={() => move(selected, "none")}>移出当前分组</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected(null)}><X size={16}/></button></div>}
+    {available.length > 2 && <div className="group-pair-selectors">{[0, 1].map((side) => <label key={side}>{side ? "右侧分组" : "左侧分组"}<select value={pair[side]} disabled={busy || !!drag} onChange={(e) => { const next = [...pair]; next[side] = Number(e.target.value); setPairs({ ...pairs, [platform]: next }); }}>{available.filter((g) => g.id !== pair[1 - side]).map((g) => <option key={g.id} value={g.id}>{g.name} #{g.id}</option>)}</select></label>)}</div>}
     {available.length > 0 && <><div className="group-map-heading">{pair.map((id, index) => <div key={id} className={index ? "group-heading-right" : "group-heading-left"}><i/><div><strong>{groupName(id)}</strong><span>#{id}</span></div><b>{candidates.filter((a) => members(a).includes(id)).length}</b></div>)}</div>
       <div className={`group-map${pair.length === 1 ? " single" : ""}`}><div className="group-outline outline-left"/>{pair.length > 1 && <div className="group-outline outline-right"/>}{zone("left", pair.length > 1 ? `仅 ${groupName(pair[0])}` : groupName(pair[0]), region("left"))}{pair.length > 1 && <>{zone("both", "两组共有", region("both"))}{zone("right", `仅 ${groupName(pair[1])}`, region("right"))}</>}</div></>}
     {!available.length && <div className="group-no-groups"><Layers3 size={24}/><span>此平台没有分组</span></div>}

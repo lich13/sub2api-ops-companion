@@ -27,8 +27,8 @@ export const getOperations = () => rows;
 export function subscribeOperations(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function setOperations(next: Operation[]) { rows = next; listeners.forEach((listener) => listener()); }
 export const operationEpoch = () => epoch;
-export async function submitAccountBatch(action: 'delete' | 'groups', accounts: {
-  account_id: number; expected_version: string; payload: Record<string, unknown>;
+export async function submitAccountBatch(action: 'delete' | 'groups' | 'recover', accounts: {
+  account_id: number; expected_version: string; payload?: Record<string, unknown>;
 }[], requestId: string): Promise<OperationBatch> {
   const current = epoch;
   const batch = await api<OperationBatch>('POST', '/account-operations/batch', {

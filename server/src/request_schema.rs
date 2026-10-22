@@ -112,7 +112,10 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
             &["action", "payload", "request_id", "client_id", "accounts"],
             &["action", "request_id", "client_id", "accounts"],
         )?;
-        choice(&value["action"], &["test", "proxy", "groups", "delete"])?;
+        choice(
+            &value["action"],
+            &["test", "proxy", "groups", "delete", "recover"],
+        )?;
         match action {
             "test" => {
                 fields(&value["payload"], &["confirmed"], &["confirmed"])?;
@@ -122,6 +125,11 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
                 fields(&value["payload"], &["proxy_id"], &["proxy_id"])?;
                 if !value["payload"]["proxy_id"].is_null() {
                     integer(&value["payload"]["proxy_id"], 1, i64::MAX)?;
+                }
+            }
+            "recover" => {
+                if let Some(payload) = value.get("payload") {
+                    fields(payload, &[], &[])?;
                 }
             }
             _ => {
