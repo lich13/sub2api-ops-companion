@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, LoaderCircle, RefreshCw, Square, X } from 'lucide-react';
+import { LoaderCircle, RefreshCw, Square, X } from 'lucide-react';
 import { api, command } from './bridge';
 import { clientId, getOperations, operationTerminal, setOperations, type Operation, type OperationBatch } from './accountOperations';
 import type { Account } from './types';
@@ -38,15 +38,18 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   const [visible, setVisible] = useState(true);
   const visibility = useRef(true);
   const focusTarget = useRef<string | null>(null);
-  const dismissed = useRef(new Set<string>());
+  const deadline = useRef<{ id: string; at: number } | null>(null);
+  const restoring = useRef(false);
   const generation = useRef(0), revision = useRef(0), guard = useRef(false), submission = useRef<Submission | null>(null);
   const batch = view.scope === connectionKey ? view.batch : null;
+  const terminalId = batch?.items.length && batch.items.every(item => operationTerminal.has(item.status)) ? batch.batch_id : null;
   useEffect(() => {
     ++generation.current; ++revision.current; guard.current = false;
     focusTarget.current = null;
-    dismissed.current.clear();
+    deadline.current = null;
     const saved = readSaved(key); submission.current = saved.request ?? null;
-    visibility.current = saved.visible !== false; setVisible(visibility.current);
+    restoring.current = !!saved.batchId;
+    visibility.current = !!saved.request || !saved.batchId; setVisible(visibility.current);
     setView({ scope: connectionKey, batch: null }); setBatchId(saved.batchId ?? null); setStarting(false); setStopping(false);
     setError(saved.request ? '上次提交结果未确认，请恢复提交结果' : '');
     return () => { ++generation.current; ++revision.current; };
@@ -57,7 +60,7 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   }, [visible]);
 
   useEffect(() => {
-    if (!online || !active || !batchId || view.scope !== connectionKey) return;
+    if (!online || !active || !batchId || terminalId === batchId || view.scope !== connectionKey) return;
     let alive = true, timer: ReturnType<typeof setTimeout> | undefined;
     const token = generation.current;
     async function read() {
@@ -65,16 +68,24 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
       try {
         const next = await api<OperationBatch>('GET', `/account-operations?batch_id=${batchId}`);
         if (!alive || token !== generation.current || version !== revision.current) return;
+        if (restoring.current) {
+          restoring.current = false;
+          visibility.current = running(next) && readSaved(key).visible !== false;
+          setVisible(visibility.current);
+          if (!running(next)) remember(key, { batchId: next.batch_id, visible: false });
+        }
         setView({ scope: connectionKey, batch: next }); publish(next); setError('');
         if (running(next)) timer = setTimeout(() => void read(), 1000);
         else void command('refresh');
       } catch (e) {
-        if (alive && token === generation.current && version === revision.current) setError(message(e));
+        if (alive && token === generation.current && version === revision.current) {
+          setError(message(e)); visibility.current = true; setVisible(true);
+        }
       }
     }
     void read();
     return () => { alive = false; clearTimeout(timer); };
-  }, [connectionKey, batchId, online, active, refresh, view.scope]);
+  }, [connectionKey, batchId, terminalId, online, active, refresh, view.scope]);
 
   async function send(request: Submission) {
     if (!online || guard.current) return;
@@ -94,6 +105,7 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   }
   async function start(accounts: Account[]) {
     if (!online || guard.current || running(batch) || batchId && !batch || submission.current || !accounts.length) return;
+    deadline.current = null; restoring.current = false;
     visibility.current = true; setVisible(true);
     if (accounts.length > 1000) { setError('每批最多测试 1000 个账号'); return; }
     const request: Submission = { action: 'test', payload: { confirmed: true },
@@ -106,25 +118,30 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
     if (submission.current) await send(submission.current);
     else setRefresh(value => value + 1);
   }
-  function changeVisibility(next: boolean, automatic = false) {
-    if (!next && batch?.items.every(item => operationTerminal.has(item.status))) dismissed.current.add(batch.batch_id);
+  function close(automatic = false) {
     if (!automatic || document.getElementById('connection-batch-results')?.contains(document.activeElement))
-      focusTarget.current = next ? 'connection-batch-results' : 'connection-batch-entry';
-    visibility.current = next; setVisible(next);
+      focusTarget.current = 'connection-batch-start';
+    visibility.current = false; setVisible(false);
     try {
-      remember(key, { ...(submission.current ? { request: submission.current } : batchId ? { batchId } : {}), visible: next });
+      remember(key, { ...(submission.current ? { request: submission.current } : batchId ? { batchId } : {}), visible: false });
     } catch { /* Closing a result must remain possible when storage is unavailable. */ }
   }
-  const terminalId = batch?.items.length && batch.items.every(item => operationTerminal.has(item.status)) ? batch.batch_id : null;
   useEffect(() => {
-    if (!terminalId) return;
-    if (!visible) { dismissed.current.add(terminalId); return; }
-    if (!active || starting || submission.current || error || dismissed.current.has(terminalId)) return;
+    if (!terminalId || !visible || starting || submission.current || error) return;
+    if (deadline.current?.id !== terminalId) deadline.current = { id: terminalId, at: Date.now() + 3000 };
     const token = generation.current;
-    const timer = setTimeout(() => {
-      if (token === generation.current) changeVisibility(false, true);
-    }, 3000);
-    return () => clearTimeout(timer);
+    const expire = () => {
+      if (token === generation.current && deadline.current?.id === terminalId && Date.now() >= deadline.current.at) close(true);
+    };
+    const timer = setTimeout(expire, Math.max(0, deadline.current.at - Date.now()));
+    window.addEventListener('focus', expire);
+    document.addEventListener('visibilitychange', expire);
+    expire();
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', expire);
+      document.removeEventListener('visibilitychange', expire);
+    };
   }, [connectionKey, terminalId, visible, active, starting, error]);
   async function stop() {
     if (!online || !batchId || stopping) return;
@@ -139,7 +156,7 @@ export function useConnectionBatch({ connectionKey, storageKey, online, active }
   return { batch, starting, stopping, error, online, visible,
     hasResult: !!batchId || !!submission.current || !!batch || starting || !!error,
     busy: starting || running(batch) || !!(batchId && !batch) || !!submission.current,
-    recoverSubmission: !!submission.current, start, stop, retry, close: () => changeVisibility(false), show: () => changeVisibility(true) };
+    recoverSubmission: !!submission.current, start, stop, retry, close: () => close() };
 }
 export type ConnectionBatchControl = ReturnType<typeof useConnectionBatch>;
 
@@ -151,15 +168,6 @@ function progress(control: ConnectionBatchControl) {
   const unfinished = items.filter(j => ['queued', 'running', 'checking'].includes(j.status)).length;
   const passed = items.filter(j => j.status === 'completed' && j.result?.success === true).length;
   return `${unfinished ? '已完成' : '已结束'} ${items.length - unfinished}/${items.length} · 通过 ${passed}`;
-}
-
-export function ConnectionBatchEntry({ control }: { control: ConnectionBatchControl }) {
-  if (!control.hasResult || control.visible) return null;
-  return <button id="connection-batch-entry" type="button" className="connection-batch-entry" onClick={control.show}
-    aria-label="查看测活结果" aria-expanded={false} aria-controls="connection-batch-results" title={progress(control)}>
-    {control.busy ? <LoaderCircle size={13} className="spin"/> : <Activity size={13}/>}测活结果
-    {control.busy && <span role="status">{progress(control)}</span>}
-  </button>;
 }
 
 function status(job: Operation) {
@@ -175,7 +183,7 @@ export function ConnectionBatchResults({ control }: { control: ConnectionBatchCo
   return <section id="connection-batch-results" tabIndex={-1} className="connection-batch" aria-label="批量测试连接">
     <header><strong>测试连接</strong><span role="status">{progress(control)}</span><div className="connection-batch-actions">
       {canStop && <button disabled={!online || stopping} onClick={() => void control.stop()}>{stopping ? <LoaderCircle size={12} className="spin"/> : <Square size={12}/>}停止未开始</button>}
-      <button onClick={control.close}><X size={12}/>关闭结果</button></div>
+      <button disabled={starting || control.recoverSubmission || !!error} onClick={control.close}><X size={12}/>关闭结果</button></div>
     </header>
     {error && <div className="connection-batch-error" role="alert"><span>{error}</span><button disabled={!online || starting} onClick={() => void control.retry()}><RefreshCw size={12}/>{control.recoverSubmission ? '恢复提交结果' : '重新读取'}</button></div>}
     {items.length > 0 && <div className="connection-batch-scroll"><table>

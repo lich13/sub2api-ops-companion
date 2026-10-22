@@ -751,3 +751,12 @@
 .app:not(.mobile) .records-table .record-col-ip { min-width: 108px; }
 .app:not(.mobile) .records-table .record-col-request_id,
 .app:not(.mobile) .records-table .record-col-upstream_id { min-width: 130px; }
+.record-cost-trigger { border: 0; background: transparent; padding: 0; text-align: left; font: inherit; cursor: help; box-shadow: none; }
+.record-cost-trigger > span { display: inline-flex; align-items: center; gap: 4px; }
+.record-cost-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.record-cost-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 12px 14px; border: 1px solid #495265; border-radius: 10px; background: #111827; color: #f9fafb; box-shadow: 0 12px 35px #0005; font-size: 12px; pointer-events: auto; }
+.record-cost-tooltip dl { margin: 8px 0 0; }
+.record-cost-tooltip dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 3px 0; }
+.record-cost-tooltip dt { color: #a3adbd; }
+.record-cost-tooltip dd { margin: 0; font-variant-numeric: tabular-nums; }
+.record-cost-tooltip .cost-section { border-top: 1px solid #374151; margin-top: 6px; padding-top: 9px; }

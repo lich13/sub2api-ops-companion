@@ -16,6 +16,8 @@ pub const DESKTOP_ACCOUNT_SQL: &str = r####"
 SELECT a.id, a.name, a.platform, a.type, a.status, a.schedulable, a.updated_at, a.priority, a.concurrency, a.load_factor, a.error_message, a.extra,
  nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
  coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
+ a.credentials->>'account_mode' AS usage_account_mode, a.credentials->>'base_url' AS usage_base_url,
+ to_jsonb(a)->>'session_window_end' AS usage_session_window_end, to_jsonb(a)->>'session_window_status' AS usage_session_window_status,
  a.proxy_id, md5(a.credentials::text) AS credential_version,
  md5((a.credentials - 'model_mapping')::text) AS credential_settings_version,
  a.credentials->'model_mapping' AS model_mapping,

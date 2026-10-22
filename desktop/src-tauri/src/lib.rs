@@ -388,6 +388,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
             && parts[0].parse::<u64>().is_ok_and(|id| id > 0)
             && matches!(parts[1], "test" | "quality-check");
     }
+    if plain.ends_with("/usage") {
+        return method == "GET" && !path.contains('?') && account_path(plain, "/usage");
+    }
     if plain == "/proxies" || plain.ends_with("/settings") {
         let settings_path = plain
             .strip_prefix("/accounts/")
@@ -2055,6 +2058,17 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        assert!(allowed_request("GET", "/accounts/7/usage"));
+        for path in [
+            "/accounts/0/usage",
+            "/accounts/7/usage?force=true",
+            "/accounts/7/usage/credentials",
+        ] {
+            assert!(!allowed_request("GET", path));
+        }
+        for method in ["POST", "PUT", "DELETE"] {
+            assert!(!allowed_request(method, "/accounts/7/usage"));
+        }
         for suffix in ["groups", "degradation-mark"] {
             assert!(allowed_request("PUT", &format!("/accounts/7/{suffix}")));
             for method in ["GET", "POST", "DELETE"] {

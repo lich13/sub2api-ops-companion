@@ -8,7 +8,7 @@ import {
   type QuotaBatch,
   type Recovery,
 } from "./types";
-import { usageColor } from "./UsageCell";
+import { usageColor, usageRefreshEvent } from "./UsageCell";
 
 export function MiniUsage({ account }: { account: Account }) {
   if (account.type !== "oauth") return null;
@@ -50,10 +50,12 @@ export function QuotaRefresh({
   online,
   report,
   active = true,
+  connectionKey = "",
 }: {
   online: boolean;
   report: (e: unknown) => void;
   active?: boolean;
+  connectionKey?: string;
 }) {
   const [batch, setBatch] = useState<QuotaBatch | null>(null);
   const [starting, setStarting] = useState(false);
@@ -69,7 +71,10 @@ export function QuotaRefresh({
           setBatch(result);
           if (result.status === "running")
             timer = setTimeout(() => void poll(), 1000);
-          else if (batch?.status === "running") void command("refresh");
+          else if (batch?.status === "running") {
+            document.dispatchEvent(new CustomEvent(usageRefreshEvent, { detail: { connectionKey, batch: result } }));
+            void command("refresh");
+          }
         }
       } catch {
         if (!gone && batch?.status === "running")
@@ -81,7 +86,7 @@ export function QuotaRefresh({
       gone = true;
       clearTimeout(timer);
     };
-  }, [online, active, batch?.id, batch?.status === "running"]);
+  }, [online, active, connectionKey, batch?.id, batch?.status === "running"]);
   async function start() {
     if (running.current || !online) return;
     running.current = true;
@@ -107,7 +112,7 @@ export function QuotaRefresh({
         onClick={() => void start()}
       >
         <RefreshCw size={14} className={starting || inProgress ? "spin" : ""} />
-        刷新全部 OAuth 额度
+        刷新全部用量
       </button>
       {batch && batch.status !== "idle" && (
         <span>

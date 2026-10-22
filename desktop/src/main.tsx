@@ -56,7 +56,7 @@ import {
   RecoveryHistory,
 } from "./AccountControls";
 import TestDialog from "./TestDialog";
-import { useConnectionBatch, ConnectionBatchEntry, ConnectionBatchResults } from "./ConnectionBatch";
+import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
 import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
 import ConnectionStatusCard from "./ConnectionStatusCard";
@@ -715,7 +715,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -778,7 +778,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><QuotaRefresh online={state.online} active={state.foreground !== false} report={report}/><ConnectionBatchEntry control={connectionBatch}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar"><QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">
@@ -786,7 +786,7 @@ export default function App() {
                         <span>已选 {selected.size} 个账号</span>
                         </div>
                         <div className="selection-actions" role="group" aria-label="批量账号操作">
-                        <button disabled={!state.online || selected.size === 0 || connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
+                        <button id="connection-batch-start" disabled={!state.online || selected.size === 0} aria-disabled={connectionBatch.busy} onClick={() => void connectionBatch.start(accounts.filter(a => selected.has(a.id)))}><Activity size={12}/>测试连接</button>
                         <RecoverSelectedButton key={connectionKey} accounts={accounts.filter(a => selected.has(a.id))} online={state.online} report={report}/>
                         <button disabled={!state.online || selected.size === 0} onClick={() => setProxyAccounts(accounts.filter(a => selected.has(a.id)))}><Network size={12}/>选择代理</button>
                         <button disabled={!state.online || selected.size === 0} onClick={() => { setTemplateAccount(null); setTemplateAccounts(accounts.filter(a => selected.has(a.id))); setTemplatesOpen(true); }}><LayoutTemplate size={12}/>应用模板</button>
@@ -804,7 +804,7 @@ export default function App() {
                         </div>
                       </div>}
                       <ConnectionBatchResults control={connectionBatch}/>
-                      {mobile ? <MobileAccounts accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
+                      {mobile ? <MobileAccounts active={state.foreground !== false} connectionKey={connectionKey} accounts={filteredAccounts} online={state.online} selected={selected} select={(id, checked) => setSelected((old) => { const next = new Set(old); if (checked) next.add(id); else next.delete(id); return next; })} schedule={schedule} accountActions={accountActions} error={(id) => void openError(id)} report={report}/> : <table className={`accounts-table${nameExpanded ? " name-expanded" : ""}`}>
                         <colgroup><col className="col-select"/><col className="col-name"/><col className="col-priority"/><col className="col-status"/><col className="col-usage"/><col className="col-error"/><col className="col-schedule"/><col className="col-actions"/></colgroup>
                         <thead>
                           <tr>
@@ -928,6 +928,8 @@ export default function App() {
                               </td>
                               <td>
                                 <UsageCell
+                                  active={state.foreground !== false}
+                                  connectionKey={connectionKey}
                                   account={a}
                                   online={state.online}
                                   refresh={() => command("refresh")}

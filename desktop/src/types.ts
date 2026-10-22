@@ -70,7 +70,11 @@ export type UsageStats = {
   user_cost: number;
 };
 export type UsageSummary = {
-  branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid";
+  branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
+  native_read?: boolean;
+  status?: "known" | "unavailable" | "error" | "authorization_required";
+  message?: string;
+  balances?: { currency: string; balance: number; observed_at?: string | null; status?: UsageWindow["status"] }[];
   windows: UsageWindow[];
   today: UsageStats | null;
   actions: UsageAction[];
@@ -84,6 +88,7 @@ export type UsageSummary = {
   monthly_used?: number | null;
 };
 export type UsageWindow = {
+  estimated?: boolean;
   key: string;
   label: string;
   used_percent: number | null;
@@ -271,6 +276,7 @@ export type QuotaBatch = {
     platform: string;
     status: string;
     error?: string;
+    usage?: UsageSummary;
   }[];
 };
 export function filterAccounts(

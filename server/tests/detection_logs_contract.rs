@@ -505,6 +505,7 @@ async fn outcomes_receipts_and_merged_or_late_notifications_remain_independent()
     degraded["result_summary"] = saved_summary();
     degraded["result_summary"]["first_prediction"] = json!("gpt-5.6-luna");
     degraded["result_summary"]["first_downgrade"] = json!(true);
+    degraded["result_summary"]["outcome"] = json!("degraded");
 
     let mut recheck = job(43, "completed", AT);
     recheck["result_summary"] = saved_summary();
@@ -772,4 +773,27 @@ fn baseline_0147_readers_accept_new_optional_summary_and_config_keys() {
 
 fn string(value: &Value) -> &str {
     value.as_str().unwrap_or("")
+}
+
+#[test]
+fn sol_rule_changes_only_future_verdicts_and_keeps_saved_history() {
+    let mut old = job(90, "completed", AT);
+    old["first_group_valid"] = true.into();
+    old["first_group_prediction"] = "gpt-5.6-sol".into();
+    old["report"] = report("gpt-5.6-sol", 0.9, 3);
+    old["result_summary"] =
+        json!({"outcome":"degraded","first_downgrade":true,"aggregate_downgrade":true});
+    let saved = old.clone();
+    let summary = detection_logs::summary(&old);
+    assert_eq!(summary["outcome"], "degraded");
+    assert_eq!(summary["first_downgrade"], true);
+    assert_eq!(summary["aggregate_downgrade"], true);
+    assert_eq!(old, saved);
+    old["result_summary"] = Value::Null;
+    let fresh = detection_logs::summary(&old);
+    assert_eq!(fresh["outcome"], "normal");
+    assert_eq!(fresh["first_downgrade"], false);
+    assert_eq!(fresh["aggregate_downgrade"], false);
+    old["completion_reason"] = "automatic_degradation".into();
+    assert_eq!(detection_logs::summary(&old)["outcome"], "degraded");
 }

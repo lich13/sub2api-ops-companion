@@ -11,7 +11,7 @@ import { DegradationBadge } from "./DegradationMark";
 import AccountStatus from "./AccountStatus";
 
 type Props = {
-  accounts: Account[]; online: boolean; selected: Set<number>;
+  accounts: Account[]; online: boolean; selected: Set<number>; active?: boolean; connectionKey?: string;
   select: (id: number, checked: boolean) => void;
   schedule: (account: Account) => ReactNode;
   error: (id: number) => void;
@@ -35,7 +35,7 @@ export default function MobileAccounts(props: Props) {
           <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
           <AccountStatus account={a} onError={props.error}/>
         </div>
-        <UsageCell account={a} online={props.online} refresh={() => command("refresh")} report={props.report}/>
+        <UsageCell account={a} online={props.online} active={props.active} connectionKey={props.connectionKey} refresh={() => command("refresh")} report={props.report}/>
         <footer>
           {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已成功</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}
           <span className="priority-value">优先级 {a.priority}</span>

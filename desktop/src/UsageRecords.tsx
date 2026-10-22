@@ -36,6 +36,7 @@ import RecordDatePicker from "./RecordDatePicker";
 import { presetRange, type RecordDateRange } from "./recordDates";
 import { useBackAction } from "./mobile";
 import "./records.css";
+import CostDetails from "./CostDetails";
 
 function Route({ row }: { row: UsageRecord }) {
   const route = modelRoute(row);
@@ -185,12 +186,7 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
         </div>
       );
     case "cost":
-      return (
-        <div className="record-stack record-money">
-          <span title="用户实扣">{money(row.actual_cost)}</span>
-          <small title="账户费用">A {money(row.account_cost)}</small>
-        </div>
-      );
+      return <CostDetails row={row} />;
     case "latency":
       return <Latency row={row} />;
     case "user_agent":

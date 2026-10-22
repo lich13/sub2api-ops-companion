@@ -156,20 +156,21 @@ export function modelRoute(record: UsageRecord) {
   add(record.upstream_response_model, "返回");
   return steps;
 }
-export function money(value: string | null | undefined) {
+export function money(value: string | null | undefined, digits = 6) {
   if (value == null || value === "") return "—";
   // Decimal strings remain intact in the DTO/detail; rounding here is presentation only.
   const match = value.match(/^(-?)(\d+)(?:\.(\d*))?$/);
   if (!match)
     return Number.isFinite(Number(value))
-      ? `$${Number(value).toFixed(6)}`
+      ? `$${Number(value).toFixed(digits)}`
       : "—";
-  const fraction = (match[3] || "").padEnd(7, "0");
+  const scale = 10n ** BigInt(digits);
+  const fraction = (match[3] || "").padEnd(digits + 1, "0");
   const rounded =
-    BigInt(match[2]) * 1000000n +
-    BigInt(fraction.slice(0, 6)) +
-    (fraction[6] >= "5" ? 1n : 0n);
-  return `$${match[1]}${rounded / 1000000n}.${(rounded % 1000000n).toString().padStart(6, "0")}`;
+    BigInt(match[2]) * scale +
+    BigInt(fraction.slice(0, digits)) +
+    (fraction[digits] >= "5" ? 1n : 0n);
+  return `$${match[1]}${rounded / scale}.${(rounded % scale).toString().padStart(digits, "0")}`;
 }
 export function tokenCount(value: number | null | undefined) {
   return value == null || !Number.isFinite(value) || value < 0

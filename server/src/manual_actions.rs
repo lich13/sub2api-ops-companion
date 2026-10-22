@@ -373,6 +373,18 @@ impl Runtime {
         let expected = string(&payload["expected_version"]);
         let row = self.actions.account(id, Some(expected)).await?;
         let action = string(&payload["action"]);
+        if action == "query_usage" && !crate::account_usage::provider(&row).is_empty() {
+            let _control = self.actions.locks.control(id).await;
+            self.actions.account(id, Some(expected)).await?;
+            let usage = self.account_usage(id, key, true).await?;
+            if matches!(string(&usage["status"]), "error" | "authorization_required") {
+                return Err(Error::new(502, "上游用量读取未成功，请检查授权后重试"));
+            }
+            let mut account = self.account_snapshot(id).await?;
+            account["usage_windows"] = usage["windows"].clone();
+            account["usage"] = usage;
+            return Ok(json!({"message":"用量查询完成","account":account}));
+        }
         if action == "query_usage" && row["platform"] == "openai" && row["type"] == "oauth" {
             if let Some(at) = requested {
                 if let Some(result) = self.monitor.queries.join_existing(id, at).await {

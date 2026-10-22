@@ -177,9 +177,8 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
             Some(&["POST"])
         }
         ["accounts", _] => Some(&["DELETE"]),
-        ["accounts", _, "settings" | "models"] | ["accounts", _, "model-tests", "latest"] => {
-            Some(&["GET"])
-        }
+        ["accounts", _, "settings" | "models" | "usage"]
+        | ["accounts", _, "model-tests", "latest"] => Some(&["GET"]),
         ["accounts", _, "operations" | "schedulable" | "recover-state" | "priority" | "test" | "model-tests"
         | "usage-action"] => Some(&["POST"]),
         ["accounts", _, "groups" | "degradation-mark"] => Some(&["PUT"]),
@@ -317,6 +316,12 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
+        ["accounts", id, "usage"] => {
+            if !query.is_empty() {
+                return Err(Error::invalid());
+            }
+            runtime.account_usage(path_id(id)?, &key, false).await?
+        }
         ["account-priorities"] => runtime.priorities.view(priority_v2).await?,
         ["account-priority-orders"] => {
             let result = runtime.priorities.submit(&payload).await?;

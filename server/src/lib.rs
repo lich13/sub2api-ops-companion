@@ -1,5 +1,6 @@
 pub mod account_locks;
 pub mod account_templates;
+pub mod account_usage;
 pub mod actions;
 pub mod api;
 pub mod audit;

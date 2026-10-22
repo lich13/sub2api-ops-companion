@@ -71,12 +71,12 @@ pub fn project(row: &Value, at: DateTime<Utc>, result: &Value) -> Value {
     let extra = &row["extra"];
     let mut value =
         json!({"branch":"none","windows":[],"today":null,"actions":[],"reset_credits":null});
-    if !matches!(string(&row["platform"]), "openai" | "grok") {
-        return value;
-    }
     let mut windows = vec![];
     let stamp = json!(datetime(at));
-    if row["type"] == "apikey" {
+    if matches!(
+        string(&row["type"]),
+        "apikey" | "upstream" | "bedrock" | "service_account"
+    ) {
         value["branch"] = "apikey".into();
         let midnight = at
             .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
@@ -274,6 +274,7 @@ pub fn project(row: &Value, at: DateTime<Utc>, result: &Value) -> Value {
         }
     }
     value["windows"] = windows.into();
+    crate::account_usage::extend(row, &mut value, at);
     value
 }
 

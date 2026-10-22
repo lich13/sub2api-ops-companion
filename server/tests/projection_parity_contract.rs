@@ -3847,3 +3847,212 @@ async fn key_template_action_verifies_mapping_and_preserves_the_full_account_row
     upstream_task.abort();
     let _ = upstream_task.await;
 }
+
+#[tokio::test]
+async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_stats() {
+    let _database_serial = POSTGRES_PROJECTION_LOCK.lock().await;
+    let fixture = start_projection_runtime_fixture("native-account-usage", false).await;
+    let cases = [
+        (969_801, "anthropic", "apikey", json!({}), ""),
+        (
+            969_802,
+            "anthropic",
+            "oauth",
+            json!({}),
+            "accounts/969802/usage",
+        ),
+        (
+            969_803,
+            "gemini",
+            "service_account",
+            json!({}),
+            "accounts/969803/usage",
+        ),
+        (
+            969_804,
+            "kimi",
+            "apikey",
+            json!({"account_mode":"coding"}),
+            "cn-providers/accounts/969804/quota",
+        ),
+        (
+            969_805,
+            "deepseek",
+            "apikey",
+            json!({}),
+            "cn-providers/accounts/969805/balance",
+        ),
+        (
+            969_806,
+            "opencode_go",
+            "apikey",
+            json!({"account_mode":"go"}),
+            "accounts/969806/opencode-go-usage",
+        ),
+    ];
+    for (id, platform, kind, credentials, _) in &cases {
+        insert_runtime_account(
+            &fixture.seed.pool,
+            *id,
+            platform,
+            kind,
+            credentials.clone(),
+            json!({}),
+            false,
+        )
+        .await;
+    }
+    let (address, task) = start_projection_api(fixture.runtime.clone()).await;
+    let client = reqwest::Client::new();
+    let url = format!("http://{address}/api/desktop/v1/accounts/969801/usage");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .post(&url)
+            .header("x-api-key", "fixture-key")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        405
+    );
+    assert_eq!(
+        client
+            .get(format!("{url}?force=true"))
+            .header("x-api-key", "fixture-key")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        422
+    );
+    for (id, _, _, _, upstream) in &cases {
+        if !upstream.is_empty() {
+            fixture.http.set_response(&format!("/api/v1/admin/{upstream}"), 200, json!({"code":0,"data":{
+                "success":true,"updated_at":compat::datetime(Utc::now()),"fetched_at":Utc::now().timestamp(),
+                "source":"passive","five_hour":{"utilization":25},"gemini_pro_daily":{"utilization":0},
+                "tiers":[{"window":"5h","used_percent":12}],"balances":[{"currency":"CNY","balance":0}],
+                "snapshot":{"status":"ok","fetched_at":compat::datetime(Utc::now()),"data":{"rolling":{"percent":10}}},
+                "credentials":{"api_key":"fixture-secret-marker"},"private":"fixture-secret-marker"
+            }}));
+        }
+        let (status, body) = projection_json_response(
+            client
+                .get(format!(
+                    "http://{address}/api/desktop/v1/accounts/{id}/usage"
+                ))
+                .header("x-api-key", "fixture-key"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!body.to_string().contains("fixture-secret-marker"));
+        assert!(body["windows"].is_array());
+        if *id == 969_801 {
+            assert_eq!(body["today"]["requests"], 0);
+        }
+    }
+    assert!(fixture
+        .http
+        .recorded_calls()
+        .iter()
+        .any(|call| call.path_and_query == "/api/v1/admin/accounts/969802/usage?source=passive"));
+    assert!(!fixture
+        .http
+        .recorded_calls()
+        .iter()
+        .any(|call| call.path_and_query.contains("accounts/969801/usage")));
+    fixture.http.set_response(
+        "/api/v1/admin/accounts/969802/usage",
+        503,
+        json!({"error":"fixture unavailable"}),
+    );
+    let failed = fixture
+        .runtime
+        .account_usage(969_802, "fixture-key", false)
+        .await
+        .unwrap();
+    assert_eq!(failed["status"], "error");
+    assert_eq!(
+        fixture
+            .runtime
+            .account_usage(969_805, "fixture-key", false)
+            .await
+            .unwrap()["balances"][0]["balance"],
+        0.0
+    );
+    let payload = usage_action_payload(&fixture.runtime, 969_805, "query_usage", None).await;
+    assert_eq!(
+        fixture
+            .runtime
+            .usage_action(969_805, &payload, "fixture-key", None)
+            .await
+            .unwrap()["account"]["usage"]["balances"][0]["currency"],
+        "CNY"
+    );
+    // Native quota requests retain the child ID; local costs remain owned by it.
+    sqlx::query("UPDATE accounts SET parent_account_id=969802 WHERE id=969803")
+        .execute(&fixture.seed.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO usage_logs(id,account_id,created_at,model,input_tokens,output_tokens,total_cost,actual_cost,account_rate_multiplier) VALUES(969891,969802,now(),'fixture',1000,1000,10,20,2),(969892,969803,now(),'fixture',10,20,0.5,0.25,3)").execute(&fixture.seed.pool).await.unwrap();
+    // Query the fixture statistics directly after the insert.
+    let projected = usage::project(
+        &fixture
+            .runtime
+            .actions
+            .account(969_803, None)
+            .await
+            .unwrap(),
+        Utc::now(),
+        &Value::Null,
+    );
+    let specs = usage::stats_specs(969_803, &projected);
+    let stats = fixture
+        .runtime
+        .actions
+        .queries
+        .db
+        .all(
+            &sub2ops_server::sql::STATS_STATS_SQL.replace("%(windows)s", "$1"),
+            &[sub2ops_server::db::Param::Json(json!(specs))],
+        )
+        .await
+        .unwrap();
+    let stat = &stats[0];
+    assert_eq!(stat["account_id"], 969_803);
+    assert_eq!(compat::integer(&stat["tokens"]), Some(30));
+    assert_eq!(compat::float(&stat["cost"]), Some(1.5));
+    assert_eq!(compat::float(&stat["user_cost"]), Some(0.25));
+    let child = fixture
+        .runtime
+        .account_usage(969_803, "fixture-key", false)
+        .await
+        .unwrap();
+    assert_eq!(child["windows"][1]["used_percent"], 0.0);
+    fixture
+        .runtime
+        .start_quota_refresh("fixture-key")
+        .await
+        .unwrap();
+    let batch = tokio::time::timeout(StdDuration::from_secs(10), async {
+        loop {
+            let batch = fixture.runtime.quota_progress();
+            if batch["status"] == "completed" {
+                break batch;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let items = batch["items"].as_array().unwrap();
+    assert!(items
+        .iter()
+        .any(|v| v["account_id"] == 969_802 && v["status"] == "partial"));
+    assert!(items.iter().any(|v| v["account_id"] == 969_805
+        && v["status"] == "success"
+        && v["usage"]["balances"][0]["currency"] == "CNY"));
+    assert!(!items.iter().any(|v| v["account_id"] == 969_801));
+    task.abort();
+    fixture.close().await;
+}

@@ -74,6 +74,7 @@ pub fn is_downgrade(requested: &str, predicted: &str) -> bool {
     match predicted_tier.cmp(&requested_tier) {
         Ordering::Less => true,
         Ordering::Greater => false,
+        Ordering::Equal if requested_tier == 2 => false,
         Ordering::Equal => compare_versions(predicted_version, requested_version) == Ordering::Less,
     }
 }
@@ -107,12 +108,15 @@ mod tests {
             ("gpt-6-astra", "gpt-6-sol", true),
             ("gpt-6-sol", "gpt-6-luna", true),
             ("gpt-6-sol", "gpt-6-astra", false),
-            ("gpt-6-sol", "gpt-5.6-sol", true),
+            ("gpt-6-sol", "gpt-5.6-sol", false),
+            ("gpt-6.1-sol", "gpt-6-sol", false),
+            ("gpt-6-sol", "gpt-6.1-sol", false),
+            ("gpt-6.1-sol", "gpt-5.6-sol", false),
             ("gpt-5.6-sol", "gpt-6-sol", false),
             ("gpt-6-luna", "gpt-5.9-sol", false),
             ("gpt-6.1-astra", "gpt-6-astra", true),
             ("gpt-6-astra", "gpt-6.0-astra", false),
-            ("gpt-5.10-sol", "gpt-5.9-sol", true),
+            ("gpt-5.10-sol", "gpt-5.9-sol", false),
             ("  GPT-6-Sol \t", "gpt-6-sol", false),
             ("gpt-6-sol", "claude-sonnet-5", false),
             ("gpt-6-sol", "", false),
@@ -135,7 +139,7 @@ mod tests {
             (
                 "gpt-184467440737095516160-sol",
                 "gpt-184467440737095516159-sol",
-                true,
+                false,
             ),
         ];
         for (requested, predicted, expected) in vectors {

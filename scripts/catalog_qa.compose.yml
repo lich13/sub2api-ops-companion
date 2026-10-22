@@ -42,7 +42,7 @@ services:
       pg: { condition: service_healthy }
       redis: { condition: service_started }
   ops:
-    image: sub2ops-catalog-qa:0.1.52
+    image: sub2ops-catalog-qa:0.1.53
     build: ..
     tmpfs:
       - /data:uid=10001,gid=10001,mode=0700

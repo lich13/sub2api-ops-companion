@@ -133,7 +133,22 @@ async function renderApp() {
 const selectionBar = () => container.querySelector<HTMLElement>(".selection-bar");
 
 describe("main account selection surface", () => {
-  it("shows batch results in the account toolbar and restores focus through the entry", async () => {
+  it("returns focus to the busy test button when running results are closed", async () => {
+    const original=vi.mocked(api).getMockImplementation()!;
+    const running={...finishedBatch, pending:1, items:finishedBatch.items.map(j=>({...j,status:"running",result:undefined}))};
+    vi.mocked(api).mockImplementation(async (method,path,...rest) => path.startsWith("/account-operations") ? running as never : original(method,path,...rest));
+    await renderApp();
+    await act(async () => container.querySelector<HTMLInputElement>(`[aria-label="选择 ${account(1).name}"]`)!.click());
+    const start=container.querySelector<HTMLButtonElement>("#connection-batch-start")!;
+    await act(async () => start.click());
+    const close=[...container.querySelectorAll<HTMLButtonElement>(".connection-batch button")].find(b=>b.textContent?.includes("关闭结果"))!;
+    await act(async () => close.click());
+    expect(document.activeElement).toBe(start);
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => start.click());
+    expect(vi.mocked(api).mock.calls.filter(([method,path])=>method==="POST"&&path==="/account-operations/batch")).toHaveLength(1);
+  });
+  it("closes batch results and restores focus to the test button without a separate entry", async () => {
     await renderApp();
     expect(selectionBar()).toBeNull();
 
@@ -154,23 +169,12 @@ describe("main account selection surface", () => {
     expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
 
     await act(async () => container.querySelector<HTMLButtonElement>(`${resultsSelector} button`)!.click());
-    const entry = container.querySelector<HTMLButtonElement>(
-      '.account-toolbar button[aria-label="查看测活结果"]',
-    )!;
     expect(container.querySelector(resultsSelector)).toBeNull();
-    expect(container.querySelector('section[aria-label="批量测试连接摘要"]')).toBeNull();
-    expect(entry.textContent?.trim()).toBe("测活结果");
-    expect(entry.title).toBe("已结束 1/1 · 通过 1");
-    expect(document.activeElement).toBe(entry);
-
+    expect(container.querySelector('.account-toolbar button[aria-label="查看测活结果"]')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector("#connection-batch-start"));
     await act(async () => accountCheckbox.click());
     expect(selectionBar()).toBeNull();
-    expect(entry.isConnected).toBe(true);
-
-    await act(async () => entry.click());
-    expect(container.querySelector(resultsSelector)).toBeTruthy();
-    expect(document.activeElement).toBe(container.querySelector(resultsSelector));
-    expect(container.querySelector('.account-toolbar button[aria-label="查看测活结果"]')).toBeNull();
+    expect(container.querySelector(resultsSelector)).toBeNull();
   });
 
   it("places mobile select-all in the sort row and hides the selection bar when no account is selected", async () => {

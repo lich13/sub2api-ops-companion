@@ -4,7 +4,7 @@ use crate::{
     oauth_queries::{QueryOptions, Source},
     runtime::Runtime,
 };
-use chrono::Timelike;
+use chrono::{Timelike, Utc};
 use futures_util::{stream, StreamExt};
 use serde_json::{json, Value};
 use std::{
@@ -40,6 +40,7 @@ impl Runtime {
             .into_iter()
             .filter(|row| {
                 matches!(string(&row["platform"]), "openai" | "grok") && row["type"] == "oauth"
+                    || !crate::account_usage::provider(row).is_empty()
             })
             .collect::<Vec<_>>();
         let batch = json!({"id":uuid::Uuid::new_v4().simple().to_string(),"status":"running","started_at":crate::compat::now(),"completed_at":null,
@@ -109,6 +110,22 @@ impl Runtime {
         requested: Instant,
     ) -> Result<Value> {
         let id = integer(&original["id"]).ok_or_else(Error::invalid)?;
+        if !crate::account_usage::provider(original).is_empty() {
+            let _control = self.actions.locks.control(id).await;
+            let live = self.actions.account(id, None).await?;
+            if live["platform"] != original["platform"] || live["type"] != original["type"] {
+                return Err(Error::new(409, "账号类型已变化"));
+            }
+            self.quota_item(id, json!({"status":"running"}), false);
+            let usage = self.account_usage(id, key, true).await?;
+            let partial = matches!(
+                string(&usage["status"]),
+                "error" | "authorization_required" | "unavailable"
+            );
+            return Ok(
+                json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":usage["message"],"usage":usage}),
+            );
+        }
         let _lease = loop {
             if self.closing.load(Ordering::Acquire) || self.actions.supervisor.is_stopping() {
                 return Err(Error::new(503, "服务正在停止"));

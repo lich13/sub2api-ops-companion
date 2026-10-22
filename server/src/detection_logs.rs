@@ -111,11 +111,13 @@ pub fn summary(job: &Value) -> Value {
         out["prediction"] = text(&report["prediction"], 200);
         out["probability"] = probability(&report["probability"]);
         out["used_outputs"] = report["used_outputs"].as_u64().into();
-        out["aggregate_downgrade"] = is_downgrade(
-            string(&job["requested_model"]),
-            string(&report["prediction"]),
-        )
-        .into();
+        if !out["aggregate_downgrade"].is_boolean() {
+            out["aggregate_downgrade"] = is_downgrade(
+                string(&job["requested_model"]),
+                string(&report["prediction"]),
+            )
+            .into();
+        }
         out["analysis_available"] = true.into();
     } else if !out.is_object() || out.get("analysis_available").is_none() {
         out["analysis_available"] = false.into();
@@ -125,11 +127,14 @@ pub fn summary(job: &Value) -> Value {
         if !job["first_group_probability"].is_null() {
             out["first_probability"] = probability(&job["first_group_probability"]);
         }
-        out["first_downgrade"] = is_downgrade(
-            string(&job["requested_model"]),
-            string(&job["first_group_prediction"]),
-        )
-        .into();
+        if !out["first_downgrade"].is_boolean() {
+            out["first_downgrade"] = (job["completion_reason"] == "automatic_degradation"
+                || is_downgrade(
+                    string(&job["requested_model"]),
+                    string(&job["first_group_prediction"]),
+                ))
+            .into();
+        }
     }
     if job["automatic_disposition"].is_object() && !out["disposition"].is_object() {
         let kind = if job["automatic_disposition"]["kind"] == "recheck" {
@@ -139,17 +144,19 @@ pub fn summary(job: &Value) -> Value {
         };
         out[kind] = receipt(&job["automatic_disposition"]);
     }
-    out["outcome"] = if job["status"] != "completed" {
-        job["status"].clone()
-    } else if out["first_downgrade"] == true {
-        "degraded".into()
-    } else if out["analysis_available"] != true {
-        "unavailable".into()
-    } else if out["aggregate_downgrade"] == true {
-        "aggregate_degraded".into()
-    } else {
-        "normal".into()
-    };
+    if !out["outcome"].is_string() {
+        out["outcome"] = if job["status"] != "completed" {
+            job["status"].clone()
+        } else if out["first_downgrade"] == true {
+            "degraded".into()
+        } else if out["analysis_available"] != true {
+            "unavailable".into()
+        } else if out["aggregate_downgrade"] == true {
+            "aggregate_degraded".into()
+        } else {
+            "normal".into()
+        };
+    }
     out
 }
 

@@ -254,6 +254,14 @@ accounts.push({
     reset_credits: null,
   },
 });
+if (new URLSearchParams(location.search).get("scenario") === "native-usage") {
+  accounts.push({ ...accounts[3], id: 392, name: "Claude · Key", platform: "anthropic", type: "apikey", managed: false,
+    usage: { branch: "apikey", windows: [], today: stats, actions: [], reset_credits: null } });
+  accounts.push({ ...accounts[3], id: 393, name: "Gemini · 配额", platform: "gemini", type: "service_account", managed: false,
+    usage: { branch: "native", native_read: true, status: "known", windows: [{ key: "gemini_shared_daily", label: "共享 1d", used_percent: 0, observed_at: now, reset_at: new Date(Date.now()+3600000).toISOString(), status: "known", source: "local_estimate", estimated: true }], today: stats, actions: ["query_usage"], reset_credits: null } });
+  accounts.push({ ...accounts[3], id: 394, name: "DeepSeek · 余额", platform: "deepseek", type: "apikey", managed: false,
+    usage: { branch: "apikey", native_read: true, status: "known", windows: [], today: stats, balances: [{ currency: "USD", balance: 0, status: "known", observed_at: now }, { currency: "CNY", balance: 42, status: "known", observed_at: now }], actions: ["query_usage"], reset_credits: null } });
+}
 let state: ViewState = {
   platform: new URLSearchParams(location.search).has("mobile") ? "android" : "macos",
   foreground: true,
@@ -654,6 +662,7 @@ export async function run(
         content_limited: true,
       };
     }
+    if (/^\/accounts\/\d+\/usage$/.test(path)) return accounts.find(a => a.id === Number(path.split("/")[2]))?.usage;
     if (path.endsWith("/usage-action")) return { message: "预览：操作已完成" };
     if (path.startsWith("/accounts/")) {
       const a = state.snapshot?.accounts.find(

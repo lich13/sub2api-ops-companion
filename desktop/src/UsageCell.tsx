@@ -1,5 +1,5 @@
 import { accountOperation } from "./accountOperations";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
 import { api } from "./bridge";
 import { useBackAction } from "./mobile";
@@ -8,7 +8,11 @@ import {
   type Account,
   type UsageAction,
   type UsageStats,
+  type UsageSummary,
+  type QuotaBatch,
 } from "./types";
+
+export const usageRefreshEvent = "sub2ops-usage-refreshed";
 
 export function compactNumber(value: number): string {
   if (value >= 1e9) return `${(value / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
@@ -47,11 +51,15 @@ export default function UsageCell({
   online,
   refresh,
   report,
+  active = true,
+  connectionKey = "",
 }: {
   account: Account;
   online: boolean;
   refresh: () => Promise<unknown>;
   report: (message: unknown) => void;
+  active?: boolean;
+  connectionKey?: string;
 }) {
   const [busy, setBusy] = useState<UsageAction | null>(null);
   const running = useRef(false);
@@ -60,7 +68,42 @@ export default function UsageCell({
     version: string;
   } | null>(null);
   useBackAction(!!confirm, () => setConfirm(null));
-  const usage = account.usage;
+  const [native, setNative] = useState<{ identity: string; value: UsageSummary } | null>(null);
+  const lastRead = useRef({ identity: "", at: 0 });
+  const request = useRef(0);
+  const identity = `${connectionKey}:${account.id}:${account.operation_versions?.usage ?? account.version}`;
+  const usage = native?.identity === identity ? { ...native.value, today: account.usage?.today ?? native.value.today } : account.usage;
+  const acceptNative = (value: UsageSummary) => setNative(previous => {
+    if (previous?.identity === identity && (value.status === "error" || value.status === "authorization_required")) {
+      value = { ...value,
+        windows: value.windows.some(w => w.source !== "configured_quota") ? value.windows : [...value.windows, ...previous.value.windows.filter(w => w.source !== "configured_quota").map(w => ({ ...w, status: "error" as const }))],
+        balances: value.balances?.length ? value.balances : previous.value.balances?.map(b => ({ ...b, status: "error" as const })),
+      };
+    }
+    return { identity, value };
+  });
+  useEffect(() => () => { ++request.current; lastRead.current = { identity: "", at: 0 }; }, [identity, online, active]);
+  useEffect(() => {
+    const refreshed = (event: Event) => {
+      const { connectionKey: scope, batch } = (event as CustomEvent<{ connectionKey: string; batch: QuotaBatch }>).detail;
+      if (scope !== connectionKey) return;
+      const value = batch.items.find(item => item.account_id === account.id)?.usage;
+      if (value) { ++request.current; lastRead.current = { identity, at: Date.now() }; acceptNative(value); }
+    };
+    document.addEventListener(usageRefreshEvent, refreshed);
+    return () => document.removeEventListener(usageRefreshEvent, refreshed);
+  }, [identity, connectionKey, account.id]);
+  useEffect(() => {
+    if (!online || !active || !account.usage?.native_read || running.current) return;
+    if (lastRead.current.identity === identity && Date.now() - lastRead.current.at < 60_000) return;
+    lastRead.current = { identity, at: Date.now() };
+    const token = ++request.current;
+    void api<UsageSummary>("GET", `/accounts/${account.id}/usage`).then(value => {
+      if (request.current === token) acceptNative(value);
+    }).catch(() => {
+      if (request.current === token) acceptNative({ ...account.usage!, status: "error", message: "用量读取失败，请重新查询", windows: account.usage!.windows.map(w => w.source === "configured_quota" ? w : ({ ...w, status: "error" })) });
+    });
+  }, [identity, account.usage, account.id, online, active]);
   const windows = usage?.windows ?? account.usage_windows ?? [];
   async function run(
     action: UsageAction,
@@ -76,7 +119,10 @@ export default function UsageCell({
     setBusy(action);
     setConfirm(null);
     try {
-      const result = await accountOperation<{ message: string }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed }, account.operation_versions?.[action === "reset_quota" ? "reset_quota" : "usage"] ?? version);
+      const token = ++request.current;
+      const result = await accountOperation<{ message: string; account?: Account }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed }, account.operation_versions?.[action === "reset_quota" ? "reset_quota" : "usage"] ?? version);
+      if (request.current !== token) return;
+      if (result.account?.usage?.native_read) acceptNative(result.account.usage);
       report(result.message);
     } catch (error) {
       report(error);
@@ -89,7 +135,7 @@ export default function UsageCell({
   }
   return (
     <div className="usage-cell">
-      {usage?.branch === "apikey" &&
+      {(usage?.branch === "apikey" || usage?.today) &&
         (usage.today ? (
           <Stats stats={usage.today} />
         ) : (
@@ -126,7 +172,7 @@ export default function UsageCell({
               <span
                 className={`usage-badge ${w.color ?? (w.label === "7d" ? "emerald" : "indigo")}`}
               >
-                {w.label}
+                {w.label}{w.estimated && "（估算）"}
               </span>
               <div
                 className="usage-track"
@@ -172,7 +218,9 @@ export default function UsageCell({
           / ${usage!.monthly_limit!.toFixed(2)}
         </span>
       )}
-      {!windows.length &&
+      {usage?.balances?.map((entry, i) => <span className="usage-money" key={`${entry.currency}:${i}`} title={`采集 ${fullTime(entry.observed_at)}`}>余额 {entry.currency || "币种未提供"} {entry.balance.toFixed(2)}{entry.status && entry.status !== "known" && ` · ${{ stale: "历史", error: "异常", unknown: "采集时间未知" }[entry.status]}`}</span>)}
+      {usage?.message && <span className="usage-unknown" role={usage.status === "error" ? "status" : undefined}>{usage.message}</span>}
+      {!windows.length && !usage?.message && !usage?.today && !usage?.balances?.length &&
         usage?.branch !== "apikey" &&
         !usage?.prepaid_balance && <span className="usage-unknown">未知</span>}
       {!!usage?.actions.length && (

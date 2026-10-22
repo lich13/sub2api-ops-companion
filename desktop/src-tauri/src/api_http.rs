@@ -89,7 +89,7 @@ fn snapshot_valid(data: &Value) -> bool {
                             || a["load_factor"]
                                 .as_u64()
                                 .is_some_and(|n| (1..=10000).contains(&n)))
-                        && (a["usage"].is_null() || a["usage"]["windows"].is_array())
+                        && (a["usage"].is_null() || usage_valid(&a["usage"]))
                         && (a["recovery_monitor"].is_null()
                             || ["status", "label", "reason"]
                                 .iter()
@@ -110,6 +110,58 @@ fn snapshot_valid(data: &Value) -> bool {
             })
         && data["errors"].is_array()
         && recoveries_valid(&data["recoveries"])
+}
+
+fn usage_valid(data: &Value) -> bool {
+    let stats = |v: &Value| {
+        v.is_null()
+            || ["requests", "tokens", "cost", "standard_cost", "user_cost"]
+                .iter()
+                .all(|k| v[*k].as_f64().is_some_and(|n| n.is_finite() && n >= 0.0))
+    };
+    data["branch"].is_string()
+        && data["actions"].is_array()
+        && stats(&data["today"])
+        && data["windows"].as_array().is_some_and(|windows| {
+            windows.iter().all(|w| {
+                w["key"].is_string()
+                    && w["label"].is_string()
+                    && w["source"].is_string()
+                    && matches!(
+                        w["status"].as_str(),
+                        Some("known" | "unknown" | "stale" | "error")
+                    )
+                    && (w["used_percent"].is_null()
+                        || w["used_percent"]
+                            .as_f64()
+                            .is_some_and(|v| v.is_finite() && v >= 0.0))
+                    && stats(&w["stats"])
+                    && ["reset_at", "observed_at"]
+                        .iter()
+                        .all(|k| w[*k].is_null() || w[*k].is_string())
+                    && (w["estimated"].is_null() || w["estimated"].is_boolean())
+            })
+        })
+        && (data["balances"].is_null()
+            || data["balances"].as_array().is_some_and(|items| {
+                items.iter().all(|v| {
+                    v["currency"].is_string()
+                        && v["balance"].as_f64().is_some_and(f64::is_finite)
+                        && (v["status"].is_null()
+                            || matches!(
+                                v["status"].as_str(),
+                                Some("known" | "unknown" | "stale" | "error")
+                            ))
+                        && (v["observed_at"].is_null() || v["observed_at"].is_string())
+                })
+            }))
+        && (data["native_read"].is_null() || data["native_read"].is_boolean())
+        && (data["status"].is_null()
+            || matches!(
+                data["status"].as_str(),
+                Some("known" | "unavailable" | "error" | "authorization_required")
+            ))
+        && (data["message"].is_null() || data["message"].is_string())
 }
 
 fn operation_valid(data: &Value) -> bool {
@@ -556,6 +608,7 @@ fn detection_logs_valid(data: &Value) -> bool {
 fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
+        p if p.starts_with("/accounts/") && p.ends_with("/usage") => usage_valid(data),
         "/config" => {
             ["oauth", "bark", "key_fallback"]
                 .iter()
@@ -693,7 +746,14 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["source"].is_string()
                 && data["status"].is_string()
         }
-        "/quota-refresh" => data["status"].is_string() && data["items"].is_array(),
+        "/quota-refresh" => {
+            data["status"].is_string()
+                && data["items"].as_array().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|item| item["usage"].is_null() || usage_valid(&item["usage"]))
+                })
+        }
         p if p.ends_with("/models") => data
             .as_array()
             .is_some_and(|m| m.iter().all(|v| v["id"].is_string())),
@@ -835,7 +895,7 @@ pub(crate) async fn http_detailed(
     if path.starts_with("/proxies/") {
         req = req.timeout(Duration::from_secs(105));
     }
-    if path.ends_with("/usage-action") {
+    if path.ends_with("/usage-action") || path.ends_with("/usage") {
         req = req.timeout(Duration::from_secs(105));
     }
     if method == "DELETE" || path.ends_with("/recover-state") {
@@ -970,6 +1030,42 @@ pub(crate) async fn http_detailed(
 mod tests {
     use super::*;
     use std::{io::Read, net::TcpListener};
+
+    #[test]
+    fn native_usage_summary_validates_balances_windows_and_missing_values() {
+        let data = serde_json::json!({"branch":"native","native_read":true,"status":"known","actions":["query_usage"],"today":null,
+            "windows":[{"key":"shared","label":"共享 1d","source":"local_estimate","estimated":true,"status":"known","used_percent":0,"observed_at":null,"reset_at":null}],
+            "balances":[{"currency":"CNY","balance":0,"status":"stale","observed_at":null}]});
+        assert!(shape_valid("/accounts/1/usage", &data));
+        assert!(shape_valid(
+            "/quota-refresh",
+            &serde_json::json!({"status":"completed","items":[{"usage":data}]})
+        ));
+        assert!(!shape_valid(
+            "/quota-refresh",
+            &serde_json::json!({"status":"completed","items":[{"usage":{"windows":[]}}]})
+        ));
+        for (field, value) in [
+            (
+                "balances",
+                serde_json::json!([{"currency":"USD","balance":"unknown"}]),
+            ),
+            (
+                "windows",
+                serde_json::json!([{"key":"x","label":"x","source":"passive","status":"known","used_percent":-1}]),
+            ),
+            ("today", serde_json::json!({"requests":1})),
+        ] {
+            let mut invalid = data.clone();
+            invalid[field] = value;
+            assert!(!shape_valid("/accounts/1/usage", &invalid));
+        }
+        for status in ["error", "unavailable", "authorization_required"] {
+            let mut data = data.clone();
+            data["status"] = status.into();
+            assert!(shape_valid("/accounts/1/usage", &data));
+        }
+    }
 
     #[test]
     fn capabilities_accepts_existing_and_android_clients() {
