@@ -169,6 +169,14 @@ describe("group manager drafts", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it("does not render the removed independent group selector", async () => {
+    await act(async () => render([account(1, "Alpha", [1]), account(2, "Beta", [2]), account(5, "Third", [3])]));
+
+    expect(container.querySelector(".group-pair-selectors")).toBeNull();
+    expect(container.textContent).not.toContain("左侧分组");
+    expect(container.textContent).not.toContain("右侧分组");
+  });
+
   it("keeps moves local until apply, submits one groups batch, and preserves failed drafts", async () => {
     const accounts = [
       account(1, "Alpha", [1]),

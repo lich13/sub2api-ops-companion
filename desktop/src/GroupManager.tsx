@@ -13,7 +13,6 @@ type Drag = { id: number; x: number; y: number; zone?: Zone };
 export default function GroupManager(props: Props) {
   const { accounts, groups, online, mobile, active } = props;
   const [platform, setPlatform] = useState("openai"), [query, setQuery] = useState("");
-  const [pairs, setPairs] = useState<Record<string, number[]>>({});
   const [drafts, setDrafts] = useState<Drafts>({}), [history, setHistory] = useState<Drafts[]>([]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [busy, setBusy] = useState(false), [expanded, setExpanded] = useState(false), [message, setMessage] = useState("");
@@ -22,8 +21,7 @@ export default function GroupManager(props: Props) {
   const batchRequest = useRef<{ signature: string; id: string } | null>(null);
   latest.current = props; draftRef.current = drafts; dragRef.current = drag;
   const available = platformGroups(groups, platform);
-  const valid = (pairs[platform] ?? []).filter((id) => available.some((g) => g.id === id));
-  const pair = [...valid, ...available.map((g) => g.id).filter((id) => !valid.includes(id))].slice(0, 2);
+  const pair = available.slice(0, 2).map((group) => group.id);
   const pairRef = useRef(pair); pairRef.current = pair;
   const pending = Object.values(drafts), conflicts = pending.filter((d) => draftConflict(d, accounts, groups));
   const candidates = accounts.filter((a) => a.platform === platform).sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id);
@@ -150,7 +148,6 @@ export default function GroupManager(props: Props) {
       <label className="group-search"><Search size={16}/><input value={query} placeholder="搜索名称或账号 ID" aria-label="搜索分组账号" onChange={(e) => setQuery(e.target.value)}/></label>
       <button className="icon-button" aria-label="刷新分组" disabled={!online || busy} onClick={() => void command("refresh").catch(props.report)}><RefreshCw size={17}/></button>
     </div>
-    {available.length > 2 && <div className="group-pair-selectors">{[0, 1].map((side) => <label key={side}>{side ? "右侧分组" : "左侧分组"}<select value={pair[side]} disabled={busy || !!drag} onChange={(e) => { const next = [...pair]; next[side] = Number(e.target.value); setPairs({ ...pairs, [platform]: next }); }}>{available.filter((g) => g.id !== pair[1 - side]).map((g) => <option key={g.id} value={g.id}>{g.name} #{g.id}</option>)}</select></label>)}</div>}
     {available.length > 0 && <><div className="group-map-heading">{pair.map((id, index) => <div key={id} className={index ? "group-heading-right" : "group-heading-left"}><i/><div><strong>{groupName(id)}</strong><span>#{id}</span></div><b>{candidates.filter((a) => members(a).includes(id)).length}</b></div>)}</div>
       <div className={`group-map${pair.length === 1 ? " single" : ""}`}><div className="group-outline outline-left"/>{pair.length > 1 && <div className="group-outline outline-right"/>}{zone("left", pair.length > 1 ? `仅 ${groupName(pair[0])}` : groupName(pair[0]), region("left"))}{pair.length > 1 && <>{zone("both", "两组共有", region("both"))}{zone("right", `仅 ${groupName(pair[1])}`, region("right"))}</>}</div></>}
     {!available.length && <div className="group-no-groups"><Layers3 size={24}/><span>此平台没有分组</span></div>}
