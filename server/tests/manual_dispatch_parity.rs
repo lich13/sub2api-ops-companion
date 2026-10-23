@@ -423,7 +423,6 @@ impl Harness {
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -690,7 +689,7 @@ async fn seed_intent(harness: &Harness, row: &Value, status: &str, at: DateTime<
     let snapshot = harness.runtime.monitor.state().unwrap();
     let result = quota::latest_result(row, &snapshot["oauth_results"][id.to_string()], at);
     let summary = quota::summary_from_result(row, &result);
-    let descriptor = recovery_rules::rate_descriptor(row, &summary);
+    let descriptor = recovery_rules::rate_descriptor(row, &summary, at);
     assert!(
         descriptor.is_object(),
         "synthetic account must have rate block evidence"
@@ -821,7 +820,7 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
         .acquire()
         .expect("hold one synthetic test slot");
     let config_guard = locked.runtime.config.lock.lock().await;
-    let fallback_guard = locked.runtime.config.fallback.lock.lock().await;
+
     for id in [first_id, second_id] {
         let response =
             tokio::time::timeout(StdDuration::from_secs(3), locked.set_schedulable(id, false))
@@ -843,7 +842,7 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     assert_eq!(locked.mock.count("POST", "/recover-state"), 0);
     assert_eq!(locked.mock.count("POST", "/schedulable"), 2);
     assert!(locked.mock.unexpected().is_empty());
-    drop(fallback_guard);
+
     drop(config_guard);
     drop(held_slot);
     drop(second_lease);
@@ -885,7 +884,6 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
         .acquire()
         .expect("hold the one test slot");
     let config_guard = harness.runtime.config.lock.lock().await;
-    let fallback_guard = harness.runtime.config.fallback.lock.lock().await;
 
     let response = tokio::time::timeout(
         StdDuration::from_secs(3),
@@ -904,7 +902,6 @@ async fn manual_control_preempts_an_inflight_monitor_request_and_busy_runtime_lo
     assert_eq!(control["generation"], 1);
     assert_eq!(control["enabled"], false);
 
-    drop(fallback_guard);
     drop(config_guard);
     drop(test_slot);
     gate.release.notify_one();

@@ -307,10 +307,6 @@ function recoveryLabel(page, form, mode, id) {
     .locator("label.check-account").filter({ hasText: new RegExp(`#${id}$`) });
 }
 
-function fallbackRow(form, id) {
-  return form.locator(".fallback-account").filter({ hasText: new RegExp(`#${id}\\s*·`) });
-}
-
 async function unchangedConfig(h, baseline) {
   const current = (await fixtureData(h.page)).config;
   await h.state(isDeepStrictEqual(current, baseline), "draft-wrote-synthetic-config");
@@ -961,11 +957,8 @@ async function featureChecks(h, baseline) {
   const { page } = h;
   await h.navigate("功能", "features");
   const oauth = configForm(page, "恢复、测活与模型检测");
-  const fallback = configForm(page, "Key 调度回退");
   await h.visible(oauth, "oauth-config-form");
-  await h.visible(fallback, "fallback-config-form");
   await h.state(await oauth.getByRole("button", { name: "保存", exact: true }).isDisabled(), "oauth-initial-draft-dirty");
-  await h.state(await fallback.getByRole("button", { name: "保存", exact: true }).isDisabled(), "key-initial-draft-dirty");
 
   h.phase = "features/recovery-search-and-exclusion";
   const search = oauth.getByRole("textbox", { name: "搜索恢复账号", exact: true });
@@ -998,34 +991,6 @@ async function featureChecks(h, baseline) {
   await unchangedConfig(h, baseline);
   await h.layout();
 
-  h.phase = "features/key-coexist-draft";
-  for (const [id, initiallyManaged] of [[389, true], [390, false]]) {
-    const row = fallbackRow(fallback, id);
-    const managedLabel = row.locator("label.check-account:not(.coexist-option)");
-    const coexistLabel = row.locator("label.coexist-option");
-    const managed = managedLabel.getByRole("checkbox");
-    const coexist = coexistLabel.getByRole("checkbox");
-    await h.within(managedLabel, "key-managed-label", { hit: true });
-    await h.within(coexistLabel, "key-coexist-label", { hit: true });
-    await h.within(coexist, "key-coexist-checkbox", { touch: false });
-    await h.state(await managed.isChecked() === initiallyManaged, "unexpected-key-management-fixture", managedLabel);
-    await h.state(await coexist.isDisabled() === !initiallyManaged, "key-coexist-disabled-state", coexistLabel);
-    await h.state(!(await coexist.isChecked()), "unexpected-key-coexist-fixture", coexistLabel);
-    if (!initiallyManaged) await managed.check();
-    await h.state(await coexist.isEnabled(), "managed-key-coexist-disabled", coexistLabel);
-    await coexist.check();
-    await h.state(await coexist.isChecked(), "coexist-checkbox-did-not-check", coexistLabel);
-    await unchangedConfig(h, baseline);
-    await managed.uncheck();
-    await h.state(!(await coexist.isChecked()) && await coexist.isDisabled(), "unmanaged-key-retained-coexist", coexistLabel);
-    await managed.check();
-    await coexist.check();
-  }
-  await h.within(fallback.getByRole("button", { name: "保存", exact: true }), "key-draft-save");
-  await h.state(await fallback.getByRole("button", { name: "保存", exact: true }).isEnabled(), "key-draft-save-disabled");
-  await unchangedConfig(h, baseline);
-  await h.layout();
-
   await h.navigate("设置", "settings");
   const settings = page.locator('.page-surface[data-page="settings"]');
   await h.visible(settings.getByRole("heading", { name: "客户端", exact: true }), "client-settings");
@@ -1037,16 +1002,9 @@ async function featureChecks(h, baseline) {
 
   await h.navigate("功能", "features");
   h.phase = "features/draft-not-saved";
-  await h.visible(fallback, "fallback-config-form");
   await unchangedConfig(h, baseline);
   await h.state(await oauth.getByRole("button", { name: "保存", exact: true }).isDisabled(), "recovery-draft-survived-remount");
-  await h.state(await fallback.getByRole("button", { name: "保存", exact: true }).isDisabled(), "key-draft-survived-remount");
   await h.state(await connection.getByRole("checkbox").isChecked() && !(await model.getByRole("checkbox").isChecked()), "recovery-unsaved-selection-persisted", connection);
-  for (const [id, initiallyManaged] of [[389, true], [390, false]]) {
-    const row = fallbackRow(fallback, id);
-    await h.state(await row.locator("label:not(.coexist-option) input").isChecked() === initiallyManaged, "key-unsaved-management-persisted", row);
-    await h.state(!(await row.locator(".coexist-option input").isChecked()), "key-unsaved-coexist-persisted", row);
-  }
   await h.layout();
 }
 

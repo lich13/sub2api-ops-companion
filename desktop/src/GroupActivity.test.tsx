@@ -79,7 +79,6 @@ const account: Account = {
   available: false,
   group_ids: [5, 8, 11, 20],
   blockers: [],
-  managed: false,
   version: "account-73-version",
   last_success_at: null,
   last_error_at: "2026-09-29T23:00:00Z",
@@ -123,7 +122,6 @@ function quickAccount(id: number, name: string, overrides: Partial<Account> = {}
     group_ids: [],
     blockers: [],
     recoverable: false,
-    managed: false,
     version: `account-${id}-version`,
     last_success_at: null,
     last_error_at: null,
@@ -319,7 +317,7 @@ describe("quick group activity", () => {
     expect(api).toHaveBeenCalledWith("POST", "/accounts/73/schedulable", {
       schedulable: true,
       expected_version: "account-73-version",
-      detach_managed: false,
+
     });
 
     await act(async () => {
@@ -340,7 +338,7 @@ describe("quick group activity", () => {
         {
           schedulable: true,
           expected_version: "account-73-version",
-          detach_managed: false,
+
         },
       ],
     ]);

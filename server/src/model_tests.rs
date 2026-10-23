@@ -291,7 +291,7 @@ impl ModelTests {
         let row = model_target::account(&self.actions, id).await?;
         let live = self.actions.account(id, None).await?;
         let conflict = if truthy(&payload["expected_operation_version"]) {
-            operation_versions(&live, false)["model_test"] != payload["expected_operation_version"]
+            operation_versions(&live)["model_test"] != payload["expected_operation_version"]
         } else {
             crate::compat::account_version(&live) != payload["expected_version"]
         };

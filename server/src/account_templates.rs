@@ -125,7 +125,7 @@ pub fn account_row(row: &Value) -> Value {
     value
 }
 pub fn account_version(row: &Value) -> Value {
-    crate::compat::operation_versions(&account_row(row), false)["account_template"].clone()
+    crate::compat::operation_versions(&account_row(row))["account_template"].clone()
 }
 fn sync_custom(data: &mut Value) {
     data["custom_templates"] = data["template_order"]

@@ -12,14 +12,14 @@ describe('durable operations', () => {
     const batch: OperationBatch = {
       batch_id: 'b'.repeat(32),
       pending: 0,
-      items: [{ ...job, batch_id: 'b'.repeat(32), action: 'delete', status: 'completed', requested: { detach_managed: true } }],
+      items: [{ ...job, batch_id: 'b'.repeat(32), action: 'delete', status: 'completed', requested: {} }],
     };
     vi.mocked(api).mockResolvedValue(batch);
     const requestId = 'request-delete-1';
-    await submitAccountBatch('delete', [{ account_id: 421, expected_version: account.version, payload: { detach_managed: true } }], requestId);
+    await submitAccountBatch('delete', [{ account_id: 421, expected_version: account.version, payload: {} }], requestId);
     expect(api).toHaveBeenCalledExactlyOnceWith('POST', '/account-operations/batch', {
       action: 'delete', payload: { confirmed: true },
-      accounts: [{ account_id: 421, expected_version: account.version, payload: { detach_managed: true } }],
+      accounts: [{ account_id: 421, expected_version: account.version, payload: {} }],
       request_id: requestId, client_id: expect.any(String),
     });
     expect(getOperations()).toEqual(batch.items);

@@ -22,6 +22,75 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle};
 
+fn strict_id(value: &Value) -> Option<i64> {
+    if let Some(id) = value.as_i64() {
+        return (id > 0).then_some(id);
+    }
+    let value = value.as_str()?.trim();
+    if !value.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let id = value.parse::<i64>().ok()?;
+    (id > 0 && id.to_string() == value).then_some(id)
+}
+
+pub fn schedulable_response_matches(body: &Value, id: i64, schedulable: bool) -> bool {
+    if !body.is_object()
+        || !(body["code"] == 0 || body["code"] == "0")
+        || !body["data"].is_object()
+        || body["data"].get("schedulable").is_none()
+    {
+        return false;
+    }
+    let (observed, ok) = crate::settings::strict_bool(&body["data"]["schedulable"], false);
+    ok && observed == schedulable
+        && body["data"]
+            .get("id")
+            .is_none_or(|v| strict_id(v) == Some(id))
+}
+
+pub async fn set_schedulable(
+    actions: &Actions,
+    id: i64,
+    enabled: bool,
+    key: &str,
+    seconds: u64,
+) -> Value {
+    if actions.settings.read_only {
+        return json!({"success":false,"error_code":"read_only"});
+    }
+    if key.trim().is_empty() || actions.upstream.active_url().is_empty() {
+        return json!({"success":false,"error_code":"missing_sub2api_admin_credentials","error":"缺少 Sub2API 地址或 Admin API Key"});
+    }
+    match actions
+        .request(
+            reqwest::Method::POST,
+            &format!("accounts/{id}/schedulable"),
+            key,
+            Some(&json!({"schedulable":enabled})),
+            Duration::from_secs(seconds.clamp(2, 60)),
+            false,
+        )
+        .await
+    {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            let body = match read_limited(response, 2_000_000).await {
+                Ok(raw) => serde_json::from_slice(&raw).unwrap_or(Value::Null),
+                Err(_) => Value::Null,
+            };
+            if (200..300).contains(&status) && schedulable_response_matches(&body, id, enabled) {
+                json!({"success":true,"status_code":status,"data":body["data"]})
+            } else {
+                json!({"success":false,"status_code":status,"error_code":if (200..300).contains(&status) {"invalid_schedulable_response".into()} else {format!("http_{status}")}})
+            }
+        }
+        Err(error) => {
+            json!({"success":false,"error_code":if error.status.as_u16()==504 {"timeout"} else {"network_error"}})
+        }
+    }
+}
+
 pub const EDIT_ACTIONS: &[&str] = &[
     "priority",
     "concurrency",
@@ -36,14 +105,11 @@ pub const TEST_MODES: &[&str] = &[
 pub struct OperationContext {
     pub action: String,
     pub expected: String,
-    pub managed: bool,
 }
 tokio::task_local! {pub static OPERATION: OperationContext;}
 pub fn version_matches(row: &Value, expected: &str) -> bool {
     OPERATION
-        .try_with(|context| {
-            operation_versions(row, context.managed)[&context.action] == context.expected
-        })
+        .try_with(|context| operation_versions(row)[&context.action] == context.expected)
         .unwrap_or_else(|_| account_version(row) == expected)
 }
 #[derive(Clone)]
@@ -311,7 +377,7 @@ impl Actions {
         }
         let row = self.account(id, None).await?;
         Ok(
-            json!({"account_id":id,"priority":integer(&row["priority"]).unwrap_or(0),"concurrency":row["concurrency"],"load_factor":row["load_factor"],"effective_load_factor":if truthy(&row["load_factor"]) {row["load_factor"].clone()} else if truthy(&row["concurrency"]) {row["concurrency"].clone()} else {json!(1)},"proxy_id":row["proxy_id"],"model_config":account_templates::split(&row["model_mapping"])? ,"capabilities":settings_capabilities(&row),"versions":crate::compat::pick(&operation_versions(&row,false),EDIT_ACTIONS)}),
+            json!({"account_id":id,"priority":integer(&row["priority"]).unwrap_or(0),"concurrency":row["concurrency"],"load_factor":row["load_factor"],"effective_load_factor":if truthy(&row["load_factor"]) {row["load_factor"].clone()} else if truthy(&row["concurrency"]) {row["concurrency"].clone()} else {json!(1)},"proxy_id":row["proxy_id"],"model_config":account_templates::split(&row["model_mapping"])? ,"capabilities":settings_capabilities(&row),"versions":crate::compat::pick(&operation_versions(&row),EDIT_ACTIONS)}),
         )
     }
     pub async fn proxies(&self, key: &str) -> Result<Vec<Value>> {
@@ -352,7 +418,7 @@ impl Actions {
         let _lease = self.locks.try_account(&row)?;
         let live = self.account(id, None).await?;
         if live["parent_account_id"] != original_parent
-            || operation_versions(&live, false)[action] != expected
+            || operation_versions(&live)[action] != expected
         {
             return Err(Error::new(
                 409,
@@ -373,7 +439,7 @@ impl Actions {
         {
             return Err(Error::new(409, "所选代理已不可用，请重新选择"));
         }
-        if operation_versions(&self.account(id, None).await?, false)[action] != expected {
+        if operation_versions(&self.account(id, None).await?)[action] != expected {
             return Err(Error::new(409, "相关字段已变化，请核对后重新提交"));
         }
         let scalar = matches!(action, "priority" | "concurrency" | "load_factor");
@@ -465,7 +531,7 @@ impl Actions {
             }
             let mut result = current_value(&actual, action)?;
             result["verified"] = true.into();
-            let versions = operation_versions(&actual, false);
+            let versions = operation_versions(&actual);
             result["field_version"] = versions[action].clone();
             result["settings_versions"] = crate::compat::pick(&versions, EDIT_ACTIONS);
             result

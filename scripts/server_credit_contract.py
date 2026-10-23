@@ -43,7 +43,6 @@ IMPLEMENTATION_PATHS = (
     "server/src/error.rs",
     "server/src/error_evidence.rs",
     "server/src/execution.rs",
-    "server/src/key_fallback.rs",
     "server/src/oauth_admission.rs",
     "server/src/oauth_native.rs",
     "server/src/oauth_queries.rs",

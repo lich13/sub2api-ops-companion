@@ -37,7 +37,6 @@ impl Runtime {
             return Ok(cache.snapshot.clone());
         }
         let now = chrono::Utc::now();
-        let managed = self.config.fallback.load().ids.into_iter().collect();
         let state = self.actions.queries.oauth.snapshot()?;
         let rows = self.actions.queries.accounts().await?;
         let mut specs = vec![];
@@ -47,7 +46,7 @@ impl Runtime {
             let meta = &state["scheduler"][id.to_string()];
             let result =
                 queries::latest_completed_result(&state["oauth_results"][id.to_string()], meta);
-            let mut account = queries::account_dto(row, now, &managed, &result);
+            let mut account = queries::account_dto(row, now, &result);
             account["usage"] = usage::project(row, now, &result);
             account["auto_reset_credit"] = crate::credit_rules::project(
                 &meta["auto_reset_credit"],

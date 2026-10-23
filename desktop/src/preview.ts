@@ -15,7 +15,6 @@ const accounts: Account[] = [
     available: true,
     group_ids: [1],
     blockers: [],
-    managed: false,
     version: "a".repeat(64),
     last_success_at: now,
     last_error_at: null,
@@ -57,7 +56,6 @@ const accounts: Account[] = [
     available: false,
     group_ids: [1],
     blockers: [{ code: "reauth", label: "需要重新认证" }],
-    managed: false,
     version: "b".repeat(64),
     last_success_at: before,
     last_error_at: now,
@@ -89,7 +87,6 @@ const accounts: Account[] = [
     available: false,
     group_ids: [2],
     blockers: [{ code: "rate_limit_reset_at", label: "限流中", until: new Date(Date.now() + (11 * 24 + 19) * 3600_000).toISOString() }],
-    managed: false,
     version: "c".repeat(64),
     last_success_at: before,
     last_error_at: now,
@@ -136,7 +133,6 @@ const accounts: Account[] = [
     available: false,
     group_ids: [1],
     blockers: [{ code: "disabled", label: "调度已关闭" }],
-    managed: true,
     version: "d".repeat(64),
     last_success_at: null,
     last_error_at: null,
@@ -207,7 +203,6 @@ accounts.push({
   name: "Grok · 按量 Key",
   group_ids: [2],
   platform: "grok",
-  managed: false,
   usage: {
     branch: "apikey",
     windows: [
@@ -255,11 +250,11 @@ accounts.push({
   },
 });
 if (new URLSearchParams(location.search).get("scenario") === "native-usage") {
-  accounts.push({ ...accounts[3], id: 392, name: "Claude · Key", platform: "anthropic", type: "apikey", managed: false,
+  accounts.push({ ...accounts[3], id: 392, name: "Claude · Key", platform: "anthropic", type: "apikey",
     usage: { branch: "apikey", windows: [], today: stats, actions: [], reset_credits: null } });
-  accounts.push({ ...accounts[3], id: 393, name: "Gemini · 配额", platform: "gemini", type: "service_account", managed: false,
+  accounts.push({ ...accounts[3], id: 393, name: "Gemini · 配额", platform: "gemini", type: "service_account",
     usage: { branch: "native", native_read: true, status: "known", windows: [{ key: "gemini_shared_daily", label: "共享 1d", used_percent: 0, observed_at: now, reset_at: new Date(Date.now()+3600000).toISOString(), status: "known", source: "local_estimate", estimated: true }], today: stats, actions: ["query_usage"], reset_credits: null } });
-  accounts.push({ ...accounts[3], id: 394, name: "DeepSeek · 余额", platform: "deepseek", type: "apikey", managed: false,
+  accounts.push({ ...accounts[3], id: 394, name: "DeepSeek · 余额", platform: "deepseek", type: "apikey",
     usage: { branch: "apikey", native_read: true, status: "known", windows: [], today: stats, balances: [{ currency: "USD", balance: 0, status: "known", observed_at: now }, { currency: "CNY", balance: 42, status: "known", observed_at: now }], actions: ["query_usage"], reset_credits: null } });
 }
 let state: ViewState = {
@@ -415,13 +410,6 @@ const config: Config = {
     model_detection_model_id: "gpt-6-luna",
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
-  key_fallback: {
-    revision: "4".repeat(64),
-    openai_enabled: false,
-    grok_enabled: false,
-    managed_account_ids: [389],
-    coexist_account_ids: [],
-  },
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
@@ -575,7 +563,6 @@ export async function run(
         changes: Record<string, unknown>;
         expected_revision: string;
         schedulable: boolean;
-        detach_managed: boolean;
         priority: number;
       } | null;
 
@@ -591,7 +578,7 @@ export async function run(
           (a) => a.account_id !== id,
         );
       emit();
-      return { deleted: true, verified: true, detached: account.managed };
+      return { deleted: true, verified: true };
     }
     if (path.endsWith("/recover-state")) {
       const account = state.snapshot?.accounts.find(
@@ -682,7 +669,6 @@ export async function run(
       if (a && body) {
         if (path.endsWith("/priority")) a.priority = body.priority;
         else a.schedulable = body.schedulable;
-        if (body.detach_managed) a.managed = false;
         emit();
       }
       return { verified: true };

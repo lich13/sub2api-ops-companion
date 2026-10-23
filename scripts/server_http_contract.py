@@ -627,7 +627,7 @@ class ContractSuite:
     def _config(self) -> dict[str, object]:
         response = self.expect_status("GET", API + "/config", (200,), headers=self.admin_headers())
         value = response.body
-        require(isinstance(value, dict) and {"oauth", "bark", "key_fallback"} <= set(value),
+        require(isinstance(value, dict) and {"oauth", "bark"} <= set(value),
                 "config response lacks a public section")
         for section in value.values():
             require(isinstance(section, dict) and bool(re.fullmatch(r"[a-f0-9]{64}", str(section.get("revision", "")))),
@@ -638,7 +638,10 @@ class ContractSuite:
         if self.rust_runtime:
             require(value["oauth"].get("model_detection_model_id") == "gpt-6-luna",
                     "global automatic detection model default differs")
-        return {"sections": sorted(value), "secret_markers_returned": 0}
+        if self.rust_runtime:
+            require("key_fallback" not in value, "retired Key fallback config is still exposed")
+            self.expect_status("PUT", API + "/config/key_fallback", (404,), headers=self.admin_headers(), body={"changes": {}})
+        return {"sections": sorted(set(value) - {"key_fallback"}), "secret_markers_returned": 0}
 
     def _detection_logs(self) -> dict[str, object]:
         path = API + "/detection-logs"
@@ -953,7 +956,7 @@ class ServiceProcess:
             "AUDIT_PATH": str(state / "audit.jsonl"),
             "OAUTH_CONFIG_PATH": str(state / "oauth-config.json"),
             "BARK_CONFIG_PATH": str(state / "bark-config.json"),
-            "KEY_FALLBACK_CONFIG_PATH": str(state / "key-fallback-config.json"),
+
             "GROUP_MODEL_CONFIG_PATH": str(state / "group-model-config.json"),
             "KEEPALIVE_CONFIG_PATH": str(state / "keepalive-state.json"),
             "OAUTH_RECOVERY_MONITOR_ENABLED": "false",

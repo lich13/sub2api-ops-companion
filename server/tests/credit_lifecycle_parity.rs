@@ -743,7 +743,6 @@ impl Harness {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: state_path,
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),

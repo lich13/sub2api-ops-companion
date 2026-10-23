@@ -17,10 +17,10 @@ use std::{
 };
 use sub2ops_server::{
     account_locks::AccountLocks, account_templates, actions::Actions, capacity_alerts,
-    capacity_alerts::CapacityAlerts, compat, db::Database, error_evidence, key_fallback,
-    model_catalog, model_config::ModelConfig, model_reasoning, model_rules, model_target,
-    oauth_state::OAuthState, queries::Queries, quota, recovery_rules, runtime::Runtime,
-    settings::Settings, slow_ttft, upstream::Upstream, usage,
+    capacity_alerts::CapacityAlerts, compat, db::Database, error_evidence, model_catalog,
+    model_config::ModelConfig, model_reasoning, model_rules, model_target, oauth_state::OAuthState,
+    queries::Queries, quota, recovery_rules, runtime::Runtime, settings::Settings, slow_ttft,
+    upstream::Upstream, usage,
 };
 
 const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
@@ -720,7 +720,6 @@ fn test_settings(
         usage_path: root.join("oauth-state.json"),
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
-        fallback_path: root.join("key-fallback-config.json"),
         connection_path,
         model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),
@@ -1286,7 +1285,7 @@ async fn account_quality_detail_route_is_removed() {
 }
 
 #[test]
-fn quota_windows_oauth_availability_and_recovery_match_pinned_python() {
+fn quota_windows_latest_result_and_recovery_match_pinned_python() {
     let document = fixtures();
     let input = &document["quota"];
     for case in input["windows"].as_array().unwrap() {
@@ -1302,19 +1301,7 @@ fn quota_windows_oauth_availability_and_recovery_match_pinned_python() {
         );
     }
 
-    for case in input["classification"].as_array().unwrap() {
-        let actual = key_fallback::oauth_state(
-            &case["row"],
-            &case["result"],
-            at(&input["at"]),
-            case["freshness_seconds"].as_i64().unwrap(),
-        );
-        assert_eq!(
-            actual,
-            case["expected_state"].as_str().unwrap(),
-            "quota availability {}",
-            case["id"]
-        );
+    for case in input["latest_results"].as_array().unwrap() {
         if !case["error_result"].is_null() {
             assert_json_numbers_equal(
                 &quota::latest_result(&case["row"], &case["error_result"], at(&input["at"])),

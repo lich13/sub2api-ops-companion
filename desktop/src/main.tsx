@@ -147,7 +147,6 @@ export default function App() {
     [busy, setBusy] = useState<number | null>(null),
     [detail, setDetail] = useState<OpsError | null>(null),
     [detailBusy, setDetailBusy] = useState(false),
-    [confirm, setConfirm] = useState<Account | null>(null),
     [query, setQuery] = useState(""),
     [group, setGroup] = useState(""),
     [platform, setPlatform] = useState(""),
@@ -192,7 +191,6 @@ export default function App() {
   useBackAction(!!leaveGroups, () => { leaveGroups?.(false); setLeaveGroups(null); });
   useBackAction(filtersOpen, () => setFiltersOpen(false));
   useBackAction(!!detail || detailBusy, closeDetail);
-  useBackAction(!!confirm, () => setConfirm(null));
   useEffect(() => {
     if (!mobile) return;
     let disposed = false, off = () => {};
@@ -202,7 +200,7 @@ export default function App() {
     }).then((unsubscribe) => { if (disposed) unsubscribe(); else off = unsubscribe; });
     return () => { disposed = true; off(); };
   }, [mobile, page]);
-  const quickBody = useQuickHeight(quick, !!detail || detailBusy || !!confirm);
+  const quickBody = useQuickHeight(quick, !!detail || detailBusy);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
   const connectionBatch = useConnectionBatch({ connectionKey, storageKey: state.preferences.base_url,
@@ -229,7 +227,6 @@ export default function App() {
     setKeepaliveAccount(null);
     setSettingsAccount(null);
     setProxyAccounts(null);
-    setConfirm(null);
     schedulePending.current = false; setBusy(null);
     setGroupsOpen(false);
     setFiltersOpen(false);
@@ -285,14 +282,13 @@ export default function App() {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing) return;
       if (testAccount) setTestAccount(null);
-      else if (confirm) setConfirm(null);
       else if (detail || detailBusy) {
         closeDetail();
       } else if (quick) void command("hide_quick").catch(report);
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [confirm, detail, detailBusy, testAccount]);
+  }, [detail, detailBusy, testAccount]);
   useEffect(() => {
     let disposed = false;
     if (state.online && (page === "settings" || page === "features"))
@@ -346,19 +342,13 @@ export default function App() {
       report(e);
     }
   }
-  async function toggle(a: Account, detach = false) {
+  async function toggle(a: Account) {
     if (!state.online || schedulePending.current) return;
-    if (a.managed && !detach) {
-      setConfirm(a);
-      return;
-    }
-    setConfirm(null);
     const epoch = operationEpoch();
     schedulePending.current = true; setBusy(a.id);
     try {
       const result = await accountOperation<{ verified: boolean }>(a, "schedulable", {
         schedulable: !a.schedulable,
-        detach_managed: detach,
       });
       if (!result.verified) throw new Error("调度写入未确认，请刷新查看实际状态");
       if (operationEpoch() === epoch) {
@@ -772,7 +762,6 @@ export default function App() {
                         <option value="">全部状态</option>
                         <option value="ready">可调度</option>
                         <option value="off">调度关闭</option>
-                        <option value="managed">回退托管</option>
                         <option value="error">曾有错误</option>
                       </select>
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
@@ -908,11 +897,6 @@ export default function App() {
                                     : a.type === "apikey"
                                       ? "Key"
                                       : a.type}
-                                  {a.managed && (
-                                    <span className="managed-tag">
-                                      回退托管
-                                    </span>
-                                  )}
                                 </small>
                                 <DegradationBadge account={a}/><AccountOperationStatus id={a.id}/>
                               </td>
@@ -1161,32 +1145,7 @@ export default function App() {
           </aside>
         </div>
       )}
-      {confirm && (
-        <div className="modal-backdrop">
-          <section
-            className="modal"
-            role="alertdialog"
-            aria-labelledby="confirm-title"
-          >
-            <ShieldCheck size={26} />
-            <h2 id="confirm-title">解除该账号的回退托管？</h2>
-            <p>
-              「{confirm.name}」正在由 Key
-              回退管理。继续后将取消此账号的托管选择，并
-              {confirm.schedulable ? "关闭" : "打开"}调度。
-            </p>
-            <footer>
-              <button onClick={() => setConfirm(null)}>取消</button>
-              <button
-                className="primary"
-                onClick={() => void toggle(confirm, true)}
-              >
-                解除托管并{confirm.schedulable ? "关闭" : "打开"}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
+
       {testAccount && (
         <TestDialog
           account={accounts.find((a) => a.id === testAccount.id) ?? testAccount}
@@ -1365,43 +1324,6 @@ function SettingsPage({
                 ))}
                 {typeof config.oauth.model_detection_model_id !== "string" && <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
                 <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>
-              </>
-            )}
-          </ConfigForm>
-          <ConfigForm
-            section="key_fallback"
-            title="Key 调度回退"
-            value={config.key_fallback}
-            online={state.online}
-            onChange={onChange}
-            onMessage={onMessage}
-            onError={onError}
-          >
-            {(draft, set) => (
-              <>
-                {["openai", "grok"].map((p) => (
-                  <div className="platform-settings" key={p}>
-                    <Field
-                      label={`${p === "openai" ? "OpenAI" : "Grok"} 自动回退`}
-                      value={draft[`${p}_enabled`]}
-                      set={(v) => set(`${p}_enabled`, v)}
-                    />
-                    {accounts.filter(a => a.platform === p && a.type === "apikey").map(a => {
-                      const managed = (draft.managed_account_ids as number[]) ?? [];
-                      const coexist = (draft.coexist_account_ids as number[]) ?? [];
-                      return <div className="fallback-account" key={a.id}>
-                        <label className="check-account"><input type="checkbox" checked={managed.includes(a.id)} onChange={e => {
-                          set("managed_account_ids", e.target.checked ? [...managed, a.id] : managed.filter(id => id !== a.id));
-                          if (!e.target.checked) set("coexist_account_ids", coexist.filter(id => id !== a.id));
-                        }}/><span>{a.name}<small>#{a.id} · {a.platform}</small></span></label>
-                        <label className="check-account coexist-option"><input type="checkbox" disabled={!managed.includes(a.id)} checked={coexist.includes(a.id)} onChange={e => set("coexist_account_ids", e.target.checked ? [...coexist, a.id] : coexist.filter(id => id !== a.id))}/><span>OAuth 可用时也启用</span></label>
-                      </div>;
-                    })}
-                    {!accounts.some(
-                      (a) => a.platform === p && a.type === "apikey",
-                    ) && <p className="hint">没有可选择的 Key 账号</p>}
-                  </div>
-                ))}
               </>
             )}
           </ConfigForm>

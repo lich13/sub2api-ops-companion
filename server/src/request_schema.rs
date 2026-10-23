@@ -276,21 +276,15 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
         ["accounts", _, "schedulable"] => {
             fields(
                 value,
-                &["expected_version", "schedulable", "detach_managed"],
+                &["expected_version", "schedulable"],
                 &["expected_version", "schedulable"],
             )?;
             version(value, "expected_version")?;
             boolean(&value["schedulable"])?;
-            optional_bool(value, "detach_managed")?;
         }
         ["accounts", _] => {
-            fields(
-                value,
-                &["expected_version", "detach_managed"],
-                &["expected_version"],
-            )?;
+            fields(value, &["expected_version"], &["expected_version"])?;
             version(value, "expected_version")?;
-            optional_bool(value, "detach_managed")?;
         }
         ["accounts", _, "recover-state"] => {
             fields(value, &["expected_version"], &["expected_version"])?;

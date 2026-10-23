@@ -7,10 +7,7 @@ use crate::{
 };
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
-use std::{
-    collections::BTreeSet,
-    sync::{Arc, OnceLock, Weak},
-};
+use std::sync::{Arc, OnceLock, Weak};
 
 pub struct Hooks(pub OnceLock<Weak<Runtime>>);
 impl Hooks {
@@ -139,9 +136,6 @@ impl operations::Backend for Hooks {
             .map(|runtime| runtime.monitor.now())
             .unwrap_or_else(|_| chrono::Utc::now())
     }
-    fn managed(&self) -> Result<BTreeSet<i64>> {
-        self.runtime()?.config.fallback.managed()
-    }
     fn mark(&self, id: i64) -> Result<Value> {
         self.runtime()?.detection.mark(id)
     }
@@ -184,23 +178,6 @@ impl operations::Backend for Hooks {
     }
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>> {
         Box::pin(async move { self.runtime()?.tests.cancel(id).await })
-    }
-    fn delete_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
-        self.runtime()
-            .expect("runtime remains alive while operations are active")
-            .config
-            .fallback
-            .lock
-            .clone()
-    }
-    fn detach_deleted<'a>(&'a self, jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-            self.runtime()?
-                .config
-                .fallback
-                .detach_deleted_locked(jobs)
-                .await
-        })
     }
     fn test_config(&self) -> Result<(String, usize)> {
         let config = self.runtime()?.config.current()?;

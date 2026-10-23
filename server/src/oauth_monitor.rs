@@ -758,25 +758,6 @@ impl Monitor {
         }
         Ok(())
     }
-    pub async fn fallback(&self) -> Result<Value> {
-        // Only OpenAI depends on a committed monitor snapshot. Grok uses its
-        // own inventory and must keep evaluating while an OpenAI cycle runs.
-        let _cycle = self.cycle.try_lock().ok();
-        let state = if _cycle.is_some()
-            && self.workers.lock().await.is_empty()
-            && self.daily.lock().await.is_none()
-        {
-            self.state().ok()
-        } else {
-            None
-        };
-        self.config
-            .fallback
-            .run(self.now(), state.as_ref(), |id| {
-                self.hooks.detection_held(id)
-            })
-            .await
-    }
     pub async fn drain(&self, seconds: u64) {
         self.closed.store(true, Ordering::Release);
         let drain_workers = async {

@@ -193,7 +193,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["model-tests", _] => Some(&["GET"]),
         ["model-tests", _, "cancel" | "retry"] => Some(&["POST"]),
         ["quota-refresh"] => Some(&["GET", "POST"]),
-        ["config", "oauth" | "bark" | "key_fallback"] => Some(&["PUT"]),
+        ["config", "oauth" | "bark"] => Some(&["PUT"]),
         ["actions", "bark-test"] => Some(&["POST"]),
         ["model-groups", _, "reasoning"] => Some(&["GET", "PUT", "DELETE"]),
         ["model-groups", _, "reasoning", "resolve"] => Some(&["POST"]),
@@ -434,28 +434,18 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         ["accounts", id, "schedulable"] => {
             request_payload(
                 &payload,
-                &["schedulable", "expected_version", "detach_managed"],
+                &["schedulable", "expected_version"],
                 &["schedulable", "expected_version"],
             )?;
             version(&payload, "expected_version")?;
             validation::boolean(&payload["schedulable"])?;
-            if let Some(v) = payload.get("detach_managed") {
-                validation::boolean(v)?;
-            }
             runtime
                 .set_schedulable(path_id(id)?, &payload, &key)
                 .await?
         }
         ["accounts", id] => {
-            request_payload(
-                &payload,
-                &["expected_version", "detach_managed"],
-                &["expected_version"],
-            )?;
+            request_payload(&payload, &["expected_version"], &["expected_version"])?;
             version(&payload, "expected_version")?;
-            if let Some(v) = payload.get("detach_managed") {
-                validation::boolean(v)?;
-            }
             runtime.delete_account(path_id(id)?, &payload, &key).await?
         }
         ["accounts", id, "recover-state"] => {
@@ -478,7 +468,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 .actions
                 .account(id, Some(string(&payload["expected_version"])))
                 .await?;
-            let versions = crate::compat::operation_versions(&row, false);
+            let versions = crate::compat::operation_versions(&row);
             runtime
                 .actions
                 .apply_setting(id, "priority", &values, string(&versions["priority"]), &key)
@@ -761,7 +751,7 @@ fn test_response(runtime: Arc<Runtime>, id: i64, payload: Value, key: String) ->
         TestState::Prepare(runtime, id, payload, key),
         |state| async move {
             let state = match state {
-                TestState::Prepare(runtime, id, payload, key) => {
+                TestState::Prepare(runtime, id, mut payload, key) => {
                     let prepared = async {
                         let permit = runtime
                             .budget
@@ -772,6 +762,8 @@ fn test_response(runtime: Arc<Runtime>, id: i64, payload: Value, key: String) ->
                             .slots
                             .acquire()
                             .ok_or_else(crate::account_locks::busy)?;
+                        let row = runtime.actions.account(id, None).await?;
+                        runtime.operations.resolve_test_model(&row, &mut payload)?;
                         let lease = runtime.actions.prepare_test(id, &payload).await?;
                         Ok::<_, Error>((
                             runtime.actions.test_stream(id, payload, key, lease, false),

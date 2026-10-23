@@ -133,7 +133,6 @@ impl Harness {
             ("AUDIT_PATH", "audit.jsonl"),
             ("OAUTH_CONFIG_PATH", "oauth.json"),
             ("BARK_CONFIG_PATH", "bark.json"),
-            ("KEY_FALLBACK_CONFIG_PATH", "fallback.json"),
             ("USAGE_QUERY_STATE_PATH", "state.json"),
             ("SUB2API_CONFIG_PATH", "connection.json"),
             ("GROUP_MODEL_CONFIG_PATH", "models.json"),
@@ -684,11 +683,6 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             "config/bark",
             json!({"expected_revision":version.clone(),"changes":{}})
         ),
-        case!(
-            PUT,
-            "config/key_fallback",
-            json!({"expected_revision":version.clone(),"changes":{}})
-        ),
         case!(POST, "actions/bark-test"),
         case!(GET, "model-groups/7/reasoning"),
         case!(
@@ -718,7 +712,7 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
         ),
     ];
-    assert_eq!(cases.len(), 60);
+    assert_eq!(cases.len(), 59);
 
     let mut rejected = Vec::new();
     for (method, route, body) in cases {

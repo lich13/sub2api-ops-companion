@@ -34,7 +34,6 @@ REFERENCE_PATHS = (
     "tests/test_daily_test.py",
     "tests/test_oauth_monitor.py",
     "tests/test_usage_query.py",
-    "tests/test_key_fallback.py",
     "tests/test_recovery_selection034.py",
 )
 LEGACY_SCOPE = {
@@ -56,14 +55,6 @@ LEGACY_SCOPE = {
             "OAuthUsageTests": ("test_active_usage_uses_x_api_key_without_bearer_header",),
         },
     },
-    "tests/test_key_fallback.py": {
-        "classes": ("KeyFallbackLatestAttemptTests", "OAuthMonitorSnapshotTests"),
-        "methods": {
-            "GrokFallbackTests": (
-                "test_grok_runs_when_openai_monitor_is_busy_missing_or_failed",
-            ),
-        },
-    },
     "tests/test_recovery_selection034.py": {
         "methods": {
             "RecoverySelection034Tests": (
@@ -77,14 +68,11 @@ EXPECTED_COUNTS = {
     "daily_test": 13,
     "oauth_monitor_runtime_http_state": 32,
     "usage_query": 1,
-    "key_fallback_snapshot_extra": 3,
-    "key_fallback_latest_attempt_extra": 5,
-    "key_fallback_grok_isolation_extra": 1,
     "recovery_selection_runtime_extra": 1,
     "excluded_monitor": 8,
     "previously_mapped_oauth_queries": 2,
     "base_total": 85,
-    "total": 95,
+    "total": 86,
 }
 
 
@@ -177,7 +165,6 @@ def selected_test_ids(reference: Path) -> tuple[list[str], dict[str, int]]:
         "tests/test_daily_test.py": 13,
         "tests/test_oauth_monitor.py": 32,
         "tests/test_usage_query.py": 1,
-        "tests/test_key_fallback.py": 9,
         "tests/test_recovery_selection034.py": 1,
     }
     require(counts == expected_module_counts, f"pinned selected-test scope changed: {counts}")

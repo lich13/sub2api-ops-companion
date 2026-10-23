@@ -296,7 +296,6 @@ impl Harness {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: temp.path().join("oauth-state.json"),
             bark_path: temp.path().join("bark-state.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -1267,7 +1266,7 @@ async fn restart_continues_only_the_never_dispatched_remaining_item() {
         .account(second, None)
         .await
         .expect("read persisted first item version");
-    let verified_version = operation_versions(&first_row, false)["priority"].clone();
+    let verified_version = operation_versions(&first_row)["priority"].clone();
     harness
         .runtime
         .priorities
@@ -1395,7 +1394,7 @@ async fn queued_legacy_priority_operation_blocks_a_new_order() {
         .account(id, None)
         .await
         .expect("read legacy priority operation version");
-    let expected = operation_versions(&row, false)["priority"].clone();
+    let expected = operation_versions(&row)["priority"].clone();
     let (status, queued, text) = harness
         .request(
             Method::POST,
@@ -2109,10 +2108,10 @@ async fn priority_legacy_retirement_reconciles_dispatched_without_replay() {
             .expect("read legacy retirement account");
         let original_priority = row["priority"].as_i64().expect("legacy original priority");
         let target_priority = 0;
-        let expected_version = operation_versions(&row, false)["priority"].clone();
+        let expected_version = operation_versions(&row)["priority"].clone();
         let mut identity_row = row.clone();
         identity_row["priority"] = 0.into();
-        let identity = operation_versions(&identity_row, false)["priority"].clone();
+        let identity = operation_versions(&identity_row)["priority"].clone();
         if applied {
             sqlx::query("UPDATE accounts SET priority=$1,updated_at=now() WHERE id=$2")
                 .bind(target_priority)

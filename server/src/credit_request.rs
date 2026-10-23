@@ -1,9 +1,9 @@
 use crate::{
+    actions,
     compat::{datetime, integer, string, truthy},
     credit::CreditController,
     credit_ownership, credit_rules,
     error::{Error, Result},
-    key_fallback,
     oauth_admission::quota_complete,
     oauth_queries::{QueryOptions, Source},
     reset_credit_observation, usage,
@@ -121,8 +121,7 @@ impl CreditController {
                 {
                     let _control = self.actions.locks.control(id).await;
                     active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(&live),"next_at":null,"control_generation":credit_ownership::generation(&self.store.snapshot()?,id)}))?;
-                    let paused =
-                        key_fallback::set_schedulable(&self.actions, id, false, key, 3).await;
+                    let paused = actions::set_schedulable(&self.actions, id, false, key, 3).await;
                     let after = self.row(id).await?;
                     let latest = self.state(id)?;
                     if latest["stage"] == "finished" && latest["episode"] == active["episode"] {

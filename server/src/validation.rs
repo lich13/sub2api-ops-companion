@@ -137,8 +137,8 @@ pub fn operation_payload(action: &str, payload: &Value) -> Result<Value> {
             ],
             &[],
         ),
-        "schedulable" => (&["schedulable", "detach_managed"], &["schedulable"]),
-        "delete" => (&["detach_managed"], &[]),
+        "schedulable" => (&["schedulable"], &["schedulable"]),
+        "delete" => (&[], &[]),
         "usage" | "reset_quota" => (&["action", "confirmed"], &["action"]),
         "degradation_mark" => (&["marked"], &["marked"]),
         _ => return Err(Error::invalid()),
@@ -211,10 +211,6 @@ pub fn operation_payload(action: &str, payload: &Value) -> Result<Value> {
             }
         }
         "schedulable" | "delete" => {
-            if value.get("detach_managed").is_none() {
-                value["detach_managed"] = false.into();
-            }
-            boolean(&value["detach_managed"])?;
             if action == "schedulable" {
                 boolean(&value["schedulable"])?;
             }

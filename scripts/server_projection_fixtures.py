@@ -78,7 +78,7 @@ def old_account(**extra: Any) -> dict[str, Any]:
 
 def build_quota(reference: Path) -> dict[str, Any]:
     sys.path.insert(0, str(reference))
-    from app.key_fallback import classify_oauth_account, latest_completed_oauth_result
+    from app.desktop_api import latest_completed_oauth_result
     from app.oauth_monitor import build_monitor_candidates
     from app.quota_snapshot import FRESHNESS_SECONDS, latest_openai_result, usage_windows
 
@@ -165,64 +165,19 @@ def build_quota(reference: Path) -> dict[str, Any]:
             }
         )
 
-    stale_fields = [
-        {"codex_usage_updated_at": (QUOTA_AT - timedelta(seconds=3601)).isoformat()},
-        {"codex_7d_used_percent": None},
-        {"codex_usage_updated_at": (QUOTA_AT + timedelta(seconds=1)).isoformat()},
-    ]
-    classification_cases = []
-    for index, changes in enumerate(stale_fields):
-        row = old_account(**changes)
-        selected = latest_openai_result(row, None, QUOTA_AT)
-        classification_cases.append(
-            {
-                "id": f"incomplete_or_stale_{index}",
-                "row": row,
-                "result": selected,
-                "freshness_seconds": 3600,
-                "expected_state": classify_oauth_account(row, selected, QUOTA_AT, 3600),
-            }
-        )
-    row = old_account(codex_7d_used_percent=None)
-    selected = latest_openai_result(row, None, QUOTA_AT)
-    classification_cases.append(
-        {
-            "id": "unknown_is_not_available",
-            "row": row,
-            "result": selected,
-            "freshness_seconds": FRESHNESS_SECONDS,
-            "expected_state": classify_oauth_account(row, selected, QUOTA_AT, FRESHNESS_SECONDS),
-        }
-    )
-    row = old_account(codex_7d_used_percent=100, codex_7d_reset_at=QUOTA_AT.isoformat())
-    selected = latest_openai_result(row, None, QUOTA_AT)
-    classification_cases.append(
-        {
-            "id": "fresh_passive_replaces_old_active_result",
-            "row": row,
-            "result": selected,
-            "freshness_seconds": FRESHNESS_SECONDS,
-            "expected_state": classify_oauth_account(row, selected, QUOTA_AT, FRESHNESS_SECONDS),
-        }
-    )
+    latest_result_cases = []
     error_row = old_account(codex_usage_updated_at=(QUOTA_AT - timedelta(minutes=3)).isoformat())
     old_passive = latest_openai_result(error_row, None, QUOTA_AT)
     latest_error = latest_completed_oauth_result(
         old_passive,
         {"last_error_at": QUOTA_AT.isoformat(), "last_error_code": "http_500"},
     )
-    classification_cases.append(
+    latest_result_cases.append(
         {
             "id": "newer_error_overrides_passive_success",
             "row": error_row,
             "result": latest_openai_result(error_row, latest_error, QUOTA_AT),
             "freshness_seconds": FRESHNESS_SECONDS,
-            "expected_state": classify_oauth_account(
-                error_row,
-                latest_openai_result(error_row, latest_error, QUOTA_AT),
-                QUOTA_AT,
-                FRESHNESS_SECONDS,
-            ),
             "error_result": latest_error,
         }
     )
@@ -263,7 +218,7 @@ def build_quota(reference: Path) -> dict[str, Any]:
     return {
         "at": QUOTA_AT.isoformat(),
         "windows": window_cases,
-        "classification": classification_cases,
+        "latest_results": latest_result_cases,
         "candidate_cases": candidate_cases,
     }
 

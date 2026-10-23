@@ -30,7 +30,6 @@ const account = (overrides: Partial<Account> = {}) => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   recoverable: true,
   version: "account-version",
   operation_versions: { model_config: "model-version", proxy: "proxy-version", sync_models: "sync-version" },

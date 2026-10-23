@@ -1,7 +1,6 @@
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
     env, fs,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -22,7 +21,7 @@ use sub2ops_server::{
     store::write_json,
     upstream::Upstream,
 };
-use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tokio::sync::Semaphore;
 
 const BATCH_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const JOB_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -40,14 +39,9 @@ struct Fixture {
 
 struct FixtureBackend {
     dispatch_calls: Arc<AtomicUsize>,
-    delete_lock: Arc<AsyncMutex<()>>,
 }
 
 impl Backend for FixtureBackend {
-    fn managed(&self) -> Result<BTreeSet<i64>> {
-        Ok(BTreeSet::new())
-    }
-
     fn mark(&self, _id: i64) -> Result<Value> {
         Ok(json!({"version":"0".repeat(64)}))
     }
@@ -74,14 +68,6 @@ impl Backend for FixtureBackend {
         Box::pin(async { Err(Error::new(404, "fixture model operation absent")) })
     }
 
-    fn delete_lock(&self) -> Arc<AsyncMutex<()>> {
-        self.delete_lock.clone()
-    }
-
-    fn detach_deleted<'a>(&'a self, _jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Ok(()) })
-    }
-
     fn test_config(&self) -> Result<(String, usize)> {
         Ok(("fixture-test-model".into(), 1))
     }
@@ -103,7 +89,6 @@ impl Fixture {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: temp.path().join("oauth-state.json"),
             bark_path: temp.path().join("bark-state.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path: temp.path().join("sub2api-config.json"),
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -129,7 +114,6 @@ impl Fixture {
         .expect("construct operation actions");
         let backend = Arc::new(FixtureBackend {
             dispatch_calls: Arc::new(AtomicUsize::new(0)),
-            delete_lock: Arc::new(AsyncMutex::new(())),
         });
         let operations = Operations::new(actions, backend.clone(), Arc::new(Semaphore::new(8)))
             .expect("construct durable operation queue");
@@ -350,4 +334,25 @@ async fn idempotent_replay_returns_existing_batch_without_duplicate_dispatch() {
     );
     assert_eq!(fixture.backend.dispatch_calls.load(Ordering::SeqCst), 0);
     fixture.close().await;
+}
+
+#[tokio::test]
+async fn historical_ownership_fields_are_omitted_without_rewriting_saved_jobs() {
+    let fixture = Fixture::new().await;
+    let mut job = valid_job();
+    job["action"] = "delete".into();
+    job["status"] = "completed".into();
+    job["payload"] = json!({"detach_managed":true});
+    job["managed_child_ids"] = json!([2]);
+    job["detached"] = true.into();
+    job["result"] = json!({"deleted":true,"detached":true});
+    let original = job.clone();
+    let view = fixture.operations.public(&job, true, 0);
+    assert!(view.get("managed_child_ids").is_none());
+    assert!(view.get("detached").is_none());
+    assert!(view["requested"].get("detach_managed").is_none());
+    assert_eq!(view["result"], json!({"deleted":true}));
+    assert_eq!(job, original);
+    assert_eq!(fixture.backend.dispatch_calls.load(Ordering::SeqCst), 0);
+    fixture.db.close().await;
 }

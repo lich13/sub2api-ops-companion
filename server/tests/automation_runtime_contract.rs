@@ -365,7 +365,6 @@ impl Harness {
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -524,7 +523,7 @@ async fn seed_recovery(harness: &Harness, uncertain_test: bool) -> (Value, Value
     let observed = harness.now() - Duration::seconds(1);
     let usage = usage_result(&row, observed);
     let summary = quota::summary_from_result(&row, &usage);
-    let descriptor = recovery_rules::rate_descriptor(&row, &summary);
+    let descriptor = recovery_rules::rate_descriptor(&row, &summary, harness.now());
     assert!(
         descriptor.is_object(),
         "fixture row must derive an exact rate-limit intent"
@@ -635,139 +634,6 @@ async fn manual_query_caches_verified_card_receipt_using_the_runtime_clock() {
     assert_eq!(harness.mock.count("GET", "/usage"), 1);
     assert_eq!(harness.mock.count("POST", "/test"), 0);
     assert_eq!(harness.mock.count("POST", "/reset-quota"), 0);
-    assert!(harness.mock.unexpected().is_empty());
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn corrupt_snapshot_blocks_fallback_without_reinitializing_or_writing() {
-    let harness = Harness::new().await;
-    let grok_oauth = harness.seed_account("oauth", false, false).await;
-    let grok_key = harness.seed_account("apikey", false, false).await;
-    let grok_oauth_id = integer(&grok_oauth["id"]).unwrap();
-    let grok_key_id = integer(&grok_key["id"]).unwrap();
-    sqlx::query("UPDATE accounts SET platform='grok' WHERE id=$1 OR id=$2")
-        .bind(grok_oauth_id)
-        .bind(grok_key_id)
-        .execute(&harness.db.pool)
-        .await
-        .unwrap();
-    harness
-        .runtime
-        .config
-        .fallback
-        .save(
-            &json!({
-                "openai_enabled": true, "grok_enabled": true,
-                "managed_account_ids": [grok_key_id]
-            }),
-            "fixture-admin",
-        )
-        .await
-        .unwrap();
-    let damaged = b"{fixture-incomplete-state";
-    let path = harness.runtime.monitor.store.0.path();
-    fs::write(path, damaged).unwrap();
-    let failure = harness.runtime.monitor.fallback().await.unwrap_err();
-    assert_eq!(failure.status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(fs::read(path).unwrap(), damaged);
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn grok_fallback_continues_while_openai_daily_usage_is_in_flight() {
-    let harness = Harness::new().await;
-    harness.seed_account("oauth", true, false).await;
-    let grok_oauth = harness.seed_account("oauth", true, false).await;
-    let openai_key = harness.seed_account("apikey", false, false).await;
-    let grok_key = harness.seed_account("apikey", false, false).await;
-    let grok_oauth_id = integer(&grok_oauth["id"]).unwrap();
-    let openai_key_id = integer(&openai_key["id"]).unwrap();
-    let grok_key_id = integer(&grok_key["id"]).unwrap();
-    sqlx::query("UPDATE accounts SET platform='grok',extra=$1 WHERE id=$2 OR id=$3")
-        .bind(SqlJson(json!({"grok_needs_reauth": true})))
-        .bind(grok_oauth_id)
-        .bind(grok_key_id)
-        .execute(&harness.db.pool)
-        .await
-        .unwrap();
-    harness
-        .runtime
-        .config
-        .oauth
-        .transaction(|config| {
-            config["oauth_recovery_monitor_enabled"] = false.into();
-            Ok(())
-        })
-        .unwrap();
-    harness
-        .runtime
-        .config
-        .fallback
-        .save(
-            &json!({
-                "openai_enabled": true,
-                "grok_enabled": true,
-                "managed_account_ids": [openai_key_id, grok_key_id]
-            }),
-            "fixture-admin",
-        )
-        .await
-        .unwrap();
-    harness.runtime.monitor.startup().await.unwrap();
-    let gate = Gate::new();
-    *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-    harness.set_now(reference_time() + Duration::seconds(52));
-    harness.runtime.monitor.tick().await.unwrap();
-    tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
-        .await
-        .expect("daily quota query must be in flight");
-
-    let before_usage = harness.mock.count("GET", "/usage");
-    let before_tests = harness.mock.count("POST", "/test");
-    let report = tokio::time::timeout(
-        StdDuration::from_secs(8),
-        harness.runtime.monitor.fallback(),
-    )
-    .await;
-    let during_usage = harness.mock.count("GET", "/usage");
-    let during_tests = harness.mock.count("POST", "/test");
-    // Release the worker before checking assertions so a failed contract also
-    // cleans up promptly instead of leaving a blocked network request.
-    *harness.mock.usage_gate.lock().unwrap() = None;
-    gate.release.notify_one();
-    let report = report
-        .expect("Grok fallback must not wait for OpenAI usage")
-        .unwrap();
-    assert_eq!(report["changed_ids"], json!([grok_key_id]));
-    assert_eq!(report["desired_by_platform"]["openai"], Value::Null);
-    assert_eq!(report["desired_by_platform"]["grok"], true);
-    assert_eq!(report["platform_reasons"]["openai"], "refresh_in_progress");
-    assert_eq!(before_usage, during_usage);
-    assert_eq!(before_tests, during_tests);
-    assert_eq!(
-        harness
-            .mock
-            .count("POST", &format!("/{grok_key_id}/schedulable")),
-        1
-    );
-    assert_eq!(
-        harness
-            .mock
-            .count("POST", &format!("/{openai_key_id}/schedulable")),
-        0
-    );
-    assert_eq!(
-        harness.runtime.monitor.row(openai_key_id).await.unwrap()["schedulable"],
-        false
-    );
-    assert_eq!(
-        harness.runtime.monitor.row(grok_key_id).await.unwrap()["schedulable"],
-        true
-    );
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
 }

@@ -189,7 +189,7 @@ pub fn pick(value: &Value, keys: &[&str]) -> Value {
     )
 }
 
-pub fn operation_versions(row: &Value, managed: bool) -> Value {
+pub fn operation_versions(row: &Value) -> Value {
     let identity = pick(
         row,
         &[
@@ -228,10 +228,10 @@ pub fn operation_versions(row: &Value, managed: bool) -> Value {
         row["credential_version"].clone()
     };
     let values = json!({
-        "schedulable":[row["schedulable"],managed],
+        "schedulable":[row["schedulable"]],
         "groups":groups,
         "recover":limits,
-        "delete":[row["name"],row["status"],row["schedulable"],groups,managed],
+        "delete":[row["name"],row["status"],row["schedulable"],groups],
         "usage":null,
         "reset_quota":[limits,reset],
         "test":[groups,row["model_catalog_version"]],

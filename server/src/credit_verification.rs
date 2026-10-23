@@ -1,9 +1,9 @@
 use crate::{
+    actions,
     compat::{datetime, integer, parse_datetime, sha256, string, truthy},
     credit::CreditController,
     credit_ownership, credit_rules,
     error::{Error, Result},
-    key_fallback,
     oauth_admission::{credential_fingerprint, AUTH_ERRORS},
     quota, recovery_policy, recovery_rules,
 };
@@ -356,8 +356,7 @@ impl CreditController {
             return Ok(());
         }
         let _ =
-            key_fallback::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3)
-                .await;
+            actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
         let final_row = self.row(id).await?;
         if !self.release_confirmed(&final_row, &task, self.now())? {
             self.save(id,&task,json!({"error_code":"recovery_failed","next_at":datetime(self.now()+Duration::seconds(30))}))?;
@@ -507,8 +506,7 @@ impl CreditController {
         }
         let task = self.save(id, task, json!({"pause_undo_requested_at":datetime(at)}))?;
         let _ =
-            key_fallback::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3)
-                .await;
+            actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
         let actual = self.row(id).await?;
         if actual["schedulable"] == true
             && json!(credit_ownership::generation(&self.store.snapshot()?, id))

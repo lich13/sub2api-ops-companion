@@ -6,13 +6,10 @@
     "oauth_monitor_runtime_http_state": 32,
     "usage_query": 1,
     "excluded_monitor": 8,
-    "key_fallback_snapshot_extra": 3,
-    "key_fallback_latest_attempt_extra": 5,
-    "key_fallback_grok_isolation_extra": 1,
     "recovery_selection_runtime_extra": 1,
     "previously_mapped_oauth_queries": 2,
     "base_total": 85,
-    "total": 95
+    "total": 86
   },
   "daily": {
     "before_0500_beijing": "2026-09-21T20:59:50Z",
@@ -26,13 +23,13 @@
     "bearer_header": null,
     "automatic_budget_per_rolling_day": 6,
     "automatic_min_interval_seconds": 3600,
-    "retry_backoff_hours": [1, 3, 6, 12, 12],
+    "retry_backoff_hours": [
+      1,
+      3,
+      6,
+      12,
+      12
+    ],
     "manual_consumes_automatic_budget": false
-  },
-  "monitor_fallback": {
-    "busy_reason": "refresh_in_progress",
-    "busy_must_not_dispatch_usage": true,
-    "busy_must_not_dispatch_test": true,
-    "busy_must_not_write_schedulable": true
   }
 }

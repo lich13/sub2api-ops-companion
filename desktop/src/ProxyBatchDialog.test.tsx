@@ -35,7 +35,6 @@ const account = (id: number, overrides: Partial<Account> = {}): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   recoverable: true,
   version: `account-version-${id}`,
   operation_versions: { proxy: `operation-version-${id}` },

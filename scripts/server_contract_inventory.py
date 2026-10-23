@@ -1170,6 +1170,19 @@ def _datetime_marker(value: str) -> dict[str, str]:
     return {"$type": "datetime", "value": value, "python_str": str(stamp)}
 
 
+def operation_versions_without_management(row: dict[str, Any], versions: dict[str, str]) -> dict[str, str]:
+    """Approved 0.1.55 contract: scheduling/deletion have no ownership input."""
+    identity = {key: row.get(key) for key in (
+        "id", "platform", "type", "parent_account_id", "credential_version", "proxy_id")}
+    values = {
+        "schedulable": [row.get("schedulable")],
+        "delete": [row.get("name"), row.get("status"), row.get("schedulable"), sorted(row.get("group_ids") or [])],
+    }
+    return {**versions, **{name: hashlib.sha256(json.dumps(
+        [identity, value], sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+        for name, value in values.items()}}
+
+
 def _load_hash_functions(sources: dict[str, str]) -> dict[str, Any]:
     operation_ns: dict[str, Any] = {}
     exec(compile(sources["app/operation_versions.py"], "app/operation_versions.py", "exec"), operation_ns)
@@ -1218,7 +1231,7 @@ def _load_hash_functions(sources: dict[str, str]) -> dict[str, Any]:
 
     return {
         "operation_digest": operation_ns["digest"],
-        "operation_versions": operation_ns["versions"],
+        "operation_versions": lambda row: operation_versions_without_management(row, operation_ns["versions"](row)),
         "account_version": account_version,
         "config_revision": config_revision,
         "model_revision": model_ns["revision"],
@@ -1290,7 +1303,7 @@ def build_version_vectors(sources: dict[str, str]) -> dict[str, Any]:
     vectors.append(
         {
             "id": "operation_versions_full_synthetic_account",
-            "source": "app/operation_versions.py#versions",
+            "source": "app/operation_versions.py#versions; approved 0.1.55 removes ownership from schedulable/delete",
             "input": _json_safe(account),
             "expected_versions": account_versions,
         }
@@ -1360,7 +1373,7 @@ def build_version_vectors(sources: dict[str, str]) -> dict[str, Any]:
     vectors.append(
         {
             "id": "operation_versions_group_order_invariance",
-            "source": "app/operation_versions.py#versions",
+            "source": "app/operation_versions.py#versions; approved 0.1.55 removes ownership from schedulable/delete",
             "cases": {
                 "a": _json_safe(group_order_a),
                 "b": _json_safe(group_order_b),

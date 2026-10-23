@@ -772,7 +772,6 @@ impl Harness {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: temp.path().join("oauth-state.json"),
             bark_path: temp.path().join("bark-state.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -1151,16 +1150,9 @@ impl Drop for Harness {
 }
 
 fn operation_version(row: &Value, action: &str) -> String {
-    operation_versions(row, false)[action]
+    operation_versions(row)[action]
         .as_str()
         .expect("field version should be text")
-        .to_owned()
-}
-
-fn managed_operation_version(row: &Value, action: &str, managed: bool) -> String {
-    operation_versions(row, managed)[action]
-        .as_str()
-        .expect("managed field version should be text")
         .to_owned()
 }
 
@@ -4823,39 +4815,26 @@ async fn proxy_batch_schema_template_and_target_preflight_are_per_item_and_atomi
 }
 
 #[tokio::test]
-async fn native_delete_confirmation_detaches_managed_accounts_and_rechecks_children() {
+async fn native_delete_confirmation_rechecks_children_without_management() {
     let mut harness = Harness::new().await;
-    let managed_id = harness
+    let first_id = harness
         .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
         .await;
     let ordinary_id = harness
         .insert_account("grok", "apikey", json!({}), json!({}), None, &[])
         .await;
-    harness
-        .runtime
-        .config
-        .fallback
-        .write_locked(
-            true,
-            true,
-            &[managed_id],
-            None,
-            1,
-            "fixture-account-mutation",
-        )
-        .unwrap();
-    let managed_row = harness.account(managed_id).await;
+    let first_row = harness.account(first_id).await;
     let ordinary_row = harness.account(ordinary_id).await;
     let delete_accounts = vec![
         json!({
-            "account_id":managed_id,
-            "expected_version":managed_operation_version(&managed_row,"delete",true),
-            "payload":{"detach_managed":true}
+            "account_id":first_id,
+            "expected_version":operation_version(&first_row,"delete"),
+            "payload":{}
         }),
         json!({
             "account_id":ordinary_id,
-            "expected_version":managed_operation_version(&ordinary_row,"delete",false),
-            "payload":{"detach_managed":false}
+            "expected_version":operation_version(&ordinary_row,"delete"),
+            "payload":{}
         }),
     ];
     let unconfirmed = harness
@@ -4884,7 +4863,7 @@ async fn native_delete_confirmation_detaches_managed_accounts_and_rechecks_child
                 "delete",
                 json!({"confirmed":true}),
                 delete_accounts,
-                "fixture-delete-detach-managed-0001",
+                "fixture-delete-confirmation-0001",
             )),
         )
         .await;
@@ -4905,19 +4884,12 @@ async fn native_delete_confirmation_detaches_managed_accounts_and_rechecks_child
     assert_eq!(delete_calls.len(), 1);
     assert_eq!(
         delete_calls[0].body,
-        json!({"account_ids":[managed_id,ordinary_id]})
+        json!({"account_ids":[first_id,ordinary_id]})
     );
     assert_eq!(delete_calls[0].api_key, ADMIN_KEY);
     assert!(delete_calls[0].body.get("detach_managed").is_none());
-    assert!(!harness
-        .runtime
-        .config
-        .fallback
-        .managed()
-        .unwrap()
-        .contains(&managed_id));
     let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE id=ANY($1)")
-        .bind(vec![managed_id, ordinary_id])
+        .bind(vec![first_id, ordinary_id])
         .fetch_one(&harness.runtime.db.pool)
         .await
         .unwrap();
@@ -4932,8 +4904,8 @@ async fn native_delete_confirmation_detaches_managed_accounts_and_rechecks_child
         json!({"confirmed":true}),
         vec![json!({
             "account_id":parent_id,
-            "expected_version":managed_operation_version(&parent_row,"delete",false),
-            "payload":{"detach_managed":false}
+            "expected_version":operation_version(&parent_row,"delete"),
+            "payload":{}
         })],
         "fixture-delete-child-set-change-0001",
     );
@@ -4976,85 +4948,6 @@ async fn native_delete_confirmation_detaches_managed_accounts_and_rechecks_child
     );
     assert!(harness.account(child_id).await.is_object());
 
-    let managed_parent = harness
-        .insert_account("openai", "oauth", json!({}), json!({}), None, &[])
-        .await;
-    harness
-        .runtime
-        .config
-        .fallback
-        .write_locked(
-            true,
-            true,
-            &[managed_parent],
-            None,
-            2,
-            "fixture-account-mutation",
-        )
-        .unwrap();
-    let managed_parent_row = harness.account(managed_parent).await;
-    let managed_parent_request = native_batch(
-        "delete",
-        json!({"confirmed":true}),
-        vec![json!({
-            "account_id":managed_parent,
-            "expected_version":managed_operation_version(&managed_parent_row,"delete",true),
-            "payload":{"detach_managed":true}
-        })],
-        "fixture-delete-managed-child-set-change-0001",
-    );
-    let (status, queued_managed_parent, _) = harness
-        .request(
-            Method::POST,
-            "account-operations/batch",
-            Some(managed_parent_request),
-        )
-        .await;
-    assert_eq!(status, 202);
-    assert_eq!(
-        queued_managed_parent["items"][0]["managed_child_ids"],
-        json!([])
-    );
-    let managed_child = harness
-        .insert_account(
-            "grok",
-            "oauth",
-            json!({}),
-            json!({}),
-            Some(managed_parent),
-            &[],
-        )
-        .await;
-    harness
-        .runtime
-        .config
-        .fallback
-        .write_locked(
-            true,
-            true,
-            &[managed_parent, managed_child],
-            None,
-            3,
-            "fixture-account-mutation",
-        )
-        .unwrap();
-    harness.runtime.operations.tick().await.unwrap();
-    let managed_child_change = harness
-        .wait_batch(queued_managed_parent["batch_id"].as_str().unwrap())
-        .await;
-    assert_eq!(
-        managed_child_change["items"][0]["status"],
-        "needs_confirmation"
-    );
-    assert!(managed_child_change["items"][0]["reason"]
-        .as_str()
-        .unwrap()
-        .contains("关联账号"));
-    assert_eq!(
-        harness.runtime.config.fallback.managed().unwrap(),
-        BTreeSet::from([managed_parent, managed_child])
-    );
-    assert!(harness.account(managed_parent).await.is_object());
     harness.finish().await;
 }
 
@@ -5789,19 +5682,6 @@ async fn proxy_diagnostic_waits_for_the_real_90_second_timeout_without_replay() 
     harness.finish().await;
 }
 
-async fn managed_keys(harness: &Harness, ids: &[i64]) {
-    harness
-        .runtime
-        .config
-        .fallback
-        .save(
-            &json!({"managed_account_ids":ids,"openai_enabled":false,"grok_enabled":true}),
-            "fixture",
-        )
-        .await
-        .unwrap();
-}
-
 fn manual_writes(harness: &Harness) -> Vec<Call> {
     harness
         .upstream
@@ -5860,7 +5740,7 @@ async fn management_auth_cache_refresh_and_invalid_keys_never_expose_key_in_url(
 }
 
 #[tokio::test]
-async fn management_delete_detaches_before_request_and_preserves_other_keys_and_history() {
+async fn management_delete_preserves_other_keys_and_history() {
     let mut h = Harness::new().await;
     let a = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
@@ -5868,7 +5748,6 @@ async fn management_delete_detaches_before_request_and_preserves_other_keys_and_
     let b = h
         .insert_account("grok", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[a, b]).await;
     h.runtime
         .monitor
         .store
@@ -5878,6 +5757,7 @@ async fn management_delete_detaches_before_request_and_preserves_other_keys_and_
             Ok(())
         })
         .unwrap();
+    assert_eq!(h.account(b).await["schedulable"], true);
     let expected = account_version(&h.account(a).await);
     let path = format!("/api/v1/admin/accounts/{a}");
     let gate = h.upstream.gate(&path);
@@ -5885,21 +5765,17 @@ async fn management_delete_detaches_before_request_and_preserves_other_keys_and_
         .client
         .delete(format!("{}/api/desktop/v1/accounts/{a}", h.base_url))
         .header("x-api-key", ADMIN_KEY)
-        .json(&json!({"expected_version":expected,"detach_managed":true}));
+        .json(&json!({"expected_version":expected}));
     let pending = tokio::spawn(async move { request.send().await.unwrap() });
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
         .await
         .unwrap();
-    let detached = h.runtime.config.fallback.load();
-    assert_eq!(detached.ids, vec![b]);
-    assert!(!detached.openai);
-    assert!(detached.grok);
     gate.release.notify_one();
     let response = pending.await.unwrap();
     assert_eq!(response.status().as_u16(), 200);
     assert_eq!(
         response.json::<Value>().await.unwrap(),
-        json!({"account_id":a,"deleted":true,"verified":true,"detached":true})
+        json!({"account_id":a,"deleted":true,"verified":true})
     );
     assert_eq!(
         h.runtime
@@ -5924,14 +5800,13 @@ async fn management_delete_detaches_before_request_and_preserves_other_keys_and_
 }
 
 #[tokio::test]
-async fn management_invalid_auth_version_deleted_account_and_failed_detach_never_dispatch() {
+async fn management_invalid_auth_version_and_deleted_account_never_dispatch() {
     let mut h = Harness::new().await;
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[id]).await;
     let version = account_version(&h.account(id).await);
-    let payload = json!({"expected_version":version,"detach_managed":true});
+    let payload = json!({"expected_version":version});
     let path = format!("accounts/{id}");
     assert_eq!(
         h.request_with_key(Method::DELETE, &path, Some(payload.clone()), "fixture-bad")
@@ -5943,7 +5818,7 @@ async fn management_invalid_auth_version_deleted_account_and_failed_detach_never
         h.request(
             Method::DELETE,
             &path,
-            Some(json!({"expected_version":"a".repeat(64),"detach_managed":true}))
+            Some(json!({"expected_version":"a".repeat(64)}))
         )
         .await
         .0,
@@ -5955,42 +5830,17 @@ async fn management_invalid_auth_version_deleted_account_and_failed_detach_never
             .0,
         404
     );
-    assert_eq!(
-        h.request(
-            Method::DELETE,
-            &path,
-            Some(json!({"expected_version":version}))
-        )
-        .await
-        .0,
-        409
-    );
-    let fallback = h.runtime.settings.fallback_path.clone();
-    let before = fs::read(&fallback).unwrap();
-    let lock = fallback.with_extension("lock");
-    let saved = h._temp.path().join("fixture-fallback-lock");
-    fs::rename(&lock, &saved).unwrap();
-    fs::create_dir(&lock).unwrap();
-    let failed = h.request(Method::DELETE, &path, Some(payload)).await;
-    fs::remove_dir(&lock).unwrap();
-    fs::rename(saved, &lock).unwrap();
-    assert_eq!(failed.0, 503);
-    assert!(!failed.2.contains("fixture-fallback-lock"));
-    assert_eq!(fs::read(&fallback).unwrap(), before);
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![id]);
     assert!(manual_writes(&h).is_empty());
     h.finish().await;
 }
 
 #[tokio::test]
-async fn management_delete_rejection_keeps_detached_state_and_disconnect_uses_readback_once() {
+async fn management_delete_rejection_and_disconnect_use_readback_once() {
     let mut h = Harness::new().await;
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[id]).await;
-    let payload =
-        json!({"expected_version":account_version(&h.account(id).await),"detach_managed":true});
+    let payload = json!({"expected_version":account_version(&h.account(id).await)});
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
     let failed = h
         .request(
@@ -6000,11 +5850,8 @@ async fn management_delete_rejection_keeps_detached_state_and_disconnect_uses_re
         )
         .await;
     assert_eq!(failed.0, 502);
-    assert_eq!(failed.1["detail"]["detached"], true);
-    assert!(failed.2.contains("已解除托管"));
     assert_eq!(failed.1["detail"]["code"], "http_500");
     assert!(!failed.2.contains("fixture-private"));
-    assert!(h.runtime.config.fallback.load().ids.is_empty());
     assert!(h.runtime.actions.account(id, None).await.is_ok());
     assert_eq!(manual_writes(&h).len(), 1);
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::DisconnectedApplied;
@@ -6038,11 +5885,13 @@ async fn management_parallel_deletes_succeed_but_same_account_overlap_rejects_wi
                 .await,
         );
     }
-    managed_keys(&h, &ids[..2]).await;
     let mut requests = Vec::new();
     for id in &ids {
-        let request=h.client.delete(format!("{}/api/desktop/v1/accounts/{id}",h.base_url))
-            .header("x-api-key",ADMIN_KEY).json(&json!({"expected_version":account_version(&h.account(*id).await),"detach_managed":true}));
+        let request = h
+            .client
+            .delete(format!("{}/api/desktop/v1/accounts/{id}", h.base_url))
+            .header("x-api-key", ADMIN_KEY)
+            .json(&json!({"expected_version":account_version(&h.account(*id).await)}));
         requests.push(tokio::spawn(async move {
             request.send().await.unwrap().status().as_u16()
         }));
@@ -6050,7 +5899,6 @@ async fn management_parallel_deletes_succeed_but_same_account_overlap_rejects_wi
     for request in requests {
         assert_eq!(request.await.unwrap(), 200);
     }
-    assert!(h.runtime.config.fallback.load().ids.is_empty());
     assert_eq!(manual_writes(&h).len(), 3);
     for id in &ids {
         assert_eq!(
@@ -6094,12 +5942,11 @@ async fn management_parallel_deletes_succeed_but_same_account_overlap_rejects_wi
 }
 
 #[tokio::test]
-async fn management_recover_exact_request_preserves_switches_history_and_managed_ownership() {
+async fn management_recover_exact_request_preserves_switches_and_history() {
     let mut h = Harness::new().await;
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[id]).await;
     sqlx::query("UPDATE accounts SET status='error',schedulable=false,rate_limit_reset_at=now()+interval '5 minutes' WHERE id=$1")
         .bind(id).execute(&h.runtime.db.pool).await.unwrap();
     let history = h.runtime.monitor.store.snapshot().unwrap()["recovery_history"].clone();
@@ -6118,7 +5965,6 @@ async fn management_recover_exact_request_preserves_switches_history_and_managed
     assert_eq!(row["status"], "active");
     assert_eq!(row["schedulable"], false);
     assert!(row["rate_limit_reset_at"].is_null());
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![id]);
     assert_eq!(
         h.runtime.monitor.store.snapshot().unwrap()["recovery_history"],
         history
@@ -6194,7 +6040,7 @@ async fn management_recover_live_model_limit_expired_state_failures_and_disconne
 }
 
 #[tokio::test]
-async fn management_schedule_detaches_before_exact_write_and_failed_readback_never_reenrolls() {
+async fn management_schedule_uses_exact_write_and_confirms_readback() {
     let mut h = Harness::new().await;
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
@@ -6202,26 +6048,29 @@ async fn management_schedule_detaches_before_exact_write_and_failed_readback_nev
     let other = h
         .insert_account("grok", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[id, other]).await;
+    assert_eq!(h.account(other).await["schedulable"], true);
     let path = format!("/api/v1/admin/accounts/{id}/schedulable");
     let gate = h.upstream.gate(&path);
-    let request=h.client.post(format!("{}/api/desktop/v1/accounts/{id}/schedulable",h.base_url))
-        .header("x-api-key",ADMIN_KEY).json(&json!({"expected_version":account_version(&h.account(id).await),"schedulable":false,"detach_managed":true}));
+    let request = h
+        .client
+        .post(format!(
+            "{}/api/desktop/v1/accounts/{id}/schedulable",
+            h.base_url
+        ))
+        .header("x-api-key", ADMIN_KEY)
+        .json(
+            &json!({"expected_version":account_version(&h.account(id).await),"schedulable":false}),
+        );
     let pending = tokio::spawn(async move { request.send().await.unwrap() });
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
         .await
         .unwrap();
-    let config = h.runtime.config.fallback.load();
-    assert_eq!(config.ids, vec![other]);
-    assert!(!config.openai);
-    assert!(config.grok);
     gate.release.notify_one();
     h.upstream.ungate(&path);
     let response = pending.await.unwrap();
     assert_eq!(response.status().as_u16(), 200);
     let body = response.json::<Value>().await.unwrap();
     assert_eq!(body["verified"], true);
-    assert_eq!(body["detached"], true);
     assert_eq!(h.account(id).await["schedulable"], false);
     let calls = manual_writes(&h);
     assert_eq!(calls.len(), 1);
@@ -6229,59 +6078,27 @@ async fn management_schedule_detaches_before_exact_write_and_failed_readback_nev
     assert_eq!(calls[0].path, path);
     assert_eq!(calls[0].body, json!({"schedulable":false}));
 
-    managed_keys(&h, &[id, other]).await;
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Unchanged;
-    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true,"detach_managed":true}))).await;
+    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}))).await;
     assert_eq!(failed.0, 502);
     assert_eq!(failed.1["detail"]["code"], "readback_mismatch");
-    assert_eq!(failed.1["detail"]["detached"], true);
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![other]);
     assert_eq!(h.account(id).await["schedulable"], false);
-    managed_keys(&h, &[id, other]).await;
     *h.upstream.manual_mode.lock().unwrap() = ManualMode::Rejected;
-    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true,"detach_managed":true}))).await;
+    let failed=h.request(Method::POST,&format!("accounts/{id}/schedulable"),Some(json!({"expected_version":account_version(&h.account(id).await),"schedulable":true}))).await;
     assert_eq!(failed.0, 502);
-    assert_eq!(failed.1["detail"]["detached"], true);
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![other]);
     assert_eq!(manual_writes(&h).len(), 3);
     h.finish().await;
 }
 
 #[tokio::test]
-async fn management_schedule_conflicts_and_failed_detach_stop_before_any_upstream_write() {
+async fn management_schedule_conflicts_stop_before_any_upstream_write() {
     let mut h = Harness::new().await;
     let id = h
         .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
         .await;
-    managed_keys(&h, &[id]).await;
     let version = account_version(&h.account(id).await);
     let path = format!("accounts/{id}/schedulable");
-    assert_eq!(
-        h.request(
-            Method::POST,
-            &path,
-            Some(json!({"expected_version":version,"schedulable":false}))
-        )
-        .await
-        .0,
-        409
-    );
-    let payload = json!({"expected_version":version,"schedulable":false,"detach_managed":true});
-    let file = h.runtime.settings.fallback_path.clone();
-    let before = fs::read(&file).unwrap();
-    let lock = file.with_extension("lock");
-    let saved = h._temp.path().join("fixture-fallback-lock");
-    fs::rename(&lock, &saved).unwrap();
-    fs::create_dir(&lock).unwrap();
-    assert_eq!(
-        h.request(Method::POST, &path, Some(payload.clone()))
-            .await
-            .0,
-        500
-    );
-    fs::remove_dir(&lock).unwrap();
-    fs::rename(saved, &lock).unwrap();
-    assert_eq!(fs::read(&file).unwrap(), before);
+    let payload = json!({"expected_version":version,"schedulable":false});
     sqlx::query("UPDATE accounts SET type='oauth' WHERE id=$1")
         .bind(id)
         .execute(&h.runtime.db.pool)
@@ -6293,14 +6110,12 @@ async fn management_schedule_conflicts_and_failed_detach_stop_before_any_upstrea
             .0,
         409
     );
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![id]);
     sqlx::query("DELETE FROM accounts WHERE id=$1")
         .bind(id)
         .execute(&h.runtime.db.pool)
         .await
         .unwrap();
     assert_eq!(h.request(Method::POST, &path, Some(payload)).await.0, 404);
-    assert_eq!(h.runtime.config.fallback.load().ids, vec![id]);
     assert!(manual_writes(&h).is_empty());
     h.finish().await;
 }
@@ -7053,4 +6868,89 @@ async fn connection_http_runtime_operation_queue_keeps_eight_slots_across_action
         );
     }
     h.finish().await;
+}
+
+#[tokio::test]
+async fn retired_key_management_has_no_routes_fields_startup_dependency_or_background_writes() {
+    let mut h = Harness::new().await;
+    let id = h
+        .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
+        .await;
+    let retired = h._temp.path().join("key-fallback-config.json");
+    let old_config = json!({"enabled":true,"openai_enabled":true,"managed_account_ids":[id]});
+    fs::write(&retired, serde_json::to_vec(&old_config).unwrap()).unwrap();
+    h.restart_api().await;
+    h.runtime.preflight().await.unwrap();
+    h.runtime.monitor.startup().await.unwrap();
+    for _ in 0..3 {
+        h.runtime.monitor.tick().await.unwrap();
+    }
+    let (status, config, _) = h.request(Method::GET, "config", None).await;
+    assert_eq!(status, 200);
+    assert!(config.get("key_fallback").is_none());
+    for method in [Method::GET, Method::PUT] {
+        let (status, _, _) = h
+            .request(
+                method,
+                "config/key_fallback",
+                Some(json!({"expected_revision":"a".repeat(64),"changes":{}})),
+            )
+            .await;
+        assert_eq!(status, 404);
+    }
+    let dto = h.runtime.account_snapshot(id).await.unwrap();
+    assert!(dto.get("managed").is_none());
+    for (method, path, payload) in [
+        (
+            Method::POST,
+            format!("accounts/{id}/schedulable"),
+            json!({"expected_version":account_version(&h.account(id).await),"schedulable":false,"detach_managed":true}),
+        ),
+        (
+            Method::DELETE,
+            format!("accounts/{id}"),
+            json!({"expected_version":account_version(&h.account(id).await),"detach_managed":false}),
+        ),
+    ] {
+        assert_eq!(h.request(method, &path, Some(payload)).await.0, 422);
+    }
+    assert!(manual_writes(&h).is_empty());
+    assert_eq!(h.account(id).await["schedulable"], true);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&retired).unwrap()).unwrap(),
+        old_config
+    );
+    fs::write(&retired, b"invalid retired configuration").unwrap();
+    h.restart_api().await;
+    h.runtime.preflight().await.unwrap();
+    assert_eq!(
+        fs::read(&retired).unwrap(),
+        b"invalid retired configuration"
+    );
+    assert_eq!(h.account(id).await["schedulable"], true);
+    h.finish().await;
+}
+
+#[test]
+fn shared_schedulable_response_requires_matching_code_id_and_boolean() {
+    for (body, accepted) in [
+        (json!({"code":0,"data":{"id":4,"schedulable":true}}), true),
+        (
+            json!({"code":"0","data":{"id":"4","schedulable":true}}),
+            true,
+        ),
+        (json!({"code":1,"data":{"id":4,"schedulable":true}}), false),
+        (json!({"code":0,"data":{"id":5,"schedulable":true}}), false),
+        (json!({"code":0,"data":{"id":4,"schedulable":false}}), false),
+        (json!({"code":0,"data":{"id":4}}), false),
+        (
+            json!({"code":0,"data":{"id":4,"schedulable":"invalid"}}),
+            false,
+        ),
+    ] {
+        assert_eq!(
+            sub2ops_server::actions::schedulable_response_matches(&body, 4, true),
+            accepted
+        );
+    }
 }

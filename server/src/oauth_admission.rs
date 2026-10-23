@@ -45,6 +45,9 @@ pub fn fresh_quota(row: &Value, result: &Value, at: DateTime<Utc>) -> bool {
                 .is_none_or(|t| t > at)
         })
 }
+pub fn temporary_block_expired(row: &Value, at: DateTime<Utc>) -> bool {
+    parse_datetime(&row["temp_unschedulable_until"]).is_some_and(|until| until <= at)
+}
 pub fn automatic_eligible(row: &Value, at: DateTime<Utc>) -> bool {
     if row["platform"] != "openai"
         || row["type"] != "oauth"
@@ -56,14 +59,18 @@ pub fn automatic_eligible(row: &Value, at: DateTime<Utc>) -> bool {
     }
     let reason = string(&row["temp_unschedulable_reason"]);
     let threshold: Value = serde_json::from_str(reason).unwrap_or(json!({}));
-    if !reason.is_empty()
+    if !temporary_block_expired(row, at)
+        && !reason.is_empty()
         && (!threshold.is_object()
             || threshold["source"] != "account_scheduling_threshold"
             || threshold["platform"] != "openai")
     {
         return false;
     }
-    if truthy(&row["temp_unschedulable_until"]) && reason.is_empty() {
+    if !temporary_block_expired(row, at)
+        && truthy(&row["temp_unschedulable_until"])
+        && reason.is_empty()
+    {
         return false;
     }
     !(truthy(&row["auto_pause_on_expired"])

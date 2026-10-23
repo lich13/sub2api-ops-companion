@@ -78,50 +78,14 @@ impl Runtime {
         if id < 1 {
             return Err(Error::new(422, "账号编号无效"));
         }
-        let initial = self.actions.account(id, None).await?;
-        let oauth = initial["platform"] == "openai" && initial["type"] == "oauth";
-        let _config = if oauth {
-            None
-        } else {
-            Some(self.config.lock.lock().await)
-        };
-        let _fallback = if oauth {
-            None
-        } else {
-            Some(self.config.fallback.lock.lock().await)
-        };
         let _control = self.actions.locks.control(id).await;
         let row = self
             .actions
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
-        let config = self.config.fallback.load();
-        if !config.valid {
-            return Err(Error::new(409, "托管配置无法读取，操作已中止"));
-        }
-        let detached = config.ids.contains(&id);
-        if detached {
-            if payload["detach_managed"] != true {
-                return Err(Error::new(409, "此账号由 Key 回退托管，请确认解除托管"));
-            }
-            self.config.fallback.write_locked(
-                config.openai,
-                config.grok,
-                &config
-                    .ids
-                    .iter()
-                    .copied()
-                    .filter(|v| *v != id)
-                    .collect::<Vec<_>>(),
-                None,
-                config.version + 1,
-                "desktop:admin",
-            )?;
-        }
         let enabled = crate::validation::boolean(&payload["schedulable"])?;
         self.revoke_manual(&row, enabled, "manual").await?;
-        let response =
-            crate::key_fallback::set_schedulable(&self.actions, id, enabled, key, 3).await;
+        let response = crate::actions::set_schedulable(&self.actions, id, enabled, key, 3).await;
         let live = self.actions.account(id, None).await;
         let verified = response["success"] == true
             && live.as_ref().is_ok_and(|v| {
@@ -133,16 +97,16 @@ impl Runtime {
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_schedulable",
-            json!({"account_id":id,"schedulable":enabled,"verified":verified,"detached":detached,"error_code":response["error_code"]}),
+            json!({"account_id":id,"schedulable":enabled,"verified":verified,"error_code":response["error_code"]}),
             false,
         );
         if !verified {
             return Err(Error::new(
                 502,
-                json!({"message":"调度写入未确认，请刷新查看实际状态","detached":detached,"code":response["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("readback_mismatch")}),
+                json!({"message":"调度写入未确认，请刷新查看实际状态","code":response["error_code"].as_str().filter(|v|!v.is_empty()).unwrap_or("readback_mismatch")}),
             ));
         }
-        Ok(json!({"verified":true,"detached":detached,"account_id":id,"schedulable":enabled}))
+        Ok(json!({"verified":true,"account_id":id,"schedulable":enabled}))
     }
     pub async fn delete_account(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
         self.writable()?;
@@ -155,41 +119,11 @@ impl Runtime {
             .await?;
         let _lease = self.monitor.lease(&row)?;
         let _config = self.config.lock.lock().await;
-        let _fallback = self.config.fallback.lock.lock().await;
         let _control = self.actions.locks.control(id).await;
         let row = self
             .actions
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
-        let config = self.config.fallback.load();
-        if !config.valid {
-            return Err(Error::new(409, "托管配置无法读取，删除已中止"));
-        }
-        let detached = config.ids.contains(&id);
-        if detached {
-            if payload["detach_managed"] != true {
-                return Err(Error::new(
-                    409,
-                    "此账号由 Key 回退托管，请刷新并确认解除托管后删除",
-                ));
-            }
-            self.config
-                .fallback
-                .write_locked(
-                    config.openai,
-                    config.grok,
-                    &config
-                        .ids
-                        .iter()
-                        .copied()
-                        .filter(|v| *v != id)
-                        .collect::<Vec<_>>(),
-                    None,
-                    config.version + 1,
-                    "desktop:admin",
-                )
-                .map_err(|_| Error::new(503, "解除托管保存失败，未执行删除"))?;
-        }
         self.revoke_manual(&row, false, "delete").await?;
         let code = self.manual_account_write(id, false, key).await;
         let verified = self
@@ -202,16 +136,16 @@ impl Runtime {
         crate::audit::write(
             &self.settings.audit_path,
             "desktop_delete_account",
-            json!({"account_id":id,"verified":verified,"detached":detached,"code":code}),
+            json!({"account_id":id,"verified":verified,"code":code}),
             false,
         );
         if !verified {
             return Err(Error::new(
                 502,
-                json!({"message":if detached {"已解除托管；删除未确认，请刷新核对实际状态"} else {"删除未确认，请刷新核对实际状态"},"detached":detached,"code":if code == "ok" {"readback_mismatch"} else {&code}}),
+                json!({"message":"删除未确认，请刷新核对实际状态","code":if code == "ok" {"readback_mismatch"} else {&code}}),
             ));
         }
-        Ok(json!({"account_id":id,"deleted":true,"verified":true,"detached":detached}))
+        Ok(json!({"account_id":id,"deleted":true,"verified":true}))
     }
     pub async fn recover_account(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {
         self.writable()?;
@@ -318,7 +252,6 @@ impl Runtime {
                     .try_with(|c| OperationContext {
                         action: c.action.clone(),
                         expected: c.expected.clone(),
-                        managed: c.managed,
                     })
                     .ok();
                 let operation = async move {

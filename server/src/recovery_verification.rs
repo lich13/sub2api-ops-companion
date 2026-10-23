@@ -230,7 +230,7 @@ impl Monitor {
             .map(|v| (*v).to_owned())
             .collect::<Vec<_>>();
         let prior = receipt_result(&intent["verification_receipt"]);
-        if !(recovery_rules::eligible(&row, &windows)
+        if !(recovery_rules::eligible(&row, &windows, self.now())
             || truthy(&prior["success"]) && recovery_rules::confirmed(&row))
         {
             return self.blocked_intent(
@@ -419,7 +419,7 @@ impl Monitor {
                 method_generation,
             );
         }
-        if !recovery_rules::eligible(&after, &windows) {
+        if !recovery_rules::eligible(&after, &windows, self.now()) {
             return self.known_recovery_failure(
                 id,
                 &after,

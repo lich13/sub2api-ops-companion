@@ -860,7 +860,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     passed = (
         result.get("exit_code") == 0
         and summary.get("status") == "passed"
-        and summary.get("passed", 0) == 11
+        and summary.get("passed", 0) == 9
         and summary.get("failed", 0) == 0
         and result.get("python_receipt_reader", {}).get("status") == "readable"
         and result.get("postgres", {}).get("stopped") is True

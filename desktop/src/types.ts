@@ -23,7 +23,6 @@ export type Account = {
   available: boolean;
   group_ids: number[];
   blockers: { code: string; label: string; until?: string }[];
-  managed: boolean;
   recoverable?: boolean;
   version: string;
   operation_versions?: Record<string, string>;
@@ -298,9 +297,7 @@ export function filterAccounts(
       (!status ||
         (status === "ready"
           ? a.available
-          : status === "managed"
-            ? a.managed
-            : status === "error"
+          : status === "error"
               ? !!a.last_error_id
               : !a.schedulable)),
   );

@@ -83,7 +83,6 @@ const account = (id: number, name: string, status = "active"): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   version: "fixture",
   last_success_at: null,
   last_error_at: null,

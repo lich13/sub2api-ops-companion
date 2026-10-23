@@ -99,7 +99,7 @@ impl Detection {
                 .flatten()
                 .map(|v| string(v).to_owned())
                 .collect::<Vec<_>>();
-            if !recovery_rules::eligible(row, &windows) {
+            if !recovery_rules::eligible(row, &windows, now) {
                 return Ok("账号状态不允许自动恢复".into());
             }
             if block_signature(row) != context["block_signature"] {
@@ -327,7 +327,7 @@ impl Detection {
                 &json!({
                     "model_id": model,
                     "expected_version": "0".repeat(64),
-                    "expected_operation_version": operation_versions(&row, false)["model_test"],
+                    "expected_operation_version": operation_versions(&row)["model_test"],
                     "request_id": request,
                     "concurrency": 1,
                 }),

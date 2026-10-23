@@ -3,7 +3,6 @@ use crate::{
     bark::{self, Bark},
     compat::{config_revision, integer, now, string, text},
     error::{Error, Result},
-    key_fallback::KeyFallback,
     oauth_state::OAuthState,
     queries::Queries,
     recovery_policy::{self, CONNECTION_IDS, MODEL_IDS, SEEN_IDS},
@@ -19,7 +18,6 @@ pub struct ConfigService {
     pub oauth: Store,
     pub bark_store: Store,
     pub bark: Bark,
-    pub fallback: KeyFallback,
     pub state: OAuthState,
     pub queries: Queries,
     pub lock: Arc<tokio::sync::Mutex<()>>,
@@ -28,12 +26,7 @@ fn conflict() -> Error {
     Error::new(409, "设置已被其他窗口修改，请刷新后重试")
 }
 impl ConfigService {
-    pub fn new(
-        settings: Arc<Settings>,
-        bark: Bark,
-        fallback: KeyFallback,
-        queries: Queries,
-    ) -> Self {
+    pub fn new(settings: Arc<Settings>, bark: Bark, queries: Queries) -> Self {
         Self {
             oauth: Store::new(
                 settings.oauth_path.clone(),
@@ -50,7 +43,6 @@ impl ConfigService {
             state: queries.oauth.clone(),
             settings,
             bark,
-            fallback,
             queries,
             lock: Arc::new(tokio::sync::Mutex::new(())),
         }
@@ -114,11 +106,6 @@ impl ConfigService {
         } else {
             json!({})
         };
-        let fallback = if section.is_none_or(|s| s == "key_fallback") {
-            self.fallback.load().panel()
-        } else {
-            json!({})
-        };
         let bark_raw = if section.is_none_or(|s| s == "bark") {
             // Optional Bark config can be invalid while the service keeps
             // displaying its disabled/invalid status. Transactions still use
@@ -127,10 +114,9 @@ impl ConfigService {
         } else {
             json!({})
         };
-        let mut result = json!({"oauth":oauth,"bark":bark,"key_fallback":fallback});
+        let mut result = json!({"oauth":oauth,"bark":bark});
         result["oauth"]["revision"] = config_revision(&json!([result["oauth"], raw])).into();
         result["bark"]["revision"] = config_revision(&json!([result["bark"], bark_raw])).into();
-        result["key_fallback"]["revision"] = config_revision(&result["key_fallback"]).into();
         Ok(result)
     }
     pub async fn reconcile(&self, rows: &[Value]) -> Result<bool> {
@@ -193,7 +179,7 @@ impl ConfigService {
             return Err(Error::read_only());
         }
         let _guard = self.lock.lock().await;
-        if !matches!(section, "oauth" | "bark" | "key_fallback") {
+        if !matches!(section, "oauth" | "bark") {
             return Err(Error::new(422, "未知设置分区"));
         }
         let current = self.snapshot(Some(section))?;
@@ -404,43 +390,7 @@ impl ConfigService {
                 })?;
                 self.bark.configure(&payload, true);
             }
-            _ => {
-                if changes.keys().any(|key| {
-                    !matches!(
-                        key.as_str(),
-                        "openai_enabled"
-                            | "grok_enabled"
-                            | "managed_account_ids"
-                            | "coexist_account_ids"
-                    )
-                }) {
-                    return Err(Error::new(422, "未知 Key 回退设置"));
-                }
-                let mut values = json!({});
-                for key in ["openai_enabled", "grok_enabled", "managed_account_ids"] {
-                    values[key] = current[section][key].clone();
-                }
-                values.as_object_mut().unwrap().extend(changes.clone());
-                if !changes.contains_key("coexist_account_ids") {
-                    let selected = values["managed_account_ids"]
-                        .as_array()
-                        .cloned()
-                        .unwrap_or_default();
-                    values["coexist_account_ids"] = json!(current[section]["coexist_account_ids"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter(|id| selected.contains(id))
-                        .cloned()
-                        .collect::<Vec<_>>());
-                }
-                for key in ["openai_enabled", "grok_enabled"] {
-                    if !values[key].is_boolean() {
-                        return Err(Error::new(422, "开关必须为布尔值"));
-                    }
-                }
-                self.fallback.save_expected(&values, user, expected).await?;
-            }
+            _ => unreachable!("validated config section"),
         }
         audit::write(
             &self.settings.audit_path,

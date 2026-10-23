@@ -18,14 +18,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from server_contract_inventory import operation_versions_without_management
 from server_credit_contract import safe_environment
 from server_http_contract import REFERENCE_SHA, ROOT
 
 SELECTION = {
-    "tests.test_key_fallback": {
-        "OAuthClassificationTests": None,
-        "GrokFallbackTests": ["test_grok_blocking_states_and_unknown_values"],
-    },
     "tests.test_quota_snapshot": {"PassiveQuotaTests": None},
     "tests.test_model_catalog": {"RuleTests": None},
     "tests.test_codex_identity": {"CodexIdentityTests": None},
@@ -53,7 +50,6 @@ SELECTION = {
     ]}},
 }
 FUNCTIONS = {
-    "classify_oauth_account", "classify_grok_oauth_account", "desired_key_schedulable",
     "latest_completed_oauth_result", "oauth_quota_summary_from_result", "latest_openai_result",
     "usage_windows", "build_monitor_candidates", "merge", "validate_overrides", "transform",
     "admitted", "import_fields", "targets", "composite_target", "codex_identity",
@@ -110,6 +106,11 @@ def collect():
                 cases.append(record)
                 raise
             record["expected"] = serial(value)
+            if name == "account_dto":
+                record["expected"].pop("managed", None)
+                record["expected"]["operation_versions"] = operation_versions_without_management(
+                    captured["row"], record["expected"]["operation_versions"])
+                record["approved_difference"] = "0.1.55 removes Key management and its version inputs"
             record["input_unchanged"] = before == serial(bound.arguments)
             cases.append(record)
             return value

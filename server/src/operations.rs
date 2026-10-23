@@ -181,7 +181,6 @@ pub trait Backend: Send + Sync {
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
         chrono::Utc::now()
     }
-    fn managed(&self) -> Result<BTreeSet<i64>>;
     fn mark(&self, id: i64) -> Result<Value>;
     fn dispatch<'a>(
         &'a self,
@@ -192,8 +191,6 @@ pub trait Backend: Send + Sync {
     fn model_get(&self, id: &str) -> Result<Value>;
     fn model_jobs(&self) -> Result<Vec<Value>>;
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>>;
-    fn delete_lock(&self) -> Arc<AsyncMutex<()>>;
-    fn detach_deleted<'a>(&'a self, jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>>;
     fn test_config(&self) -> Result<(String, usize)>;
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         None
@@ -255,6 +252,8 @@ impl Operations {
             "expected_version",
             "payload",
             "template_target",
+            "managed_child_ids",
+            "detached",
         ] {
             map.shift_remove(field);
         }
@@ -265,11 +264,15 @@ impl Operations {
                 "image_data_url",
                 "audio_data_url",
                 "expected_version",
+                "detach_managed",
             ] {
                 map.shift_remove(field);
             }
         }
         out["requested"] = requested;
+        if let Some(result) = out["result"].as_object_mut() {
+            result.shift_remove("detached");
+        }
         if detail && job["action"] == "test" {
             let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
             let values = events
@@ -376,10 +379,7 @@ impl Operations {
         if job["action"] == "degradation_mark" {
             return Ok(string(&self.backend.mark(id)?["version"]).to_owned());
         }
-        Ok(string(
-            &operation_versions(row, self.backend.managed()?.contains(&id))[string(&job["action"])],
-        )
-        .to_owned())
+        Ok(string(&operation_versions(row)[string(&job["action"])]).to_owned())
     }
     pub fn current(&self, row: &Value, job: &Value) -> Result<Value> {
         let action = string(&job["action"]);
@@ -410,7 +410,7 @@ impl Operations {
         }
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         Ok(match action {
-            "schedulable" => row[action] == p[action] && !self.backend.managed()?.contains(&id),
+            "schedulable" => row[action] == p[action],
             "groups" => {
                 let current = ids(&row["group_ids"]);
                 let scope = ids(&p["scope_group_ids"]);
@@ -454,6 +454,16 @@ impl Operations {
             Err(e) => Err(e),
         }
     }
+    pub fn resolve_test_model(&self, row: &Value, payload: &mut Value) -> Result<()> {
+        if row["platform"] == "openai" && string(&payload["model_id"]).trim().is_empty() {
+            let model = self.backend.test_config()?.0;
+            if !account_templates::MODEL_ID.is_match(&model) {
+                return Err(Error::new(422, "测活模型配置无效"));
+            }
+            payload["model_id"] = model.into();
+        }
+        Ok(())
+    }
     pub async fn submit(self: &Arc<Self>, aid: i64, request: &Value, key: &str) -> Result<Value> {
         if self.actions.settings.read_only {
             return Err(Error::read_only());
@@ -477,7 +487,7 @@ impl Operations {
         let client = validation::request_id(&request["client_id"])?;
         let expected = validation::text(&request["expected_version"], 64, 64)?;
         let action = string(&request["action"]);
-        let payload =
+        let mut payload =
             validation::operation_payload(action, request.get("payload").unwrap_or(&json!({})))?;
         let scheduled = request
             .get("scheduled_at")
@@ -531,6 +541,9 @@ impl Operations {
             None
         };
         let row = self.actions.account(aid, None).await?;
+        if action == "test" {
+            self.resolve_test_model(&row, &mut payload)?;
+        }
         let jid = id();
         let mut job = json!({"id":jid,"account_id":aid,"account_name":row["name"],"action":action,"payload":payload,"expected_version":expected,"client_id":client,"request_id":rid,"request_hash":signature,"parent_account_id":row["parent_account_id"],"created_at":now(),"updated_at":now(),"status":"queued","reason":"等待执行","result":null});
         if let Some(at) = scheduled {
@@ -772,7 +785,6 @@ impl Operations {
         } else {
             BTreeMap::new()
         };
-        let managed = self.backend.managed()?;
         let bid = id();
         let created = now();
         let mut jobs = vec![];
@@ -797,10 +809,6 @@ impl Operations {
             if action == "delete" {
                 let children = descendants.get(&aid).cloned().unwrap_or_default();
                 job["child_account_ids"] = json!(children);
-                job["managed_child_ids"] = json!(children
-                    .into_iter()
-                    .filter(|i| managed.contains(i))
-                    .collect::<Vec<_>>());
             }
             let mut change = None;
             if action == "test" {
@@ -810,7 +818,7 @@ impl Operations {
                     || !matches!(string(&row["type"]), "oauth" | "apikey")
                 {
                     Some(("failed", "此账号不支持连接测试"))
-                } else if operation_versions(row, false)["test"] != item["expected_version"] {
+                } else if operation_versions(row)["test"] != item["expected_version"] {
                     Some((
                         "needs_confirmation",
                         "账号凭据、代理或模型配置已变化，请刷新后重新选择",
@@ -1227,7 +1235,7 @@ impl Operations {
                     result["degradation_mark"] = self.backend.mark(aid)?;
                 }
                 if EDIT_ACTIONS.contains(&string(&job["action"])) {
-                    let versions = operation_versions(row, false);
+                    let versions = operation_versions(row);
                     result["field_version"] = versions[string(&job["action"])].clone();
                     result["settings_versions"] = pick(&versions, EDIT_ACTIONS);
                 }
@@ -1264,6 +1272,11 @@ impl Operations {
             return Ok(());
         }
         let mut started = json!({"status":"running","reason":"","started_at":now()});
+        if job["action"] == "test" {
+            let mut payload = job["payload"].clone();
+            self.resolve_test_model(row.as_ref().unwrap(), &mut payload)?;
+            started["payload"] = payload;
+        }
         if scheduled {
             // A future connection test follows this account's current credentials,
             // including routine OAuth refreshes since the appointment was created.
@@ -1277,7 +1290,6 @@ impl Operations {
         let context = OperationContext {
             action: string(&job["action"]).into(),
             expected: string(&job["expected_version"]).into(),
-            managed: self.backend.managed()?.contains(&aid),
         };
         let result = OPERATION
             .scope(context, self.dispatch(&row, &job, &key))
@@ -1508,7 +1520,6 @@ pub fn native_confirmed(row: Option<&Value>, job: &Value, unchanged: bool) -> Va
     match string(&job["action"]) {
         "delete" => {
             result["deleted"] = true.into();
-            result["detached"] = truthy(&job["detached"]).into();
         }
         "groups" => {
             result["group_ids"] = json!(row["group_ids"].as_array().cloned().unwrap_or_default())

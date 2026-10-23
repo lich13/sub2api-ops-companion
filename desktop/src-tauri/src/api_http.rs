@@ -333,10 +333,7 @@ fn proxy_batch_valid(data: &Value) -> bool {
                                     id.is_null() || id.as_u64().is_some_and(|value| value > 0)
                                 })
                         }
-                        Some("delete") => {
-                            fields.len() == 1
-                                && fields.get("detach_managed").is_some_and(Value::is_boolean)
-                        }
+                        Some("delete") => fields.is_empty(),
                         Some("test") => {
                             fields.len() == 3
                                 && fields.get("confirmed").and_then(Value::as_bool) == Some(true)
@@ -655,7 +652,7 @@ fn shape_valid(path: &str, data: &Value) -> bool {
         "/snapshot" => snapshot_valid(data),
         p if p.starts_with("/accounts/") && p.ends_with("/usage") => usage_valid(data),
         "/config" => {
-            ["oauth", "bark", "key_fallback"]
+            ["oauth", "bark"]
                 .iter()
                 .all(|k| data[*k]["revision"].is_string())
                 && data["oauth"]
@@ -1048,11 +1045,6 @@ pub(crate) async fn http_detailed(
             .and_then(Value::as_str)
             .or_else(|| detail.and_then(|d| d["message"].as_str()))
             .unwrap_or(fallback);
-        let suffix = if detail.is_some_and(|d| d["detached"].as_bool() == Some(true)) {
-            "（该账号已解除托管）"
-        } else {
-            ""
-        };
         let mut error = fail(
             if status == 401 || status == 403 {
                 "auth"
@@ -1060,9 +1052,8 @@ pub(crate) async fn http_detailed(
                 "http"
             },
             &format!(
-                "{}{} [{}]",
+                "{} [{}]",
                 message.chars().take(240).collect::<String>(),
-                suffix,
                 status
             ),
         );
@@ -1640,8 +1631,7 @@ mod tests {
         }
         let config = serde_json::json!({
             "oauth":{"revision":"fixture","model_detection_model_id":"gpt-6-luna"},
-            "bark":{"revision":"fixture"},
-            "key_fallback":{"revision":"fixture"}
+            "bark":{"revision":"fixture"}
         });
         assert!(shape_valid("/config", &config));
         let mut invalid_config = config.clone();
@@ -2003,10 +1993,10 @@ mod tests {
         };
         let batch = |job: Value| serde_json::json!({"batch_id": id, "pending": 0, "items": [job]});
 
-        let delete = batch(item("delete", serde_json::json!({"detach_managed": true})));
+        let delete = batch(item("delete", serde_json::json!({})));
         assert!(shape_valid("/account-operations/batch", &delete));
         let mut bad_delete = delete.clone();
-        bad_delete["items"][0]["requested"]["detach_managed"] = serde_json::json!("true");
+        bad_delete["items"][0]["requested"]["unexpected"] = serde_json::json!(true);
         assert!(!shape_valid("/account-operations/batch", &bad_delete));
         let mut extra_delete = delete.clone();
         extra_delete["items"][0]["requested"]["extra"] = serde_json::json!(false);

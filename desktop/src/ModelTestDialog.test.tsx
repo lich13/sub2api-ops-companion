@@ -22,7 +22,6 @@ const account: Account = {
   available: true,
   group_ids: [13],
   blockers: [],
-  managed: false,
   version: "a".repeat(64),
   last_success_at: null,
   last_error_at: null,

@@ -23,7 +23,6 @@ const account = (overrides: Partial<Account> = {}): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   recoverable: false,
   version: "fixture-version",
   last_success_at: null,

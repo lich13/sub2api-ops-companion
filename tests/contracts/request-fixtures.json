@@ -1415,10 +1415,9 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": false
-        },
+        "payload": {},
         "status": 200
       },
       "id": "delete/default",
@@ -1426,6 +1425,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -1438,10 +1438,9 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": false
-        },
+        "payload": {},
         "status": 200
       },
       "id": "delete/extra-expected_version",
@@ -1453,6 +1452,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -1465,6 +1465,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -1475,11 +1476,9 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": true
-        },
-        "status": 200
+        "status": 422
       },
       "id": "delete/detach_managed-1",
       "payload": {
@@ -1488,11 +1487,9 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": false
-        },
-        "status": 200
+        "status": 422
       },
       "id": "delete/detach_managed-2",
       "payload": {
@@ -1501,6 +1498,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -1511,6 +1509,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -1521,6 +1520,7 @@
     },
     {
       "action": "delete",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2514,9 +2514,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "payload": {
-          "detach_managed": false,
           "schedulable": false
         },
         "status": 200
@@ -2528,6 +2528,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2536,6 +2537,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2549,9 +2551,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "payload": {
-          "detach_managed": false,
           "schedulable": false
         },
         "status": 200
@@ -2566,6 +2568,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2579,6 +2582,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2589,9 +2593,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "payload": {
-          "detach_managed": false,
           "schedulable": true
         },
         "status": 200
@@ -2603,9 +2607,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "payload": {
-          "detach_managed": false,
           "schedulable": false
         },
         "status": 200
@@ -2617,6 +2621,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2627,6 +2632,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2637,6 +2643,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2647,6 +2654,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2658,12 +2666,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": true,
-          "schedulable": false
-        },
-        "status": 200
+        "status": 422
       },
       "id": "schedulable/detach_managed-1",
       "payload": {
@@ -2673,12 +2678,9 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
-        "payload": {
-          "detach_managed": false,
-          "schedulable": false
-        },
-        "status": 200
+        "status": 422
       },
       "id": "schedulable/detach_managed-2",
       "payload": {
@@ -2688,6 +2690,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2699,6 +2702,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -2710,6 +2714,7 @@
     },
     {
       "action": "schedulable",
+      "approved_difference": "0.1.55 removes Key management",
       "expected": {
         "status": 422
       },
@@ -7256,7 +7261,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "fixture_private_input": "fixture-private-input",
         "schedulable": false
@@ -7268,7 +7272,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
@@ -7278,7 +7281,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": null
       }
@@ -7289,7 +7291,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": 0
       }
@@ -7300,7 +7301,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": 1
       }
@@ -7311,7 +7311,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": 1.0
       }
@@ -7322,7 +7321,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": {}
       }
@@ -7333,7 +7331,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": []
       }
@@ -7344,7 +7341,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": ""
       }
@@ -7355,7 +7351,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": "fixture-private-input"
       }
@@ -7366,7 +7361,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": [
           "1"
@@ -7379,7 +7373,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": [
           true
@@ -7392,7 +7385,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": [
           1.0
@@ -7405,147 +7397,8 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-00",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": null,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-03",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": 0,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-04",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": 1,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-05",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": 1.0,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-06",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": {},
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-07",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": [],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-08",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": "",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-09",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": "fixture-private-input",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-10",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": [
-          "1"
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-11",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": [
-          true
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-12",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": [
-          1.0
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "ScheduleRequest/detach_managed-13",
-      "method": "POST",
-      "path": "/accounts/989996/schedulable",
-      "payload": {
-        "detach_managed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulable": false
       }
     },
     {
@@ -7554,7 +7407,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "schedulable": false
       }
     },
@@ -7564,7 +7416,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": null,
         "schedulable": false
       }
@@ -7575,7 +7426,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": true,
         "schedulable": false
       }
@@ -7586,7 +7436,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": false,
         "schedulable": false
       }
@@ -7597,7 +7446,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": 0,
         "schedulable": false
       }
@@ -7608,7 +7456,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": 1,
         "schedulable": false
       }
@@ -7619,7 +7466,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": 1.0,
         "schedulable": false
       }
@@ -7630,7 +7476,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": {},
         "schedulable": false
       }
@@ -7641,7 +7486,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": [],
         "schedulable": false
       }
@@ -7652,7 +7496,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "",
         "schedulable": false
       }
@@ -7663,7 +7506,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "fixture-private-input",
         "schedulable": false
       }
@@ -7674,7 +7516,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           "1"
         ],
@@ -7687,7 +7528,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           true
         ],
@@ -7700,7 +7540,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           1.0
         ],
@@ -7713,7 +7552,6 @@
       "method": "POST",
       "path": "/accounts/989996/schedulable",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "schedulable": false
       }
@@ -7873,135 +7711,8 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "fixture_private_input": "fixture-private-input"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-00",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": null,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-03",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": 0,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-04",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": 1,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-05",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": 1.0,
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-06",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": {},
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-07",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": [],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-08",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": "",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-09",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": "fixture-private-input",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-10",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": [
-          "1"
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-11",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": [
-          true
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-12",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": [
-          1.0
-        ],
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    },
-    {
-      "expected_status": 422,
-      "id": "DeleteRequest/detach_managed-13",
-      "method": "DELETE",
-      "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
     {
@@ -8009,9 +7720,7 @@
       "id": "DeleteRequest/expected_version-missing",
       "method": "DELETE",
       "path": "/accounts/989996",
-      "payload": {
-        "detach_managed": false
-      }
+      "payload": {}
     },
     {
       "expected_status": 422,
@@ -8019,7 +7728,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": null
       }
     },
@@ -8029,7 +7737,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": true
       }
     },
@@ -8039,7 +7746,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": false
       }
     },
@@ -8049,7 +7755,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": 0
       }
     },
@@ -8059,7 +7764,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": 1
       }
     },
@@ -8069,7 +7773,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": 1.0
       }
     },
@@ -8079,7 +7782,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": {}
       }
     },
@@ -8089,7 +7791,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": []
       }
     },
@@ -8099,7 +7800,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": ""
       }
     },
@@ -8109,7 +7809,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": "fixture-private-input"
       }
     },
@@ -8119,7 +7818,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           "1"
         ]
@@ -8131,7 +7829,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           true
         ]
@@ -8143,7 +7840,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": [
           1.0
         ]
@@ -8155,7 +7851,6 @@
       "method": "DELETE",
       "path": "/accounts/989996",
       "payload": {
-        "detach_managed": false,
         "expected_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },

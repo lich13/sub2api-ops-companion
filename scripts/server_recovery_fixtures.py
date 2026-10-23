@@ -175,14 +175,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
     sys.path.insert(0, str(app_root))
     from app import bark as py_bark
     from app.daily_test import DailyTestSchedule, daily_account_eligible, next_daily_time
-    from app.key_fallback import (
-        AVAILABLE,
-        UNKNOWN,
-        UNAVAILABLE,
-        classify_grok_oauth_account,
-        classify_oauth_account,
-        desired_key_schedulable,
-    )
     from app.oauth_monitor import (
         OAuthStateStore,
         _quota_recovery_descriptor,
@@ -807,48 +799,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         },
     }
 
-    grok_cases = [
-        ("available", {"status": "active", "schedulable": True, "extra": {"grok_needs_reauth": False}}),
-        ("reauth_needed", {"status": "active", "schedulable": True, "extra": {"grok_needs_reauth": True}}),
-        ("malformed_status", {"status": "active", "schedulable": True, "extra": "invalid fixture"}),
-        ("future_rate_reset", {"status": "active", "schedulable": True,
-                                "rate_limit_reset_at": stamp(AT + timedelta(seconds=1))}),
-    ]
-    key_fallback_vectors = {
-        "grok": [
-            {"name": name, "row": row, "expected": classify_grok_oauth_account(row, AT)}
-            for name, row in grok_cases
-        ],
-        "oauth": [],
-        "desired": [],
-    }
-    for name, row, result in [
-        ("available", account(), quota_result(AT, reset_5h=AT + timedelta(hours=1), reset_7d=AT + timedelta(days=3))),
-        ("quota_exhausted", account(), quota_result(AT, used_5h=100, reset_5h=AT + timedelta(hours=1), reset_7d=AT + timedelta(days=3))),
-        ("incomplete_windows", account(), {"success": True, "queried_at": stamp(AT),
-             "oauth_quota": {"plan_type": "plus", "ui_windows": [{"key": "codex_5h", "used_percent": 20}]}}),
-        ("stale_result", account(), quota_result(AT - timedelta(hours=2))),
-    ]:
-        key_fallback_vectors["oauth"].append({
-            "name": name,
-            "row": row,
-            "result": result,
-            "now": stamp(AT),
-            "freshness_seconds": 3600,
-            "expected": classify_oauth_account(row, result, AT, 3600),
-        })
-    for name, states in [
-        ("empty", []),
-        ("available_wins", [UNKNOWN, UNAVAILABLE, AVAILABLE]),
-        ("all_unavailable", [UNAVAILABLE, UNAVAILABLE]),
-        ("unknown_only", [UNKNOWN]),
-    ]:
-        key_fallback_vectors["desired"].append({
-            "name": name,
-            "states": states,
-            "expected": desired_key_schedulable(states),
-        })
-
     manual_row = account()
     with tempfile.TemporaryDirectory(prefix="server-recovery-python-") as directory:
         baseline_state = OAuthStateStore(str(Path(directory) / "oauth-state.json"))
@@ -913,7 +863,6 @@ def build_fixtures(repo: Path, app_root: Path) -> dict[str, Any]:
         "daily_test": daily_vectors,
         "reset_credit": reset_vectors,
         "bark": bark_vectors,
-        "key_fallback": key_fallback_vectors,
         "manual_generation": manual_generation,
     })
 

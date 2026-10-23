@@ -112,6 +112,14 @@ def build(reference: Path) -> dict:
             item["expected"] = {"status": 200, "payload": normalized}
         except (ValidationError, HTTPException) as error:
             item["expected"] = {"status": getattr(error, "status_code", 422)}
+    # The current contract rejects the retired ownership flag, including false.
+    for item in result:
+        if item["action"] in {"delete", "schedulable"}:
+            if "detach_managed" in item["payload"]:
+                item["expected"] = {"status": 422}
+            elif item["expected"]["status"] == 200:
+                item["expected"]["payload"].pop("detach_managed", None)
+            item["approved_difference"] = "0.1.55 removes Key management"
     integer_cases = []
     for index, value in enumerate([
         None, {}, [], True, False, -1, 0, 1, 1.0, 1.5, 42, 42.0,
@@ -136,9 +144,9 @@ def build(reference: Path) -> dict:
         (GroupsRequest, "PUT", account + "/groups", {"scope_group_ids": [1], "group_ids": [], "expected_version": version}),
         (DegradationMarkRequest, "PUT", account + "/degradation-mark", {"marked": False, "expected_mark_version": version}),
         (TestRequest, "POST", account + "/test", {"confirmed": True, "model_id": "fixture-model", "mode": "default", "prompt": "", "image_data_url": "", "audio_data_url": "", "expected_version": version}),
-        (ScheduleRequest, "POST", account + "/schedulable", {"schedulable": False, "detach_managed": False, "expected_version": version}),
+        (ScheduleRequest, "POST", account + "/schedulable", {"schedulable": False, "expected_version": version}),
         (AccountVersionRequest, "POST", account + "/recover-state", {"expected_version": version}),
-        (DeleteRequest, "DELETE", account, {"detach_managed": False, "expected_version": version}),
+        (DeleteRequest, "DELETE", account, {"expected_version": version}),
         (UsageActionRequest, "POST", account + "/usage-action", {"action": "query_usage", "confirmed": False, "expected_version": version}),
         (ModelTestRequest, "POST", account + "/model-tests", {"model_id": "fixture-model", "request_id": ids["request_id"], "concurrency": 1, "expected_operation_version": None, "expected_version": version}),
         (DetectionRequest, "PUT", account + "/model-detection", {"enabled": False, "interval_minutes": 15, "model_id": "fixture-model", "expected_version": version}),

@@ -1,12 +1,11 @@
 use crate::{
-    actions::Actions,
+    actions::{self, Actions},
     audit,
     bark::Bark,
     capacity_alerts::{mark_view, CapacityAlerts},
     compat::{datetime, digest, integer, operation_versions, parse_datetime, pick, string, truthy},
     detection_quota,
     error::{Error, Result},
-    key_fallback,
     model_downgrade::{bank_contains, is_downgrade, valid_report},
     model_target,
     model_tests::{ModelTests, ACTIVE},
@@ -593,7 +592,7 @@ impl Detection {
                 &json!({
                     "model_id": model,
                     "expected_version": "0".repeat(64),
-                    "expected_operation_version": operation_versions(&row, false)["model_test"],
+                    "expected_operation_version": operation_versions(&row)["model_test"],
                     "request_id": request,
                     "concurrency": 1,
                 }),
@@ -602,7 +601,7 @@ impl Detection {
                         "detection_mark_version": mark["version"],
                         "triggers": causes,
                         "degradation_recheck": recheck,
-                        "recheck_account_version": if recheck { operation_versions(&row, false)["model_test"].clone()} else { Value::Null},
+                        "recheck_account_version": if recheck { operation_versions(&row)["model_test"].clone()} else { Value::Null},
                         "recheck_schedulable": if recheck { row["schedulable"].clone()} else { Value::Null},
                     })),
             )
@@ -750,7 +749,7 @@ impl Detection {
             } else {
                 d["status"] = "writing".into();
                 self.update(id, json!({"disposition":d}))?;
-                let _ = key_fallback::set_schedulable(&self.actions, id, false, &key, 3).await;
+                let _ = actions::set_schedulable(&self.actions, id, false, &key, 3).await;
                 let live = self.actions.account(id, None).await?;
                 if live["schedulable"] == false {
                     d["status"] = "completed".into();

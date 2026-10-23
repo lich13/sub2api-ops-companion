@@ -43,7 +43,6 @@ const account = (
   available: true,
   group_ids: groupIds,
   blockers: [],
-  managed: false,
   version: `version-${id}`,
   last_success_at: null,
   last_error_at: null,

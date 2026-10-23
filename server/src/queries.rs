@@ -69,12 +69,7 @@ pub fn recoverable(row: &Value, at: DateTime<Utc>) -> bool {
             })
 }
 
-pub fn account_dto(
-    row: &Value,
-    at: DateTime<Utc>,
-    managed: &BTreeSet<i64>,
-    quota_result: &Value,
-) -> Value {
+pub fn account_dto(row: &Value, at: DateTime<Utc>, quota_result: &Value) -> Value {
     let mut value = pick(
         row,
         &[
@@ -119,8 +114,6 @@ pub fn account_dto(
         .unwrap_or_default()
         .into();
     value["usage_windows"] = quota::usage_windows(row, at, quota_result).into();
-    let is_managed = managed.contains(&integer(&row["id"]).unwrap_or(0));
-    value["managed"] = is_managed.into();
     value["recovery_selectable"] = json!(
         row["platform"] == "openai"
             && row["type"] == "oauth"
@@ -171,7 +164,7 @@ pub fn account_dto(
         .is_some_and(|(s, e)| s > e)
         .into();
     value["version"] = account_version(row).into();
-    value["operation_versions"] = operation_versions(row, is_managed);
+    value["operation_versions"] = operation_versions(row);
     value
 }
 

@@ -610,7 +610,6 @@ impl Harness {
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -1856,8 +1855,7 @@ async fn all_automatic_sources_and_models_share_the_same_exact_cooldown_boundary
     }
 
     let live = harness.runtime().actions.account(id, None).await.unwrap();
-    let operation_version =
-        sub2ops_server::compat::operation_versions(&live, false)["model_test"].clone();
+    let operation_version = sub2ops_server::compat::operation_versions(&live)["model_test"].clone();
     let queued_automatic = harness
         .runtime()
         .tests
@@ -3474,7 +3472,7 @@ async fn marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_sched
     harness.advance(1);
     let live_account = harness.runtime().actions.account(id, None).await.unwrap();
     let expected_account_version =
-        sub2ops_server::compat::operation_versions(&live_account, false)["model_test"].clone();
+        sub2ops_server::compat::operation_versions(&live_account)["model_test"].clone();
     harness.runtime().detection.tick().await.unwrap();
     harness.mock.wait_for("POST", "/v1/responses", 1).await;
     let job_id = harness.runtime().detection.control(id).unwrap()["job_id"]
@@ -3651,7 +3649,7 @@ async fn sol_request_with_astra_prediction_stays_unmarked_and_clears_a_qualified
     let current = harness.runtime().detection.control(id).unwrap();
     let account = harness.runtime().actions.account(id, None).await.unwrap();
     let account_version =
-        sub2ops_server::compat::operation_versions(&account, false)["model_test"].clone();
+        sub2ops_server::compat::operation_versions(&account)["model_test"].clone();
     let mut recheck_job = completed_recheck_job(
         id,
         &current["generation"],
@@ -4017,7 +4015,7 @@ async fn target_recheck_and_stale_generation_cannot_clear_a_mark_or_emit_notific
         "completed_at":datetime(harness.now()),
         "detection_generation":stale_generation,
         "detection_mark_version":mark["version"],
-        "recheck_account_version":sub2ops_server::compat::operation_versions(&account,false)["model_test"],
+        "recheck_account_version":sub2ops_server::compat::operation_versions(&account)["model_test"],
         "recheck_schedulable":true,
         "first_group_valid":true,
         "first_group_prediction":"claude-sonnet-4-6",
@@ -4087,7 +4085,7 @@ async fn late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_c
         changed_mark_id,
         &control["generation"],
         &mark["version"],
-        &sub2ops_server::compat::operation_versions(&account, false)["model_test"],
+        &sub2ops_server::compat::operation_versions(&account)["model_test"],
         "fixture-mark-version-late-result",
         harness.now(),
     );
@@ -4167,7 +4165,7 @@ async fn late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_c
         released_id,
         &control["generation"],
         &mark["version"],
-        &sub2ops_server::compat::operation_versions(&account, false)["model_test"],
+        &sub2ops_server::compat::operation_versions(&account)["model_test"],
         "fixture-release-hold-late-result",
         harness.now(),
     );
@@ -4240,7 +4238,7 @@ async fn late_recheck_is_rejected_after_mark_change_manual_release_or_schedule_c
         closed_id,
         &control["generation"],
         &mark["version"],
-        &sub2ops_server::compat::operation_versions(&account, false)["model_test"],
+        &sub2ops_server::compat::operation_versions(&account)["model_test"],
         &recheck_id,
         harness.now(),
     );
@@ -4328,7 +4326,7 @@ async fn same_recheck_job_id_with_new_completion_time_is_processed_after_retry()
     let control = harness.runtime().detection.control(id).unwrap();
     let account = harness.runtime().actions.account(id, None).await.unwrap();
     let account_version =
-        sub2ops_server::compat::operation_versions(&account, false)["model_test"].clone();
+        sub2ops_server::compat::operation_versions(&account)["model_test"].clone();
     let first_completed_at = harness.now();
     let mut failed_first_group = completed_recheck_job(
         id,
@@ -4579,7 +4577,7 @@ async fn missing_result_report_variants_never_clear_marks_or_create_outbox_event
             id,
             &control["generation"],
             &mark["version"],
-            &sub2ops_server::compat::operation_versions(&account, false)["model_test"],
+            &sub2ops_server::compat::operation_versions(&account)["model_test"],
             &format!("fixture-invalid-{}", uuid::Uuid::new_v4().simple()),
             harness.now(),
         );
@@ -6949,7 +6947,7 @@ async fn stale_oauth_rejection_is_ignored_but_fresh_rejection_blocks_recheck() {
     );
 
     let account_version =
-        sub2ops_server::compat::operation_versions(&current, false)["model_test"].clone();
+        sub2ops_server::compat::operation_versions(&current)["model_test"].clone();
     let job = completed_recheck_job(
         id,
         &harness.runtime().detection.control(id).unwrap()["generation"],
@@ -7040,7 +7038,7 @@ async fn recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_se
     let control = harness.runtime().detection.control(id).unwrap();
     let account = harness.runtime().actions.account(id, None).await.unwrap();
     let account_version =
-        sub2ops_server::compat::operation_versions(&account, false)["model_test"].clone();
+        sub2ops_server::compat::operation_versions(&account)["model_test"].clone();
     let receipt = json!({
         "status":"pending",
         "job_id":job_id,

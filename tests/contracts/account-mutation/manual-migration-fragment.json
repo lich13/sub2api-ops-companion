@@ -48,14 +48,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_detaches_before_exact_write_and_failed_readback_never_reenrolls",
+        "test_name": "management_schedule_uses_exact_write_and_confirms_readback",
         "assertions": [
-          "assert_eq!(config.ids, vec![other])",
-          "assert!(!config.openai)",
-          "assert!(config.grok)",
+          "assert_eq!(h.account(other).await[\"schedulable\"], true)",
           "assert_eq!(response.status().as_u16(), 200)",
           "assert_eq!(body[\"verified\"], true)",
-          "assert_eq!(body[\"detached\"], true)",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(calls.len(), 1)",
           "assert_eq!(calls[0].method, Method::POST)",
@@ -63,12 +60,8 @@
           "assert_eq!(calls[0].body, json!({\"schedulable\":false}))",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(failed.1[\"detail\"][\"code\"], \"readback_mismatch\")",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(failed.0, 502)",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(manual_writes(&h).len(), 3)"
         ]
       },
@@ -80,14 +73,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_detaches_before_exact_write_and_failed_readback_never_reenrolls",
+        "test_name": "management_schedule_uses_exact_write_and_confirms_readback",
         "assertions": [
-          "assert_eq!(config.ids, vec![other])",
-          "assert!(!config.openai)",
-          "assert!(config.grok)",
+          "assert_eq!(h.account(other).await[\"schedulable\"], true)",
           "assert_eq!(response.status().as_u16(), 200)",
           "assert_eq!(body[\"verified\"], true)",
-          "assert_eq!(body[\"detached\"], true)",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(calls.len(), 1)",
           "assert_eq!(calls[0].method, Method::POST)",
@@ -95,12 +85,8 @@
           "assert_eq!(calls[0].body, json!({\"schedulable\":false}))",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(failed.1[\"detail\"][\"code\"], \"readback_mismatch\")",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(failed.0, 502)",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(manual_writes(&h).len(), 3)"
         ]
       },
@@ -112,14 +98,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_detaches_before_exact_write_and_failed_readback_never_reenrolls",
+        "test_name": "management_schedule_uses_exact_write_and_confirms_readback",
         "assertions": [
-          "assert_eq!(config.ids, vec![other])",
-          "assert!(!config.openai)",
-          "assert!(config.grok)",
+          "assert_eq!(h.account(other).await[\"schedulable\"], true)",
           "assert_eq!(response.status().as_u16(), 200)",
           "assert_eq!(body[\"verified\"], true)",
-          "assert_eq!(body[\"detached\"], true)",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(calls.len(), 1)",
           "assert_eq!(calls[0].method, Method::POST)",
@@ -127,12 +110,8 @@
           "assert_eq!(calls[0].body, json!({\"schedulable\":false}))",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(failed.1[\"detail\"][\"code\"], \"readback_mismatch\")",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(h.account(id).await[\"schedulable\"], false)",
           "assert_eq!(failed.0, 502)",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![other])",
           "assert_eq!(manual_writes(&h).len(), 3)"
         ]
       },
@@ -144,15 +123,10 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_conflicts_and_failed_detach_stop_before_any_upstream_write",
+        "test_name": "management_schedule_conflicts_stop_before_any_upstream_write",
         "assertions": [
-          "assert_eq!(\n        h.request(\n            Method::POST,\n            &path,\n            Some(json!({\"expected_version\":version,\"schedulable\":false}))\n        )\n        .await\n        .0,\n        409\n    )",
-          "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        500\n    )",
-          "assert_eq!(fs::read(&file).unwrap(), before)",
           "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        409\n    )",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert_eq!(h.request(Method::POST, &path, Some(payload)).await.0, 404)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert!(manual_writes(&h).is_empty())"
         ]
       },
@@ -164,15 +138,10 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_conflicts_and_failed_detach_stop_before_any_upstream_write",
+        "test_name": "management_schedule_conflicts_stop_before_any_upstream_write",
         "assertions": [
-          "assert_eq!(\n        h.request(\n            Method::POST,\n            &path,\n            Some(json!({\"expected_version\":version,\"schedulable\":false}))\n        )\n        .await\n        .0,\n        409\n    )",
-          "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        500\n    )",
-          "assert_eq!(fs::read(&file).unwrap(), before)",
           "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        409\n    )",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert_eq!(h.request(Method::POST, &path, Some(payload)).await.0, 404)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert!(manual_writes(&h).is_empty())"
         ]
       },
@@ -184,15 +153,10 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_schedule_conflicts_and_failed_detach_stop_before_any_upstream_write",
+        "test_name": "management_schedule_conflicts_stop_before_any_upstream_write",
         "assertions": [
-          "assert_eq!(\n        h.request(\n            Method::POST,\n            &path,\n            Some(json!({\"expected_version\":version,\"schedulable\":false}))\n        )\n        .await\n        .0,\n        409\n    )",
-          "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        500\n    )",
-          "assert_eq!(fs::read(&file).unwrap(), before)",
           "assert_eq!(\n        h.request(Method::POST, &path, Some(payload.clone()))\n            .await\n            .0,\n        409\n    )",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert_eq!(h.request(Method::POST, &path, Some(payload)).await.0, 404)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert!(manual_writes(&h).is_empty())"
         ]
       },
@@ -225,13 +189,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_delete_detaches_before_request_and_preserves_other_keys_and_history",
+        "test_name": "management_delete_preserves_other_keys_and_history",
         "assertions": [
-          "assert_eq!(detached.ids, vec![b])",
-          "assert!(!detached.openai)",
-          "assert!(detached.grok)",
+          "assert_eq!(h.account(b).await[\"schedulable\"], true)",
           "assert_eq!(response.status().as_u16(), 200)",
-          "assert_eq!(\n        response.json::<Value>().await.unwrap(),\n        json!({\"account_id\":a,\"deleted\":true,\"verified\":true,\"detached\":true})\n    )",
+          "assert_eq!(\n        response.json::<Value>().await.unwrap(),\n        json!({\"account_id\":a,\"deleted\":true,\"verified\":true})\n    )",
           "assert_eq!(\n        h.runtime\n            .actions\n            .account(a, None)\n            .await\n            .unwrap_err()\n            .status\n            .as_u16(),\n        404\n    )",
           "assert_eq!(\n        h.runtime.monitor.store.snapshot().unwrap()[\"recovery_history\"],\n        json!({\"fixture-old\":{\"id\":10,\"account_id\":a}})\n    )",
           "assert_eq!(calls.len(), 1)",
@@ -248,16 +210,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_invalid_auth_version_deleted_account_and_failed_detach_never_dispatch",
+        "test_name": "management_invalid_auth_version_and_deleted_account_never_dispatch",
         "assertions": [
           "assert_eq!(\n        h.request_with_key(Method::DELETE, &path, Some(payload.clone()), \"fixture-bad\")\n            .await\n            .0,\n        401\n    )",
-          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":\"a\".repeat(64),\"detach_managed\":true}))\n        )\n        .await\n        .0,\n        409\n    )",
+          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":\"a\".repeat(64)}))\n        )\n        .await\n        .0,\n        409\n    )",
           "assert_eq!(\n        h.request(Method::DELETE, \"accounts/9999999999\", Some(payload.clone()))\n            .await\n            .0,\n        404\n    )",
-          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":version}))\n        )\n        .await\n        .0,\n        409\n    )",
-          "assert_eq!(failed.0, 503)",
-          "assert!(!failed.2.contains(\"fixture-fallback-lock\"))",
-          "assert_eq!(fs::read(&fallback).unwrap(), before)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert!(manual_writes(&h).is_empty())"
         ]
       },
@@ -269,16 +226,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_invalid_auth_version_deleted_account_and_failed_detach_never_dispatch",
+        "test_name": "management_invalid_auth_version_and_deleted_account_never_dispatch",
         "assertions": [
           "assert_eq!(\n        h.request_with_key(Method::DELETE, &path, Some(payload.clone()), \"fixture-bad\")\n            .await\n            .0,\n        401\n    )",
-          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":\"a\".repeat(64),\"detach_managed\":true}))\n        )\n        .await\n        .0,\n        409\n    )",
+          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":\"a\".repeat(64)}))\n        )\n        .await\n        .0,\n        409\n    )",
           "assert_eq!(\n        h.request(Method::DELETE, \"accounts/9999999999\", Some(payload.clone()))\n            .await\n            .0,\n        404\n    )",
-          "assert_eq!(\n        h.request(\n            Method::DELETE,\n            &path,\n            Some(json!({\"expected_version\":version}))\n        )\n        .await\n        .0,\n        409\n    )",
-          "assert_eq!(failed.0, 503)",
-          "assert!(!failed.2.contains(\"fixture-fallback-lock\"))",
-          "assert_eq!(fs::read(&fallback).unwrap(), before)",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert!(manual_writes(&h).is_empty())"
         ]
       },
@@ -290,14 +242,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_delete_rejection_keeps_detached_state_and_disconnect_uses_readback_once",
+        "test_name": "management_delete_rejection_and_disconnect_use_readback_once",
         "assertions": [
           "assert_eq!(failed.0, 502)",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert!(failed.2.contains(\"已解除托管\"))",
           "assert_eq!(failed.1[\"detail\"][\"code\"], \"http_500\")",
           "assert!(!failed.2.contains(\"fixture-private\"))",
-          "assert!(h.runtime.config.fallback.load().ids.is_empty())",
           "assert!(h.runtime.actions.account(id, None).await.is_ok())",
           "assert_eq!(manual_writes(&h).len(), 1)",
           "assert_eq!(success.0, 200)",
@@ -315,14 +264,11 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_delete_rejection_keeps_detached_state_and_disconnect_uses_readback_once",
+        "test_name": "management_delete_rejection_and_disconnect_use_readback_once",
         "assertions": [
           "assert_eq!(failed.0, 502)",
-          "assert_eq!(failed.1[\"detail\"][\"detached\"], true)",
-          "assert!(failed.2.contains(\"已解除托管\"))",
           "assert_eq!(failed.1[\"detail\"][\"code\"], \"http_500\")",
           "assert!(!failed.2.contains(\"fixture-private\"))",
-          "assert!(h.runtime.config.fallback.load().ids.is_empty())",
           "assert!(h.runtime.actions.account(id, None).await.is_ok())",
           "assert_eq!(manual_writes(&h).len(), 1)",
           "assert_eq!(success.0, 200)",
@@ -343,7 +289,6 @@
         "test_name": "management_parallel_deletes_succeed_but_same_account_overlap_rejects_without_queueing",
         "assertions": [
           "assert_eq!(request.await.unwrap(), 200)",
-          "assert!(h.runtime.config.fallback.load().ids.is_empty())",
           "assert_eq!(manual_writes(&h).len(), 3)",
           "assert_eq!(\n            h.runtime\n                .actions\n                .account(*id, None)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            404\n        )",
           "assert_eq!(rejected.0, 409)",
@@ -362,7 +307,6 @@
         "test_name": "management_parallel_deletes_succeed_but_same_account_overlap_rejects_without_queueing",
         "assertions": [
           "assert_eq!(request.await.unwrap(), 200)",
-          "assert!(h.runtime.config.fallback.load().ids.is_empty())",
           "assert_eq!(manual_writes(&h).len(), 3)",
           "assert_eq!(\n            h.runtime\n                .actions\n                .account(*id, None)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            404\n        )",
           "assert_eq!(rejected.0, 409)",
@@ -378,7 +322,7 @@
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
-        "test_name": "management_recover_exact_request_preserves_switches_history_and_managed_ownership",
+        "test_name": "management_recover_exact_request_preserves_switches_and_history",
         "assertions": [
           "assert_eq!(response.0, 200)",
           "assert_eq!(response.1[\"verified\"], true)",
@@ -386,7 +330,6 @@
           "assert_eq!(row[\"status\"], \"active\")",
           "assert_eq!(row[\"schedulable\"], false)",
           "assert!(row[\"rate_limit_reset_at\"].is_null())",
-          "assert_eq!(h.runtime.config.fallback.load().ids, vec![id])",
           "assert_eq!(\n        h.runtime.monitor.store.snapshot().unwrap()[\"recovery_history\"],\n        history\n    )",
           "assert_eq!(calls.len(), 1)",
           "assert_eq!(calls[0].method, Method::POST)",

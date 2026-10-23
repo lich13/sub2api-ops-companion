@@ -62,7 +62,7 @@ export async function operationPreview(method: string, path: string, body: Recor
               job.result = { verified: true, group_ids: account.group_ids };
             } else {
               for (let i = accounts.length - 1; i >= 0; --i) if (accounts[i].id === account.id || accounts[i].parent_account_id === account.id) accounts.splice(i, 1);
-              job.result = { verified: true, deleted: true, detached: account.managed };
+              job.result = { verified: true, deleted: true };
             }
             job.status = 'completed'; job.reason = '';
           }
@@ -110,7 +110,6 @@ export async function operationPreview(method: string, path: string, body: Recor
       }
       if (action === 'schedulable') {
         account.schedulable = Boolean(payload.schedulable);
-        if (payload.detach_managed) account.managed = false;
         account.blockers = account.blockers.filter(blocker => blocker.code !== 'disabled');
         if (!account.schedulable) account.blockers.push({ code: 'disabled', label: '调度已关闭' });
         account.available = account.status === 'active' && account.blockers.length === 0;

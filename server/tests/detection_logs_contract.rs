@@ -131,7 +131,6 @@ impl Harness {
             usage_path: root.path().join("oauth-state.json"),
             oauth_path: root.path().join("oauth-config.json"),
             bark_path: root.path().join("bark-config.json"),
-            fallback_path: root.path().join("fallback.json"),
             connection_path,
             model_path: root.path().join("group-models.json"),
             keepalive_path: root.path().join("keepalive-state.json"),

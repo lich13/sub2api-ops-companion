@@ -9,7 +9,6 @@ use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use sqlx::types::Json as SqlJson;
 use std::{
-    collections::BTreeSet,
     future::pending,
     path::Path,
     process::{Command, Stdio},
@@ -36,7 +35,7 @@ use sub2ops_server::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{Mutex as AsyncMutex, Notify, Semaphore},
+    sync::{Notify, Semaphore},
     task::JoinHandle,
 };
 
@@ -102,7 +101,6 @@ fn fixture_settings(
         usage_path: directory.join("oauth-state.json"),
         oauth_path: directory.join("oauth-config.json"),
         bark_path: directory.join("bark-config.json"),
-        fallback_path: directory.join("key-fallback.json"),
         connection_path,
         model_path: directory.join("group-models.json"),
         keepalive_path: directory.join("keepalive-state.json"),
@@ -250,10 +248,6 @@ struct PanicBackend {
 }
 
 impl Backend for PanicBackend {
-    fn managed(&self) -> Result<BTreeSet<i64>> {
-        Ok(BTreeSet::new())
-    }
-
     fn mark(&self, _id: i64) -> Result<Value> {
         Ok(json!({"marked":false,"version":"0".repeat(64)}))
     }
@@ -280,14 +274,6 @@ impl Backend for PanicBackend {
         Box::pin(async { Err(Error::new(404, "fixture model absent")) })
     }
 
-    fn delete_lock(&self) -> Arc<AsyncMutex<()>> {
-        Arc::new(AsyncMutex::new(()))
-    }
-
-    fn detach_deleted<'a>(&'a self, _jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Ok(()) })
-    }
-
     fn test_config(&self) -> Result<(String, usize)> {
         Ok(("gpt-6-luna".into(), 1))
     }
@@ -299,10 +285,6 @@ struct SafeBackend {
 }
 
 impl Backend for SafeBackend {
-    fn managed(&self) -> Result<BTreeSet<i64>> {
-        Ok(BTreeSet::new())
-    }
-
     fn mark(&self, _id: i64) -> Result<Value> {
         Ok(json!({"marked":false,"version":"0".repeat(64)}))
     }
@@ -327,14 +309,6 @@ impl Backend for SafeBackend {
 
     fn model_cancel<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Value>> {
         Box::pin(async { Err(Error::new(404, "fixture model absent")) })
-    }
-
-    fn delete_lock(&self) -> Arc<AsyncMutex<()>> {
-        Arc::new(AsyncMutex::new(()))
-    }
-
-    fn detach_deleted<'a>(&'a self, _jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Ok(()) })
     }
 
     fn test_config(&self) -> Result<(String, usize)> {
@@ -418,7 +392,7 @@ async fn operation_panic_closes_runtime_and_restart_checks_dispatched_work_once(
         let request = submit_request(
             "usage",
             &format!("fixture-supervision-operation-{index:04}"),
-            &operation_versions(&row, false)["usage"],
+            &operation_versions(&row)["usage"],
             json!({"action":"query_usage"}),
         );
         let accepted = queue

@@ -171,7 +171,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_confirmed_payload_is_required_and_strict",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/operation_contract.rs",
@@ -179,16 +179,21 @@
         "assertions": [
           "assert_eq!(error.status.as_u16(), 422)",
           "assert_eq!(accepted[\"status\"], \"queued\")",
-          "assert_eq!(\n        accepted[\"requested\"],\n        fixtures()[\"request_defaults\"][\"public_requested\"]\n    )",
           "assert!(harness.mock.test_calls().is_empty())",
           "assert_eq!(error.status.as_u16(), 422)",
           "assert_eq!(\n            harness\n                .operations\n                .submit_batch(&invalid_batch, ADMIN_KEY, false)\n                .await\n                .unwrap_err()\n                .status\n                .as_u16(),\n            422\n        )",
           "assert_eq!(harness.operations.store.read().unwrap(), before)",
           "assert!(\n        sub2ops_server::validation::operation_payload(\"test\", &json!({\"confirmed\": \"true\"}))\n            .is_err()\n    )",
-          "assert!(sub2ops_server::validation::operation_payload(\n        \"test\",\n        &json!({\"confirmed\": true, \"unknown\": true})\n    )\n    .is_err())"
+          "assert!(sub2ops_server::validation::operation_payload(\n        \"test\",\n        &json!({\"confirmed\": true, \"unknown\": true})\n    )\n    .is_err())",
+          "assert_eq!(accepted[\"requested\"], requested);"
         ]
       },
-      "coverage_note": "Missing, false, nonboolean confirmation and client-selected batch models reject with 422; persistent state stays unchanged."
+      "coverage_note": "Default connection test model now follows the approved configured model requirement; strict request validation remains covered.",
+      "replacement": {
+        "legacy_assertions": "Missing, false, nonboolean confirmation and client-selected batch models reject with 422; persistent state stays unchanged.",
+        "approved_requirement": "Single account default connection tests must use the configured test model instead of an empty upstream model ID.",
+        "replacement_contract": "Strict field rejection remains unchanged; accepted default payload contains the configured model. Immediate and scheduled requests freeze it across restarts and idempotent resubmission."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_connection_batch039:ConnectionBatch039Tests.test_default_concurrency_is_two",

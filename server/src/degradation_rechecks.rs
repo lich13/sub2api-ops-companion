@@ -45,7 +45,7 @@ impl Detection {
         !row.is_object()
             || value["enabled"] != true
             || row["schedulable"] != true
-            || operation_versions(row, false)["model_test"] != context["recheck_account_version"]
+            || operation_versions(row)["model_test"] != context["recheck_account_version"]
             || row["schedulable"] != context["recheck_schedulable"]
     }
     pub async fn complete_recheck(&self, job: &Value) -> Result<Value> {

@@ -8,7 +8,6 @@ Sub2API 的 Rust 旁路运维服务，提供 OAuth 额度监控、Bark 事件推
 - Bark：推送 OAuth 恢复、测活失败、自动恢复失败和 401/402 认证异常。
 - OAuth 额度查询：客户端支持单账号查询和全部 OAuth 刷新；Grok 只刷新官方账单，不发送模型请求。
 - 账号保活：按账号选择是否清除符合条件的临时不可调度，所有平台默认关闭；保留人工调度、降智标记及恢复限额。
-- Key 调度回退：OpenAI、Grok 分平台控制选定的 apikey。某平台全部 OAuth 账号不可用时开启该平台的 Key；存在可用 OAuth 时，勾选“OAuth 可用时也启用”的 Key 保持开启，其余关闭。没有 OAuth 或无法判断时保持原状态。Grok 根据 Sub2API 的调度、冷却、限流、到期和重新认证状态判断，不额外查询额度。
 
 机制说明：[OAuth 监控](docs/oauth-monitoring.md)、[模型检测](docs/model-detection.md)、[账号保活](docs/keepalive.md)、[自动用卡](docs/automatic-credit.md)、[账号测试](docs/account-operations.md)、[模型目录](docs/model-catalog.md)。升级和回退见 [UPGRADING.md](UPGRADING.md)。
 
@@ -46,7 +45,6 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 | `BARK_ENABLED` | 是否启用事件 Bark 推送（含账号保活达到频率上限后的暂停通知），默认关闭。 |
 | `BARK_DEVICE_KEY` | Bark Device Key；生产环境建议通过桌面设置写入权限为 `0600` 的配置文件。 |
 | `BARK_SERVER_URL` | Bark 服务根 URL，默认 `https://api.day.app`；HTTP 只允许 loopback。桌面端保留当前运行时 URL。 |
-| `KEY_FALLBACK_CONFIG_PATH` | Key 调度回退配置文件，默认 `/data/key-fallback-config.json`。 |
 | `OAUTH_RECOVERY_MONITOR_ENABLED` | 是否监控到期恢复，默认开启。 |
 | `MODEL_DETECTION_MODEL_ID` | 全局自动检测模型，默认 `gpt-6-luna`；新任务生效，已有任务保留原模型。 |
 | `OAUTH_AUTO_RESET_CREDIT_ENABLED` | 7d 原始用量达到 100% 且当前上游 429 限流时自动用卡，默认关闭；与 Sub2API 原自动用卡互斥。 |

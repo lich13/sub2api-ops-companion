@@ -11,7 +11,6 @@ use crate::{
     execution::{DiskLease, TestSlots},
     fingerprint_bank::FingerprintBank,
     keepalive::Keepalive,
-    key_fallback::KeyFallback,
     model_catalog::Catalog,
     model_detection::Detection,
     model_tests::ModelTests,
@@ -102,7 +101,6 @@ impl Runtime {
             ("oauth_state", settings.usage_path.clone()),
             ("oauth_config", settings.oauth_path.clone()),
             ("bark_config", settings.bark_path.clone()),
-            ("fallback_config", settings.fallback_path.clone()),
             ("connection_config", settings.connection_path.clone()),
             ("model_config", settings.model_path.clone()),
             ("keepalive", settings.keepalive_path.clone()),
@@ -185,12 +183,7 @@ impl Runtime {
             crate::model_candidates::Candidates::with_clock(actions.supervisor.clone(), monotonic);
         let mut bark = Bark::new(settings.clone())?;
         bark.supervise(actions.supervisor.clone());
-        let config = ConfigService::new(
-            settings.clone(),
-            bark.clone(),
-            KeyFallback::new(actions.clone()),
-            queries,
-        );
+        let config = ConfigService::new(settings.clone(), bark.clone(), queries);
         let hooks = Arc::new(Hooks(OnceLock::new()));
         let config_for_slots = config.clone();
         let slots = TestSlots::new(Arc::new(move || {
@@ -295,7 +288,6 @@ impl Runtime {
     pub async fn preflight(&self) -> Result<Value> {
         startup("oauth_state", self.actions.queries.oauth.snapshot())?;
         startup("oauth_config", self.config.snapshot(None))?;
-        startup("fallback_config", self.config.fallback.preflight())?;
         startup("model_tests", self.tests.data())?;
         startup("detection", self.detection.store.read())?;
         startup("keepalive", self.keepalive.store.read())?;
@@ -341,7 +333,6 @@ impl Runtime {
         startup("priority_orders", self.priorities.recover_startup().await)?;
         startup("legacy_recovery", self.migrate_legacy_recovery().await)?;
         startup("model_tests", self.tests.startup())?;
-        startup("key_fallback", self.config.fallback.migrate())?;
         startup(
             "capacity",
             self.detection.capacity.retire_legacy(chrono::Utc::now()),
@@ -365,7 +356,6 @@ impl Runtime {
             ("daily", 1000),
             ("notifications", 2000),
             ("credit_notifications", 2000),
-            ("fallback", 30000),
             ("capacity", 2000),
             ("detection", 2000),
             ("keepalive", 2000),
@@ -402,7 +392,6 @@ impl Runtime {
                                 .deliver_results(&runtime.config.bark)
                                 .await
                         }
-                        "fallback" => runtime.monitor.fallback().await.map(|_| ()),
                         "capacity" => runtime.detection.capacity.poll().await,
                         "detection" => runtime.detection.tick().await,
                         "keepalive" => runtime.keepalive.tick().await,

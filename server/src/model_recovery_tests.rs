@@ -568,7 +568,6 @@ impl Harness {
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -779,7 +778,7 @@ async fn seed_recovery_with_model(
     let observed = harness.now() - Duration::seconds(1);
     let usage = usage_result(&row, observed);
     let summary = quota::summary_from_result(&row, &usage);
-    let descriptor = recovery_rules::rate_descriptor(&row, &summary);
+    let descriptor = recovery_rules::rate_descriptor(&row, &summary, harness.now());
     assert!(
         descriptor.is_object(),
         "fixture row must derive an exact rate-limit intent"

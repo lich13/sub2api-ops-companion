@@ -60,7 +60,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
         match id {
             "account_template_version_from_operation_version" => {
                 let input = python_value(&item["input"]);
-                let actual = compat::operation_versions(&input, false);
+                let actual = compat::operation_versions(&input);
                 assert_hash(
                     actual["account_template"].as_str().unwrap().to_owned(),
                     &item["expected_version"],
@@ -83,7 +83,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
                 ];
                 for (case_name, expected_prefix, fields) in mappings {
                     let input = python_value(&item["cases"][case_name]);
-                    let actual = compat::operation_versions(&input, false);
+                    let actual = compat::operation_versions(&input);
                     for field in fields {
                         let expected_key = format!("{expected_prefix}_{field}_version");
                         assert_hash(
@@ -171,7 +171,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
             "operation_versions_full_synthetic_account" => {
                 let input = python_value(&item["input"]);
                 assert_eq!(
-                    compat::operation_versions(&input, false),
+                    compat::operation_versions(&input),
                     item["expected_versions"],
                     "{id}"
                 );
@@ -180,7 +180,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
                 let mut actual_versions = BTreeMap::new();
                 for case_name in ["a", "b"] {
                     let input = python_value(&item["cases"][case_name]);
-                    let actual = compat::operation_versions(&input, false);
+                    let actual = compat::operation_versions(&input);
                     assert_eq!(
                         actual, item["expected_versions"][case_name],
                         "{id}/{case_name}"
@@ -197,7 +197,7 @@ fn all_version_vectors_match_the_pinned_python_contract() {
                     item["expected_model_config_versions"].as_object().unwrap()
                 {
                     let input = python_value(&item["cases"][case_name]);
-                    let actual = compat::operation_versions(&input, false);
+                    let actual = compat::operation_versions(&input);
                     assert_hash(
                         actual["model_config"].as_str().unwrap().to_owned(),
                         expected,

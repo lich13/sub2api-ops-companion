@@ -27,7 +27,7 @@ export default function MobileAccounts(props: Props) {
       {props.accounts.map((a) => <article className="mobile-account" key={a.id}>
         <header>
           <label className="account-check"><input type="checkbox" aria-label={`选择 ${a.name}`} checked={props.selected.has(a.id)} disabled={!props.online} onChange={(e) => props.select(a.id, e.target.checked)}/></label>
-          <div className="mobile-identity"><strong title={a.name}>{a.name}</strong><span>{a.platform === "openai" ? "OpenAI" : a.platform === "grok" ? "Grok" : a.platform} · {a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}{a.managed && " · 回退托管"}</span></div>
+          <div className="mobile-identity"><strong title={a.name}>{a.name}</strong><span>{a.platform === "openai" ? "OpenAI" : a.platform === "grok" ? "Grok" : a.platform} · {a.type === "oauth" ? "OAuth" : a.type === "apikey" ? "Key" : a.type}</span></div>
           {props.schedule(a)}
           <button className="icon-button" aria-label={`${a.name}操作`} onClick={() => setActiveId(a.id)}><MoreHorizontal size={21}/></button>
         </header>

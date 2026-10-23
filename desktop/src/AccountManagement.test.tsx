@@ -48,7 +48,6 @@ const account = (id: number): Account => ({
   schedulable: false,
   available: false,
   blockers: [],
-  managed: id === 1,
   version: "a".repeat(64),
   group_ids: [],
   last_success_at: null,
@@ -95,12 +94,6 @@ async function openAutoResetSettings(
       oauth_early_probe_batch_size: 5,
       oauth_recovery_test_model_id: "fixture-model",
       model_detection_model_id: "gpt-6-luna",
-    },
-    key_fallback: {
-      revision: "key-r1",
-      openai_enabled: false,
-      grok_enabled: false,
-      managed_account_ids: [],
     },
     bark: { revision: "bark-r1", enabled: false },
   };
@@ -246,9 +239,9 @@ it("submits one confirmed deletion batch, reports individual results, and remove
     account_name: a.name,
     action: "delete",
     status: index === 1 ? "failed" : "completed",
-    reason: index === 1 ? "已解除托管；删除未确认" : "",
-    requested: { detach_managed: a.managed },
-    ...(index === 1 ? {} : { result: { deleted: true, verified: true, detached: a.managed } }),
+    reason: index === 1 ? "删除未确认" : "",
+    requested: {},
+    ...(index === 1 ? {} : { result: { deleted: true, verified: true } }),
   }));
   vi.mocked(api).mockResolvedValue({ batch_id: batchId, items, pending: 0 } as never);
   const removed = vi.fn(), finished = vi.fn();
@@ -266,7 +259,7 @@ it("submits one confirmed deletion batch, reports individual results, and remove
     ),
   );
   expect(container.textContent).toContain("删除 5 个账号");
-  expect(container.textContent).toContain("#1 · 回退托管");
+  expect(container.textContent).not.toContain("回退托管");
   expect(container.textContent).toContain("母账号关联的 1 个账号也会被删除");
   expect(api).not.toHaveBeenCalled();
   await act(async () => button("确认删除").click());
@@ -276,7 +269,7 @@ it("submits one confirmed deletion batch, reports individual results, and remove
     accounts: selected.map((a) => ({
       account_id: a.id,
       expected_version: `delete-version-${a.id}`,
-      payload: { detach_managed: a.managed },
+      payload: {},
     })),
     request_id: expect.any(String),
     client_id: expect.any(String),
@@ -288,7 +281,7 @@ it("submits one confirmed deletion batch, reports individual results, and remove
       .map((r: { id: number }) => r.id),
   ).toEqual([2]);
   expect(container.textContent).toContain("4 个已删除，1 个失败");
-  expect(container.textContent).toContain("已解除托管；删除未确认");
+  expect(container.textContent).toContain("删除未确认");
   expect(api).toHaveBeenCalledTimes(1);
 });
 
@@ -330,7 +323,7 @@ it("shows the server reason for queued, checking, and running batch jobs", async
       action: "delete",
       status: (["queued", "checking", "running"] as const)[index],
       reason: ["等待账号空闲", "正在核对删除结果", "删除任务执行中"][index],
-      requested: { detach_managed: a.managed },
+      requested: {},
     })),
   } as never);
   await act(async () =>

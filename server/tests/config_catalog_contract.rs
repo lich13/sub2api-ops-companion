@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::Path};
 use sub2ops_server::{
     account_templates::{self, Templates},
-    compat, key_fallback, model_catalog,
+    compat, model_catalog,
     model_config::ModelConfig,
     model_rules,
     settings::Settings,
@@ -363,7 +363,7 @@ fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
 }
 
 #[test]
-fn settings_priority_and_key_fallback_legacy_parsing_match_pinned_python() {
+fn settings_priority_parsing_matches_pinned_python() {
     let fixture = fixtures();
     let root = tempfile::tempdir().expect("temporary test root");
     let priority = &fixture["settings_priority"];
@@ -399,66 +399,6 @@ fn settings_priority_and_key_fallback_legacy_parsing_match_pinned_python() {
     );
     assert_eq!(fs::read(&oauth_path).unwrap(), oauth_before);
     assert_eq!(fs::read(&bark_path).unwrap(), bark_before);
-
-    let fallback = &fixture["key_fallback"];
-    let parsed = key_fallback::parse_config(&fallback["legacy_input"]);
-    assert!(parsed.valid);
-    assert_eq!(
-        parsed.enabled,
-        fallback["expected"]["enabled"].as_bool().unwrap()
-    );
-    assert_eq!(
-        parsed.openai,
-        fallback["expected"]["openai_enabled"].as_bool().unwrap()
-    );
-    assert_eq!(
-        parsed.grok,
-        fallback["expected"]["grok_enabled"].as_bool().unwrap()
-    );
-    assert_eq!(
-        json!(parsed.ids),
-        fallback["expected"]["managed_account_ids"]
-    );
-    assert_eq!(
-        json!(parsed.coexist),
-        fallback["expected"]["coexist_account_ids"]
-    );
-    assert_eq!(
-        parsed.version,
-        fallback["expected"]["config_version"].as_i64().unwrap()
-    );
-    assert_eq!(
-        parsed.updated_at,
-        fallback["expected"]["updated_at"].as_str().unwrap()
-    );
-    assert_eq!(
-        parsed.updated_by,
-        fallback["expected"]["updated_by"].as_str().unwrap()
-    );
-    assert_eq!(parsed.panel(), fallback["expected"]["panel"]);
-
-    let invalid = key_fallback::parse_config(&fallback["invalid_input"]);
-    assert!(!invalid.valid);
-    assert_eq!(invalid.panel(), fallback["invalid_expected"]["panel"]);
-    assert_eq!(fallback["invalid_expected"]["valid"].as_bool(), Some(false));
-
-    for case in fallback["managed_id_cases"].as_array().unwrap() {
-        let result = key_fallback::managed_ids(&case["input"]);
-        assert_eq!(
-            result.is_ok(),
-            case["accepted"].as_bool().unwrap(),
-            "managed account ID case {}",
-            case["id"]
-        );
-        if let Some(expected) = case.get("expected") {
-            assert_eq!(
-                json!(result.unwrap()),
-                *expected,
-                "managed account ID case {}",
-                case["id"]
-            );
-        }
-    }
 }
 
 #[test]

@@ -165,7 +165,6 @@ struct MockUpstream {
     test_gate: Arc<StdMutex<Option<Gate>>>,
     mark_unschedulable_on_test: Arc<StdMutex<Option<i64>>>,
     clear_block_on_test: Arc<StdMutex<Option<i64>>>,
-    schedulable_gate: Arc<StdMutex<Option<Gate>>>,
     recovery_status: Arc<StdMutex<u16>>,
     clear_status: Arc<StdMutex<u16>>,
     temp_status: Arc<StdMutex<u16>>,
@@ -189,7 +188,6 @@ impl MockUpstream {
             test_gate: Arc::new(StdMutex::new(None)),
             mark_unschedulable_on_test: Arc::new(StdMutex::new(None)),
             clear_block_on_test: Arc::new(StdMutex::new(None)),
-            schedulable_gate: Arc::new(StdMutex::new(None)),
             recovery_status: Arc::new(StdMutex::new(200)),
             clear_status: Arc::new(StdMutex::new(200)),
             temp_status: Arc::new(StdMutex::new(200)),
@@ -419,30 +417,6 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         return json_response(*state.temp_status.lock().unwrap(), json!({"code":0}));
     }
 
-    if method == Method::POST && path.ends_with("/schedulable") {
-        let gate = { state.schedulable_gate.lock().unwrap().clone() };
-        if let Some(gate) = gate {
-            gate.entered.notify_one();
-            gate.release.notified().await;
-        }
-        let Some(id) = account_id(&path, "/schedulable") else {
-            return json_response(404, json!({"code":1}));
-        };
-        let schedulable = payload["schedulable"].as_bool().unwrap_or(false);
-        let now = *state.clock.lock().unwrap();
-        sqlx::query("UPDATE accounts SET schedulable=$1,updated_at=$2 WHERE id=$3")
-            .bind(schedulable)
-            .bind(now)
-            .bind(id)
-            .execute(&state.pool)
-            .await
-            .expect("apply synthetic key fallback only to temporary PostgreSQL");
-        return json_response(
-            200,
-            json!({"code":0,"data":{"id":id,"schedulable":schedulable}}),
-        );
-    }
-
     if method == Method::POST && path == "/push" {
         return json_response(200, json!({"code":200,"data":"fixture-delivered"}));
     }
@@ -546,7 +520,6 @@ impl Harness {
             usage_path: temp.path().join("oauth-state.json"),
             oauth_path: temp.path().join("oauth-config.json"),
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -605,42 +578,6 @@ impl Harness {
             .row(id)
             .await
             .expect("read synthetic account through Runtime query projection")
-    }
-
-    async fn seed_key(&self, schedulable: bool) -> Value {
-        let id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-        self.track_account_id(id);
-        let now = self.now();
-        sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,$2,'openai','apikey','active',$3,$4,'{}'::jsonb,$5)")
-            .bind(id)
-            .bind(format!("fixture-oauth-scheduler-key-{id}"))
-            .bind(schedulable)
-            .bind(SqlJson(json!({"api_key":"fixture-key-material"})))
-            .bind(now)
-            .execute(&self.runtime.db.pool)
-            .await
-            .expect("insert synthetic API key into temporary PostgreSQL");
-        self.runtime
-            .monitor
-            .row(id)
-            .await
-            .expect("read synthetic API key through Runtime query projection")
-    }
-
-    async fn enable_openai_fallback(&self, key_id: i64) {
-        self.runtime
-            .config
-            .fallback
-            .save(
-                &json!({
-                    "openai_enabled":true,
-                    "grok_enabled":false,
-                    "managed_account_ids":[key_id]
-                }),
-                "fixture-oauth-scheduler",
-            )
-            .await
-            .expect("enable fallback only for the synthetic API key");
     }
 
     async fn stop_upstream(&mut self) {
@@ -898,13 +835,10 @@ fn fixed_reference_scope_and_daily_time_contract_are_pinned() {
     assert_eq!(reference["scope"]["oauth_monitor_runtime_http_state"], 32);
     assert_eq!(reference["scope"]["usage_query"], 1);
     assert_eq!(reference["scope"]["excluded_monitor"], 8);
-    assert_eq!(reference["scope"]["key_fallback_snapshot_extra"], 3);
-    assert_eq!(reference["scope"]["key_fallback_latest_attempt_extra"], 5);
-    assert_eq!(reference["scope"]["key_fallback_grok_isolation_extra"], 1);
     assert_eq!(reference["scope"]["recovery_selection_runtime_extra"], 1);
     assert_eq!(reference["scope"]["previously_mapped_oauth_queries"], 2);
     assert_eq!(reference["scope"]["base_total"], 85);
-    assert_eq!(reference["scope"]["total"], 95);
+    assert_eq!(reference["scope"]["total"], 86);
     assert_eq!(
         daily_test::next_time(reference_time(), "05:00").unwrap(),
         parse_datetime(&reference["daily"]["next_at_0500_beijing"]).unwrap()
@@ -4534,553 +4468,6 @@ async fn cached_inventory_rechecks_live_eligibility_before_any_scheduler_request
 }
 
 #[tokio::test]
-async fn fallback_skips_an_uncommitted_force_refresh_snapshot_and_monitor_tick() {
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-snapshot-cycle", json!({}))
-        .await;
-    let key = harness.seed_key(false).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness
-        .runtime
-        .monitor
-        .store
-        .transaction(|state| {
-            state["oauth_results"][oauth_id.to_string()] = json!({
-                "account_id":oauth_id,
-                "template_type":"oauth",
-                "success":false,
-                "queried_at":datetime(harness.now()),
-                "error_code":"http_401"
-            });
-            Ok(())
-        })
-        .unwrap();
-    let gate = Gate::new();
-    *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-    let monitor = harness.runtime.monitor.clone();
-    let refresh = tokio::spawn(async move { monitor.force_refresh().await.unwrap() });
-    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
-        .await
-        .expect("force refresh must hold its cycle while the loopback request is pending");
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    harness.runtime.monitor.tick().await.unwrap();
-    assert_eq!(report["platform_reasons"]["openai"], "refresh_in_progress");
-    assert_eq!(report["desired_by_platform"]["openai"], Value::Null);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    gate.release.notify_one();
-    let refresh = tokio::time::timeout(StdDuration::from_secs(8), refresh)
-        .await
-        .expect("finish gated loopback force refresh")
-        .unwrap();
-    assert_eq!(refresh["success"], true);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn fallback_write_excludes_monitor_tick_until_schedulable_response() {
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-write", json!({}))
-        .await;
-    let key = harness.seed_key(false).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness
-        .runtime
-        .monitor
-        .store
-        .transaction(|state| {
-            state["oauth_results"][oauth_id.to_string()] = json!({
-                "account_id":oauth_id,
-                "template_type":"oauth",
-                "success":false,
-                "queried_at":datetime(harness.now()),
-                "error_code":"http_401"
-            });
-            Ok(())
-        })
-        .unwrap();
-    harness.runtime.monitor.startup().await.unwrap();
-    let gate = Gate::new();
-    *harness.mock.schedulable_gate.lock().unwrap() = Some(gate.clone());
-    let monitor = harness.runtime.monitor.clone();
-    let fallback = tokio::spawn(async move { monitor.fallback().await.unwrap() });
-    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
-        .await
-        .expect("fallback must reach the synthetic schedulable endpoint");
-    harness.runtime.monitor.tick().await.unwrap();
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 1);
-    gate.release.notify_one();
-    let report = tokio::time::timeout(StdDuration::from_secs(5), fallback)
-        .await
-        .expect("fallback write returns after its loopback response")
-        .unwrap();
-    assert_eq!(report["changed_ids"], json!([key_id]));
-    assert_eq!(
-        harness.runtime.monitor.row(key_id).await.unwrap()["schedulable"],
-        true
-    );
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 1);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn fallback_ignores_uncommitted_snapshot_while_monitor_worker_is_active() {
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-worker", json!({}))
-        .await;
-    let key = harness.seed_key(false).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness
-        .runtime
-        .config
-        .oauth
-        .transaction(|config| {
-            config["oauth_recovery_monitor_enabled"] = true.into();
-            config["oauth_recovery_connection_account_ids"] = json!([oauth_id]);
-            config["oauth_recovery_model_account_ids"] = json!([]);
-            Ok(())
-        })
-        .unwrap();
-    harness.runtime.monitor.startup().await.unwrap();
-    let gate = Gate::new();
-    *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-    harness.runtime.monitor.tick().await.unwrap();
-    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
-        .await
-        .expect("monitor worker must dispatch exactly one loopback quota request");
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    harness.runtime.monitor.tick().await.unwrap();
-    assert_eq!(report["platform_reasons"]["openai"], "refresh_in_progress");
-    assert_eq!(report["desired_by_platform"]["openai"], Value::Null);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    gate.release.notify_one();
-    *harness.mock.usage_gate.lock().unwrap() = None;
-    tokio::time::timeout(StdDuration::from_secs(8), async {
-        loop {
-            let current = harness.runtime.monitor.state().unwrap()["oauth_results"]
-                [oauth_id.to_string()]["success"]
-                .clone();
-            if current == true {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("worker completes the reserved quota request");
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn grok_fallback_runs_without_openai_monitor_snapshot_when_oauth_state_is_valid() {
-    let harness = Harness::new().await;
-    let _openai_oauth = harness
-        .seed_account("plus", "fixture-grok-isolation-openai", json!({}))
-        .await;
-    let openai_key = harness.seed_key(true).await;
-    let openai_key_id = integer(&openai_key["id"]).unwrap();
-
-    let grok_oauth_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-    let grok_key_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-    harness.track_account_id(grok_oauth_id);
-    harness.track_account_id(grok_key_id);
-    let now = harness.now();
-    sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,'fixture-grok-oauth','grok','oauth','active',true,$2,$3,$4)")
-        .bind(grok_oauth_id)
-        .bind(SqlJson(json!({"plan_type":"plus","access_token":"fixture-grok-oauth-token","refresh_token":"fixture-grok-refresh"})))
-        .bind(SqlJson(json!({"grok_needs_reauth":true})))
-        .bind(now)
-        .execute(&harness.runtime.db.pool)
-        .await
-        .expect("insert a synthetic Grok OAuth row in temporary PostgreSQL");
-    sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,'fixture-grok-key','grok','apikey','active',false,$2,'{}'::jsonb,$3)")
-        .bind(grok_key_id)
-        .bind(SqlJson(json!({"api_key":"fixture-grok-key-material"})))
-        .bind(now)
-        .execute(&harness.runtime.db.pool)
-        .await
-        .expect("insert a synthetic Grok API key in temporary PostgreSQL");
-
-    harness
-        .runtime
-        .config
-        .fallback
-        .save(
-            &json!({
-                "openai_enabled":true,
-                "grok_enabled":true,
-                "managed_account_ids":[openai_key_id,grok_key_id]
-            }),
-            "fixture-oauth-scheduler",
-        )
-        .await
-        .unwrap();
-
-    assert!(harness.runtime.config.state.admin_token().is_ok());
-    let oauth_state_before = fs::read(&harness.runtime.settings.usage_path).unwrap();
-    let report = harness
-        .runtime
-        .config
-        .fallback
-        .run(harness.now(), None, |_| Ok(false))
-        .await
-        .unwrap();
-
-    assert_eq!(report["platform_reasons"]["openai"], "refresh_in_progress");
-    assert_eq!(report["desired_by_platform"]["openai"], Value::Null);
-    assert_eq!(
-        report["grok_oauth_states"][grok_oauth_id.to_string()],
-        "unavailable"
-    );
-    assert_eq!(report["desired_by_platform"]["grok"], true);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 1);
-    assert_eq!(harness.mock.count("GET", "/usage"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(
-        harness.runtime.monitor.row(openai_key_id).await.unwrap()["schedulable"],
-        true
-    );
-    assert_eq!(
-        harness.runtime.monitor.row(grok_key_id).await.unwrap()["schedulable"],
-        true
-    );
-    let writes = harness
-        .mock
-        .calls()
-        .into_iter()
-        .filter(|call| call.method == "POST" && call.path.ends_with("/schedulable"))
-        .collect::<Vec<_>>();
-    assert_eq!(writes.len(), 1);
-    assert!(writes[0]
-        .path
-        .ends_with(&format!("/api/v1/admin/accounts/{grok_key_id}/schedulable")));
-    assert_eq!(writes[0].body["schedulable"], true);
-    assert_eq!(writes[0].api_key.as_deref(), Some(ADMIN_KEY));
-    assert_eq!(writes[0].authorization, None);
-    assert_eq!(
-        fs::read(&harness.runtime.settings.usage_path).unwrap(),
-        oauth_state_before
-    );
-    assert!(harness.mock.unexpected().is_empty());
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn corrupt_oauth_state_prevents_fallback_write_without_cached_admin_key() {
-    let harness = Harness::new().await;
-    let openai_key = harness.seed_key(true).await;
-    let openai_key_id = integer(&openai_key["id"]).unwrap();
-    let grok_oauth_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-    let grok_key_id = NEXT_ACCOUNT_ID.fetch_add(1, Ordering::Relaxed);
-    harness.track_account_id(grok_oauth_id);
-    harness.track_account_id(grok_key_id);
-    let now = harness.now();
-    sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,'fixture-grok-oauth','grok','oauth','active',true,$2,$3,$4)")
-        .bind(grok_oauth_id)
-        .bind(SqlJson(json!({"plan_type":"plus","access_token":"fixture-grok-oauth-token","refresh_token":"fixture-grok-refresh"})))
-        .bind(SqlJson(json!({"grok_needs_reauth":true})))
-        .bind(now)
-        .execute(&harness.runtime.db.pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO accounts (id,name,platform,type,status,schedulable,credentials,extra,updated_at) VALUES ($1,'fixture-grok-key','grok','apikey','active',false,$2,'{}'::jsonb,$3)")
-        .bind(grok_key_id)
-        .bind(SqlJson(json!({"api_key":"fixture-grok-key-material"})))
-        .bind(now)
-        .execute(&harness.runtime.db.pool)
-        .await
-        .unwrap();
-    harness
-        .runtime
-        .config
-        .fallback
-        .save(
-            &json!({
-                "openai_enabled":true,
-                "grok_enabled":true,
-                "managed_account_ids":[openai_key_id,grok_key_id]
-            }),
-            "fixture-oauth-scheduler",
-        )
-        .await
-        .unwrap();
-
-    assert!(harness.runtime.config.state.admin_token().is_ok());
-    let corrupt = b"{synthetic-invalid-oauth-state";
-    fs::write(&harness.runtime.settings.usage_path, corrupt).unwrap();
-    assert!(harness.runtime.config.state.admin_token().is_err());
-    let result = harness
-        .runtime
-        .config
-        .fallback
-        .run(harness.now(), None, |_| Ok(false))
-        .await;
-    let error = result.expect_err("fallback writes must fail closed without readable admin state");
-    assert_eq!(error.status.as_u16(), 503);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    assert_eq!(
-        harness.runtime.monitor.row(grok_key_id).await.unwrap()["schedulable"],
-        false
-    );
-    assert_eq!(
-        fs::read(&harness.runtime.settings.usage_path).unwrap(),
-        corrupt
-    );
-    assert!(harness.mock.unexpected().is_empty());
-    harness.close().await;
-}
-
-#[tokio::test]
-async fn force_refresh_latest_failures_drive_fallback_only_when_fresh_and_known() {
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-401-prior", json!({}))
-        .await;
-    let key = harness.seed_key(true).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    let initial = harness
-        .runtime
-        .monitor
-        .queries
-        .query(
-            oauth_id,
-            ADMIN_KEY,
-            query_options(Source::Manual, harness.now()),
-        )
-        .await;
-    assert_eq!(initial["success"], true);
-    harness.set_now(harness.now() + Duration::minutes(1));
-    harness.mock.set_usage(401, None);
-    let refresh = harness.runtime.monitor.force_refresh().await.unwrap();
-    let diagnostic = force_refresh_diagnostic(
-        &refresh,
-        &harness.runtime.monitor.state().unwrap(),
-        oauth_id,
-    );
-    assert_eq!(refresh["success"], false, "HTTP 401 report: {diagnostic}");
-    assert_eq!(harness.mock.count("GET", "/usage"), 2);
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    assert_eq!(report["oauth_states"][oauth_id.to_string()], "unavailable");
-    assert_eq!(report["desired"], true);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    harness.close().await;
-
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-402-empty", json!({}))
-        .await;
-    let key = harness.seed_key(false).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness.mock.set_usage(402, None);
-    let refresh = harness.runtime.monitor.force_refresh().await.unwrap();
-    let diagnostic = force_refresh_diagnostic(
-        &refresh,
-        &harness.runtime.monitor.state().unwrap(),
-        oauth_id,
-    );
-    assert_eq!(refresh["success"], false, "HTTP 402 report: {diagnostic}");
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    assert_eq!(report["oauth_states"][oauth_id.to_string()], "unavailable");
-    assert_eq!(report["desired"], true);
-    let writes = harness
-        .mock
-        .calls()
-        .into_iter()
-        .filter(|call| call.method == "POST" && call.path.ends_with("/schedulable"))
-        .collect::<Vec<_>>();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].body["schedulable"], true);
-    assert_eq!(
-        harness.runtime.monitor.row(key_id).await.unwrap()["schedulable"],
-        true
-    );
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    harness.close().await;
-
-    for failure_kind in ["timeout", "network_error", "http_500"] {
-        let mut harness = Harness::new().await;
-        let oauth = harness
-            .seed_account(
-                "plus",
-                &format!("fixture-fallback-{failure_kind}"),
-                json!({}),
-            )
-            .await;
-        let key = harness.seed_key(true).await;
-        let oauth_id = integer(&oauth["id"]).unwrap();
-        let key_id = integer(&key["id"]).unwrap();
-        harness.enable_openai_fallback(key_id).await;
-        let initial = harness
-            .runtime
-            .monitor
-            .queries
-            .query(
-                oauth_id,
-                ADMIN_KEY,
-                query_options(Source::Manual, harness.now()),
-            )
-            .await;
-        assert_eq!(initial["success"], true);
-        harness.set_now(harness.now() + Duration::minutes(1));
-        let refresh = match failure_kind {
-            "timeout" => {
-                let gate = Gate::new();
-                *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
-                let monitor = harness.runtime.monitor.clone();
-                let refresh = tokio::spawn(async move { monitor.force_refresh().await.unwrap() });
-                tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
-                    .await
-                    .expect("timed request reaches the loopback server");
-                let refresh = tokio::time::timeout(StdDuration::from_secs(16), refresh)
-                    .await
-                    .expect("real upstream timeout terminates the force-refresh request")
-                    .unwrap();
-                gate.release.notify_one();
-                *harness.mock.usage_gate.lock().unwrap() = None;
-                assert_eq!(
-                    harness.runtime.monitor.state().unwrap()["scheduler"][oauth_id.to_string()]
-                        ["last_error_code"],
-                    "timeout"
-                );
-                refresh
-            }
-            "network_error" => {
-                harness.stop_upstream().await;
-                let refresh = harness.runtime.monitor.force_refresh().await.unwrap();
-                assert_eq!(
-                    harness.runtime.monitor.state().unwrap()["scheduler"][oauth_id.to_string()]
-                        ["last_error_code"],
-                    "network_error"
-                );
-                refresh
-            }
-            "http_500" => {
-                harness.mock.set_usage(500, None);
-                let refresh = harness.runtime.monitor.force_refresh().await.unwrap();
-                assert_eq!(
-                    harness.runtime.monitor.state().unwrap()["scheduler"][oauth_id.to_string()]
-                        ["last_error_code"],
-                    "http_500"
-                );
-                refresh
-            }
-            _ => unreachable!(),
-        };
-        let diagnostic = force_refresh_diagnostic(
-            &refresh,
-            &harness.runtime.monitor.state().unwrap(),
-            oauth_id,
-        );
-        assert_eq!(
-            refresh["success"], false,
-            "{failure_kind} is an unsuccessful forced refresh: {diagnostic}"
-        );
-        let report = harness.runtime.monitor.fallback().await.unwrap();
-        assert_eq!(
-            report["oauth_states"][oauth_id.to_string()],
-            "unknown",
-            "{failure_kind}"
-        );
-        assert_eq!(report["desired"], Value::Null, "{failure_kind}");
-        assert_eq!(
-            harness.mock.count("POST", "/schedulable"),
-            0,
-            "{failure_kind}"
-        );
-        assert_eq!(harness.mock.count("POST", "/test"), 0, "{failure_kind}");
-        assert_eq!(
-            harness.runtime.monitor.row(key_id).await.unwrap()["schedulable"],
-            true,
-            "{failure_kind} must leave the selected fallback key untouched"
-        );
-        if matches!(failure_kind, "timeout" | "http_500") {
-            assert_eq!(harness.mock.count("GET", "/usage"), 2);
-        } else {
-            assert_eq!(harness.mock.count("GET", "/usage"), 1);
-        }
-        harness.close().await;
-    }
-
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-success-after-failure", json!({}))
-        .await;
-    let key = harness.seed_key(true).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness.mock.set_usage(401, None);
-    harness.runtime.monitor.force_refresh().await.unwrap();
-    harness.set_now(harness.now() + Duration::minutes(1));
-    harness.mock.set_usage(200, None);
-    harness.runtime.monitor.force_refresh().await.unwrap();
-    let state = harness.runtime.monitor.state().unwrap();
-    assert!(state["scheduler"][oauth_id.to_string()]["last_error_at"].is_string());
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    assert_eq!(report["oauth_states"][oauth_id.to_string()], "available");
-    assert_eq!(report["desired"], false);
-    let writes = harness
-        .mock
-        .calls()
-        .into_iter()
-        .filter(|call| call.method == "POST" && call.path.ends_with("/schedulable"))
-        .collect::<Vec<_>>();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].body["schedulable"], false);
-    assert_eq!(harness.mock.count("GET", "/usage"), 2);
-    harness.close().await;
-
-    let harness = Harness::new().await;
-    let oauth = harness
-        .seed_account("plus", "fixture-fallback-stale-failure", json!({}))
-        .await;
-    let key = harness.seed_key(false).await;
-    let oauth_id = integer(&oauth["id"]).unwrap();
-    let key_id = integer(&key["id"]).unwrap();
-    harness.enable_openai_fallback(key_id).await;
-    harness.mock.set_usage(401, None);
-    harness.runtime.monitor.force_refresh().await.unwrap();
-    harness.set_now(harness.now() + Duration::hours(2));
-    let report = harness.runtime.monitor.fallback().await.unwrap();
-    assert_eq!(report["oauth_states"][oauth_id.to_string()], "unknown");
-    assert_eq!(report["desired"], Value::Null);
-    assert_eq!(harness.mock.count("GET", "/usage"), 1);
-    assert_eq!(harness.mock.count("POST", "/schedulable"), 0);
-    assert_eq!(harness.mock.count("POST", "/test"), 0);
-    assert_eq!(
-        harness.runtime.monitor.row(key_id).await.unwrap()["schedulable"],
-        false
-    );
-    harness.close().await;
-}
-
-#[tokio::test]
 async fn interrupted_daily_test_with_unknown_response_is_marked_and_not_replayed_after_reopen() {
     let harness = Harness::new().await;
     let now = harness.now();
@@ -5173,5 +4560,183 @@ async fn recovery_http_uses_exact_404_fallback_sequence_and_never_falls_back_on_
     assert_eq!(failed["error_code"], "http_500");
     assert_eq!(harness.mock.calls().len(), 4);
     assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn five_due_accounts_with_expired_reasons_recover_once_across_capacity_and_restart() {
+    let mut harness = Harness::new().await;
+    let due = harness.now() + Duration::hours(4);
+    let mut ids = Vec::new();
+    for index in 0..5 {
+        let row = harness
+            .seed_account(
+                "plus",
+                &format!("fixture-expired-reason-{index}"),
+                json!({}),
+            )
+            .await;
+        let id = integer(&row["id"]).unwrap();
+        ids.push(id);
+        prepare_expired_recovery(&harness, &row, due).await;
+        if index < 4 {
+            sqlx::query("UPDATE accounts SET temp_unschedulable_reason=$1,temp_unschedulable_until=$2 WHERE id=$3")
+                .bind("fixture network unavailable").bind(due - Duration::hours(2)).bind(id)
+                .execute(&harness.runtime.db.pool).await.unwrap();
+        }
+        harness
+            .runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                state["scheduler"][id.to_string()]["recovery_intent"] = json!({
+                    "status":"recovered", "fingerprint":format!("fixture-previous-cycle-{id}"),
+                    "recovered_at":datetime(due - Duration::hours(4)),
+                    "verification_dispatched":true, "verification_receipt":{"result":{"success":true},"block_state":{},"credential_fingerprint":"0".repeat(64)}
+                });
+                Ok(())
+            })
+            .unwrap();
+    }
+    harness
+        .runtime
+        .config
+        .oauth
+        .transaction(|config| {
+            config["oauth_recovery_connection_account_ids"] = json!(ids);
+            config["oauth_recovery_test_concurrency"] = 1.into();
+            config["oauth_usage_refresh_concurrency"] = 1.into();
+            Ok(())
+        })
+        .unwrap();
+    harness.set_now(due);
+    harness.mock.set_usage(200, Some(default_usage(due)));
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            let state = harness.runtime.monitor.state().unwrap();
+            if ids
+                .iter()
+                .filter(|id| {
+                    state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered"
+                })
+                .count()
+                == 2
+            {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the first bounded batch should complete");
+    let tested_before_restart = harness.mock.count("POST", "/test");
+    assert!(
+        tested_before_restart > 0 && tested_before_restart < 5,
+        "capacity must leave pending accounts"
+    );
+    harness.restart_runtime().await;
+    harness.runtime.monitor.startup().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(10), async {
+        loop {
+            harness.runtime.monitor.tick().await.unwrap();
+            let state = harness.runtime.monitor.state().unwrap();
+            if ids.iter().all(|id| {
+                state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "recovered"
+            }) {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("all five due accounts should leave the bounded queue");
+    for _ in 0..3 {
+        harness.runtime.monitor.tick().await.unwrap();
+    }
+    harness.restart_runtime().await;
+    harness.runtime.monitor.startup().await.unwrap();
+    harness.runtime.monitor.tick().await.unwrap();
+    for id in &ids {
+        assert_eq!(harness.mock.count("POST", &format!("/{id}/test")), 1);
+        assert_eq!(
+            harness.mock.count("POST", &format!("/{id}/recover-state")),
+            1
+        );
+    }
+    assert_eq!(harness.mock.count("GET", "/usage"), 5);
+    let state = harness.runtime.monitor.state().unwrap();
+    let history = state["recovery_history"].as_object().unwrap();
+    assert_eq!(
+        history
+            .values()
+            .filter(|entry| entry["legacy"] == false)
+            .count(),
+        5
+    );
+    assert_eq!(
+        history
+            .values()
+            .filter(|entry| entry["legacy"] == true)
+            .count(),
+        5
+    );
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn renewed_temporary_restriction_during_test_prevents_recovery() {
+    let harness = Harness::new().await;
+    let due = harness.now() + Duration::hours(4);
+    let row = harness
+        .seed_account("plus", "fixture-renewed-restriction", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    prepare_expired_recovery(&harness, &row, due).await;
+    sqlx::query(
+        "UPDATE accounts SET temp_unschedulable_reason=$1,temp_unschedulable_until=$2 WHERE id=$3",
+    )
+    .bind("fixture network unavailable")
+    .bind(due - Duration::hours(1))
+    .bind(id)
+    .execute(&harness.runtime.db.pool)
+    .await
+    .unwrap();
+    harness.set_now(due);
+    harness.mock.set_usage(200, Some(default_usage(due)));
+    harness.runtime.monitor.startup().await.unwrap();
+    let gate = Gate::new();
+    *harness.mock.test_gate.lock().unwrap() = Some(gate.clone());
+    harness.runtime.monitor.tick().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET temp_unschedulable_until=$1 WHERE id=$2")
+        .bind(due + Duration::hours(1))
+        .bind(id)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    gate.release.notify_one();
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            let state = harness.runtime.monitor.state().unwrap();
+            if state["scheduler"][id.to_string()]["recovery_intent"]["status"] == "retry" {
+                break;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("renewed block must end verification without recovery");
+    assert_eq!(harness.mock.count("POST", "/test"), 1);
+    assert_eq!(harness.mock.count("POST", "/recover-state"), 0);
+    assert_ne!(
+        harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+            ["status"],
+        "recovered"
+    );
     harness.close().await;
 }

@@ -101,7 +101,7 @@ export function DeleteAccountsDialog({
     try {
       const batch = await submitAccountBatch("delete", accounts.map(a => {
         if (!a.operation_versions?.delete) throw new Error("请刷新账号后重试");
-        return { account_id: a.id, expected_version: a.operation_versions.delete, payload: { detach_managed: a.managed } };
+        return { account_id: a.id, expected_version: a.operation_versions.delete, payload: {} };
       }), requestId.current);
       accepted.current = true;
       await followAccountBatch(batch, value => {
@@ -143,7 +143,6 @@ export function DeleteAccountsDialog({
         {phase === "confirm" && (
           <p>
             删除后无法撤销。
-            {[...accounts, ...affected].some((a) => a.managed) && "回退托管账号将先解除托管。"}
             {!!affected.length && `母账号关联的 ${affected.length} 个账号也会被删除。`}
           </p>
         )}
@@ -154,7 +153,6 @@ export function DeleteAccountsDialog({
                 <strong title={a.name}>{a.name}</strong>
                 <span>
                   #{a.id}
-                  {a.managed ? " · 回退托管" : ""}
                 </span>
               </div>
               {phase !== "confirm" && (

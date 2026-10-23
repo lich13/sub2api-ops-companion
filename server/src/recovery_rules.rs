@@ -65,7 +65,7 @@ pub fn threshold(value: &Value) -> Value {
     };
     json!({"window_key":format!("codex_{window}"),"threshold_percent":percent,"until_at":datetime(until)})
 }
-pub fn eligible(row: &Value, windows: &[String]) -> bool {
+pub fn eligible(row: &Value, windows: &[String], at: DateTime<Utc>) -> bool {
     if integer(&row["id"]).unwrap_or(0) <= 0
         || !string(&row["platform"]).eq_ignore_ascii_case("openai")
         || !string(&row["type"]).eq_ignore_ascii_case("oauth")
@@ -77,10 +77,11 @@ pub fn eligible(row: &Value, windows: &[String]) -> bool {
     }
     let reason = string(&row["temp_unschedulable_reason"]).trim();
     let info = threshold(&json!(reason));
-    if !reason.is_empty() && !truthy(&info)
-        || !row["temp_unschedulable_until"].is_null()
-            && row["temp_unschedulable_until"] != ""
-            && !truthy(&info)
+    if !oauth_admission::temporary_block_expired(row, at)
+        && (!reason.is_empty() && !truthy(&info)
+            || !row["temp_unschedulable_until"].is_null()
+                && row["temp_unschedulable_until"] != ""
+                && !truthy(&info))
     {
         return false;
     }
@@ -144,13 +145,13 @@ pub fn quota_descriptor(summary: &Value, at: DateTime<Utc>) -> Value {
     };
     json!({"fingerprint":depleted.iter().map(|(key,_,t)|format!("{key}@{}",t.map(datetime).unwrap_or_else(||"unknown".into()))).collect::<Vec<_>>().join("|"),"due_at":datetime(due),"source":if depleted.iter().all(|(_,win,_)|!truthy(&win["reset_source"]) || win["reset_source"]=="server_exact") {"server_exact"} else {"estimated_from_remaining"},"window_keys":depleted.iter().map(|(key,_,_)|*key).collect::<Vec<_>>(),"kind":"quota_exhausted"})
 }
-pub fn threshold_descriptor(row: &Value, summary: &Value) -> Value {
+pub fn threshold_descriptor(row: &Value, summary: &Value, at: DateTime<Utc>) -> Value {
     let info = threshold(&row["temp_unschedulable_reason"]);
     let key = string(&info["window_key"]);
     let Some(due) = parse_datetime(&row["temp_unschedulable_until"]) else {
         return Value::Null;
     };
-    if key.is_empty() || !eligible(row, &[key.into()]) {
+    if key.is_empty() || !eligible(row, &[key.into()], at) {
         return Value::Null;
     }
     let windows = quota::windows_by_key(&summary["ui_windows"]);
@@ -179,13 +180,14 @@ pub fn all_available(summary: &Value) -> bool {
                 .is_some_and(|used| used < 100.0)
         })
 }
-pub fn rate_descriptor(row: &Value, summary: &Value) -> Value {
+pub fn rate_descriptor(row: &Value, summary: &Value, at: DateTime<Utc>) -> Value {
     let windows = quota::required_windows(&summary["plan_type"]);
     if !(truthy(&row["rate_limited_at"]) || truthy(&row["rate_limit_reset_at"]))
         || !all_available(summary)
         || !eligible(
             row,
             &windows.iter().map(|v| (*v).into()).collect::<Vec<_>>(),
+            at,
         )
     {
         return Value::Null;
@@ -236,7 +238,7 @@ pub fn quota_ready(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>)
     {
         return false;
     }
-    let threshold = threshold_descriptor(row, &summary);
+    let threshold = threshold_descriptor(row, &summary, at);
     !truthy(&threshold) || threshold_available(&summary, &threshold)
 }
 pub fn control_allows(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>) -> bool {
@@ -297,7 +299,7 @@ pub fn candidates(
         );
         let descriptor = quota_descriptor(&summary, at);
         let descriptor = if descriptor.is_null() {
-            threshold_descriptor(row, &summary)
+            threshold_descriptor(row, &summary, at)
         } else {
             descriptor
         };

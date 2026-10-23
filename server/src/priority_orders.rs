@@ -350,7 +350,7 @@ pub struct PriorityOrders {
     running: Arc<AtomicBool>,
 }
 fn version(row: &Value) -> Value {
-    operation_versions(row, false)["priority"].clone()
+    operation_versions(row)["priority"].clone()
 }
 fn identity(row: &Value) -> String {
     let mut stable = row.clone();

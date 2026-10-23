@@ -49,6 +49,18 @@ export function costDetails(row: UsageRecord): [string, string][] {
   return rows;
 }
 
+const valueClasses: Record<string, string> = {
+  "输入单价": "cost-input-price",
+  "图片输入单价": "cost-input-price",
+  "输出单价": "cost-output-price",
+  "图片输出单价": "cost-output-price",
+  "服务档位": "cost-tier",
+  "倍率": "cost-multiplier",
+  "账号倍率": "cost-multiplier",
+  "用户扣费": "cost-charged",
+  "账号计费": "cost-charged",
+};
+
 export default function CostDetails({ row }: { row: UsageRecord }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -101,7 +113,7 @@ export default function CostDetails({ row }: { row: UsageRecord }) {
       <span><span title="用户实扣">{money(row.actual_cost)}</span> <Info size={12}/></span><small title="账户费用">A {money(row.account_cost)}</small>
     </button>
     {open && createPortal(<div ref={panel} id={id} role="tooltip" tabIndex={-1} className="record-cost-tooltip" style={position} onBlur={e => { if (!trigger.current?.contains(e.relatedTarget as Node)) setOpen(false); }}>
-      <strong>费用明细</strong><dl>{costDetails(row).map(([label, value]) => <div key={label} className={label === "服务档位" || label === "账号倍率" ? "cost-section" : undefined}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      <strong>费用明细</strong><dl>{costDetails(row).map(([label, value]) => <div key={label} className={label === "服务档位" || label === "账号倍率" ? "cost-section" : undefined}><dt>{label}</dt><dd className={valueClasses[label]}>{value}</dd></div>)}</dl>
     </div>, document.body)}
   </>;
 }

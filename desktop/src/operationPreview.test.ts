@@ -12,7 +12,6 @@ const account = (id: number, patch: Partial<Account> = {}): Account => ({
   version: `version-${id}`,
   priority: id,
   group_ids: [],
-  managed: false,
   ...patch,
 } as Account);
 
@@ -22,13 +21,13 @@ describe("account operation preview batches", () => {
   it("previews a confirmed delete batch and removes the selected parent with its child", async () => {
     vi.useFakeTimers();
     const accounts = [
-      account(1, { managed: true }),
+      account(1, { }),
       account(2, { parent_account_id: 1 }),
     ];
     const body = {
       action: "delete",
       payload: { confirmed: true },
-      accounts: [{ account_id: 1, expected_version: "version-1", payload: { detach_managed: true } }],
+      accounts: [{ account_id: 1, expected_version: "version-1", payload: {} }],
       request_id: "preview-delete-request",
       client_id: "preview-client",
     };
@@ -39,7 +38,7 @@ describe("account operation preview batches", () => {
     await vi.advanceTimersByTimeAsync(1200);
     const done = await operationPreview("GET", `/account-operations?batch_id=${initial.batch_id}`, {}, accounts, vi.fn());
 
-    expect(done).toMatchObject({ pending: 0, items: [{ status: "completed", result: { verified: true, deleted: true, detached: true } }] });
+    expect(done).toMatchObject({ pending: 0, items: [{ status: "completed", result: { verified: true, deleted: true } }] });
     expect(accounts).toEqual([]);
   });
 
@@ -68,7 +67,7 @@ describe("account operation preview batches", () => {
     const body = {
       action: "delete",
       payload: {},
-      accounts: [{ account_id: 1, expected_version: "version-1", payload: { detach_managed: false } }],
+      accounts: [{ account_id: 1, expected_version: "version-1", payload: {} }],
       request_id: "preview-unconfirmed-delete",
       client_id: "preview-client",
     };

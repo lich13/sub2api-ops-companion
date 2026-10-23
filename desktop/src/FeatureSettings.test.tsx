@@ -14,7 +14,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const account = (id: number, type: "oauth" | "apikey", platform = "openai"): Account => ({
   id, name: `Fixture ${id}`, type, platform, priority: id, status: "active", schedulable: true, available: true,
-  group_ids: [], blockers: [], managed: false, version: "a".repeat(64), last_success_at: null,
+  group_ids: [], blockers: [], version: "a".repeat(64), last_success_at: null,
   last_error_at: null, last_error_id: null, last_error_code: null, last_error_status: null,
   error_message: "", success_after_error: false, usage_windows: [],
 });
@@ -44,7 +44,6 @@ beforeEach(() => {
       model_detection_model_id: "gpt-6-luna",
       oauth_recovery_connection_account_ids: [1], oauth_recovery_model_account_ids: [2],
     },
-    key_fallback: { revision: "key-r1", openai_enabled: true, grok_enabled: false, managed_account_ids: [11], coexist_account_ids: [] },
     bark: { revision: "bark-r1", enabled: false },
   };
   vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
@@ -78,61 +77,17 @@ function saveButton(target: HTMLFormElement) {
   return [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "保存")!;
 }
 
-function keyInputs(id: number) {
-  const row = [...container.querySelectorAll(".fallback-account")].find((node) => node.textContent?.includes(`Fixture ${id}`))!;
-  const inputs = row.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-  return { managed: inputs[0], coexist: inputs[1] };
-}
-
 const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
-  it("saves Key coexist choices only on submit and removes coexist when management is unchecked", async () => {
+  it("shows recovery and model settings without retired Key fallback controls", async () => {
     await openFeatures();
-    const target = form("Key 调度回退");
-    expect(keyInputs(11).coexist.disabled).toBe(false);
-    expect(keyInputs(21).coexist.disabled).toBe(true);
-    expect(saveButton(target).disabled).toBe(true);
-    await act(async () => keyInputs(11).coexist.click());
-    await act(async () => keyInputs(21).managed.click());
-    await act(async () => keyInputs(21).coexist.click());
+    expect(form("恢复、测活与模型检测")).toBeDefined();
+    expect(container.textContent).toContain("模型配置");
+    expect(container.textContent).not.toContain("Key 调度回退");
+    expect(container.querySelector(".fallback-account")).toBeNull();
     expect(writes()).toEqual([]);
-    expect(config.key_fallback.coexist_account_ids).toEqual([]);
-    expect(config.key_fallback.managed_account_ids).toEqual([11]);
-    await act(async () => receive({ ...initial, snapshot: { ...initial.snapshot!, observed_at: "2026-10-08T00:00:10Z" } }));
-    expect(keyInputs(11).coexist.checked).toBe(true);
-    expect(keyInputs(21).coexist.checked).toBe(true);
-
-    let finishSave!: (value: ConfigSection) => void;
-    const original = vi.mocked(api).getMockImplementation()!;
-    vi.mocked(api).mockImplementation(async (method, path, body) => {
-      if (method === "PUT" && path === "/config/key_fallback") return new Promise((resolve) => { finishSave = resolve; });
-      return original(method, path, body);
-    });
-    await act(async () => saveButton(target).click());
-    expect(writes()).toEqual([["PUT", "/config/key_fallback", {
-      expected_revision: "key-r1", changes: { coexist_account_ids: [11, 21], managed_account_ids: [11, 21] },
-    }]]);
-    expect(target.querySelector("fieldset")?.disabled).toBe(true);
-    const saved = { ...config.key_fallback, revision: "key-r2", managed_account_ids: [11, 21], coexist_account_ids: [11, 21] };
-    await act(async () => finishSave(saved));
-    expect(saveButton(target).disabled).toBe(true);
-    expect(target.querySelector("fieldset")?.disabled).toBe(false);
-
-    await act(async () => keyInputs(11).managed.click());
-    expect(keyInputs(11).coexist.checked).toBe(false);
-    expect(keyInputs(11).coexist.disabled).toBe(true);
-    expect(keyInputs(21).coexist.checked).toBe(true);
-    expect(writes()).toHaveLength(1);
-    await act(async () => saveButton(target).click());
-    expect(writes()[1]).toEqual(["PUT", "/config/key_fallback", {
-      expected_revision: "key-r2", changes: { managed_account_ids: [21], coexist_account_ids: [21] },
-    }]);
-    await act(async () => finishSave({ ...saved, revision: "key-r3", managed_account_ids: [21], coexist_account_ids: [21] }));
-    expect(saveButton(target).disabled).toBe(true);
-    expect(container.textContent).toContain("设置已保存");
   });
-
   it("saves mutually exclusive recovery modes together without changing the automatic card-use setting", async () => {
     await openFeatures();
     const target = form("恢复、测活与模型检测");

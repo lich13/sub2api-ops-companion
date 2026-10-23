@@ -107,18 +107,17 @@ def verify():
     _,config=ops('/config'); old=config['oauth']['revision']
     status,_=ops('/config/oauth','PUT',{'expected_revision':old,'changes':{'oauth_daily_test_time':'06:15'}});assert status==200
     assert ops('/config/oauth','PUT',{'expected_revision':old,'changes':{'oauth_daily_test_time':'07:15'}})[0]==409
-    fallback=config['key_fallback']
-    assert ops('/config/key_fallback','PUT',{'expected_revision':fallback['revision'],'changes':{'managed_account_ids':[shared['id'],other['id']]}})[0]==200
+    assert 'key_fallback' not in config
     for enabled in (False,True):
         _,snapshot=ops('/snapshot'); live=next(a for a in snapshot['accounts'] if a['id']==shared['id'])
-        status,result=ops(f"/accounts/{shared['id']}/schedulable",'POST',{'schedulable':enabled,'expected_version':live['version'],'detach_managed':True})
+        status,result=ops(f"/accounts/{shared['id']}/schedulable",'POST',{'schedulable':enabled,'expected_version':live['version']})
         assert status==200 and result['verified'],(status,result)
     _,config=ops('/config')
-    assert config['key_fallback']['managed_account_ids']==[other['id']]
+    assert 'key_fallback' not in config
     with psycopg.connect(DB) as db:
         state=db.execute('SELECT schedulable,status,credentials FROM accounts WHERE id=%s',(shared['id'],)).fetchone()
         assert state[0] and state[1]=='active' and state[2]['api_key']=='qa-upstream-only'
-    print(json.dumps({'desktop_integration':'passed','real_admin_auth':True,'real_schedulable_api':True,'group_evidence':True,'redaction':True,'revision_conflict':True,'managed_detach':True}))
+    print(json.dumps({'desktop_integration':'passed','real_admin_auth':True,'real_schedulable_api':True,'group_evidence':True,'redaction':True,'revision_conflict':True}))
 
 
 class MockUpstream(BaseHTTPRequestHandler):
@@ -150,7 +149,7 @@ def gateway():
     for account in before['accounts']:
         if account['name'] in ('QA Third', 'QA Fourth') and account['schedulable']:
             status,result=ops(f"/accounts/{account['id']}/schedulable",'POST',{
-                'schedulable':False,'expected_version':account['version'],'detach_managed':False})
+                'schedulable':False,'expected_version':account['version']})
             assert status==200 and result['verified']
     previous=next(a for a in before['accounts'] if a['name']=='QA Shared')['last_error_id'] or 0
     for content,expected in (('QA success',200),('QA_FORCE_ERROR',500),('QA recovered',200)):
@@ -196,8 +195,8 @@ def management():
     assert not shared['recoverable']
     assert ops(f"/accounts/{shared['id']}", 'DELETE', {'expected_version':'0'*64})[0] == 409
     assert ops(f"/accounts/{other['id']}", 'DELETE', {'expected_version':other['version']})[0] == 409
-    status, result = ops(f"/accounts/{other['id']}", 'DELETE', {'expected_version':other['version'],'detach_managed':True})
-    assert status == 200 and result['deleted'] and result['detached'], (status,result)
+    status, result = ops(f"/accounts/{other['id']}", 'DELETE', {'expected_version':other['version']})
+    assert status == 200 and result['deleted'], (status,result)
     # Delete the latest account in both groups; query must find the next live three.
     status, result = ops(f"/accounts/{shared['id']}", 'DELETE', {'expected_version':shared['version']})
     assert status == 200 and result['deleted'], (status,result)
@@ -208,12 +207,12 @@ def management():
     assert [a['account_name'] for a in recent] == ['QA Third','QA Fourth'], recent
     assert next(g for g in snapshot['groups'] if g['name'] == 'QA Beta')['recent_accounts'] == []
     _, config = ops('/config')
-    assert config['key_fallback']['managed_account_ids'] == []
+    assert 'key_fallback' not in config
     with psycopg.connect(DB) as db:
         assert db.execute('SELECT count(*) FROM usage_logs').fetchone()[0] == logs
         assert db.execute('SELECT count(*) FROM ops_error_logs WHERE account_id=%s', (shared['id'],)).fetchone()[0] > 0
     print(json.dumps({'management_integration':'passed','real_delete':True,'real_recover_state':True,
-        'deleted_group_filter':True,'managed_detach':True,'zero_model_requests':True,'error_history_preserved':True}))
+        'deleted_group_filter':True,'zero_model_requests':True,'error_history_preserved':True}))
 
 
 if __name__=='__main__':

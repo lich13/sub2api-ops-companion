@@ -31,7 +31,6 @@ const account = (id = 1, lastErrorId: number | null = null): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   version: "a".repeat(64),
   last_success_at: null,
   last_error_at: lastErrorId ? "2026-10-01T03:00:00Z" : null,

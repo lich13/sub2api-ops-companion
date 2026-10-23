@@ -469,7 +469,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
                     .is_some_and(|s| s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit()))
         }
         "PUT" => {
-            (["oauth", "bark", "key_fallback"]
+            (["oauth", "bark"]
                 .iter()
                 .any(|s| plain == format!("/config/{s}"))
                 || account_path(plain, "/groups")

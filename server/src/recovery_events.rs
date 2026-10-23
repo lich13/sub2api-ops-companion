@@ -124,18 +124,20 @@ pub fn discover(
             .iter()
             .map(|s| (*s).to_owned())
             .collect::<Vec<_>>();
-        if !recovery_rules::eligible(row, &windows) {
+        if !recovery_rules::eligible(row, &windows, at) {
             continue;
         }
         let old = &meta["recovery_intent"];
-        if truthy(&old["verification_dispatched"]) && old["status"] != "cancelled" {
+        if truthy(&old["verification_dispatched"])
+            && !matches!(string(&old["status"]), "cancelled" | "recovered")
+        {
             continue;
         }
         let descriptor = recovery_rules::quota_descriptor(&summary, at);
         let descriptor = if truthy(&descriptor) {
             descriptor
         } else {
-            recovery_rules::threshold_descriptor(row, &summary)
+            recovery_rules::threshold_descriptor(row, &summary, at)
         };
         if !truthy(&descriptor)
             && matches!(
@@ -148,7 +150,7 @@ pub fn discover(
         let descriptor = if truthy(&descriptor) {
             descriptor
         } else {
-            recovery_rules::rate_descriptor(row, &summary)
+            recovery_rules::rate_descriptor(row, &summary, at)
         };
         if !truthy(&descriptor)
             || descriptor["fingerprint"] == old["fingerprint"] && old["status"] != "cancelled"
@@ -303,7 +305,7 @@ pub fn quota_update(
     );
     let summary = quota::summary_from_result(row, result);
     let quota_descriptor = recovery_rules::quota_descriptor(&summary, at);
-    let threshold = recovery_rules::threshold_descriptor(row, &summary);
+    let threshold = recovery_rules::threshold_descriptor(row, &summary, at);
     let descriptor = if truthy(&quota_descriptor) {
         &quota_descriptor
     } else {
@@ -380,7 +382,7 @@ pub fn quota_update(
             "recovered" | "auth_failed" | "blocked"
         )
     {
-        let descriptor = recovery_rules::rate_descriptor(row, &summary);
+        let descriptor = recovery_rules::rate_descriptor(row, &summary, at);
         if truthy(&descriptor) && descriptor["fingerprint"] != intent["fingerprint"] {
             intent = new_intent(&descriptor, "ready", Some(at));
         }

@@ -786,7 +786,6 @@ fn settings(root: &Path, database_url: String, base_url: &str) -> Arc<Settings> 
         usage_path: root.join("oauth-state.json"),
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
-        fallback_path: root.join("key-fallback-config.json"),
         connection_path,
         model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),

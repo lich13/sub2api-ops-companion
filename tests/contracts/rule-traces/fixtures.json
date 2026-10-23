@@ -2,2131 +2,6 @@
   "cases": [
     {
       "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "free",
-            "ui_windows": [
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 90,
-                "used_percent": 10
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "free"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "disabled",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": false,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": "2026-09-05T08:05:00+00:00",
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": "2026-09-05T08:01:00+00:00",
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": "2026-09-05T08:01:00+00:00",
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": true,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": "2026-09-05T07:59:00+00:00",
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "old",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": "2026-09-05T07:59:00+00:00",
-          "rate_limited_at": "2026-09-05T07:00:00+00:00",
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": "2026-09-05T07:59:00+00:00",
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block"
-    },
-    {
-      "arguments": {
-        "states": []
-      },
-      "expected": null,
-      "function": "desired_key_schedulable",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix"
-    },
-    {
-      "arguments": {
-        "states": [
-          "available",
-          "unavailable",
-          "unknown"
-        ]
-      },
-      "expected": false,
-      "function": "desired_key_schedulable",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix"
-    },
-    {
-      "arguments": {
-        "states": [
-          "unavailable",
-          "unavailable"
-        ]
-      },
-      "expected": true,
-      "function": "desired_key_schedulable",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix"
-    },
-    {
-      "arguments": {
-        "states": [
-          "unavailable",
-          "unknown"
-        ]
-      },
-      "expected": null,
-      "function": "desired_key_schedulable",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix"
-    },
-    {
-      "arguments": {
-        "states": [
-          "unknown",
-          "unknown"
-        ]
-      },
-      "expected": null,
-      "function": "desired_key_schedulable",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "data": {
-            "five_hour": {
-              "utilization": 20
-            },
-            "seven_day": {
-              "utilization": 30
-            }
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_fresh_usage_data_windows_still_classify_available"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T06:59:59+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:05+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "not-a-time",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "network_error",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "timeout",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "http_500",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "http_401",
-          "queried_at": "2026-09-05T06:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown"
-    },
-    {
-      "arguments": {
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T07:50:00+00:00",
-          "success": true
-        },
-        "scheduler_row": {
-          "last_error_at": "2026-09-05T08:00:00+00:00",
-          "last_error_code": "http_401",
-          "last_success_at": "2026-09-05T07:50:00+00:00"
-        }
-      },
-      "expected": {
-        "error_code": "http_401",
-        "queried_at": "2026-09-05T08:00:00+00:00",
-        "success": false
-      },
-      "function": "latest_completed_oauth_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "scheduler_row": {
-          "last_error_at": "2026-09-05T07:50:00+00:00",
-          "last_error_code": "http_401",
-          "last_success_at": "2026-09-05T08:00:00+00:00"
-        }
-      },
-      "expected": {
-        "oauth_quota": {
-          "plan_type": "plus",
-          "ui_windows": [
-            {
-              "key": "codex_5h",
-              "label": "5h",
-              "remaining_percent": 80,
-              "used_percent": 20
-            },
-            {
-              "key": "codex_7d",
-              "label": "7d",
-              "remaining_percent": 70,
-              "used_percent": 30
-            }
-          ]
-        },
-        "queried_at": "2026-09-05T08:00:00+00:00",
-        "success": true
-      },
-      "function": "latest_completed_oauth_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error_code": "http_401",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 80,
-                "used_percent": 20
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 70,
-                "used_percent": 30
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "result": null,
-        "scheduler_row": {
-          "last_error_at": "2026-09-05T06:00:00+00:00",
-          "last_error_code": "http_401"
-        }
-      },
-      "expected": {
-        "error_code": "http_401",
-        "queried_at": "2026-09-05T06:00:00+00:00",
-        "success": false
-      },
-      "function": "latest_completed_oauth_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error_code": "http_401",
-          "queried_at": "2026-09-05T06:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "result": null,
-        "scheduler_row": {
-          "last_error_at": "2026-09-05T08:01:00+00:00",
-          "last_error_code": "http_401"
-        }
-      },
-      "expected": {
-        "error_code": "http_401",
-        "queried_at": "2026-09-05T08:01:00+00:00",
-        "success": false
-      },
-      "function": "latest_completed_oauth_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error_code": "http_401",
-          "queried_at": "2026-09-05T08:01:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "result": null,
-        "scheduler_row": {
-          "last_error_at": "not-a-time",
-          "last_error_code": "http_401"
-        }
-      },
-      "expected": null,
-      "function": "latest_completed_oauth_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": null,
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 0,
-                "used_percent": 100
-              },
-              {
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 90,
-                "used_percent": 10
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "http_401",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "error": "query failed",
-          "error_code": "http_402",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "key": "codex_7d",
-                "used_percent": 10
-              }
-            ]
-          },
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows"
-    },
-    {
-      "arguments": {
-        "account_row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "codex_5h_used_percent": 10,
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-05T08:00:00+00:00"
-          },
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        },
-        "result": {
-          "data": {},
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        }
-      },
-      "expected": {
-        "plan_type": "plus",
-        "ui_windows": [
-          {
-            "depleted": false,
-            "key": "codex_5h",
-            "label": "5h",
-            "remaining_percent": 90.0,
-            "used_percent": 10.0
-          },
-          {
-            "depleted": false,
-            "key": "codex_7d",
-            "label": "7d",
-            "remaining_percent": 80.0,
-            "used_percent": 20.0
-          }
-        ],
-        "updated_at": "2026-09-05T08:00:00+00:00"
-      },
-      "function": "oauth_quota_summary_from_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "data": {},
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "codex_5h_used_percent": 10,
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-05T08:00:00+00:00"
-          },
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "codex_5h_used_percent": 10,
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-05T08:00:00+00:00"
-          },
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-05T08:00:00+00:00",
-        "result": {
-          "data": "<html>nope</html>",
-          "oauth_quota": "bad",
-          "queried_at": "2026-09-05T08:00:00+00:00",
-          "success": true
-        },
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "codex_5h_used_percent": 10,
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-05T08:00:00+00:00"
-          },
-          "id": 1,
-          "name": "oauth-1",
-          "overload_until": null,
-          "platform": "openai",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "disabled",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": false,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": "2026-09-05T08:01:00+00:00",
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": "2026-09-05T08:01:00+00:00",
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": "2026-09-05T08:01:00+00:00",
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": true,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": "2026-09-05T07:59:00+00:00",
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "grok_needs_reauth": true
-          },
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unavailable",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": "2026-09-05T07:59:00+00:00",
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": true,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": "2026-09-05T08:01:00+00:00",
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": "2026-09-05T07:59:00+00:00",
-          "platform": "grok",
-          "rate_limit_reset_at": "2026-09-05T07:59:00+00:00",
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": "2026-09-05T07:59:00+00:00",
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "grok_needs_reauth": false,
-            "grok_usage_snapshot": {
-              "status_code": 401
-            }
-          },
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": null,
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": "true",
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": "not-a-date",
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": [],
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": false,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {
-            "grok_needs_reauth": "bad"
-          },
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": "bad",
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": null,
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
-        "now": "2026-09-05T08:00:00+00:00",
-        "row": {
-          "auto_pause_on_expired": true,
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "deleted_at": null,
-          "error_message": "stale error text",
-          "expires_at": "bad",
-          "extra": {},
-          "id": 2,
-          "name": "oauth-2",
-          "overload_until": null,
-          "platform": "grok",
-          "rate_limit_reset_at": null,
-          "rate_limited_at": null,
-          "schedulable": true,
-          "status": "active",
-          "temp_unschedulable_until": null,
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_grok_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values"
-    },
-    {
-      "arguments": {
         "now": "2026-09-24T12:00:00+00:00",
         "result": null,
         "row": {
@@ -2698,62 +573,6 @@
     },
     {
       "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-24T12:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "depleted": false,
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 100.0,
-                "reset_at": "2026-09-24T14:00:00+00:00",
-                "reset_source": "server_exact",
-                "used_percent": 0.0
-              },
-              {
-                "depleted": false,
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 80.0,
-                "reset_at": "2026-09-26T12:00:00+00:00",
-                "reset_source": "server_exact",
-                "used_percent": 20.0
-              }
-            ],
-            "updated_at": "2026-09-24T12:00:00+00:00"
-          },
-          "queried_at": "2026-09-24T12:00:00+00:00",
-          "source": "passive",
-          "success": true
-        },
-        "row": {
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "extra": {
-            "codex_5h_reset_at": "2026-09-24T14:00:00+00:00",
-            "codex_5h_used_percent": 0,
-            "codex_7d_reset_at": "2026-09-26T12:00:00+00:00",
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-24T12:00:00+00:00"
-          },
-          "id": 1,
-          "platform": "openai",
-          "schedulable": true,
-          "status": "active",
-          "type": "oauth"
-        }
-      },
-      "expected": "available",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_new_passive_snapshot_replaces_old_active_result"
-    },
-    {
-      "arguments": {
         "now": "2026-09-24T12:00:00+00:00",
         "result": null,
         "row": {
@@ -2884,38 +703,6 @@
         "success": false
       },
       "function": "latest_openai_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_newer_error_wins_over_old_success_and_passive_snapshot"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-24T12:00:00+00:00",
-        "result": {
-          "error_code": "http_500",
-          "queried_at": "2026-09-24T12:00:00+00:00",
-          "success": false
-        },
-        "row": {
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "extra": {
-            "codex_5h_reset_at": "2026-09-24T14:00:00+00:00",
-            "codex_5h_used_percent": 0,
-            "codex_7d_reset_at": "2026-09-26T12:00:00+00:00",
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-24T11:57:00+00:00"
-          },
-          "id": 1,
-          "platform": "openai",
-          "schedulable": true,
-          "status": "active",
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
       "input_unchanged": true,
       "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_newer_error_wins_over_old_success_and_passive_snapshot"
     },
@@ -3174,62 +961,6 @@
     },
     {
       "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-24T12:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "depleted": false,
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 100.0,
-                "reset_at": "2026-09-24T14:00:00+00:00",
-                "reset_source": "server_exact",
-                "used_percent": 0.0
-              },
-              {
-                "depleted": false,
-                "key": "codex_7d",
-                "label": "7d",
-                "remaining_percent": 80.0,
-                "reset_at": "2026-09-26T12:00:00+00:00",
-                "reset_source": "server_exact",
-                "used_percent": 20.0
-              }
-            ],
-            "updated_at": "2026-09-24T10:59:59+00:00"
-          },
-          "queried_at": "2026-09-24T10:59:59+00:00",
-          "source": "passive",
-          "success": true
-        },
-        "row": {
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "extra": {
-            "codex_5h_reset_at": "2026-09-24T14:00:00+00:00",
-            "codex_5h_used_percent": 0,
-            "codex_7d_reset_at": "2026-09-26T12:00:00+00:00",
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-24T10:59:59+00:00"
-          },
-          "id": 1,
-          "platform": "openai",
-          "schedulable": true,
-          "status": "active",
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback"
-    },
-    {
-      "arguments": {
         "now": "2026-09-24T12:00:00+00:00",
         "result": null,
         "row": {
@@ -3276,53 +1007,6 @@
     },
     {
       "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-24T12:00:00+00:00",
-        "result": {
-          "oauth_quota": {
-            "plan_type": "plus",
-            "ui_windows": [
-              {
-                "depleted": false,
-                "key": "codex_5h",
-                "label": "5h",
-                "remaining_percent": 100.0,
-                "reset_at": "2026-09-24T14:00:00+00:00",
-                "reset_source": "server_exact",
-                "used_percent": 0.0
-              }
-            ],
-            "updated_at": "2026-09-24T12:00:00+00:00"
-          },
-          "queried_at": "2026-09-24T12:00:00+00:00",
-          "source": "passive",
-          "success": true
-        },
-        "row": {
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "extra": {
-            "codex_5h_reset_at": "2026-09-24T14:00:00+00:00",
-            "codex_5h_used_percent": 0,
-            "codex_7d_reset_at": "2026-09-26T12:00:00+00:00",
-            "codex_7d_used_percent": null,
-            "codex_usage_updated_at": "2026-09-24T12:00:00+00:00"
-          },
-          "id": 1,
-          "platform": "openai",
-          "schedulable": true,
-          "status": "active",
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback"
-    },
-    {
-      "arguments": {
         "now": "2026-09-24T12:00:00+00:00",
         "result": null,
         "row": {
@@ -3345,34 +1029,6 @@
       },
       "expected": null,
       "function": "latest_openai_result",
-      "input_unchanged": true,
-      "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback"
-    },
-    {
-      "arguments": {
-        "freshness_seconds": 3600,
-        "now": "2026-09-24T12:00:00+00:00",
-        "result": null,
-        "row": {
-          "credentials": {
-            "plan_type": "plus"
-          },
-          "extra": {
-            "codex_5h_reset_at": "2026-09-24T14:00:00+00:00",
-            "codex_5h_used_percent": 0,
-            "codex_7d_reset_at": "2026-09-26T12:00:00+00:00",
-            "codex_7d_used_percent": 20,
-            "codex_usage_updated_at": "2026-09-24T12:00:01+00:00"
-          },
-          "id": 1,
-          "platform": "openai",
-          "schedulable": true,
-          "status": "active",
-          "type": "oauth"
-        }
-      },
-      "expected": "unknown",
-      "function": "classify_oauth_account",
       "input_unchanged": true,
       "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_stale_incomplete_future_and_expired_snapshots_do_not_enable_fallback"
     },
@@ -12089,11 +9745,12 @@
       "legacy_test_id": "py:tests.test_events030:EventEvidence030Tests.test_upstream_429_and_all_capacity_messages_are_not_local_concurrency_limits"
     },
     {
+      "approved_difference": "0.1.55 removes Key management and its version inputs",
       "arguments": {
         "managed": [
           12
         ],
-        "now": "2026-10-13T21:31:53.205680+00:00",
+        "now": "2026-10-23T09:15:05.665058+00:00",
         "quota_result": null,
         "row": {
           "credentials": {
@@ -12109,7 +9766,7 @@
           "schedulable": false,
           "status": "active",
           "type": "apikey",
-          "updated_at": "2026-10-13 21:31:53.205680+00:00"
+          "updated_at": "2026-10-23 09:15:05.665058+00:00"
         }
       },
       "expected": {
@@ -12134,12 +9791,11 @@
         "last_error_status": null,
         "last_success_at": null,
         "load_factor": null,
-        "managed": true,
         "name": "测试账号",
         "operation_versions": {
           "account_template": "b52d5ae627611d9ef6db42b945ac361e82b6c4fe007313369b257ef6868b7ba7",
           "concurrency": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "delete": "578d8033f1f0a09851c10fcee0f8bc327dbe1212c2ffb2e312fb0fe4229da8c3",
+          "delete": "be41c54b7f9e4252d0b0892e37a253fc355963776614acf87ecb84b782132ddc",
           "groups": "b557dbd246d781ca44f9380e60213544c1bdba04c24c42a3880a0cfb4a8e94d8",
           "load_factor": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "model_config": "5bb93d797223979c738f246cc5bd649a0de307ed7df223d694f35498b7f470b6",
@@ -12148,7 +9804,7 @@
           "proxy": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "recover": "7e8dfa8720c7c366bd9182db1d9456054946c11dbd3bca3e8d2dd321ccad5102",
           "reset_quota": "415801221bdb04520e401096084657d85afeaa65d06c2654182c8e927ef0f94a",
-          "schedulable": "75483ae0f877e9ad61650a218e19a331c96067c54bf67b7818ea7f1cfc0a3371",
+          "schedulable": "284915fb3420ceebfe30649f2eeb835bdddc4dca2dcaa486cd2feffcdf7a2b36",
           "sync_models": "dab76432c4117e1b200d7b1d89bf54a6e2613d005a75d05b7aa48217d0f49a5a",
           "test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "usage": "cee905fa8cdf831a80177ceab6c567e89381a79b2bfa433b72b622d0fa7dc681"
@@ -12187,9 +9843,9 @@
         "status": "active",
         "success_after_error": false,
         "type": "apikey",
-        "updated_at": "2026-10-13T21:31:53.205680+00:00",
+        "updated_at": "2026-10-23T09:15:05.665058+00:00",
         "usage_windows": [],
-        "version": "bf76176cbea6e4cb4015c0df1059b7e01f4cc22087c8c521760a406abcb5fa99"
+        "version": "269e81b38e9d4233b5f04f774b6debf6927434620bbb10bac7ae8e2dd746ad6a"
       },
       "function": "account_dto",
       "input_unchanged": true,
@@ -12251,9 +9907,10 @@
       "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_error_detail_is_bounded_and_does_not_return_raw_columns"
     },
     {
+      "approved_difference": "0.1.55 removes Key management and its version inputs",
       "arguments": {
         "managed": [],
-        "now": "2026-10-13T21:31:53.205680+00:00",
+        "now": "2026-10-23T09:15:05.665058+00:00",
         "quota_result": null,
         "row": {
           "credentials": {
@@ -12264,15 +9921,15 @@
             2
           ],
           "id": 12,
-          "last_error_at": "2026-10-13 21:30:53.205680+00:00",
-          "last_success_at": "2026-10-13 21:31:53.205680+00:00",
+          "last_error_at": "2026-10-23 09:14:05.665058+00:00",
+          "last_success_at": "2026-10-23 09:15:05.665058+00:00",
           "name": "测试账号",
           "platform": "openai",
-          "rate_limit_reset_at": "2026-10-13 21:31:48.205680+00:00",
+          "rate_limit_reset_at": "2026-10-23 09:15:00.665058+00:00",
           "schedulable": true,
           "status": "active",
           "type": "apikey",
-          "updated_at": "2026-10-13 21:31:53.205680+00:00"
+          "updated_at": "2026-10-23 09:15:05.665058+00:00"
         }
       },
       "expected": {
@@ -12286,27 +9943,26 @@
         ],
         "id": 12,
         "last_called_at": null,
-        "last_error_at": "2026-10-13T21:30:53.205680+00:00",
+        "last_error_at": "2026-10-23T09:14:05.665058+00:00",
         "last_error_code": null,
         "last_error_id": null,
         "last_error_status": null,
-        "last_success_at": "2026-10-13T21:31:53.205680+00:00",
+        "last_success_at": "2026-10-23T09:15:05.665058+00:00",
         "load_factor": null,
-        "managed": false,
         "name": "测试账号",
         "operation_versions": {
           "account_template": "b52d5ae627611d9ef6db42b945ac361e82b6c4fe007313369b257ef6868b7ba7",
           "concurrency": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "delete": "1347e8696bb240ab5c936e0cd5d16e7b042e2aadeaeabd9cd9d098c0788da013",
+          "delete": "06187077872999ad4a67af68f14d8d7b6b6ef06a96be9a8ccf6ea6670e906b33",
           "groups": "b557dbd246d781ca44f9380e60213544c1bdba04c24c42a3880a0cfb4a8e94d8",
           "load_factor": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "model_config": "5bb93d797223979c738f246cc5bd649a0de307ed7df223d694f35498b7f470b6",
           "model_test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "priority": "7ae8309a7981b05548f70c091fe8110e247aabb18c5cdfb010de10485b4d1179",
           "proxy": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "recover": "1580db61a36eca4a474162bd35e58e7d14f415acbbefebea05b6450f1087cea8",
-          "reset_quota": "3287ef0176bbf19da4fbf9f0fe844a94c3bc9c023016e1a766cc862a4ea6c69b",
-          "schedulable": "3489defa52e4940d6222cecfe9c8b0cad9562b9fedbc075ad0e2c5d5117a1816",
+          "recover": "c61f625973f194f9d1d4f5549c5deec630fdcd86012beb78dfa9e9049c7e842e",
+          "reset_quota": "4f5d80e68126d119886db2883673b61276e2a178f0574b52bcd07bde4ab1d2cb",
+          "schedulable": "57ddc469369fe4266eb76664d3cb9a677e83066b0f6da124e2fafdac4ad60fbc",
           "sync_models": "dab76432c4117e1b200d7b1d89bf54a6e2613d005a75d05b7aa48217d0f49a5a",
           "test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "usage": "cee905fa8cdf831a80177ceab6c567e89381a79b2bfa433b72b622d0fa7dc681"
@@ -12345,9 +10001,9 @@
         "status": "active",
         "success_after_error": true,
         "type": "apikey",
-        "updated_at": "2026-10-13T21:31:53.205680+00:00",
+        "updated_at": "2026-10-23T09:15:05.665058+00:00",
         "usage_windows": [],
-        "version": "ff74119685a385ba515c788276144c41d6ee64ab5f39decc702d403d84be1b72"
+        "version": "bb65a9f7206a7ec49fb03581d08b1d776d34b063bc0787a28f7d9d02f4f9f8de"
       },
       "function": "account_dto",
       "input_unchanged": true,
@@ -12364,7 +10020,7 @@
           {
             "account_id": 10,
             "account_name": "已移出",
-            "called_at": "2026-10-13T21:31:53.205680+00:00",
+            "called_at": "2026-10-23T09:15:05.665058+00:00",
             "id": 5,
             "log_id": 100,
             "model": "old",
@@ -12374,7 +10030,7 @@
           {
             "account_id": 11,
             "account_name": "已删除",
-            "called_at": "2026-10-13T21:32:53.205680+00:00",
+            "called_at": "2026-10-23T09:16:05.665058+00:00",
             "id": 5,
             "log_id": 101,
             "model": "old",
@@ -12404,9 +10060,10 @@
       "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_group_with_only_removed_or_deleted_candidates_clears_legacy_summary"
     },
     {
+      "approved_difference": "0.1.55 removes Key management and its version inputs",
       "arguments": {
         "managed": [],
-        "now": "2026-10-13T21:31:53.205680+00:00",
+        "now": "2026-10-23T09:15:05.665058+00:00",
         "quota_result": null,
         "row": {
           "credentials": {
@@ -12417,14 +10074,14 @@
             2
           ],
           "id": 12,
-          "last_error_at": "2026-10-13 21:31:53.205680+00:00",
-          "last_success_at": "2026-10-13 21:30:53.205680+00:00",
+          "last_error_at": "2026-10-23 09:15:05.665058+00:00",
+          "last_success_at": "2026-10-23 09:14:05.665058+00:00",
           "name": "测试账号",
           "platform": "openai",
           "schedulable": false,
           "status": "active",
           "type": "apikey",
-          "updated_at": "2026-10-13 21:31:53.205680+00:00"
+          "updated_at": "2026-10-23 09:15:05.665058+00:00"
         }
       },
       "expected": {
@@ -12443,18 +10100,17 @@
         ],
         "id": 12,
         "last_called_at": null,
-        "last_error_at": "2026-10-13T21:31:53.205680+00:00",
+        "last_error_at": "2026-10-23T09:15:05.665058+00:00",
         "last_error_code": null,
         "last_error_id": null,
         "last_error_status": null,
-        "last_success_at": "2026-10-13T21:30:53.205680+00:00",
+        "last_success_at": "2026-10-23T09:14:05.665058+00:00",
         "load_factor": null,
-        "managed": false,
         "name": "测试账号",
         "operation_versions": {
           "account_template": "b52d5ae627611d9ef6db42b945ac361e82b6c4fe007313369b257ef6868b7ba7",
           "concurrency": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "delete": "8dde42859439e4c16a8a5948d38a4337989f5f0fa3381f98e038ae0d39187aee",
+          "delete": "be41c54b7f9e4252d0b0892e37a253fc355963776614acf87ecb84b782132ddc",
           "groups": "b557dbd246d781ca44f9380e60213544c1bdba04c24c42a3880a0cfb4a8e94d8",
           "load_factor": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "model_config": "5bb93d797223979c738f246cc5bd649a0de307ed7df223d694f35498b7f470b6",
@@ -12463,7 +10119,7 @@
           "proxy": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "recover": "7e8dfa8720c7c366bd9182db1d9456054946c11dbd3bca3e8d2dd321ccad5102",
           "reset_quota": "415801221bdb04520e401096084657d85afeaa65d06c2654182c8e927ef0f94a",
-          "schedulable": "ea93b8b5082548eb9f82b3230fd23bbbad74342e12f4d47fcee3bf4ffa960b16",
+          "schedulable": "284915fb3420ceebfe30649f2eeb835bdddc4dca2dcaa486cd2feffcdf7a2b36",
           "sync_models": "dab76432c4117e1b200d7b1d89bf54a6e2613d005a75d05b7aa48217d0f49a5a",
           "test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "usage": "cee905fa8cdf831a80177ceab6c567e89381a79b2bfa433b72b622d0fa7dc681"
@@ -12502,18 +10158,19 @@
         "status": "active",
         "success_after_error": false,
         "type": "apikey",
-        "updated_at": "2026-10-13T21:31:53.205680+00:00",
+        "updated_at": "2026-10-23T09:15:05.665058+00:00",
         "usage_windows": [],
-        "version": "bf76176cbea6e4cb4015c0df1059b7e01f4cc22087c8c521760a406abcb5fa99"
+        "version": "269e81b38e9d4233b5f04f774b6debf6927434620bbb10bac7ae8e2dd746ad6a"
       },
       "function": "account_dto",
       "input_unchanged": true,
       "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_new_error_is_not_hidden_by_older_success"
     },
     {
+      "approved_difference": "0.1.55 removes Key management and its version inputs",
       "arguments": {
         "managed": [],
-        "now": "2026-10-13T21:31:53.205680+00:00",
+        "now": "2026-10-23T09:15:05.665058+00:00",
         "quota_result": null,
         "row": {
           "credentials": {
@@ -12530,7 +10187,7 @@
           "schedulable": false,
           "status": "active",
           "type": "apikey",
-          "updated_at": "2026-10-13 21:31:53.205680+00:00"
+          "updated_at": "2026-10-23 09:15:05.665058+00:00"
         }
       },
       "expected": {
@@ -12555,12 +10212,11 @@
         "last_error_status": null,
         "last_success_at": null,
         "load_factor": null,
-        "managed": false,
         "name": "测试账号",
         "operation_versions": {
           "account_template": "b52d5ae627611d9ef6db42b945ac361e82b6c4fe007313369b257ef6868b7ba7",
           "concurrency": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "delete": "8dde42859439e4c16a8a5948d38a4337989f5f0fa3381f98e038ae0d39187aee",
+          "delete": "be41c54b7f9e4252d0b0892e37a253fc355963776614acf87ecb84b782132ddc",
           "groups": "b557dbd246d781ca44f9380e60213544c1bdba04c24c42a3880a0cfb4a8e94d8",
           "load_factor": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "model_config": "5bb93d797223979c738f246cc5bd649a0de307ed7df223d694f35498b7f470b6",
@@ -12569,7 +10225,7 @@
           "proxy": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "recover": "f83e9b7d339f82ef9b0d79842f1e18bfbbe712ce399d6e06cbba389be199029a",
           "reset_quota": "d9bced7a817b1a0bc766b69706b0fda8f475138fb365588579dc7112dc159cb9",
-          "schedulable": "ea93b8b5082548eb9f82b3230fd23bbbad74342e12f4d47fcee3bf4ffa960b16",
+          "schedulable": "284915fb3420ceebfe30649f2eeb835bdddc4dca2dcaa486cd2feffcdf7a2b36",
           "sync_models": "dab76432c4117e1b200d7b1d89bf54a6e2613d005a75d05b7aa48217d0f49a5a",
           "test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "usage": "cee905fa8cdf831a80177ceab6c567e89381a79b2bfa433b72b622d0fa7dc681"
@@ -12608,9 +10264,9 @@
         "status": "active",
         "success_after_error": false,
         "type": "apikey",
-        "updated_at": "2026-10-13T21:31:53.205680+00:00",
+        "updated_at": "2026-10-23T09:15:05.665058+00:00",
         "usage_windows": [],
-        "version": "bf76176cbea6e4cb4015c0df1059b7e01f4cc22087c8c521760a406abcb5fa99"
+        "version": "269e81b38e9d4233b5f04f774b6debf6927434620bbb10bac7ae8e2dd746ad6a"
       },
       "function": "account_dto",
       "input_unchanged": true,
@@ -12640,7 +10296,7 @@
           {
             "account_id": 1,
             "account_name": "1",
-            "called_at": "2026-10-13T21:37:53.205680+00:00",
+            "called_at": "2026-10-23T09:21:05.665058+00:00",
             "id": 1,
             "log_id": 900,
             "model": "gpt-6-sol",
@@ -12650,7 +10306,7 @@
           {
             "account_id": 4,
             "account_name": "4",
-            "called_at": "2026-10-13T21:36:53.205680+00:00",
+            "called_at": "2026-10-23T09:20:05.665058+00:00",
             "id": 1,
             "log_id": 901,
             "model": "gpt-6-sol",
@@ -12660,7 +10316,7 @@
           {
             "account_id": 2,
             "account_name": "2",
-            "called_at": "2026-10-13T21:35:53.205680+00:00",
+            "called_at": "2026-10-23T09:19:05.665058+00:00",
             "id": 1,
             "log_id": 201,
             "model": "gpt-6-sol",
@@ -12670,7 +10326,7 @@
           {
             "account_id": 2,
             "account_name": "2",
-            "called_at": "2026-10-13T21:35:53.205680+00:00",
+            "called_at": "2026-10-23T09:19:05.665058+00:00",
             "id": 1,
             "log_id": 202,
             "model": "gpt-6-sol",
@@ -12680,7 +10336,7 @@
           {
             "account_id": 2,
             "account_name": "2",
-            "called_at": "2026-10-13T21:31:53.205680+00:00",
+            "called_at": "2026-10-23T09:15:05.665058+00:00",
             "id": 1,
             "log_id": 999,
             "model": "gpt-6-sol",
@@ -12690,7 +10346,7 @@
           {
             "account_id": 3,
             "account_name": "3",
-            "called_at": "2026-10-13T21:34:53.205680+00:00",
+            "called_at": "2026-10-23T09:18:05.665058+00:00",
             "id": 1,
             "log_id": 300,
             "model": "gpt-6-sol",
@@ -12700,7 +10356,7 @@
           {
             "account_id": 6,
             "account_name": "6",
-            "called_at": "2026-10-13T21:33:53.205680+00:00",
+            "called_at": "2026-10-23T09:17:05.665058+00:00",
             "id": 1,
             "log_id": 600,
             "model": "gpt-6-sol",
@@ -12710,7 +10366,7 @@
           {
             "account_id": 7,
             "account_name": "7",
-            "called_at": "2026-10-13T21:32:53.205680+00:00",
+            "called_at": "2026-10-23T09:16:05.665058+00:00",
             "id": 1,
             "log_id": 700,
             "model": "gpt-6-sol",
@@ -12720,7 +10376,7 @@
           {
             "account_id": 3,
             "account_name": "3",
-            "called_at": "2026-10-13T21:34:53.205680+00:00",
+            "called_at": "2026-10-23T09:18:05.665058+00:00",
             "id": 2,
             "log_id": 301,
             "model": "gpt-6-sol",
@@ -12730,7 +10386,7 @@
           {
             "account_id": 4,
             "account_name": "4",
-            "called_at": "2026-10-13T21:36:53.205680+00:00",
+            "called_at": "2026-10-23T09:20:05.665058+00:00",
             "id": 2,
             "log_id": 401,
             "model": "gpt-6-sol",
@@ -12740,7 +10396,7 @@
           {
             "account_id": 5,
             "account_name": "5",
-            "called_at": "2026-10-13T21:37:53.205680+00:00",
+            "called_at": "2026-10-23T09:21:05.665058+00:00",
             "id": 2,
             "log_id": 501,
             "model": "gpt-6-sol",
@@ -12763,7 +10419,7 @@
         {
           "account_id": 2,
           "account_name": "2",
-          "called_at": "2026-10-13T21:35:53.205680+00:00",
+          "called_at": "2026-10-23T09:19:05.665058+00:00",
           "id": 1,
           "log_id": 202,
           "model": "gpt-6-sol",
@@ -12773,7 +10429,7 @@
             {
               "account_id": 2,
               "account_name": "2",
-              "called_at": "2026-10-13T21:35:53.205680+00:00",
+              "called_at": "2026-10-23T09:19:05.665058+00:00",
               "log_id": 202,
               "model": "gpt-6-sol",
               "upstream_model": ""
@@ -12781,7 +10437,7 @@
             {
               "account_id": 3,
               "account_name": "3",
-              "called_at": "2026-10-13T21:34:53.205680+00:00",
+              "called_at": "2026-10-23T09:18:05.665058+00:00",
               "log_id": 300,
               "model": "gpt-6-sol",
               "upstream_model": ""
@@ -12789,7 +10445,7 @@
             {
               "account_id": 6,
               "account_name": "6",
-              "called_at": "2026-10-13T21:33:53.205680+00:00",
+              "called_at": "2026-10-23T09:17:05.665058+00:00",
               "log_id": 600,
               "model": "gpt-6-sol",
               "upstream_model": ""
@@ -12802,7 +10458,7 @@
         {
           "account_id": 4,
           "account_name": "4",
-          "called_at": "2026-10-13T21:36:53.205680+00:00",
+          "called_at": "2026-10-23T09:20:05.665058+00:00",
           "id": 2,
           "log_id": 401,
           "model": "gpt-6-sol",
@@ -12812,7 +10468,7 @@
             {
               "account_id": 4,
               "account_name": "4",
-              "called_at": "2026-10-13T21:36:53.205680+00:00",
+              "called_at": "2026-10-23T09:20:05.665058+00:00",
               "log_id": 401,
               "model": "gpt-6-sol",
               "upstream_model": ""
@@ -12820,7 +10476,7 @@
             {
               "account_id": 3,
               "account_name": "3",
-              "called_at": "2026-10-13T21:34:53.205680+00:00",
+              "called_at": "2026-10-23T09:18:05.665058+00:00",
               "log_id": 301,
               "model": "gpt-6-sol",
               "upstream_model": ""
@@ -12970,9 +10626,10 @@
       "legacy_test_id": "py:tests.test_desktop_api:DesktopEvidenceTests.test_stringified_request_dump_is_hidden_in_detail_and_summary"
     },
     {
+      "approved_difference": "0.1.55 removes Key management and its version inputs",
       "arguments": {
         "managed": [],
-        "now": "2026-10-13T21:31:53.205680+00:00",
+        "now": "2026-10-23T09:15:05.665058+00:00",
         "quota_result": null,
         "row": {
           "credentials": {
@@ -12985,11 +10642,11 @@
           "id": 12,
           "name": "测试账号",
           "platform": "openai",
-          "rate_limit_reset_at": "2026-10-13 21:36:53.205680+00:00",
+          "rate_limit_reset_at": "2026-10-23 09:20:05.665058+00:00",
           "schedulable": true,
           "status": "active",
           "type": "apikey",
-          "updated_at": "2026-10-13 21:31:53.205680+00:00"
+          "updated_at": "2026-10-23 09:15:05.665058+00:00"
         }
       },
       "expected": {
@@ -12998,7 +10655,7 @@
           {
             "code": "rate_limit_reset_at",
             "label": "限流中",
-            "until": "2026-10-13T21:36:53.205680+00:00"
+            "until": "2026-10-23T09:20:05.665058+00:00"
           }
         ],
         "concurrency": null,
@@ -13015,21 +10672,20 @@
         "last_error_status": null,
         "last_success_at": null,
         "load_factor": null,
-        "managed": false,
         "name": "测试账号",
         "operation_versions": {
           "account_template": "b52d5ae627611d9ef6db42b945ac361e82b6c4fe007313369b257ef6868b7ba7",
           "concurrency": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "delete": "1347e8696bb240ab5c936e0cd5d16e7b042e2aadeaeabd9cd9d098c0788da013",
+          "delete": "06187077872999ad4a67af68f14d8d7b6b6ef06a96be9a8ccf6ea6670e906b33",
           "groups": "b557dbd246d781ca44f9380e60213544c1bdba04c24c42a3880a0cfb4a8e94d8",
           "load_factor": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
           "model_config": "5bb93d797223979c738f246cc5bd649a0de307ed7df223d694f35498b7f470b6",
           "model_test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "priority": "7ae8309a7981b05548f70c091fe8110e247aabb18c5cdfb010de10485b4d1179",
           "proxy": "d75d0b4c913399f58860840536759a55b48d79309df6ac94df2b966bd79316e3",
-          "recover": "577d976769baba369ffade80c97927a4588b54c925a7f0eae73075983113bf0c",
-          "reset_quota": "ec47487558da10b682978d22283a44ed0c3e5ac188673acf129ee83baf080235",
-          "schedulable": "3489defa52e4940d6222cecfe9c8b0cad9562b9fedbc075ad0e2c5d5117a1816",
+          "recover": "12d537c4c8c6cbe446696a7ef4973b62d56a964cab367a13691c80d8837596c3",
+          "reset_quota": "9e45efe44a1e715f5cb61adf4dc516dce4c4db0ff532603b162967cc8f3c7337",
+          "schedulable": "57ddc469369fe4266eb76664d3cb9a677e83066b0f6da124e2fafdac4ad60fbc",
           "sync_models": "dab76432c4117e1b200d7b1d89bf54a6e2613d005a75d05b7aa48217d0f49a5a",
           "test": "969cd7b869b721407d77155e8a2bd3467b4bd25f03de3a268e5cb403dc9d81e9",
           "usage": "cee905fa8cdf831a80177ceab6c567e89381a79b2bfa433b72b622d0fa7dc681"
@@ -13068,9 +10724,9 @@
         "status": "active",
         "success_after_error": false,
         "type": "apikey",
-        "updated_at": "2026-10-13T21:31:53.205680+00:00",
+        "updated_at": "2026-10-23T09:15:05.665058+00:00",
         "usage_windows": [],
-        "version": "ff74119685a385ba515c788276144c41d6ee64ab5f39decc702d403d84be1b72"
+        "version": "bb65a9f7206a7ec49fb03581d08b1d776d34b063bc0787a28f7d9d02f4f9f8de"
       },
       "function": "account_dto",
       "input_unchanged": true,
@@ -13078,15 +10734,6 @@
     }
   ],
   "legacy_tests": [
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_fresh_usage_data_windows_still_classify_available",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows",
-    "py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra",
-    "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values",
     "py:tests.test_quota_snapshot:PassiveQuotaTests.test_billing_and_money_budgets_are_not_usage_windows",
     "py:tests.test_quota_snapshot:PassiveQuotaTests.test_free_plan_has_only_seven_day_window_and_no_raw_data",
     "py:tests.test_quota_snapshot:PassiveQuotaTests.test_grok_error_stale_and_incomplete_are_not_fresh",

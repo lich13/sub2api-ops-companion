@@ -69,7 +69,6 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
 
     from app import account_templates as account_templates_module
     from app.account_templates import AccountTemplates, CustomTemplateRequest
-    from app.key_fallback import KeyFallbackController, KeyFallbackConfigError, parse_managed_account_ids
     from app.model_catalog import import_fields
     from app.model_config_store import ModelConfigStore
     from app.model_rules import revision, transform, validate_fields, validate_overrides
@@ -359,7 +358,7 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
         **env,
         "OAUTH_CONFIG_PATH": str(oauth_path),
         "BARK_CONFIG_PATH": str(bark_path),
-        "KEY_FALLBACK_CONFIG_PATH": str(priority_root / "key-fallback.json"),
+
         "KEEPALIVE_CONFIG_PATH": str(priority_root / "keepalive-state.json"),
     }
     with patch.dict(os.environ, env_for_settings, clear=True):
@@ -376,56 +375,6 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
         "oauth_recovery_connection_account_ids": settings.oauth_recovery_connection_account_ids,
         "oauth_recovery_model_account_ids": settings.oauth_recovery_model_account_ids,
     }
-
-    fallback_root = work / "key-fallback"
-    fallback_root.mkdir()
-    fallback_path = fallback_root / "key-fallback.json"
-    fallback_input = {
-        "enabled": True,
-        "managed_account_ids": [7, 7, 9],
-        "coexist_account_ids": [7],
-        "config_version": 3,
-        "updated_at": "2031-04-05T06:07:08+00:00",
-        "updated_by": "fixture-admin",
-    }
-    fallback_path.write_text(json.dumps(fallback_input), encoding="utf-8")
-    controller = KeyFallbackController(
-        SimpleNamespace(key_fallback_config_path=str(fallback_path)),
-        SimpleNamespace(),
-        base_url_provider=lambda: "http://127.0.0.1:8090",
-        admin_token_provider=lambda: "",
-    )
-    parsed_fallback = controller.load_config()
-    fallback_expected = {
-        "enabled": parsed_fallback.enabled,
-        "openai_enabled": parsed_fallback.openai_enabled,
-        "grok_enabled": parsed_fallback.grok_enabled,
-        "managed_account_ids": list(parsed_fallback.managed_account_ids),
-        "coexist_account_ids": list(parsed_fallback.coexist_account_ids),
-        "config_version": parsed_fallback.config_version,
-        "updated_at": parsed_fallback.updated_at,
-        "updated_by": parsed_fallback.updated_by,
-        "valid": parsed_fallback.valid,
-        "panel": controller.panel_snapshot(),
-    }
-    invalid_fallback = {"enabled": "fixture-invalid", "managed_account_ids": [7]}
-    fallback_path.write_text(json.dumps(invalid_fallback), encoding="utf-8")
-    invalid_parsed = controller.load_config()
-    invalid_fallback_expected = {
-        "valid": invalid_parsed.valid,
-        "panel": controller.panel_snapshot(),
-    }
-    id_cases = [
-        {"id": "numeric_ids_deduplicated", "input": [7, "9", 7], "accepted": True, "expected": [7, 9]},
-        {"id": "zero_rejected", "input": [0], "accepted": False},
-        {"id": "boolean_rejected", "input": [True], "accepted": False},
-    ]
-    for case in id_cases:
-        try:
-            case["expected"] = parse_managed_account_ids(case["input"])
-            case["accepted"] = True
-        except KeyFallbackConfigError:
-            case["accepted"] = False
 
     return {
         "reference_sha": REFERENCE_SHA,
@@ -472,13 +421,6 @@ def build_fixtures(repo: Path, app_root: Path, work: Path) -> dict[str, Any]:
             "env": env,
             "expected": jsonable(priority_expected),
             "rust_additions_0_1_48": {"model_detection_model_id": "gpt-6-luna"},
-        },
-        "key_fallback": {
-            "legacy_input": fallback_input,
-            "expected": jsonable(fallback_expected),
-            "invalid_input": invalid_fallback,
-            "invalid_expected": jsonable(invalid_fallback_expected),
-            "managed_id_cases": id_cases,
         },
     }
 

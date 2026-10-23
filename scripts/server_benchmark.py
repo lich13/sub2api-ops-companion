@@ -193,7 +193,7 @@ def service(image: str, implementation: str, database: str, upstream: str, state
         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}
     for key, filename in {"AUDIT_PATH": "audit.jsonl", "USAGE_QUERY_STATE_PATH": "usage-query-state.json",
         "OAUTH_CONFIG_PATH": "oauth-config.json", "BARK_CONFIG_PATH": "bark-config.json",
-        "KEY_FALLBACK_CONFIG_PATH": "key-fallback-config.json", "SUB2API_CONFIG_PATH": "sub2api-config.json",
+        "SUB2API_CONFIG_PATH": "sub2api-config.json",
         "GROUP_MODEL_CONFIG_PATH": "group-model-config.json",
         "KEEPALIVE_CONFIG_PATH": "keepalive-state.json"}.items():
         env[key] = "/data/" + filename

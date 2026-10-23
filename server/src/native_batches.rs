@@ -141,14 +141,6 @@ impl Operations {
             );
         }
         if action == "delete" {
-            if self
-                .backend
-                .managed()?
-                .contains(&integer(&row["id"]).unwrap())
-                && p["detach_managed"] != true
-            {
-                return Err(Error::new(409, "请确认解除托管后删除"));
-            }
             return Ok(json!({}));
         }
         let scope = ids(&p["scope_group_ids"]);
@@ -401,9 +393,6 @@ impl Operations {
         Ok(())
     }
     async fn delete_native_chunk(&self, bid: &str, jobs: Vec<Value>, key: &str) -> Result<()> {
-        let lock = self.backend.delete_lock();
-        let _guard = lock.lock().await;
-        let managed = self.backend.managed()?;
         let rows = self.native_rows(&jobs).await?;
         let children = self
             .children(
@@ -429,16 +418,8 @@ impl Operations {
                     != ids(&job["child_account_ids"])
                         .into_iter()
                         .collect::<Vec<_>>()
-                || children
-                    .iter()
-                    .filter(|id| managed.contains(id))
-                    .copied()
-                    .collect::<BTreeSet<_>>()
-                    != ids(&job["managed_child_ids"])
             {
                 self.update(jid,json!({"status":"needs_confirmation","reason":"账号或关联账号已变化，请重新确认删除"}))?;
-            } else if managed.contains(&aid) && job["payload"]["detach_managed"] != true {
-                self.update(jid,json!({"status":"needs_confirmation","reason":"托管状态已变化，请重新确认删除"}))?;
             } else {
                 allowed.push(job);
             }
@@ -450,15 +431,9 @@ impl Operations {
             vec![allowed]
         };
         for group in groups {
-            let mut selected = self.record_native(bid, &group, compatibility)?;
+            let selected = self.record_native(bid, &group, compatibility)?;
             if selected.is_empty() {
                 continue;
-            }
-            self.backend.detach_deleted(&mut selected).await?;
-            for job in &selected {
-                if job["detached"] == true {
-                    self.update(string(&job["id"]), json!({"detached":true}))?;
-                }
             }
             self.send_native(bid, selected, key, compatibility, true)
                 .await?;
@@ -484,9 +459,6 @@ impl Operations {
                     json!({"status":"running","started_at":at,"updated_at":at,"reason":"","dispatch_id":cid,"execution_mode":mode,"native_target":job["native_target"]})
                         .as_object().unwrap().clone(),
                 );
-                if job["detached"] == true {
-                    live["detached"] = true.into();
-                }
                 selected.push(live.clone());
             }
             if !selected.is_empty() {

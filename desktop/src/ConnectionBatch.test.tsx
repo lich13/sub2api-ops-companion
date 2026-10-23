@@ -21,7 +21,6 @@ const account = (id: number, overrides: Partial<Account> = {}): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   version: `account-version-${id}`,
   operation_versions: { test: `test-version-${id}` },
   last_success_at: null,

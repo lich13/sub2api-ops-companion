@@ -42,7 +42,6 @@ const account = (item: PriorityAccount): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   recoverable: true,
   version: `account-version-${item.id}`,
   operation_versions: { priority: item.version },

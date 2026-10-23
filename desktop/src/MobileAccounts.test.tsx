@@ -20,7 +20,6 @@ const account: Account = {
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   recoverable: true,
   version: "fixture-version",
   last_success_at: null,

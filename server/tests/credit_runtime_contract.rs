@@ -544,7 +544,6 @@ impl Harness {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: state_path,
             bark_path: temp.path().join("bark-config.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -1396,7 +1395,7 @@ async fn seed_parameter_retry(h: &Harness) -> (i64, Value) {
 
 async fn apply_parameter(h: &Harness, id: i64, field: &str, target: i64) -> Result<Value> {
     let row = h.controller.actions.account(id, None).await?;
-    let versions = operation_versions(&row, false);
+    let versions = operation_versions(&row);
     h.controller
         .actions
         .apply_setting(
@@ -1478,7 +1477,7 @@ async fn interrupted_parameter_write(h: &Harness, id: i64) -> Value {
     *h.mock.scalar_gate.lock().unwrap() = Some(gate.clone());
     let actions = h.controller.actions.clone();
     let row = actions.account(id, None).await.unwrap();
-    let expected = operation_versions(&row, false)["concurrency"]
+    let expected = operation_versions(&row)["concurrency"]
         .as_str()
         .unwrap()
         .to_owned();

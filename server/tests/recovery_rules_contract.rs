@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use sub2ops_server::{
-    bark, compat, daily_test, key_fallback, oauth_admission,
+    bark, compat, daily_test, oauth_admission,
     oauth_state::{self, OAuthState, Update},
     recovery_policy, recovery_rules, reset_credit_observation,
 };
@@ -160,16 +160,23 @@ fn recovery_descriptors_and_block_signatures_match_pinned_python() {
     let parsed = recovery_rules::threshold(&json!(threshold["value"]));
     assert_eq!(parsed, threshold["expected"]);
     assert_eq!(
-        recovery_rules::eligible(&threshold["row"], &["codex_5h".to_owned()]),
+        recovery_rules::eligible(
+            &threshold["row"],
+            &["codex_5h".to_owned()],
+            date(&fixture["at"])
+        ),
         threshold["eligibility_expected"].as_bool().unwrap(),
         "threshold evidence must name an observed quota window",
     );
     assert_eq!(
-        recovery_rules::eligible(&threshold["row"], &[]),
+        recovery_rules::eligible(&threshold["row"], &[], date(&fixture["at"])),
         threshold["unobserved_window_expected"].as_bool().unwrap(),
     );
-    let descriptor =
-        recovery_rules::threshold_descriptor(&threshold["row"], &threshold["descriptor_summary"]);
+    let descriptor = recovery_rules::threshold_descriptor(
+        &threshold["row"],
+        &threshold["descriptor_summary"],
+        date(&fixture["at"]),
+    );
     assert_eq!(descriptor, threshold["descriptor_expected"]);
     assert_eq!(
         recovery_rules::threshold_available(&threshold["descriptor_summary"], &descriptor),
@@ -190,7 +197,7 @@ fn recovery_descriptors_and_block_signatures_match_pinned_python() {
     );
     let rate = &rules["rate_descriptor"];
     assert_eq!(
-        recovery_rules::rate_descriptor(&rate["row"], &rate["summary"]),
+        recovery_rules::rate_descriptor(&rate["row"], &rate["summary"], date(&fixture["at"])),
         rate["expected"],
         "natural rate-limit reset evidence must retain the same fingerprint",
     );
@@ -515,47 +522,6 @@ fn bark_urls_messages_and_utf8_chunks_match_pinned_python() {
 }
 
 #[test]
-fn key_fallback_classification_matches_pinned_python() {
-    let fixture = fixtures();
-    let vectors = &fixture["key_fallback"];
-    for case in vectors["grok"].as_array().unwrap() {
-        assert_eq!(
-            key_fallback::grok_state(&case["row"], date(&fixture["at"])),
-            case["expected"].as_str().unwrap(),
-            "{}",
-            case["name"],
-        );
-    }
-    for case in vectors["oauth"].as_array().unwrap() {
-        assert_eq!(
-            key_fallback::oauth_state(
-                &case["row"],
-                &case["result"],
-                date(&case["now"]),
-                case["freshness_seconds"].as_i64().unwrap(),
-            ),
-            case["expected"].as_str().unwrap(),
-            "{}",
-            case["name"],
-        );
-    }
-    for case in vectors["desired"].as_array().unwrap() {
-        let states = case["states"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            key_fallback::desired(&states),
-            case["expected"].as_bool(),
-            "{}",
-            case["name"],
-        );
-    }
-}
-
-#[test]
 fn manual_generation_discards_stale_state_updates() {
     let fixture = fixtures();
     let expected = &fixture["manual_generation"];
@@ -598,4 +564,40 @@ fn manual_generation_discards_stale_state_updates() {
             .unwrap_or(Value::Null),
         expected["expected_result"],
     );
+}
+
+#[test]
+fn ordinary_temporary_restrictions_expire_only_at_a_valid_deadline() {
+    let now = date(&json!("2026-01-01T12:00:00Z"));
+    let base = json!({"id":73,"platform":"openai","type":"oauth","status":"active","schedulable":true,
+        "rate_limited_at":"2026-01-01T10:00:00Z","rate_limit_reset_at":"2026-01-01T12:00:00Z",
+        "temp_unschedulable_reason":"fixture network unavailable"});
+    for (deadline, expected) in [
+        (json!("2026-01-01T11:59:59Z"), true),
+        (json!("2026-01-01T12:00:00Z"), true),
+        (json!("2026-01-01T12:00:01Z"), false),
+        (Value::Null, false),
+        (json!(""), false),
+        (json!("invalid"), false),
+    ] {
+        let mut row = base.clone();
+        row["temp_unschedulable_until"] = deadline;
+        assert_eq!(oauth_admission::automatic_eligible(&row, now), expected);
+        assert_eq!(recovery_rules::eligible(&row, &[], now), expected);
+        row["schedulable"] = false.into();
+        assert!(!oauth_admission::automatic_eligible(&row, now));
+        assert!(!recovery_rules::eligible(&row, &[], now));
+    }
+    let mut expired = base;
+    expired["temp_unschedulable_until"] = "2026-01-01T11:00:00Z".into();
+    expired["credentials"] = json!({"access_token":"fixture-token"});
+    let auth = json!({"quota_query":{"auth_fingerprint":oauth_admission::credential_fingerprint(&expired)}});
+    assert_eq!(
+        oauth_admission::automatic_gate(&expired, &Value::Null, &auth, now, true, false, 1)
+            .unwrap()
+            .0,
+        "auth_paused"
+    );
+    expired["status"] = "error".into();
+    assert!(!recovery_rules::eligible(&expired, &[], now));
 }

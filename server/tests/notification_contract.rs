@@ -71,7 +71,6 @@ fn settings(
         usage_path: root.join("usage-query-state.json"),
         oauth_path: root.join("oauth-config.json"),
         bark_path: root.join("bark-config.json"),
-        fallback_path: root.join("key-fallback-config.json"),
         connection_path: root.join("sub2api-config.json"),
         model_path: root.join("group-model-config.json"),
         keepalive_path: root.join("keepalive-state.json"),
@@ -146,10 +145,6 @@ fn runtime_env(root: &Path, bark_path: &Path, base_url: &str) -> BTreeMap<String
         root.join("audit.jsonl").display().to_string(),
     );
     env.insert("SUB2API_BASE_URL".into(), base_url.into());
-    env.insert(
-        "KEY_FALLBACK_CONFIG_PATH".into(),
-        root.join("missing-fallback.json").display().to_string(),
-    );
     env.insert(
         "SUB2API_CONFIG_PATH".into(),
         root.join("missing-connection.json").display().to_string(),

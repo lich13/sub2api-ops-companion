@@ -29,7 +29,6 @@ const account = (id: number, overrides: Partial<Account> = {}): Account => ({
   available: true,
   group_ids: [1],
   blockers: [],
-  managed: false,
   recoverable: true,
   version: `account-version-${id}`,
   last_success_at: null,
@@ -337,7 +336,7 @@ describe("shared account actions", () => {
           batch_id: "a".repeat(32), pending: 0,
           items: [{
             id: "1".repeat(32), batch_id: "a".repeat(32), account_id: 1, account_name: "Fixture 1", action: "delete",
-            status: "completed", reason: "", requested: { detach_managed: false }, result: { deleted: true, verified: true, detached: false },
+            status: "completed", reason: "", requested: {}, result: { deleted: true, verified: true },
           }],
         } as never;
       }
@@ -373,7 +372,7 @@ describe("shared account actions", () => {
     expect(writes).toHaveLength(2);
     expect(writes[0]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
       action: "delete", payload: { confirmed: true },
-      accounts: [{ account_id: 1, expected_version: "account-version-1", payload: { detach_managed: false } }],
+      accounts: [{ account_id: 1, expected_version: "account-version-1", payload: {} }],
     })]);
     expect(writes[1]).toEqual(["POST", "/account-operations/batch", expect.objectContaining({
       action: "groups", payload: {},
@@ -431,9 +430,9 @@ describe("shared scheduling in groups and priorities", () => {
     ? groupCard("Fixture 1").closest("[data-drop-zone]")?.getAttribute("data-drop-zone")
     : [...container.querySelectorAll("[data-priority-id]")].map(row => row.getAttribute("data-priority-id"));
 
-  it.each(["分组", "优先级"] as const)("%s confirms managed scheduling, uses its own operation version and preserves drafts", async (page) => {
+  it.each(["分组", "优先级"] as const)("%s changes scheduling directly, uses its own operation version and preserves drafts", async (page) => {
     const pending = deferred<unknown>();
-    const items = [account(1, { managed: true, operation_versions: { schedulable: "schedule-version-1", priority: "priority-1", groups: "groups-1" } }), account(2)];
+    const items = [account(1, { operation_versions: { schedulable: "schedule-version-1", priority: "priority-1", groups: "groups-1" } }), account(2)];
     const original = vi.mocked(api).getMockImplementation()!;
     vi.mocked(api).mockImplementation(async (method, path, body) => path === "/accounts/1/operations" ? pending.promise as never : original(method, path, body));
     await openPanel(page, items);
@@ -441,15 +440,13 @@ describe("shared scheduling in groups and priorities", () => {
     expect(draft).toEqual(page === "分组" ? "right" : ["2", "1"]);
     expect(panelSwitch(page).getAttribute("aria-checked")).toBe("true");
     await act(async () => panelSwitch(page).click());
-    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
-    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(0);
-    await act(async () => button("解除托管并关闭").click());
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
     expect(panelSwitch(page).disabled).toBe(true);
     expect(vi.mocked(api).mock.calls.find(([method]) => method === "POST")?.[2]).toMatchObject({
-      action: "schedulable", payload: { schedulable: false, detach_managed: true }, expected_version: "schedule-version-1",
+      action: "schedulable", payload: { schedulable: false }, expected_version: "schedule-version-1",
     });
     await act(async () => pending.resolve({ id: "fixture-schedule", account_id: 1, action: "schedulable", status: "completed", requested: {}, result: { verified: true } }));
-    await act(async () => receive(state([{ ...items[0], schedulable: false, managed: false }, items[1]])));
+    await act(async () => receive(state([{ ...items[0], schedulable: false }, items[1]])));
     expect(panelSwitch(page).getAttribute("aria-checked")).toBe("false");
     expect(draftState(page)).toEqual(draft);
     expect(command).toHaveBeenCalledWith("refresh");

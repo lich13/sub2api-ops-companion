@@ -487,7 +487,7 @@
       "expected_versions": {
         "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
         "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
-        "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+        "delete": "5cc3e1096ef707ae8f3896836dadfe38ad0df045bbe878e38bedc8833db2dd87",
         "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
         "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
         "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
@@ -496,7 +496,7 @@
         "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
         "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
         "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
-        "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+        "schedulable": "02c98354b4da6c8a1ca07abc42eac2b0bfa7491e17e24788a2792282c1ffd816",
         "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
         "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
         "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
@@ -546,7 +546,7 @@
         },
         "type": "oauth"
       },
-      "source": "app/operation_versions.py#versions"
+      "source": "app/operation_versions.py#versions; approved 0.1.55 removes ownership from schedulable/delete"
     },
     {
       "assertions": [
@@ -646,7 +646,7 @@
         "a": {
           "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
           "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
-          "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+          "delete": "5cc3e1096ef707ae8f3896836dadfe38ad0df045bbe878e38bedc8833db2dd87",
           "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
           "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
           "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
@@ -655,7 +655,7 @@
           "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
           "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
           "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
-          "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+          "schedulable": "02c98354b4da6c8a1ca07abc42eac2b0bfa7491e17e24788a2792282c1ffd816",
           "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
           "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
           "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
@@ -663,7 +663,7 @@
         "b": {
           "account_template": "db0cced5e29dc5ece8cebd63689d4a6d5f6ec08ab7a8a4c78177d55084a463e3",
           "concurrency": "2f4a01e0a2623a7c4eca9d098822ff06bc88e2a6458dafd7f10e2d2971a303f4",
-          "delete": "d593c2bcfdcade3f8256e75dbe062a0195b2ef5a85a0ff8bb4305926fa880c63",
+          "delete": "5cc3e1096ef707ae8f3896836dadfe38ad0df045bbe878e38bedc8833db2dd87",
           "groups": "c4eb63caeb805602e3e51b38b72c8253012e06dd4f26fe73692b7dad8be8f17a",
           "load_factor": "77eddab4d74458b76984a6a5518c94b7895d9863c9af5f1410dededf5069d18e",
           "model_config": "47d87717d5cf07278db37dae51ff54946e4d1aaf9cb12fd13b150a4be0a399b5",
@@ -672,14 +672,14 @@
           "proxy": "881bb4d9c21fbd4f06dc85a03b47f0881605f98d982f8076f1df085004d29a3a",
           "recover": "e64c9569f46d07f6b3fbb986837beddab03ffa211a36bbaa22c7a298f857f3da",
           "reset_quota": "5170d743014bcf42a64adf4d4e8fc5ee9d3c23ec6528ef611882d2d2e923c0e9",
-          "schedulable": "2ebb907fefb4a164384479239ec99fbaab0d3f5f91296119b3dd7b58da173860",
+          "schedulable": "02c98354b4da6c8a1ca07abc42eac2b0bfa7491e17e24788a2792282c1ffd816",
           "sync_models": "60076bbff54643d7b03daec64e585ecce285784d7ea6e281c2427de3b541202a",
           "test": "056fb2c89605bdecc4476a5568c859e5b210ca1ef247c224b57987c265559065",
           "usage": "65ee7ee228cb39f7de07656e895d19db08cad9e3a1ce053dba6d2a6a1937e36d"
         }
       },
       "id": "operation_versions_group_order_invariance",
-      "source": "app/operation_versions.py#versions"
+      "source": "app/operation_versions.py#versions; approved 0.1.55 removes ownership from schedulable/delete"
     },
     {
       "assertions": [

@@ -757,6 +757,12 @@
 .record-cost-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 12px 14px; border: 1px solid #495265; border-radius: 10px; background: #111827; color: #f9fafb; box-shadow: 0 12px 35px #0005; font-size: 12px; pointer-events: auto; }
 .record-cost-tooltip dl { margin: 8px 0 0; }
 .record-cost-tooltip dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 3px 0; }
-.record-cost-tooltip dt { color: #a3adbd; }
-.record-cost-tooltip dd { margin: 0; font-variant-numeric: tabular-nums; }
+.record-cost-tooltip > strong { color: #d1d5db; font-weight: 600; }
+.record-cost-tooltip dt { color: #9ca3af; font-weight: 400; }
+.record-cost-tooltip dd { margin: 0; color: #fff; font-weight: 500; font-variant-numeric: tabular-nums; }
+.record-cost-tooltip .cost-input-price { color: #7dd3fc; }
+.record-cost-tooltip .cost-output-price { color: #c4b5fd; }
+.record-cost-tooltip .cost-tier { color: #67e8f9; }
+.record-cost-tooltip .cost-multiplier { color: #60a5fa; }
+.record-cost-tooltip .cost-charged { color: #4ade80; }
 .record-cost-tooltip .cost-section { border-top: 1px solid #374151; margin-top: 6px; padding-top: 9px; }

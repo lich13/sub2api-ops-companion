@@ -34,7 +34,7 @@ use sub2ops_server::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{Mutex as AsyncMutex, Notify, Semaphore},
+    sync::{Notify, Semaphore},
     task::JoinHandle,
 };
 
@@ -407,15 +407,11 @@ struct FixtureBackend {
     recover_failures: Mutex<BTreeSet<i64>>,
     test_model: Mutex<String>,
     test_concurrency: AtomicI64,
-    delete_lock: Arc<AsyncMutex<()>>,
 }
 
 impl Backend for FixtureBackend {
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
         *self.now.lock().unwrap()
-    }
-    fn managed(&self) -> Result<BTreeSet<i64>> {
-        Ok(BTreeSet::new())
     }
 
     fn mark(&self, _id: i64) -> Result<Value> {
@@ -453,14 +449,6 @@ impl Backend for FixtureBackend {
 
     fn model_cancel<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Value>> {
         Box::pin(async { Err(Error::new(404, "fixture model operation absent")) })
-    }
-
-    fn delete_lock(&self) -> Arc<AsyncMutex<()>> {
-        self.delete_lock.clone()
-    }
-
-    fn detach_deleted<'a>(&'a self, _jobs: &'a mut [Value]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Ok(()) })
     }
 
     fn test_config(&self) -> Result<(String, usize)> {
@@ -519,7 +507,6 @@ impl Harness {
             usage_path: temp.path().join("usage-state.json"),
             oauth_path: temp.path().join("oauth-state.json"),
             bark_path: temp.path().join("bark-state.json"),
-            fallback_path: temp.path().join("key-fallback.json"),
             connection_path,
             model_path: temp.path().join("group-models.json"),
             keepalive_path: temp.path().join("keepalive-state.json"),
@@ -555,7 +542,6 @@ impl Harness {
                     .to_owned(),
             ),
             test_concurrency: AtomicI64::new(2),
-            delete_lock: Arc::new(AsyncMutex::new(())),
         });
         let operations = Operations::new(
             actions.clone(),
@@ -626,7 +612,7 @@ impl Harness {
             .into_iter()
             .map(|row| {
                 let id = row["id"].as_i64().unwrap();
-                let version = operation_versions(&row, false)[action]
+                let version = operation_versions(&row)[action]
                     .as_str()
                     .unwrap()
                     .to_owned();
@@ -807,10 +793,9 @@ async fn strict_fields_and_single_test_defaults_match_reference() {
         .await
         .expect("valid single test request");
     assert_eq!(accepted["status"], "queued");
-    assert_eq!(
-        accepted["requested"],
-        fixtures()["request_defaults"]["public_requested"]
-    );
+    let mut requested = fixtures()["request_defaults"]["public_requested"].clone();
+    requested["model_id"] = fixtures()["connection_test"]["requested_model"].clone();
+    assert_eq!(accepted["requested"], requested);
     assert!(harness.mock.test_calls().is_empty());
 
     let mut invalid_batch = harness
@@ -2520,5 +2505,103 @@ async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_r
         .submit(ids[0], &invalid, ADMIN_KEY)
         .await
         .is_err());
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn single_default_test_model_is_frozen_for_immediate_and_scheduled_requests() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(4, json!({})).await;
+    let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T09:31:00+08:00")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    *harness.backend.now.lock().unwrap() = due - chrono::Duration::minutes(1);
+    *harness.backend.test_model.lock().unwrap() = "fixture-preset-model".into();
+    let versions = harness.expected_versions(&ids, "test").await;
+    let mut jobs = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
+        let chosen = if index == 2 {
+            "fixture-explicit-model"
+        } else {
+            ""
+        };
+        let mut request = json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":chosen},"expected_version":versions[id],"request_id":format!("fixture-default-model-{index:04}"),"client_id":CLIENT_ID});
+        if matches!(index, 1 | 3) {
+            request["scheduled_at"] = "2030-01-02T09:31:00+08:00".into();
+        }
+        let job = harness
+            .operations
+            .submit(*id, &request, ADMIN_KEY)
+            .await
+            .unwrap();
+        assert_eq!(
+            job["requested"]["model_id"],
+            if chosen.is_empty() {
+                "fixture-preset-model"
+            } else {
+                chosen
+            }
+        );
+        jobs.push((request, job));
+    }
+    // Simulate a still-queued appointment accepted by the previous release.
+    let legacy_id = jobs[3].1["id"].as_str().unwrap();
+    harness
+        .operations
+        .store
+        .transaction(|state| {
+            state["jobs"][legacy_id]["payload"]["model_id"] = "".into();
+            Ok(())
+        })
+        .unwrap();
+    jobs[3].1["requested"]["model_id"] = "".into();
+    *harness.backend.test_model.lock().unwrap() = "fixture-new-preset".into();
+    harness.restart().await;
+    for (id, (request, job)) in ids.iter().zip(&jobs) {
+        let replay = harness
+            .operations
+            .submit(*id, request, ADMIN_KEY)
+            .await
+            .unwrap();
+        assert_eq!(replay["id"], job["id"]);
+        assert_eq!(replay["requested"], job["requested"]);
+    }
+    *harness.backend.now.lock().unwrap() = due;
+    harness.operations.tick().await.unwrap();
+    for (_, job) in &jobs {
+        harness
+            .wait_status(job["id"].as_str().unwrap(), "completed")
+            .await;
+    }
+    let calls = harness.mock.test_calls();
+    assert_eq!(calls.len(), 4);
+    for id in &ids[..2] {
+        assert_eq!(
+            calls
+                .iter()
+                .find(|c| c.path.ends_with(&format!("/{id}/test")))
+                .unwrap()
+                .body["model_id"],
+            "fixture-preset-model"
+        );
+    }
+    assert_eq!(
+        calls
+            .iter()
+            .find(|c| c.path.ends_with(&format!("/{}/test", ids[2])))
+            .unwrap()
+            .body["model_id"],
+        "fixture-explicit-model"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .find(|c| c.path.ends_with(&format!("/{}/test", ids[3])))
+            .unwrap()
+            .body["model_id"],
+        "fixture-new-preset"
+    );
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.mock.test_calls().len(), 4);
     harness.finish().await;
 }

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use sub2ops_server::{
     compat, credit_rules,
     error::Result,
-    error_evidence, key_fallback, model_catalog, model_rules, model_target,
+    error_evidence, model_catalog, model_rules, model_target,
     oauth_state::{self, OAuthState},
     queries, quota, recovery_events, recovery_rules, reset_credit_observation,
 };
@@ -16,17 +16,9 @@ fn time(value: &Value) -> DateTime<Utc> {
 
 fn execute(name: &str, args: &Value) -> Result<Value> {
     Ok(match name {
-        "account_dto" => queries::account_dto(
-            &args["row"],
-            time(&args["now"]),
-            &args["managed"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|id| id.as_i64().unwrap())
-                .collect(),
-            &args["quota_result"],
-        ),
+        "account_dto" => {
+            queries::account_dto(&args["row"], time(&args["now"]), &args["quota_result"])
+        }
         "group_dtos" => json!(queries::group_dtos(
             args["rows"].as_array().unwrap(),
             &args["account_groups"]
@@ -79,6 +71,7 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
                 .flatten()
                 .map(|v| v.as_str().unwrap().to_owned())
                 .collect::<Vec<_>>(),
+            time(&json!("2026-01-01T00:00:00+00:00")),
         )),
         "recovery_block_signature" => json!(oauth_state::block_signature(&args["row"])),
         "recovery_block_change_is_safe" => json!(recovery_rules::change_is_safe(
@@ -100,23 +93,6 @@ fn execute(name: &str, args: &Value) -> Result<Value> {
             time(&args["completed"]),
         )
         .unwrap_or(Value::Null),
-        "classify_oauth_account" => json!(key_fallback::oauth_state(
-            &args["row"],
-            &args["result"],
-            time(&args["now"]),
-            args["freshness_seconds"].as_i64().unwrap()
-        )),
-        "classify_grok_oauth_account" => {
-            json!(key_fallback::grok_state(&args["row"], time(&args["now"])))
-        }
-        "desired_key_schedulable" => json!(key_fallback::desired(
-            &args["states"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_str().unwrap())
-                .collect::<Vec<_>>()
-        )),
         "latest_completed_oauth_result" => {
             queries::latest_completed_result(&args["result"], &args["scheduler_row"])
         }
@@ -263,58 +239,6 @@ fn check(legacy_id: &str) {
 }
 
 // The individual tests below correspond to pinned Python test identities.
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_available_requires_gates_fresh_success_and_required_windows(
-) {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_available_requires_gates_fresh_success_and_required_windows");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block(
-) {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_blocking_db_state_is_unavailable_and_stale_fields_do_not_block");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_desired_state_matrix() {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_desired_state_matrix");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_fresh_usage_data_windows_still_classify_available() {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_fresh_usage_data_windows_still_classify_available");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_freshness_and_ordinary_errors_are_unknown() {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_freshness_and_ordinary_errors_are_unknown");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_latest_completed_attempt_prefers_newer_success_over_leftover_error(
-) {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_latest_completed_attempt_prefers_newer_success_over_leftover_error");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_quota_exhaustion_auth_errors_and_incomplete_windows()
-{
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_quota_exhaustion_auth_errors_and_incomplete_windows");
-}
-
-#[test]
-fn key_fallback_oauthclassificationtests_test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra(
-) {
-    check("py:tests.test_key_fallback:OAuthClassificationTests.test_success_without_fresh_quota_payload_is_unknown_despite_stale_extra");
-}
-
-#[test]
-fn key_fallback_grokfallbacktests_test_grok_blocking_states_and_unknown_values() {
-    check(
-        "py:tests.test_key_fallback:GrokFallbackTests.test_grok_blocking_states_and_unknown_values",
-    );
-}
 
 #[test]
 fn quota_snapshot_passivequotatests_test_billing_and_money_budgets_are_not_usage_windows() {

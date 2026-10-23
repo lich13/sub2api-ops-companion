@@ -33,7 +33,6 @@ const account = (id: number): Account => ({
   available: true,
   group_ids: [],
   blockers: [],
-  managed: false,
   version: "a".repeat(64),
   operation_versions: { test: "b".repeat(64) },
   last_success_at: null,
