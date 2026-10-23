@@ -41,7 +41,7 @@ pub fn short(job: &Value) -> bool {
     matches!(string(&job["action"]), "schedulable" | "degradation_mark")
 }
 pub fn connection_test(job: &Value) -> bool {
-    job["action"] == "test" && truthy(&job["batch_id"])
+    job["action"] == "test" && (truthy(&job["batch_id"]) || job["scheduled_at"].is_string())
 }
 pub fn native(job: &Value) -> bool {
     truthy(&job["batch_id"])
@@ -54,6 +54,17 @@ pub fn native(job: &Value) -> bool {
 pub fn id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
+pub fn scheduled_time(value: &Value) -> Result<chrono::DateTime<chrono::Utc>> {
+    use chrono::Timelike;
+    let at = value
+        .as_str()
+        .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+        .ok_or_else(Error::invalid)?;
+    if at.second() != 0 || at.nanosecond() != 0 {
+        return Err(Error::new(422, "预约时间须精确到分钟"));
+    }
+    Ok(at.with_timezone(&chrono::Utc))
+}
 pub fn validate_store(data: &Value) -> Result<()> {
     let error = || Error::new(503, "操作状态无法读取");
     if data["version"] != 1 || !data["jobs"].is_object() || !data["requests"].is_object() {
@@ -64,6 +75,9 @@ pub fn validate_store(data: &Value) -> Result<()> {
             || !job["account_id"].is_i64()
             || !job["payload"].is_object()
             || !job["status"].is_string()
+            || job
+                .get("scheduled_at")
+                .is_some_and(|value| job["action"] != "test" || scheduled_time(value).is_err())
         {
             return Err(error());
         }
@@ -164,6 +178,9 @@ impl OperationStore {
 /// Domain controllers implement the remaining operations without delegating to
 /// another service or a legacy runtime. Shared guards survive native requests.
 pub trait Backend: Send + Sync {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now()
+    }
     fn managed(&self) -> Result<BTreeSet<i64>>;
     fn mark(&self, id: i64) -> Result<Value>;
     fn dispatch<'a>(
@@ -452,6 +469,7 @@ impl Operations {
                 "client_id",
                 "expected_version",
                 "payload",
+                "scheduled_at",
             ],
             &["action", "request_id", "client_id", "expected_version"],
         )?;
@@ -461,7 +479,29 @@ impl Operations {
         let action = string(&request["action"]);
         let payload =
             validation::operation_payload(action, request.get("payload").unwrap_or(&json!({})))?;
-        let signature = digest(&json!([action, payload, expected]));
+        let scheduled = request
+            .get("scheduled_at")
+            .map(scheduled_time)
+            .transpose()?;
+        if scheduled.is_some()
+            && (action != "test"
+                || !matches!(string(&payload["mode"]), "default" | "text")
+                || truthy(&payload["prompt"])
+                || truthy(&payload["image_data_url"])
+                || truthy(&payload["audio_data_url"]))
+        {
+            return Err(Error::new(422, "预约仅支持普通测试连接"));
+        }
+        let signature = if let Some(at) = scheduled {
+            digest(&json!([
+                action,
+                payload,
+                expected,
+                crate::compat::datetime(at)
+            ]))
+        } else {
+            digest(&json!([action, payload, expected]))
+        };
         let _submit = self.submit_lock.lock().await;
         let data = self.store.read()?;
         if data["batch_requests"].get(rid).is_some() {
@@ -482,6 +522,9 @@ impl Operations {
                 .insert(jid.into(), key.into());
             return Ok(self.public(old, false, 0));
         }
+        if scheduled.is_some_and(|at| at <= self.backend.now()) {
+            return Err(Error::new(422, "预约时间须晚于当前时间"));
+        }
         let _priority = if action == "priority" {
             Some(self.actions.priorities.enter().await?)
         } else {
@@ -490,6 +533,10 @@ impl Operations {
         let row = self.actions.account(aid, None).await?;
         let jid = id();
         let mut job = json!({"id":jid,"account_id":aid,"account_name":row["name"],"action":action,"payload":payload,"expected_version":expected,"client_id":client,"request_id":rid,"request_hash":signature,"parent_account_id":row["parent_account_id"],"created_at":now(),"updated_at":now(),"status":"queued","reason":"等待执行","result":null});
+        if let Some(at) = scheduled {
+            job["scheduled_at"] = crate::compat::datetime(at).into();
+            job["reason"] = "等待预约时间".into();
+        }
         if action == "account_template" {
             match self.actions.templates.desired(&payload) {
                 Ok(target) => job["template_target"] = target,
@@ -908,6 +955,7 @@ impl Operations {
         }
         let data = self.store.read()?;
         let jobs = data["jobs"].as_object().unwrap();
+        self.record_scheduled_results(jobs.values())?;
         let mut running: BTreeSet<_> = self
             .tasks
             .lock()
@@ -951,6 +999,9 @@ impl Operations {
             if !matches!(string(&job["status"]), "queued" | "checking")
                 || running.contains(jid)
                 || native(job)
+                || (job["status"] == "queued"
+                    && crate::compat::parse_datetime(&job["scheduled_at"])
+                        .is_some_and(|at| at > self.backend.now()))
             {
                 continue;
             }
@@ -1000,6 +1051,36 @@ impl Operations {
             if connection_test(job) {
                 active_tests += 1;
             }
+        }
+        Ok(())
+    }
+    fn record_scheduled_results<'a>(&self, jobs: impl Iterator<Item = &'a Value>) -> Result<()> {
+        let state = self.actions.queries.oauth.snapshot()?;
+        let mut history = BTreeMap::new();
+        for job in jobs.filter(|job| {
+            job["scheduled_at"].is_string()
+                && !matches!(string(&job["status"]), "queued" | "running" | "checking")
+        }) {
+            let key = format!("connection-test:{}", string(&job["id"]));
+            if state["recovery_history"].get(&key).is_some() {
+                continue;
+            }
+            let result = &job["result"];
+            let status = if job["status"] == "completed" && result["success"] != true {
+                "failed"
+            } else {
+                string(&job["status"])
+            };
+            history.insert(key, json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status}));
+        }
+        if !history.is_empty() {
+            self.actions
+                .queries
+                .oauth
+                .commit(crate::oauth_state::Update {
+                    history,
+                    ..Default::default()
+                })?;
         }
         Ok(())
     }
@@ -1129,8 +1210,11 @@ impl Operations {
             self.update(jid,json!({"status":"needs_confirmation","reason":"已派发请求的结果未确认，未重复执行","current":self.current(row.as_ref().unwrap_or(&json!({})),&job)?}))?;
             return Ok(());
         }
+        let scheduled = job["scheduled_at"].is_string();
         if row.is_none()
-            || self.fingerprint(row.as_ref().unwrap(), &job)? != string(&job["expected_version"])
+            || !scheduled
+                && self.fingerprint(row.as_ref().unwrap(), &job)?
+                    != string(&job["expected_version"])
         {
             self.update(jid,json!({"status":"needs_confirmation","reason":"相关字段、凭据或资格已变化","current":self.current(row.as_ref().unwrap_or(&json!({})),&job)?}))?;
             return Ok(());
@@ -1147,10 +1231,13 @@ impl Operations {
         if self.store.read()?["jobs"][jid]["status"] != "queued" {
             return Ok(());
         }
-        let job = self.update(
-            jid,
-            json!({"status":"running","reason":"","started_at":now()}),
-        )?;
+        let mut started = json!({"status":"running","reason":"","started_at":now()});
+        if scheduled {
+            // A future connection test follows this account's current credentials,
+            // including routine OAuth refreshes since the appointment was created.
+            started["expected_version"] = self.fingerprint(row.as_ref().unwrap(), &job)?.into();
+        }
+        let job = self.update(jid, started)?;
         if job["status"] != "running" {
             return Ok(());
         }

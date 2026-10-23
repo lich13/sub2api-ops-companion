@@ -73,7 +73,6 @@ export function useAccountActions(options: Options): (account: Account) => Accou
 
   return (account) => {
     const openai = account.platform === "openai" && ["oauth", "apikey"].includes(account.type);
-    const testable = ["openai", "grok"].includes(account.platform) && ["oauth", "apikey"].includes(account.type);
     const pending = (action: string) => running.current.has(`${options.connectionKey}:${account.id}:${action}`);
     const mark = marks[account.id]?.base === account.degradation_mark?.version ? marks[account.id]?.value ?? account.degradation_mark : account.degradation_mark;
     const items: AccountActionItem[] = [];
@@ -85,7 +84,7 @@ export function useAccountActions(options: Options): (account: Account) => Accou
         run: () => { void execute(account, "degradation_mark", mark); } },
       { id: "model_detection", label: "定时检测", icon: <Clock3 size={12}/>, className: "detection-action", disabled: !options.online, run: () => options.modelDetection(account) },
     );
-    items.push({ id: "test", label: "测试连接", icon: <CircleCheck size={12}/>, className: "test-button", disabled: !options.online || !testable, run: () => options.test(account) });
+    items.push({ id: "test", label: "测试连接", icon: <CircleCheck size={12}/>, className: "test-button", disabled: !options.online, run: () => options.test(account) });
     if (options.keepalive) items.push({ id: "keepalive", label: "账号保活", icon: <Activity size={12}/>, disabled: !options.online, run: () => options.keepalive?.(account) });
     if (account.recoverable) items.push({ id: "recover", label: "恢复状态", disabled: !options.online || pending("recover"), pending: pending("recover"),
       icon: pending("recover") ? <LoaderCircle size={12} className="spin"/> : <RotateCcw size={12}/>, run: () => { void execute(account, "recover"); } });

@@ -2190,3 +2190,53 @@ async fn priority_legacy_retirement_reconciles_dispatched_without_replay() {
         harness.finish().await;
     }
 }
+
+#[tokio::test]
+async fn parallel_slots_keep_priorities_and_validate_platform_capacity() {
+    let mut harness = Harness::new().await;
+    let a = harness.insert_account("openai", "apikey", 1).await;
+    let b = harness.insert_account("openai", "oauth", 3).await;
+    let c = harness.insert_account("openai", "apikey", 5).await;
+    let view = harness.v2_view().await;
+    let (code, changed, _) = harness.request(Method::PUT, "account-priorities?schema=2", Some(json!({"platform":"openai","parallelism":3,"expected_version":view["platforms"][0]["version"]}))).await;
+    assert_eq!(code, 200);
+    assert_eq!(changed["platforms"][0]["parallelism"], 3);
+    let request = json!({"platform":"openai","parallelism":3,"target_priorities":[1,1,5],"ordered_account_ids":[a,b,c],"expected_version":changed["platforms"][0]["version"],"request_id":"fixture-parallel-slots-0001","client_id":CLIENT_ID});
+    let (code, job, _) = harness
+        .request(
+            Method::POST,
+            "account-priority-orders?schema=2",
+            Some(request.clone()),
+        )
+        .await;
+    assert_eq!(code, 200);
+    let finished = harness.wait_v2_task(job["id"].as_str().unwrap()).await;
+    assert_eq!(finished["status"], "completed");
+    assert_eq!(harness.priority(a).await, 1);
+    assert_eq!(harness.priority(b).await, 1);
+    assert_eq!(harness.priority(c).await, 5);
+    let (code, replay, _) = harness
+        .request(
+            Method::POST,
+            "account-priority-orders?schema=2",
+            Some(request),
+        )
+        .await;
+    assert_eq!(code, 200);
+    assert_eq!(replay["id"], job["id"]);
+    let view = harness.v2_view().await;
+    assert_eq!(view["platforms"][0]["parallelism"], 3);
+    let invalid = json!({"platform":"openai","parallelism":2,"target_priorities":[1,1,1],"ordered_account_ids":[a,b,c],"expected_version":view["platforms"][0]["version"],"request_id":"fixture-parallel-slots-0002","client_id":CLIENT_ID});
+    assert_ne!(
+        harness
+            .request(
+                Method::POST,
+                "account-priority-orders?schema=2",
+                Some(invalid)
+            )
+            .await
+            .0,
+        200
+    );
+    harness.finish().await;
+}

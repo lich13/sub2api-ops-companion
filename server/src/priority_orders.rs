@@ -84,6 +84,18 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
     {
         return Err(invalid_state());
     }
+    if v2
+        && data.get("parallelism").is_some_and(|values| {
+            !values.as_object().is_some_and(|values| {
+                values.iter().all(|(platform, value)| {
+                    platform_valid(&Value::String(platform.clone()))
+                        && value.as_u64().is_some_and(|value| (1..=8).contains(&value))
+                })
+            })
+        })
+    {
+        return Err(invalid_state());
+    }
     for field in ["active_id", "last_id"] {
         if data.get(field).is_none()
             || !data[field].is_null()
@@ -129,6 +141,9 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
         if v2
             && (!platform_valid(&job["platform"])
                 || job["base"] != 1
+                || job.get("parallelism").is_some_and(|value| {
+                    !value.as_u64().is_some_and(|value| (1..=8).contains(&value))
+                })
                 || !job["waiting_reason"].is_string()
                 || !job["waiting_account_ids"].as_array().is_some_and(|ids| {
                     let accounts: HashSet<_> = job["items"]
@@ -147,11 +162,21 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
             return Err(invalid_state());
         }
         let mut ids = BTreeSet::new();
+        let mut target_counts = HashMap::<i64, usize>::new();
         for (index, item) in job["items"].as_array().unwrap().iter().enumerate() {
+            let target = item["target_priority"].as_i64();
+            let target_valid = if v2 && job.get("parallelism").is_some() {
+                target.is_some_and(|value| (0..=i32::MAX as i64).contains(&value))
+            } else {
+                item["target_priority"].as_u64() == Some(index as u64 + u64::from(v2))
+            };
+            if let Some(target) = target {
+                *target_counts.entry(target).or_default() += 1;
+            }
             if !item["account_id"]
                 .as_i64()
                 .is_some_and(|id| id > 0 && ids.insert(id))
-                || item["target_priority"].as_u64() != Some(index as u64 + u64::from(v2))
+                || !target_valid
                 || v2 && item["platform"] != job["platform"]
                 || !item["original_priority"].is_i64()
                 || validation::hex(&item["expected_version"], 64).is_err()
@@ -173,6 +198,12 @@ fn validate_store_schema(data: &Value, v2: bool) -> Result<()> {
                 || job["status"] == "completed"
                     && !matches!(string(&item["status"]), "verified" | "unchanged")
             {
+                return Err(invalid_state());
+            }
+        }
+        if v2 && job.get("parallelism").is_some() {
+            let capacity = job["parallelism"].as_u64().unwrap_or(1) as usize;
+            if target_counts.values().any(|count| *count > capacity) {
                 return Err(invalid_state());
             }
         }
@@ -219,7 +250,7 @@ impl PriorityGate {
                 settings
                     .usage_path
                     .with_file_name("account-priority-orders-v2.json"),
-                json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{}}),
+                json!({"version":2,"active_id":null,"last_id":null,"jobs":{},"requests":{},"parallelism":{}}),
                 validate_v2,
                 settings.read_only,
             ),
@@ -326,15 +357,26 @@ fn identity(row: &Value) -> String {
     stable["priority"] = 0.into();
     string(&version(&stable)).to_owned()
 }
-fn list_version(rows: &[Value]) -> String {
-    digest(&json!(rows
+fn list_version(rows: &[Value], parallelism: u64) -> String {
+    let entries = json!(rows
         .iter()
         .map(|row| json!([
             row["id"],
             version(row),
             settings_capabilities(row)["priority"]
         ]))
-        .collect::<Vec<_>>()))
+        .collect::<Vec<_>>());
+    if parallelism == 1 {
+        digest(&entries)
+    } else {
+        digest(&json!([parallelism, entries]))
+    }
+}
+fn parallelism(data: &Value, platform: &str) -> u64 {
+    data["parallelism"][platform]
+        .as_u64()
+        .filter(|value| (1..=8).contains(value))
+        .unwrap_or(1)
 }
 fn public_item(row: &Value) -> Value {
     let capability = settings_capabilities(row)["priority"].clone();
@@ -363,6 +405,9 @@ fn public_job_v2(job: &Value, details: bool) -> Value {
     }
     result["platform"] = job["platform"].clone();
     result["base"] = if job["base"] == 1 { json!(1) } else { json!(0) };
+    if let Some(parallelism) = job.get("parallelism") {
+        result["parallelism"] = parallelism.clone();
+    }
     result["waiting_reason"] = job.get("waiting_reason").cloned().unwrap_or(json!(""));
     result["waiting_account_ids"] = job.get("waiting_account_ids").cloned().unwrap_or(json!([]));
     if details && job["base"] == 1 {
@@ -404,6 +449,8 @@ pub fn validate_request(request: &Value) -> Result<()> {
         &[
             "platform",
             "ordered_account_ids",
+            "target_priorities",
+            "parallelism",
             "expected_version",
             "request_id",
             "client_id",
@@ -433,7 +480,32 @@ pub fn validate_request(request: &Value) -> Result<()> {
             return Err(Error::new(422, "账号编号不能重复"));
         }
     }
+    if let Some(parallelism) = request.get("parallelism") {
+        validation::integer(parallelism, 1, 8)?;
+    }
+    if let Some(targets) = request.get("target_priorities") {
+        let targets = targets
+            .as_array()
+            .filter(|targets| targets.len() == ids.len())
+            .ok_or_else(Error::invalid)?;
+        for target in targets {
+            validation::integer(target, 0, i32::MAX as i64)?;
+        }
+    }
     Ok(())
+}
+
+pub fn validate_parallelism_request(request: &Value) -> Result<()> {
+    validation::fields(
+        request,
+        &["platform", "parallelism", "expected_version"],
+        &["platform", "parallelism", "expected_version"],
+    )?;
+    if !platform_valid(&request["platform"]) {
+        return Err(Error::invalid());
+    }
+    validation::integer(&request["parallelism"], 1, 8)?;
+    validation::hex(&request["expected_version"], 64).map(|_| ())
 }
 impl PriorityOrders {
     pub fn new(actions: Actions, operations: Arc<Operations>) -> Arc<Self> {
@@ -469,7 +541,7 @@ impl PriorityOrders {
             })
             .collect();
         if !v2 {
-            return Ok(json!({"items":items,"version":list_version(&rows),
+            return Ok(json!({"items":items,"version":list_version(&rows, 1),
                 "active_task":active(&legacy).map(|id|public_job(&legacy["jobs"][id],false)),
                 "last_task":legacy["last_id"].as_str().map(|id|public_job(&legacy["jobs"][id],false))}));
         }
@@ -491,9 +563,10 @@ impl PriorityOrders {
                 .push(row.clone());
         }
         let platforms: Vec<_> = groups.into_iter().map(|(platform, items)| {
+            let width = parallelism(&data, platform);
             let last = data["jobs"].as_object().unwrap().values().filter(|job| job["platform"] == platform)
                 .max_by_key(|job| (string(&job["created_at"]), string(&job["id"])));
-            json!({"platform":platform,"items":items,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default()),"last_task":last.map(|job|public_job_v2(job,false))})
+            json!({"platform":platform,"items":items,"parallelism":width,"version":list_version(raw.get(platform).map(Vec::as_slice).unwrap_or_default(), width),"last_task":last.map(|job|public_job_v2(job,false))})
         }).collect();
         Ok(json!({"platforms":platforms,
             "active_task":active(&data).map(|id|public_job_v2(&data["jobs"][id],false)),
@@ -528,12 +601,19 @@ impl PriorityOrders {
         let _gate = self.actions.priorities.admission.write().await;
         let data = self.store.read()?;
         let rid = string(&request["request_id"]);
-        let signature = digest(&json!([
-            request["platform"],
-            request["client_id"],
-            request["ordered_account_ids"],
-            request["expected_version"]
-        ]));
+        let mut request_identity = vec![
+            request["platform"].clone(),
+            request["client_id"].clone(),
+            request["ordered_account_ids"].clone(),
+            request["expected_version"].clone(),
+        ];
+        if request.get("parallelism").is_some() || request.get("target_priorities").is_some() {
+            request_identity.extend([
+                request["parallelism"].clone(),
+                request["target_priorities"].clone(),
+            ]);
+        }
+        let signature = digest(&json!(request_identity));
         if let Some(id) = data["requests"][rid].as_str() {
             let job = &data["jobs"][id];
             if job["request_hash"] != signature || job["client_id"] != request["client_id"] {
@@ -557,13 +637,21 @@ impl PriorityOrders {
         }
         let platform = string(&request["platform"]);
         let rows = self.rows(Some(platform)).await?;
+        let width = parallelism(&data, platform);
+        if request
+            .get("parallelism")
+            .is_some_and(|value| value.as_u64() != Some(width))
+        {
+            return Err(Error::new(409, "平台并列值已变化，请重新核对"));
+        }
         let by_id: HashMap<i64, &Value> = rows
             .iter()
             .map(|row| (integer(&row["id"]).unwrap(), row))
             .collect();
         let ids = request["ordered_account_ids"].as_array().unwrap();
         if rows.is_empty()
-            || list_version(&rows) != request["expected_version"]
+            || !(1..=8).contains(&width)
+            || list_version(&rows, width) != request["expected_version"]
             || ids.len() != rows.len()
             || ids
                 .iter()
@@ -571,21 +659,31 @@ impl PriorityOrders {
         {
             return Err(Error::new(409, "账号集合或优先级已变化，请重新核对"));
         }
+        let targets = request["target_priorities"].as_array();
+        let mut target_counts = HashMap::<i64, usize>::new();
         let mut items = Vec::new();
         for (index, id) in ids.iter().enumerate() {
             let row = by_id[&integer(id).unwrap()];
             let original = integer(&row["priority"]).unwrap_or(0);
-            let changed = original != index as i64 + 1;
+            let target = targets
+                .and_then(|targets| targets.get(index))
+                .and_then(Value::as_i64)
+                .unwrap_or(index as i64 / width as i64 + 1);
+            *target_counts.entry(target).or_default() += 1;
+            let changed = original != target;
             if changed && settings_capabilities(row)["priority"]["editable"] != true {
                 return Err(Error::new(409, "排序包含不可修改的账号，请重新核对"));
             }
-            items.push(json!({"account_id":id,"account_name":clean(&row["name"],200),"original_priority":original,"target_priority":index + 1,"platform":platform,
+            items.push(json!({"account_id":id,"account_name":clean(&row["name"],200),"original_priority":original,"target_priority":target,"platform":platform,
                 "expected_version":version(row),"identity":identity(row),"capability":settings_capabilities(row)["priority"],"status":if changed {"pending"} else {"unchanged"},
                 "observed_priority":if changed {Value::Null} else {json!(original)}}));
         }
+        if target_counts.values().any(|count| *count > width as usize) {
+            return Err(Error::new(422, "并列槽位数量超过平台设置"));
+        }
         let id = operations::id();
         let created = now();
-        let job = json!({"id":id,"platform":platform,"base":1,"waiting_reason":"","waiting_account_ids":[],"status":"queued","reason":"等待执行","cancel_requested":false,"items":items,
+        let job = json!({"id":id,"platform":platform,"base":1,"parallelism":width,"waiting_reason":"","waiting_account_ids":[],"status":"queued","reason":"等待执行","cancel_requested":false,"items":items,
             "request_id":rid,"client_id":request["client_id"],"request_hash":signature,"created_at":created,"updated_at":created,"completed_at":null});
         self.store.transaction(|data| {
             if active(data).is_some() {
@@ -598,6 +696,35 @@ impl PriorityOrders {
             Ok(())
         })?;
         Ok(public_job_v2(&job, true))
+    }
+    pub async fn set_parallelism(&self, request: &Value) -> Result<Value> {
+        if self.actions.settings.read_only {
+            return Err(Error::read_only());
+        }
+        validate_parallelism_request(request)?;
+        let _gate = self.actions.priorities.admission.write().await;
+        let data = self.store.read()?;
+        if active(&data).is_some() || active(&self.legacy.read()?).is_some() {
+            return Err(busy());
+        }
+        let platform = string(&request["platform"]);
+        let rows = self.rows(Some(platform)).await?;
+        let current = parallelism(&data, platform);
+        if rows.is_empty() || list_version(&rows, current) != request["expected_version"] {
+            return Err(Error::new(409, "账号集合或优先级已变化，请重新核对"));
+        }
+        let width = request["parallelism"].as_u64().unwrap();
+        self.store.transaction(|data| {
+            if active(data).is_some() {
+                return Err(busy());
+            }
+            if !data["parallelism"].is_object() {
+                data["parallelism"] = json!({});
+            }
+            data["parallelism"][platform] = width.into();
+            Ok(())
+        })?;
+        self.view(true).await
     }
     fn finish(&self, id: &str, status: &str, reason: &str) -> Result<()> {
         self.store.transaction(|data| {

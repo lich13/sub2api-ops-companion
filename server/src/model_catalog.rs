@@ -8,6 +8,7 @@ use crate::{
         reasoning_values, routing_binding, same_reasoning, FIELDS,
     },
     model_rules::{admitted, revision, transform, validate_overrides},
+    security::clean,
     settings::Settings,
     upstream::{read_limited, Upstream},
 };
@@ -792,6 +793,66 @@ impl Catalog {
             return Err(Error::new(502, "上游目录暂不可用"));
         }
         let mut data: Value = serde_json::from_slice(&response.body)?;
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut cursors = std::collections::BTreeSet::new();
+        loop {
+            let next = if platform == "gemini" {
+                data["nextPageToken"]
+                    .as_str()
+                    .filter(|v| !v.is_empty())
+                    .map(|v| ("pageToken", v.to_owned(), "models"))
+            } else if data["has_more"] == true {
+                Some((
+                    "after_id",
+                    data["last_id"]
+                        .as_str()
+                        .filter(|v| !v.is_empty())
+                        .ok_or_else(|| Error::new(502, "上游模型分页标识缺失"))?
+                        .to_owned(),
+                    "data",
+                ))
+            } else {
+                None
+            };
+            let Some((key, cursor, field)) = next else {
+                break;
+            };
+            if !cursors.insert(cursor.clone()) || cursors.len() > 100 {
+                return Err(Error::new(502, "上游模型分页无效"));
+            }
+            let mut page_url = parsed.clone();
+            page_url.query_pairs_mut().append_pair(key, &cursor);
+            let reply = tokio::time::timeout_at(
+                deadline,
+                self.read_http(
+                    reqwest::Method::GET,
+                    page_url.as_str(),
+                    &headers,
+                    None,
+                    Some(&client),
+                ),
+            )
+            .await
+            .map_err(|_| Error::new(504, "上游模型目录读取超时"))??;
+            if reply.status != 200 {
+                return Err(Error::new(502, "上游目录暂不可用"));
+            }
+            let page: Value = serde_json::from_slice(&reply.body)?;
+            let entries = page[field]
+                .as_array()
+                .ok_or_else(|| Error::new(502, "上游模型分页格式无效"))?;
+            let all = data[field]
+                .as_array_mut()
+                .ok_or_else(|| Error::new(502, "上游模型列表格式无效"))?;
+            if all.len() + entries.len() > 10_000 {
+                return Err(Error::new(502, "上游模型列表超过限制"));
+            }
+            all.extend(entries.iter().cloned());
+            for field in ["has_more", "last_id", "nextPageToken"] {
+                data[field] = page[field].clone();
+            }
+        }
+
         let secrets: Vec<&str> = ["api_key", "access_token", "refresh_token", "id_token"]
             .into_iter()
             .filter_map(|k| credentials[k].as_str())
@@ -830,6 +891,66 @@ impl Catalog {
             );
         }
         Ok(data)
+    }
+
+    pub async fn account_models(&self, id: i64) -> Result<Vec<Value>> {
+        let account = self
+            .db
+            .one(
+                "SELECT a.id,a.platform,a.type,coalesce(p.credentials,a.credentials) AS credentials,a.extra,coalesce(p.proxy_id,a.proxy_id) AS proxy_id FROM accounts a LEFT JOIN accounts p ON p.id=coalesce(nullif(to_jsonb(a)->>'parent_account_id','')::bigint,nullif(a.extra->>'parent_account_id','')::bigint) AND p.deleted_at IS NULL WHERE a.id=$1 AND a.deleted_at IS NULL",
+                &[id.into()],
+            )
+            .await?
+            .ok_or_else(|| Error::new(404, "账号不存在"))?;
+        let data = self
+            .source_catalog(&account, Duration::from_secs(8))
+            .await?;
+        let entries = data
+            .as_array()
+            .or_else(|| data.get("data").and_then(Value::as_array))
+            .or_else(|| data.get("models").and_then(Value::as_array))
+            .ok_or_else(|| Error::new(502, "上游模型列表格式无效"))?;
+        if entries.len() > 10_000 {
+            return Err(Error::new(502, "上游模型列表超过限制"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        Ok(entries
+            .iter()
+            .filter_map(|entry| {
+                let id = entry
+                    .get("id")
+                    .or_else(|| entry.get("slug"))
+                    .or_else(|| entry.get("modelId"))
+                    .or_else(|| entry.get("name"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .map(|id| {
+                        if account["platform"] == "gemini" {
+                            id.strip_prefix("models/").unwrap_or(id)
+                        } else {
+                            id
+                        }
+                    })
+                    .filter(|id| !id.is_empty() && seen.insert((*id).to_owned()))?;
+                let display_name = clean(
+                    entry
+                        .get("display_name")
+                        .or_else(|| entry.get("displayName"))
+                        .unwrap_or(&Value::Null),
+                    200,
+                );
+                let model_id = clean(&Value::String(id.to_owned()), 200);
+                if model_id.is_empty() {
+                    return None;
+                }
+                let label = if display_name.is_empty() {
+                    model_id.clone()
+                } else {
+                    display_name
+                };
+                Some(json!({"id": model_id, "display_name": label, "type": "model"}))
+            })
+            .collect())
     }
 
     fn summary(group: &Value) -> Value {

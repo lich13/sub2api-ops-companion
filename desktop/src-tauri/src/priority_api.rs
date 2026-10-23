@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 fn hex(value: &Value, length: usize) -> bool {
     value.as_str().is_some_and(|s| {
@@ -47,6 +47,9 @@ fn task_schema(value: &Value, detail: bool, v2: bool) -> bool {
     ];
     if v2 {
         allowed.extend(["platform", "base", "waiting_reason", "waiting_account_ids"]);
+        if value.get("parallelism").is_some() {
+            allowed.push("parallelism");
+        }
     }
     let base = if v2 {
         value["base"].as_u64().unwrap_or(2)
@@ -57,6 +60,7 @@ fn task_schema(value: &Value, detail: bool, v2: bool) -> bool {
         allowed.push("items");
     }
     fields(value, &allowed)
+        && (!v2 || value.get("parallelism").is_none_or(parallelism))
         && (!v2
             || base <= 1
                 && (if base == 1 {
@@ -101,6 +105,7 @@ fn task_schema(value: &Value, detail: bool, v2: bool) -> bool {
         && (!detail
             || value["items"].as_array().is_some_and(|items| {
                 let mut ids = HashSet::new();
+                let mut counts = HashMap::<u64, u64>::new();
                 items.len() as u64 == value["total"].as_u64().unwrap_or(u64::MAX)
                     && items.iter().enumerate().all(|(index, item)| {
                         let mut item_fields = vec![
@@ -120,7 +125,16 @@ fn task_schema(value: &Value, detail: bool, v2: bool) -> bool {
                             && ids.insert(item["account_id"].as_u64().unwrap())
                             && text(&item["account_name"])
                             && item["original_priority"].is_i64()
-                            && item["target_priority"].as_u64() == Some(index as u64 + base)
+                            && (if v2 && base == 1 && value.get("parallelism").is_some() {
+                                item["target_priority"].as_u64().is_some_and(|target| {
+                                    let count = counts.entry(target).or_default();
+                                    *count += 1;
+                                    target <= i32::MAX as u64
+                                        && *count <= value["parallelism"].as_u64().unwrap_or(1)
+                                })
+                            } else {
+                                item["target_priority"].as_u64() == Some(index as u64 + base)
+                            })
                             && (item["observed_priority"].is_null()
                                 || item["observed_priority"].is_i64())
                             && matches!(
@@ -178,13 +192,19 @@ fn platform(value: &Value) -> bool {
         .as_str()
         .is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 64)
 }
+fn parallelism(value: &Value) -> bool {
+    value.as_u64().is_some_and(|width| (1..=8).contains(&width))
+}
 pub fn list_v2(value: &Value) -> bool {
     fields(value, &["platforms", "active_task", "legacy_last_task"])
         && value["platforms"].as_array().is_some_and(|groups| {
             let mut platforms = HashSet::new();
             let mut ids = HashSet::new();
             groups.iter().all(|group| {
-                fields(group, &["platform", "version", "items", "last_task"])
+                let mut keys = vec!["platform", "version", "items", "last_task"];
+                if group.get("parallelism").is_some() { keys.push("parallelism"); }
+                fields(group, &keys)
+                    && group.get("parallelism").is_none_or(parallelism)
                     && platform(&group["platform"])
                     && platforms.insert(group["platform"].as_str().unwrap())
                     && list(&serde_json::json!({"items":group["items"],"version":group["version"],"active_task":null,"last_task":null}))
@@ -311,6 +331,20 @@ mod tests {
         let mut detail = summary.clone();
         detail["items"] = json!([{"account_id":1,"account_name":"fixture","platform":"openai","original_priority":8,"target_priority":1,"observed_priority":null,"status":"pending"}]);
         assert!(task_v2(&detail, true));
+        let mut parallel = detail.clone();
+        parallel["parallelism"] = 3.into();
+        parallel["total"] = 2.into();
+        let mut second = parallel["items"][0].clone();
+        second["account_id"] = 2.into();
+        parallel["items"].as_array_mut().unwrap().push(second);
+        assert!(task_v2(&parallel, true));
+        parallel["parallelism"] = 1.into();
+        assert!(!task_v2(&parallel, true));
+        assert!(crate::allowed_request(
+            "PUT",
+            "/account-priorities?schema=2"
+        ));
+        assert!(!crate::allowed_request("PUT", "/account-priorities"));
         detail["items"][0]["platform"] = "grok".into();
         assert!(!task_v2(&detail, true));
         detail["items"][0]["platform"] = "openai".into();
@@ -318,6 +352,11 @@ mod tests {
         assert!(!task_v2(&detail, true));
         let mut view = json!({"platforms":[{"platform":"openai","version":"b".repeat(64),"items":[{"id":1,"name":"fixture","platform":"openai","type":"oauth","priority":8,"version":"c".repeat(64),"editable":true,"reason":"","status":"active","schedulable":true}],"last_task":summary}],"active_task":summary,"legacy_last_task":null});
         assert!(list_v2(&view));
+        view["platforms"][0]["parallelism"] = 3.into();
+        assert!(list_v2(&view));
+        view["platforms"][0]["parallelism"] = 9.into();
+        assert!(!list_v2(&view));
+        view["platforms"][0]["parallelism"] = 3.into();
         assert!(!list(&view));
         view["platforms"][0]["items"][0]["credentials"] = json!({});
         assert!(!list_v2(&view));

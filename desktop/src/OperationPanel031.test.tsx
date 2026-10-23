@@ -153,6 +153,14 @@ describe("operation panel batch history", () => {
           status: "queued",
           requested: { confirmed: true },
         }),
+        operation({
+          id: "scheduled-dispatched",
+          action: "test",
+          status,
+          scheduled_at: "2030-01-02T01:31:00+00:00",
+          started_at: "2030-01-02T01:31:00+00:00",
+          requested: { confirmed: true, model_id: "fixture-model" },
+        }),
       ];
       vi.mocked(api).mockImplementation(async (method, path) => {
         if (method === "GET" && path === "/account-operations") return { items: jobs } as never;
@@ -166,12 +174,14 @@ describe("operation panel batch history", () => {
       await act(async () => entryButton().click());
       await flush();
       const articles = [...container.querySelectorAll('[role="dialog"] .operation-list article')];
-      expect(articles).toHaveLength(3);
+      expect(articles).toHaveLength(4);
       const cancelButtons = articles.map((article) => [...article.querySelectorAll<HTMLButtonElement>("button")]
         .find((button) => button.textContent === "取消"));
       expect(cancelButtons[0]).toBeUndefined();
       expect(cancelButtons[1]).toBeDefined();
       expect(cancelButtons[2]).toBeDefined();
+      expect(cancelButtons[3]).toBeUndefined();
+      expect(articles[3].querySelector("time")?.textContent).toContain("09:31");
 
       await act(async () => cancelButtons[1]!.click());
       await flush();

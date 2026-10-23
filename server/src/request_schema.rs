@@ -31,6 +31,7 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
                     | "keepalive"
             ]
             | ["account-operations", "batch"]
+            | ["account-priorities"]
             | ["account-priority-orders"]
             | ["account-priority-orders", _, "cancel"]
             | ["account-templates", ..]
@@ -181,6 +182,9 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
     match path {
         ["account-operations", "batch"] => batch(value, false)?,
         ["account-templates", "apply"] => batch(value, true)?,
+        ["account-priorities"] if method == "PUT" => {
+            crate::priority_orders::validate_parallelism_request(value)?
+        }
         ["account-priority-orders"] => crate::priority_orders::validate_request(value)?,
         ["account-priority-orders", _, "cancel"] => fields(value, &[], &[])?,
         ["accounts", _, "operations"] => {
@@ -192,6 +196,7 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
                     "expected_version",
                     "request_id",
                     "client_id",
+                    "scheduled_at",
                 ],
                 &["action", "expected_version", "request_id", "client_id"],
             )?;
@@ -218,6 +223,12 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
             version(value, "expected_version")?;
             for key in ["request_id", "client_id"] {
                 validation::request_id(&value[key])?;
+            }
+            if let Some(at) = value.get("scheduled_at") {
+                if value["action"] != "test" {
+                    return Err(Error::invalid());
+                }
+                crate::operations::scheduled_time(at)?;
             }
             if let Some(payload) = value.get("payload") {
                 object(payload)?;
@@ -442,4 +453,28 @@ pub fn reasoning(value: &mut Value, kind: &str) -> Result<()> {
         text(&value["default_effort"], 0, usize::MAX)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn scheduled_connection_request_accepts_minute_precision_only_for_test_operations() {
+        use serde_json::json;
+        let path = ["accounts", "42", "operations"];
+        let base = json!({"action":"test","expected_version":"a".repeat(64),"request_id":"fixture-scheduled-request","client_id":"fixture-scheduled-client","payload":{"mode":"default"},"scheduled_at":"2030-01-02T09:31:00+08:00"});
+        assert!(super::validate(&path, "POST", &mut base.clone()).is_ok());
+        for at in [
+            "2030-01-02T09:31:01+08:00",
+            "2030-02-30T09:31:00+08:00",
+            "2030-01-02T09:31",
+            "invalid",
+        ] {
+            let mut bad = base.clone();
+            bad["scheduled_at"] = at.into();
+            assert!(super::validate(&path, "POST", &mut bad).is_err());
+        }
+        let mut bad = base;
+        bad["action"] = "delete".into();
+        assert!(super::validate(&path, "POST", &mut bad).is_err());
+    }
 }

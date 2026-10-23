@@ -134,6 +134,11 @@ impl model_tests::ModelHooks for Hooks {
     }
 }
 impl operations::Backend for Hooks {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        self.runtime()
+            .map(|runtime| runtime.monitor.now())
+            .unwrap_or_else(|_| chrono::Utc::now())
+    }
     fn managed(&self) -> Result<BTreeSet<i64>> {
         self.runtime()?.config.fallback.managed()
     }

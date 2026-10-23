@@ -888,7 +888,7 @@ async function eventChecks(h, fixture) {
     } else {
       const rows = panel.locator(".recovery-table tbody tr");
       await h.visible(rows.first(), "recovery-history-row");
-      const columns = ["账号", "恢复类型", "验证方式", "测试模型", "用卡时间", "验证通过时间", "恢复确认时间"];
+      const columns = ["账号", "恢复类型", "验证方式", "测试模型", "用卡时间", "测试完成时间", "结果 / 恢复时间"];
       await h.state(isDeepStrictEqual(await panel.locator(".recovery-table th").allTextContents(), columns), "recovery-history-column-labels", panel);
       const recoveries = [...fixture.recoveries].sort((a, b) => b.id - a.id);
       await h.state(await rows.count() === recoveries.length && recoveries.some((item) => item.kind === "reset_credit")
@@ -904,18 +904,20 @@ async function eventChecks(h, fixture) {
         "recovery-history-mobile-labels", row);
         const cellText = async (label) => (await row.locator(`td[data-label="${label}"]`).textContent())?.trim();
         const card = recovery.kind === "reset_credit";
+        const scheduled = recovery.kind === "connection_test";
         await h.state(await cellText("账号") === recovery.account_name && await cellText("测试模型") === recovery.model_id,
           "recovery-history-fixture-mismatch", row);
-        await h.state(await cellText("恢复类型") === (card ? "用卡恢复" : "额度恢复"), "recovery-kind-label", row);
+        await h.state(await cellText("恢复类型") === (scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"), "recovery-kind-label", row);
         if (card) {
           await h.state(!!recovery.reset_credit?.completed_at && ["model", "connection"].includes(recovery.reset_credit.verification_method), "missing-reset-credit-metadata", row);
           await h.state(await cellText("验证方式") === (recovery.reset_credit.verification_method === "model" ? "模型测试" : "测试连接")
             && !["", "—", "时间未知"].includes(await cellText("用卡时间")), "reset-credit-metadata-labels", row);
         } else {
-          await h.state(await cellText("验证方式") === "—" && await cellText("用卡时间") === "—", "quota-recovery-has-card-metadata", row);
+          await h.state(await cellText("验证方式") === (scheduled ? "测试连接" : "—") && await cellText("用卡时间") === "—", "recovery-without-card-metadata", row);
         }
-        await h.state(!["", "—", "时间未知"].includes(await cellText("验证通过时间"))
-          && !["", "—", "时间未知"].includes(await cellText("恢复确认时间")), "recovery-history-timestamps-missing", row);
+        await h.state(!["", "—", "时间未知"].includes(await cellText("测试完成时间"))
+          && !["", "—", "时间未知"].includes(await cellText("结果 / 恢复时间")), "recovery-history-timestamps-missing", row);
+        if (scheduled) await h.state(await cellText("结果 / 恢复时间") === "已完成", "scheduled-test-result-label", row);
       }
       await h.allWithin(panel.locator(".recovery-table td"), "recovery-history-cell", { touch: false, vertical: false });
     }
@@ -1281,6 +1283,8 @@ async function connectionBatchChecks(h, fixture) {
   await h.allWithin(selection.locator(".selection-actions button"), "batch-connection-selection-action");
   await h.layout();
 
+  // Freeze the short-lived result while geometry checks run on slower hosts.
+  await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 60_000)));
   h.phase = "accounts/batch-connection-stop";
   await h.click(entry, "batch-connection-start");
   await h.state(await entry.isDisabled(), "batch-connection-running-entry-enabled", entry);
@@ -1300,10 +1304,9 @@ async function connectionBatchChecks(h, fixture) {
   h.phase = "accounts/batch-connection-results";
   await h.click(entry, "batch-connection-restart");
   await h.state(await entry.isDisabled(), "batch-connection-repeat-entry-enabled", entry);
+  await h.visible(results.getByRole("status").filter({ hasText: "已完成 0/3" }), "batch-connection-queued-summary");
+  await page.clock.runFor(2500);
   await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 2" }), "batch-connection-finished-summary");
-  await results.waitFor({ state: "hidden" });
-  await h.click(surface.getByRole("button", { name: "查看测活结果", exact: true }), "batch-connection-reopen");
-  await h.visible(results, "batch-connection-manually-reopened");
   await h.within(results, "batch-connection-inline-results", { touch: false, vertical: false });
   await h.state(await page.getByRole("dialog").count() === 0, "batch-connection-opened-dialog", results);
   await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-replaced-account-list", accountRows);
@@ -1326,10 +1329,13 @@ async function connectionBatchChecks(h, fixture) {
     && await entry.isEnabled(), "batch-connection-finished-controls-mismatch", results);
   const finishedJobs = await readJobs();
   await h.state(finishedJobs.length === beforeJobs.length + 6, "batch-connection-submitted-duplicate-jobs", results);
-  const resultCells = () => results.locator("tbody tr").evaluateAll((rows) => rows.map((row) =>
-    [...row.querySelectorAll("td")].map((cell) => cell.textContent)));
-  const completedCells = await resultCells();
   await h.layout();
+  await page.clock.runFor(3000);
+  await results.waitFor({ state: "hidden" });
+  await page.clock.resume();
+  await h.state(await results.count() === 0, "batch-connection-results-not-auto-closed", surface);
+  await h.state(await surface.getByRole("button", { name: "查看测活结果", exact: true }).count() === 0,
+    "batch-connection-standalone-result-entry-remains", surface);
 
   h.phase = "accounts/batch-connection-filter";
   async function platform(value) {
@@ -1345,7 +1351,7 @@ async function connectionBatchChecks(h, fixture) {
     "batch-connection-filter-kept-stale-selection", surface);
   await h.state(await accountRows.count() === fixture.accounts.filter((account) => account.platform === "grok").length,
     "batch-connection-filter-did-not-change-account-list", accountRows);
-  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-filter-changed-results", results);
+  await h.state(await results.count() === 0, "batch-connection-filter-restored-closed-results", surface);
   await h.layout();
   await platform("");
 
@@ -1361,8 +1367,8 @@ async function connectionBatchChecks(h, fixture) {
   await h.state(await page.getByRole("region", { name: "批量测试连接", exact: true }).count() === 0,
     "batch-connection-results-leaked-to-other-page");
   await navigate("账号", "accounts");
-  await h.visible(results, "batch-connection-results-after-return");
-  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-return-lost-results", results);
+  await h.state(await page.getByRole("region", { name: "批量测试连接", exact: true }).count() === 0,
+    "batch-connection-results-reappeared-after-return");
 
   h.phase = "accounts/batch-connection-recovery";
   // The synthetic transport changes connection scope without making a network request.
@@ -1374,8 +1380,7 @@ async function connectionBatchChecks(h, fixture) {
   await results.waitFor({ state: "hidden" });
   await h.state(await results.count() === 0, "batch-connection-results-leaked-to-other-connection", surface);
   await connect(fixture.baseUrl);
-  await h.visible(results.getByRole("status").filter({ hasText: "已结束 3/3 · 通过 2" }), "batch-connection-restored-summary");
-  await h.state(isDeepStrictEqual(await resultCells(), completedCells), "batch-connection-same-server-not-restored", results);
+  await h.state(await results.count() === 0, "batch-connection-closed-results-restored", surface);
   await h.state(isDeepStrictEqual(await readJobs(), finishedJobs), "batch-connection-recovery-resubmitted-or-changed-jobs", results);
   await h.state(isDeepStrictEqual((await fixtureData(page)).accounts, fixture.accounts), "batch-connection-mutated-preview-accounts", surface);
   await h.state(await accountRows.count() === fixture.accounts.length, "batch-connection-return-account-list-incomplete", accountRows);

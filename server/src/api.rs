@@ -158,7 +158,6 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["capabilities"
         | "connection-status"
         | "snapshot"
-        | "account-priorities"
         | "detection-logs"
         | "errors"
         | "usage-records"
@@ -167,6 +166,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         | "proxies"
         | "config"
         | "model-groups"] => Some(&["GET"]),
+        ["account-priorities"] => Some(&["GET", "PUT"]),
         ["account-operations"] => Some(&["GET"]),
         ["account-priority-orders"] => Some(&["POST"]),
         ["account-priority-orders", _] => Some(&["GET"]),
@@ -242,7 +242,10 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         }) {
             return Err(Error::invalid());
         }
-        if method == Method::POST && path == ["account-priority-orders"] && !priority_v2 {
+        if ((method == Method::POST && path.as_slice() == ["account-priority-orders"])
+            || method == Method::PUT)
+            && !priority_v2
+        {
             return Err(crate::priority_orders::upgrade_required());
         }
     }
@@ -322,7 +325,10 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             }
             runtime.account_usage(path_id(id)?, &key, false).await?
         }
-        ["account-priorities"] => runtime.priorities.view(priority_v2).await?,
+        ["account-priorities"] if method == Method::GET => {
+            runtime.priorities.view(priority_v2).await?
+        }
+        ["account-priorities"] => runtime.priorities.set_parallelism(&payload).await?,
         ["account-priority-orders"] => {
             let result = runtime.priorities.submit(&payload).await?;
             runtime.priorities.tick().await?;
@@ -509,12 +515,40 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             if purpose.is_some_and(|value| value != "model_test") {
                 return Err(Error::new(422, "模型目录用途无效"));
             }
-            json!(
-                runtime
-                    .actions
-                    .models(path_id(id)?, &key, purpose == Some("model_test"))
-                    .await?
-            )
+            let account_id = path_id(id)?;
+            if purpose == Some("model_test") {
+                let row = runtime.actions.account(account_id, None).await?;
+                if row["platform"] == "openai" && matches!(string(&row["type"]), "oauth" | "apikey")
+                {
+                    json!(runtime.actions.models(account_id, &key, true).await?)
+                } else {
+                    match runtime.catalog.account_models(account_id).await {
+                        Ok(models) => json!(models),
+                        Err(error) if error.status.as_u16() == 422 => {
+                            let data = runtime
+                                .actions
+                                .json(
+                                    reqwest::Method::GET,
+                                    &format!("accounts/{account_id}/models"),
+                                    &key,
+                                    None,
+                                    30,
+                                )
+                                .await?;
+                            let items = data
+                                .as_array()
+                                .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
+                            if items.len() > 10_000 {
+                                return Err(Error::new(502, "上游模型列表超过限制"));
+                            }
+                            json!(crate::actions::filter_models(items, &[]))
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+            } else {
+                json!(runtime.actions.models(account_id, &key, false).await?)
+            }
         }
         ["account-templates"] if method == Method::GET => {
             let row = if let Some(id) = number(&query, "account_id", 1, i64::MAX)? {

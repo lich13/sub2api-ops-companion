@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
 import { money, type UsageRecord } from "./records";
@@ -55,6 +55,15 @@ export default function CostDetails({ row }: { row: UsageRecord }) {
   const trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null);
   const pointer = useRef(false);
   const id = useId();
+  const openFromMouse = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType !== "mouse") return;
+    if (window.matchMedia && !window.matchMedia("(any-hover: hover)").matches) return;
+    if (event.isTrusted) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
+    }
+    setOpen(true);
+  };
   useLayoutEffect(() => {
     if (!open || !trigger.current || !panel.current) return;
     const anchor = trigger.current.getBoundingClientRect(), bounds = panel.current.getBoundingClientRect();
@@ -64,18 +73,27 @@ export default function CostDetails({ row }: { row: UsageRecord }) {
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
-    const outside = (e: PointerEvent) => { if (!trigger.current?.contains(e.target as Node) && !panel.current?.contains(e.target as Node)) close(); };
+    const outside = (e: Event) => { if (!trigger.current?.contains(e.target as Node) && !panel.current?.contains(e.target as Node)) close(); };
     const scroll = (e: Event) => { if (!panel.current?.contains(e.target as Node)) close(); };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
-    document.addEventListener("pointerdown", outside);
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("click", outside, true);
+    document.addEventListener("focusin", outside, true);
     document.addEventListener("keydown", key, true);
     window.addEventListener("resize", close);
     window.addEventListener("scroll", scroll, true);
-    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", key, true); window.removeEventListener("resize", close); window.removeEventListener("scroll", scroll, true); };
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("click", outside, true);
+      document.removeEventListener("focusin", outside, true);
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", scroll, true);
+    };
   }, [open]);
   return <>
     <button type="button" ref={trigger} className="record-stack record-money record-cost-trigger" aria-label="查看费用明细" aria-describedby={open ? id : undefined} aria-expanded={open}
-      onPointerEnter={e => { if (e.pointerType === "mouse") setOpen(true); }} onPointerLeave={e => { if (e.pointerType === "mouse") setOpen(false); }}
+      onPointerEnter={openFromMouse} onPointerLeave={e => { if (e.pointerType === "mouse") setOpen(false); }}
       onPointerDown={() => { pointer.current = true; }}
       onFocus={() => { if (!pointer.current) setOpen(true); }} onBlur={e => { pointer.current = false; if (!panel.current?.contains(e.relatedTarget as Node)) setOpen(false); }}
       onClick={e => { e.stopPropagation(); pointer.current = false; setOpen(value => !value); }}

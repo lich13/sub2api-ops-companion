@@ -27,6 +27,7 @@ fn native() -> Value {
 struct Upstream {
     calls: Arc<Mutex<Vec<Value>>>,
     status: Arc<Mutex<Option<u16>>>,
+    pages: Arc<Mutex<BTreeMap<String, Value>>>,
 }
 
 async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
@@ -60,7 +61,12 @@ async fn upstream(State(mock): State<Upstream>, request: Request) -> Response {
         (
             status,
             if status == 200 {
-                native()
+                mock.pages
+                    .lock()
+                    .unwrap()
+                    .get(&request.uri().to_string())
+                    .cloned()
+                    .unwrap_or_else(native)
             } else {
                 json!({"error":"fixture-revoked"})
             },
@@ -1030,5 +1036,59 @@ async fn config_partial_save_keeps_other_fields_permissions_and_rejects_stale_or
         "06:15"
     );
     assert!(h.mock.calls.lock().unwrap().is_empty());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn account_connection_directory_keeps_all_pages_parent_credentials_and_native_ids() {
+    let h = Harness::new().await;
+    let base = h.runtime.settings.base_url.clone();
+    for (parent, child, platform) in [(21, 22, "anthropic"), (31, 32, "gemini"), (41, 42, "grok")] {
+        sqlx::query("INSERT INTO accounts(id,name,platform,type,credentials,parent_account_id) VALUES($1,'fixture-parent',$3,'apikey',$4,null),($2,'fixture-child',$3,'apikey','{}',$1)")
+            .bind(parent as i64).bind(child).bind(platform).bind(sqlx::types::Json(json!({"api_key":"fixture-directory-secret","base_url":base,"model_mapping":{"fixture-only":"fixture-first"}}))).execute(&h.runtime.db.pool).await.unwrap();
+        if platform == "anthropic" {
+            *h.mock.pages.lock().unwrap() = BTreeMap::from([
+                (
+                    "/v1/models".into(),
+                    json!({"data":[{"id":"fixture-first","display_name":"First"}],"has_more":true,"last_id":"fixture-first"}),
+                ),
+                (
+                    "/v1/models?after_id=fixture-first".into(),
+                    json!({"data":[{"id":"fixture-second"},{"id":"fixture-first"}],"has_more":false}),
+                ),
+            ]);
+        } else if platform == "gemini" {
+            *h.mock.pages.lock().unwrap() = BTreeMap::from([
+                (
+                    "/v1beta/models".into(),
+                    json!({"models":[{"name":"models/fixture-first","displayName":"First"}],"nextPageToken":"page2"}),
+                ),
+                (
+                    "/v1beta/models?pageToken=page2".into(),
+                    json!({"models":[{"name":"models/fixture-second"}]}),
+                ),
+            ]);
+        } else {
+            *h.mock.pages.lock().unwrap() = BTreeMap::from([(
+                "/v1/models".into(),
+                json!({"data":[{"id":"fixture-first"},{"id":"fixture-second"}]}),
+            )]);
+        }
+        let models = h.runtime.catalog.account_models(child).await.unwrap();
+        assert_eq!(
+            models
+                .iter()
+                .map(|m| m["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["fixture-first", "fixture-second"]
+        );
+        assert!(models.iter().all(|m| m.as_object().unwrap().len() == 3));
+        let calls = h.mock.calls.lock().unwrap().len();
+        assert_eq!(
+            h.runtime.catalog.account_models(child).await.unwrap(),
+            models
+        );
+        assert_eq!(h.mock.calls.lock().unwrap().len(), calls);
+    }
     h.close().await;
 }

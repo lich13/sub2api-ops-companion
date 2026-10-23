@@ -45,7 +45,7 @@ describe("cost popover", () => {
     details.mockClear(); container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     await act(async () => root.render(<div onClick={details} onKeyDown={details} style={{ overflow: "hidden" }}><CostDetails row={record()} /></div>));
   });
-  afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
+  afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
   it("portals hover details outside the table and closes on pointer exit", async () => {
     const button = container.querySelector("button")!;
     await act(async () => pointer(button, "pointerover", "mouse"));
@@ -59,6 +59,13 @@ describe("cost popover", () => {
     await act(async () => button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(tooltip()).toBeNull(); expect(document.activeElement).toBe(button); expect(details).not.toHaveBeenCalled();
   });
+  it("ignores emulated mouse hover on touch-only screens while retaining tap access", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    const button = container.querySelector("button")!;
+    await act(async () => pointer(button, "pointerover", "mouse")); expect(tooltip()).toBeNull();
+    await act(async () => { pointer(button, "pointerdown", "touch"); button.focus(); button.click(); });
+    expect(tooltip()).not.toBeNull(); expect(details).not.toHaveBeenCalled();
+  });
   it("opens on a touch tap, toggles on another tap, and closes on outside input", async () => {
     const button = container.querySelector("button")!;
     await act(async () => { pointer(button, "pointerdown", "touch"); button.focus(); button.click(); });
@@ -68,5 +75,15 @@ describe("cost popover", () => {
     await act(async () => button.click()); expect(tooltip()).toBeNull();
     await act(async () => button.click()); expect(tooltip()).not.toBeNull();
     await act(async () => pointer(document.body, "pointerdown", "touch")); expect(tooltip()).toBeNull();
+  });
+  it("closes when focus moves to a control outside the record", async () => {
+    const button = container.querySelector("button")!;
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    await act(async () => button.focus());
+    expect(tooltip()).not.toBeNull();
+    await act(async () => outside.focus());
+    expect(tooltip()).toBeNull();
+    outside.remove();
   });
 });

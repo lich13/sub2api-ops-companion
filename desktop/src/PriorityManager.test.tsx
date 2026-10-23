@@ -195,7 +195,7 @@ describe("platform priority manager", () => {
     });
     expect(list().querySelectorAll("li")).toHaveLength(1);
     expect(list().querySelector<HTMLButtonElement>('[aria-label="拖动 Alpha"]')!.disabled).toBe(true);
-    expect(container.textContent).toContain("搜索结果仅供查看");
+    expect(container.textContent).not.toContain("搜索结果仅供查看");
 
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -462,4 +462,19 @@ it("renders scheduling from live accounts while retaining a priority draft", asy
   expect(list().querySelector('[aria-label="Alpha调度"]')?.getAttribute("aria-checked")).toBe("false");
   expect(list().querySelector('[data-priority-id="101"]')?.textContent).toContain("不可调度");
   expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
+});
+
+ it("keeps empty slots at every priority and applies a move into a slot without renumbering peers", async () => {
+  const parallel = view({ platforms: [{ ...platform("openai", openaiItems), parallelism: 3 }] });
+  vi.mocked(api).mockImplementation(async (method, path) => {
+    if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;
+    if (path === "/account-priorities?schema=2") return parallel as never;
+    if (method === "POST") return task("queued", { parallelism: 3 }) as never;
+    throw new Error(path);
+  });
+  await render();
+  expect(list().querySelectorAll(".priority-slot-empty")).toHaveLength(7);
+  await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="拖动 Beta"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+  await act(async () => button("应用变更").click());
+  expect(api).toHaveBeenCalledWith("POST", "/account-priority-orders?schema=2", expect.objectContaining({ ordered_account_ids: [101, 102], target_priorities: [1, 1], parallelism: 3 }));
 });

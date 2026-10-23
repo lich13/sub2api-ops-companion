@@ -385,6 +385,17 @@ let state: ViewState = {
         recovered_at: now,
         legacy: false,
       },
+      {
+        id: 3,
+        account_id: 101,
+        account_name: accounts[0].name,
+        model_id: "gpt-6-sol",
+        test_completed_at: before,
+        recovered_at: null,
+        legacy: false,
+        kind: "connection_test",
+        result_status: "completed",
+      },
     ],
   },
 };
@@ -621,7 +632,7 @@ export async function run(
       return { items, next_cursor: null };
     }
     if (path.startsWith("/recoveries"))
-      return { items: state.snapshot?.recoveries, next_cursor: null };
+      return { items: [...(await import("./operationPreview")).scheduledTestHistory(), ...(state.snapshot?.recoveries ?? [])], next_cursor: null };
     if (path === "/quota-refresh")
       return args.method === "POST"
         ? {

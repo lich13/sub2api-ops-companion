@@ -6,7 +6,7 @@ export type Operation = {
   reason?: string; requested: Record<string, unknown>; current?: Record<string, unknown>;
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
   execution_mode?: 'native' | 'compatibility';
-  started_at?: string;
+  started_at?: string; scheduled_at?: string;
 };
 export type OperationBatch = { batch_id: string; items: Operation[]; pending: number };
 export const operationTerminal = new Set(['completed', 'failed', 'cancelled', 'superseded', 'needs_confirmation']);
@@ -54,12 +54,12 @@ export async function followAccountBatch(initial: OperationBatch, update: (batch
     setOperations([...batch.items, ...rows.filter(r => !batch.items.some(j => j.id === r.id))]);
   }
 }
-export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string): Promise<Operation> {
+export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string, scheduledAt?: string): Promise<Operation> {
   const current = epoch;
   const version = expected ?? (action === 'degradation_mark' ? account.degradation_mark?.version : account.operation_versions?.[action]);
   if (!version) throw new Error('请刷新账号后重试');
   const job = await api<Operation>('POST', `/accounts/${account.id}/operations`, {
-    action, payload, expected_version: version, request_id: crypto.randomUUID(), client_id: clientId(),
+    action, payload, expected_version: version, request_id: crypto.randomUUID(), client_id: clientId(), ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
   });
   if (current !== epoch) throw new Error('连接已切换；请求保留在原连接');
   setOperations([job, ...rows.filter((row) => row.id !== job.id)]);

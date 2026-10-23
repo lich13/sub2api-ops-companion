@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
 import { fullTime, type Account, type TestEvent } from "./types";
-import { submitOperation, followOperation } from "./accountOperations";
+import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, type Operation } from "./accountOperations";
 import { useBackAction } from "./mobile";
 
 export type TestMode = "default" | "compact" | "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime";
@@ -25,6 +25,12 @@ export function preferredModel(models: TestModel[], platform: string, mode: Test
 }
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
   useBackAction(true, close);
+  const operations = useSyncExternalStore(subscribeOperations, getOperations);
+  const scheduled = operations.filter(job => job.account_id === account.id && job.scheduled_at && ["queued", "running", "checking", "needs_confirmation"].includes(job.status));
+  const [execution, setExecution] = useState("now");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const scheduleTimestamp = scheduledAt ? Date.parse(`${scheduledAt}:00+08:00`) : NaN;
+  const scheduleValid = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(scheduledAt) && Number.isFinite(scheduleTimestamp) && scheduleTimestamp > Date.now() && new Date(scheduleTimestamp + 8 * 3600_000).toISOString().slice(0, 16) === scheduledAt;
   const [models, setModels] = useState<TestModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<TestMode>(account.platform === "grok" ? "text" : "default");
@@ -42,7 +48,8 @@ export default function TestDialog({ account, online, close }: {account: Account
   const running = useRef(false), alive = useRef(true), cancelled = useRef(false);
   useEffect(() => {
     alive.current = true;
-    void api<TestModel[]>("GET", `/accounts/${account.id}/models`).then((list) => {
+    if (account.operation_versions?.test) void api<{ items: Operation[] }>("GET", "/account-operations").then(data => { if (alive.current) setOperations(data.items); }).catch(e => { if (alive.current) setError(String(e)); });
+    void api<TestModel[]>("GET", `/accounts/${account.id}/models?purpose=model_test`).then((list) => {
       if (!alive.current) return;
       setModels(list); setModel(preferredModel(list, account.platform, mode));
     }).catch((e) => { if (alive.current) setError(String(e)); }).finally(() => { if (alive.current) setLoading(false); });
@@ -50,7 +57,7 @@ export default function TestDialog({ account, online, close }: {account: Account
   }, [account.id]);
   const choices: {id: TestMode; label: string}[] = account.platform === "grok"
     ? [{id:"text",label:"文本"},{id:"image",label:"图像"},{id:"video",label:"视频"},{id:"search",label:"搜索"},{id:"tts",label:"TTS"},{id:"stt",label:"STT"},{id:"realtime",label:"Realtime"}]
-    : [{id:"default",label:"普通"},{id:"compact",label:"Compact"}];
+    : account.platform === "openai" ? [{id:"default",label:"普通"},{id:"compact",label:"Compact"}] : [{id:"default",label:"普通"}];
   const available = modelsForMode(models, account.platform, mode);
   const standalone = ["search", "tts", "stt", "realtime"].includes(mode);
   const imageModel = account.platform === "openai" && mode === "default" && model.startsWith("gpt-image-");
@@ -70,6 +77,16 @@ export default function TestDialog({ account, online, close }: {account: Account
   async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); else await command("cancel_test"); }
   async function start() {
     if (running.current || !online) return;
+    if (execution === "scheduled") {
+      if (!scheduleValid) return;
+      running.current = true; setBusy(true); setError("");
+      try {
+        await submitOperation(account, "test", { confirmed: true, mode: account.platform === "grok" ? "text" : "default", model_id: model, prompt: "" }, undefined, new Date(scheduleTimestamp).toISOString());
+        if (alive.current) { setStatus("已预约"); setExecution("now"); }
+      } catch (e) { if (alive.current) setError(String(e).replace(/^Error: /, "")); }
+      finally { running.current = false; if (alive.current) setBusy(false); }
+      return;
+    }
     running.current = true; cancelled.current = false; setBusy(true); setText(""); setError(""); setOutputs([]); setResult(null); setStatus("正在连接");
     let terminal = false;
     try {
@@ -102,18 +119,21 @@ export default function TestDialog({ account, online, close }: {account: Account
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
       <div className="test-controls">
-        <label>模式<select disabled={busy} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") changeMode(account.platform === "grok" ? "text" : "default"); }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
+        {execution === "scheduled" && <label className="test-schedule-time">预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={60} value={scheduledAt} disabled={busy} onChange={e => setScheduledAt(e.target.value)}/></label>}
+        <label>模式<select disabled={busy || execution === "scheduled"} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
         {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
         {((account.platform === "grok" && ["image", "video", "stt"].includes(mode)) || imageModel) && <label className="test-upload">{mode === "stt" ? "音频素材（可选）" : "图片素材（可选）"}<input key={`${mode}-${imageModel}`} type="file" accept={mode === "stt" ? "audio/*,.wav,.mp3,.m4a,.ogg,.webm" : "image/png,image/jpeg,image/webp,image/gif"} disabled={busy} onChange={(e) => void chooseFile(e.target.files?.[0])}/>{fileName && <span>{fileName}</span>}</label>}
       </div>
+      {scheduled.length > 0 && <ul className="test-schedules">{scheduled.map(job => <li key={job.id}><div><time>{fullTime(job.scheduled_at)}</time><span>{String(job.requested.model_id || "默认模型")}</span></div><span>{({ queued: "待执行", running: "测试中", checking: "核对中", needs_confirmation: "待核对" } as Record<string, string>)[job.status]}</span>{job.status === "queued" && <button className="icon-button" aria-label={`取消预约 ${fullTime(job.scheduled_at)}`} disabled={busy || !online} onClick={() => { void api<Operation>("POST", `/account-operations/${job.id}/cancel`, {}).then(result => { if (alive.current) setOperations(getOperations().map(row => row.id === result.id ? result : row)); }).catch(e => { if (alive.current) setError(String(e)); }); }}><X size={15}/></button>}</li>)}</ul>}
       <div className="test-result" aria-live="polite">
         {status && <div className="test-status">{busy && <LoaderCircle size={14} className="spin"/>}{status}{result?.duration_ms != null && <span>{(result.duration_ms / 1000).toFixed(2)} s · {fullTime(result.completed_at)}</span>}</div>}
         {text && <pre>{text}</pre>}
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer>{busy ? <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || loading} onClick={() => void start()}><Play size={13}/>开始测试</button>}</footer>
+      <footer>{busy ? <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || loading || (execution === "scheduled" && !scheduleValid)} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
     </section>
   </div>;
 }

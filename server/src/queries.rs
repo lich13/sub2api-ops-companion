@@ -449,6 +449,10 @@ impl Queries {
                 if row["kind"] == "quota_recovery" {
                     value["kind"] = "quota_recovery".into();
                 }
+                if row["kind"] == "connection_test" {
+                    value["kind"] = "connection_test".into();
+                    value["result_status"] = clean(&row["result_status"], 64).into();
+                }
                 let receipt = &row["reset_credit"];
                 if row["kind"] == "reset_credit"
                     && row["legacy"] == false

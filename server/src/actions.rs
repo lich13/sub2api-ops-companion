@@ -797,10 +797,8 @@ impl Actions {
             .await?;
         let platform = string(&row["platform"]);
         let mode = string(&payload["mode"]);
-        if !matches!(platform, "openai" | "grok")
-            || !matches!(string(&row["type"]), "oauth" | "apikey")
-        {
-            return Err(Error::new(422, "此账号不支持连接测试"));
+        if platform != "openai" && platform != "grok" && mode != "default" {
+            return Err(Error::new(422, "此平台仅支持普通测试连接"));
         }
         if platform == "openai" && !matches!(mode, "default" | "compact") {
             return Err(Error::new(422, "OpenAI 测试模式无效"));

@@ -1,4 +1,4 @@
-import type { Account } from './types';
+import type { Account, Recovery } from './types';
 import type { Operation } from './accountOperations';
 import { applySettingsPreview, isSettingsAction, previewProxies, settingsPreview } from './settingsPreview';
 function recoverPreview(account: Account) {
@@ -10,6 +10,12 @@ function recoverPreview(account: Account) {
   if (account.operation_versions) account.operation_versions.recover = crypto.randomUUID().replaceAll('-', '').repeat(2);
 }
 const jobs = new Map<string, Operation>();
+const scheduledHistory = new Map<string, Recovery>();
+export const scheduledTestHistory = () => [...scheduledHistory.values()].reverse();
+function recordScheduled(job: Operation) {
+  if (!job.scheduled_at || scheduledHistory.has(job.id)) return;
+  scheduledHistory.set(job.id, { id: 10000 + scheduledHistory.size, account_id: job.account_id, account_name: job.account_name, model_id: String(job.requested.model_id || ""), test_completed_at: new Date().toISOString(), recovered_at: null, legacy: false, kind: 'connection_test', result_status: job.status });
+}
 const requests = new Map<string, string>();
 const batches = new Map<string, string[]>();
 const batchRequests = new Map<string, { id: string; signature: string }>();
@@ -90,10 +96,13 @@ export async function operationPreview(method: string, path: string, body: Recor
     const account = accounts.find((a) => a.id === Number(path.split('/')[2]));
     if (!account) throw new Error('账号不存在');
     const action = String(body.action), payload = body.payload as Record<string, unknown>;
-    const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), account_id: account.id, account_name: account.name, action, requested: payload, status: 'queued', reason: '等待账号空闲' };
+    const at = typeof body.scheduled_at === 'string' ? Date.parse(body.scheduled_at) : undefined;
+    if (at !== undefined && (action !== 'test' || !Number.isFinite(at) || at <= Date.now() || at % 60000 !== 0)) throw new Error('预约时间无效');
+    const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), account_id: account.id, account_name: account.name, action, requested: payload, status: 'queued', reason: at ? '等待预约时间' : '等待账号空闲', ...(at ? { scheduled_at: new Date(at).toISOString() } : {}) };
     jobs.set(job.id, job); requests.set(String(body.request_id), job.id);
-    setTimeout(() => {
+    const finish = () => {
       if (job.status !== 'queued') return;
+      if (at && at > Date.now()) { setTimeout(finish, Math.min(at - Date.now(), 2_147_483_647)); return; }
       let settingsResult: Record<string, unknown> = {};
       if (isSettingsAction(action)) {
         try { settingsResult = applySettingsPreview(account, action, payload, String(body.expected_version)); }
@@ -118,13 +127,14 @@ export async function operationPreview(method: string, path: string, body: Recor
       }
       job.status = 'completed'; job.reason = '';
       job.result = { verified: true, priority: account.priority, group_ids: account.group_ids, version: account.version, degradation_mark: account.degradation_mark, message: '操作已完成', deleted: action === 'delete', success: true, ...settingsResult };
-      emit();
-    }, 1200);
+      recordScheduled(job); emit();
+    };
+    setTimeout(finish, at ? Math.min(at - Date.now(), 2_147_483_647) : 1200);
     return structuredClone(job);
   }
   const job = jobs.get(path.split('/')[2]?.split('?')[0]);
   if (!job) throw new Error('操作不存在');
-  if (method === 'POST' && path.endsWith('/cancel') && job.status === 'queued') job.status = 'cancelled';
+  if (method === 'POST' && path.endsWith('/cancel') && job.status === 'queued') { job.status = 'cancelled'; recordScheduled(job); }
   return structuredClone(job);
 }
 

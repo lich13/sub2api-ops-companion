@@ -401,6 +401,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
 }
 
 struct FixtureBackend {
+    now: Mutex<chrono::DateTime<chrono::Utc>>,
     pool: sqlx::PgPool,
     recover_calls: Mutex<Vec<i64>>,
     recover_failures: Mutex<BTreeSet<i64>>,
@@ -410,6 +411,9 @@ struct FixtureBackend {
 }
 
 impl Backend for FixtureBackend {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        *self.now.lock().unwrap()
+    }
     fn managed(&self) -> Result<BTreeSet<i64>> {
         Ok(BTreeSet::new())
     }
@@ -540,6 +544,7 @@ impl Harness {
         )
         .expect("construct operation actions");
         let backend = Arc::new(FixtureBackend {
+            now: Mutex::new(chrono::Utc::now()),
             pool: db.pool.clone(),
             recover_calls: Mutex::new(Vec::new()),
             recover_failures: Mutex::new(BTreeSet::new()),
@@ -2403,5 +2408,93 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
             .as_u16(),
         409
     );
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_restart() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(3, json!({})).await;
+    let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T09:31:00+08:00")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    *harness.backend.now.lock().unwrap() = due - chrono::Duration::seconds(60);
+    let versions = harness.expected_versions(&ids, "test").await;
+    let request = json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},"scheduled_at":"2030-01-02T09:31:00+08:00","expected_version":versions[&ids[0]],"request_id":"fixture-scheduled-connection-0001","client_id":CLIENT_ID});
+    let job = harness
+        .operations
+        .submit(ids[0], &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(
+        sub2ops_server::operations::scheduled_time(&job["scheduled_at"]).unwrap(),
+        due
+    );
+    *harness.backend.now.lock().unwrap() = due - chrono::Duration::seconds(1);
+    harness.operations.tick().await.unwrap();
+    assert!(harness.mock.test_calls().is_empty());
+    sqlx::query("UPDATE accounts SET credentials=credentials || '{\"access_token\":\"fixture-refreshed-token\"}'::jsonb WHERE id=$1")
+        .bind(ids[0]).execute(&harness.db.pool).await.unwrap();
+    harness.restart().await;
+    let replay = harness
+        .operations
+        .submit(ids[0], &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(replay["id"], job["id"]);
+    *harness.backend.now.lock().unwrap() = due;
+    harness.operations.tick().await.unwrap();
+    harness
+        .wait_status(job["id"].as_str().unwrap(), "completed")
+        .await;
+    harness.operations.tick().await.unwrap();
+    let history = harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"].clone();
+    let entry = &history[format!("connection-test:{}", job["id"].as_str().unwrap())];
+    assert_eq!(entry["kind"], "connection_test");
+    assert_eq!(entry["result_status"], "completed");
+    assert!(entry["recovered_at"].is_null());
+    harness.restart().await;
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    assert_eq!(
+        harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"],
+        history
+    );
+    let mut cancelled = request.clone();
+    cancelled["expected_version"] = versions[&ids[1]].clone().into();
+    cancelled["request_id"] = "fixture-scheduled-connection-0002".into();
+    cancelled["scheduled_at"] = "2030-01-02T09:32:00+08:00".into();
+    let queued = harness
+        .operations
+        .submit(ids[1], &cancelled, ADMIN_KEY)
+        .await
+        .unwrap();
+    harness
+        .operations
+        .cancel(queued["id"].as_str().unwrap())
+        .await
+        .unwrap();
+    *harness.backend.now.lock().unwrap() = due + chrono::Duration::minutes(1);
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    let state = harness.actions.queries.oauth.snapshot().unwrap();
+    assert_eq!(
+        state["recovery_history"][format!("connection-test:{}", queued["id"].as_str().unwrap())]
+            ["result_status"],
+        "cancelled"
+    );
+    let mut invalid = request.clone();
+    invalid["request_id"] = "fixture-scheduled-invalid-0001".into();
+    assert!(harness
+        .operations
+        .submit(ids[0], &invalid, ADMIN_KEY)
+        .await
+        .is_err());
+    invalid["scheduled_at"] = "2031-01-01T01:00:01Z".into();
+    assert!(harness
+        .operations
+        .submit(ids[0], &invalid, ADMIN_KEY)
+        .await
+        .is_err());
     harness.finish().await;
 }

@@ -225,12 +225,13 @@ export function RecoveryHistory({
               <th>验证方式</th>
               <th>测试模型</th>
               <th>用卡时间</th>
-              <th>验证通过时间</th>
-              <th>恢复确认时间</th>
+              <th>测试完成时间</th>
+              <th>结果 / 恢复时间</th>
             </tr>
           </thead>
           <tbody>
             {items.map((r) => {
+              const scheduled = r.kind === "connection_test";
               const card = r.kind === "reset_credit" && !r.legacy && r.reset_credit
                 && ["connection", "model"].includes(r.reset_credit.verification_method)
                 && [r.reset_credit.completed_at, r.test_completed_at, r.recovered_at].every((time) => !!time && Number.isFinite(Date.parse(time)))
@@ -241,20 +242,20 @@ export function RecoveryHistory({
                   {r.account_name ||
                     accounts.find((a) => a.id === r.account_id)?.name}
                 </td>
-                <td data-label="恢复类型">{card ? "用卡恢复" : "额度恢复"}</td>
-                <td data-label="验证方式">{card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>
+                <td data-label="恢复类型">{scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"}</td>
+                <td data-label="验证方式">{scheduled ? "测试连接" : card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>
                 <td data-label="测试模型">{r.model_id || "未知"}</td>
                 <td data-label="用卡时间"><time>{card ? fullTime(card.completed_at) : "—"}</time></td>
-                <td data-label="验证通过时间">
+                <td data-label="测试完成时间">
                   <time>
                     {r.test_completed_at
                       ? fullTime(r.test_completed_at)
                       : "时间未知"}
                   </time>
                 </td>
-                <td data-label="恢复确认时间">
+                <td data-label="结果 / 恢复时间">
                   <time>
-                    {r.recovered_at ? fullTime(r.recovered_at) : "时间未知"}
+                    {scheduled ? ({completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "已中断", needs_confirmation: "需确认"}[r.result_status ?? ""] ?? "已记录") : r.recovered_at ? fullTime(r.recovered_at) : "时间未知"}
                   </time>
                 </td>
               </tr>

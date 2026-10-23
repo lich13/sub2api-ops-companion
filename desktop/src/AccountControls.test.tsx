@@ -102,8 +102,17 @@ describe("recovery history provenance", () => {
     expect(row.textContent).toContain("用卡恢复");
     expect(cell(row, "用卡时间")).toBe(fullTime(completedAt));
     expect(cell(row, "验证方式")).toBe(label);
-    expect(cell(row, "验证通过时间")).toBe(fullTime(verifiedAt));
-    expect(cell(row, "恢复确认时间")).toBe(fullTime(recoveredAt));
+    expect(cell(row, "测试完成时间")).toBe(fullTime(verifiedAt));
+    expect(cell(row, "结果 / 恢复时间")).toBe(fullTime(recoveredAt));
+  });
+
+  it("shows scheduled connection tests in recovery history", async () => {
+    await render([recovery({ kind: "connection_test", recovered_at: null, result_status: "completed" })]);
+    const row = container.querySelector("tbody tr")!;
+    expect(row.textContent).toContain("预约测试");
+    expect(cell(row, "验证方式")).toBe("测试连接");
+    expect(cell(row, "结果 / 恢复时间")).toBe("已完成");
+    expect(cell(row, "用卡时间")).toBe("—");
   });
 
   it.each([

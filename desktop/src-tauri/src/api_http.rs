@@ -9,7 +9,11 @@ fn recoveries_valid(data: &Value) -> bool {
         rows.iter().all(|row| {
             let kind = &row["kind"];
             let receipt = &row["reset_credit"];
-            (kind.is_null() || matches!(kind.as_str(), Some("quota_recovery" | "reset_credit")))
+            (kind.is_null()
+                || matches!(
+                    kind.as_str(),
+                    Some("quota_recovery" | "reset_credit" | "connection_test")
+                ))
                 && (receipt.is_null()
                     || receipt.is_object()
                         && receipt["completed_at"]
@@ -164,6 +168,44 @@ fn usage_valid(data: &Value) -> bool {
         && (data["message"].is_null() || data["message"].is_string())
 }
 
+fn scheduled_at_valid(value: &Value) -> bool {
+    let Some(s) = value.as_str() else {
+        return false;
+    };
+    let b = s.as_bytes();
+    if b.len() != 25
+        || !s.ends_with(":00+00:00")
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || ![0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15]
+            .into_iter()
+            .all(|i| b[i].is_ascii_digit())
+    {
+        return false;
+    }
+    let year = s[..4].parse::<u32>().unwrap();
+    let month = s[5..7].parse::<u32>().unwrap();
+    let day = s[8..10].parse::<u32>().unwrap();
+    let days = match month {
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
+                29
+            } else {
+                28
+            }
+        }
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        _ => 0,
+    };
+    day > 0
+        && day <= days
+        && s[11..13].parse::<u32>().unwrap() < 24
+        && s[14..16].parse::<u32>().unwrap() < 60
+}
+
 fn operation_valid(data: &Value) -> bool {
     data["id"]
         .as_str()
@@ -184,6 +226,9 @@ fn operation_valid(data: &Value) -> bool {
             )
         })
         && data["requested"].is_object()
+        && data
+            .get("scheduled_at")
+            .is_none_or(|v| data["action"] == "test" && scheduled_at_valid(v))
 }
 
 fn connection_valid(data: &Value) -> bool {
@@ -1476,12 +1521,14 @@ mod tests {
         let legacy = serde_json::json!([{"id":1,"account_id":1,"legacy":true}]);
         let ordinary =
             serde_json::json!([{"id":2,"account_id":1,"kind":"quota_recovery","legacy":false}]);
+        let connection_test = serde_json::json!([{"id":4,"account_id":1,"kind":"connection_test","result_status":"completed","legacy":false}]);
         let card = serde_json::json!([{"id":3,"account_id":1,"kind":"reset_credit","legacy":false,
             "test_completed_at":"2026-10-01T01:11:00Z","recovered_at":"2026-10-01T01:12:00Z",
             "reset_credit":{"completed_at":"2026-10-01T01:10:00Z","verification_method":"connection"}}]);
 
         assert!(recoveries_valid(&legacy));
         assert!(recoveries_valid(&ordinary));
+        assert!(recoveries_valid(&connection_test));
         assert!(recoveries_valid(&card));
         assert!(shape_valid(
             "/recoveries",
@@ -1580,6 +1627,7 @@ mod tests {
         let mut bad = detection.clone();
         bad["interval_minutes"] = serde_json::json!(0);
         assert!(!shape_valid("/accounts/1/model-detection", &bad));
+
         let profile = serde_json::json!({"whitelist":[],"mappings":[]});
         let templates = serde_json::json!({"version":"fixture","configured":false,"templates":{"full":profile,"degraded":profile,"takeover":profile}});
         assert!(shape_valid("/account-templates", &templates));
@@ -1766,6 +1814,18 @@ mod tests {
             "/account-operations",
             &serde_json::json!({"pending":1,"items":[job.clone()]})
         ));
+        let mut scheduled = job.clone();
+        scheduled["action"] = "test".into();
+        scheduled["scheduled_at"] = "2030-01-02T01:31:00+00:00".into();
+        assert!(operation_valid(&scheduled));
+        for invalid in [
+            "2030-02-30T01:31:00+00:00",
+            "2030-01-02T01:31:01+00:00",
+            "invalid",
+        ] {
+            scheduled["scheduled_at"] = invalid.into();
+            assert!(!operation_valid(&scheduled));
+        }
         let mut wrong = job.clone();
         wrong["status"] = serde_json::json!("unknown");
         assert!(!shape_valid("/accounts/421/operations", &wrong));

@@ -3,6 +3,8 @@ import {
   groupPriorityAccounts,
   movePriority,
   priorityOrder,
+  prioritySlots,
+  movePrioritySlot,
   priorityPending,
   priorityPlatformName,
   samePriorityAccounts,
@@ -72,4 +74,15 @@ describe("priority data helpers", () => {
     expect(priorityPending({ status: "completed" } as never)).toBe(false);
     expect(priorityPending(null)).toBe(false);
   });
+});
+
+it("reserves slots for every priority, moves only the selected account and adds a new empty lane", () => {
+  const slots = prioritySlots([account(1, "openai", 1), account(2, "openai", 3)], 3);
+  expect(slots.map(s => [s.priority, s.id])).toEqual([[1,1],[1,null],[1,null],[3,2],[3,null],[3,null],[4,null],[4,null],[4,null]]);
+  const moved = movePrioritySlot(slots, 2, 1, 3);
+  expect(moved.filter(s => s.id !== null)).toEqual([{ priority: 1, id: 1 }, { priority: 1, id: 2 }]);
+  expect(moved[3]).toEqual({ priority: 3, id: null });
+  const last = movePrioritySlot(slots, 1, 6, 3);
+  expect(last.slice(-3)).toEqual(Array.from({length:3}, () => ({ priority: 5, id: null })));
+  expect(slots[0].id).toBe(1);
 });

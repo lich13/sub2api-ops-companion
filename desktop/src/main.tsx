@@ -700,7 +700,7 @@ export default function App() {
               <>
                 <GroupManager key={connectionKey} connectionKey={connectionKey} active={page === "groups"} accounts={accounts} groups={groups} mobile={mobile} online={state.online} back={() => setPage("accounts")} report={report} accountActions={accountActions} schedule={schedule} changed={(count, saving) => setGroupChanges({ count, busy: saving })}/>
                 <PriorityManager key={`priorities:${connectionKey}`} connectionKey={connectionKey} active={page === "priorities"} accounts={accounts} mobile={mobile} online={state.online} back={() => setPage("accounts")} schedule={schedule} changed={setPriorityChanges}/>
-                <div key={`${page}:${connectionKey}`} className="page-surface" data-page={page} hidden={page === "groups" || page === "priorities"}>
+                <div key={`surface:${page}:${connectionKey}`} className="page-surface" data-page={page} hidden={page === "groups" || page === "priorities"}>
                   <div className="page-heading">
                     <div>
                       <h1>{pages.find((p) => p.id === page)?.label}</h1>

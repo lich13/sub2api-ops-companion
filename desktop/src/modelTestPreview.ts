@@ -1,6 +1,7 @@
 import type { Account } from "./types";
 export function modelTestCandidates(account: Account) {
-  if (account.platform !== "openai") throw new Error("仅支持 Codex 模型测试");
+  if (account.platform === "grok") return ["grok-4.5", "grok-imagine-image", "grok-imagine-video", "grok-search", "grok-tts"].map((id) => ({ id, display_name: id, type: "model" }));
+  if (account.platform !== "openai") throw new Error("该平台没有模型目录");
   return (account.type === "apikey" ? ["gpt-6-sol", "gpt-6-luna"] : [
     "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "codex-auto-review",
   ]).map((id) => ({ id, display_name: id, type: "model" }));

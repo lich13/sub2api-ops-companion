@@ -285,6 +285,7 @@ fn allowed_request(method: &str, path: &str) -> bool {
         }
         return match method {
             "GET" => plain == "/account-priorities" || detail,
+            "PUT" => plain == "/account-priorities" && priority_api::is_v2(path),
             "POST" => {
                 plain == "/account-priority-orders"
                     || plain

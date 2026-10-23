@@ -233,7 +233,7 @@ describe("shared account actions", () => {
   it.each([
     ["模型测试", "模型测试", "/accounts/1/models?purpose=model_test"],
     ["定时检测", "定时检测", "/accounts/1/model-detection"],
-    ["测试连接", "测试连接", "/accounts/1/models"],
+    ["测试连接", "测试连接", "/accounts/1/models?purpose=model_test"],
     ["应用模板", "账号模板", "/account-templates?account_id=1"],
   ])("opens %s from the group card for that account", async (action, dialogLabel, request) => {
     await render();

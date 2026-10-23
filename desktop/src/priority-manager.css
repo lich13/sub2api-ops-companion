@@ -12,6 +12,9 @@
 .priority-column-heading h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .priority-column-heading > span { color: var(--muted); font-size: 12px; }
 .priority-column-heading > b { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--accent); }
+.priority-parallelism { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.priority-parallelism output { min-width: 2ch; text-align: center; color: var(--text); }
+.priority-parallelism .icon-button { width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 2px; border-color: transparent; background: transparent; }
 .priority-column > p { margin: 10px 12px; font-size: 12px; overflow-wrap: anywhere; }
 .priority-column > p button { margin-left: 6px; }
 .priority-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 0 0 10px; }
@@ -20,16 +23,24 @@
 .priority-tabs button > span { font-variant-numeric: tabular-nums; color: var(--muted); }
 .priority-tabs i { display: block; height: 5px; width: 5px; border-radius: 50%; background: var(--accent); }
 .priority-list { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: min(56vh, max(96px, calc(100dvh - 380px)), 640px); overscroll-behavior: contain; scrollbar-gutter: stable; }
-.priority-list > li { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto minmax(34px, auto); align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); min-height: 64px; }
-.priority-list > li:last-child { border-bottom: 0; }
-.priority-list > li:hover { background: var(--hover); }
-.priority-list > li.dragging { opacity: .45; }
-.priority-list > li.insert-before::before, .priority-list > li.insert-after::after { content: ""; position: absolute; height: 3px; background: var(--accent); left: 0; right: 0; z-index: 2; }
-.priority-list > li.insert-before::before { top: 0; }
-.priority-list > li.insert-after::after { bottom: 0; }
+.priority-list > li { list-style: none; }
+.priority-lane { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.priority-lane:last-child { border-bottom: 0; }
+.priority-lane-label { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 11px; text-align: right; }
+.priority-slot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(220px, calc((100% - (var(--priority-parallelism, 1) - 1) * 6px) / var(--priority-parallelism, 1)))), 1fr)); gap: 6px; min-width: 0; }
+.priority-slot { position: relative; min-width: 0; min-height: 64px; border: 1px solid transparent; border-radius: 7px; }
+.priority-slot:hover { background: var(--hover); }
+.priority-slot.insert-before::before, .priority-slot.insert-after::after { content: ""; position: absolute; height: 3px; background: var(--accent); left: -2px; right: -2px; z-index: 2; }
+.priority-slot.insert-before::before { top: -2px; }
+.priority-slot.insert-after::after { bottom: -2px; }
+.priority-slot-empty { display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--line-strong, var(--line)); background: color-mix(in srgb, var(--surface) 82%, var(--hover)); }
+.priority-slot.is-target { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.priority-slot-filtered { min-height: 0; }
+.priority-account-row { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto minmax(34px, auto); align-items: center; gap: 6px; padding: 8px; min-height: 64px; }
+.priority-account-row.dragging { opacity: .45; }
 .priority-grip { padding: 4px 0; min-width: 24px; border: 0; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
 .priority-identity { min-width: 0; }
-.priority-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
+.priority-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .priority-identity small { display: flex; gap: 4px 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
 .priority-identity .priority-account-reason { color: var(--warn); }
 .priority-number { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
@@ -52,7 +63,9 @@
 .app.mobile .priority-manager button, .app.mobile .priority-manager input { min-height: 48px; }
 .app.mobile .priority-manager .icon-button, .app.mobile .priority-grip { min-width: 48px; }
 .app.mobile .priority-list { max-height: 52vh; }
-.app.mobile .priority-list > li { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 4px 6px; padding: 8px; }
+.app.mobile .priority-lane { grid-template-columns: 22px minmax(0, 1fr); gap: 4px; padding: 8px 6px; }
+.app.mobile .priority-slot-grid { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.app.mobile .priority-account-row { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 4px 6px; padding: 8px 4px; }
 .app.mobile .priority-moves { grid-column: 2 / -1; flex-direction: row; justify-content: flex-end; gap: 6px; }
 .app.mobile .priority-draft button { padding: 6px 10px; }
 @media (prefers-reduced-motion: reduce) { .priority-manager *, .priority-drag-ghost { scroll-behavior: auto; transition: none; } }
@@ -63,3 +76,9 @@
 .priority-task-state button { font-size: 12px; padding: 5px 8px; }
 .priority-result { overflow-wrap: anywhere; }
 .app.mobile .priority-account-controls { grid-column: 2 / -1; flex-direction: row; justify-content: flex-end; }
+.has-parallel-slots .priority-account-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+.has-parallel-slots .priority-account-controls { grid-column: 2 / -1; flex-direction: row; justify-content: space-between; }
+.has-parallel-slots .priority-moves { flex-direction: row; }
+.has-parallel-slots .priority-slot:not(.priority-slot-empty) { border-color: var(--line); background: var(--surface); }
+.has-parallel-slots .priority-slot.is-target { border-color: var(--accent); background: var(--accent-bg); }
+.app.mobile .has-parallel-slots .priority-account-row { grid-template-columns: 48px minmax(0, 1fr) auto; }

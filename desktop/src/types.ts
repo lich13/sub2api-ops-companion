@@ -184,7 +184,8 @@ export type Recovery = {
   test_completed_at: string | null;
   recovered_at: string | null;
   legacy: boolean;
-  kind?: "quota_recovery" | "reset_credit";
+  kind?: "quota_recovery" | "reset_credit" | "connection_test";
+  result_status?: string;
   reset_credit?: { consumed?: boolean; completed_at: string; verification_method: "connection" | "model" };
 };
 export type Snapshot = {

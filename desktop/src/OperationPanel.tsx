@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ListChecks, X } from 'lucide-react';
 import { api, command } from './bridge';
-import type { Account } from './types';
+import { fullTime, type Account } from './types';
 import { useBackAction } from './mobile';
 import { getOperations, subscribeOperations, setOperations, operationEpoch, submitOperation, type Operation } from './accountOperations';
 
@@ -69,9 +69,10 @@ export default function AccountOperations({ accounts, online, connectionKey, rep
       {batchId && <button onClick={() => setBatchId(null)}>返回全部待办</button>}
       {error && <p className="bad-text" role="alert">{error}</p>}
       <div className="operation-list">{(batchId ? batchItems : jobs).map((job) => <article key={job.id}><div><strong>{job.account_name} <span>#{job.account_id}</span></strong><span>{labels[job.action] || job.action} · {states[job.status] || job.status}</span></div>{job.reason && <p className={job.status === 'needs_confirmation' || job.status === 'failed' ? 'bad-text' : 'muted'}>{job.reason}</p>}
+        {job.scheduled_at && <time>{fullTime(job.scheduled_at)}</time>}
         {!batchId && job.batch_id && <button onClick={() => { setBatchItems([]); setBatchId(job.batch_id!); }}>查看整批</button>}
         {job.status === 'needs_confirmation' && <><dl><div><dt>请求</dt><dd>{describe(job.requested)}</dd></div>{job.current && <div><dt>当前</dt><dd>{describe(job.current)}</dd></div>}</dl><button disabled={!online} onClick={() => void retry(job)}>{job.action === "priority" ? "进入优先级页核对" : job.action === "account_template" ? "重新预览模板" : "确认后重新提交"}</button></>}
-        {!(job.action === 'test' && job.batch_id && job.started_at) && (['queued', 'needs_confirmation'].includes(job.status) || job.status === 'running' && ['test', 'model_test'].includes(job.action)) ? <button disabled={!online} onClick={() => void cancel(job)}>取消</button> : null}
+        {!(job.action === 'test' && (job.batch_id || job.scheduled_at) && job.started_at) && (['queued', 'needs_confirmation'].includes(job.status) || job.status === 'running' && ['test', 'model_test'].includes(job.action)) ? <button disabled={!online} onClick={() => void cancel(job)}>取消</button> : null}
       </article>)}</div></section></div>}
   </>;
 }
