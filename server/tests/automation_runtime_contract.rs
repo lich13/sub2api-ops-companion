@@ -1119,6 +1119,7 @@ async fn prepare_detection_job(harness: &Harness) -> (Value, String, i64) {
             &json!({
                 "enabled": true,
                 "interval_minutes": 1,
+                "schedule_mode": "fixed",
                 "model_id": "gpt-6-luna",
                 "expected_version": model_detection::version(&control)
             }),
