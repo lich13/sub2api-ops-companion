@@ -250,10 +250,13 @@ fn quota_windows_and_read_only_usage_projections_match_python() {
         usage_fixture["oauth_expected_projection"],
         "OAuth usage cells and expiring reset-credit projection",
     );
+    let mut apikey_expected = usage_fixture["apikey_expected_projection"].clone();
+    apikey_expected["native_read"] = true.into();
+    apikey_expected["actions"] = serde_json::json!(["query_usage"]);
     assert_eq!(
         usage::project(&usage_fixture["apikey_row"], at, &Value::Null),
-        usage_fixture["apikey_expected_projection"],
-        "configured API-key windows, absent-used default, and UTC+8 day boundary",
+        apikey_expected,
+        "configured API-key windows and UTC+8 boundary retain parity with the added balance query capability",
     );
 }
 

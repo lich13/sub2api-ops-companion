@@ -1035,8 +1035,9 @@ async function templateChecks(h) {
   await nameInput.fill(longName);
   const saveRenamed = full.getByRole("button", { name: `保存${longName}模板`, exact: true });
   await h.click(saveRenamed, "template-save-icon");
-  const deleteRenamed = full.locator('button[title="删除模板"]');
-  await page.waitForFunction((button) => !button.disabled, await deleteRenamed.elementHandle());
+  await dialog.waitFor({ state: "hidden" });
+  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-save");
+  await h.visible(nameInput, "saved-template-name");
   await h.state(await saveRenamed.isDisabled(), "template-save-did-not-settle", saveRenamed);
   await h.state((await nameInput.inputValue()) === longName, "template-long-name-lost", nameInput);
   await h.layout();
@@ -1062,8 +1063,10 @@ async function templateChecks(h) {
   const customName = "响应式空模板批量预览";
   await creating.getByRole("textbox", { name: "新模板名称" }).fill(customName);
   await h.click(creating.getByRole("button", { name: "保存新模板", exact: true }), "new-template-save-icon");
-  await creating.waitFor({ state: "detached" });
+  await dialog.waitFor({ state: "hidden" });
+  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-create");
   const created = dialog.locator(".account-template-grid > .account-template-card").last();
+  await h.visible(created, "created-template-card");
   await h.state((await created.locator(".account-template-name").inputValue()) === customName, "new-template-not-saved", created);
   await h.state((await created.locator(".account-template-fields > .muted").textContent()) === "不限制模型", "saved-empty-template-label", created);
   await h.layout();
@@ -1145,7 +1148,6 @@ async function templateChecks(h) {
   await h.within(apply, "batch-template-apply", { hit: true });
   await page.waitForFunction((button) => !button.disabled, await apply.elementHandle());
   await h.state(await apply.isEnabled(), "batch-template-apply-disabled", apply);
-  await h.click(apply, "batch-template-preview-submit");
   const previews = batchDialog.locator(".account-template-preview");
   await h.visible(previews.first(), "batch-template-first-preview");
   await h.state(await previews.count() === 2, "batch-template-preview-count", previews);
@@ -1159,7 +1161,7 @@ async function templateChecks(h) {
   await h.state(longNameStyle.overflowWrap === "anywhere" && longNameStyle.width > 0, "batch-preview-long-name-not-wrappable", longPreview.locator("strong"));
   await h.allWithin(previews, "batch-template-preview-card", { touch: false, vertical: false });
   await h.layout();
-  await h.click(batchDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "batch-template-close");
+  await h.click(apply, "batch-template-preview-submit");
   await batchDialog.waitFor({ state: "hidden" });
 
   await h.click(deleteSelectedAction, "batch-delete-entry");
@@ -1185,7 +1187,9 @@ async function templateChecks(h) {
   await h.within(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon", { hit: true });
   await h.click(deleteCard.locator('.account-template-tools button[title="删除模板"]'), "template-delete-icon");
   await h.click(deleteCard.getByRole("button", { name: "确认删除", exact: true }), "template-delete-confirm");
-  await deleteCard.waitFor({ state: "detached" });
+  await deleteDialog.waitFor({ state: "hidden" });
+  await h.click(surface.getByRole("button", { name: "账号模板", exact: true }), "template-reopen-after-delete");
+  await h.visible(deleteDialog.locator(".account-template-grid > .account-template-card").first(), "remaining-template-card");
   await h.state(await deleteDialog.locator(".account-template-grid > .account-template-card").count() === 3, "deleted-template-remained-or-was-refilled", deleteDialog.locator(".account-template-grid"));
   await h.layout();
   await h.click(deleteDialog.getByRole("button", { name: "关闭账号模板", exact: true }), "delete-template-close");
@@ -1213,7 +1217,7 @@ async function connectionBatchChecks(h, fixture) {
   const surface = page.locator('.page-surface[data-page="accounts"]');
   const selection = surface.locator(".selection-bar");
   const results = surface.getByRole("region", { name: "批量测试连接", exact: true });
-  const accountRows = surface.locator(h.scenario.mobile ? ".mobile-account" : ".accounts-table tbody tr");
+  const accountRows = surface.locator(h.scenario.mobile ? ".mobile-account" : ".accounts-table > tbody > tr");
   const selectedAccounts = [101, 102, 201].map((id) => fixture.accounts.find((account) => account.id === id));
   await h.state(selectedAccounts.every(Boolean), "missing-batch-connection-fixture", surface);
   await h.state(await selection.count() === 0, "batch-connection-selection-bar-rendered-with-no-selection", surface);
@@ -1363,7 +1367,7 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
       await h.state(await card.count() === 1, "batch-proxy-mobile-account-not-unique", card);
       await h.click(card.locator("label.account-check"), `batch-proxy-select-${index}`);
     } else {
-      const row = surface.locator(".accounts-table tbody tr").filter({ has: checkbox });
+      const row = surface.locator(".accounts-table > tbody > tr").filter({ has: checkbox });
       await h.state(await row.count() === 1, "batch-proxy-desktop-account-not-unique", row);
       await h.click(checkbox, `batch-proxy-select-${index}`, { touch: false, vertical: false });
     }
@@ -1471,7 +1475,7 @@ async function proxyBatchChecks(h, fixture, { navigate = false } = {}) {
 async function desktopActionChecks(h, table, fixture) {
   const { page } = h;
   for (const account of fixture.accounts) {
-    const row = table.locator("tbody tr").filter({
+    const row = table.locator(":scope > tbody > tr").filter({
       has: page.getByRole("checkbox", { name: `选择 ${account.name}`, exact: true }),
     });
     await h.state(await row.count() === 1, "desktop-account-row-not-unique", row);
