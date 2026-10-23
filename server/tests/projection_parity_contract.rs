@@ -1179,6 +1179,19 @@ async fn capacity_slow_ttft_poll_persists_one_clue_without_bark() {
     assert_eq!(repeated["pending"], json!({}));
     assert_eq!(repeated["slow_pending"], json!({}));
 
+    // The suite shares a database. An OAuth account without reset timestamps
+    // has rolling stats windows, so leaving it here can invalidate another
+    // test's shared-stats cache when its two snapshots cross a minute boundary.
+    sqlx::query("DELETE FROM usage_logs WHERE account_id=$1")
+        .bind(ACCOUNT_ID)
+        .execute(&db.pool)
+        .await
+        .expect("remove this test's synthetic slow samples");
+    sqlx::query("DELETE FROM accounts WHERE id=$1")
+        .bind(ACCOUNT_ID)
+        .execute(&db.pool)
+        .await
+        .expect("remove this test's synthetic OAuth account");
     db.close().await;
 }
 
