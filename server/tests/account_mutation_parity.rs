@@ -372,6 +372,39 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             }]}),
         );
     }
+    if path.starts_with("/api/v1/admin/proxies")
+        && !path.ends_with("/test")
+        && !path.ends_with("/quality-check")
+    {
+        let proxy = json!({"id":PROXY_ID,"name":"fixture proxy","protocol":"socks5","host":"::1","port":1080,"status":"active","username":"fixture-user","password":"fixture-password","expires_at":null,"quality_checked":123});
+        let data = match (
+            method.as_str(),
+            path.strip_prefix("/api/v1/admin/proxies").unwrap(),
+        ) {
+            ("GET", "") => json!({"items":[proxy],"page":2,"page_size":20,"total":21,"pages":2}),
+            ("GET", "/data") => {
+                json!({"exported_at":"2031-04-05T10:00:00Z","proxies":[{"proxy_key":"socks5|::1|1080|fixture-user|fixture-password","name":"fixture proxy","protocol":"socks5","host":"::1","port":1080,"username":"fixture-user","password":"fixture-password","status":"active"}],"accounts":[]})
+            }
+            ("POST", "/data") => {
+                json!({"proxy_created":1,"proxy_reused":0,"proxy_failed":1,"errors":[{"kind":"proxy","name":"fixture invalid","proxy_key":"fixture-password","message":"failed fixture-password"}]})
+            }
+            ("POST", "/batch-delete") => {
+                json!({"deleted_ids":[PROXY_ID],"skipped":[{"id":PROXY_ID+1,"reason":"proxy has bound accounts"}]})
+            }
+            ("POST", "/batch") => json!({"created":1,"skipped":0}),
+            ("GET", suffix) if suffix.ends_with("/accounts") => {
+                json!([{"id":1,"name":"fixture account","platform":"openai","type":"oauth","notes":"fixture-private"}])
+            }
+            ("DELETE", _) => {
+                return response(
+                    StatusCode::BAD_REQUEST,
+                    json!({"code":400,"message":"fixture-password association"}),
+                )
+            }
+            _ => proxy,
+        };
+        return response(StatusCode::OK, json!({"code":0,"data":data}));
+    }
     if method == Method::GET && path.ends_with("/models") {
         return response(
             StatusCode::OK,
@@ -6953,4 +6986,95 @@ fn shared_schedulable_response_requires_matching_code_id_and_boolean() {
             accepted
         );
     }
+}
+
+#[tokio::test]
+async fn proxy_management_masks_regular_reads_and_forwards_explicit_operations_once() {
+    let mut h = Harness::new().await;
+    let (status,list,text)=h.request(Method::GET,"proxy-management?page=2&page_size=20&search=fixture%20proxy&protocol=socks5&status=active&sort_by=account_count&sort_order=asc",None).await;
+    assert_eq!(status, 200);
+    assert_eq!(list["page"], 2);
+    assert_eq!(list["items"][0]["username_set"], true);
+    assert!(!text.contains("fixture-password"));
+    assert!(!text.contains("fixture-user"));
+    let get = h.upstream.matching(Method::GET, "/api/v1/admin/proxies");
+    assert_eq!(get.len(), 1);
+    assert!(get[0].uri.contains("search=fixture+proxy"));
+    let path = format!("proxy-management/{PROXY_ID}");
+    for body in [
+        json!({"name":"renamed"}),
+        json!({"username":"","password":"","expires_at":null}),
+    ] {
+        assert_eq!(
+            h.request(Method::PUT, &path, Some(body.clone())).await.0,
+            200
+        );
+        assert_eq!(
+            h.upstream
+                .matching(Method::PUT, &format!("/api/v1/admin/proxies/{PROXY_ID}"))
+                .last()
+                .unwrap()
+                .body,
+            body
+        );
+    }
+    let (status, credentials, _) = h
+        .request(Method::GET, &format!("{path}/credentials"), None)
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(credentials["password"], "fixture-password");
+    let (_, accounts, text) = h
+        .request(Method::GET, &format!("{path}/accounts"), None)
+        .await;
+    assert_eq!(accounts[0]["id"], 1);
+    assert!(!text.contains("fixture-private"));
+    let (status, _, text) = h.request(Method::DELETE, &path, None).await;
+    assert_eq!(status, 409);
+    assert!(!text.contains("fixture-password"));
+    assert_eq!(
+        h.upstream
+            .matching(Method::DELETE, &format!("/api/v1/admin/proxies/{PROXY_ID}"))
+            .len(),
+        1
+    );
+    let (_, result, _) = h
+        .request(
+            Method::POST,
+            "proxy-management/batch-delete",
+            Some(json!({"ids":[PROXY_ID,PROXY_ID+1]})),
+        )
+        .await;
+    assert_eq!(result["deleted_ids"], json!([PROXY_ID]));
+    assert_eq!(result["skipped"][0]["reason"], "代理仍有关联账号");
+    let (status, data, _) = h
+        .request(Method::GET, "proxy-management/data?ids=1", None)
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(data["proxies"][0]["password"], "fixture-password");
+    let (status, result, text) = h
+        .request(
+            Method::POST,
+            "proxy-management/data",
+            Some(json!({"data":data})),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(result["proxy_failed"], 1);
+    assert!(!text.contains("fixture-password"));
+    for body in [
+        json!({"name":"fixture","protocol":"ftp","host":"::1","port":1080}),
+        json!({"name":"fixture","protocol":"socks5","host":"::1","port":0}),
+    ] {
+        assert_eq!(
+            h.request(Method::POST, "proxy-management", Some(body))
+                .await
+                .0,
+            422
+        );
+    }
+    assert!(h
+        .upstream
+        .matching(Method::POST, "/api/v1/admin/proxies")
+        .is_empty());
+    h.finish().await;
 }

@@ -1350,7 +1350,7 @@
           "assert_eq!(completed[\"report\"][\"prediction\"], \"gpt-5.6-luna\");",
           "assert_eq!(completed[\"report\"][\"used_outputs\"], 3);",
           "harness.mock.count(\"POST\", \"/v1/responses\"), 6",
-          "assert_eq!(completed[\"automatic_disposition\"], Value::Null);"
+          "assert_eq!(completed[\"automatic_disposition\"][\"basis\"], \"aggregate\");"
         ],
         "fixtures": [
           {
@@ -1361,7 +1361,7 @@
           }
         ]
       },
-      "coverage_note": "确定三次 HTTP 502 后，首组失败而两组输出成功形成可重试的 completed job，aggregate 为未提前结束的两样本 gpt-5.4；300秒后只重试首组，复用另两组缓存，最终 first-group claude-sonnet-4-6 与三样本 gpt-5.6-luna aggregate 分开保留且原始 cooldown 不延长。",
+      "coverage_note": "确定三次 HTTP 502 后，首组失败而两组输出成功形成可重试的 completed job，aggregate 为未提前结束的两样本 gpt-5.4；300秒后只重试首组，复用另两组缓存，最终 first-group claude-sonnet-4-6 与三样本 gpt-5.6-luna aggregate 分开保留且原始 cooldown 不延长。0.1.56 汇总命中降智时保留 still_degraded 回执及 aggregate 依据。",
       "supporting_targets": [
         {
           "kind": "rust_test",

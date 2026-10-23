@@ -128,6 +128,10 @@ pub fn discover(
             continue;
         }
         let old = &meta["recovery_intent"];
+        if recovery_rules::obsolete_rate_intent(row, &summary, old, at) {
+            changes.push((id, recovery_rules::cancel_obsolete_rate_intent(old)));
+            continue;
+        }
         if truthy(&old["verification_dispatched"])
             && !matches!(string(&old["status"]), "cancelled" | "recovered")
         {
@@ -313,6 +317,14 @@ pub fn quota_update(
     };
     let depleted = truthy(&quota_descriptor);
     let transition = recovery_transition(&item["previous_summary"], &summary, at);
+    if !truthy(descriptor)
+        && !truthy(&transition)
+        && recovery_rules::obsolete_rate_intent(row, &summary, &intent, at)
+    {
+        metadata["recovery_intent"] = recovery_rules::cancel_obsolete_rate_intent(&intent);
+        update.scheduler.insert(id, metadata);
+        return (update, None, false);
+    }
     if truthy(descriptor) {
         if descriptor["fingerprint"] != intent["fingerprint"] {
             intent = new_intent(descriptor, "pending", None);

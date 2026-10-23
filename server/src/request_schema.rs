@@ -9,12 +9,13 @@ use crate::{
 use serde_json::{json, Value};
 
 pub fn has_body(path: &[&str], method: &str) -> bool {
-    if method == "GET" {
+    if method == "GET" || method == "DELETE" && path.first() == Some(&"proxy-management") {
         return false;
     }
     matches!(
         path,
-        ["accounts", _]
+        ["proxy-management", ..]
+            | ["accounts", _]
             | [
                 "accounts",
                 _,
@@ -179,6 +180,9 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
 }
 
 pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
+    if path.first() == Some(&"proxy-management") {
+        return crate::proxy_management::validate_body(path, method, value);
+    }
     match path {
         ["account-operations", "batch"] => batch(value, false)?,
         ["account-templates", "apply"] => batch(value, true)?,

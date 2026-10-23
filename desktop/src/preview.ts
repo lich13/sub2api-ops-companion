@@ -526,6 +526,7 @@ export async function run(
       if (args.path.endsWith("/test")) return { success: true, message: "连接成功", latency_ms: 85, ip_address: "192.0.2.1", city: "", region: "", country: "示例地区", country_code: "" };
       return { score: 90, grade: "A", summary: "原生质量检测通过", exit_ip: "192.0.2.1", country: "示例地区", country_code: "", base_latency_ms: 85, passed_count: 1, warn_count: 0, failed_count: 0, challenge_count: 0, checked_at: Math.floor(Date.now() / 1000), items: [{ target: "OpenAI", status: "pass", http_status: 200, latency_ms: 90, message: "通过" }] };
     }
+    if (String(args.path).startsWith("/proxy-management")) return (await import("./proxyPreview")).proxyPreview(String(args.method),String(args.path),(args.body || {}) as Record<string,unknown>);
     if (args.path === "/proxies") return structuredClone((await import('./settingsPreview')).previewProxies);
     if (/^\/accounts\/\d+\/settings$/.test(String(args.path))) {
       const account = state.snapshot?.accounts.find(a => a.id === Number(String(args.path).split('/')[2]));

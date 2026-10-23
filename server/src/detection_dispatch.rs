@@ -154,6 +154,7 @@ impl Detection {
                             "generation": disposition["generation"],
                             "model_id": disposition["model_id"],
                             "prediction": disposition["prediction"],
+                            "basis": disposition.get("basis").cloned().unwrap_or(json!("first_group")),
                             "probability": disposition["probability"],
                             "triggers": disposition.get("triggers").unwrap_or(&json!([])),
                             "created_at": at,
@@ -332,7 +333,7 @@ pub fn notification_message(event: &Value) -> (&'static str, String) {
         .unwrap_or_else(|| "未知".into());
     let recovered = event["kind"] == "recovered";
     let mut body = format!(
-        "账号：{} #{}（{}）\n触发：{}\n请求模型：{}\n首组指纹推测：{}\n",
+        "账号：{} #{}（{}）\n触发：{}\n请求模型：{}\n{}指纹推测：{}\n",
         string(&event["account_name"]),
         integer(&event["account_id"]).unwrap_or(0),
         if event["account_type"] == "apikey" {
@@ -346,10 +347,19 @@ pub fn notification_message(event: &Value) -> (&'static str, String) {
             &labels
         },
         string(&event["model_id"]),
-        event["first_group_prediction"]
-            .as_str()
-            .filter(|v| !v.is_empty())
-            .unwrap_or(string(&event["prediction"]))
+        if event["basis"] == "aggregate" {
+            "最终汇总"
+        } else {
+            "首组"
+        },
+        event[if event["basis"] == "aggregate" {
+            "prediction"
+        } else {
+            "first_group_prediction"
+        }]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .unwrap_or(string(&event["prediction"]))
     );
     if recovered {
         body.push_str(&format!(

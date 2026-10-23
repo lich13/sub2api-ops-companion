@@ -150,7 +150,7 @@ impl ModelTests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .len();
-        let disposition = run
+        let mut disposition = run
             .disposition
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -165,6 +165,25 @@ impl ModelTests {
         } else {
             "completed"
         };
+        if status == "completed"
+            && current["automatic"] == true
+            && crate::model_tests::ACTIVE.contains(&string(&current["status"]))
+            && !truthy(&disposition)
+            && !truthy(&current["automatic_disposition"])
+            && valid_report(&current["report"])
+            && is_downgrade(
+                string(&current["requested_model"]),
+                string(&current["report"]["prediction"]),
+            )
+        {
+            let mut verdict_job = current.clone();
+            verdict_job["disposition_basis"] = "aggregate".into();
+            disposition = self.hooks.verdict(verdict_job, current["report"].clone()).await
+                .unwrap_or_else(|error| json!({"status":"overridden","reason":crate::security::safe_error(&error.detail,200)}));
+            if disposition.is_object() {
+                disposition["basis"] = "aggregate".into();
+            }
+        }
         let error = if let Some(fatal) = &fatal {
             error_text(fatal.code)
         } else if truthy(&current["report"]) {
@@ -507,6 +526,7 @@ impl ModelTests {
                             .unwrap_or_else(|error| {
                                 json!({
                                     "status": "overridden",
+                                    "basis": "first_group",
                                     "reason": crate::security::safe_error(&error.detail, 200),
                                 })
                             });

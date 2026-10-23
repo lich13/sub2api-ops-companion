@@ -3802,7 +3802,11 @@ async fn failed_first_group_retry_scores_first_sample_separately_from_aggregate(
     assert_eq!(completed["report"]["prediction"], "gpt-5.6-luna");
     assert_eq!(completed["report"]["used_outputs"], 3);
     assert!(completed["report"]["probability"].as_f64().unwrap() < 0.99);
-    assert_eq!(completed["automatic_disposition"], Value::Null);
+    assert_eq!(
+        completed["automatic_disposition"]["status"],
+        "still_degraded"
+    );
+    assert_eq!(completed["automatic_disposition"]["basis"], "aggregate");
     assert_eq!(completed["groups"][0]["status"], "completed");
     assert_eq!(completed["groups"][0]["attempts"], 1);
     assert_eq!(completed["groups"][1]["status"], "completed");
@@ -7538,4 +7542,134 @@ async fn smart_dispatch_rechecks_activity_but_allows_started_work_to_complete() 
         0
     );
     h.close().await;
+}
+
+#[tokio::test]
+async fn final_aggregate_disposes_when_first_group_has_no_valid_verdict() {
+    let h = Harness::new(sample_text("automatic_first_group", 0)).await;
+    h.mock.set_model_outputs([
+        "fixture without a fingerprint sample".to_owned(),
+        sample_text("automatic_first_group", 0),
+        sample_text("automatic_first_group", 0),
+    ]);
+    let row = h.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    h.enable_detection(id, 1).await;
+    h.runtime()
+        .detection
+        .update(
+            id,
+            json!({"next_at":datetime(h.now()-Duration::seconds(1))}),
+        )
+        .unwrap();
+    h.runtime().detection.tick().await.unwrap();
+    let job_id = h.runtime().detection.control(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let job = h.wait_job_terminal(&job_id).await;
+    assert_eq!(job["status"], "completed");
+    assert_ne!(job["first_group_valid"], true);
+    assert_eq!(job["report"]["prediction"], "gpt-5.6-luna");
+    assert_eq!(job["automatic_disposition"]["basis"], "aggregate");
+    assert_eq!(job["automatic_disposition"]["marked"], true);
+    assert_eq!(job["automatic_disposition"]["schedule_verified"], true);
+    for _ in 0..2 {
+        h.runtime().detection.tick().await.unwrap();
+    }
+    assert_eq!(
+        h.mock
+            .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+        1
+    );
+    let summary = sub2ops_server::detection_logs::summary(&job);
+    assert_ne!(summary["first_downgrade"], true);
+    assert_eq!(summary["aggregate_downgrade"], true);
+    assert_eq!(summary["disposition"]["basis"], "aggregate");
+    let (_, message) = sub2ops_server::detection_dispatch::notification_message(
+        &json!({"basis":"aggregate","prediction":"gpt-5.6-luna","first_group_prediction":"fixture-first","marked":true,"schedule_verified":true}),
+    );
+    assert!(message.contains("最终汇总指纹推测：gpt-5.6-luna"));
+    assert!(!message.contains("fixture-first"));
+    h.close().await;
+}
+
+#[tokio::test]
+async fn normal_first_group_still_allows_aggregate_degradation_disposition() {
+    let h = Harness::new(sample_text("automatic_first_group", 0)).await;
+    h.mock.set_model_outputs([
+        sample_text("above_99", 2),
+        sample_text("automatic_first_group", 0),
+        sample_text("automatic_first_group", 0),
+    ]);
+    let row = h.seed_account("apikey", true, json!({})).await;
+    let id = integer(&row["id"]).unwrap();
+    h.enable_detection(id, 1).await;
+    let job = h
+        .runtime()
+        .detection
+        .trigger(id, &["error:fixture-aggregate".into()])
+        .await
+        .unwrap();
+    let job = h.wait_job_terminal(job["id"].as_str().unwrap()).await;
+    assert_eq!(job["first_group_valid"], true);
+    assert!(!sub2ops_server::model_downgrade::is_downgrade(
+        "gpt-6-luna",
+        job["first_group_prediction"].as_str().unwrap()
+    ));
+    assert_eq!(job["automatic_disposition"]["basis"], "aggregate");
+    assert_eq!(job["automatic_disposition"]["schedule_verified"], true);
+    h.close().await;
+}
+#[tokio::test]
+async fn aggregate_disposition_respects_human_override_and_invalid_analysis() {
+    for human in [true, false] {
+        let h = Harness::new(if human {
+            sample_text("automatic_first_group", 0)
+        } else {
+            "fixture invalid".into()
+        })
+        .await;
+        h.mock.set_model_outputs(["fixture invalid".into()]);
+        let row = h.seed_account("apikey", true, json!({})).await;
+        let id = integer(&row["id"]).unwrap();
+        h.enable_detection(id, 1).await;
+        let gate = Gate::new();
+        if human {
+            h.mock.set_model_gate(Some(gate.clone()));
+        }
+        let job = h
+            .runtime()
+            .detection
+            .trigger(id, &["error:fixture-override".into()])
+            .await
+            .unwrap();
+        if human {
+            tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
+                .await
+                .unwrap();
+            gate.release.notify_one();
+            tokio::time::timeout(StdDuration::from_secs(8), gate.entered.notified())
+                .await
+                .unwrap();
+            let control = h.runtime().detection.control(id).unwrap();
+            h.runtime()
+                .detection
+                .update(
+                    id,
+                    json!({"generation":integer(&control["generation"]).unwrap()+1}),
+                )
+                .unwrap();
+            gate.release.notify_waiters();
+            h.mock.set_model_gate(None);
+        }
+        let job = h.wait_job_terminal(job["id"].as_str().unwrap()).await;
+        assert_ne!(job["automatic_disposition"]["marked"], true);
+        assert_eq!(
+            h.mock
+                .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
+            0
+        );
+        h.close().await;
+    }
 }

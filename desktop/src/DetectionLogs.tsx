@@ -11,7 +11,8 @@ const statuses: Record<string, string> = { completed: "已完成", failed: "失�
 const outcomes: Record<string, string> = { normal: "未确认降智", degraded: "首组判定降智", aggregate_degraded: "汇总符合降智特征", unavailable: "历史详情不可用", failed: "失败", cancelled: "已取消", interrupted: "已中断", needs_confirmation: "待确认" };
 const triggers: Record<string, string> = { scheduled: "定时检测", recheck: "降智复查", error: "错误触发", slow: "慢首字", recovery: "额度恢复验证", credit: "用卡恢复验证" };
 const notices: Record<string, string> = { pending: "待推送", queued: "待推送", retry: "待重试", delivered: "已推送", suppressed: "已取消", failed: "投递失败" };
-const result = (row: DetectionLog) => outcomes[row.summary.outcome] || "待核对";
+const basis = (summary: DetectionLog["summary"]) => summary.disposition?.basis ?? summary.recovery?.basis;
+const result = (row: DetectionLog) => basis(row.summary) === "aggregate" ? "最终汇总判定降智" : outcomes[row.summary.outcome] || "待核对";
 const executionTone: Record<string, string> = { completed: "neutral", failed: "bad", cancelled: "neutral", interrupted: "interrupted", needs_confirmation: "warning" };
 const outcomeTone: Record<string, string> = { normal: "good", degraded: "bad", aggregate_degraded: "bad", unavailable: "warning", ...executionTone };
 const noticeTone: Record<string, string> = { pending: "warning", queued: "warning", retry: "warning", delivered: "neutral", suppressed: "neutral", failed: "bad" };
@@ -34,6 +35,7 @@ function Facts({ row }: { row: DetectionLog }) {
   return <dl className="detection-meta">
     <dt>请求模型</dt><dd>{row.model_id}</dd><dt>触发</dt><dd>{row.triggers.map(t => triggers[t] || "自动检测").join("、") || "自动检测"}</dd>
     <dt>执行状态</dt><dd>{statuses[row.status] || "待核对"}</dd><dt>检测结论</dt><dd>{result(row)}</dd>
+    {basis(summary) && <><dt>处置依据</dt><dd>{basis(summary) === "aggregate" ? "最终汇总" : "首组指纹"}</dd></>}
     <dt>首组预测</dt><dd>{summary.first_prediction || "暂无记录"}</dd><dt>汇总预测</dt><dd>{summary.prediction || "暂无记录"}</dd>
     <dt>汇总匹配度</dt><dd>{summary.probability === null ? "暂无记录" : `${(summary.probability * 100).toFixed(1)}%`}</dd>
     {typeof summary.first_probability === "number" && <><dt>首组匹配度</dt><dd>{(summary.first_probability * 100).toFixed(1)}%</dd></>}

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 
-pub const ACCOUNT_SELECT: &str = "SELECT id,name,platform,type,credentials,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,extra,status,schedulable,priority AS account_priority,concurrency,load_factor,proxy_id,temp_unschedulable_until,temp_unschedulable_reason,rate_limited_at,rate_limit_reset_at,overload_until,error_message,expires_at,auto_pause_on_expired,updated_at FROM accounts WHERE deleted_at IS NULL";
+pub const ACCOUNT_SELECT: &str = "SELECT id,name,platform,type,credentials,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,extra,status,schedulable,priority AS account_priority,concurrency,load_factor,proxy_id,temp_unschedulable_until,temp_unschedulable_reason,rate_limited_at,rate_limit_reset_at,overload_until,error_message,expires_at,auto_pause_on_expired,updated_at,(SELECT created_at FROM usage_logs WHERE account_id=accounts.id ORDER BY created_at DESC,id DESC LIMIT 1) AS last_success_at FROM accounts WHERE deleted_at IS NULL";
 pub async fn account(db: &Database, id: i64) -> Result<Value> {
     db.one(&format!("{ACCOUNT_SELECT} AND id=$1"), &[id.into()])
         .await?

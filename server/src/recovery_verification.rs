@@ -220,6 +220,17 @@ impl Monitor {
             );
         }
         let saved = quota::latest_result(&row, usage, self.now());
+        let summary = quota::summary_from_result(&row, &saved);
+        if recovery_rules::obsolete_rate_intent(&row, &summary, &intent, self.now()) {
+            self.save_intent(
+                id,
+                &intent,
+                &recovery_rules::cancel_obsolete_rate_intent(&intent),
+                generation,
+                method_generation,
+            )?;
+            return Ok(json!({"success":false,"skipped":true,"error_code":"already_serving"}));
+        }
         if !recovery_rules::quota_ready(&row, &saved, meta, self.now()) {
             self.waiting(id, "reset_boundary", None, generation)?;
             return Ok(json!({"success":false,"deferred":true,"error_code":"quota_not_released"}));

@@ -145,14 +145,18 @@ impl Detection {
             value = self.control(id)?;
             let report = &job["report"];
             let valid = job["status"] == "completed" && valid_report(report);
-            // Confirmation follows the same first-group evidence as the
-            // automatic disposition; the aggregate remains the result view.
+            // Historical aggregate summaries alone must never initiate disposition.
             let confirmed = valid
-                && job["first_group_valid"] == true
-                && is_downgrade(
-                    string(&job["requested_model"]),
-                    string(&job["first_group_prediction"]),
-                );
+                && (job["first_group_valid"] == true
+                    && is_downgrade(
+                        string(&job["requested_model"]),
+                        string(&job["first_group_prediction"]),
+                    )
+                    || job["automatic_disposition"]["basis"] == "aggregate"
+                        && is_downgrade(
+                            string(&job["requested_model"]),
+                            string(&report["prediction"]),
+                        ));
             let triggers = job["triggers"]
                 .as_array()
                 .into_iter()
@@ -169,7 +173,11 @@ impl Detection {
                     "failed"
                 },
                 if confirmed {
-                    "首组指纹确认降智"
+                    if job["automatic_disposition"]["basis"] == "aggregate" {
+                        "最终汇总确认降智"
+                    } else {
+                        "首组指纹确认降智"
+                    }
                 } else if valid {
                     "未确认降智"
                 } else {

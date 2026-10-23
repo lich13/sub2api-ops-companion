@@ -601,3 +601,48 @@ fn ordinary_temporary_restrictions_expire_only_at_a_valid_deadline() {
     expired["status"] = "error".into();
     assert!(!recovery_rules::eligible(&expired, &[], now));
 }
+
+#[test]
+fn rate_only_recovery_requires_fresh_evidence_and_preserves_real_blocks() {
+    let now = date(&json!("2031-04-05T10:00:00Z"));
+    let row = json!({"rate_limited_at":"2031-04-05T08:00:00Z", "rate_limit_reset_at":"2031-04-05T09:00:00Z", "last_success_at":"2031-04-05T09:30:00Z"});
+    let summary = json!({"plan_type":"plus", "ui_windows":[{"key":"codex_5h","used_percent":20},{"key":"codex_7d","used_percent":30}]});
+    assert!(recovery_rules::stale_rate_block(&row, &summary, now));
+    assert!(recovery_rules::rate_descriptor(&row, &summary, now).is_null());
+    let intent = json!({"kind":"rate_limit_block","status":"pending"});
+    assert!(recovery_rules::obsolete_rate_intent(
+        &row, &summary, &intent, now
+    ));
+    for patch in [
+        json!({"last_success_at":null}),
+        json!({"last_success_at":"2031-04-05T08:59:00Z"}),
+        json!({"last_success_at":"2031-04-05T11:00:00Z"}),
+        json!({"rate_limited_at":"2031-04-05T09:45:00Z"}),
+        json!({"rate_limit_reset_at":"2031-04-05T11:00:00Z"}),
+    ] {
+        let mut changed = row.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::stale_rate_block(&changed, &summary, now));
+    }
+    let mut depleted = summary.clone();
+    depleted["ui_windows"][1]["used_percent"] = 100.into();
+    assert!(!recovery_rules::stale_rate_block(&row, &depleted, now));
+    for patch in [
+        json!({"kind":"quota"}),
+        json!({"verification_dispatched":true}),
+        json!({"verification_receipt":{"success":true}}),
+        json!({"recovery_write_dispatched":true}),
+    ] {
+        let mut changed = intent.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::obsolete_rate_intent(
+            &row, &summary, &changed, now
+        ));
+    }
+}

@@ -166,6 +166,11 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         | "proxies"
         | "config"
         | "model-groups"] => Some(&["GET"]),
+        ["proxy-management"] => Some(&["GET", "POST"]),
+        ["proxy-management", "data"] => Some(&["GET", "POST"]),
+        ["proxy-management", "batch" | "batch-delete"] => Some(&["POST"]),
+        ["proxy-management", _, "credentials" | "accounts"] => Some(&["GET"]),
+        ["proxy-management", _] => Some(&["GET", "PUT", "DELETE"]),
         ["account-priorities"] => Some(&["GET", "PUT"]),
         ["account-operations"] => Some(&["GET"]),
         ["account-priority-orders"] => Some(&["POST"]),
@@ -316,7 +321,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     let result: Value = match path.as_slice() {
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
         ["accounts", id, "usage"] => {
@@ -498,6 +503,17 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             runtime.set_degradation(path_id(id)?, &payload).await?
         }
         ["accounts", id, "settings"] => runtime.actions.settings_view(path_id(id)?).await?,
+        ["proxy-management", ..] => {
+            crate::proxy_management::handle(
+                &runtime.actions,
+                &key,
+                &path,
+                method.clone(),
+                &query,
+                &payload,
+            )
+            .await?
+        }
         ["proxies"] => json!(runtime.actions.proxies(&key).await?),
         ["proxies", id, action] => runtime.proxies.run(&key, path_id(id)?, action).await?,
         ["accounts", id, "models"] => {

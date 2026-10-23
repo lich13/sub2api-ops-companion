@@ -62,6 +62,9 @@ pub(crate) fn valid_summary(value: &Value) -> bool {
                         && ["status", "reason"]
                             .iter()
                             .all(|field| v.get(*field).is_none_or(|f| f.is_string()))
+                        && v.get("basis").is_none_or(|f| {
+                            f.is_null() || matches!(f.as_str(), Some("first_group" | "aggregate"))
+                        })
                         && ["marked", "schedule_verified", "mark_cleared"]
                             .iter()
                             .all(|field| {
@@ -89,6 +92,7 @@ pub fn receipt(value: &Value) -> Value {
         return Value::Null;
     }
     json!({"status":text(&value["status"],40),"marked":value["marked"].as_bool(),
+        "basis":value.get("basis").filter(|v|matches!(v.as_str(),Some("first_group"|"aggregate"))),
         "schedule_verified":value["schedule_verified"].as_bool(),"mark_cleared":value["mark_cleared"].as_bool(),
         "reason":text(&value["reason"],200),"completed_at":time(&value["completed_at"])})
 }
@@ -128,7 +132,8 @@ pub fn summary(job: &Value) -> Value {
             out["first_probability"] = probability(&job["first_group_probability"]);
         }
         if !out["first_downgrade"].is_boolean() {
-            out["first_downgrade"] = (job["completion_reason"] == "automatic_degradation"
+            out["first_downgrade"] = ((job["completion_reason"] == "automatic_degradation"
+                && job["automatic_disposition"]["basis"] != "aggregate")
                 || is_downgrade(
                     string(&job["requested_model"]),
                     string(&job["first_group_prediction"]),
@@ -368,7 +373,7 @@ impl Detection {
             }
             // These notifications are created only after both writes are confirmed.
             if recovered.is_object() && recovered["kind"]!="recovered" && recovered["job_id"]==job["id"] && !view["disposition"].is_object() {
-                view["disposition"]=json!({"status":"completed","marked":true,"schedule_verified":true,"completed_at":recovered["created_at"]});
+                view["disposition"]=json!({"status":"completed","marked":true,"schedule_verified":true,"completed_at":recovered["created_at"],"basis":recovered["basis"]});
             }
             let mut triggers = job["triggers"].as_array().into_iter().flatten().filter_map(|v|v.as_str())
                 .filter_map(|v| if v=="scheduled" {Some("scheduled")} else if v.starts_with("error:") {Some("error")}

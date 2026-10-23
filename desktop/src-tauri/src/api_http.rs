@@ -579,6 +579,8 @@ fn detection_logs_valid(data: &Value) -> bool {
                 && v["status"].is_string()
                 && v["reason"].is_string()
                 && optional_text(&v["completed_at"])
+                && (v["basis"].is_null()
+                    || matches!(v["basis"].as_str(), Some("first_group" | "aggregate")))
                 && ["marked", "schedule_verified", "mark_cleared"]
                     .iter()
                     .all(|k| v[*k].is_null() || v[*k].is_boolean())
@@ -648,6 +650,13 @@ fn detection_logs_valid(data: &Value) -> bool {
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
+    if path
+        .split('?')
+        .next()
+        .is_some_and(|p| p == "/proxy-management" || p.starts_with("/proxy-management/"))
+    {
+        return crate::proxy_management::valid(path, data);
+    }
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
         p if p.starts_with("/accounts/") && p.ends_with("/usage") => usage_valid(data),
@@ -948,7 +957,7 @@ pub(crate) async fn http_detailed(
         .request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key)
         .header("Accept", "application/json");
-    if path.starts_with("/proxies/") {
+    if path.starts_with("/proxies/") || path.starts_with("/proxy-management") {
         req = req.timeout(Duration::from_secs(105));
     }
     if path.ends_with("/usage-action") || path.ends_with("/usage") {

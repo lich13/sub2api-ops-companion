@@ -612,7 +612,7 @@ impl Detection {
         Ok(job)
     }
     pub async fn verdict(&self, job: &Value, report: &Value) -> Result<Value> {
-        // The automatic caller supplies the first group's independent report.
+        // The runner supplies either the independent first group or the final aggregate.
         if !valid_report(report)
             || !is_downgrade(
                 string(&job["requested_model"]),
@@ -624,7 +624,7 @@ impl Detection {
         self.guard(job).await?;
         if job["degradation_recheck"] == true {
             return Ok(
-                json!({"kind":"recheck","status":"still_degraded","mark_cleared":false,"reason":"仍符合降智特征"}),
+                json!({"kind":"recheck","status":"still_degraded","mark_cleared":false,"reason":"仍符合降智特征","basis":job["disposition_basis"].as_str().unwrap_or("first_group")}),
             );
         }
         let id = integer(&job["account_id"]).ok_or_else(Error::invalid)?;
@@ -649,6 +649,7 @@ impl Detection {
             }
             let mut disposition = json!({
                 "status": "pending",
+                "basis": job["disposition_basis"].as_str().unwrap_or("first_group"),
                 "job_id": job["id"],
                 "generation": value["generation"],
                 "mark_version": mark["version"],

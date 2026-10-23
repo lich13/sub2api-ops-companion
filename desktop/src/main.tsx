@@ -49,6 +49,7 @@ import "./style.css";
 import "./responsive.css";
 import UsageCell from "./UsageCell";
 import RecoveryAccounts from "./RecoveryAccounts";
+import ProxyManagement from "./ProxyManagement";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
 import {
   MiniUsage,
@@ -1287,6 +1288,8 @@ function SettingsPage({
   onError: (e: unknown) => void;
   beforeConnectionChange: () => Promise<boolean>;
 }) {
+  const [featureTab, setFeatureTab] = useState("recovery");
+  const connectionKey = `${state.preferences.base_url}:${state.connection_revision ?? 0}`;
   async function action(name: string) {
     try {
       const result = await api<{ message?: string }>(
@@ -1302,6 +1305,17 @@ function SettingsPage({
     <div className={`settings-stack ${page === "features" ? "features-stack" : ""}`}>
       {page === "features" ? (
         <>
+          <div className="feature-tabs" role="tablist" aria-label="功能分区">
+            {[["recovery", "恢复与检测"], ["models", "模型配置"], ["ip", "IP 管理"]].map(([key, label]) => (
+              <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => setFeatureTab(key)} onKeyDown={e => {
+                const keys = ["recovery", "models", "ip"];
+                const index = keys.indexOf(key);
+                const next = e.key === "ArrowRight" ? keys[(index + 1) % 3] : e.key === "ArrowLeft" ? keys[(index + 2) % 3] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[2] : null;
+                if (next) { e.preventDefault(); setFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
+              }}>{label}</button>
+            ))}
+          </div>
+          <div role="tabpanel" id="feature-panel-recovery" aria-labelledby="feature-tab-recovery" hidden={featureTab !== "recovery"}>
           <ConfigForm
             section="oauth"
             title="恢复、测活与模型检测"
@@ -1327,10 +1341,13 @@ function SettingsPage({
               </>
             )}
           </ConfigForm>
-          <section className="feature-models">
-            <h2>模型配置</h2>
-            <ModelConfig key={`${state.preferences.base_url}:${state.connection_revision ?? 0}`} online={state.online}/>
+          </div>
+          <section className="feature-models" role="tabpanel" id="feature-panel-models" aria-labelledby="feature-tab-models" hidden={featureTab !== "models"}>
+            <ModelConfig key={connectionKey} online={state.online}/>
           </section>
+          <div role="tabpanel" id="feature-panel-ip" aria-labelledby="feature-tab-ip" hidden={featureTab !== "ip"}>
+            <ProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online}/>
+          </div>
         </>
       ) : (
         <>

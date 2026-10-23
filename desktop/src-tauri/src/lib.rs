@@ -26,6 +26,7 @@ use tokio::sync::{oneshot, watch, Mutex, Notify};
 mod api_http;
 mod credentials;
 mod priority_api;
+mod proxy_management;
 use api_http::{http, http_detailed, HttpFailure};
 
 const RELEASES: &str = "https://github.com/lich13/sub2api-ops-companion/releases";
@@ -239,6 +240,9 @@ fn allowed_request(method: &str, path: &str) -> bool {
                         .is_ok_and(|id| id > 0 && (key != "limit" || id <= 200))
             })
         });
+    }
+    if plain == "/proxy-management" || plain.starts_with("/proxy-management/") {
+        return proxy_management::allowed(method, path);
     }
     if plain == "/connection-status" {
         return method == "GET" && path == plain;
@@ -1486,7 +1490,10 @@ async fn background(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init());
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {

@@ -184,6 +184,7 @@ pub fn rate_descriptor(row: &Value, summary: &Value, at: DateTime<Utc>) -> Value
     let windows = quota::required_windows(&summary["plan_type"]);
     if !(truthy(&row["rate_limited_at"]) || truthy(&row["rate_limit_reset_at"]))
         || !all_available(summary)
+        || stale_rate_block(row, summary, at)
         || !eligible(
             row,
             &windows.iter().map(|v| (*v).into()).collect::<Vec<_>>(),
@@ -199,6 +200,43 @@ pub fn rate_descriptor(row: &Value, summary: &Value, at: DateTime<Utc>) -> Value
     };
     let deadline = parse_datetime(&row["rate_limit_reset_at"]).unwrap_or(blocked);
     json!({"fingerprint":windows.iter().map(|key|format!("{key}@{}:{}",datetime(blocked),datetime(deadline))).collect::<Vec<_>>().join("|"),"due_at":datetime(deadline),"source":"server_exact","window_keys":windows,"kind":"rate_limit_block"})
+}
+/// Successful traffic after an expired rate limit supersedes its stale fields.
+/// Quota exhaustion and scheduling thresholds keep their own recovery policy.
+pub fn stale_rate_block(row: &Value, summary: &Value, at: DateTime<Utc>) -> bool {
+    let Some(deadline) = parse_datetime(&row["rate_limit_reset_at"]) else {
+        return false;
+    };
+    let boundary =
+        parse_datetime(&row["rate_limited_at"]).map_or(deadline, |blocked| blocked.max(deadline));
+    deadline <= at
+        && boundary <= at
+        && all_available(summary)
+        && !truthy(&threshold(&row["temp_unschedulable_reason"]))
+        && parse_datetime(&row["last_success_at"])
+            .is_some_and(|success| success > boundary && success <= at)
+}
+pub fn obsolete_rate_intent(
+    row: &Value,
+    summary: &Value,
+    intent: &Value,
+    at: DateTime<Utc>,
+) -> bool {
+    intent["kind"] == "rate_limit_block"
+        && !truthy(&intent["verification_dispatched"])
+        && !truthy(&intent["verification_receipt"])
+        && !truthy(&intent["recovery_write_dispatched"])
+        && !matches!(string(&intent["status"]), "recovered" | "cancelled")
+        && stale_rate_block(row, summary, at)
+}
+pub fn cancel_obsolete_rate_intent(intent: &Value) -> Value {
+    let mut next = intent.clone();
+    next["status"] = "cancelled".into();
+    next["waiting_reason"] = "".into();
+    next["next_retry_at"] = "".into();
+    next["last_error_code"] = "already_serving".into();
+    next["last_error"] = "限制到期后已有成功调用，无需恢复测试".into();
+    next
 }
 pub fn retry_at(at: DateTime<Utc>, attempt: i64) -> String {
     datetime(
@@ -284,6 +322,9 @@ pub fn candidates(
         }
         let summary = quota::summary_from_result(row, &result);
         let intent = &meta["recovery_intent"];
+        if obsolete_rate_intent(row, &summary, intent, at) {
+            continue;
+        }
         if truthy(&intent["verification_dispatched"])
             && (!truthy(&intent["verification_receipt"]) || intent["status"] == "blocked")
         {

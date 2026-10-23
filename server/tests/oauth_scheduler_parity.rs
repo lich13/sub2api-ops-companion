@@ -4740,3 +4740,118 @@ async fn renewed_temporary_restriction_during_test_prevents_recovery() {
     );
     harness.close().await;
 }
+
+#[tokio::test]
+async fn successful_traffic_supersedes_old_rate_only_intents_including_restart() {
+    for queued in [false, true] {
+        let mut h = Harness::new().await;
+        let due = h.now() + Duration::hours(4);
+        let row = h.seed_account("plus", "fixture-serving", json!({})).await;
+        let id = integer(&row["id"]).unwrap();
+        prepare_expired_recovery(&h, &row, due).await;
+        let usage = cached_result(&row, due - Duration::minutes(2), default_usage(due));
+        save_cached(&h, id, usage).await;
+        h.set_now(due);
+        if queued {
+            h.runtime.monitor.store.transaction(|s| {
+                s["scheduler"][id.to_string()]["recovery_intent"] = json!({
+                    "kind":"rate_limit_block", "status":"pending", "fingerprint":"fixture-rate-only",
+                    "due_at":datetime(due - Duration::seconds(60)), "window_keys":["5h","7d"]
+                });
+                Ok(())
+            }).unwrap();
+        }
+        sqlx::query("INSERT INTO usage_logs(id,account_id,created_at) VALUES($1,$1,$2)")
+            .bind(id)
+            .bind(due - Duration::seconds(30))
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_datetime(&h.runtime.monitor.row(id).await.unwrap()["last_success_at"]),
+            Some(due - Duration::seconds(30))
+        );
+        h.runtime.monitor.startup().await.unwrap();
+        for _ in 0..2 {
+            h.runtime.monitor.tick().await.unwrap();
+        }
+        h.restart_runtime().await;
+        h.runtime.monitor.startup().await.unwrap();
+        h.runtime.monitor.tick().await.unwrap();
+        let state = h.runtime.monitor.state().unwrap();
+        if queued {
+            assert_eq!(
+                state["scheduler"][id.to_string()]["recovery_intent"]["status"],
+                "cancelled"
+            );
+        }
+        assert_eq!(h.mock.count("POST", "/test"), 0);
+        assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+        assert!(state["recovery_history"]
+            .as_object()
+            .is_none_or(|s| s.is_empty()));
+        assert!(state["pending_events"]
+            .as_object()
+            .is_none_or(|s| s.is_empty()));
+        sqlx::query("DELETE FROM usage_logs WHERE account_id=$1")
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        h.close().await;
+    }
+}
+
+#[tokio::test]
+async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
+    let h = Harness::new().await;
+    let due = h.now() + Duration::hours(4);
+    let row = h
+        .seed_account("plus", "fixture-before-dispatch", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    prepare_expired_recovery(&h, &row, due).await;
+    h.set_now(due);
+    let usage = cached_result(&row, due - Duration::minutes(2), default_usage(due));
+    save_cached(&h, id, usage.clone()).await;
+    let fresh = h.runtime.monitor.row(id).await.unwrap();
+    let descriptor =
+        sub2ops_server::recovery_rules::rate_descriptor(&fresh, &usage["oauth_quota"], due);
+    assert_eq!(descriptor["kind"], "rate_limit_block");
+    let intent = sub2ops_server::recovery_events::new_intent(&descriptor, "ready", Some(due));
+    h.runtime
+        .monitor
+        .store
+        .transaction(|s| {
+            s["scheduler"][id.to_string()]["recovery_intent"] = intent.clone();
+            Ok(())
+        })
+        .unwrap();
+    sqlx::query("INSERT INTO usage_logs(id,account_id,created_at) VALUES($1,$1,$2)")
+        .bind(id)
+        .bind(due - Duration::seconds(30))
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    let lease = h.runtime.actions.locks.try_account(&fresh).unwrap();
+    let result = h
+        .runtime
+        .monitor
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .await
+        .unwrap();
+    assert_eq!(result["error_code"], "already_serving");
+    assert_eq!(
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+            ["status"],
+        "cancelled"
+    );
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    sqlx::query("DELETE FROM usage_logs WHERE account_id=$1")
+        .bind(id)
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    h.close().await;
+}

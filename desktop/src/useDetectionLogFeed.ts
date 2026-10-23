@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
 
-export type DetectionReceipt = { status: string; marked: boolean | null; schedule_verified: boolean | null; mark_cleared: boolean | null; reason: string; completed_at: string | null };
+export type DetectionReceipt = { status: string; basis?: "first_group" | "aggregate" | null; marked: boolean | null; schedule_verified: boolean | null; mark_cleared: boolean | null; reason: string; completed_at: string | null };
 export type DetectionLog = {
   job_id: string; account_id: number; account_name: string; model_id: string;
   status: string; created_at: string; started_at: string | null; completed_at: string | null;

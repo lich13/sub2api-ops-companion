@@ -54,6 +54,7 @@ pub mod oauth_state;
 pub mod operations;
 pub mod priority_orders;
 pub mod proxy_diagnostics;
+pub mod proxy_management;
 pub mod queries;
 pub mod quota;
 mod quota_refresh;
