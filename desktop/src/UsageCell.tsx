@@ -1,6 +1,9 @@
+import { api } from "./bridge";
 import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
+import KeyQuotaView, { KeyQuotaSummary } from "./KeyQuota";
+import { useKeyQuotaSettings, KeyQuotaSettingsDialog } from "./KeyQuotaSettings";
 import { readNativeUsage } from "./nativeUsage";
 import { useBackAction } from "./mobile";
 import {
@@ -53,6 +56,7 @@ export default function UsageCell({
   report,
   active = true,
   connectionKey = "",
+  compact = false,
 }: {
   account: Account;
   online: boolean;
@@ -60,7 +64,10 @@ export default function UsageCell({
   report: (message: unknown) => void;
   active?: boolean;
   connectionKey?: string;
+  compact?: boolean;
 }) {
+  const quotaSettings = useKeyQuotaSettings();
+  const [quotaDialog, setQuotaDialog] = useState(false), [quotaBusy, setQuotaBusy] = useState(false);
   const [busy, setBusy] = useState<UsageAction | null>(null);
   const running = useRef(false);
   const [confirm, setConfirm] = useState<{
@@ -71,8 +78,10 @@ export default function UsageCell({
   const [native, setNative] = useState<{ identity: string; value: UsageSummary } | null>(null);
   const lastRead = useRef({ identity: "", at: 0 });
   const request = useRef(0);
-  const identity = `${connectionKey}:${account.id}:${account.operation_versions?.usage ?? account.version}`;
+  const parent = account.type === "apikey" && account.parent_account_id ? quotaSettings.accounts.find(a => a.id === account.parent_account_id) : undefined;
+  const identity = `${connectionKey}:${account.id}:${account.operation_versions?.usage ?? account.version}:${parent?.operation_versions?.usage ?? parent?.version ?? ""}`;
   const usage = native?.identity === identity ? { ...native.value, today: account.usage?.today ?? native.value.today } : account.usage;
+  const latestUsage = useRef(usage); latestUsage.current = usage;
   const acceptNative = (value: UsageSummary) => setNative(previous => {
     if (previous?.identity === identity && (value.status === "error" || value.status === "authorization_required")) {
       value = { ...value,
@@ -80,6 +89,7 @@ export default function UsageCell({
         balances: value.balances?.length ? value.balances : previous.value.balances?.map(b => ({ ...b, status: "error" as const })),
       };
     }
+    latestUsage.current = value;
     return { identity, value };
   });
   useEffect(() => () => { ++request.current; lastRead.current = { identity: "", at: 0 }; }, [identity, online, active]);
@@ -94,7 +104,7 @@ export default function UsageCell({
     return () => document.removeEventListener(usageRefreshEvent, refreshed);
   }, [identity, connectionKey, account.id]);
   useEffect(() => {
-    if (!online || !active || !account.usage?.native_read || running.current) return;
+    if (account.type === "apikey" || !online || !active || !account.usage?.native_read || running.current) return;
     if (lastRead.current.identity === identity && Date.now() - lastRead.current.at < 60_000) return;
     lastRead.current = { identity, at: Date.now() };
     const token = ++request.current;
@@ -104,6 +114,40 @@ export default function UsageCell({
       if (request.current === token) acceptNative({ ...account.usage!, status: "error", message: "用量读取失败，请重新查询", windows: account.usage!.windows.map(w => w.source === "configured_quota" ? w : ({ ...w, status: "error" })) });
     });
   }, [identity, account.usage, account.id, online, active]);
+  useEffect(() => {
+    if (account.type !== "apikey" || !account.usage?.native_read || !online || !active || !quotaSettings.visible || !quotaSettings.ready || quotaSettings.seconds === 0) return;
+    let alive = true, timer: ReturnType<typeof setTimeout>;
+    const interval = quotaSettings.seconds;
+    const tick = async () => {
+      const quota = latestUsage.current?.key_quota;
+      const next = Math.max(quota?.checked_at ? quota.checked_at + interval : 0, quota?.retry_at ?? 0);
+      if (next > Date.now() / 1000 || running.current) {
+        timer = setTimeout(() => void tick(), Math.min(2_147_483_647, Math.max(1000, (next - Date.now() / 1000) * 1000))); return;
+      }
+      const token = ++request.current;
+      setQuotaBusy(true);
+      try {
+        const value = await readNativeUsage(identity, account.id, () => alive && request.current === token);
+        if (alive && request.current === token) acceptNative(value);
+      } catch {
+        if (alive && request.current === token && latestUsage.current) {
+          const previous = latestUsage.current;
+          acceptNative({ ...previous, key_quota: {
+            plans: [], subscriptions: [], source: null, success_at: null, retry_at: null, next_refresh_at: null, key_status: null, expires_at: null, expires_at_unix: null, today: null, total_usage: null,
+            ...previous.key_quota, state: "error", stale: !!previous.key_quota?.success_at, error: "余额读取失败，请重新查询", checked_at: Date.now() / 1000,
+          } });
+        }
+      } finally {
+        if (alive) {
+          setQuotaBusy(false);
+          const q = latestUsage.current?.key_quota;
+          timer = setTimeout(() => void tick(), Math.min(2_147_483_647, Math.max(1000, (Math.max(q?.checked_at ? q.checked_at + interval : Date.now()/1000 + interval, q?.retry_at ?? 0) - Date.now()/1000)*1000)));
+        }
+      }
+    };
+    void tick();
+    return () => { alive = false; clearTimeout(timer); ++request.current; setQuotaBusy(false); };
+  }, [identity, account.id, account.type, account.usage?.native_read, online, active, quotaSettings.visible, quotaSettings.ready, quotaSettings.seconds, quotaSettings.revision]);
   const windows = usage?.windows ?? account.usage_windows ?? [];
   async function run(
     action: UsageAction,
@@ -122,7 +166,11 @@ export default function UsageCell({
       const token = ++request.current;
       const result = await accountOperation<{ message: string; account?: Account }>(account, action === "reset_quota" ? "reset_quota" : "usage", { action, confirmed }, account.operation_versions?.[action === "reset_quota" ? "reset_quota" : "usage"] ?? version);
       if (request.current !== token) return;
-      if (result.account?.usage?.native_read) acceptNative(result.account.usage);
+      if (account.type === "apikey" && action === "query_usage") {
+        const value = await api<UsageSummary>("GET", `/accounts/${account.id}/usage`);
+        if (request.current !== token) return;
+        acceptNative(value);
+      } else if (result.account?.usage?.native_read) acceptNative(result.account.usage);
       report(result.message);
     } catch (error) {
       report(error);
@@ -133,8 +181,11 @@ export default function UsageCell({
       setBusy(null);
     }
   }
+  if (compact) return <KeyQuotaSummary quota={usage?.key_quota} busy={quotaBusy}/>;
   return (
     <div className="usage-cell">
+      {account.type === "apikey" && <KeyQuotaView quota={usage?.key_quota} busy={quotaBusy || busy !== null} online={online} refresh={() => void run("query_usage")} settings={() => setQuotaDialog(true)}/>}
+      {quotaDialog && <KeyQuotaSettingsDialog account={account} online={online} close={() => setQuotaDialog(false)} saved={() => { ++request.current; latestUsage.current = account.usage; setNative(null); void run("query_usage"); }}/>}
       {(usage?.branch === "apikey" || usage?.today) &&
         (usage.today ? (
           <Stats stats={usage.today} />
@@ -225,7 +276,7 @@ export default function UsageCell({
         !usage?.prepaid_balance && <span className="usage-unknown">未知</span>}
       {!!usage?.actions.length && (
         <div className="usage-actions">
-          {usage.actions.map((action) => (
+          {usage.actions.filter(action => account.type !== "apikey" || action !== "query_usage").map((action) => (
             <button
               key={action}
               className={`usage-action ${action}`}

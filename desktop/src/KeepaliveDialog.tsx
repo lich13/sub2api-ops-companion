@@ -93,7 +93,7 @@ export default function KeepaliveDialog({ account, online, connectionKey, close,
         enabled: draft.enabled, expected_version: draft.version,
       }), account.id);
       if (current === epoch.current && request === revision.current) {
-        setValue(result); setDraft(result); await command("refresh");
+        setValue(result); setDraft(result); dismiss(); void command("refresh").catch(report);
       }
     } catch (e) {
       if (current === epoch.current && request === revision.current) { setError(message(e)); report(e); }

@@ -134,7 +134,9 @@ describe("account keepalive", () => {
       if (method === "PUT" && path === "/accounts/42/keepalive") return saved as never;
       throw new Error("unexpected " + method + " " + path);
     });
-    await mount();
+    const close = vi.fn(), report = vi.fn();
+    vi.mocked(command).mockRejectedValueOnce(new Error("fixture refresh failure"));
+    await mount({close, report});
 
     expect(detail("状态")).toBe("已暂停");
     expect(detail("原因")).toBe("账号暂时不可调度");
@@ -147,6 +149,8 @@ describe("account keepalive", () => {
       expected_version: version1,
     });
     expect(command).toHaveBeenCalledWith("refresh");
+    expect(close).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalled();
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
   });
 
@@ -247,16 +251,17 @@ describe("account keepalive", () => {
   it("lets a 409 be followed by a fresh read of the server value", async () => {
     const conflict = new Error("HTTP 409 冲突");
     const refreshed = valueFor(42, { enabled: true, status: "waiting", generation: 2, version: "b".repeat(64) });
-    const report = vi.fn();
+    const report = vi.fn(), close = vi.fn();
     let reads = 0;
     vi.mocked(api).mockImplementation(async (method, path) => {
       if (method === "GET" && path === "/accounts/42/keepalive") return (reads++ === 0 ? baseKeepalive : refreshed) as never;
       if (method === "PUT" && path === "/accounts/42/keepalive") throw conflict;
       throw new Error("unexpected " + method + " " + path);
     });
-    await mount({ report });
+    await mount({ report, close });
     await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     await act(async () => button("保存").click());
+    expect(close).not.toHaveBeenCalled();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("409");
     expect(report).toHaveBeenCalledWith(conflict);

@@ -85,6 +85,7 @@ const batch = (batchId: string, items: Operation[], pending = items.filter((item
 
 let container: HTMLDivElement;
 let root: Root;
+const close = vi.fn();
 
 const click = async (element: Element) => {
   await act(async () => (element as HTMLElement).click());
@@ -113,7 +114,7 @@ async function flush() {
 async function renderDialog(accounts: Account[] = [account(1)], online = true, connectionKey = "proxy-connection-1") {
   bindOperationConnection(connectionKey);
   await act(async () => {
-    root.render(<ProxyBatchDialog accounts={accounts} online={online} connectionKey={connectionKey} close={vi.fn()} report={vi.fn()} />);
+    root.render(<ProxyBatchDialog accounts={accounts} online={online} connectionKey={connectionKey} close={close} report={vi.fn()} />);
     await Promise.resolve();
   });
   await flush();
@@ -197,7 +198,7 @@ describe("proxy batch dialog", () => {
   });
 
   it("keeps clearing a target local until confirmation, then sends only the proxy batch contract", async () => {
-    const response = batch("batch-clear", [], 0);
+    const response = batch("batch-clear", [{ id: "job-clear", batch_id: "batch-clear", account_id: 1, account_name: "Fixture", action: "proxy", requested: { proxy_id: null }, status: "completed", reason: "已确认" }], 0);
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (method === "GET" && path === "/proxies") return structuredClone(proxies) as never;
       if (method === "GET" && path === "/accounts/1/settings") return settings(1, { proxy_id: 2 }) as never;
@@ -225,6 +226,7 @@ describe("proxy batch dialog", () => {
     const body = writes[0]?.[2] as { request_id: unknown; client_id: unknown; payload: Record<string, unknown> };
     expect(typeof body.request_id).toBe("string");
     expect(typeof body.client_id).toBe("string");
+    expect(close).toHaveBeenCalledOnce();
     expect(Object.keys(body.payload)).toEqual(["proxy_id"]);
     expect(JSON.stringify(body)).not.toMatch(/password|token|secret/i);
   });
@@ -264,6 +266,7 @@ describe("proxy batch dialog", () => {
         { account_id: 3, expected_version: "proxy-version-3" },
       ],
     });
+    expect(close).not.toHaveBeenCalled();
     expect(container.textContent).toContain("无变化");
     expect(container.textContent).toContain("代理继承自父账号，不能单独修改");
     expect(container.textContent).toContain("已确认生效");
@@ -365,7 +368,7 @@ describe("proxy batch dialog", () => {
     expect(vi.mocked(api).mock.calls).toContainEqual(["POST", "/proxies/2/test"]);
 
     await act(async () => {
-      root.render(<ProxyBatchDialog accounts={[account(1)]} online connectionKey="connection-after" close={vi.fn()} report={vi.fn()} />);
+      root.render(<ProxyBatchDialog accounts={[account(1)]} online connectionKey="connection-after" close={close} report={vi.fn()} />);
       await Promise.resolve();
     });
     await act(async () => resolveDiagnostic({

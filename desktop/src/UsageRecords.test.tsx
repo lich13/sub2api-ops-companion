@@ -1778,6 +1778,7 @@ describe("record view", () => {
     expect(headers()).toEqual([
       "用户",
       "API 密钥",
+      "时间",
       "账户",
       "模型",
       "类型",
@@ -1787,7 +1788,6 @@ describe("record view", () => {
       "延迟",
       "User-Agent",
       "IP",
-      "时间",
     ]);
     const toggle = (name: string) =>
       [
@@ -1816,7 +1816,7 @@ describe("record view", () => {
     await renderView({ columns: ["type", "model", "cost", "user_agent"] });
     expect(
       [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "模型", "类型", "费用", "User-Agent", "时间"]);
+    ).toEqual(["用户", "时间", "模型", "类型", "费用", "User-Agent"]);
     const options = [
       ...container.querySelectorAll<HTMLLabelElement>(
         ".records-column-options label",
@@ -1861,7 +1861,7 @@ describe("record view", () => {
     await renderView({ columns: ["type"] });
     expect(
       [...container.querySelectorAll("th")].map((node) => node.textContent),
-    ).toEqual(["用户", "类型", "时间"]);
+    ).toEqual(["用户", "时间", "类型"]);
     expect(saveColumns).not.toHaveBeenCalled();
   });
 

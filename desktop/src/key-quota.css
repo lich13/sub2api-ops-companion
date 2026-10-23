@@ -1,0 +1,109 @@
+.key-quota {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.key-quota-heading,
+.key-quota-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.key-quota-heading {
+  justify-content: space-between;
+}
+.key-quota-heading strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.key-quota-heading > div,
+.key-quota-updated,
+.key-quota time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.key-quota-error {
+  color: var(--amber);
+}
+.key-quota-subscription header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+.key-quota-subscription header b {
+  font-weight: 600;
+}
+.key-quota .key-quota-plans {
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+  border-collapse: collapse;
+  background: transparent;
+}
+.key-quota .key-quota-plans th,
+.key-quota .key-quota-plans td {
+  position: static;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 3px 4px 3px 0;
+  border: 0;
+  background: transparent;
+  font-size: 10px;
+  text-align: right;
+  white-space: normal;
+  font-weight: 400;
+  vertical-align: top;
+  box-shadow: none;
+}
+.key-quota .key-quota-plans th:first-child {
+  text-align: left;
+}
+.key-quota .key-quota-plans thead th {
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.key-quota-plans time {
+  display: block;
+}
+.key-quota-statistics summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.key-quota-settings {
+  width: min(440px, calc(100vw - 32px));
+}
+.key-quota-settings > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.key-quota-settings footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.mobile .key-quota .usage-action {
+  min-width: 48px;
+  min-height: 48px;
+  justify-content: center;
+}
+.mobile .key-quota {
+  font-size: 12px;
+}
+.mobile .key-quota .key-quota-plans th,
+.mobile .key-quota .key-quota-plans td {
+  font-size: 11px;
+}
+.key-quota-compact > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key-quota-compact.warning { color: var(--warn); }

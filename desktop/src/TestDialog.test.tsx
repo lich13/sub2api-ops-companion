@@ -2,10 +2,10 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
-import TestDialog, { nextBeijingMinute, appointmentTimestamp } from './TestDialog';
+import TestDialog, { nextBeijingMinute, appointmentTimestamp, nextCycleAppointment } from './TestDialog';
 import { api, command } from './bridge';
 import { setOperations } from './accountOperations';
-import type { Account } from './types';
+import type { Account, UsageSummary, UsageWindow } from './types';
 vi.mock('./bridge', () => ({ api: vi.fn(), command: vi.fn(), runTest: vi.fn() }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let container: HTMLDivElement, root: ReturnType<typeof createRoot>;
@@ -38,7 +38,7 @@ it('uses the complete upstream directory and submits one connection test at a Be
   await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, 'scheduled');
   await change(model, 'upstream-extra');
   const date = container.querySelector<HTMLInputElement>('[aria-label="预约时间"]')!;
-  expect(date.type).toBe('datetime-local'); expect(date.step).toBe('60');
+  expect(date.type).toBe('datetime-local'); expect(date.step).toBe('1');
   const submit = () => [...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!;
   expect(date.value).toBe('2030-01-02T09:31');
   await change(date, '2030-01-02T09:30'); expect(submit().disabled).toBe(false);
@@ -53,11 +53,60 @@ it('uses the complete upstream directory and submits one connection test at a Be
   expect(container.querySelector('.test-schedules')).toBeNull();
 });
 
-it('rounds Beijing time across midnight and rejects invalid calendar minutes', () => {
+it('rounds the default minute across midnight, accepts seconds and rejects invalid calendar times', () => {
   expect(nextBeijingMinute(Date.parse('2030-01-02T15:59:59Z'))).toBe('2030-01-03T00:00');
   expect(nextBeijingMinute(Date.parse('2030-01-02T01:30:00Z'))).toBe('2030-01-02T09:31');
   expect(appointmentTimestamp('2030-01-03T00:00')).toBe(Date.parse('2030-01-02T16:00:00Z'));
-  for (const value of ['', 'broken', '2030-02-30T10:00', '2030-01-02T10:01:22']) expect(Number.isNaN(appointmentTimestamp(value))).toBe(true);
+  expect(appointmentTimestamp('2030-01-02T10:01:22')).toBe(Date.parse('2030-01-02T02:01:22Z'));
+  for (const value of ['', 'broken', '2030-02-30T10:00', '2030-01-02T10:01:60', '2030-01-02T10:01:22.123']) expect(Number.isNaN(appointmentTimestamp(value))).toBe(true);
+});
+
+const windowAt = (label: string, reset_at: string | null): UsageWindow => ({ key: label, label, reset_at, used_percent: label === '5h' ? 100 : 16, status: 'known', source: 'upstream_snapshot', observed_at: null });
+const cycleUsage = (): UsageSummary => ({ branch: 'openai_oauth', native_read: true, windows: [windowAt('7d', '2030-01-09T01:16:35Z'), windowAt('5h', '2030-01-02T01:46:35Z')], actions: ['query_usage'], today: null, reset_credits: null });
+it('fills the nearest refreshed cycle plus three seconds without submitting until confirmed', async () => {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((method, path, body) => path === '/accounts/42/usage' ? Promise.resolve(cycleUsage() as never) : previous(method, path, body));
+  await act(async () => root.render(<TestDialog account={{ ...account, type: 'oauth', usage: { ...cycleUsage(), windows: [windowAt('5h', '2030-01-02T01:40:00Z')] } }} online close={() => {}}/>));
+  await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, 'scheduled');
+  await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === '最近周期 +3 秒')!.click());
+  expect(api).toHaveBeenCalledWith('GET', '/accounts/42/usage');
+  expect(appointmentTimestamp(container.querySelector<HTMLInputElement>('[aria-label="预约时间"]')!.value)).toBe(Date.parse('2030-01-02T01:46:38Z'));
+  expect(vi.mocked(api).mock.calls.filter(([method]) => method === 'POST')).toHaveLength(0);
+  await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.click());
+  expect(api).toHaveBeenCalledWith('POST', '/accounts/42/operations', expect.objectContaining({ scheduled_at: '2030-01-02T01:46:38.000Z' }));
+});
+it('chooses an upcoming API Key plan, ignoring expired, invalid and inactive cycles', () => {
+  const usage = { ...cycleUsage(), windows: [windowAt('old', '2030-01-01T00:00:00Z'), windowAt('unknown', 'invalid')], key_quota: {
+    state: 'ok',
+    plans: [{ reset_at: '2030-01-02T03:00:00Z' }], subscriptions: [
+      { active: false, expires_at: null, plans: [{ reset_at: '2030-01-02T01:31:00Z' }] },
+      { active: true, expires_at: '2030-01-01T00:00:00Z', plans: [{ reset_at: '2030-01-02T01:32:00Z' }] },
+      { active: true, expires_at: null, plans: [{ reset_at: '2030-01-02T02:00:59Z' }] },
+    ],
+  } } as UsageSummary;
+  expect(nextCycleAppointment(usage)).toBe(Date.parse('2030-01-02T02:01:02Z'));
+  expect(nextCycleAppointment(undefined, [windowAt('unknown', null)])).toBeNull();
+  expect(nextCycleAppointment({ ...usage, windows: [{ ...windowAt('failed', '2030-01-02T01:31:00Z'), status: 'error' }], key_quota: { ...usage.key_quota!, state: 'error', stale: true } })).toBeNull();
+  expect(nextCycleAppointment(undefined, [windowAt('5h', '2030-01-02T15:59:59Z')])).toBe(Date.parse('2030-01-02T16:00:02Z'));
+});
+it('retains the edited appointment when cycle time is unavailable or its read fails', async () => {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  let fail = false;
+  vi.mocked(api).mockImplementation((method, path, body) => path === '/accounts/42/usage'
+    ? fail ? Promise.reject(new Error('fixture read failed')) : Promise.resolve({ ...cycleUsage(), windows: [] } as never)
+    : previous(method, path, body));
+  await act(async () => root.render(<TestDialog account={{ ...account, usage: cycleUsage() }} online close={() => {}}/>));
+  await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, 'scheduled');
+  const date = container.querySelector<HTMLInputElement>('[aria-label="预约时间"]')!;
+  await change(date, '2030-01-02T12:00:05');
+  const fill = () => [...container.querySelectorAll('button')].find(button => button.textContent === '最近周期 +3 秒')!;
+  await act(async () => fill().click());
+  expect(container.textContent).toContain('暂无可用的周期重置时间');
+  expect(appointmentTimestamp(date.value)).toBe(Date.parse('2030-01-02T04:00:05Z'));
+  fail = true;
+  await act(async () => fill().click());
+  expect(container.textContent).toContain('周期时间读取失败');
+  expect(appointmentTimestamp(date.value)).toBe(Date.parse('2030-01-02T04:00:05Z'));
 });
 it('submits the default model during a slow directory load only once and retains the selection', async () => {
   let directory!: (value: never) => void, finish!: (value: never) => void;

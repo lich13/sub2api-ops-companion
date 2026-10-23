@@ -118,6 +118,7 @@ function deferred<T>() {
 
 let container: HTMLDivElement;
 let root: Root;
+const close = vi.fn();
 let operationConnectionSequence = 0;
 
 function resetOperationStore() {
@@ -311,7 +312,7 @@ async function renderTemplates(options: {
         initialAccount={options.initialAccount}
         initialAccounts={options.initialAccounts}
         online={options.online ?? true}
-        close={() => {}}
+        close={close}
         report={() => {}}
       />,
     );
@@ -335,7 +336,7 @@ describe("unified account templates", () => {
     ).toEqual(["Beta", "Alpha"]);
   });
 
-  it("saves one card without discarding another card's independent draft", async () => {
+  it("saves only the chosen template and closes after success", async () => {
     const server = installApi();
     await renderTemplates();
 
@@ -353,8 +354,8 @@ describe("unified account templates", () => {
       whitelist: ["alpha-model"],
       mappings: [],
     });
-    expect(inputByLabel("模板名称 beta").value).toBe("Beta draft");
-    expect(buttonByLabel("保存Beta draft模板").disabled).toBe(false);
+    expect(close).toHaveBeenCalledOnce();
+    expect(server.current.template_meta.beta.name).toBe("Beta");
     expect(inputByLabel("模板名称 alpha").value).toBe("Alpha renamed");
     expect(server.current.version).toBe("config-v2");
   });
@@ -504,6 +505,7 @@ describe("unified account templates", () => {
       ([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-42",
     )).toBe(true);
     expect(container.textContent).toContain("已完成");
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("discards a late accepted batch after an epoch change while preserving it on the original connection", async () => {
@@ -753,7 +755,7 @@ describe("unified account templates", () => {
     await renderTemplates({ online: true });
     await act(async () => {
       root.render(
-        <AccountTemplates accounts={[account]} online={false} close={() => {}} report={() => {}} />,
+        <AccountTemplates accounts={[account]} online={false} close={close} report={() => {}} />,
       );
     });
     await flush();
@@ -764,4 +766,13 @@ describe("unified account templates", () => {
 
     expect(container.querySelector('input[aria-label="模板名称 alpha"]')).toBeNull();
   });
+});
+
+it("preserves template edits after a failed save", async () => {
+  installApi(); await renderTemplates();
+  await setInput(inputByLabel("模板名称 alpha"), "Fixture draft");
+  vi.mocked(api).mockRejectedValueOnce(new Error("fixture save failure"));
+  await act(async () => buttonByLabel("保存Fixture draft模板").click());
+  await flush(); expect(close).not.toHaveBeenCalled();
+  expect(inputByLabel("模板名称 alpha").value).toBe("Fixture draft");
 });

@@ -28,6 +28,7 @@ pub mod execution;
 pub mod fingerprint_bank;
 pub mod keepalive;
 mod keepalive_state;
+pub mod key_quota;
 pub mod legacy;
 pub mod maintenance;
 mod manual_actions;

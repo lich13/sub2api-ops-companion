@@ -11609,20 +11609,25 @@
     },
     {
       "legacy_test_id": "py:tests.test_desktop_usage:UsageActionTests.test_confirmation_version_type_deleted_and_credit_checks",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/projection_parity_contract.rs",
         "test_name": "desktop_usage_action_preconditions_reject_without_upstream_requests",
         "assertions": [
           "assert_eq!(error.status.as_u16(), 409);",
-          "assert_eq!(error.status.as_u16(), 422);",
           "assert_eq!(error.status.as_u16(), 404);",
-          "assert!(fixture.http.recorded_calls().is_empty());"
+          "assert!(fixture.http.recorded_calls().is_empty());",
+          "assert_eq!(result[\"account\"][\"usage\"][\"key_quota\"][\"state\"], \"error\");"
         ],
         "fixtures": []
       },
-      "coverage_note": "实际 Runtime 分别拒绝过期账号版本、缺少 reset/probe 确认、无持久化额度、API-key 类型与删除账号，并确认所有拒绝均未发出上游请求。"
+      "coverage_note": "实际 Runtime 拒绝过期版本、缺少 reset/probe 确认、无持久化额度与删除账号。API Key 余额查询独立于 OAuth，地址缺失返回明确错误。",
+      "replacement": {
+        "legacy_assertions": "API Key query_usage was rejected with 422 alongside stale version, missing confirmation, missing reset credits and deleted accounts.",
+        "approved_requirement": "Sub2Ops 0.1.57 exposes direct read-only billing through existing API Key usage actions.",
+        "replacement_contract": "Version, confirmation, credits and deleted-account guards stay covered. API Key query_usage returns key_quota with an explicit invalid-address error and no OAuth upstream request."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_desktop_usage:UsageActionTests.test_exact_upstream_paths_methods_and_whitelist",

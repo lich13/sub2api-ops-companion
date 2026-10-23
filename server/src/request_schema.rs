@@ -30,6 +30,7 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
                     | "degradation-mark"
                     | "model-detection"
                     | "keepalive"
+                    | "key-quota-settings"
             ]
             | ["account-operations", "batch"]
             | ["account-priorities"]
@@ -244,6 +245,8 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
         ["accounts", _, "model-detection"] => {
             *value = crate::model_detection::detection_request(value)?;
         }
+        ["config", "key-quota"] => crate::key_quota::settings_request(value, false)?,
+        ["accounts", _, "key-quota-settings"] => crate::key_quota::settings_request(value, true)?,
         ["accounts", _, "keepalive"] => crate::keepalive::request(value)?,
         ["model-tests", _, "retry"] => {
             fields(value, &["request_id"], &["request_id"])?;
@@ -456,13 +459,16 @@ pub fn reasoning(value: &mut Value, kind: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn scheduled_connection_request_accepts_minute_precision_only_for_test_operations() {
+    fn scheduled_connection_request_accepts_second_precision_only_for_test_operations() {
         use serde_json::json;
         let path = ["accounts", "42", "operations"];
         let base = json!({"action":"test","expected_version":"a".repeat(64),"request_id":"fixture-scheduled-request","client_id":"fixture-scheduled-client","payload":{"mode":"default"},"scheduled_at":"2030-01-02T09:31:00+08:00"});
         assert!(super::validate(&path, "POST", &mut base.clone()).is_ok());
+        let mut seconds = base.clone();
+        seconds["scheduled_at"] = "2030-01-02T09:31:38+08:00".into();
+        assert!(super::validate(&path, "POST", &mut seconds).is_ok());
         for at in [
-            "2030-01-02T09:31:01+08:00",
+            "2030-01-02T09:31:01.001+08:00",
             "2030-02-30T09:31:00+08:00",
             "2030-01-02T09:31",
             "invalid",

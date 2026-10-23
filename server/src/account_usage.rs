@@ -493,6 +493,15 @@ impl Runtime {
         let row = self.usage_row(id).await?;
         let kind = provider(&row);
         let mut usage = self.local_account_usage(&row).await?;
+        if row["type"] == "apikey" {
+            let input = self.key_quota_input(id).await?;
+            let signature = input.version.clone();
+            let value = self.key_quota.query(input, force).await?;
+            if self.key_quota_input(id).await?.version != signature {
+                return Err(Error::new(409, "账号余额配置已变化，请重新读取"));
+            }
+            usage["key_quota"] = serde_json::to_value(value)?;
+        }
         if kind.is_empty() {
             return Ok(usage);
         }

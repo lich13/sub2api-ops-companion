@@ -40,6 +40,7 @@ impl Runtime {
             .into_iter()
             .filter(|row| {
                 matches!(string(&row["platform"]), "openai" | "grok") && row["type"] == "oauth"
+                    || row["type"] == "apikey"
                     || !crate::account_usage::provider(row).is_empty()
             })
             .collect::<Vec<_>>();
@@ -110,7 +111,7 @@ impl Runtime {
         requested: Instant,
     ) -> Result<Value> {
         let id = integer(&original["id"]).ok_or_else(Error::invalid)?;
-        if !crate::account_usage::provider(original).is_empty() {
+        if original["type"] == "apikey" || !crate::account_usage::provider(original).is_empty() {
             let _control = self.actions.locks.control(id).await;
             let live = self.actions.account(id, None).await?;
             if live["platform"] != original["platform"] || live["type"] != original["type"] {
@@ -121,9 +122,12 @@ impl Runtime {
             let partial = matches!(
                 string(&usage["status"]),
                 "error" | "authorization_required" | "unavailable"
-            );
+            ) || matches!(
+                string(&usage["key_quota"]["state"]),
+                "error" | "unsupported"
+            ) || !usage["key_quota"]["error"].is_null();
             return Ok(
-                json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":usage["message"],"usage":usage}),
+                json!({"status":if partial {"partial"}else {"success"},"queried_at":datetime(Utc::now()),"error":if usage["key_quota"]["error"].is_null() { &usage["message"] } else { &usage["key_quota"]["error"] },"usage":usage}),
             );
         }
         let _lease = loop {

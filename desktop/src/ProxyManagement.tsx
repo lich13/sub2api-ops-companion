@@ -486,16 +486,17 @@ export default function ProxyManagement({
   function rowActions(row: ProxyRow) {
     return (
       <div className="proxy-row-actions">
-        <button disabled={blocked} onClick={() => void diagnose([row], "test")}>
+        <button title="测试连接" aria-label="测试连接" disabled={blocked} onClick={() => void diagnose([row], "test")}>
           <Check size={15} />
-          测试连接
+          测试
         </button>
         <button
           disabled={blocked}
           onClick={() => void diagnose([row], "quality-check")}
+          title="质量检测" aria-label="质量检测"
         >
           <ShieldCheck size={15} />
-          质量检测
+          质量
         </button>
         <button
           disabled={blocked}
@@ -770,6 +771,7 @@ export default function ProxyManagement({
         tabIndex={0}
       >
         <table className="proxy-table">
+          <colgroup>{Array.from({ length: 11 }, (_, i) => <col key={i}/>)}</colgroup>
           <thead>
             <tr>
               <th className="proxy-pin-select">
@@ -824,7 +826,7 @@ export default function ProxyManagement({
                 </td>
                 <td>
                   <div className="proxy-address">
-                    <code>{proxyAddress(row)}</code>
+                    <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
                     <button
                       className="icon-button"
                       aria-label={`复制 ${row.name} 地址`}
@@ -887,7 +889,7 @@ export default function ProxyManagement({
               <span className="proxy-badge protocol">
                 {row.protocol.toUpperCase()}
               </span>
-              <code>{proxyAddress(row)}</code>
+              <code title={proxyAddress(row)}>{proxyAddress(row)}</code>
               <button
                 aria-label={`复制 ${row.name} 地址`}
                 disabled={blocked}

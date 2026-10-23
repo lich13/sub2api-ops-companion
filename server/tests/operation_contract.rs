@@ -2414,15 +2414,15 @@ async fn recover_batch_dispatches_recovery_with_partial_results_and_never_replay
 }
 
 #[tokio::test]
-async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_restart() {
+async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_restart() {
     let mut harness = Harness::new().await;
     let ids = harness.seed_accounts(3, json!({})).await;
-    let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T09:31:00+08:00")
+    let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T09:31:38+08:00")
         .unwrap()
         .with_timezone(&chrono::Utc);
     *harness.backend.now.lock().unwrap() = due - chrono::Duration::seconds(60);
     let versions = harness.expected_versions(&ids, "test").await;
-    let request = json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},"scheduled_at":"2030-01-02T09:31:00+08:00","expected_version":versions[&ids[0]],"request_id":"fixture-scheduled-connection-0001","client_id":CLIENT_ID});
+    let request = json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},"scheduled_at":"2030-01-02T09:31:38+08:00","expected_version":versions[&ids[0]],"request_id":"fixture-scheduled-connection-0001","client_id":CLIENT_ID});
     let job = harness
         .operations
         .submit(ids[0], &request, ADMIN_KEY)
@@ -2472,7 +2472,7 @@ async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_r
     let mut cancelled = request.clone();
     cancelled["expected_version"] = versions[&ids[1]].clone().into();
     cancelled["request_id"] = "fixture-scheduled-connection-0002".into();
-    cancelled["scheduled_at"] = "2030-01-02T09:32:00+08:00".into();
+    cancelled["scheduled_at"] = "2030-01-02T09:32:38+08:00".into();
     let queued = harness
         .operations
         .submit(ids[1], &cancelled, ADMIN_KEY)
@@ -2499,7 +2499,7 @@ async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_r
         .submit(ids[0], &invalid, ADMIN_KEY)
         .await
         .is_err());
-    invalid["scheduled_at"] = "2031-01-01T01:00:01Z".into();
+    invalid["scheduled_at"] = "2031-01-01T01:00:01.001Z".into();
     assert!(harness
         .operations
         .submit(ids[0], &invalid, ADMIN_KEY)

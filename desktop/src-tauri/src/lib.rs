@@ -1,3 +1,4 @@
+mod key_quota;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(desktop)]
@@ -203,6 +204,11 @@ fn allowed_request(method: &str, path: &str) -> bool {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain == "/config/key-quota" || plain.ends_with("/key-quota-settings") {
+        return matches!(method, "GET" | "PUT")
+            && !path.contains('?')
+            && (plain == "/config/key-quota" || account_path(plain, "/key-quota-settings"));
+    }
     if plain == "/errors" || plain.starts_with("/errors/") {
         if method != "GET" {
             return false;
@@ -2062,6 +2068,16 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        for path in ["/config/key-quota", "/accounts/7/key-quota-settings"] {
+            for method in ["GET", "PUT"] {
+                assert!(allowed_request(method, path));
+            }
+            for method in ["POST", "DELETE"] {
+                assert!(!allowed_request(method, path));
+            }
+            assert!(!allowed_request("GET", &format!("{path}?token=fixture")));
+        }
+        assert!(!allowed_request("GET", "/accounts/0/key-quota-settings"));
         assert!(allowed_request("GET", "/accounts/7/usage"));
         for path in [
             "/accounts/0/usage",

@@ -78,6 +78,8 @@ fn snapshot_valid(data: &Value) -> bool {
             .is_some_and(|rows| {
                 rows.iter().all(|a| {
                     a["id"].as_i64().is_some()
+                        && (a["parent_account_id"].is_null()
+                            || a["parent_account_id"].as_i64().is_some_and(|id| id > 0))
                         && ["name", "platform", "type", "version"]
                             .iter()
                             .all(|k| a[*k].is_string())
@@ -123,7 +125,8 @@ fn usage_valid(data: &Value) -> bool {
                 .iter()
                 .all(|k| v[*k].as_f64().is_some_and(|n| n.is_finite() && n >= 0.0))
     };
-    data["branch"].is_string()
+    (data["key_quota"].is_null() || crate::key_quota::valid(&data["key_quota"]))
+        && data["branch"].is_string()
         && data["actions"].is_array()
         && stats(&data["today"])
         && data["windows"].as_array().is_some_and(|windows| {
@@ -174,12 +177,13 @@ fn scheduled_at_valid(value: &Value) -> bool {
     };
     let b = s.as_bytes();
     if b.len() != 25
-        || !s.ends_with(":00+00:00")
+        || !s.ends_with("+00:00")
         || b[4] != b'-'
         || b[7] != b'-'
         || b[10] != b'T'
         || b[13] != b':'
-        || ![0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15]
+        || b[16] != b':'
+        || ![0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
             .into_iter()
             .all(|i| b[i].is_ascii_digit())
     {
@@ -202,6 +206,7 @@ fn scheduled_at_valid(value: &Value) -> bool {
     };
     day > 0
         && day <= days
+        && s[17..19].parse::<u32>().unwrap() < 60
         && s[11..13].parse::<u32>().unwrap() < 24
         && s[14..16].parse::<u32>().unwrap() < 60
 }
@@ -659,6 +664,12 @@ fn shape_valid(path: &str, data: &Value) -> bool {
     }
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
+        "/config/key-quota" => crate::key_quota::settings_valid(data, None),
+        p if p.ends_with("/key-quota-settings") => p
+            .strip_prefix("/accounts/")
+            .and_then(|p| p.strip_suffix("/key-quota-settings"))
+            .and_then(|id| id.parse::<u64>().ok())
+            .is_some_and(|id| crate::key_quota::settings_valid(data, Some(id))),
         p if p.starts_with("/accounts/") && p.ends_with("/usage") => usage_valid(data),
         "/config" => {
             ["oauth", "bark"]
@@ -1851,9 +1862,12 @@ mod tests {
         scheduled["action"] = "test".into();
         scheduled["scheduled_at"] = "2030-01-02T01:31:00+00:00".into();
         assert!(operation_valid(&scheduled));
+        scheduled["scheduled_at"] = "2030-01-02T01:31:38+00:00".into();
+        assert!(operation_valid(&scheduled));
         for invalid in [
             "2030-02-30T01:31:00+00:00",
-            "2030-01-02T01:31:01+00:00",
+            "2030-01-02T01:31:60+00:00",
+            "2030-01-02T01:31:38.001+00:00",
             "invalid",
         ] {
             scheduled["scheduled_at"] = invalid.into();

@@ -148,7 +148,7 @@ describe("scheduling parameters", () => {
     expect(command).not.toHaveBeenCalledWith("refresh");
 
     await act(async () => resolveFollow({ verified: true }));
-    expect(form.querySelector('[role="status"]')?.textContent).toBe("已确认生效");
+    expect(editor("并发")).toBeNull();
     expect(command).toHaveBeenCalledWith("refresh");
     expect(submitOperation).toHaveBeenCalledWith(
       expect.objectContaining({ id: 101 }),

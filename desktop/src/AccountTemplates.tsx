@@ -116,6 +116,7 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
       accept(result, id);
       if (method === "POST") { setSelected(result.template_order.find(key => !saved.templates[key]) ?? ""); setCreating(null); }
       if (method === "DELETE") setDeleteId(null);
+      close();
     } catch (e) { if (current === configGeneration.current) { setError(e instanceof Error ? e.message : "模板保存失败"); report(e); } }
     finally { if (current === configGeneration.current) setBusy(false); }
   }
@@ -124,6 +125,7 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
     setBatch(value);
     const ids = new Set(value.items.map(item => item.id));
     setOperations([...value.items, ...getOperations().filter(item => !ids.has(item.id))]);
+    if (value.items.length > 0 && value.items.every(item => item.status === "completed")) close();
   }
   async function readBatch(id: string, generation = configGeneration.current) {
     const epoch = operationEpoch();
@@ -150,7 +152,7 @@ export default function AccountTemplates({ accounts, online, initialAccount, ini
       if (current !== configGeneration.current || epoch !== operationEpoch()) return;
       acceptBatch(result); setBatchError("");
       await readBatch(result.batch_id, current);
-      if (current === configGeneration.current && epoch === operationEpoch()) void command("refresh");
+      if (current === configGeneration.current && epoch === operationEpoch()) void command("refresh").catch(report);
     } catch (e) { if (current === configGeneration.current && epoch === operationEpoch()) { setError(e instanceof Error ? e.message : "模板应用失败"); report(e); } }
     finally { if (current === configGeneration.current) setBusy(false); }
   }

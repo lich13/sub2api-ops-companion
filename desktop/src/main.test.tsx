@@ -545,3 +545,29 @@ describe("account sorting and Android connection settings", () => {
     expect(container.querySelector(".mobile-account")?.textContent).toContain("账号 1");
   });
 });
+
+it("returns to initial account filters, selection, disclosures and scroll while retaining saved display preferences", async () => {
+  const initial=state();
+  initial.snapshot!.accounts=[{...account(1),group_ids:[7]},account(2)];
+  initial.snapshot!.groups=[{id:7,name:"Fixture group",platform:"openai",status:"active"} as never];
+  vi.mocked(command).mockImplementation(async name=>name==="get_state" ? initial as never : undefined as never);
+  await act(async()=>root.render(<App/>));
+  const select=async(label:string,value:string)=>act(async()=>{const input=container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;input.value=value;input.dispatchEvent(new Event("change",{bubbles:true}));});
+  const search=container.querySelector<HTMLInputElement>('.filters input[placeholder="搜索名称或账号 ID"]')!;
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(search,"账号 1");search.dispatchEvent(new Event("input",{bubbles:true}));});
+  for(const [label,value] of [["分组筛选","7"],["平台筛选","openai"],["类型筛选","oauth"],["状态筛选","ready"],["账号排序","priority:desc"]]) await select(label,value);
+  await act(async()=>container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')!.click());
+  const detail=container.querySelector<HTMLDetailsElement>(".accounts-table details"); if(detail) detail.open=true;
+  const content=container.querySelector<HTMLElement>(".content")!;content.scrollTop=240;content.scrollLeft=60;
+  expect(search.value).toBe("账号 1");
+  await act(async()=>nav("记录").click());
+  expect(container.querySelector(".breadcrumb strong")?.textContent).toBe("记录");
+  expect(container.querySelector('.filters input[placeholder="搜索名称或账号 ID"]')).toBeNull();
+  await act(async()=>nav("账号").click());
+  expect(container.querySelector<HTMLInputElement>('.filters input[placeholder="搜索名称或账号 ID"]')?.value).toBe("");
+  for(const label of ["分组筛选","平台筛选","类型筛选","状态筛选"]) expect(container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)?.value).toBe("");
+  expect(container.querySelector<HTMLInputElement>('[aria-label="全选当前筛选账号"]')?.checked).toBe(false);
+  expect(container.querySelector(".accounts-table details[open]")).toBeNull();
+  expect(container.querySelector<HTMLSelectElement>('[aria-label="账号排序"]')?.value).toBe("priority:desc");
+  expect(content.scrollTop).toBe(0); expect(content.scrollLeft).toBe(0);
+});

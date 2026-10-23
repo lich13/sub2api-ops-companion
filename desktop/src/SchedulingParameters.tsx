@@ -32,11 +32,11 @@ export function NumericEditor({ account, field, online, close, anchor }: { accou
       const job = await submitOperation(account, field, { [field]: automatic ? null : number }, initial.current.version);
       if (alive.current) setNotice(operationLabel(job));
       const result = await followOperation<{ verified: boolean; field_version?: string }>(job, undefined, next => { if (alive.current) setNotice(operationLabel(next)); });
-      if (epoch === operationEpoch()) void command("refresh");
+      if (epoch === operationEpoch()) void command("refresh").catch(() => {});
       if (alive.current) {
         if (!result.verified) throw new Error("字段保存尚未确认，请在待办中核对");
         if (result.field_version) initial.current.version = result.field_version;
-        setNotice("已确认生效");
+        close();
       }
     } catch (e) { if (alive.current) { setNotice(""); setError(String(e).replace(/^Error: /, "")); } }
     finally { running.current = false; if (alive.current) setBusy(false); }

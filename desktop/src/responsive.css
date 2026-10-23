@@ -127,6 +127,7 @@
 .mobile-action-sheet .field { margin: 0; }
 .mobile .drawer, .mobile .test-dialog, .mobile .reasoning-modal, .mobile .delete-dialog { position: relative; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); overflow: auto; } .mobile .test-dialog header > div { min-width: 0; flex: 1; } .mobile .test-dialog header strong { max-width: 100%; }
 .mobile .test-controls { grid-template-columns: minmax(0, 1fr); padding: 12px 0; }
+.mobile .test-schedule-time { grid-template-columns: minmax(0, 1fr); }
 .mobile .test-dialog > header, .mobile .test-result { padding-left: 0; padding-right: 0; }
 .mobile .test-dialog pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mobile .test-dialog img, .mobile .test-dialog video, .mobile .test-dialog audio { max-width: 100%; }

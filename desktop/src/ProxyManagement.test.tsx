@@ -117,11 +117,12 @@ describe("IP administration", () => {
     expect(saved).toHaveBeenCalledTimes(2);
   });
   it("shows per-item batch failure without repeating uncertain writes", async () => {
+    const saved = vi.fn();
     vi.mocked(api)
       .mockResolvedValueOnce({ created: 1, skipped: 0 } as never)
       .mockRejectedValueOnce(new Error("fixture"));
     await act(async () =>
-      root.render(<ProxyBatchAdd online close={() => {}} saved={() => {}} />),
+      root.render(<ProxyBatchAdd online close={() => {}} saved={saved} />),
     );
     await change(
       container.querySelector("textarea")!,
@@ -129,6 +130,7 @@ describe("IP administration", () => {
     );
     await click(button("添加 2 个"));
     expect(api).toHaveBeenCalledTimes(2);
+    expect(saved).not.toHaveBeenCalled();
     expect(container.textContent).toContain("结果未确认");
     expect(container.textContent).toContain("已添加");
     expect(button("添加 2 个")).toBeUndefined();
@@ -194,4 +196,13 @@ describe("IP administration", () => {
       "fixture report",
     );
   });
+});
+
+it("closes batch add only after every proxy is confirmed", async () => {
+  const saved=vi.fn();
+  vi.mocked(api).mockResolvedValue({created:1,skipped:0} as never);
+  await act(async()=>root.render(<ProxyBatchAdd online close={vi.fn()} saved={saved}/>));
+  await change(container.querySelector("textarea")!, "socks5://[::1]:1080\nhttp://127.0.0.1:8080");
+  await click(button("添加 2 个"));
+  expect(saved).toHaveBeenCalledOnce(); expect(api).toHaveBeenCalledTimes(2);
 });

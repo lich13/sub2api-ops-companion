@@ -68,7 +68,18 @@ export type UsageStats = {
   standard_cost: number;
   user_cost: number;
 };
+export type QuotaPlan = { name: string; remaining: number | null; used: number | null; total: number | null; unit: string; unlimited: boolean; reset_at: string | null };
+export type KeyQuota = {
+  state: "idle" | "loading" | "ok" | "error" | "unsupported"; source: "sub2api" | "newapi" | null;
+  checked_at: number | null; success_at: number | null; retry_at: number | null; next_refresh_at: number | null;
+  stale: boolean; error: string | null; key_status: string | null; plans: QuotaPlan[];
+  subscriptions: { name: string | null; status: string | null; active: boolean | null; expires_at: string | null; plans: QuotaPlan[] }[];
+  expires_at: string | null; expires_at_unix: number | null;
+  today: { requests: number | null; tokens: number | null; cost: number | null } | null;
+  total_usage: { requests: number | null; tokens: number | null; cost: number | null } | null;
+};
 export type UsageSummary = {
+  key_quota?: KeyQuota;
   branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
   native_read?: boolean;
   status?: "known" | "unavailable" | "error" | "authorization_required";

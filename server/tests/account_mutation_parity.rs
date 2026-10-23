@@ -331,6 +331,39 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         gate.release.notified().await;
     }
 
+    if method == Method::GET && path.starts_with("/fixture-billing/") {
+        assert!(
+            api_key.is_empty(),
+            "billing never forwards the administrator key"
+        );
+        if path.ends_with("/api/user/self") {
+            assert_eq!(authorization, "Bearer fixture-account-token");
+            return response(
+                StatusCode::OK,
+                json!({"success":true,"data":{"quota":250000}}),
+            );
+        }
+        if path.ends_with("/api/status") {
+            assert!(authorization.is_empty());
+            return response(
+                StatusCode::OK,
+                json!({"data":{"quota_display_type":"USD","quota_per_unit":500000}}),
+            );
+        }
+        if path.ends_with("/api/usage/token/") {
+            assert!(authorization.starts_with("Bearer fixture-"));
+            return response(
+                StatusCode::OK,
+                json!({"success":true,"data":{"object":"token_usage","unlimited_quota":true}}),
+            );
+        }
+        assert!(authorization.starts_with("Bearer fixture-"));
+        return response(
+            StatusCode::OK,
+            json!({"balance":if authorization.ends_with("-new") {9} else {5}}),
+        );
+    }
+
     if method == Method::GET && path.starts_with("/fixture-models/") {
         assert!(
             api_key.is_empty(),
@@ -7077,4 +7110,231 @@ async fn proxy_management_masks_regular_reads_and_forwards_explicit_operations_o
         .matching(Method::POST, "/api/v1/admin/proxies")
         .is_empty());
     h.finish().await;
+}
+
+#[tokio::test]
+async fn key_quota_http_auth_settings_and_parent_credential_isolation() {
+    let mut harness = Harness::new().await;
+    let parent = harness
+        .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
+        .await;
+    let child = harness
+        .insert_account("openai", "apikey", json!({}), json!({}), Some(parent), &[])
+        .await;
+    let other = harness
+        .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
+        .await;
+    let base = format!(
+        "{}/fixture-billing/parent/v1",
+        harness
+            .runtime
+            .actions
+            .settings
+            .base_url
+            .trim_end_matches('/')
+    );
+    sqlx::query("UPDATE accounts SET credentials=jsonb_build_object('base_url',$1::text,'api_key','fixture-parent') WHERE id=$2").bind(&base).bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
+    // Both child and parent use the inherited source, but their independent
+    // account access tokens and cache entries remain isolated.
+    let snapshot = harness.runtime.snapshot().await.unwrap();
+    let child_dto = snapshot["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == child)
+        .unwrap();
+    assert_eq!(child_dto["parent_account_id"], parent);
+    let read = |id| format!("accounts/{id}/usage");
+    let (status, value, _) = harness.request(Method::GET, &read(child), None).await;
+    assert_eq!(status, 200);
+    assert_eq!(value["key_quota"]["plans"][0]["remaining"], 5.0);
+    assert!(value["native_read"].as_bool().unwrap());
+    let row = harness.account(child).await;
+    let job = harness.runtime.operations.submit(child, &json!({"action":"usage","payload":{"action":"query_usage"},"expected_version":operation_version(&row,"usage"),"client_id":CLIENT_ID,"request_id":"fixture-key-quota-operation-0001"}), ADMIN_KEY).await.unwrap();
+    harness.runtime.operations.tick().await.unwrap();
+    let done = harness
+        .wait_job(job["id"].as_str().unwrap(), &["completed"])
+        .await;
+    assert!(done["result"]["account"]["usage"]
+        .get("key_quota")
+        .is_none());
+    assert!(!harness
+        .runtime
+        .operations
+        .store
+        .read()
+        .unwrap()
+        .to_string()
+        .contains("key_quota"));
+    assert_eq!(
+        harness
+            .runtime
+            .account_usage(child, ADMIN_KEY, false)
+            .await
+            .unwrap()["key_quota"]["plans"][0]["remaining"],
+        5.0
+    );
+
+    assert!(value["today"].is_object());
+    let path = format!("accounts/{child}/key-quota-settings");
+    let (_, settings, _) = harness.request(Method::GET, &path, None).await;
+    let (status,saved,raw)=harness.request(Method::PUT,&path,Some(json!({"expected_revision":settings["revision"],"access_token":"fixture-account-token"}))).await;
+    assert_eq!(status, 200);
+    assert_eq!(saved["has_access_token"], true);
+    assert!(!raw.contains("fixture-account-token"));
+    let (status, _, _) = harness
+        .request(
+            Method::PUT,
+            &path,
+            Some(json!({"expected_revision":settings["revision"],"access_token":""})),
+        )
+        .await;
+    assert_eq!(status, 409);
+    let (_, child_usage, _) = harness.request(Method::GET, &read(child), None).await;
+    assert_eq!(child_usage["key_quota"]["plans"][0]["remaining"], 0.5);
+    assert_eq!(child_usage["key_quota"]["plans"][0]["unit"], "USD");
+    let (_, parent_usage, _) = harness.request(Method::GET, &read(parent), None).await;
+    assert_eq!(parent_usage["key_quota"]["plans"][0]["remaining"], 5.0);
+    let (_, other_settings, _) = harness
+        .request(
+            Method::GET,
+            &format!("accounts/{parent}/key-quota-settings"),
+            None,
+        )
+        .await;
+    assert_eq!(other_settings["has_access_token"], false);
+    assert_eq!(
+        harness
+            .request_with_key(Method::GET, &path, None, "fixture-wrong")
+            .await
+            .0,
+        401
+    );
+    let (_, global, _) = harness.request(Method::GET, "config/key-quota", None).await;
+    assert_eq!(global["seconds"], 60);
+    assert_eq!(
+        harness
+            .request(
+                Method::PUT,
+                "config/key-quota",
+                Some(json!({"expected_revision":global["revision"],"seconds":9}))
+            )
+            .await
+            .0,
+        422
+    );
+    assert_eq!(
+        harness
+            .request(
+                Method::PUT,
+                "config/key-quota",
+                Some(json!({"expected_revision":global["revision"],"seconds":0}))
+            )
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        harness
+            .request(
+                Method::PUT,
+                "config/key-quota",
+                Some(json!({"expected_revision":global["revision"],"seconds":10}))
+            )
+            .await
+            .0,
+        409
+    );
+    assert_eq!(
+        harness
+            .request_with_key(
+                Method::PUT,
+                "config/key-quota",
+                Some(json!({"expected_revision":global["revision"],"seconds":10})),
+                "fixture-wrong"
+            )
+            .await
+            .0,
+        401
+    );
+    let (_, disabled, _) = harness.request(Method::GET, &read(other), None).await;
+    assert_eq!(disabled["key_quota"]["state"], "idle");
+    // Manual refresh bypasses a disabled schedule without altering routing.
+    let manual = harness
+        .runtime
+        .account_usage(parent, ADMIN_KEY, true)
+        .await
+        .unwrap();
+    assert_eq!(manual["key_quota"]["state"], "ok");
+    harness
+        .request(
+            Method::PUT,
+            &path,
+            Some(json!({"expected_revision":saved["revision"],"access_token":""})),
+        )
+        .await;
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-parent-new\"') WHERE id=$1").bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
+    let changed = harness
+        .runtime
+        .account_usage(child, ADMIN_KEY, true)
+        .await
+        .unwrap();
+    assert_eq!(changed["key_quota"]["plans"][0]["remaining"], 9.0);
+    sqlx::query("UPDATE accounts SET parent_account_id=$1 WHERE id=$2")
+        .bind(other)
+        .bind(child)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    let (_, reparented, _) = harness.request(Method::GET, &read(child), None).await;
+    assert_eq!(reparented["key_quota"]["state"], "idle");
+    assert!(reparented["key_quota"]["plans"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(harness
+        .upstream
+        .calls()
+        .iter()
+        .filter(|c| c.path.starts_with("/fixture-billing/"))
+        .all(|c| c.method == Method::GET && c.api_key.is_empty()));
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn key_quota_inflight_parent_change_discards_the_old_result() {
+    let mut harness = Harness::new().await;
+    let parent = harness
+        .insert_account("openai", "apikey", json!({}), json!({}), None, &[])
+        .await;
+    let child = harness
+        .insert_account("openai", "apikey", json!({}), json!({}), Some(parent), &[])
+        .await;
+    let base = format!(
+        "{}/fixture-billing/parent/v1",
+        harness
+            .runtime
+            .actions
+            .settings
+            .base_url
+            .trim_end_matches('/')
+    );
+    sqlx::query("UPDATE accounts SET credentials=jsonb_build_object('base_url',$1::text,'api_key','fixture-parent') WHERE id=$2").bind(&base).bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
+    let gate = harness.upstream.gate("/fixture-billing/parent/v1/usage");
+    let runtime = harness.runtime.clone();
+    let task = tokio::spawn(async move { runtime.account_usage(child, ADMIN_KEY, true).await });
+    tokio::time::timeout(Duration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET credentials=jsonb_set(credentials,'{api_key}','\"fixture-parent-new\"') WHERE id=$1").bind(parent).execute(&harness.runtime.db.pool).await.unwrap();
+    harness.upstream.ungate("/fixture-billing/parent/v1/usage");
+    gate.release.notify_one();
+    assert_eq!(task.await.unwrap().unwrap_err().status.as_u16(), 409);
+    let value = harness
+        .runtime
+        .account_usage(child, ADMIN_KEY, true)
+        .await
+        .unwrap();
+    assert_eq!(value["key_quota"]["plans"][0]["remaining"], 9.0);
+    harness.finish().await;
 }

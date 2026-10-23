@@ -257,6 +257,21 @@ if (new URLSearchParams(location.search).get("scenario") === "native-usage") {
   accounts.push({ ...accounts[3], id: 394, name: "DeepSeek · 余额", platform: "deepseek", type: "apikey",
     usage: { branch: "apikey", native_read: true, status: "known", windows: [], today: stats, balances: [{ currency: "USD", balance: 0, status: "known", observed_at: now }, { currency: "CNY", balance: 42, status: "known", observed_at: now }], actions: ["query_usage"], reset_credits: null } });
 }
+for (const account of accounts.filter(a => a.type === "apikey")) {
+  if (!account.usage) continue;
+  account.usage.native_read = true;
+  if (!account.usage.actions.includes("query_usage")) account.usage.actions.unshift("query_usage");
+  account.usage.key_quota = {
+    state: "ok", source: "sub2api", checked_at: Date.now()/1000, success_at: Date.now()/1000,
+    retry_at: null, next_refresh_at: null, stale: false, error: null, key_status: null,
+    plans: [{name:"钱包余额",remaining:12.5,used:null,total:null,unit:"USD",unlimited:false,reset_at:null}],
+    subscriptions: [{name:"标准套餐",status:"active",active:true,expires_at:new Date(Date.now()+86400000*30).toISOString(),plans:[
+      {name:"每日",remaining:15,used:5,total:20,unit:"USD",unlimited:false,reset_at:new Date(Date.now()+3600000).toISOString()},
+      {name:"每周",remaining:80,used:20,total:100,unit:"USD",unlimited:false,reset_at:null},
+    ]}], expires_at:null, expires_at_unix:null,
+    today:{requests:25,tokens:16000,cost:1.2},total_usage:{requests:180,tokens:128000,cost:8.4},
+  };
+}
 let state: ViewState = {
   platform: new URLSearchParams(location.search).has("mobile") ? "android" : "macos",
   foreground: true,
@@ -477,6 +492,8 @@ if (state.snapshot && scenario === "priority-platforms") {
 function emit() {
   for (const cb of listeners) cb(structuredClone(state));
 }
+let previewQuotaSeconds = 60;
+const previewQuotaTokens = new Map<number, boolean>();
 export function subscribe(cb: (s: ViewState) => void) {
   listeners.add(cb);
   return () => {
@@ -519,6 +536,16 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (args.path === "/config/key-quota") {
+      if (args.method === "PUT") previewQuotaSeconds = Number((args.body as {seconds:number}).seconds);
+      return {seconds:previewQuotaSeconds,revision:"a".repeat(64)};
+    }
+    if (/^\/accounts\/\d+\/key-quota-settings$/.test(String(args.path))) {
+      const id = Number(String(args.path).split("/")[2]);
+      if (args.method === "PUT" && Object.hasOwn((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, !!(args.body as {access_token:string}).access_token);
+      return {account_id:id,has_access_token:previewQuotaTokens.get(id) ?? false,revision:"b".repeat(64)};
+    }
+
     if (args.path === "/capabilities") return { api_version: 1, features: { detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
     if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));

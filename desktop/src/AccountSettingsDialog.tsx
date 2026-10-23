@@ -66,11 +66,11 @@ export default function AccountSettingsDialog({ account, initialSection, online,
       const result = await followOperation<{ verified: boolean; field_version?: string; settings_versions?: Record<string, string> }>(job, undefined, next => {
         if (current === generation.current) setNotice(operationLabel(next));
       });
-      if (epoch === operationEpoch()) void command("refresh");
+      if (epoch === operationEpoch()) void command("refresh").catch(() => {});
       if (current !== generation.current) return;
       if (!result.verified) throw new Error("保存尚未确认，请在待办中查看");
       setSettings(old => old ? { ...old, ...(action === "proxy" ? { proxy_id: submittedProxy } : { model_config: submitted }), versions: { ...old.versions, ...result.settings_versions, ...(result.field_version ? { [action]: result.field_version } : {}) } } : old);
-      setNotice("已确认生效");
+      close();
     } catch (e) { if (current === generation.current) { setNotice(""); setError(String(e).replace(/^Error: /, "")); } }
     finally { submitGuard.current = false; if (current === generation.current) setBusy(false); }
   }

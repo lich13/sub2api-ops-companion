@@ -926,7 +926,20 @@ fn every_selected_legacy_test_has_a_precise_projection_mapping() {
                 );
             }
         } else if status == "superseded" {
-            panic!("only account quality mappings may be superseded here: {legacy_id}");
+            assert_eq!(legacy_id, "py:tests.test_desktop_usage:UsageActionTests.test_confirmation_version_type_deleted_and_credit_checks");
+            assert_eq!(
+                name,
+                "desktop_usage_action_preconditions_reject_without_upstream_requests"
+            );
+            for field in [
+                "legacy_assertions",
+                "approved_requirement",
+                "replacement_contract",
+            ] {
+                assert!(mapping["replacement"][field]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty()));
+            }
         }
         if status == "partial" {
             assert!(mapping["uncovered_assertions"]
@@ -934,8 +947,8 @@ fn every_selected_legacy_test_has_a_precise_projection_mapping() {
                 .is_some_and(|values| !values.is_empty()));
         }
     }
-    assert_eq!(statuses.get("mapped").copied().unwrap_or_default(), 47);
-    assert_eq!(statuses.get("superseded").copied().unwrap_or_default(), 28);
+    assert_eq!(statuses.get("mapped").copied().unwrap_or_default(), 46);
+    assert_eq!(statuses.get("superseded").copied().unwrap_or_default(), 29);
     assert_eq!(statuses.get("partial").copied().unwrap_or_default(), 0);
 }
 
@@ -1354,9 +1367,23 @@ fn desktop_usage_projections_stats_and_credit_privacy_match_pinned_python() {
         let row = &case["row"];
         let account_id = row["id"].as_i64().unwrap();
         let actual = usage::project(row, now, &Value::Null);
+        // The pinned legacy projection predates direct API Key billing reads.
+        // Keep all existing windows and statistics identical while checking the
+        // newly available action separately.
+        let expected_usage = |value: &Value| {
+            let mut expected = value.clone();
+            if row["type"] == "apikey" {
+                expected["native_read"] = true.into();
+                let actions = expected["actions"].as_array_mut().unwrap();
+                if !actions.iter().any(|a| a == "query_usage") {
+                    actions.insert(0, json!("query_usage"));
+                }
+            }
+            expected
+        };
         assert_json_numbers_equal(
             &actual,
-            &case["expected"],
+            &expected_usage(&case["expected"]),
             &format!("usage projection {}", case["id"]),
         );
         if let Some(expected) = case.get("stats_specs") {
@@ -1385,7 +1412,7 @@ fn desktop_usage_projections_stats_and_credit_privacy_match_pinned_python() {
                 );
                 assert_json_numbers_equal(
                     &projected,
-                    &case["attached_expected"][variant],
+                    &expected_usage(&case["attached_expected"][variant]),
                     &format!("attached usage statistics {}/{}", case["id"], variant),
                 );
             }
@@ -1396,7 +1423,7 @@ fn desktop_usage_projections_stats_and_credit_privacy_match_pinned_python() {
                 let projected = usage::project(override_row, now, &Value::Null);
                 assert_json_numbers_equal(
                     &projected,
-                    &case["tier_override_expected"][variant],
+                    &expected_usage(&case["tier_override_expected"][variant]),
                     &format!("credential tier override {}/{}", case["id"], variant),
                 );
             }
@@ -1680,12 +1707,16 @@ async fn desktop_usage_action_preconditions_reject_without_upstream_requests() {
 
     let api_key_query =
         usage_action_payload(&fixture.runtime, APIKEY_ID, "query_usage", None).await;
-    let error = fixture
+    let result = fixture
         .runtime
         .usage_action(APIKEY_ID, &api_key_query, "fixture-action-key", None)
         .await
-        .expect_err("OpenAI API-key accounts do not expose OAuth usage actions");
-    assert_eq!(error.status.as_u16(), 422);
+        .expect("API Key billing is available independently of OAuth actions");
+    assert_eq!(result["account"]["usage"]["key_quota"]["state"], "error");
+    assert_eq!(
+        result["account"]["usage"]["key_quota"]["error"],
+        "供应商地址无效"
+    );
 
     let deleted_query = json!({
         "action":"query_usage",
@@ -4050,9 +4081,12 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
         .iter()
         .any(|v| v["account_id"] == 969_802 && v["status"] == "partial"));
     assert!(items.iter().any(|v| v["account_id"] == 969_805
-        && v["status"] == "success"
+        && v["status"] == "partial"
+        && v["usage"]["key_quota"]["state"] == "error"
         && v["usage"]["balances"][0]["currency"] == "CNY"));
-    assert!(!items.iter().any(|v| v["account_id"] == 969_801));
+    assert!(items
+        .iter()
+        .any(|v| v["account_id"] == 969_801 && v["status"] == "partial"));
     task.abort();
     fixture.close().await;
 }

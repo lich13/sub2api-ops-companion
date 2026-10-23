@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, command, subscribe } from "./bridge";
-import type { Account, Group, OpsError, ViewState } from "./types";
+import type { Account, Group, OpsError, UsageSummary, ViewState } from "./types";
 
 vi.mock("./bridge", () => ({
   api: vi.fn(),
@@ -39,6 +39,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   window.history.replaceState(null, "", "/");
+  vi.useRealTimers();
 });
 
 const activity = (log_id: number, called_at: string) => ({
@@ -205,6 +206,37 @@ function quickErrorRow(name: string): Element {
 }
 
 describe("quick group activity", () => {
+  it("shows one compact balance per group and shares visible refreshes while retaining failures", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-01-02T01:30:00Z"));
+    const usage: UsageSummary = { branch: "apikey", native_read: true, windows: [], today: null, reset_credits: null, actions: ["query_usage"] };
+    const row = quickAccount(73, "Fixture balance", { group_ids: [23, 24], usage });
+    const state = quickState([row], [quickGroup(23, "First", row), quickGroup(24, "Second", row)], []);
+    let fail = false;
+    let rejectRead!: (error: Error) => void;
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/config/key-quota") return { seconds: 10, revision: "a".repeat(64) } as never;
+      if (path !== "/accounts/73/usage") throw new Error(path);
+      if (fail) return new Promise((_resolve, reject) => { rejectRead = reject; });
+      return { ...usage, key_quota: { state: "ok", source: "sub2api", checked_at: Date.now() / 1000, success_at: Date.now() / 1000,
+        stale: false, plans: [{ name: "钱包余额", remaining: 6, unit: "USD", unlimited: false }], subscriptions: [] } } as never;
+    });
+    const { deliver } = await renderQuickState(state);
+    const reads = () => vi.mocked(api).mock.calls.filter(([, path]) => path === "/accounts/73/usage");
+    expect(reads()).toHaveLength(1);
+    expect(container.querySelectorAll(".key-quota-compact")).toHaveLength(2);
+    expect(quickGroupRow("First").textContent).toContain("剩余 6 USD");
+    expect(quickGroupRow("First").querySelector(".key-quota-compact")?.getAttribute("title")).toContain("Sub2API");
+    expect(container.querySelector(".key-quota-plans, .usage-stats")).toBeNull();
+    fail = true;
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(reads()).toHaveLength(2);
+    await act(async () => rejectRead(new Error("fixture unavailable")));
+    expect(quickGroupRow("First").textContent).toContain("剩余 6 USD · 异常");
+    await deliver({ ...state, foreground: false });
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(reads()).toHaveLength(2);
+  });
   it("orders current activity, keeps pin preferences, and routes mocked actions to the account ID", async () => {
     const at = "2026-09-30T00:00:00Z";
     const state: ViewState = {

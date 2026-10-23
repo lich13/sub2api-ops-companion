@@ -939,12 +939,13 @@ export default function UsageRecords({
             <thead>
               <tr>
                 <th className="record-user">用户</th>
-                {shown.map(([key, label]) => (
+                {shown.filter(([key]) => key === "api_key").map(([key, label]) => <th key={key} className={`record-col-${key}`}>{label}</th>)}
+                <th className="record-time">时间</th>
+                {shown.filter(([key]) => key !== "api_key").map(([key, label]) => (
                   <th key={key} className={`record-col-${key}`}>
                     {label}
                   </th>
                 ))}
-                <th className="record-time">时间</th>
               </tr>
             </thead>
             <tbody>
@@ -970,14 +971,14 @@ export default function UsageRecords({
                       <small>#{row.user_id}</small>
                     </button>
                   </td>
-                  {shown.map(([key]) => (
+                  {shown.filter(([key]) => key === "api_key").map(([key]) => <td key={key} className={`record-col-${key}`}><Cell column={key} row={row}/></td>)}
+                  <td className="record-time"><time>{fullTime(row.created_at)}</time></td>
+                  {shown.filter(([key]) => key !== "api_key").map(([key]) => (
                     <td key={key} className={`record-col-${key}`}>
                       <Cell column={key} row={row} />
                     </td>
                   ))}
-                  <td className="record-time">
-                    <time>{fullTime(row.created_at)}</time>
-                  </td>
+
                 </tr>
               ))}
             </tbody>

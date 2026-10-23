@@ -62,6 +62,7 @@ pub struct Runtime {
     pub priorities: Arc<crate::priority_orders::PriorityOrders>,
     pub catalog: Catalog,
     pub proxies: ProxyDiagnostics,
+    pub key_quota: crate::key_quota::Service,
     pub slots: TestSlots,
     pub budget: Arc<Semaphore>,
     pub closing: AtomicBool,
@@ -246,6 +247,13 @@ impl Runtime {
             crate::priority_orders::PriorityOrders::new(actions.clone(), operations.clone());
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
         let proxies = ProxyDiagnostics::new(actions.clone());
+        let key_quota = startup(
+            "key_quota",
+            crate::key_quota::Service::new(
+                settings.data_dir().join("api-key-quota-config.json"),
+                settings.read_only,
+            ),
+        )?;
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         let (stop, _) = watch::channel(false);
         let runtime = Arc::new(Self {
@@ -262,6 +270,7 @@ impl Runtime {
             priorities,
             catalog,
             proxies,
+            key_quota,
             slots,
             budget,
             closing: AtomicBool::new(false),

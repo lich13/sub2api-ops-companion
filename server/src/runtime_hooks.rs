@@ -158,7 +158,15 @@ impl operations::Backend for Hooks {
                     runtime.set_degradation(id, &payload).await
                 }
                 "delete" => runtime.delete_account(id, &payload, key).await,
-                "usage" | "reset_quota" => runtime.usage_action(id, &payload, key, None).await,
+                "usage" | "reset_quota" => {
+                    let mut result = runtime.usage_action(id, &payload, key, None).await?;
+                    // Billing samples live only in the quota service's memory.
+                    // Durable operation receipts retain the ordinary usage result.
+                    if let Some(usage) = result["account"]["usage"].as_object_mut() {
+                        usage.remove("key_quota");
+                    }
+                    Ok(result)
+                }
                 _ => Err(Error::new(422, "未知账号操作")),
             };
             runtime.invalidate().await;

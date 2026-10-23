@@ -17,6 +17,20 @@ const account = (id: number, patch: Partial<Account> = {}): Account => ({
 
 afterEach(() => vi.useRealTimers());
 
+it("keeps a second-precision appointment queued until its exact due time", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2030-01-02T01:30:00Z"));
+  const accounts = [account(47)], emit = vi.fn();
+  const body = { action: "test", payload: { confirmed: true, mode: "default" }, expected_version: "version-47", request_id: "fixture-second-appointment", client_id: "fixture-client", scheduled_at: "2030-01-02T01:30:03Z" };
+  const job = await operationPreview("POST", "/accounts/47/operations", body, accounts, emit);
+  expect(job).toMatchObject({ status: "queued", scheduled_at: "2030-01-02T01:30:03.000Z" });
+  await vi.advanceTimersByTimeAsync(2999);
+  expect(emit).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(emit).toHaveBeenCalledOnce();
+  await expect(operationPreview("POST", "/accounts/47/operations", { ...body, request_id: "fixture-fractional-appointment", scheduled_at: "2030-01-02T01:31:00.123Z" }, accounts, emit)).rejects.toThrow("预约时间无效");
+});
+
 describe("account operation preview batches", () => {
   it("previews a confirmed delete batch and removes the selected parent with its child", async () => {
     vi.useFakeTimers();

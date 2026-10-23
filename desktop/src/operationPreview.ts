@@ -97,7 +97,7 @@ export async function operationPreview(method: string, path: string, body: Recor
     if (!account) throw new Error('账号不存在');
     const action = String(body.action), payload = body.payload as Record<string, unknown>;
     const at = typeof body.scheduled_at === 'string' ? Date.parse(body.scheduled_at) : undefined;
-    if (at !== undefined && (action !== 'test' || !Number.isFinite(at) || at <= Date.now() || at % 60000 !== 0)) throw new Error('预约时间无效');
+    if (at !== undefined && (action !== 'test' || !Number.isFinite(at) || at <= Date.now() || at % 1000 !== 0)) throw new Error('预约时间无效');
     const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), account_id: account.id, account_name: account.name, action, requested: payload, status: 'queued', reason: at ? '等待预约时间' : '等待账号空闲', ...(at ? { scheduled_at: new Date(at).toISOString() } : {}) };
     jobs.set(job.id, job); requests.set(String(body.request_id), job.id);
     const finish = () => {

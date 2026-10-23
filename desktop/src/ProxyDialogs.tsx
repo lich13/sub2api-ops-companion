@@ -426,7 +426,7 @@ export function ProxyBatchAdd({
       return;
     lock.current = true;
     setBusy(true);
-    let next = 0;
+    let next = 0, succeeded = 0;
     await Promise.all(
       Array.from({ length: Math.min(5, parsed.proxies.length) }, async () => {
         while (
@@ -445,6 +445,7 @@ export function ProxyBatchAdd({
               { proxies: [proxy] },
             );
             ok = r.created === 1;
+            if (ok) ++succeeded;
             message = ok ? "已添加" : "已存在或未添加，请核对";
           } catch {
             message = "结果未确认，请刷新核对；未重试";
@@ -476,6 +477,7 @@ export function ProxyBatchAdd({
       setBusy(false);
     }
     lock.current = false;
+    if (alive.current && connected.current && succeeded === parsed.proxies.length) saved(`已添加 ${succeeded} 个 IP`);
   }
   const done = () =>
     results.length

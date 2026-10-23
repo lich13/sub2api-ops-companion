@@ -52,7 +52,7 @@ export default function ModelDetectionDialog({ account, online, close, report, s
     const current = ++generation.current; setBusy(true); setError("");
     try {
       const result = await api<Detection>("PUT", `/accounts/${account.id}/model-detection`, { expected_version: draft.version, enabled: draft.enabled, interval_minutes: draft.interval_minutes, ...(canChooseSchedule ? { schedule_mode: draft.schedule_mode, min_interval_minutes: draft.min_interval_minutes } : {}), ...(canChooseModel ? { model_override: draft.model_override ?? null } : {}) });
-      if (current === generation.current) { setValue(result); setDraft(result); await command("refresh"); }
+      if (current === generation.current) { setValue(result); setDraft(result); dismiss(); void command("refresh").catch(report); }
     } catch (e) { if (current === generation.current) { setError(e instanceof Error ? e.message : "检测设置保存失败"); report(e); } }
     finally { if (current === generation.current) setBusy(false); }
   }

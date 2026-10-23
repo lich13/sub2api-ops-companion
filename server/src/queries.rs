@@ -92,6 +92,14 @@ pub fn account_dto(row: &Value, at: DateTime<Utc>, quota_result: &Value) -> Valu
             "last_error_status",
         ],
     );
+    if row["type"] == "apikey" {
+        if let Some(parent) = integer(&row["parent_account_id"])
+            .or_else(|| integer(&row["extra"]["parent_account_id"]))
+            .filter(|id| *id > 0)
+        {
+            value["parent_account_id"] = parent.into();
+        }
+    }
     value["name"] = clean(&row["name"], 160).into();
     value["priority"] = integer(&value["priority"]).unwrap_or(0).into();
     if value["load_factor"].is_string() {

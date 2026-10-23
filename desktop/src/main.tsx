@@ -48,6 +48,7 @@ import {
 import "./style.css";
 import "./responsive.css";
 import UsageCell from "./UsageCell";
+import { KeyQuotaProvider, KeyQuotaRefreshSettings } from "./KeyQuotaSettings";
 import RecoveryAccounts from "./RecoveryAccounts";
 import ProxyManagement from "./ProxyManagement";
 import { useErrorFeed, type ErrorCategory } from "./useErrorFeed";
@@ -201,6 +202,22 @@ export default function App() {
     }).then((unsubscribe) => { if (disposed) unsubscribe(); else off = unsubscribe; });
     return () => { disposed = true; off(); };
   }, [mobile, page]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousPage = useRef(page);
+  useEffect(() => {
+    if (previousPage.current !== page && (previousPage.current === "accounts" || page === "accounts")) {
+      setQuery(""); setGroup(""); setPlatform(""); setFilter(""); setType(""); setSelected(new Set());
+      setFiltersOpen(false); setGroupsOpen(false); setDeleteAccounts(null); setTestAccount(null); setModelTestAccount(null);
+      setModelDetectionAccount(null); setKeepaliveAccount(null); setSettingsAccount(null); setProxyAccounts(null);
+      setTemplatesOpen(false); setTemplateAccount(null); setTemplateAccounts(undefined); closeDetail();
+      if (page === "accounts") {
+        setAccountSort(readAccountSort());
+        try { setNameExpanded(localStorage.getItem("sub2ops-account-name-expanded") === "true"); } catch { setNameExpanded(false); }
+        if (contentRef.current) { contentRef.current.scrollTop = 0; contentRef.current.scrollLeft = 0; }
+      }
+    }
+    previousPage.current = page;
+  }, [page]);
   const quickBody = useQuickHeight(quick, !!detail || detailBusy);
   const connectionKey = `${state.preferences.base_url}:${state.connected}:${state.connection_revision ?? 0}`;
   useEffect(() => bindOperationConnection(connectionKey), [connectionKey]);
@@ -426,7 +443,9 @@ export default function App() {
                         <QuickRestriction reason={restriction}/>
                         {a && <><DegradationBadge account={a} compact /></>}
                       </strong>
-                      {a && <MiniUsage account={a} />}
+                      {a && (quick && a.type === "apikey"
+                        ? <UsageCell account={a} compact online={state.online} active={state.foreground !== false} connectionKey={connectionKey} refresh={() => command("refresh")} report={report}/>
+                        : <MiniUsage account={a} />)}
                     </div>
                     <div className="compact-times">
                       <div>
@@ -646,6 +665,7 @@ export default function App() {
           </div>
         )}
         <div
+          ref={contentRef}
           key={mobile ? connectionKey : "content"}
           className={`content ${!quick && page === "events" ? "events-content" : ""} ${!quick && page === "records" ? "records-content" : ""}`}
         >
@@ -671,10 +691,12 @@ export default function App() {
             ) : quick ? (
               <>
                 {quickTab === "groups" ? (
+                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={accounts.some(a => a.type === "apikey")}>
                   <div className="quick-groups">
                     {visibleGroups.map((g) => groupRow(g, true))}
                     {!groups.length && <Empty text="没有分组记录" />}
                   </div>
+                  </KeyQuotaProvider>
                 ) : (
                   <div className="error-list">
                     {eventRows.map((error) => errorRow(error, true))}
@@ -705,8 +727,8 @@ export default function App() {
                   await command("preferences", { ...state.preferences, launchAtLogin: state.preferences.launch_at_login, recordColumns: columns });
                 }}/>}
                 {page === "accounts" && (
-                  <>
-                    {!mobile && <div className="account-toolbar"><QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                  <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={accounts.some(a => a.type === "apikey")}>
+                    {!mobile && <div className="account-toolbar">{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -768,7 +790,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar"><QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar">{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">
@@ -966,7 +988,7 @@ export default function App() {
                       filter,
                       type,
                     ).length && <Empty text="没有符合条件的账号" />}
-                  </>
+                  </KeyQuotaProvider>
                 )}
                 {page === "events" && (
                   <div className="events-view">

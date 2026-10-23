@@ -60,8 +60,8 @@ pub fn scheduled_time(value: &Value) -> Result<chrono::DateTime<chrono::Utc>> {
         .as_str()
         .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
         .ok_or_else(Error::invalid)?;
-    if at.second() != 0 || at.nanosecond() != 0 {
-        return Err(Error::new(422, "预约时间须精确到分钟"));
+    if at.nanosecond() != 0 {
+        return Err(Error::new(422, "预约时间须精确到秒"));
     }
     Ok(at.with_timezone(&chrono::Utc))
 }

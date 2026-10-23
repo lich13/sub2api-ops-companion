@@ -306,7 +306,9 @@ impl Runtime {
         let expected = string(&payload["expected_version"]);
         let row = self.actions.account(id, Some(expected)).await?;
         let action = string(&payload["action"]);
-        if action == "query_usage" && !crate::account_usage::provider(&row).is_empty() {
+        if action == "query_usage"
+            && (row["type"] == "apikey" || !crate::account_usage::provider(&row).is_empty())
+        {
             let _control = self.actions.locks.control(id).await;
             self.actions.account(id, Some(expected)).await?;
             let usage = self.account_usage(id, key, true).await?;

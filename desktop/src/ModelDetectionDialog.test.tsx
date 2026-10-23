@@ -619,8 +619,10 @@ describe("OpenAI Key detection models", () => {
       }
       throw new Error("unexpected " + path);
     });
-    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    const close = vi.fn();
+    const render = async () => act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={close} report={vi.fn()}/>));
+    await render();
+    let select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
     expect([...select.options].map(option => option.value)).toEqual(["", ...models.map(model => model.id)]);
     await act(async () => { select.value = "gpt-6-luna"; select.dispatchEvent(new Event("change", { bubbles: true })); });
     expect(button("保存").disabled).toBe(false);
@@ -628,13 +630,17 @@ describe("OpenAI Key detection models", () => {
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
       expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "gpt-6-luna",
     });
+    expect(close).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(null));
+    await render();
+    select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
     expect(select.value).toBe("gpt-6-luna");
     await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await act(async () => button("保存").click());
     expect(api).toHaveBeenCalledWith("PUT", "/accounts/42/model-detection", {
       expected_version: "saved-version", enabled: false, interval_minutes: 30, model_override: null,
     });
-    expect(select.value).toBe("");
+    expect(close).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
   });
 

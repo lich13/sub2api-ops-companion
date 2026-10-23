@@ -43,13 +43,14 @@ export default function ProxyBatchDialog({ accounts, online, connectionKey, clos
     setBatch(value);
     const ids = new Set(value.items.map(j => j.id));
     setOperations([...value.items, ...getOperations().filter(j => !ids.has(j.id))]);
+    if (value.items.length > 0 && value.items.every(j => j.status === "completed")) close();
   }
   async function readBatch(id: string) {
     const token = generation.current, epoch = operationEpoch();
     try {
       const value = await api<Batch>("GET", `/account-operations?batch_id=${id}`);
       if (token !== generation.current || epoch !== operationEpoch()) return;
-      accept(value); setBatchError(""); if (!pending(value)) void command("refresh");
+      accept(value); setBatchError(""); if (!pending(value)) void command("refresh").catch(report);
     } catch (e) { if (token === generation.current && epoch === operationEpoch()) setBatchError(String(e).replace(/^Error: /, "")); }
   }
   useEffect(() => {
@@ -70,7 +71,7 @@ export default function ProxyBatchDialog({ accounts, online, connectionKey, clos
     try {
       const value = await api<Batch>("POST", "/account-operations/batch", { ...payload, request_id: request.current.request_id });
       if (token !== generation.current || epoch !== operationEpoch()) return;
-      accept(value); setBatchError(""); if (!pending(value)) void command("refresh");
+      accept(value); setBatchError(""); if (!pending(value)) void command("refresh").catch(report);
     } catch (e) { if (token === generation.current && epoch === operationEpoch()) { setError(String(e).replace(/^Error: /, "")); report(e); } }
     finally { if (token === generation.current) { guard.current = false; setBusy(false); } }
   }

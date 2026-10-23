@@ -274,6 +274,13 @@ pub fn project(row: &Value, at: DateTime<Utc>, result: &Value) -> Value {
         }
     }
     value["windows"] = windows.into();
+    if row["type"] == "apikey" {
+        value["native_read"] = true.into();
+        let actions = value["actions"].as_array_mut().expect("usage actions");
+        if !actions.iter().any(|a| a == "query_usage") {
+            actions.insert(0, json!("query_usage"));
+        }
+    }
     crate::account_usage::extend(row, &mut value, at);
     value
 }

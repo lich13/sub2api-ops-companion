@@ -198,6 +198,8 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["model-tests", _] => Some(&["GET"]),
         ["model-tests", _, "cancel" | "retry"] => Some(&["POST"]),
         ["quota-refresh"] => Some(&["GET", "POST"]),
+        ["config", "key-quota"] => Some(&["GET", "PUT"]),
+        ["accounts", _, "key-quota-settings"] => Some(&["GET", "PUT"]),
         ["config", "oauth" | "bark"] => Some(&["PUT"]),
         ["actions", "bark-test"] => Some(&["POST"]),
         ["model-groups", _, "reasoning"] => Some(&["GET", "PUT", "DELETE"]),
@@ -324,6 +326,18 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
+        ["config", "key-quota"] => {
+            if method == Method::GET {
+                runtime.key_quota.settings()?
+            } else {
+                runtime.key_quota.save_settings(&payload, None)?
+            }
+        }
+        ["accounts", id, "key-quota-settings"] => {
+            runtime
+                .key_quota_settings(path_id(id)?, (method == Method::PUT).then_some(&payload))
+                .await?
+        }
         ["accounts", id, "usage"] => {
             if !query.is_empty() {
                 return Err(Error::invalid());

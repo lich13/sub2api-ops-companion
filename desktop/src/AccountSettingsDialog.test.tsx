@@ -86,6 +86,7 @@ const catalog = {
 
 let container: HTMLDivElement;
 let root: Root;
+const close = vi.fn();
 
 const click = async (element: Element) => {
   await act(async () => (element as HTMLElement).click());
@@ -104,7 +105,7 @@ const button = (text: string, scope: ParentNode = container) =>
 
 async function renderDialog(section: "whitelist" | "mappings" | "proxy" = "whitelist", value = account()) {
   await act(async () => {
-    root.render(<AccountSettingsDialog account={value} initialSection={section} online close={vi.fn()} />);
+    root.render(<AccountSettingsDialog account={value} initialSection={section} online close={close} />);
     await Promise.resolve();
   });
   await act(async () => Promise.resolve());
@@ -185,7 +186,7 @@ describe("account settings dialog", () => {
     await renderDialog("whitelist", current);
     await change(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')!, "gpt-draft");
     await act(async () => {
-      root.render(<AccountSettingsDialog account={{ ...current, priority: 99 }} initialSection="whitelist" online close={vi.fn()} />);
+      root.render(<AccountSettingsDialog account={{ ...current, priority: 99 }} initialSection="whitelist" online close={close} />);
       await Promise.resolve();
     });
 
@@ -237,6 +238,7 @@ describe("account settings dialog", () => {
     await click(button("保存"));
 
     const save = vi.mocked(submitOperation).mock.calls.find(([, action]) => action === "proxy");
+    expect(close).toHaveBeenCalledOnce();
     expect(save?.[2]).toEqual({ proxy_id: null });
     expect(JSON.stringify(save?.[2])).not.toMatch(/token|password|username|secret/i);
   });
@@ -291,8 +293,8 @@ describe("account settings dialog", () => {
     });
     const first = account({ id: 101, name: "Old account" });
     const second = account({ id: 202, name: "New account" });
-    await act(async () => root.render(<AccountSettingsDialog account={first} initialSection="whitelist" online close={vi.fn()} />));
-    await act(async () => root.render(<AccountSettingsDialog account={second} initialSection="whitelist" online close={vi.fn()} />));
+    await act(async () => root.render(<AccountSettingsDialog account={first} initialSection="whitelist" online close={close} />));
+    await act(async () => root.render(<AccountSettingsDialog account={second} initialSection="whitelist" online close={close} />));
     await act(async () => resolveNew(settings({ account_id: 202, model_config: { whitelist: ["new-model"], mappings: [] } })));
     expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')?.value).toBe("new-model");
 
@@ -300,4 +302,20 @@ describe("account settings dialog", () => {
     expect(container.querySelector<HTMLInputElement>('[aria-label="白名单模型 1"]')?.value).toBe("new-model");
     expect(container.textContent).toContain("New account");
   });
+});
+
+it.each(["failed", "unconfirmed"])("keeps account settings and draft after %s confirmation", async (result) => {
+  if (result === "failed") vi.mocked(followOperation).mockRejectedValue(new Error("fixture failure"));
+  else vi.mocked(followOperation).mockResolvedValue({ verified: false } as never);
+  await renderDialog("proxy");
+  const clear = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(input => input.parentElement?.textContent?.includes("不使用代理"))!;
+  await click(clear); await click(button("保存"));
+  expect(close).not.toHaveBeenCalled(); expect(clear.checked).toBe(true);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+});
+it("closes confirmed account settings even if the list refresh fails", async () => {
+  vi.mocked(command).mockRejectedValue(new Error("fixture refresh failure"));
+  await renderDialog("proxy");
+  await click([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(input => input.parentElement?.textContent?.includes("不使用代理"))!);
+  await click(button("保存")); expect(close).toHaveBeenCalledOnce();
 });

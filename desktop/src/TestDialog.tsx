@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
-import { fullTime, type Account, type TestEvent } from "./types";
+import { fullTime, type Account, type TestEvent, type UsageSummary, type UsageWindow } from "./types";
 import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, type Operation } from "./accountOperations";
 import { useBackAction } from "./mobile";
 
@@ -27,9 +27,19 @@ export function nextBeijingMinute(now = Date.now()) {
   return new Date((Math.floor(now / 60_000) + 1) * 60_000 + 8 * 3600_000).toISOString().slice(0, 16);
 }
 export function appointmentTimestamp(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::00(?:\.0{1,3})?)?$/.test(value)) return NaN;
-  const minute = value.slice(0, 16), at = Date.parse(`${minute}:00+08:00`);
-  return Number.isFinite(at) && new Date(at + 8 * 3600_000).toISOString().slice(0, 16) === minute ? at : NaN;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::[0-5]\d(?:\.0{1,3})?)?$/.test(value)) return NaN;
+  const second = value.length >= 19 ? value.slice(0, 19) : `${value}:00`, at = Date.parse(`${second}+08:00`);
+  return Number.isFinite(at) && new Date(at + 8 * 3600_000).toISOString().slice(0, 19) === second ? at : NaN;
+}
+export function nextCycleAppointment(usage: UsageSummary | undefined, windows: UsageWindow[] = [], now = Date.now()) {
+  const quota = usage?.key_quota?.state === "ok" ? usage.key_quota : undefined;
+  const resets = [
+    ...(usage?.windows ?? windows).filter(window => window.status !== "error" && window.status !== "unknown").map(window => window.reset_at),
+    ...(quota?.plans ?? []).map(plan => plan.reset_at),
+    ...(quota?.subscriptions ?? []).filter(subscription => subscription.active !== false && (!subscription.expires_at || Date.parse(subscription.expires_at) > now))
+      .flatMap(subscription => subscription.plans.map(plan => plan.reset_at)),
+  ].map(reset => reset ? Math.ceil(Date.parse(reset) / 1000) * 1000 + 3000 : NaN).filter(at => Number.isFinite(at) && at > now);
+  return resets.length ? Math.min(...resets) : null;
 }
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
   useBackAction(true, close);
@@ -45,6 +55,8 @@ export default function TestDialog({ account, online, close }: {account: Account
   const [media, setMedia] = useState("");
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cycleBusy, setCycleBusy] = useState(false);
+  const cycleReading = useRef(false);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
@@ -81,12 +93,24 @@ export default function TestDialog({ account, online, close }: {account: Account
     reader.onerror = () => setError("素材读取失败"); reader.readAsDataURL(file);
   }
   async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); else await command("cancel_test"); }
+  async function fillCycleTime() {
+    if (cycleReading.current || running.current || !online) return;
+    cycleReading.current = true; setCycleBusy(true); setError("");
+    try {
+      const usage = account.usage?.native_read ? await api<UsageSummary>("GET", `/accounts/${account.id}/usage`) : account.usage;
+      if (!alive.current) return;
+      const at = nextCycleAppointment(usage, account.usage_windows);
+      if (at == null) { setError("暂无可用的周期重置时间，请手动设置预约时间。"); return; }
+      setScheduledAt(new Date(at + 8 * 3600_000).toISOString().slice(0, 19));
+    } catch (e) { if (alive.current) setError(`周期时间读取失败：${String(e).replace(/^Error: /, "")}`); }
+    finally { cycleReading.current = false; if (alive.current) setCycleBusy(false); }
+  }
   async function start() {
-    if (running.current || !online) return;
+    if (running.current || cycleReading.current || !online) return;
     if (execution === "scheduled") {
       const scheduleTimestamp = appointmentTimestamp(scheduledAt);
       if (!scheduledAt) { setError("请填写预约时间。"); return; }
-      if (!Number.isFinite(scheduleTimestamp)) { setError("预约时间无效，请选择有效日期并精确到分钟。"); return; }
+      if (!Number.isFinite(scheduleTimestamp)) { setError("预约时间无效，请选择有效日期并精确到秒。"); return; }
       if (scheduleTimestamp <= Date.now()) { setError("预约时间须晚于当前北京时间。"); return; }
       running.current = true; setBusy(true); setError("");
       try {
@@ -128,8 +152,8 @@ export default function TestDialog({ account, online, close }: {account: Account
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
       <div className="test-controls">
-        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
-        {execution === "scheduled" && <label className="test-schedule-time">预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={60} value={scheduledAt} disabled={busy} onChange={e => setScheduledAt(e.target.value)}/></label>}
+        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
+        {execution === "scheduled" && <div className="test-schedule-time"><label>预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={1} value={scheduledAt} disabled={busy || cycleBusy} onChange={e => setScheduledAt(e.target.value)}/></label><button type="button" disabled={busy || cycleBusy || !online} onClick={() => void fillCycleTime()}>{cycleBusy ? <LoaderCircle size={13} className="spin"/> : null}最近周期 +3 秒</button></div>}
         <label>模式<select disabled={busy || execution === "scheduled"} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
         {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
@@ -144,7 +168,7 @@ export default function TestDialog({ account, online, close }: {account: Account
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer>{busy ? execution === "scheduled" ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
+      <footer>{busy ? execution === "scheduled" ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || cycleBusy} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
     </section>
   </div>;
 }
