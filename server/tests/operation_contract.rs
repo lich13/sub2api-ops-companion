@@ -1975,12 +1975,13 @@ async fn connection_parent_siblings_and_duplicate_account_never_overlap() {
     let ids = harness.seed_accounts(4, json!({})).await;
     sqlx::query("UPDATE accounts SET parent_account_id=$1,extra=jsonb_build_object('parent_account_id',$1) WHERE id=ANY($2)")
         .bind(ids[0]).bind(&ids[1..3]).execute(&harness.db.pool).await.unwrap();
-    for id in [ids[0], ids[3]] {
+    for id in [ids[1], ids[3]] {
         harness.mock.gate_test(id);
     }
+    let batch_ids = [ids[1], ids[0], ids[2], ids[3]];
     let first_request = harness
         .batch_request(
-            &ids,
+            &batch_ids,
             "test",
             json!({"confirmed":true}),
             "fixture-parent-siblings-0001",
@@ -2005,6 +2006,11 @@ async fn connection_parent_siblings_and_duplicate_account_never_overlap() {
         .await
         .unwrap();
     harness.operations.tick().await.unwrap();
+    // Only the first child and the independent account may occupy workers,
+    // even before either worker reaches authentication or the request lock.
+    assert_eq!(harness.operations.budget.available_permits(), 6);
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.operations.budget.available_permits(), 6);
     harness.wait_test_calls(2).await;
     for _ in 0..3 {
         harness.operations.tick().await.unwrap();
@@ -2017,7 +2023,7 @@ async fn connection_parent_siblings_and_duplicate_account_never_overlap() {
             .iter()
             .map(|call| account_id_from_test_path(&call.path).unwrap())
             .collect::<BTreeSet<_>>(),
-        BTreeSet::from([ids[0], ids[3]])
+        BTreeSet::from([ids[1], ids[3]])
     );
     assert_eq!(harness.mock.test_calls().len(), 2);
     harness.mock.release_all();

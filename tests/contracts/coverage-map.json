@@ -8877,7 +8877,8 @@
         "path": "server/tests/operation_contract.rs",
         "test_name": "connection_parent_siblings_and_duplicate_account_never_overlap",
         "assertions": [
-          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<BTreeSet<_>>(),\n        BTreeSet::from([ids[0], ids[3]])\n    )",
+          "assert_eq!(harness.operations.budget.available_permits(), 6)",
+          "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<BTreeSet<_>>(),\n        BTreeSet::from([ids[1], ids[3]])\n    )",
           "assert_eq!(harness.mock.test_calls().len(), 2)",
           "assert_eq!(first[\"pending\"], 0)",
           "assert_eq!(second[\"pending\"], 0)",

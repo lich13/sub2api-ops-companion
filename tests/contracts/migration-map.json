@@ -14801,7 +14801,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2228,
+          "rust_source_line": 2234,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14883,7 +14883,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2135,
+          "rust_source_line": 2141,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15284,7 +15284,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2181,
+          "rust_source_line": 2187,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15310,7 +15310,8 @@
         "crate": "sub2ops-server",
         "evidence": {
           "assertions": [
-            "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<BTreeSet<_>>(),\n        BTreeSet::from([ids[0], ids[3]])\n    )",
+            "assert_eq!(harness.operations.budget.available_permits(), 6)",
+            "assert_eq!(\n        harness\n            .mock\n            .test_calls()\n            .iter()\n            .map(|call| account_id_from_test_path(&call.path).unwrap())\n            .collect::<BTreeSet<_>>(),\n        BTreeSet::from([ids[1], ids[3]])\n    )",
             "assert_eq!(harness.mock.test_calls().len(), 2)",
             "assert_eq!(first[\"pending\"], 0)",
             "assert_eq!(second[\"pending\"], 0)",
@@ -15422,7 +15423,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2058,
+          "rust_source_line": 2064,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15463,7 +15464,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2228,
+          "rust_source_line": 2234,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,

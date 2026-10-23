@@ -985,7 +985,13 @@ impl Operations {
             .iter()
             .filter_map(|jid| jobs.get(jid))
             .filter(|j| !short(j))
-            .filter_map(|j| integer(&j["account_id"]))
+            .flat_map(|j| {
+                [
+                    integer(&j["account_id"]).unwrap_or(0),
+                    integer(&j["parent_account_id"]).unwrap_or(0),
+                ]
+            })
+            .filter(|id| *id > 0)
             .collect();
         let mut active_tests = running
             .iter()
@@ -1011,17 +1017,14 @@ impl Operations {
             if !short(job) && running.len() >= 8 {
                 continue;
             }
-            if !short(job)
-                && job["status"] == "queued"
-                && self
-                    .actions
-                    .locks
-                    .try_ids([aid, integer(&job["parent_account_id"]).unwrap_or(0)])
-                    .is_err()
-            {
+            let account_ids = [aid, integer(&job["parent_account_id"]).unwrap_or(0)];
+            if !short(job) && account_ids.iter().any(|id| occupied.contains(id)) {
                 continue;
             }
-            if !short(job) && occupied.contains(&aid) {
+            if !short(job)
+                && job["status"] == "queued"
+                && self.actions.locks.try_ids(account_ids).is_err()
+            {
                 continue;
             }
             let permit = if short(job) {
@@ -1046,7 +1049,7 @@ impl Operations {
             self.launch(job.clone(), permit, test_permit);
             running.insert(jid.into());
             if !short(job) {
-                occupied.insert(aid);
+                occupied.extend(account_ids.into_iter().filter(|id| *id > 0));
             }
             if connection_test(job) {
                 active_tests += 1;
