@@ -111,3 +111,17 @@ it("shares preview model candidates and keeps a Key override when the global mod
   const follow = detectionPreview("PUT", "/accounts/11/model-detection", { expected_version: updated.version, model_override: null, enabled: false, interval_minutes: 15 }, accounts, "fixture-new-global") as Record<string, unknown>;
   expect(follow).toMatchObject({ model_source: "global", model_override: null, model_id: "fixture-new-global" });
 });
+
+it("previews smart floors, idle pause and fixed compatibility", () => {
+  const accounts = [account(102),account(103)];
+  const path = '/accounts/102/model-detection';
+  const initial = detectionPreview('GET',path,{},accounts) as Record<string,unknown>;
+  const paused = detectionPreview('PUT',path,{ expected_version:initial.version, enabled:true, interval_minutes:37, schedule_mode:'smart', min_interval_minutes:17 },accounts) as Record<string,unknown>;
+  expect(paused).toMatchObject({ status:'paused', recent_request_count:0, effective_interval_minutes:null, next_at:null });
+  const fixed = detectionPreview('PUT',path,{ expected_version:paused.version, enabled:true, interval_minutes:37, schedule_mode:'fixed' },accounts) as Record<string,unknown>;
+  expect(fixed).toMatchObject({ status:'waiting', effective_interval_minutes:37, min_interval_minutes:17 });
+  const active = detectionPreview('GET','/accounts/103/model-detection',{},accounts) as Record<string,unknown>;
+  const smart = detectionPreview('PUT','/accounts/103/model-detection',{ expected_version:active.version, enabled:true, interval_minutes:15, min_interval_minutes:17 },accounts) as Record<string,unknown>;
+  expect(smart).toMatchObject({ schedule_mode:'smart', recent_request_count:60, effective_interval_minutes:17 });
+  expect(() => detectionPreview('PUT','/accounts/103/model-detection',{ expected_version:smart.version, enabled:true, interval_minutes:15, min_interval_minutes:31 },accounts)).toThrow('5–30');
+});

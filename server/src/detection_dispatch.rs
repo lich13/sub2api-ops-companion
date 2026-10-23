@@ -58,6 +58,22 @@ impl Detection {
             if !state["automatic_starts"].is_object() {
                 state["automatic_starts"] = json!({});
             }
+            for value in state["accounts"].as_object_mut().unwrap().values_mut() {
+                if value.get("schedule_mode").is_none() {
+                    value["schedule_mode"] = "smart".into();
+                    value["min_interval_minutes"] = 5.into();
+                    let anchor = parse_datetime(&value["last_result"]["completed_at"])
+                        .or_else(|| {
+                            parse_datetime(&value["next_at"]).map(|at| {
+                                at - Duration::minutes(
+                                    integer(&value["interval_minutes"]).unwrap_or(15),
+                                )
+                            })
+                        })
+                        .unwrap_or_else(|| self.now());
+                    value["schedule_anchor_at"] = datetime(anchor).into();
+                }
+            }
             for job in jobs["jobs"].as_object().unwrap().values() {
                 if job["automatic"] != true {
                     continue;

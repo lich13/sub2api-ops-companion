@@ -35,6 +35,7 @@ const account: Account = {
 };
 
 type Detection = {
+  schedule_mode?: "fixed" | "smart"; min_interval_minutes?: number; effective_interval_minutes?: number | null; recent_request_count?: number | null;
   last_automatic_started_at?: string | null;
   enabled: boolean;
   interval_minutes: number;
@@ -653,4 +654,33 @@ describe("OpenAI Key detection models", () => {
       expected_version: baseDetection.version, enabled: false, interval_minutes: 30, model_override: "retired-model",
     });
   });
+});
+
+it("shows smart activity, validates the floor and preserves the fixed interval when switching", async () => {
+  const smart: Detection = { ...baseDetection, enabled: true, schedule_mode: "smart", min_interval_minutes: 5, effective_interval_minutes: 15, recent_request_count: 44 };
+  await renderDialog(smart);
+  expect(container.textContent).toContain("44 次"); expect(container.textContent).toContain("15 分钟");
+  const floor = container.querySelector<HTMLInputElement>('[aria-label="最小间隔"]')!;
+  const set = async (element: HTMLInputElement | HTMLSelectElement, value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(element, value);
+    element.dispatchEvent(new Event("input", { bubbles: true })); element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  for (const invalid of ['4','31','5.5','']) { await set(floor, invalid); expect(button("保存").disabled).toBe(true); }
+  await set(floor, '17'); expect(button("保存").disabled).toBe(false);
+  const mode = container.querySelector<HTMLSelectElement>('[aria-label="检测模式"]')!;
+  await set(mode, 'fixed');
+  expect(container.querySelector<HTMLInputElement>('[aria-label="检测间隔"]')!.value).toBe('30');
+  await set(mode, 'smart');
+  expect(container.querySelector<HTMLInputElement>('[aria-label="最小间隔"]')!.value).toBe('17');
+  vi.mocked(api).mockImplementation(async (method, path, body) => method === 'PUT' ? { ...smart, ...(body as object) } as never : smart as never);
+  await act(async () => button('保存').click());
+  expect(api).toHaveBeenCalledWith('PUT','/accounts/42/model-detection',expect.objectContaining({ schedule_mode:'smart', min_interval_minutes:17, interval_minutes:30 }));
+});
+it("shows idle and failed statistics distinctly", async () => {
+  await renderDialog({ ...baseDetection, schedule_mode:'smart', min_interval_minutes:5, recent_request_count:0, effective_interval_minutes:null, status:'paused', reason:'最近一小时无业务调用，已暂停定时检测' });
+  expect(container.textContent).toContain('无调用，已暂停');
+  vi.mocked(api).mockResolvedValue({ ...baseDetection, schedule_mode:'smart', min_interval_minutes:5, recent_request_count:null, effective_interval_minutes:null, status:'paused', reason:'调用统计暂不可用，等待重新读取' } as never);
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(container.textContent).toContain('等待调用统计');
+  expect(container.textContent).toContain('调用统计暂不可用');
 });

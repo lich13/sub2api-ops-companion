@@ -17,7 +17,7 @@ export type AccountSettings = {
   versions: Record<string, string>;
 };
 type SyncResult = { models: string[]; warnings: string[]; synced_at: string };
-export const operationLabel = (job: Operation) => ({ queued: "已排队，等待账号空闲", running: "正在保存", checking: "正在核对实际值", completed: "已确认生效", needs_confirmation: "相关字段已变化，请在待办中核对", failed: "保存失败", cancelled: "已取消", superseded: "已由新请求替代" } as Record<string, string>)[job.status] || job.status;
+export const operationLabel = (job: Operation) => job.status === "queued" ? job.reason || "已排队，等待执行" : ({ running: "正在保存", checking: "正在核对实际值", completed: "已确认生效", needs_confirmation: "相关字段已变化，请在待办中核对", failed: "保存失败", cancelled: "已取消", superseded: "已由新请求替代" } as Record<string, string>)[job.status] || job.status;
 
 export default function AccountSettingsDialog({ account, initialSection, online, close }: {
   account: Account; initialSection: SettingsSection; online: boolean; close: () => void;

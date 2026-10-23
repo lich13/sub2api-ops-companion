@@ -999,32 +999,44 @@ impl Operations {
             .filter(|j| connection_test(j))
             .count();
         let limit = self.backend.test_config()?.1.clamp(1, 8);
+        let mut waiting = BTreeMap::new();
         for job in jobs.values() {
             let jid = string(&job["id"]);
             let aid = integer(&job["account_id"]).unwrap();
-            if !matches!(string(&job["status"]), "queued" | "checking")
-                || running.contains(jid)
-                || native(job)
-                || (job["status"] == "queued"
-                    && crate::compat::parse_datetime(&job["scheduled_at"])
-                        .is_some_and(|at| at > self.backend.now()))
+            if !matches!(string(&job["status"]), "queued" | "checking") || running.contains(jid) {
+                continue;
+            }
+            if native(job) {
+                if !running.contains(string(&job["batch_id"])) {
+                    waiting.insert(jid, "等待操作执行容量");
+                }
+                continue;
+            }
+            if job["status"] == "queued"
+                && crate::compat::parse_datetime(&job["scheduled_at"])
+                    .is_some_and(|at| at > self.backend.now())
             {
+                waiting.insert(jid, "等待预约时间");
                 continue;
             }
             if connection_test(job) && job["status"] == "queued" && active_tests >= limit {
+                waiting.insert(jid, "等待测试执行容量");
                 continue;
             }
             if !short(job) && running.len() >= 8 {
+                waiting.insert(jid, "等待操作执行容量");
                 continue;
             }
             let account_ids = [aid, integer(&job["parent_account_id"]).unwrap_or(0)];
             if !short(job) && account_ids.iter().any(|id| occupied.contains(id)) {
+                waiting.insert(jid, "等待账号空闲");
                 continue;
             }
             if !short(job)
                 && job["status"] == "queued"
                 && self.actions.locks.try_ids(account_ids).is_err()
             {
+                waiting.insert(jid, "等待账号空闲");
                 continue;
             }
             let permit = if short(job) {
@@ -1032,14 +1044,20 @@ impl Operations {
             } else {
                 match self.budget.clone().try_acquire_owned() {
                     Ok(p) => Some(p),
-                    Err(_) => continue,
+                    Err(_) => {
+                        waiting.insert(jid, "等待操作执行容量");
+                        continue;
+                    }
                 }
             };
             let test_permit = if job["action"] == "test" && job["status"] == "queued" {
                 match self.backend.test_slots() {
                     Some(slots) => match slots.acquire() {
                         Some(permit) => Some(permit),
-                        None => continue,
+                        None => {
+                            waiting.insert(jid, "等待测试执行容量");
+                            continue;
+                        }
                     },
                     None => None,
                 }
@@ -1054,6 +1072,17 @@ impl Operations {
             if connection_test(job) {
                 active_tests += 1;
             }
+        }
+        waiting.retain(|id, reason| jobs[*id]["reason"] != *reason);
+        if !waiting.is_empty() {
+            self.store.transaction(|data| {
+                for (id, reason) in &waiting {
+                    if data["jobs"][*id]["status"] == "queued" {
+                        data["jobs"][*id]["reason"] = (*reason).into();
+                    }
+                }
+                Ok(())
+            })?;
         }
         Ok(())
     }

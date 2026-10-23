@@ -316,7 +316,7 @@ describe("proxy batch dialog", () => {
       .find((node) => node.parentElement?.textContent?.includes("香港代理"))!);
     await click(button("确认应用"));
     await flush();
-    expect(container.textContent).toContain("已排队，等待账号空闲");
+    expect(container.textContent).toContain("等待账号空闲");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
@@ -348,7 +348,7 @@ describe("proxy batch dialog", () => {
     await flush();
 
     expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "GET" && path === "/account-operations?batch_id=batch-late")).toBe(false);
-    expect(container.textContent).not.toContain("已排队，等待账号空闲");
+    expect(container.textContent).not.toContain("等待账号空闲");
     expect(container.textContent).not.toContain("已确认生效");
   });
 

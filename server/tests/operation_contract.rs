@@ -1271,6 +1271,7 @@ async fn a_busy_account_does_not_block_other_items_and_account_lock_is_respected
         .unwrap();
     let items = items_by_account(&running);
     assert_eq!(items[&busy_id]["status"], "queued");
+    assert_eq!(items[&busy_id]["reason"], "等待账号空闲");
     assert_eq!(items[&other_id]["status"], "running");
     harness.mock.release_test(other_id);
     let settled_other = harness
@@ -1879,6 +1880,16 @@ async fn connection_concurrency_defaults_to_two_and_clamps_to_one_or_eight() {
         }
         assert_eq!(harness.mock.test_calls().len(), expected);
         assert_eq!(harness.mock.active.lock().unwrap().len(), expected);
+        let waiting = harness
+            .operations
+            .listing(Some(accepted["batch_id"].as_str().unwrap()))
+            .unwrap();
+        assert!(waiting["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|job| job["status"] == "queued")
+            .all(|job| job["reason"] == "等待测试执行容量"));
         harness.mock.release_all();
         let finished = harness
             .wait_batch_settled(accepted["batch_id"].as_str().unwrap())
@@ -2438,6 +2449,13 @@ async fn scheduled_connection_runs_once_at_the_minute_and_keeps_history_across_r
     );
     *harness.backend.now.lock().unwrap() = due - chrono::Duration::seconds(1);
     harness.operations.tick().await.unwrap();
+    assert_eq!(
+        harness
+            .operations
+            .get(job["id"].as_str().unwrap(), 0)
+            .unwrap()["reason"],
+        "等待预约时间"
+    );
     assert!(harness.mock.test_calls().is_empty());
     sqlx::query("UPDATE accounts SET credentials=credentials || '{\"access_token\":\"fixture-refreshed-token\"}'::jsonb WHERE id=$1")
         .bind(ids[0]).execute(&harness.db.pool).await.unwrap();

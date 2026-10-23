@@ -52,7 +52,7 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     return structuredClone(bank);
   }
   const aid = Number(path.split('/')[2]);
-  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
+  let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
   const effectiveModel = value.model_override ?? model;
@@ -68,7 +68,15 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     if (override !== null && (typeof override !== "string" || !/^[A-Za-z0-9._:/-]{1,200}$/.test(override))) throw new Error('检测模型无效');
     const selected = override ?? model;
     if (body.enabled && (!account || !modelTestCandidates(account).some((m) => m.id === selected))) throw new Error('所选模型不在当前账号上游模型目录中');
-    value = { ...value, model_override: override, model_id: selected, model_source: override ? "account" : "global", enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? 'waiting' : 'disabled', next_at: body.enabled ? new Date(Date.now() + Number(body.interval_minutes)*60000).toISOString() : null };
+    const schedule = body.schedule_mode ?? value.schedule_mode;
+    const minimum = body.min_interval_minutes ?? value.min_interval_minutes;
+    if (!['fixed', 'smart'].includes(String(schedule))) throw new Error('检测模式无效');
+    if (!Number.isInteger(minimum) || Number(minimum) < 5 || Number(minimum) > 30) throw new Error('最小间隔须为 5–30 的整数分钟');
+    const count = Number(value.recent_request_count);
+    const tier = count >= 120 ? 5 : count >= 60 ? 10 : count >= 30 ? 15 : count >= 10 ? 20 : count >= 3 ? 25 : count > 0 ? 30 : null;
+    const effective = schedule === 'smart' ? tier === null ? null : Math.max(tier, Number(minimum)) : Number(body.interval_minutes);
+    const anchor = value.schedule_anchor_at ?? new Date().toISOString();
+    value = { ...value, schedule_mode: schedule, min_interval_minutes: minimum, effective_interval_minutes: effective, schedule_anchor_at: anchor, model_override: override, model_id: selected, model_source: override ? "account" : "global", enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? effective === null ? 'paused' : 'waiting' : 'disabled', reason: body.enabled && effective === null ? '最近一小时无业务调用，已暂停定时检测' : '', next_at: body.enabled && effective !== null ? new Date((schedule === 'smart' ? Date.parse(String(anchor)) : Date.now()) + effective*60000).toISOString() : null };
     detections.set(aid, value);
   }
   return structuredClone(value);

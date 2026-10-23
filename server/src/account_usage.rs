@@ -451,10 +451,48 @@ pub fn apply_native(row: &Value, usage: &mut Value, data: &Value, at: DateTime<U
 }
 
 impl Runtime {
+    async fn usage_row(&self, id: i64) -> Result<Value> {
+        self.db.one(
+            "SELECT a.id,a.platform,a.type,a.extra,md5(a.credentials::text) AS credential_version,
+             nullif(to_jsonb(a)->>'parent_account_id','')::bigint AS parent_account_id,
+             coalesce(nullif(a.credentials->>'plan_type',''),nullif(a.credentials->>'chatgpt_plan_type',''),a.extra->>'plan_type') AS quota_plan_type,
+             a.credentials->>'subscription_tier' AS quota_grok_tier,a.credentials->>'entitlement_status' AS quota_grok_entitlement,
+             a.credentials->>'account_mode' AS usage_account_mode,a.credentials->>'base_url' AS usage_base_url,
+             to_jsonb(a)->>'session_window_end' AS usage_session_window_end,to_jsonb(a)->>'session_window_status' AS usage_session_window_status
+             FROM accounts a WHERE a.id=$1 AND a.deleted_at IS NULL",
+            &[id.into()],
+        ).await?.ok_or_else(|| Error::new(404, "账号不存在"))
+    }
+
+    async fn local_account_usage(&self, row: &Value) -> Result<Value> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
+        let state = self.actions.queries.oauth.snapshot()?;
+        let result = crate::queries::latest_completed_result(
+            &state["oauth_results"][id.to_string()],
+            &state["scheduler"][id.to_string()],
+        );
+        let mut usage = crate::usage::project(row, Utc::now(), &result);
+        let specs = crate::usage::stats_specs(id, &usage);
+        let stats = if specs.is_empty() {
+            crate::usage::Stats::new()
+        } else {
+            self.db
+                .all(
+                    &crate::sql::STATS_STATS_SQL.replace("%(windows)s", "$1"),
+                    &[crate::db::Param::Json(json!(specs))],
+                )
+                .await
+                .map(crate::usage::stats_rows)
+                .unwrap_or_default()
+        };
+        crate::usage::attach_stats(id, &mut usage, &stats, 500_000);
+        Ok(usage)
+    }
+
     pub async fn account_usage(&self, id: i64, key: &str, force: bool) -> Result<Value> {
-        let row = self.actions.account(id, None).await?;
+        let row = self.usage_row(id).await?;
         let kind = provider(&row);
-        let mut usage = self.account_snapshot(id).await?["usage"].clone();
+        let mut usage = self.local_account_usage(&row).await?;
         if kind.is_empty() {
             return Ok(usage);
         }
@@ -504,7 +542,7 @@ impl Runtime {
             _ => return Ok(usage),
         };
         let response = self.actions.json(method, &path, key, None, 30).await;
-        let live = self.actions.account(id, None).await?;
+        let live = self.usage_row(id).await?;
         if row["credential_version"] != live["credential_version"]
             || row["platform"] != live["platform"]
             || row["type"] != live["type"]

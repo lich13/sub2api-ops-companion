@@ -16,6 +16,7 @@ use tokio::{net::TcpListener, task::JoinHandle};
 struct Mock {
     reply: Arc<Mutex<(u16, Value)>>,
     calls: Arc<Mutex<Vec<(String, String)>>>,
+    gate: Arc<Mutex<Option<Arc<tokio::sync::Semaphore>>>>,
 }
 
 struct Server {
@@ -29,6 +30,7 @@ impl Server {
         let mock = Mock {
             reply: Arc::new(Mutex::new((status, body))),
             calls: Arc::new(Mutex::new(vec![])),
+            gate: Arc::new(Mutex::new(None)),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -62,6 +64,10 @@ async fn handler(State(mock): State<Mock>, request: Request) -> Response {
             .unwrap_or("")
             .to_owned(),
     ));
+    let gate = mock.gate.lock().unwrap().clone();
+    if let Some(gate) = gate {
+        gate.acquire().await.unwrap().forget();
+    }
     let (status, body) = mock.reply.lock().unwrap().clone();
     (StatusCode::from_u16(status).unwrap(), Json(body)).into_response()
 }
@@ -277,4 +283,78 @@ async fn legacy_envelope_code_requires_integer_zero() {
         assert_eq!(router.status()["state"], "protocol_mismatch");
     }
     assert_eq!(verify.count(), 3);
+}
+
+#[tokio::test]
+async fn overlapping_fresh_probes_merge_while_cached_reads_bypass_the_probe_queue() {
+    let server = Server::start(200, json!({"code":0,"data":[]})).await;
+    let dir = tempfile::tempdir().unwrap();
+    let router = router(dir.path(), &server.url, "");
+    router.authenticate("fixture-key", true).await.unwrap();
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *server.mock.gate.lock().unwrap() = Some(gate.clone());
+    let first = {
+        let router = router.clone();
+        tokio::spawn(async move { router.authenticate("fixture-key", true).await })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while server.count() < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut waiting = (0..15)
+        .map(|_| Box::pin(router.authenticate("fixture-key", true)))
+        .collect::<Vec<_>>();
+    for future in &mut waiting {
+        assert!(futures_util::poll!(future.as_mut()).is_pending());
+    }
+    // The writer remains gated, but the existing read cache is immediately usable.
+    assert!(futures_util::poll!(Box::pin(router.authenticate("fixture-key", false))).is_ready());
+    gate.add_permits(1);
+    first.await.unwrap().unwrap();
+    for result in futures_util::future::join_all(waiting).await {
+        result.unwrap();
+    }
+    assert_eq!(server.count(), 2);
+    *server.mock.gate.lock().unwrap() = None;
+    // A new write after completion must validate again, not reuse that result.
+    router.authenticate("fixture-key", true).await.unwrap();
+    assert_eq!(server.count(), 3);
+    router
+        .authenticate("fixture-other-key", false)
+        .await
+        .unwrap();
+    assert_eq!(server.count(), 4);
+    server.reply(403, json!({"message":"denied"}));
+    assert!(router
+        .authenticate("fixture-other-key", true)
+        .await
+        .is_err());
+    assert!(router
+        .authenticate("fixture-other-key", false)
+        .await
+        .is_err());
+    assert_eq!(
+        server.count(),
+        6,
+        "an authorization denial clears positive cache immediately"
+    );
+}
+
+#[tokio::test]
+async fn changing_connection_configuration_cannot_reuse_old_authentication() {
+    let first = Server::start(200, json!({"code":0,"data":[]})).await;
+    let second = Server::start(403, json!({"message":"denied"})).await;
+    let dir = tempfile::tempdir().unwrap();
+    let router = router(dir.path(), &first.url, "");
+    router.authenticate("fixture-key", false).await.unwrap();
+    std::fs::write(
+        dir.path().join("SUB2API_CONFIG_PATH"),
+        serde_json::to_vec(&json!({"base_url":"","verify_base_url":second.url})).unwrap(),
+    )
+    .unwrap();
+    assert!(router.authenticate("fixture-key", false).await.is_err());
+    assert_eq!((first.count(), second.count()), (1, 1));
 }

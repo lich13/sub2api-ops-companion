@@ -23,14 +23,20 @@ export function preferredModel(models: TestModel[], platform: string, mode: Test
   const options = modelsForMode(models, platform, mode);
   return (platform === "grok" ? options.find((m) => m.id.includes("grok-4.5")) ?? options.find((m) => m.id === "grok") : options.find((m) => m.id.includes("sonnet")))?.id ?? options[0]?.id ?? "";
 }
+export function nextBeijingMinute(now = Date.now()) {
+  return new Date((Math.floor(now / 60_000) + 1) * 60_000 + 8 * 3600_000).toISOString().slice(0, 16);
+}
+export function appointmentTimestamp(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::00(?:\.0{1,3})?)?$/.test(value)) return NaN;
+  const minute = value.slice(0, 16), at = Date.parse(`${minute}:00+08:00`);
+  return Number.isFinite(at) && new Date(at + 8 * 3600_000).toISOString().slice(0, 16) === minute ? at : NaN;
+}
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
   useBackAction(true, close);
   const operations = useSyncExternalStore(subscribeOperations, getOperations);
   const scheduled = operations.filter(job => job.account_id === account.id && job.scheduled_at && ["queued", "running", "checking", "needs_confirmation"].includes(job.status));
   const [execution, setExecution] = useState("now");
   const [scheduledAt, setScheduledAt] = useState("");
-  const scheduleTimestamp = scheduledAt ? Date.parse(`${scheduledAt}:00+08:00`) : NaN;
-  const scheduleValid = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(scheduledAt) && Number.isFinite(scheduleTimestamp) && scheduleTimestamp > Date.now() && new Date(scheduleTimestamp + 8 * 3600_000).toISOString().slice(0, 16) === scheduledAt;
   const [models, setModels] = useState<TestModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<TestMode>(account.platform === "grok" ? "text" : "default");
@@ -51,8 +57,8 @@ export default function TestDialog({ account, online, close }: {account: Account
     if (account.operation_versions?.test) void api<{ items: Operation[] }>("GET", "/account-operations").then(data => { if (alive.current) setOperations(data.items); }).catch(e => { if (alive.current) setError(String(e)); });
     void api<TestModel[]>("GET", `/accounts/${account.id}/models?purpose=model_test`).then((list) => {
       if (!alive.current) return;
-      setModels(list); setModel(preferredModel(list, account.platform, mode));
-    }).catch((e) => { if (alive.current) setError(String(e)); }).finally(() => { if (alive.current) setLoading(false); });
+      setModels(list);
+    }).catch(() => { if (alive.current) setError("模型列表读取失败，仍可使用默认模型测试。"); }).finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; if (running.current && !account.operation_versions) void command("cancel_test"); };
   }, [account.id]);
   const choices: {id: TestMode; label: string}[] = account.platform === "grok"
@@ -78,7 +84,10 @@ export default function TestDialog({ account, online, close }: {account: Account
   async function start() {
     if (running.current || !online) return;
     if (execution === "scheduled") {
-      if (!scheduleValid) return;
+      const scheduleTimestamp = appointmentTimestamp(scheduledAt);
+      if (!scheduledAt) { setError("请填写预约时间。"); return; }
+      if (!Number.isFinite(scheduleTimestamp)) { setError("预约时间无效，请选择有效日期并精确到分钟。"); return; }
+      if (scheduleTimestamp <= Date.now()) { setError("预约时间须晚于当前北京时间。"); return; }
       running.current = true; setBusy(true); setError("");
       try {
         await submitOperation(account, "test", { confirmed: true, mode: account.platform === "grok" ? "text" : "default", model_id: model, prompt: "" }, undefined, new Date(scheduleTimestamp).toISOString());
@@ -119,7 +128,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
       <div className="test-controls">
-        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") changeMode(account.platform === "grok" ? "text" : "default"); }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
+        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
         {execution === "scheduled" && <label className="test-schedule-time">预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={60} value={scheduledAt} disabled={busy} onChange={e => setScheduledAt(e.target.value)}/></label>}
         <label>模式<select disabled={busy || execution === "scheduled"} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
         {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
@@ -128,12 +137,14 @@ export default function TestDialog({ account, online, close }: {account: Account
       </div>
       {scheduled.length > 0 && <ul className="test-schedules">{scheduled.map(job => <li key={job.id}><div><time>{fullTime(job.scheduled_at)}</time><span>{String(job.requested.model_id || "默认模型")}</span></div><span>{({ queued: "待执行", running: "测试中", checking: "核对中", needs_confirmation: "待核对" } as Record<string, string>)[job.status]}</span>{job.status === "queued" && <button className="icon-button" aria-label={`取消预约 ${fullTime(job.scheduled_at)}`} disabled={busy || !online} onClick={() => { void api<Operation>("POST", `/account-operations/${job.id}/cancel`, {}).then(result => { if (alive.current) setOperations(getOperations().map(row => row.id === result.id ? result : row)); }).catch(e => { if (alive.current) setError(String(e)); }); }}><X size={15}/></button>}</li>)}</ul>}
       <div className="test-result" aria-live="polite">
+        {!online && <p className="bad-text">当前离线，请恢复连接后操作。</p>}
+        {loading && <p className="muted">正在读取模型列表，可直接使用默认模型测试。</p>}
         {status && <div className="test-status">{busy && <LoaderCircle size={14} className="spin"/>}{status}{result?.duration_ms != null && <span>{(result.duration_ms / 1000).toFixed(2)} s · {fullTime(result.completed_at)}</span>}</div>}
         {text && <pre>{text}</pre>}
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer>{busy ? <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || loading || (execution === "scheduled" && !scheduleValid)} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
+      <footer>{busy ? execution === "scheduled" ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
     </section>
   </div>;
 }

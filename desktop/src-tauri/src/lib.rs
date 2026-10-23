@@ -742,26 +742,22 @@ async fn api_request(
     if record_read {
         check_record_activity(&_app).await?;
     }
-    let (view, key, generation) = {
+    let (base, key, generation) = {
         let _gate = state.network.lock().await;
-        let view = state.view.lock().await.clone();
+        let view = state.view.lock().await;
         let diagnostic = method == "GET" && path == "/connection-status";
         if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) {
             return Err("当前离线，请恢复连接后操作".into());
         }
         let key = state.key.lock().await.clone().ok_or("尚未连接")?;
-        (view, key, state.generation.load(Ordering::SeqCst))
+        (
+            view.preferences.base_url.clone(),
+            key,
+            state.generation.load(Ordering::SeqCst),
+        )
     };
     let log = state.path.with_file_name("network-diagnostics.log");
-    let request = http(
-        &state.client,
-        &view.preferences.base_url,
-        &key,
-        &method,
-        &path,
-        body,
-        &log,
-    );
+    let request = http(&state.client, &base, &key, &method, &path, body, &log);
     let request = async {
         if method == "GET" {
             active_read(&state, request).await

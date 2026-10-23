@@ -740,6 +740,20 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["version"].is_string()
                 && data["enabled"].is_boolean()
                 && data["interval_minutes"].as_u64().is_some_and(|v| v > 0)
+                && data
+                    .get("schedule_mode")
+                    .is_none_or(|v| v == "fixed" || v == "smart")
+                && data
+                    .get("min_interval_minutes")
+                    .is_none_or(|v| v.as_u64().is_some_and(|n| (5..=30).contains(&n)))
+                && (data["effective_interval_minutes"].is_null()
+                    || data["effective_interval_minutes"]
+                        .as_u64()
+                        .is_some_and(|n| {
+                            n > 0 && (data["schedule_mode"] != "smart" || (5..=30).contains(&n))
+                        }))
+                && (data["recent_request_count"].is_null()
+                    || data["recent_request_count"].as_u64().is_some())
                 && data["model_id"].is_string()
                 && data
                     .get("model_source")
@@ -1580,6 +1594,26 @@ mod tests {
     fn detection_templates_and_bank_response_guards() {
         let detection = serde_json::json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"gpt-6-luna","status":"disabled"});
         assert!(shape_valid("/accounts/1/model-detection", &detection));
+        let mut smart_detection = detection.clone();
+        smart_detection["schedule_mode"] = serde_json::json!("smart");
+        smart_detection["min_interval_minutes"] = serde_json::json!(5);
+        smart_detection["effective_interval_minutes"] = serde_json::json!(10);
+        smart_detection["recent_request_count"] = serde_json::json!(77);
+        assert!(shape_valid("/accounts/1/model-detection", &smart_detection));
+        for (field, value) in [
+            ("schedule_mode", serde_json::json!("other")),
+            ("min_interval_minutes", serde_json::json!(4)),
+            ("min_interval_minutes", serde_json::json!(5.5)),
+            ("effective_interval_minutes", serde_json::json!(31)),
+            ("recent_request_count", serde_json::json!(-1)),
+        ] {
+            let mut invalid = smart_detection.clone();
+            invalid[field] = value;
+            assert!(!shape_valid("/accounts/1/model-detection", &invalid));
+        }
+        smart_detection["effective_interval_minutes"] = serde_json::Value::Null;
+        smart_detection["recent_request_count"] = serde_json::Value::Null;
+        assert!(shape_valid("/accounts/1/model-detection", &smart_detection));
         let mut global_detection = detection.clone();
         global_detection["model_source"] = serde_json::json!("global");
         assert!(shape_valid(

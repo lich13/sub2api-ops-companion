@@ -14760,7 +14760,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1652,
+          "rust_source_line": 1653,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14801,7 +14801,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2234,
+          "rust_source_line": 2245,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14841,7 +14841,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1366,
+          "rust_source_line": 1367,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14883,7 +14883,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2141,
+          "rust_source_line": 2152,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14922,7 +14922,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1846,
+          "rust_source_line": 1847,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14961,7 +14961,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1846,
+          "rust_source_line": 1847,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15043,7 +15043,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1846,
+          "rust_source_line": 1847,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15080,7 +15080,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1497,
+          "rust_source_line": 1498,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15120,7 +15120,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1902,
+          "rust_source_line": 1913,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15204,7 +15204,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1724,
+          "rust_source_line": 1725,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15284,7 +15284,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2187,
+          "rust_source_line": 2198,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15326,7 +15326,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1970,
+          "rust_source_line": 1981,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15423,7 +15423,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2064,
+          "rust_source_line": 2075,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15464,7 +15464,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2234,
+          "rust_source_line": 2245,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15558,7 +15558,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1811,
+          "rust_source_line": 1812,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -20707,7 +20707,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6305,
+          "rust_source_line": 6306,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20758,7 +20758,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1790,
+          "rust_source_line": 1791,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20805,7 +20805,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2087,
+          "rust_source_line": 2088,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20854,7 +20854,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6376,
+          "rust_source_line": 6377,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20902,7 +20902,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1570,
+          "rust_source_line": 1571,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20948,7 +20948,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6182,
+          "rust_source_line": 6183,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -20994,7 +20994,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1371,
+          "rust_source_line": 1372,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21032,7 +21032,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4775,
+          "rust_source_line": 4776,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21080,7 +21080,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1995,
+          "rust_source_line": 1996,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21128,7 +21128,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6182,
+          "rust_source_line": 6183,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21176,7 +21176,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6376,
+          "rust_source_line": 6377,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21221,7 +21221,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4435,
+          "rust_source_line": 4436,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21266,7 +21266,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4435,
+          "rust_source_line": 4436,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21308,7 +21308,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2127,
+          "rust_source_line": 2128,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21348,7 +21348,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2127,
+          "rust_source_line": 2128,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21388,7 +21388,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2127,
+          "rust_source_line": 2128,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21432,7 +21432,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2127,
+          "rust_source_line": 2128,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21470,7 +21470,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5169,
+          "rust_source_line": 5170,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21509,7 +21509,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5169,
+          "rust_source_line": 5170,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21550,7 +21550,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5169,
+          "rust_source_line": 5170,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21597,7 +21597,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2971,
+          "rust_source_line": 2972,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21643,7 +21643,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5410,
+          "rust_source_line": 5411,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21682,7 +21682,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4903,
+          "rust_source_line": 4904,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21727,7 +21727,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5462,
+          "rust_source_line": 5463,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21772,7 +21772,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5025,
+          "rust_source_line": 5026,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21818,7 +21818,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4954,
+          "rust_source_line": 4955,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21856,7 +21856,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4633,
+          "rust_source_line": 4634,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21905,7 +21905,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2538,
+          "rust_source_line": 2539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21951,7 +21951,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2731,
+          "rust_source_line": 2732,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -21996,7 +21996,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5082,
+          "rust_source_line": 5083,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22043,7 +22043,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2538,
+          "rust_source_line": 2539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22080,7 +22080,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3218,
+          "rust_source_line": 3219,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22118,7 +22118,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6866,
+          "rust_source_line": 6867,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22155,7 +22155,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3218,
+          "rust_source_line": 3219,
           "supporting_targets": [
             {
               "assertions": [
@@ -22165,7 +22165,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 6866,
+              "line": 6867,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "stale_oauth_rejection_is_ignored_but_fresh_rejection_blocks_recheck",
@@ -22217,7 +22217,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6775,
+          "rust_source_line": 6776,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22254,7 +22254,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3218,
+          "rust_source_line": 3219,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22293,7 +22293,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6612,
+          "rust_source_line": 6613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22331,7 +22331,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6612,
+          "rust_source_line": 6613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22369,7 +22369,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6612,
+          "rust_source_line": 6613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22408,7 +22408,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6555,
+          "rust_source_line": 6556,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22447,7 +22447,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6612,
+          "rust_source_line": 6613,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22493,7 +22493,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2538,
+          "rust_source_line": 2539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22532,7 +22532,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4903,
+          "rust_source_line": 4904,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22572,7 +22572,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4847,
+          "rust_source_line": 4848,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22617,7 +22617,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2890,
+          "rust_source_line": 2891,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22700,7 +22700,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3414,
+          "rust_source_line": 3415,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22738,7 +22738,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3218,
+          "rust_source_line": 3219,
           "supporting_targets": [
             {
               "assertions": [
@@ -22759,7 +22759,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 3414,
+              "line": 3415,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "marked_recheck_waits_for_shared_cooldown_then_clears_mark_without_schedule_write",
@@ -22812,7 +22812,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3414,
+          "rust_source_line": 3415,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22850,7 +22850,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5760,
+          "rust_source_line": 5761,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22888,7 +22888,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4536,
+          "rust_source_line": 4537,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22925,7 +22925,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3945,
+          "rust_source_line": 3946,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -22971,7 +22971,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3414,
+          "rust_source_line": 3415,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23017,7 +23017,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 7017,
+          "rust_source_line": 7018,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23063,7 +23063,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 7017,
+          "rust_source_line": 7018,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23110,7 +23110,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3414,
+          "rust_source_line": 3415,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23156,7 +23156,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 7017,
+          "rust_source_line": 7018,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23194,7 +23194,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4304,
+          "rust_source_line": 4305,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23231,7 +23231,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3945,
+          "rust_source_line": 3946,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23269,7 +23269,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4046,
+          "rust_source_line": 4047,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23306,7 +23306,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4046,
+          "rust_source_line": 4047,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23357,7 +23357,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3695,
+          "rust_source_line": 3696,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23413,7 +23413,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3695,
+          "rust_source_line": 3696,
           "supporting_targets": [
             {
               "assertions": [
@@ -23434,7 +23434,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 6495,
+              "line": 6496,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "manual_model_test_never_runs_automatic_disposition_for_a_target_first_group",
@@ -23478,7 +23478,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5845,
+          "rust_source_line": 5846,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23517,7 +23517,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4046,
+          "rust_source_line": 4047,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23557,7 +23557,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5534,
+          "rust_source_line": 5535,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23595,7 +23595,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4046,
+          "rust_source_line": 4047,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23633,7 +23633,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5916,
+          "rust_source_line": 5917,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -23679,7 +23679,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 3836,
+          "rust_source_line": 3837,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26168,7 +26168,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2731,
+          "rust_source_line": 2732,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26216,7 +26216,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5082,
+          "rust_source_line": 5083,
           "supporting_targets": [
             {
               "assertions": [
@@ -26235,7 +26235,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 2538,
+              "line": 2539,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "automatic_first_group_verdict_confirms_schedulable_write_before_bark_and_deduplicates",
@@ -26279,7 +26279,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2127,
+          "rust_source_line": 2128,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26330,7 +26330,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1790,
+          "rust_source_line": 1791,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26380,7 +26380,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1371,
+          "rust_source_line": 1372,
           "supporting_targets": [
             {
               "assertions": [
@@ -26392,7 +26392,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 1570,
+              "line": 1571,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "cooling_clues_are_consumed_without_later_replay",
@@ -26451,7 +26451,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1995,
+          "rust_source_line": 1996,
           "supporting_targets": [
             {
               "assertions": [
@@ -26463,7 +26463,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 4435,
+              "line": 4436,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "dispatch_history_migration_survives_pruned_job_summaries_and_restart",
@@ -26518,7 +26518,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2538,
+          "rust_source_line": 2539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26563,7 +26563,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6182,
+          "rust_source_line": 6183,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -26604,7 +26604,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4633,
+          "rust_source_line": 4634,
           "supporting_targets": [
             {
               "assertions": [
@@ -26624,7 +26624,7 @@
               ],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 6495,
+              "line": 6496,
               "module": "detection_lifecycle_parity",
               "path": "server/tests/detection_lifecycle_parity.rs",
               "test_name": "manual_model_test_never_runs_automatic_disposition_for_a_target_first_group",
@@ -29730,7 +29730,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5713,
+          "rust_source_line": 5714,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29777,7 +29777,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5674,
+          "rust_source_line": 5675,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29824,7 +29824,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5674,
+          "rust_source_line": 5675,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29870,7 +29870,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1371,
+          "rust_source_line": 1372,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29907,7 +29907,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 4494,
+          "rust_source_line": 4495,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29946,7 +29946,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5362,
+          "rust_source_line": 5363,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -29984,7 +29984,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1645,
+          "rust_source_line": 1646,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -30021,7 +30021,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 1736,
+          "rust_source_line": 1737,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -30063,7 +30063,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 5994,
+          "rust_source_line": 5995,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -30110,7 +30110,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 2538,
+          "rust_source_line": 2539,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -30156,7 +30156,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/detection_lifecycle_parity.rs",
-          "rust_source_line": 6495,
+          "rust_source_line": 6496,
           "verification_command": ".venv/bin/python scripts/server_test.py --test detection_lifecycle_parity"
         },
         "gap": null,
@@ -44438,7 +44438,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 110,
+          "rust_source_line": 116,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44475,7 +44475,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 236,
+          "rust_source_line": 242,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44512,7 +44512,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 163,
+          "rust_source_line": 169,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44548,7 +44548,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 268,
+          "rust_source_line": 274,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44584,7 +44584,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 152,
+          "rust_source_line": 158,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44620,7 +44620,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 197,
+          "rust_source_line": 203,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44656,7 +44656,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 214,
+          "rust_source_line": 220,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44692,7 +44692,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 138,
+          "rust_source_line": 144,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44728,7 +44728,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 174,
+          "rust_source_line": 180,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,
@@ -44766,7 +44766,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/upstream_router_contract.rs",
-          "rust_source_line": 90,
+          "rust_source_line": 96,
           "verification_command": ".venv/bin/python scripts/server_test.py --test upstream_router_contract"
         },
         "gap": null,

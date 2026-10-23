@@ -8,7 +8,7 @@ export type AccountKeepalive = {
 export type Account = {
   degradation_mark?: DegradationMark;
   recovery_selectable?: boolean;
-  model_detection?: { last_automatic_started_at?: string | null; enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
+  model_detection?: { schedule_mode?: "fixed" | "smart"; min_interval_minutes?: number; effective_interval_minutes?: number | null; recent_request_count?: number | null; last_automatic_started_at?: string | null; enabled: boolean; interval_minutes: number; model_id: string; version: string; next_at?: string | null; status: string; reason?: string; last_result?: { status?: string; report?: { prediction_name?: string }; completed_at?: string } | null };
   id: number;
   parent_account_id?: number | null;
   name: string;

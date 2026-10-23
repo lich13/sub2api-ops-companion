@@ -1,7 +1,7 @@
 import { accountOperation } from "./accountOperations";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw, RotateCw } from "lucide-react";
-import { api } from "./bridge";
+import { readNativeUsage } from "./nativeUsage";
 import { useBackAction } from "./mobile";
 import {
   fullTime,
@@ -98,7 +98,7 @@ export default function UsageCell({
     if (lastRead.current.identity === identity && Date.now() - lastRead.current.at < 60_000) return;
     lastRead.current = { identity, at: Date.now() };
     const token = ++request.current;
-    void api<UsageSummary>("GET", `/accounts/${account.id}/usage`).then(value => {
+    void readNativeUsage(identity, account.id, () => request.current === token).then(value => {
       if (request.current === token) acceptNative(value);
     }).catch(() => {
       if (request.current === token) acceptNative({ ...account.usage!, status: "error", message: "用量读取失败，请重新查询", windows: account.usage!.windows.map(w => w.source === "configured_quota" ? w : ({ ...w, status: "error" })) });

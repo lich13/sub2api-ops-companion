@@ -84,7 +84,7 @@ export async function followOperation<T>(initial: Operation, onEvent?: (event: T
       if (job.status === 'completed') return job.result as T;
       throw new Error(job.reason || ({ needs_confirmation: '请求已保留，请在待办中核对', cancelled: '已取消', superseded: '已由新请求替代' } as Record<string, string>)[job.status] || '操作失败');
     }
-    onEvent?.({ type: 'status', text: job.status === 'queued' ? '已排队，等待账号空闲' : job.status === 'checking' ? '核对结果' : '测试中' });
+    onEvent?.({ type: 'status', text: job.status === 'queued' ? job.reason || '已排队，等待执行' : job.status === 'checking' ? '核对结果' : '测试中' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (current !== epoch) throw new Error('连接已切换；请求保留在原连接');
     const next = await api<Operation>('GET', `/account-operations/${job.id}${onEvent ? `?after_event=${after}` : ''}`);

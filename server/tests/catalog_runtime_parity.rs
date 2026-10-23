@@ -1092,3 +1092,46 @@ async fn account_connection_directory_keeps_all_pages_parent_credentials_and_nat
     }
     h.close().await;
 }
+
+#[tokio::test]
+async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock() {
+    let h = Harness::new().await;
+    sqlx::query("INSERT INTO accounts (id,name,platform,type) VALUES (12,'fixture-usage','openai','apikey')")
+        .execute(&h.runtime.db.pool).await.unwrap();
+    sqlx::query("INSERT INTO usage_logs (id,account_id,created_at,input_tokens,output_tokens) VALUES (12,12,now(),10,20)")
+        .execute(&h.runtime.db.pool).await.unwrap();
+    let expected = h.runtime.account_usage(12, ADMIN, false).await.unwrap();
+    assert_eq!(expected["today"]["requests"], 1);
+    let mut blocker = h.runtime.db.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE groups, ops_error_logs IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let runtime = h.runtime.clone();
+    let snapshot = tokio::spawn(async move { runtime.snapshot().await });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
+                .bind(pid).fetch_one(&h.owner.pool).await.unwrap();
+            if waiting { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.unwrap();
+    let usage = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        h.runtime.account_usage(12, ADMIN, false),
+    )
+    .await
+    .expect("single-account usage must not wait for an unrelated snapshot")
+    .unwrap();
+    assert_eq!(usage["today"], expected["today"]);
+    assert!(!snapshot.is_finished());
+    blocker.rollback().await.unwrap();
+    snapshot.await.unwrap().unwrap();
+    assert!(h.mock.calls.lock().unwrap().is_empty());
+    h.close().await;
+}

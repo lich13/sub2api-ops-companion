@@ -55,6 +55,25 @@ struct Cache {
     status: Probe,
     auth: Option<(String, Instant)>,
     failure: Option<(String, Probe, u32, Instant)>,
+    completed_probe: Option<(String, Probe, Instant)>,
+}
+
+impl Cache {
+    fn cached(&self, signature: &str) -> Option<Result<Probe>> {
+        if self.status.state == "ok"
+            && self
+                .auth
+                .as_ref()
+                .is_some_and(|(digest, until)| digest == signature && *until > Instant::now())
+        {
+            return Some(Ok(self.status.clone()));
+        }
+        self.failure
+            .as_ref()
+            .and_then(|(digest, result, _, until)| {
+                (digest == signature && *until > Instant::now()).then(|| Err(result.error()))
+            })
+    }
 }
 
 #[derive(Clone)]
@@ -79,6 +98,7 @@ impl Upstream {
                 active: None,
                 auth: None,
                 failure: None,
+                completed_probe: None,
                 status: Probe::new("network_unreachable", "none", None, "尚未检查上游", false),
             })),
         })
@@ -120,6 +140,7 @@ impl Upstream {
         cache.active = None;
         cache.auth = None;
         cache.failure = None;
+        cache.completed_probe = None;
     }
 
     async fn probe(&self, endpoint: &str, base: &str, key: &str) -> Probe {
@@ -210,8 +231,9 @@ impl Upstream {
     }
 
     pub async fn authenticate(&self, key: &str, fresh: bool) -> Result<Probe> {
-        let _guard = self.probe_lock.lock().await;
+        let requested = Instant::now();
         if key.is_empty() || key.chars().count() > 4096 || key.chars().any(|c| (c as u32) < 33) {
+            let _guard = self.probe_lock.lock().await;
             let result = Probe::new(
                 "auth_rejected",
                 "none",
@@ -221,6 +243,7 @@ impl Upstream {
             );
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             cache.auth = None;
+            cache.completed_probe = None;
             cache.status = result.clone();
             return Err(result.error());
         }
@@ -233,20 +256,34 @@ impl Upstream {
                 .collect::<Vec<_>>()
                 .join("\0")
         ));
+        // Cached reads must not wait behind a slow, fresh write authorization.
+        if !fresh {
+            if let Some(result) = self
+                .cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .cached(&signature)
+            {
+                return result;
+            }
+        }
+        let _guard = self.probe_lock.lock().await;
         {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            if !fresh {
-                if cache.status.state == "ok"
-                    && cache.auth.as_ref().is_some_and(|(digest, until)| {
-                        digest == &signature && *until > Instant::now()
-                    })
-                {
-                    return Ok(cache.status.clone());
+            // Only a probe completed after this request began can authorize a
+            // fresh caller. Sequential writes still perform a fresh check.
+            if let Some((digest, result, completed)) = &cache.completed_probe {
+                if digest == &signature && *completed >= requested {
+                    return if result.state == "ok" {
+                        Ok(result.clone())
+                    } else {
+                        Err(result.error())
+                    };
                 }
-                if let Some((digest, result, _, until)) = &cache.failure {
-                    if digest == &signature && *until > Instant::now() {
-                        return Err(result.error());
-                    }
+            }
+            if !fresh {
+                if let Some(result) = cache.cached(&signature) {
+                    return result;
                 }
             }
         }
@@ -274,7 +311,8 @@ impl Upstream {
                 let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
                 cache.active = Some(base);
                 cache.status = last.clone();
-                cache.auth = Some((signature, Instant::now() + Duration::from_secs(15)));
+                cache.auth = Some((signature.clone(), Instant::now() + Duration::from_secs(15)));
+                cache.completed_probe = Some((signature, last.clone(), Instant::now()));
                 cache.failure = None;
                 return Ok(last);
             }
@@ -288,6 +326,7 @@ impl Upstream {
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         cache.status = last.clone();
         cache.auth = None;
+        cache.completed_probe = Some((signature.clone(), last.clone(), Instant::now()));
         cache.failure = if last.retryable {
             let count = cache
                 .failure

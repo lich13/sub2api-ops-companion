@@ -85,3 +85,37 @@ fn key_detection_overrides_validate_the_new_contract() {
         assert!(detection_request(&payload).is_err());
     }
 }
+
+#[test]
+fn smart_detection_fields_are_optional_strict_and_preserved_by_request_validation() {
+    use serde_json::json;
+    use sub2ops_server::model_detection::detection_request;
+    let base = json!({"expected_version":"a".repeat(64),"enabled":true,"interval_minutes":37});
+    let legacy = detection_request(&base).unwrap();
+    assert!(legacy.get("schedule_mode").is_none());
+    assert!(legacy.get("min_interval_minutes").is_none());
+    for (mode, floor) in [
+        (json!("smart"), json!(5)),
+        (json!("fixed"), json!(30)),
+        (json!("smart"), json!(17)),
+    ] {
+        let mut request = base.clone();
+        request["schedule_mode"] = mode.clone();
+        request["min_interval_minutes"] = floor.clone();
+        let request = detection_request(&request).unwrap();
+        assert_eq!(request["schedule_mode"], mode);
+        assert_eq!(request["min_interval_minutes"], floor);
+    }
+    for (field, value) in [
+        ("schedule_mode", json!(null)),
+        ("schedule_mode", json!("auto")),
+        ("min_interval_minutes", json!(4)),
+        ("min_interval_minutes", json!(31)),
+        ("min_interval_minutes", json!(5.5)),
+        ("min_interval_minutes", json!("5")),
+    ] {
+        let mut request = base.clone();
+        request[field] = value;
+        assert!(detection_request(&request).is_err());
+    }
+}

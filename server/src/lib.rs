@@ -20,6 +20,7 @@ pub mod degradation_rechecks;
 pub mod detection_dispatch;
 pub mod detection_logs;
 pub mod detection_quota;
+pub mod detection_schedule;
 pub mod detection_tick;
 pub mod error;
 pub mod error_evidence;

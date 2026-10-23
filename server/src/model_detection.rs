@@ -22,7 +22,10 @@ pub fn defaults() -> Value {
     json!({
         "enabled":false, "interval_minutes":15, "model_id":crate::settings::DEFAULT_DETECTION_MODEL, "model_override":null,
         "generation":0, "next_at":null, "status":"disabled", "reason":"",
-        "job_id":null, "hold":false
+        "job_id":null, "hold":false,
+        "schedule_mode":"smart", "min_interval_minutes":5,
+        "schedule_anchor_at":null, "schedule_idle_paused":false,
+        "recent_request_count":null, "frequency_sampled_at":null
     })
 }
 pub fn version(value: &Value) -> String {
@@ -31,6 +34,8 @@ pub fn version(value: &Value) -> String {
         &[
             "enabled",
             "interval_minutes",
+            "schedule_mode",
+            "min_interval_minutes",
             "model_id",
             "model_override",
             "generation",
@@ -48,6 +53,12 @@ fn validate(value: &Value) -> Result<()> {
             || !control["interval_minutes"]
                 .as_i64()
                 .is_some_and(|n| (1..=525600).contains(&n))
+            || control
+                .get("schedule_mode")
+                .is_some_and(|v| v != "fixed" && v != "smart")
+            || control
+                .get("min_interval_minutes")
+                .is_some_and(|v| !v.as_i64().is_some_and(|n| (5..=30).contains(&n)))
             || !crate::account_templates::MODEL_ID.is_match(string(&control["model_id"]))
             || (!control["model_override"].is_null()
                 && !crate::account_templates::MODEL_ID.is_match(string(&control["model_override"])))
@@ -68,6 +79,7 @@ pub struct Detection {
     pub clock: Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     pub(crate) tick_lock: Arc<tokio::sync::Mutex<()>>,
     pub(crate) notice_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) frequency_lock: Arc<tokio::sync::Mutex<()>>,
 }
 impl Detection {
     pub fn new(
@@ -96,6 +108,7 @@ impl Detection {
             clock: Arc::new(Utc::now),
             tick_lock: Arc::new(tokio::sync::Mutex::new(())),
             notice_lock: Arc::new(tokio::sync::Mutex::new(())),
+            frequency_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
     pub fn model_id(&self) -> Result<String> {
@@ -112,16 +125,37 @@ impl Detection {
     fn effective_version(value: &Value, model: &str) -> String {
         let mut effective = value.clone();
         effective["model_id"] = model.into();
+        effective
+            .as_object_mut()
+            .unwrap()
+            .entry("schedule_mode")
+            .or_insert(json!("smart"));
+        effective
+            .as_object_mut()
+            .unwrap()
+            .entry("min_interval_minutes")
+            .or_insert(json!(5));
         version(&effective)
     }
     pub fn now(&self) -> DateTime<Utc> {
         (self.clock)()
     }
     pub fn control(&self, id: i64) -> Result<Value> {
-        Ok(self.store.read()?["accounts"]
+        let mut value = self.store.read()?["accounts"]
             .get(id.to_string())
             .cloned()
-            .unwrap_or_else(defaults))
+            .unwrap_or_else(defaults);
+        value
+            .as_object_mut()
+            .unwrap()
+            .entry("schedule_mode")
+            .or_insert(json!("smart"));
+        value
+            .as_object_mut()
+            .unwrap()
+            .entry("min_interval_minutes")
+            .or_insert(json!(5));
+        Ok(value)
     }
     pub fn mark(&self, id: i64) -> Result<Value> {
         Ok(mark_view(
@@ -170,6 +204,16 @@ impl Detection {
             .get(id.to_string())
             .cloned()
             .unwrap_or_else(defaults);
+        value
+            .as_object_mut()
+            .unwrap()
+            .entry("schedule_mode")
+            .or_insert(json!("smart"));
+        value
+            .as_object_mut()
+            .unwrap()
+            .entry("min_interval_minutes")
+            .or_insert(json!(5));
         let model = self.effective_model(&value)?;
         value["version"] = Self::effective_version(&value, &model).into();
         value["model_id"] = model.into();
@@ -185,6 +229,9 @@ impl Detection {
         value["last_automatic_started_at"] =
             data["automatic_starts"][id.to_string()]["started_at"].clone();
         value["next_allowed_at"] = self.next_allowed_at(id)?;
+        value["recent_request_count"] = value["recent_request_count"].clone();
+        value["effective_interval_minutes"] =
+            crate::detection_schedule::effective_interval(&value).into();
         value["disposition_notification"] =
             data["disposition_notifications"][string(&value["disposition"]["job_id"])].clone();
         value["recovery_notification"] =
@@ -229,6 +276,11 @@ impl Detection {
         let current = self.control(id)?;
         let previous_model = self.effective_model(&current)?;
         let mut candidate = current.clone();
+        for field in ["schedule_mode", "min_interval_minutes"] {
+            if let Some(value) = request.get(field) {
+                candidate[field] = value.clone();
+            }
+        }
         if let Some(model) = request.get("model_override") {
             candidate["model_override"] = model.clone();
         }
@@ -261,7 +313,8 @@ impl Detection {
             }
             value["generation"] = json!(integer(&value["generation"]).unwrap_or(0) + 1);
             let enabled = request["enabled"] == true;
-            let next_at = if enabled {
+            let smart = crate::detection_schedule::smart(&candidate);
+            let next_at = if enabled && !smart {
                 json!(datetime(
                     self.now() + Duration::minutes(integer(&request["interval_minutes"]).unwrap())
                 ))
@@ -271,6 +324,10 @@ impl Detection {
             let changes = json!({
                 "enabled": request["enabled"],
                 "interval_minutes": request["interval_minutes"],
+                "schedule_mode": candidate["schedule_mode"],
+                "min_interval_minutes": candidate["min_interval_minutes"],
+                "schedule_anchor_at": datetime(if value["enabled"] == true || truthy(&value["last_result"]) { parse_datetime(&value["schedule_anchor_at"]).or_else(|| parse_datetime(&value["last_result"]["completed_at"])).unwrap_or_else(|| self.now()) } else { self.now() }),
+                "schedule_idle_paused": if crate::detection_schedule::smart(&candidate) { value["schedule_idle_paused"].clone() } else { json!(false) },
                 "model_override": candidate["model_override"],
                 "pending_request_id": null,
                 "candidate_blocked": false,
@@ -285,6 +342,10 @@ impl Detection {
                 .extend(changes.as_object().unwrap().clone());
             Ok(())
         })?;
+        if crate::detection_schedule::smart(&candidate) && request["enabled"] == true {
+            self.refresh_call_frequency().await?;
+            self.update_smart_schedule(id, &self.control(id)?)?;
+        }
         self.view(id)
     }
     pub async fn reason(&self, row: &Value, mark: &Value, recheck: bool) -> Result<String> {
@@ -335,6 +396,7 @@ impl Detection {
         {
             return Err(Error::new(409, "检测已被新的人工操作替代"));
         }
+        self.check_smart_dispatch(job).await?;
         let context = &job["recovery_context"];
         let recheck = job["degradation_recheck"] == true;
         if recheck && self.recheck_target_changed(&row, &value, job) {
@@ -458,6 +520,15 @@ impl Detection {
             );
             self.clue_status(causes, "ignored", "五分钟冷却中", None)?;
             return Ok(Value::Null);
+        }
+        if causes.len() == 1 && causes[0] == "scheduled" && crate::detection_schedule::smart(&value)
+        {
+            self.refresh_call_frequency().await?;
+            let value = self.control(id)?;
+            let due = self.update_smart_schedule(id, &value)?;
+            if due.is_none_or(|at| at > self.now()) {
+                return Ok(Value::Null);
+            }
         }
         let row = self.actions.account(id, None).await?;
         let mark = self.mark(id)?;
@@ -713,6 +784,8 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
             "expected_version",
             "enabled",
             "interval_minutes",
+            "schedule_mode",
+            "min_interval_minutes",
             "model_id",
             "model_override",
         ]
@@ -725,6 +798,15 @@ pub fn detection_request(payload: &Value) -> Result<Value> {
         return Err(Error::invalid());
     }
     let mut value = payload.clone();
+    if value
+        .get("schedule_mode")
+        .is_some_and(|v| v != "fixed" && v != "smart")
+        || value
+            .get("min_interval_minutes")
+            .is_some_and(|v| !v.as_i64().is_some_and(|n| (5..=30).contains(&n)))
+    {
+        return Err(Error::invalid());
+    }
     if let Some(model) = value.get_mut("model_override") {
         if !model.is_null() {
             let normalized = model.as_str().map(str::trim).ok_or_else(Error::invalid)?;

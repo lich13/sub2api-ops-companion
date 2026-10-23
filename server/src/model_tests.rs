@@ -370,6 +370,10 @@ impl ModelTests {
             if let Some(Err(error)) = result {
                 let current = this.get(&task_id).unwrap_or(Value::Null);
                 if ACTIVE.contains(&string(&current["status"])) {
+                    if error.detail["code"] == "smart_schedule_deferred" && !truthy(&current["started_at"]) {
+                        let _ = this.finish_cancel(&task_id);
+                        return;
+                    }
                     let message = if matches!(error.status.as_u16(), 409 | 422) {
                         crate::security::safe_error(&error.detail, 200)
                     } else {
@@ -508,6 +512,9 @@ impl ModelTests {
         }
         if self.actions.supervisor.is_stopping() {
             return Ok(());
+        }
+        if job["automatic"] == true {
+            self.hooks.guard(self.get(id)?).await?;
         }
         let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.snapshot.1,"can_retry":false}))?;
         self.run(job, context).await

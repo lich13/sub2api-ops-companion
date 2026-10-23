@@ -20,7 +20,7 @@ use std::{
     time::Duration as StdDuration,
 };
 use sub2ops_server::{
-    compat::{account_version, datetime, integer, sha256},
+    compat::{account_version, datetime, integer, parse_datetime, sha256},
     db::Database,
     model_detection, modeltrace,
     oauth_state::Update,
@@ -812,6 +812,7 @@ impl Harness {
                 &json!({
                     "enabled":true,
                     "interval_minutes":interval_minutes,
+                    "schedule_mode":"fixed",
                     "model_id":model_id,
                     "expected_version":control["version"]
                 }),
@@ -1169,7 +1170,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
             id,
             &json!({
                 "expected_version":initial["version"], "enabled":true, "interval_minutes":1,
-                "model_override":"  gpt-6-sol  "
+                "model_override":"  gpt-6-sol  ", "schedule_mode":"fixed"
             }),
         )
         .await
@@ -7198,4 +7199,345 @@ async fn recovery_receipt_failure_is_adopted_after_restart_and_bark_uses_five_se
     assert_eq!(harness.mock.count("POST", "/push"), 2);
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
+}
+
+impl Harness {
+    async fn business_requests(&self, id: i64, count: i64) {
+        sqlx::query("DELETE FROM usage_logs WHERE account_id=$1")
+            .bind(id)
+            .execute(&self.runtime().db.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO usage_logs (id,account_id,created_at) SELECT $1 * 1000 + n,$1,$2 FROM generate_series(1,$3::bigint) n")
+            .bind(id).bind(self.now()).bind(count).execute(&self.runtime().db.pool).await.unwrap();
+    }
+    async fn smart_detection(&self, id: i64, minimum: i64) -> Value {
+        self.set_detection_model("gpt-6-luna").await;
+        let value = self.runtime().detection.view(id).unwrap();
+        self.runtime().detection.save(id, &json!({"enabled":true,"interval_minutes":37,"schedule_mode":"smart","min_interval_minutes":minimum,"expected_version":value["version"]})).await.unwrap()
+    }
+}
+
+#[tokio::test]
+async fn smart_frequency_tiers_floor_pause_failure_and_restart_do_not_drift() {
+    let mut h = Harness::new(sample_text("above_99", 0)).await;
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let other = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    h.business_requests(other, 120).await;
+    h.business_requests(id, 1).await;
+    let enabled = h.smart_detection(id, 5).await;
+    let anchor = h.now();
+    assert_eq!(
+        enabled["recent_request_count"], 1,
+        "other accounts do not contribute"
+    );
+    let version = enabled["version"].clone();
+    for (count, minutes) in [
+        (2, 30),
+        (3, 25),
+        (9, 25),
+        (10, 20),
+        (29, 20),
+        (30, 15),
+        (59, 15),
+        (60, 10),
+        (119, 10),
+        (120, 5),
+    ] {
+        // Keep work queued while asserting the exact due time, even after it has passed.
+        h.business_requests(id, count).await;
+        h.advance(60);
+        let live = h.runtime().actions.account(id, None).await.unwrap();
+        let lease = h.runtime().actions.locks.try_account(&live).unwrap();
+        h.runtime().detection.tick().await.unwrap();
+        let value = h.runtime().detection.view(id).unwrap();
+        assert_eq!(value["recent_request_count"], count);
+        assert_eq!(value["effective_interval_minutes"], minutes);
+        assert_eq!(
+            value["version"], version,
+            "sampling does not invalidate settings drafts"
+        );
+        if value["job_id"].is_string() {
+            h.runtime()
+                .tests
+                .cancel(value["job_id"].as_str().unwrap())
+                .await
+                .unwrap();
+        }
+        if value["job_id"].is_null() {
+            assert_eq!(
+                parse_datetime(&value["next_at"]),
+                Some(anchor + Duration::minutes(minutes))
+            );
+        } else {
+            assert!(h.now() >= anchor + Duration::minutes(minutes));
+        }
+        drop(lease);
+    }
+    let floor = h.smart_detection(id, 17).await;
+    assert_eq!(floor["effective_interval_minutes"], 17);
+    assert_eq!(
+        parse_datetime(&floor["next_at"]),
+        Some(anchor + Duration::minutes(17))
+    );
+    h.runtime().detection.tick().await.unwrap();
+    h.restart_runtime().await;
+    h.runtime().detection.migrate_dispatches().unwrap();
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id).unwrap()["next_at"],
+        floor["next_at"]
+    );
+    h.business_requests(id, 0).await;
+    h.advance(60);
+    h.runtime().detection.tick().await.unwrap();
+    let paused = h.runtime().detection.view(id).unwrap();
+    assert_eq!(paused["recent_request_count"], 0);
+    assert_eq!(paused["status"], "paused");
+    assert!(paused["effective_interval_minutes"].is_null());
+    assert!(paused["next_at"].is_null());
+    assert_eq!(paused["reason"], "最近一小时无业务调用，已暂停定时检测");
+    // An unavailable usage relation is a stats failure, not a zero-call sample.
+    sqlx::query("ALTER TABLE usage_logs RENAME TO fixture_unavailable_usage")
+        .execute(&h.runtime().db.pool)
+        .await
+        .unwrap();
+    h.advance(60);
+    let tick = h.runtime().detection.tick().await;
+    sqlx::query("ALTER TABLE fixture_unavailable_usage RENAME TO usage_logs")
+        .execute(&h.runtime().db.pool)
+        .await
+        .unwrap();
+    tick.unwrap();
+    let failed = h.runtime().detection.view(id).unwrap();
+    assert!(failed["recent_request_count"].is_null());
+    assert!(failed["reason"].as_str().unwrap().contains("暂不可用"));
+    h.business_requests(id, 1).await;
+    h.advance(60);
+    h.runtime().detection.tick().await.unwrap();
+    let restored = h.runtime().detection.view(id).unwrap();
+    assert_eq!(restored["status"], "waiting");
+    let resumed_at = parse_datetime(&restored["schedule_anchor_at"]).unwrap();
+    assert!(resumed_at > anchor);
+    assert_eq!(
+        parse_datetime(&restored["next_at"]),
+        Some(resumed_at + Duration::minutes(30))
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn smart_idle_cancels_waiting_periodic_work_and_pauses_marked_rechecks() {
+    let h = Harness::new(sample_text("above_99", 0)).await;
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    h.business_requests(id, 120).await;
+    h.smart_detection(id, 5).await;
+    let live = h.runtime().actions.account(id, None).await.unwrap();
+    let lease = h.runtime().actions.locks.try_account(&live).unwrap();
+    h.advance(300);
+    h.runtime().detection.tick().await.unwrap();
+    let queued = h.runtime().detection.view(id).unwrap();
+    let job = queued["job_id"].as_str().unwrap();
+    assert_eq!(h.runtime().tests.get(job).unwrap()["status"], "queued");
+    h.advance(3600);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(h.runtime().tests.get(job).unwrap()["status"], "cancelled");
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(h.runtime().detection.view(id).unwrap()["status"], "paused");
+    assert!(h.runtime().detection.next_allowed_at(id).unwrap().is_null());
+    drop(lease);
+    let mark = h.runtime().detection.mark(id).unwrap();
+    h.runtime()
+        .detection
+        .capacity
+        .store
+        .set_mark(
+            id,
+            true,
+            mark["version"].as_str().unwrap(),
+            h.now(),
+            Some("fixture-mark"),
+        )
+        .unwrap();
+    h.runtime().detection.update(id,json!({"hold":true,"disposition":{"status":"completed","marked":true,"schedule_verified":true,"job_id":"fixture-mark"}})).unwrap();
+    h.runtime().detection.tick().await.unwrap();
+    assert!(h.runtime().detection.view(id).unwrap()["reason"]
+        .as_str()
+        .unwrap()
+        .contains("无业务调用"));
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    // Marked accounts retain the existing rule that ignores error clues.
+    assert!(h
+        .runtime()
+        .detection
+        .trigger(id, &["error:fixture-marked".into()])
+        .await
+        .unwrap()
+        .is_null());
+    // A different, unmarked idle account still admits error clues.
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    h.smart_detection(id, 5).await;
+    let clue = h
+        .runtime()
+        .detection
+        .trigger(id, &["error:fixture-smart-idle".into()])
+        .await
+        .unwrap();
+    assert!(clue["id"].is_string());
+    let done = h.wait_job_terminal(clue["id"].as_str().unwrap()).await;
+    h.runtime().detection.tick().await.unwrap();
+    assert!(done["started_at"].is_string());
+    assert_eq!(
+        h.runtime().detection.view(id).unwrap()["recent_request_count"],
+        0,
+        "detector traffic is not business usage"
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() {
+    let mut h = Harness::new(sample_text("above_99", 0)).await;
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    let disabled = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    h.enable_detection(id, 37).await;
+    h.runtime()
+        .detection
+        .update(disabled, json!({"enabled":false}))
+        .unwrap();
+    h.runtime()
+        .detection
+        .store
+        .transaction(|state| {
+            for id in [id, disabled] {
+                let v = state["accounts"][id.to_string()].as_object_mut().unwrap();
+                v.shift_remove("schedule_mode");
+                v.shift_remove("min_interval_minutes");
+                v.shift_remove("schedule_anchor_at");
+            }
+            Ok(())
+        })
+        .unwrap();
+    h.runtime().detection.migrate_dispatches().unwrap();
+    let migrated = h.runtime().detection.view(id).unwrap();
+    assert_eq!(migrated["schedule_mode"], "smart");
+    assert_eq!(migrated["min_interval_minutes"], 5);
+    assert_eq!(migrated["interval_minutes"], 37);
+    assert_eq!(
+        h.runtime().detection.view(disabled).unwrap()["enabled"],
+        false
+    );
+    let configured = h.smart_detection(id, 19).await;
+    let old_client = h
+        .runtime()
+        .detection
+        .save(
+            id,
+            &json!({"enabled":true,"interval_minutes":37,"expected_version":configured["version"]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(old_client["schedule_mode"], "smart");
+    assert_eq!(old_client["min_interval_minutes"], 19);
+    for fields in [
+        json!({"schedule_mode":"invalid"}),
+        json!({"min_interval_minutes":4}),
+        json!({"min_interval_minutes":31}),
+        json!({"min_interval_minutes":5.5}),
+    ] {
+        let mut request =
+            json!({"enabled":true,"interval_minutes":37,"expected_version":old_client["version"]});
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        assert_eq!(
+            h.runtime()
+                .detection
+                .save(id, &request)
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    let fixed = h.runtime().detection.save(id,&json!({"enabled":true,"interval_minutes":37,"schedule_mode":"fixed","expected_version":old_client["version"]})).await.unwrap();
+    assert_eq!(fixed["effective_interval_minutes"], 37);
+    assert_eq!(
+        parse_datetime(&fixed["next_at"]),
+        Some(h.now() + Duration::minutes(37))
+    );
+    assert_ne!(fixed["version"], old_client["version"]);
+    assert_eq!(h.runtime().detection.save(id,&json!({"enabled":true,"interval_minutes":37,"expected_version":old_client["version"]})).await.unwrap_err().status.as_u16(),409);
+    h.restart_runtime().await;
+    h.runtime().detection.migrate_dispatches().unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id).unwrap()["schedule_mode"],
+        "fixed"
+    );
+    assert_eq!(
+        h.runtime().detection.view(disabled).unwrap()["enabled"],
+        false
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn smart_dispatch_rechecks_activity_but_allows_started_work_to_complete() {
+    let h = Harness::new(sample_text("above_99", 0)).await;
+    let id = integer(&h.seed_account("apikey", true, json!({})).await["id"]).unwrap();
+    h.business_requests(id, 120).await;
+    h.smart_detection(id, 5).await;
+    let row = h.runtime().actions.account(id, None).await.unwrap();
+    let lease = h.runtime().actions.locks.try_account(&row).unwrap();
+    h.advance(300);
+    h.runtime().detection.tick().await.unwrap();
+    let queued = h.runtime().detection.view(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    h.business_requests(id, 0).await;
+    h.advance(60);
+    drop(lease);
+    // No scheduler tick: the worker itself must reject the stale queued work.
+    assert_eq!(h.wait_job_terminal(&queued).await["status"], "cancelled");
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    h.runtime().detection.tick().await.unwrap();
+    h.business_requests(id, 120).await;
+    h.advance(60);
+    let gate = Gate::new();
+    h.mock.set_model_gate(Some(gate.clone()));
+    h.runtime().detection.tick().await.unwrap();
+    h.advance(300);
+    h.runtime().detection.tick().await.unwrap();
+    tokio::time::timeout(StdDuration::from_secs(3), gate.entered.notified())
+        .await
+        .unwrap();
+    let running = h.runtime().detection.view(id).unwrap()["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(h.runtime().tests.get(&running).unwrap()["started_at"].is_string());
+    h.advance(3600);
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().tests.get(&running).unwrap()["status"],
+        "running"
+    );
+    h.mock.set_model_gate(None);
+    gate.release.notify_one();
+    let completed = h.wait_job_terminal(&running).await;
+    assert_eq!(completed["status"], "completed");
+    h.runtime().detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime().detection.view(id).unwrap()["schedule_anchor_at"],
+        completed["completed_at"]
+    );
+    assert_eq!(
+        h.runtime().detection.view(id).unwrap()["recent_request_count"],
+        0
+    );
+    h.close().await;
 }

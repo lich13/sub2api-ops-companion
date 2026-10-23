@@ -18,6 +18,7 @@ impl Detection {
         let Ok(_guard) = self.tick_lock.try_lock() else {
             return Ok(());
         };
+        self.refresh_call_frequency().await?;
         let alerts = self.capacity.store.snapshot()?;
         for (key, event) in alerts["detection_events"].as_object().into_iter().flatten() {
             if self.store.read()?["consumed"].get(key).is_none() {
@@ -183,6 +184,9 @@ impl Detection {
             changes["last_result"]["disposition"] = job["automatic_disposition"].clone();
             if value["generation"] == job["detection_generation"] {
                 let ended = parse_datetime(&job["completed_at"]).unwrap_or_else(|| self.now());
+                if truthy(&job["started_at"]) {
+                    changes["schedule_anchor_at"] = datetime(ended).into();
+                }
                 let next = (ended.max(self.now())
                     + Duration::minutes(integer(&value["interval_minutes"]).unwrap_or(15)))
                 .max(parse_datetime(&self.next_allowed_at(id)?).unwrap_or(ended));
@@ -240,6 +244,12 @@ impl Detection {
         if value["enabled"] != true {
             return Ok(());
         }
+        if crate::detection_schedule::smart(&value)
+            && crate::detection_schedule::effective_interval(&value).is_none()
+        {
+            self.update_smart_schedule(id, &value)?;
+            return Ok(());
+        }
         let row = self.actions.account(id, None).await?;
         let reason = self.reason(&row, &mark, recheck).await?;
         if !reason.is_empty() {
@@ -272,7 +282,14 @@ impl Detection {
                 json!({"candidate_blocked":false,"candidate_recheck_at":null}),
             )?;
         }
-        if let Some(due) = parse_datetime(&value["next_at"]) {
+        if crate::detection_schedule::smart(&value) {
+            if self
+                .update_smart_schedule(id, &value)?
+                .is_some_and(|due| self.now() >= due)
+            {
+                self.trigger(id, &["scheduled".into()]).await?;
+            }
+        } else if let Some(due) = parse_datetime(&value["next_at"]) {
             if self.now() >= due {
                 self.trigger(id, &["scheduled".into()]).await?;
             }
