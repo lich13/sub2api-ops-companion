@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, RefreshCw, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Eye, EyeOff, RefreshCw, Search, X } from "lucide-react";
 import { parseDocument, stringify } from "yaml";
 import { api } from "./bridge";
 import { ProxyDialog } from "./ProxyDialogs";
@@ -62,50 +62,104 @@ const display = (value: unknown) =>
       ? value || '""'
       : JSON.stringify(value);
 const errorText = (e: unknown) => String(e).replace(/^Error: /, "");
+const equal = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+const containsPath = (parent: string, path: string) =>
+  path === parent ||
+  path.startsWith(`${parent}.`) ||
+  path.startsWith(`${parent}[`);
+const summary = (description: string) => {
+  const first = description.split(/[。\n]/)[0];
+  return first.length > 90 ? `${first.slice(0, 90)}…` : first;
+};
+const subsection = (field: ConfigField) =>
+  field.path.split(".").length > 2
+    ? field.path.split(".").slice(0, 2).join(".")
+    : field.group;
+const structuredText = (value: unknown) =>
+  typeof value === "string" ? value : value == null ? "" : stringify(value);
+function structuredValue(text: string, type: string) {
+  const document = parseDocument(text, { uniqueKeys: true });
+  if (document.errors.length)
+    return { value: text, error: "YAML 语法无效，请检查缩进和重复字段" };
+  let value: unknown;
+  try {
+    value = document.toJS({ maxAliasCount: 100 });
+  } catch {
+    return { value: text, error: "YAML 别名数量过多" };
+  }
+  const valid =
+    type === "array"
+      ? Array.isArray(value)
+      : !!value && typeof value === "object" && !Array.isArray(value);
+  return {
+    value: valid ? value : text,
+    error: valid ? "" : type === "array" ? "需要 YAML 列表" : "需要 YAML 映射",
+  };
+}
 
 function FieldEditor({
   field,
   value,
   disabled,
   change,
+  invalid = false,
 }: {
   field: ConfigField;
   value: unknown;
   disabled: boolean;
   change: (value: unknown) => void;
+  invalid?: boolean;
 }) {
   const [reveal, setReveal] = useState(false);
   const structured = field.type === "array" || field.type === "object";
-  const [yaml, setYaml] = useState(() =>
-    stringify(value ?? (field.type === "array" ? [] : {})),
+  const [yaml, setYaml] = useState(() => structuredText(value));
+  const [error, setError] = useState(() =>
+    structured && typeof value === "string"
+      ? structuredValue(value, field.type).error
+      : "",
   );
-  const [error, setError] = useState("");
   const emitted = useRef<unknown>(value);
   useEffect(() => {
     if (structured && emitted.current !== value) {
-      setYaml(stringify(value ?? (field.type === "array" ? [] : {})));
-      setError("");
+      setYaml(structuredText(value));
+      setError(
+        typeof value === "string"
+          ? structuredValue(value, field.type).error
+          : "",
+      );
     }
   }, [value, structured, field.type]);
   const id = `config-${field.path}`;
+  const a11y = {
+    "aria-describedby": `${id}-help ${id}-errors${error && !invalid ? ` ${id}-syntax` : ""}`,
+    "aria-invalid": invalid || !!error,
+  };
   if (field.type === "boolean")
     return (
-      <select
-        id={id}
-        aria-label={field.path}
-        disabled={disabled}
-        value={String(value ?? false)}
-        onChange={(e) => change(e.target.value === "true")}
-      >
-        <option value="true">开启 · true</option>
-        <option value="false">关闭 · false</option>
-      </select>
+      <div className="config-boolean">
+        <button
+          type="button"
+          role="switch"
+          className={`switch ${value === true ? "on" : ""}`}
+          id={id}
+          aria-label={field.path}
+          aria-checked={value === true}
+          {...a11y}
+          disabled={disabled}
+          onClick={() => change(value !== true)}
+        >
+          <span />
+        </button>
+        <span>{value == null ? "未配置" : value ? "开启" : "关闭"}</span>
+      </div>
     );
   if (field.choices)
     return (
       <select
         id={id}
         aria-label={field.path}
+        {...a11y}
         disabled={disabled}
         value={String(value ?? "")}
         onChange={(e) => change(e.target.value)}
@@ -126,48 +180,26 @@ function FieldEditor({
         <textarea
           id={id}
           aria-label={field.path}
+          {...a11y}
           disabled={disabled}
-          rows={5}
+          rows={4}
           value={yaml}
-          aria-invalid={!!error}
+          placeholder={
+            field.type === "array"
+              ? "输入 YAML 列表，例如 []"
+              : "输入 YAML 映射，例如 {}"
+          }
           onChange={(e) => {
             const text = e.target.value;
             setYaml(text);
-            const document = parseDocument(text, { uniqueKeys: true });
-            if (document.errors.length) {
-              setError("YAML 语法无效，请检查缩进和重复字段");
-              emitted.current = text;
-              change(text);
-              return;
-            }
-            let parsed: unknown;
-            try {
-              parsed = document.toJS({ maxAliasCount: 100 });
-            } catch {
-              setError("YAML 别名数量过多");
-              emitted.current = text;
-              change(text);
-              return;
-            }
-            const valid =
-              field.type === "array"
-                ? Array.isArray(parsed)
-                : !!parsed &&
-                  typeof parsed === "object" &&
-                  !Array.isArray(parsed);
-            setError(
-              valid
-                ? ""
-                : field.type === "array"
-                  ? "需要 YAML 列表"
-                  : "需要 YAML 映射",
-            );
-            emitted.current = parsed;
-            change(parsed);
+            const result = structuredValue(text, field.type);
+            setError(result.error);
+            emitted.current = result.value;
+            change(result.value);
           }}
         />
-        {error && (
-          <small role="alert" className="bad-text">
+        {error && !invalid && (
+          <small id={`${id}-syntax`} role="alert" className="bad-text">
             {error}
           </small>
         )}
@@ -179,6 +211,7 @@ function FieldEditor({
       <input
         id={id}
         aria-label={field.path}
+        {...a11y}
         disabled={disabled}
         type={
           field.sensitive && !reveal ? "password" : numeric ? "number" : "text"
@@ -187,6 +220,13 @@ function FieldEditor({
         value={value == null ? "" : String(value)}
         autoComplete="off"
         spellCheck={false}
+        placeholder={
+          value == null
+            ? "未配置"
+            : typeof value === "string" && !value
+              ? "空字符串"
+              : undefined
+        }
         onChange={(e) =>
           change(
             numeric
@@ -210,6 +250,184 @@ function FieldEditor({
   );
 }
 
+function ConfigFieldRow({
+  field,
+  current,
+  change,
+  children,
+  issues,
+  expand,
+  blocked,
+  locked,
+  edit,
+  remove,
+  undo,
+}: {
+  field: ConfigField;
+  current?: FieldValue;
+  change?: Change;
+  children: ConfigField[];
+  issues: Issue[];
+  expand: boolean;
+  blocked: boolean;
+  locked: boolean;
+  edit: (value: unknown, explicit?: boolean) => void;
+  remove: () => void;
+  undo: () => void;
+}) {
+  const [details, setDetails] = useState(false);
+  useEffect(() => {
+    if (expand) setDetails(true);
+  }, [expand]);
+  const configured = change ? !change.remove : !!current?.configured;
+  const value = change
+    ? change.remove
+      ? field.default_value
+      : change.value
+    : current?.source === "environment"
+      ? current.effective
+      : current?.configured
+        ? current.yaml
+        : field.default_value;
+  const overridden = current?.source === "environment";
+  const editable = !!current?.editable && field.editable;
+  const source = overridden
+    ? "环境变量 · 只读"
+    : field.status === "reserved"
+      ? "保留字段 · 只读"
+      : !editable
+        ? "只读"
+        : configured
+          ? "YAML"
+          : field.has_default
+            ? "使用默认值"
+            : "未配置";
+  const id = `config-${field.path}`;
+  return (
+    <article
+      className={`config-field${change ? " changed" : ""}${issues.length ? " invalid" : ""}`}
+      data-config-path={field.path}
+    >
+      <div className="config-field-intro">
+        <label htmlFor={id}>{summary(field.description)}</label>
+        <code className="config-path">{field.path}</code>
+        <div className="config-field-tags">
+          <span>{field.type_label}</span>
+          <span className={overridden || !editable ? "config-source" : ""}>
+            {source}
+          </span>
+          {change && (
+            <span className="config-dirty">
+              {change.remove ? "待恢复默认" : "已修改"}
+            </span>
+          )}
+        </div>
+        {overridden && (
+          <p className="config-override">
+            由 <code>{current.environment}</code> 覆盖，不能在此修改。
+            <br />
+            YAML：
+            {field.sensitive
+              ? current.configured
+                ? "已遮蔽"
+                : "未配置"
+              : current.configured
+                ? display(current.yaml)
+                : "未配置"}
+          </p>
+        )}
+        {!editable && !overridden && (
+          <p className="config-override">
+            {field.status === "reserved"
+              ? "当前版本保留此字段，不支持编辑。"
+              : "当前版本不支持修改此字段。"}
+          </p>
+        )}
+      </div>
+      <div className="config-field-control">
+        <FieldEditor
+          key={`${field.path}:${change?.remove ?? false}:${current?.configured}`}
+          field={field}
+          value={value}
+          disabled={blocked || !editable || overridden}
+          invalid={issues.length > 0}
+          change={edit}
+        />
+        <div id={`${id}-help`} className="config-value-meta">
+          <span>
+            默认：<span>{field.default_text}</span>
+          </span>
+          <span>
+            范围：
+            <span>
+              {field.range.startsWith("官方未声明")
+                ? "官方未声明额外范围"
+                : field.range}
+            </span>
+          </span>
+        </div>
+        <div id={`${id}-errors`} className="config-field-errors">
+          {issues.map((issue, index) => (
+            <p key={index} role="alert" className="bad-text">
+              {issue.message}
+            </p>
+          ))}
+        </div>
+        {(change || (editable && configured)) && (
+          <div className="config-field-actions">
+            {editable && configured && (
+              <button type="button" disabled={blocked} onClick={remove}>
+                恢复默认
+              </button>
+            )}
+            {change && (
+              <button type="button" disabled={locked} onClick={undo}>
+                撤销此项
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <details
+        className="config-field-details"
+        open={details}
+        onToggle={(e) => setDetails(e.currentTarget.open)}
+      >
+        <summary>
+          完整说明{children.length ? `与内部字段（${children.length}）` : ""}
+        </summary>
+        <div className="config-detail-body">
+          <p>{field.description}</p>
+          <p>允许范围：{field.range}</p>
+          {children.map((child) => (
+            <div className="config-child" key={child.path}>
+              <code>{child.path}</code>
+              <p>{child.description}</p>
+              <span>
+                {child.type_label} · {child.range}
+              </span>
+            </div>
+          ))}
+          <div className="config-detail-actions">
+            <a href={field.source_url} target="_blank" rel="noreferrer">
+              官方源码
+            </a>
+            {editable && !configured && field.has_default && (
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => edit(field.default_value, true)}
+              >
+                写入默认值
+              </button>
+            )}
+          </div>
+        </div>
+      </details>
+    </article>
+  );
+}
+
 export default function Sub2ApiConfig({
   active,
   online,
@@ -221,7 +439,11 @@ export default function Sub2ApiConfig({
     [draft, setDraft] = useState<Record<string, Change>>({});
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
-    [group, setGroup] = useState("server");
+    [group, setGroup] = useState("server"),
+    [scopeGroup, setScopeGroup] = useState(""),
+    [focusTarget, setFocusTarget] = useState<{ path: string } | null>(null);
+  const rootRef = useRef<HTMLElement>(null),
+    fieldsRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [issues, setIssues] = useState<Issue[]>([]),
@@ -330,13 +552,15 @@ export default function Sub2ApiConfig({
   }, [applying]);
   const changes = Object.values(draft),
     blocked = busy || applying || !online || !document?.editable;
-  function edit(field: ConfigField, value: unknown) {
+  function edit(field: ConfigField, value: unknown, explicit = false) {
     setDraft((old) => {
       const next = { ...old },
         current = document?.values[field.path];
       if (
-        current?.configured &&
-        JSON.stringify(current.yaml) === JSON.stringify(value)
+        !explicit &&
+        (current?.configured
+          ? equal(current.yaml, value)
+          : field.has_default && equal(field.default_value, value))
       )
         delete next[field.path];
       else next[field.path] = { path: field.path, remove: false, value };
@@ -354,6 +578,28 @@ export default function Sub2ApiConfig({
   }
   async function validate(openConfirm: boolean) {
     if (blocked || !changes.length) return;
+    const localIssues = changes.flatMap((c) => {
+      const field = document!.catalog.fields.find((f) => f.path === c.path)!;
+      if (
+        !c.remove &&
+        (field.type === "array" || field.type === "object") &&
+        typeof c.value === "string"
+      )
+        return [
+          {
+            path: c.path,
+            message:
+              structuredValue(c.value, field.type).error ||
+              "需要有效的 YAML 结构",
+          },
+        ];
+      return [];
+    });
+    if (localIssues.length) {
+      setIssues(localIssues);
+      locate(localIssues[0].path);
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
@@ -365,6 +611,7 @@ export default function Sub2ApiConfig({
       );
       if (!alive.current) return;
       setIssues(result.errors);
+      if (!result.valid && result.errors[0]) locate(result.errors[0].path);
       if (result.valid) {
         setMessage("配置检查通过");
         if (openConfirm) setConfirm(true);
@@ -405,359 +652,463 @@ export default function Sub2ApiConfig({
       if (alive.current) setBusy(false);
     }
   }
-  function shown(field: ConfigField) {
-    const value = document!.values[field.path];
-    return (
-      !field.internal &&
-      (!query ||
-        `${field.path} ${field.description}`
-          .toLowerCase()
-          .includes(query.toLowerCase())) &&
-      (filter === "all" ||
-        (filter === "configured" && value?.configured) ||
-        (filter === "changed" && !!draft[field.path]) ||
-        (filter === "environment" && value?.source === "environment"))
+  const childrenByPath = useMemo(() => {
+    const fields = document?.catalog?.fields ?? [];
+    return new Map(
+      fields
+        .filter((f) => !f.internal)
+        .map((f) => [
+          f.path,
+          fields.filter((c) => c.internal && containsPath(f.path, c.path)),
+        ]),
     );
-  }
+  }, [document]);
+  const needle = query.trim().toLowerCase();
+  const matches = (field: ConfigField) =>
+    `${field.path} ${field.description}`.toLowerCase().includes(needle);
   const fields = document?.available
-    ? document.catalog.fields.filter(shown)
+    ? document.catalog.fields.filter((field) => {
+        const value = document.values[field.path];
+        return (
+          !field.internal &&
+          (!needle ||
+            matches(field) ||
+            childrenByPath.get(field.path)?.some(matches)) &&
+          (filter === "all" ||
+            (filter === "configured" && value?.configured) ||
+            (filter === "changed" && !!draft[field.path]) ||
+            (filter === "environment" && value?.source === "environment"))
+        );
+      })
     : [];
   const groups = document?.available
     ? document.catalog.groups.filter((g) =>
         fields.some((f) => f.group === g.id),
       )
     : [];
-  const selectedGroup = groups.some((g) => g.id === group)
-    ? group
-    : groups[0]?.id;
+  const aggregate = !!needle || filter !== "all";
+  const selectedGroup = aggregate
+    ? groups.some((g) => g.id === scopeGroup)
+      ? scopeGroup
+      : ""
+    : groups.some((g) => g.id === group)
+      ? group
+      : (groups[0]?.id ?? "");
+  const shownGroups = groups.filter(
+    (g) => !selectedGroup || g.id === selectedGroup,
+  );
+  const count = (id: string) => fields.filter((f) => f.group === id).length;
+  const shownCount = selectedGroup ? count(selectedGroup) : fields.length;
+  function chooseGroup(id: string) {
+    if (aggregate) setScopeGroup(id);
+    else setGroup(id);
+  }
+  function search(value: string) {
+    setQuery(value);
+    setScopeGroup("");
+  }
+  function chooseFilter(value: string) {
+    setFilter(value);
+    setScopeGroup("");
+  }
+  function locate(path: string) {
+    const field = document?.catalog.fields.find(
+      (f) => !f.internal && containsPath(f.path, path),
+    );
+    if (!field) return;
+    setQuery(field.path);
+    setFilter("all");
+    setScopeGroup("");
+    setFocusTarget({ path });
+  }
+  useEffect(() => {
+    if (fieldsRef.current) fieldsRef.current.scrollTop = 0;
+    const workspace = rootRef.current?.querySelector(".config-workspace");
+    if (workspace) workspace.scrollTop = 0;
+  }, [query, filter, selectedGroup]);
+  useEffect(() => {
+    if (!focusTarget) return;
+    const field = document?.catalog.fields.find(
+      (f) => !f.internal && containsPath(f.path, focusTarget.path),
+    );
+    const input =
+      field &&
+      rootRef.current?.ownerDocument.getElementById(`config-${field.path}`);
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView?.({ block: "nearest" });
+  }, [focusTarget]);
+  function undo(path: string) {
+    setDraft((old) => {
+      const next = { ...old };
+      delete next[path];
+      return next;
+    });
+    setIssues((old) => old.filter((issue) => !containsPath(path, issue.path)));
+    setMessage("");
+  }
+  function remove(field: ConfigField) {
+    if (document?.values[field.path]?.configured)
+      setDraft((old) => ({
+        ...old,
+        [field.path]: { path: field.path, remove: true },
+      }));
+    else undo(field.path);
+    setIssues((old) =>
+      old.filter((issue) => !containsPath(field.path, issue.path)),
+    );
+    setMessage("");
+  }
+  function scrollToSection(id: string) {
+    rootRef.current?.ownerDocument
+      .getElementById(`config-section-${id}`)
+      ?.scrollIntoView({ block: "start" });
+  }
   return (
-    <section className="sub2api-config" aria-label="Sub2API 配置">
-      <header className="config-heading">
-        <div>
-          <h2>Sub2API 配置</h2>
-          {document?.available && (
-            <div className="config-runtime">
-              <b>运行 {document.version}</b>
-              <code>{document.commit.slice(0, 8)}</code>
-              <span className={document.healthy ? "good-text" : "bad-text"}>
-                {document.healthy ? "服务健康" : "服务未就绪"}
-              </span>
-              <span>配置说明 {document.catalog.version}</span>
-            </div>
-          )}
-        </div>
-        <button
-          disabled={busy || applying || !online || changes.length > 0}
-          onClick={() => void load(true)}
-        >
-          <RefreshCw size={15} />
-          刷新
-        </button>
-      </header>
-      {(error || document?.reason) && (
-        <p role="alert" className="config-notice bad-text">
-          {error || document?.reason}
-        </p>
-      )}
-      {!document && !error && (
-        <p className="config-notice">
-          {busy ? "正在读取配置…" : "连接后读取配置"}
-        </p>
-      )}
-      {operation && operation.status !== "idle" && (
-        <div role="status" className="config-notice">
-          <b>{operation.message || operation.status}</b>
-        </div>
-      )}
-      {document?.available && (
-        <>
-          <p className="config-notice muted">
-            配置值按
-            YAML、进程环境变量与默认值推导；后台业务设置仍可能覆盖部分参数。
-          </p>
-          <div className="config-filters">
-            <label className="config-search">
-              <Search size={16} />
-              <input
-                aria-label="搜索配置字段"
-                placeholder="搜索字段、路径或中文含义"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <select
-              aria-label="配置字段筛选"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            >
-              <option value="all">全部字段</option>
-              <option value="configured">已配置</option>
-              <option value="changed">已修改</option>
-              <option value="environment">环境变量覆盖</option>
-            </select>
+    <section ref={rootRef} className="sub2api-config" aria-label="Sub2API 配置">
+      <div className="config-workspace">
+        <header className="config-heading">
+          <div className="config-heading-main">
+            <h2>Sub2API 配置</h2>
+            {document?.available && (
+              <div className="config-runtime">
+                <b>运行 {document.version}</b>
+                <code>{document.commit.slice(0, 8)}</code>
+                <span className={document.healthy ? "good-text" : "bad-text"}>
+                  {document.healthy ? "服务健康" : "服务未就绪"}
+                </span>
+                <span>说明 {document.catalog.version}</span>
+              </div>
+            )}
           </div>
-          <div className="config-layout">
-            <nav className="config-groups" aria-label="配置分组">
-              {groups.map((g) => (
-                <button
-                  key={g.id}
-                  aria-current={g.id === selectedGroup ? "true" : undefined}
-                  onClick={() => setGroup(g.id)}
-                >
-                  <span>{g.label}</span>
-                  <small>{g.id}</small>
-                </button>
-              ))}
-            </nav>
-            <div className="config-fields">
+          <button
+            type="button"
+            className="config-refresh"
+            disabled={busy || applying || !online || changes.length > 0}
+            onClick={() => void load(true)}
+          >
+            <RefreshCw size={15} className={busy ? "spin" : ""} />
+            <span>刷新</span>
+          </button>
+        </header>
+        {document?.available ? (
+          <>
+            <div className="config-filters">
+              <label className="config-search">
+                <Search size={16} />
+                <input
+                  aria-label="搜索配置字段"
+                  placeholder="搜索字段、路径或中文含义"
+                  value={query}
+                  onChange={(e) => search(e.target.value)}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    aria-label="清空配置搜索"
+                    onClick={() => search("")}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </label>
               <select
                 className="config-mobile-group"
                 aria-label="选择配置分组"
-                value={selectedGroup ?? ""}
-                onChange={(e) => setGroup(e.target.value)}
+                value={selectedGroup}
+                onChange={(e) => chooseGroup(e.target.value)}
               >
+                {aggregate && (
+                  <option value="">全部分组（{fields.length}）</option>
+                )}
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.label}
+                    {g.label}（{count(g.id)}）
                   </option>
                 ))}
+                {!groups.length && <option value="">没有匹配分组</option>}
               </select>
-              {!fields.length && (
-                <p className="config-notice">没有匹配的配置字段</p>
-              )}
-              {fields
-                .filter((f) => f.group === selectedGroup)
-                .map((f) => {
-                  const current = document.values[f.path],
-                    change = draft[f.path],
-                    configured = change ? !change.remove : current?.configured;
-                  const value = change
-                    ? change.remove
-                      ? f.default_value
-                      : change.value
-                    : current?.source === "environment"
-                      ? current.effective
-                      : current?.configured
-                        ? current.yaml
-                        : f.default_value;
-                  const editable = !blocked && current?.editable;
-                  const children = document.catalog.fields.filter(
-                    (c) =>
-                      c.internal &&
-                      (c.path.startsWith(`${f.path}.`) ||
-                        c.path.startsWith(`${f.path}[]`)),
-                  );
-                  return (
-                    <article
-                      className={`config-field${change ? " changed" : ""}`}
-                      key={f.path}
+              <select
+                aria-label="配置字段筛选"
+                value={filter}
+                onChange={(e) => chooseFilter(e.target.value)}
+              >
+                <option value="all">全部字段</option>
+                <option value="configured">已配置</option>
+                <option value="changed">已修改</option>
+                <option value="environment">环境变量覆盖</option>
+              </select>
+            </div>
+            <div className="config-layout">
+              <nav className="config-groups" aria-label="配置分组">
+                {aggregate && (
+                  <button
+                    type="button"
+                    aria-current={!selectedGroup ? "true" : undefined}
+                    onClick={() => chooseGroup("")}
+                  >
+                    <span>全部分组</span>
+                    <small>{fields.length}</small>
+                  </button>
+                )}
+                {groups.map((g) => (
+                  <button
+                    type="button"
+                    key={g.id}
+                    aria-label={g.label}
+                    aria-current={g.id === selectedGroup ? "true" : undefined}
+                    onClick={() => chooseGroup(g.id)}
+                  >
+                    <span>{g.label}</span>
+                    <small>{count(g.id)}</small>
+                  </button>
+                ))}
+                {!groups.length && (
+                  <p className="config-notice muted">没有匹配分组</p>
+                )}
+              </nav>
+              <div
+                ref={fieldsRef}
+                className="config-fields"
+                tabIndex={0}
+                aria-label="配置字段列表"
+              >
+                {!online && (
+                  <p role="alert" className="config-notice bad-text">
+                    连接已断开，草稿已保留；重新连接后才能检查和应用。
+                  </p>
+                )}
+                {(error || document.reason) && (
+                  <p role="alert" className="config-notice bad-text">
+                    {error || document.reason}
+                  </p>
+                )}
+                {operation && operation.status !== "idle" && (
+                  <p
+                    role="status"
+                    className={`config-notice${["failed", "restore_failed", "restored"].includes(operation.status) ? " bad-text" : ""}`}
+                  >
+                    {operation.message || operation.status}
+                  </p>
+                )}
+                {issues.length > 0 && (
+                  <div
+                    role="alert"
+                    className="config-notice config-issues bad-text"
+                  >
+                    {issues.map((issue, index) => (
+                      <p key={index}>
+                        <button
+                          type="button"
+                          className="config-issue"
+                          onClick={() => locate(issue.path)}
+                        >
+                          {issue.path || "配置"}
+                        </button>
+                        ：{issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <div className="config-results">
+                  <span>
+                    {aggregate
+                      ? `${shownCount} 项匹配`
+                      : `${shownCount} 个字段`}
+                  </span>
+                  <details className="config-source-help">
+                    <summary>配置值来源</summary>
+                    <p>
+                      显示值由
+                      YAML、进程环境变量与版本默认值推导。环境变量覆盖项只读；后台业务设置仍可能覆盖部分参数。
+                    </p>
+                  </details>
+                </div>
+                {!fields.length && (
+                  <div className="config-empty">
+                    <p>没有匹配的配置字段</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        search("");
+                        chooseFilter("all");
+                      }}
                     >
-                      <div className="config-field-title">
-                        <label htmlFor={`config-${f.path}`}>
-                          <code>{f.path}</code>
-                        </label>
-                        <span className="muted">{f.type_label}</span>
-                        {current?.source === "environment" ? (
-                          <span className="config-source">
-                            环境变量覆盖 · 只读
-                          </span>
-                        ) : f.status === "reserved" ? (
-                          <span className="config-source">保留字段</span>
-                        ) : (
-                          <span className="muted">
-                            {configured ? "YAML" : "默认值"}
-                          </span>
+                      清除搜索与筛选
+                    </button>
+                  </div>
+                )}
+                {shownGroups.map((g) => {
+                  const groupFields = fields.filter((f) => f.group === g.id);
+                  const split =
+                    document.catalog.fields.filter(
+                      (f) => !f.internal && f.group === g.id,
+                    ).length >= 24;
+                  const sections = new Map<string, ConfigField[]>();
+                  for (const field of groupFields) {
+                    const key = split ? subsection(field) : g.id;
+                    sections.set(key, [...(sections.get(key) ?? []), field]);
+                  }
+                  return (
+                    <section
+                      className="config-field-group"
+                      aria-label={g.label}
+                      key={g.id}
+                    >
+                      <header className="config-group-heading">
+                        <h3>{g.label}</h3>
+                        <span>{groupFields.length}</span>
+                        {sections.size > 1 && (
+                          <select
+                            className="config-subsection-picker"
+                            aria-label={`${g.label}子节`}
+                            value=""
+                            onChange={(e) => scrollToSection(e.target.value)}
+                          >
+                            <option value="" disabled>
+                              跳转子节
+                            </option>
+                            {[...sections.keys()].map((id) => (
+                              <option key={id} value={id}>
+                                {id === g.id
+                                  ? "基础参数"
+                                  : id.slice(g.id.length + 1)}
+                              </option>
+                            ))}
+                          </select>
                         )}
-                      </div>
-                      <p className="config-explanation">{f.description}</p>
-                      <FieldEditor
-                        key={`${f.path}:${change?.remove ?? false}:${current?.configured}`}
-                        field={f}
-                        value={value}
-                        disabled={
-                          !editable ||
-                          (!configured && !change) ||
-                          current?.source === "environment"
-                        }
-                        change={(v) => edit(f, v)}
-                      />
-                      <dl className="config-field-meta">
-                        <div>
-                          <dt>默认值</dt>
-                          <dd>{f.default_text}</dd>
-                        </div>
-                        <div>
-                          <dt>允许范围</dt>
-                          <dd>{f.range}</dd>
-                        </div>
-                        {current?.environment && (
-                          <div>
-                            <dt>覆盖来源</dt>
-                            <dd>
-                              <code>{current.environment}</code>
-                              <span>
-                                {" "}
-                                · YAML：
-                                {f.sensitive ? "已遮蔽" : display(current.yaml)}
-                              </span>
-                            </dd>
-                          </div>
-                        )}
-                        <div>
-                          <dt>配置来源</dt>
-                          <dd>
-                            <a
-                              href={f.source_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              官方源码
-                            </a>
-                          </dd>
-                        </div>
-                      </dl>
-                      {children.length > 0 && (
-                        <details>
-                          <summary>列表／映射内部字段说明</summary>
-                          {children.map((c) => (
-                            <div key={c.path} className="config-child">
-                              <code>{c.path}</code>
-                              <p>{c.description}</p>
-                              <small>
-                                {c.type_label} · {c.range}
-                              </small>
-                            </div>
+                      </header>
+                      {[...sections].map(([id, sectionFields]) => (
+                        <div
+                          key={id}
+                          id={`config-section-${id}`}
+                          className="config-subsection"
+                        >
+                          {sections.size > 1 && id !== g.id && (
+                            <h4>{id === g.id ? "基础参数" : id}</h4>
+                          )}
+                          {sectionFields.map((field) => (
+                            <ConfigFieldRow
+                              key={field.path}
+                              field={field}
+                              current={document.values[field.path]}
+                              change={draft[field.path]}
+                              children={childrenByPath.get(field.path) ?? []}
+                              expand={
+                                (!!needle &&
+                                  (childrenByPath
+                                    .get(field.path)
+                                    ?.some(matches) ??
+                                    false)) ||
+                                (!!focusTarget &&
+                                  focusTarget.path !== field.path &&
+                                  containsPath(field.path, focusTarget.path))
+                              }
+                              issues={issues.filter((issue) =>
+                                containsPath(field.path, issue.path),
+                              )}
+                              blocked={blocked}
+                              locked={busy || applying}
+                              edit={(value, explicit) =>
+                                edit(field, value, explicit)
+                              }
+                              remove={() => remove(field)}
+                              undo={() => undo(field.path)}
+                            />
                           ))}
-                        </details>
-                      )}
-                      {issues
-                        .filter((e) => e.path === f.path)
-                        .map((e, i) => (
-                          <p key={i} role="alert" className="bad-text">
-                            {e.message}
-                          </p>
-                        ))}
-                      <div className="config-field-actions">
-                        {current?.editable && !configured && (
-                          <button
-                            disabled={blocked}
-                            onClick={() =>
-                              edit(
-                                f,
-                                f.has_default
-                                  ? f.default_value
-                                  : f.type === "array"
-                                    ? []
-                                    : f.type === "object"
-                                      ? {}
-                                      : f.type === "boolean"
-                                        ? false
-                                        : f.type === "integer" ||
-                                            f.type === "number"
-                                          ? 0
-                                          : "",
-                              )
-                            }
-                          >
-                            添加参数
-                          </button>
-                        )}
-                        {current?.editable && configured && (
-                          <button
-                            disabled={blocked}
-                            onClick={() =>
-                              setDraft((old) => ({
-                                ...old,
-                                [f.path]: { path: f.path, remove: true },
-                              }))
-                            }
-                          >
-                            恢复默认
-                          </button>
-                        )}
-                        {change && (
-                          <button
-                            disabled={busy || applying}
-                            onClick={() =>
-                              setDraft((old) => {
-                                const next = { ...old };
-                                delete next[f.path];
-                                return next;
-                              })
-                            }
-                          >
-                            撤销此项
-                          </button>
-                        )}
-                      </div>
-                    </article>
+                        </div>
+                      ))}
+                    </section>
                   );
                 })}
+                {document.unknown.length > 0 && (
+                  <details className="config-unknown">
+                    <summary>
+                      未识别或失效字段 · {document.unknown.length}
+                    </summary>
+                    {document.unknown.map((v) => (
+                      <p key={v.path}>
+                        <code>{v.path}</code> · {v.message}
+                      </p>
+                    ))}
+                  </details>
+                )}
+              </div>
             </div>
+          </>
+        ) : (
+          <div className="config-empty">
+            {error || document?.reason ? (
+              <p role="alert" className="bad-text">
+                {error || document?.reason}
+              </p>
+            ) : (
+              <p>{busy ? "正在读取配置…" : "连接后读取配置"}</p>
+            )}
+            {operation && operation.status !== "idle" && (
+              <p role="status">{operation.message || operation.status}</p>
+            )}
           </div>
-          {document.unknown.length > 0 && (
-            <details className="config-notice">
-              <summary>未识别或失效字段 · {document.unknown.length}</summary>
-              {document.unknown.map((v) => (
-                <p key={v.path}>
-                  <code>{v.path}</code> · {v.message}
-                </p>
-              ))}
-            </details>
-          )}
-          {issues.length > 0 && (
-            <div role="alert" className="config-notice bad-text">
-              {issues.map((e, i) => (
-                <p key={i}>
-                  <button
-                    className="config-issue"
-                    onClick={() => {
-                      setQuery(e.path);
-                      setFilter("all");
-                      const f = document.catalog.fields.find(
-                        (f) => f.path === e.path,
-                      );
-                      if (f) setGroup(f.group);
-                    }}
-                  >
-                    {e.path || "配置"}
-                  </button>
-                  ：{e.message}
-                </p>
-              ))}
-            </div>
-          )}
-          <footer className="config-footer">
-            <span>
-              {changes.length} 项修改{message && ` · ${message}`}
+        )}
+      </div>
+      {document?.available && (
+        <footer className="config-footer">
+          <div className="config-footer-state">
+            {changes.length ? (
+              <>
+                <button
+                  type="button"
+                  className="config-change-count"
+                  onClick={() => {
+                    search("");
+                    chooseFilter("changed");
+                  }}
+                >
+                  {changes.length} 项修改
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || applying}
+                  onClick={() => {
+                    setDraft({});
+                    setIssues([]);
+                    setMessage("");
+                  }}
+                >
+                  撤销全部
+                </button>
+              </>
+            ) : (
+              <span>没有待应用的修改</span>
+            )}
+            <span
+              className={issues.length ? "bad-text" : "good-text"}
+              role="status"
+            >
+              {applying
+                ? "正在应用…"
+                : issues.length
+                  ? `${issues.length} 项检查错误`
+                  : message}
             </span>
-            <div>
-              <button
-                disabled={!changes.length || busy || applying}
-                onClick={() => {
-                  setDraft({});
-                  setIssues([]);
-                  setMessage("");
-                }}
-              >
-                撤销全部
-              </button>
-              <button
-                disabled={blocked || !changes.length}
-                onClick={() => void validate(false)}
-              >
-                检查配置
-              </button>
-              <button
-                className="primary"
-                disabled={blocked || !changes.length}
-                onClick={() => void validate(true)}
-              >
-                应用并重启
-              </button>
-            </div>
-          </footer>
-        </>
+          </div>
+          <div className="config-footer-actions">
+            <button
+              type="button"
+              disabled={blocked || !changes.length}
+              onClick={() => void validate(false)}
+            >
+              检查配置
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={blocked || !changes.length}
+              onClick={() => void validate(true)}
+            >
+              应用并重启
+            </button>
+          </div>
+        </footer>
       )}
       {confirm && document && (
         <ProxyDialog
@@ -771,34 +1122,60 @@ export default function Sub2ApiConfig({
           </p>
           <ul className="config-diff">
             {changes.map((c) => {
-              const f = document.catalog.fields.find((f) => f.path === c.path)!;
+              const field = document.catalog.fields.find(
+                (f) => f.path === c.path,
+              )!;
+              const current = document.values[c.path];
               return (
                 <li key={c.path}>
-                  <code>{c.path}</code>
-                  <div>
-                    <span>
-                      {f.sensitive
-                        ? "已遮蔽"
-                        : display(document.values[c.path]?.yaml)}
-                    </span>
-                    <span>→</span>
+                  <div className="config-diff-title">
                     <strong>
                       {c.remove
-                        ? "删除 YAML 项，使用默认值"
-                        : f.sensitive
-                          ? "替换为新值（已遮蔽）"
-                          : display(c.value)}
+                        ? "恢复默认"
+                        : current?.configured
+                          ? "修改"
+                          : "新增"}
                     </strong>
+                    <code>{c.path}</code>
                   </div>
+                  <dl>
+                    <div>
+                      <dt>当前</dt>
+                      <dd>
+                        {current?.configured
+                          ? field.sensitive
+                            ? "已遮蔽"
+                            : display(current.yaml)
+                          : field.has_default
+                            ? `默认值：${field.default_text}`
+                            : "未配置"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>应用后</dt>
+                      <dd>
+                        {c.remove
+                          ? `删除 YAML 项，${field.has_default ? `使用默认值：${field.default_text}` : "恢复为未配置"}`
+                          : field.sensitive
+                            ? "替换为新值（已遮蔽）"
+                            : display(c.value)}
+                      </dd>
+                    </div>
+                  </dl>
                 </li>
               );
             })}
           </ul>
           <footer>
-            <button disabled={busy} onClick={() => setConfirm(false)}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirm(false)}
+            >
               返回修改
             </button>
             <button
+              type="button"
               className="primary"
               disabled={blocked}
               onClick={() => void apply()}

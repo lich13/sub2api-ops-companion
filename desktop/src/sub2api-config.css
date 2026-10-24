@@ -1,308 +1,735 @@
-.sub2api-config {
+/* Keep the active configuration workspace inside the remaining window. */
+.content:has(#feature-panel-sub2api:not([hidden])),
+.content:has(#feature-panel-sub2api:not([hidden])) .content-inner,
+.page-surface[data-page="features"]:has(#feature-panel-sub2api:not([hidden])),
+.features-stack:has(#feature-panel-sub2api:not([hidden])),
+#feature-panel-sub2api:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
+}
+.content:has(#feature-panel-sub2api:not([hidden])) .page-heading {
+  display: none;
+}
+.features-stack:has(#feature-panel-sub2api:not([hidden])) {
+  gap: 12px;
+}
+.features-stack:has(#feature-panel-sub2api:not([hidden])) > .feature-tabs {
+  flex-shrink: 0;
+}
+.sub2api-config {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
 }
 .config-heading {
   display: flex;
-  justify-content: space-between;
+  flex-shrink: 0;
   align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--line);
 }
-.config-heading h2 {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-.config-heading button {
+.config-heading-main {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  min-width: 0;
+}
+.config-heading h2 {
+  margin: 0;
+  font-size: 15px;
 }
 .config-runtime {
   display: flex;
-  gap: 8px 14px;
   flex-wrap: wrap;
-  font-size: 12px;
+  gap: 4px 10px;
+  align-items: center;
+  font-size: 11px;
 }
 .config-runtime > span:last-child {
   color: var(--muted);
 }
+.sub2api-config .config-refresh {
+  flex-shrink: 0;
+  padding: 6px 9px;
+  font-size: 12px;
+}
 .config-filters {
   display: flex;
-  gap: 12px;
-  padding: 16px 20px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
 }
 .config-search {
   display: flex;
-  gap: 8px;
   align-items: center;
   flex: 1;
-  min-width: 180px;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
-.config-search input {
+.config-search > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.config-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sub2api-config .config-search input {
   width: 100%;
   min-width: 0;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.sub2api-config .config-search button {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  color: var(--muted);
+}
+.config-filters > select {
+  max-width: 210px;
+}
+.sub2api-config .config-mobile-group {
+  display: none;
 }
 .config-layout {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  max-height: calc(100vh - 360px);
-  min-height: 320px;
+  flex: 1;
+  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 .config-groups {
-  overflow-y: auto;
-  border-right: 1px solid var(--line);
-  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border-right: 1px solid var(--line);
 }
-.config-groups button {
+.sub2api-config .config-groups button {
+  display: flex;
   flex-shrink: 0;
-  text-align: left;
+  justify-content: space-between;
+  gap: 8px;
   border: 0;
+  border-radius: 5px;
   background: transparent;
-  padding: 9px 10px;
+  padding: 9px 8px;
+  text-align: left;
   white-space: normal;
+  font-size: 12px;
+  line-height: 1.45;
 }
-.config-groups button[aria-current] {
-  background: var(--bg);
-  color: var(--accent);
+.config-groups button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-.config-groups span,
-.config-groups small {
-  display: block;
-}
-.config-groups small {
+.config-groups button > small {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
-  color: var(--muted);
-  margin-top: 3px;
+}
+.sub2api-config .config-groups button[aria-current="true"] {
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 .config-fields {
-  overflow-y: auto;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
   overscroll-behavior: contain;
+  scroll-padding: 12px;
 }
-.config-mobile-group {
-  display: none;
+.config-fields:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.config-results {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.config-results > span {
+  flex-shrink: 0;
+}
+.config-source-help {
+  max-width: 450px;
+  text-align: right;
+}
+.config-source-help summary {
+  cursor: pointer;
+}
+.config-source-help p {
+  padding-top: 6px;
+  text-align: left;
+  line-height: 1.6;
+}
+.config-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.config-group-heading h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.config-group-heading > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.config-subsection-picker {
+  margin-left: auto;
+  max-width: 45%;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.config-subsection {
+  scroll-margin-top: 12px;
+}
+.config-subsection h4 {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--hover);
+  overflow-wrap: anywhere;
 }
 .config-field {
-  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr);
+  column-gap: 24px;
+  padding: 14px 16px 10px;
   border-bottom: 1px solid var(--line);
   min-width: 0;
+  scroll-margin: 12px;
 }
 .config-field.changed {
   box-shadow: inset 3px 0 var(--accent);
 }
-.config-field-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px 12px;
-  flex-wrap: wrap;
+.config-field.invalid {
+  box-shadow: inset 3px 0 var(--bad);
 }
-.config-field-title label {
-  flex: 1;
-  min-width: 180px;
-  font-weight: 600;
+.config-field-intro,
+.config-field-control {
+  min-width: 0;
 }
-.config-field-title code {
+.config-field-intro > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.config-path {
+  display: block;
+  margin: 5px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.config-field-title > span {
+.config-field-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
   font-size: 11px;
 }
-.config-source {
+.config-source,
+.config-override {
+  color: var(--warn);
+}
+.config-dirty {
   color: var(--accent);
 }
-.config-explanation {
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 9px 0 12px;
-  max-width: 76ch;
-  white-space: pre-wrap;
+.config-override {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .config-input {
   display: flex;
-  gap: 8px;
-  max-width: 600px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-.config-input input {
+.sub2api-config .config-input input {
+  width: 100%;
   flex: 1;
   min-width: 0;
 }
 .config-input button {
   flex-shrink: 0;
+  padding: 7px;
+}
+.config-field-control > select {
+  width: 100%;
+}
+.config-boolean {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 33px;
+}
+.config-boolean > span {
+  color: var(--muted);
+  font-size: 12px;
 }
 .config-structured textarea {
-  box-sizing: border-box;
   width: 100%;
+  min-height: 92px;
   resize: vertical;
-  min-height: 110px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  padding: 9px 10px;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font:
+    12px/1.6 ui-monospace,
+    monospace;
 }
-.config-field-meta {
-  margin: 12px 0;
-  font-size: 12px;
+.config-structured textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.config-structured textarea:disabled {
+  opacity: 0.65;
+}
+.config-structured small {
+  display: block;
+  padding-top: 4px;
+}
+.config-value-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
   color: var(--muted);
-  display: grid;
-  gap: 7px;
-}
-.config-field-meta > div {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 8px;
-}
-.config-field-meta dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+  font-size: 11px;
   line-height: 1.6;
-}
-.config-field-meta dt {
-  color: var(--muted);
-}
-.config-field-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.config-field-actions button {
-  font-size: 12px;
-}
-.config-child {
-  padding: 10px 0;
-  font-size: 12px;
-}
-.config-child code {
   overflow-wrap: anywhere;
 }
-.config-child p {
-  line-height: 1.6;
+.config-value-meta > span > span {
+  color: var(--ink);
 }
-.config-notice {
-  padding: 12px 20px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
+.config-field-errors p {
+  padding-top: 6px;
+  font-size: 12px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.config-notice p {
-  margin: 6px 0;
+.config-field-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
 }
-.config-issue {
+.sub2api-config .config-field-actions button {
+  border: 0;
+  padding: 3px 0;
+  background: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.config-field-details {
+  grid-column: 1/-1;
+  min-width: 0;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.config-field-details > summary {
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 3px 0;
+}
+.config-detail-body {
+  margin: 8px 0 2px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--canvas);
+}
+.config-detail-body p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.config-detail-body p + p {
+  margin-top: 8px;
+}
+.config-detail-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+}
+.config-detail-actions a {
+  color: var(--accent);
+}
+.config-detail-actions button {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.config-child {
+  margin: 10px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.config-child code {
+  color: var(--accent);
+}
+.config-child p {
+  margin-top: 4px;
+}
+.config-child > span {
+  color: var(--muted);
+}
+.config-notice {
+  padding: 12px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border-bottom: 1px solid var(--line);
+}
+.config-notice p + p {
+  margin-top: 8px;
+}
+.sub2api-config .config-issue {
+  display: inline;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
   text-align: left;
   text-decoration: underline;
+  white-space: normal;
   overflow-wrap: anywhere;
+}
+.config-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  overflow: auto;
+  padding: 24px 16px;
+  color: var(--muted);
+  min-height: 0;
+  overflow-wrap: anywhere;
+}
+.config-unknown {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.config-unknown summary {
+  cursor: pointer;
+}
+.config-unknown p {
+  margin-top: 8px;
 }
 .config-footer {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: 10px;
+  padding: 10px 16px;
   border-top: 1px solid var(--line);
-  position: sticky;
-  bottom: 0;
   background: var(--surface);
-  border-radius: 0 0 10px 10px;
-  z-index: 2;
 }
-.config-footer > div {
+.config-footer-state {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 5px 12px;
   flex-wrap: wrap;
-}
-.config-footer > span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
+  min-width: 0;
+}
+.sub2api-config .config-footer-state button {
+  font-size: 11px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+}
+.sub2api-config .config-change-count {
+  color: var(--accent);
+}
+.config-footer-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.config-footer-actions button {
+  font-size: 12px;
 }
 .config-diff {
   list-style: none;
-  margin: 16px 0;
   padding: 0;
-  max-height: 55vh;
-  overflow: auto;
+  margin: 16px 0;
 }
 .config-diff li {
-  padding: 12px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
-.config-diff li > div {
+.config-diff-title {
   display: flex;
   gap: 10px;
-  margin-top: 8px;
+  align-items: baseline;
   flex-wrap: wrap;
+}
+.config-diff-title > strong {
+  color: var(--accent);
   font-size: 12px;
+}
+.config-diff dl {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-size: 12px;
+}
+.config-diff dl > div {
+  min-width: 0;
+  padding: 10px;
+  background: var(--canvas);
+  border-radius: 6px;
+}
+.config-diff dt {
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.config-diff dd {
+  margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.config-diff strong {
-  font-weight: 500;
-}
-@media (max-width: 760px) {
-  .feature-tabs {
-    gap: 16px;
-    overflow-x: auto;
-  }
-  .feature-tabs button {
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
+@media (max-width: 1050px) {
   .config-layout {
-    display: block;
-    max-height: none;
-    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
   }
   .config-groups {
     display: none;
   }
-  .config-mobile-group {
+  .sub2api-config .config-mobile-group {
     display: block;
-    width: calc(100% - 32px);
-    margin: 12px 16px;
   }
-  .config-field {
-    padding: 16px;
+  .config-heading-main {
+    display: block;
   }
-  .config-heading {
-    padding: 16px;
-    align-items: flex-start;
+  .config-runtime {
+    margin-top: 5px;
   }
   .config-filters {
-    padding: 12px 16px;
+    flex-wrap: wrap;
   }
-  .config-footer {
-    padding: 12px 16px;
-    flex-direction: column;
-    align-items: stretch;
-    bottom: 0;
+  .config-search {
+    flex-basis: 220px;
   }
-  .config-footer > div {
+}
+@media (max-width: 760px) {
+  .config-filters {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) 130px;
+    gap: 8px;
+    padding: 8px 12px;
   }
-  .config-footer .primary {
+  .config-search {
     grid-column: 1/-1;
   }
-  .config-field button,
-  .config-field select,
-  .config-footer button,
-  .config-heading button {
-    min-height: 48px;
+  .config-filters > select {
+    width: 100%;
+    max-width: none;
   }
-  .config-field-title label {
-    min-width: 0;
-    flex-basis: 100%;
+  .config-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+  .config-field-details {
+    margin-top: 0;
+  }
+  .config-heading {
+    padding: 10px 12px;
+  }
+  .config-footer {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 12px;
+    gap: 5px;
+  }
+  .config-footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+  }
+  .config-footer-state {
+    justify-content: space-between;
+  }
+  .config-diff dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mobile .config-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mobile .config-groups {
+  display: none;
+}
+.mobile .sub2api-config .config-mobile-group {
+  display: block;
+}
+.mobile .config-field {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.mobile .config-runtime {
+  font-size: 11px;
+}
+.mobile .config-field-details > summary {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+}
+.mobile .config-source-help > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+.mobile .config-results {
+  padding: 8px 12px 0;
+}
+.mobile .config-group-heading {
+  padding: 10px 12px;
+}
+.mobile .config-field-tags,
+.mobile .config-path,
+.mobile .config-value-meta {
+  font-size: 12px;
+}
+.mobile .config-filters > select {
+  font-size: 13px;
+  padding: 7px;
+}
+.mobile .sub2api-config .config-search input {
+  font-size: 16px;
+}
+.mobile .sub2api-config .config-footer-state button {
+  min-height: 48px;
+}
+.mobile .config-footer-state {
+  min-height: 18px;
+}
+.mobile .sub2api-config .config-field-actions button {
+  min-height: 48px;
+}
+.mobile .config-detail-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+}
+@media (max-height: 560px) {
+  .config-heading {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .config-results {
+    padding-top: 6px;
+  }
+  .config-group-heading {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+
+.config-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.config-field-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+}
+.config-field-details > summary::-webkit-details-marker {
+  display: none;
+}
+.config-field-details > summary::before {
+  content: "›";
+  font-size: 16px;
+  line-height: 1;
+}
+.config-field-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.sub2api-config summary:focus-visible,
+.sub2api-config a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-height: 700px) {
+  .config-workspace {
+    display: block;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding: 12px;
+  }
+  .config-layout {
+    display: block;
+    overflow: visible;
+  }
+  .config-fields {
+    overflow: visible;
+  }
+  .config-groups {
+    display: none;
+  }
+  .sub2api-config .config-mobile-group {
+    display: block;
   }
 }

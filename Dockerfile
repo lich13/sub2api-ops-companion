@@ -26,7 +26,7 @@ COPY server/resources/modeltrace/LICENSE.txt /usr/share/doc/sub2ops/ModelTrace-L
 ARG BUILD_REVISION=development
 LABEL org.opencontainers.image.title="Sub2Ops Companion" \
       org.opencontainers.image.revision=$BUILD_REVISION \
-      org.opencontainers.image.version="0.1.59"
+      org.opencontainers.image.version="0.1.60"
 ENV APP_PORT=18081
 USER 10001:10001
 EXPOSE 18081
