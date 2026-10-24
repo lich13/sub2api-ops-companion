@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LoaderCircle, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
 import { fullTime, type Account, type TestEvent, type UsageSummary, type UsageWindow } from "./types";
-import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, type Operation } from "./accountOperations";
+import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, publishOperation, repeating, operationPending, type Operation } from "./accountOperations";
 import { useBackAction } from "./mobile";
 
 export type TestMode = "default" | "compact" | "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime";
@@ -44,8 +44,11 @@ export function nextCycleAppointment(usage: UsageSummary | undefined, windows: U
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
   useBackAction(true, close);
   const operations = useSyncExternalStore(subscribeOperations, getOperations);
-  const scheduled = operations.filter(job => job.account_id === account.id && job.scheduled_at && ["queued", "running", "checking", "needs_confirmation"].includes(job.status));
+  const scheduled = operations.filter(job => job.account_id === account.id && (job.scheduled_at || job.repeat) && operationPending(job));
   const [execution, setExecution] = useState("now");
+  const continuous = execution === "cycle";
+  const appointment = execution !== "now";
+  const existingCycle = scheduled.some(repeating);
   const [scheduledAt, setScheduledAt] = useState("");
   const [models, setModels] = useState<TestModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,15 +110,19 @@ export default function TestDialog({ account, online, close }: {account: Account
   }
   async function start() {
     if (running.current || cycleReading.current || !online) return;
-    if (execution === "scheduled") {
+    if (appointment) {
       const scheduleTimestamp = appointmentTimestamp(scheduledAt);
-      if (!scheduledAt) { setError("请填写预约时间。"); return; }
-      if (!Number.isFinite(scheduleTimestamp)) { setError("预约时间无效，请选择有效日期并精确到秒。"); return; }
-      if (scheduleTimestamp <= Date.now()) { setError("预约时间须晚于当前北京时间。"); return; }
+      if (!continuous && !scheduledAt) { setError("请填写预约时间。"); return; }
+      if (!continuous && !Number.isFinite(scheduleTimestamp)) { setError("预约时间无效，请选择有效日期并精确到秒。"); return; }
+      if (!continuous && scheduleTimestamp <= Date.now()) { setError("预约时间须晚于当前北京时间。"); return; }
+      if (continuous && existingCycle) { setError("此账号已有连续预约，请先停止现有预约。"); return; }
       running.current = true; setBusy(true); setError("");
       try {
-        await submitOperation(account, "test", { confirmed: true, mode: account.platform === "grok" ? "text" : "default", model_id: model, prompt: "" }, undefined, new Date(scheduleTimestamp).toISOString());
-        if (alive.current) { setStatus("已预约"); setExecution("now"); }
+        const job = await submitOperation(account, "test", { confirmed: true, mode: account.platform === "grok" ? "text" : "default", model_id: model, prompt: "" }, undefined, continuous ? undefined : new Date(scheduleTimestamp).toISOString(), continuous ? "quota_cycle" : undefined);
+        if (alive.current) {
+          if (job.status === "needs_confirmation" || job.repeat_state === "needs_confirmation" || job.status === "failed") setError(job.repeat_reason || job.reason || "预约需确认，请核对后重新提交。");
+          else close();
+        }
       } catch (e) { if (alive.current) setError(String(e).replace(/^Error: /, "")); }
       finally { running.current = false; if (alive.current) setBusy(false); }
       return;
@@ -152,14 +159,15 @@ export default function TestDialog({ account, online, close }: {account: Account
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
       <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
       <div className="test-controls">
-        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value === "scheduled") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option></select></label>}
+        {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value !== "now") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option>{account.platform === "openai" && account.type === "oauth" && <option value="cycle">持续预约 · 最近周期 +3 秒</option>}</select></label>}
         {execution === "scheduled" && <div className="test-schedule-time"><label>预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={1} value={scheduledAt} disabled={busy || cycleBusy} onChange={e => setScheduledAt(e.target.value)}/></label><button type="button" disabled={busy || cycleBusy || !online} onClick={() => void fillCycleTime()}>{cycleBusy ? <LoaderCircle size={13} className="spin"/> : null}最近周期 +3 秒</button></div>}
-        <label>模式<select disabled={busy || execution === "scheduled"} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+        {continuous && <p className="muted">按最近额度周期重置后 3 秒持续测试，7d 额度满 100% 且上游 429 时停止。可在操作待办停止后续预约。</p>}
+        <label>模式<select disabled={busy || appointment} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
         {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
         {((account.platform === "grok" && ["image", "video", "stt"].includes(mode)) || imageModel) && <label className="test-upload">{mode === "stt" ? "音频素材（可选）" : "图片素材（可选）"}<input key={`${mode}-${imageModel}`} type="file" accept={mode === "stt" ? "audio/*,.wav,.mp3,.m4a,.ogg,.webm" : "image/png,image/jpeg,image/webp,image/gif"} disabled={busy} onChange={(e) => void chooseFile(e.target.files?.[0])}/>{fileName && <span>{fileName}</span>}</label>}
       </div>
-      {scheduled.length > 0 && <ul className="test-schedules">{scheduled.map(job => <li key={job.id}><div><time>{fullTime(job.scheduled_at)}</time><span>{String(job.requested.model_id || "默认模型")}</span></div><span>{({ queued: "待执行", running: "测试中", checking: "核对中", needs_confirmation: "待核对" } as Record<string, string>)[job.status]}</span>{job.status === "queued" && <button className="icon-button" aria-label={`取消预约 ${fullTime(job.scheduled_at)}`} disabled={busy || !online} onClick={() => { void api<Operation>("POST", `/account-operations/${job.id}/cancel`, {}).then(result => { if (alive.current) setOperations(getOperations().map(row => row.id === result.id ? result : row)); }).catch(e => { if (alive.current) setError(String(e)); }); }}><X size={15}/></button>}</li>)}</ul>}
+      {scheduled.length > 0 && <ul className="test-schedules">{scheduled.map(job => <li key={job.id}><div><time>{fullTime(job.scheduled_at)}</time><span>{`${job.repeat ? "持续预约 · " : ""}${String(job.requested.model_id || "默认模型")}`}</span></div><span>{job.repeat_reason || ({ queued: "待执行", running: "测试中", checking: "核对中", needs_confirmation: "待核对", completed: "准备下一次预约" } as Record<string, string>)[job.status]}</span>{(job.status === "queued" || repeating(job)) && <button className="icon-button" aria-label={repeating(job) ? "停止连续预约" : `取消预约 ${fullTime(job.scheduled_at)}`} disabled={busy || !online} onClick={() => { void api<Operation>("POST", `/account-operations/${job.id}/cancel`, {}).then(result => { if (alive.current) publishOperation(result); }).catch(e => { if (alive.current) setError(String(e)); }); }}><X size={15}/></button>}</li>)}</ul>}
       <div className="test-result" aria-live="polite">
         {!online && <p className="bad-text">当前离线，请恢复连接后操作。</p>}
         {loading && <p className="muted">正在读取模型列表，可直接使用默认模型测试。</p>}
@@ -168,7 +176,7 @@ export default function TestDialog({ account, online, close }: {account: Account
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer>{busy ? execution === "scheduled" ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || cycleBusy} onClick={() => void start()}><Play size={13}/>{execution === "scheduled" ? "预约测试" : "开始测试"}</button>}</footer>
+      <footer>{busy ? appointment ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || cycleBusy || (continuous && existingCycle)} onClick={() => void start()}><Play size={13}/>{appointment ? "预约测试" : "开始测试"}</button>}</footer>
     </section>
   </div>;
 }

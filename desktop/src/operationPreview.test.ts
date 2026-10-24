@@ -31,6 +31,30 @@ it("keeps a second-precision appointment queued until its exact due time", async
   await expect(operationPreview("POST", "/accounts/47/operations", { ...body, request_id: "fixture-fractional-appointment", scheduled_at: "2030-01-02T01:31:00.123Z" }, accounts, emit)).rejects.toThrow("预约时间无效");
 });
 
+it("keeps a continuous series pending when it needs confirmation after a completed cycle", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2030-01-02T01:30:00Z"));
+  const accounts = [account(48, {
+    type: "oauth",
+    usage_windows: [{ key: "codex_5h", label: "5h", used_percent: 20, reset_at: "2030-01-02T01:31:00Z", status: "known", observed_at: "2030-01-02T01:30:00Z", source: "fixture" }],
+  })];
+  const body = {
+    action: "test",
+    payload: { confirmed: true, mode: "default", model_id: "fixture-model" },
+    expected_version: "version-48",
+    request_id: "fixture-cycle-preview",
+    client_id: "fixture-client",
+    repeat: "quota_cycle",
+  };
+  const initial = await operationPreview("POST", "/accounts/48/operations", body, accounts, vi.fn());
+  expect(initial).toMatchObject({ repeat_state: "active", scheduled_at: "2030-01-02T01:31:03.000Z" });
+  await vi.advanceTimersByTimeAsync(63_000);
+  const listing = await operationPreview("GET", "/account-operations", {}, accounts, vi.fn());
+  if (!listing || !("items" in listing)) throw new Error("expected operation listing");
+  expect(listing.pending).toBe(1);
+  expect(listing.items[0]).toMatchObject({ status: "completed", repeat_state: "needs_confirmation" });
+});
+
 describe("account operation preview batches", () => {
   it("previews a confirmed delete batch and removes the selected parent with its child", async () => {
     vi.useFakeTimers();

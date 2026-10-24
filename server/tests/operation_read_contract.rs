@@ -356,3 +356,33 @@ async fn historical_ownership_fields_are_omitted_without_rewriting_saved_jobs() 
     assert_eq!(fixture.backend.dispatch_calls.load(Ordering::SeqCst), 0);
     fixture.db.close().await;
 }
+
+#[tokio::test]
+async fn stopped_continuous_test_cannot_be_requeued_by_a_late_busy_result() {
+    let fixture = Fixture::new().await;
+    let mut state = valid_state_with_job_ids(json!([JOB_ID]));
+    let job = &mut state["jobs"][JOB_ID];
+    job["repeat"] = "quota_cycle".into();
+    job["repeat_series_id"] = JOB_ID.into();
+    job["repeat_state"] = "active".into();
+    job["status"] = "running".into();
+    job["started_at"] = "2030-01-01T00:00:00Z".into();
+    job["scheduled_at"] = "2030-01-01T00:00:00Z".into();
+    fixture.replace_state(&state);
+    let stopped = fixture.operations.cancel(JOB_ID).await.unwrap();
+    assert_eq!(stopped["repeat_state"], "stopped");
+    assert_eq!(stopped["status"], "running");
+    fixture
+        .operations
+        .update(
+            JOB_ID,
+            json!({"status":"queued","reason":"等待账号空闲","started_at":null}),
+        )
+        .unwrap();
+    let current = fixture.operations.get(JOB_ID, 0).unwrap();
+    assert_eq!(current["status"], "cancelled");
+    assert_eq!(current["repeat_state"], "stopped");
+    assert_eq!(fixture.backend.dispatch_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.operations.listing(None).unwrap()["pending"], 0);
+    fixture.close().await;
+}

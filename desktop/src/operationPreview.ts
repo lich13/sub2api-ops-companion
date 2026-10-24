@@ -16,6 +16,13 @@ function recordScheduled(job: Operation) {
   if (!job.scheduled_at || scheduledHistory.has(job.id)) return;
   scheduledHistory.set(job.id, { id: 10000 + scheduledHistory.size, account_id: job.account_id, account_name: job.account_name, model_id: String(job.requested.model_id || ""), test_completed_at: new Date().toISOString(), recovered_at: null, legacy: false, kind: 'connection_test', result_status: job.status });
 }
+function cycleTime(account: Account, previous = 0) {
+  const now = Date.now();
+  const times = (account.usage?.windows ?? account.usage_windows).filter(w => !['error', 'unknown'].includes(w.status))
+    .map(w => w.reset_at ? Math.ceil(Date.parse(w.reset_at) / 1000) * 1000 + 3000 : NaN)
+    .filter(at => Number.isFinite(at) && at > now && at > previous);
+  return times.length ? Math.min(...times) : undefined;
+}
 const requests = new Map<string, string>();
 const batches = new Map<string, string[]>();
 const batchRequests = new Map<string, { id: string; signature: string }>();
@@ -87,8 +94,8 @@ export async function operationPreview(method: string, path: string, body: Recor
   if (path.split('?')[0] === '/account-operations') {
     const bid = new URLSearchParams(path.split('?')[1]).get('batch_id');
     if (bid && !batches.has(bid)) throw new Error('批次不存在');
-    const items = bid ? batches.get(bid)!.map(id => jobs.get(id)!) : [...jobs.values()].reverse();
-    return { ...(bid ? { batch_id: bid } : {}), items: structuredClone(items), pending: items.filter((j) => ['queued', 'running', 'checking', 'needs_confirmation'].includes(j.status)).length };
+    const items = bid ? batches.get(bid)!.map(id => jobs.get(id)!) : [...jobs.values()].filter(job => job.repeat_state !== "continued").reverse();
+    return { ...(bid ? { batch_id: bid } : {}), items: structuredClone(items), pending: items.filter((j) => ['queued', 'running', 'checking', 'needs_confirmation'].includes(j.status) || ['active', 'needs_confirmation'].includes(j.repeat_state ?? '')).length };
   }
   if (method === 'POST' && path.endsWith('/operations')) {
     const old = requests.get(String(body.request_id));
@@ -96,9 +103,17 @@ export async function operationPreview(method: string, path: string, body: Recor
     const account = accounts.find((a) => a.id === Number(path.split('/')[2]));
     if (!account) throw new Error('账号不存在');
     const action = String(body.action), payload = body.payload as Record<string, unknown>;
-    const at = typeof body.scheduled_at === 'string' ? Date.parse(body.scheduled_at) : undefined;
+    const repeat = body.repeat === 'quota_cycle';
+    if (body.repeat && (!repeat || action !== 'test' || account.platform !== 'openai' || account.type !== 'oauth' || payload.mode !== 'default' || body.scheduled_at)) throw new Error('持续预约仅支持 OpenAI OAuth 普通测试');
+    if (repeat && [...jobs.values()].some(job => job.account_id === account.id && ['active', 'needs_confirmation'].includes(job.repeat_state ?? ''))) throw new Error('此账号已有连续预约，请先停止现有预约');
+    let at = repeat ? cycleTime(account) : typeof body.scheduled_at === 'string' ? Date.parse(body.scheduled_at) : undefined;
+    if (repeat && !payload.model_id) payload.model_id = 'gpt-6-luna';
     if (at !== undefined && (action !== 'test' || !Number.isFinite(at) || at <= Date.now() || at % 1000 !== 0)) throw new Error('预约时间无效');
-    const job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), account_id: account.id, account_name: account.name, action, requested: payload, status: 'queued', reason: at ? '等待预约时间' : '等待账号空闲', ...(at ? { scheduled_at: new Date(at).toISOString() } : {}) };
+    let job: Operation = { id: crypto.randomUUID().replaceAll('-', ''), account_id: account.id, account_name: account.name, action, requested: payload, status: 'queued', reason: at ? '等待预约时间' : '等待账号空闲', ...(at ? { scheduled_at: new Date(at).toISOString() } : {}) };
+    if (repeat) {
+      Object.assign(job, { repeat: 'quota_cycle', repeat_series_id: job.id, repeat_state: at ? 'active' : 'needs_confirmation' });
+      if (!at) { job.status = 'needs_confirmation'; job.repeat_reason = '暂无可用的周期重置时间，请查询用量后重新预约'; }
+    }
     jobs.set(job.id, job); requests.set(String(body.request_id), job.id);
     const finish = () => {
       if (job.status !== 'queued') return;
@@ -126,13 +141,30 @@ export async function operationPreview(method: string, path: string, body: Recor
       }
       job.status = 'completed'; job.reason = '';
       job.result = { verified: true, priority: account.priority, group_ids: account.group_ids, version: account.version, degradation_mark: account.degradation_mark, message: '操作已完成', deleted: action === 'delete', success: true, ...settingsResult };
-      recordScheduled(job); emit();
+      recordScheduled(job);
+      if (job.repeat_state === 'active') {
+        const next = cycleTime(account, at);
+        if (!next) { job.repeat_state = 'needs_confirmation'; job.repeat_reason = '暂无可用的新周期重置时间，请查询用量后重新预约'; }
+        else {
+          const nextId = crypto.randomUUID().replaceAll('-', '');
+          job.repeat_state = 'continued'; job.next_operation_id = nextId;
+          job = { ...job, id: nextId, repeat_state: 'active', next_operation_id: undefined, status: 'queued', reason: '等待预约时间', result: undefined, events: undefined, next_event: undefined, scheduled_at: new Date(next).toISOString() };
+          jobs.set(job.id, job); at = next;
+          setTimeout(finish, Math.min(next-Date.now(), 2_147_483_647));
+        }
+      }
+      emit();
     };
     setTimeout(finish, at ? Math.min(at - Date.now(), 2_147_483_647) : 1200);
     return structuredClone(job);
   }
-  const job = jobs.get(path.split('/')[2]?.split('?')[0]);
+  let job = jobs.get(path.split('/')[2]?.split('?')[0]);
   if (!job) throw new Error('操作不存在');
+  if (method === 'POST' && path.endsWith('/cancel') && job.repeat) {
+    while (job.next_operation_id && jobs.has(job.next_operation_id)) job = jobs.get(job.next_operation_id)!;
+    job.repeat_state = 'stopped'; job.repeat_reason = '已停止连续预约';
+    if (['queued', 'needs_confirmation'].includes(job.status)) { job.status = 'cancelled'; recordScheduled(job); }
+  }
   if (method === 'POST' && path.endsWith('/cancel') && job.status === 'queued') { job.status = 'cancelled'; recordScheduled(job); }
   return structuredClone(job);
 }

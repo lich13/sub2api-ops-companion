@@ -123,6 +123,59 @@ async function renderPanel(connectionKey: string) {
 }
 
 describe("operation panel batch history", () => {
+  it("does not start a new series on another connection after a delayed stop response", async () => {
+    const job = operation({ action: "test", status: "needs_confirmation", repeat: "quota_cycle", repeat_state: "needs_confirmation", requested: { confirmed: true } });
+    const stopped = deferred<Operation>();
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET") return { items: [job] } as never;
+      if (path.endsWith("/cancel")) return stopped.promise as never;
+      throw new Error(path);
+    });
+    await renderPanel("repeat-old-connection");
+    await act(async () => entryButton().click());
+    await act(async () => buttonByText("重新预约").click());
+    await act(async () => { bindOperationConnection("repeat-new-connection"); stopped.resolve({ ...job, status: "cancelled", repeat_state: "stopped" }); });
+    expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(1);
+    expect(getOperations()).toEqual([]);
+  });
+
+  it("keeps a continuous appointment stoppable while dispatched and shows its stop reason", async () => {
+    const job = operation({ action: "test", status: "running", started_at: "2030-01-02T01:31:00Z", scheduled_at: "2030-01-02T01:31:00Z", repeat: "quota_cycle", repeat_state: "active", repeat_series_id: "fixture-series", requested: {} });
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET") return { items: [job] } as never;
+      if (path.endsWith("/cancel")) return { ...job, repeat_state: "stopped", repeat_reason: "已停止后续预约，当前测试保留结果" } as never;
+      throw new Error(path);
+    });
+    await renderPanel("panel-continuous");
+    await act(async () => entryButton().click());
+    await act(async () => buttonByText("停止连续预约").click());
+    expect(api).toHaveBeenCalledWith("POST", "/account-operations/operation-1/cancel", {});
+    expect(getOperations()[0].status).toBe("running");
+    expect(getOperations()[0].repeat_state).toBe("stopped");
+    expect(container.textContent).toContain("当前测试保留结果");
+    expect([...container.querySelectorAll("button")].some(button => button.textContent === "停止连续预约")).toBe(false);
+  });
+
+  it("restarts a confirmed continuous appointment as a new series without replaying its old time", async () => {
+    const job = operation({ action: "test", status: "completed", repeat: "quota_cycle", repeat_state: "needs_confirmation", repeat_reason: "周期无法确认", requested: { confirmed: true, mode: "default", model_id: "fixture-model" } });
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (method === "GET") return { items: [job] } as never;
+      if (path.endsWith("/cancel")) return { ...job, status: "cancelled", repeat_state: "stopped" } as never;
+      if (path.endsWith("/operations")) return { ...job, id: "new-operation", status: "queued", repeat_state: "active", repeat_series_id: "new-operation" } as never;
+      throw new Error(path);
+    });
+    await act(async () => root.render(<AccountOperations accounts={[{ ...account, operation_versions: { test: "a".repeat(64) } }]} online connectionKey="panel-repeat-confirm" report={() => {}} modelTest={() => {}} template={() => {}} priorities={() => {}}/>));
+    await act(async () => entryButton().click());
+    expect(container.textContent).toContain("周期无法确认");
+    await act(async () => buttonByText("重新预约").click());
+    const posts = vi.mocked(api).mock.calls.filter(([method]) => method === "POST");
+    expect(posts.map(([, path]) => path)).toEqual(["/account-operations/operation-1/cancel", "/accounts/1/operations"]);
+    expect(posts[1][2]).toMatchObject({ repeat: "quota_cycle", payload: job.requested });
+    expect(posts[1][2]).not.toHaveProperty("scheduled_at");
+    expect(getOperations().find(row => row.id === job.id)?.status).toBe("cancelled");
+    expect(getOperations().find(row => row.id === "new-operation")?.repeat_series_id).toBe("new-operation");
+  });
+
   it.each(["running", "needs_confirmation"])(
     "keeps cancellation for single tests and queued batches while a dispatched batch is %s",
     async (status) => {

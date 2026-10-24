@@ -7,9 +7,17 @@ export type Operation = {
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
   execution_mode?: 'native' | 'compatibility';
   started_at?: string; scheduled_at?: string;
+  repeat?: 'quota_cycle'; repeat_series_id?: string;
+  repeat_state?: 'active' | 'continued' | 'stopped' | 'needs_confirmation'; repeat_reason?: string;
+  next_operation_id?: string;
 };
 export type OperationBatch = { batch_id: string; items: Operation[]; pending: number };
 export const operationTerminal = new Set(['completed', 'failed', 'cancelled', 'superseded', 'needs_confirmation']);
+export const repeating = (job: Operation) => job.repeat === 'quota_cycle' && ['active', 'needs_confirmation'].includes(job.repeat_state ?? '');
+export const operationPending = (job: Operation) => !operationTerminal.has(job.status) || job.status === 'needs_confirmation' || repeating(job);
+export function publishOperation(job: Operation) {
+  setOperations([job, ...getOperations().filter(row => row.id !== job.id && (!job.repeat_series_id || row.repeat_series_id !== job.repeat_series_id))]);
+}
 const listeners = new Set<() => void>();
 let rows: Operation[] = [], epoch = 0, connection = '';
 const clientKey = 'sub2ops-operation-client';
@@ -54,15 +62,15 @@ export async function followAccountBatch(initial: OperationBatch, update: (batch
     setOperations([...batch.items, ...rows.filter(r => !batch.items.some(j => j.id === r.id))]);
   }
 }
-export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string, scheduledAt?: string): Promise<Operation> {
+export async function submitOperation(account: Account, action: string, payload: Record<string, unknown>, expected?: string, scheduledAt?: string, repeat?: 'quota_cycle'): Promise<Operation> {
   const current = epoch;
   const version = expected ?? (action === 'degradation_mark' ? account.degradation_mark?.version : account.operation_versions?.[action]);
   if (!version) throw new Error('请刷新账号后重试');
   const job = await api<Operation>('POST', `/accounts/${account.id}/operations`, {
-    action, payload, expected_version: version, request_id: crypto.randomUUID(), client_id: clientId(), ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
+    action, payload, expected_version: version, request_id: crypto.randomUUID(), client_id: clientId(), ...(scheduledAt ? { scheduled_at: scheduledAt } : {}), ...(repeat ? { repeat } : {}),
   });
   if (current !== epoch) throw new Error('连接已切换；请求保留在原连接');
-  setOperations([job, ...rows.filter((row) => row.id !== job.id)]);
+  publishOperation(job);
   return job;
 }
 export async function followOperation<T>(initial: Operation, onEvent?: (event: TestEvent) => void, onUpdate?: (job: Operation) => void): Promise<T> {

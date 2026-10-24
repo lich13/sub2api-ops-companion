@@ -14625,7 +14625,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1112,
+          "rust_source_line": 1150,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14680,7 +14680,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 852,
+          "rust_source_line": 890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14716,7 +14716,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1638,
+          "rust_source_line": 1676,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14757,7 +14757,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2230,
+          "rust_source_line": 2268,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14797,7 +14797,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1352,
+          "rust_source_line": 1390,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14839,7 +14839,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2137,
+          "rust_source_line": 2175,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14878,7 +14878,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1832,
+          "rust_source_line": 1870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14917,7 +14917,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1832,
+          "rust_source_line": 1870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -14960,7 +14960,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 762,
+          "rust_source_line": 800,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15003,7 +15003,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1832,
+          "rust_source_line": 1870,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15040,7 +15040,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1483,
+          "rust_source_line": 1521,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15080,7 +15080,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1898,
+          "rust_source_line": 1936,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15164,7 +15164,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1710,
+          "rust_source_line": 1748,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15207,7 +15207,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1028,
+          "rust_source_line": 1066,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15244,7 +15244,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2183,
+          "rust_source_line": 2221,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15286,7 +15286,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1966,
+          "rust_source_line": 2004,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15341,7 +15341,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 852,
+          "rust_source_line": 890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15383,7 +15383,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2060,
+          "rust_source_line": 2098,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15424,7 +15424,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 2230,
+          "rust_source_line": 2268,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15479,7 +15479,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 852,
+          "rust_source_line": 890,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,
@@ -15518,7 +15518,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/operation_contract.rs",
-          "rust_source_line": 1797,
+          "rust_source_line": 1835,
           "verification_command": ".venv/bin/python scripts/server_test.py --test operation_contract"
         },
         "gap": null,

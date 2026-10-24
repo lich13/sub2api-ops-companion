@@ -455,18 +455,6 @@
   min-height: 0;
   overflow-wrap: anywhere;
 }
-.config-unknown {
-  padding: 12px 16px;
-  font-size: 12px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.config-unknown summary {
-  cursor: pointer;
-}
-.config-unknown p {
-  margin-top: 8px;
-}
 .config-footer {
   display: flex;
   flex-shrink: 0;

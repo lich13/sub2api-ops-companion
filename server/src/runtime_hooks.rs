@@ -139,6 +139,49 @@ impl operations::Backend for Hooks {
     fn mark(&self, id: i64) -> Result<Value> {
         self.runtime()?.detection.mark(id)
     }
+    fn cycle_observation<'a>(
+        &'a self,
+        id: i64,
+        key: &'a str,
+        refresh: bool,
+    ) -> BoxFuture<'a, Result<operations::CycleObservation>> {
+        Box::pin(async move {
+            let runtime = self.runtime()?;
+            let mut row = runtime.monitor.row(id).await?;
+            if row["platform"] != "openai" || row["type"] != "oauth" {
+                return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
+            }
+            if refresh {
+                let account = runtime.actions.account(id, None).await?;
+                runtime.usage_action(id, &json!({"action":"query_usage","expected_version":crate::compat::account_version(&account)}), key, None).await?;
+                row = runtime.monitor.row(id).await?;
+            }
+            let at = runtime.monitor.now();
+            let state = runtime.monitor.store.snapshot()?;
+            let meta = &state["scheduler"][id.to_string()];
+            if meta["quota_query"]["auth_fingerprint"]
+                == crate::oauth_admission::credential_fingerprint(&row)
+                || !truthy(&meta["quota_query"]["auth_fingerprint"])
+                    && crate::oauth_admission::AUTH_ERRORS
+                        .contains(&string(&meta["last_error_code"]))
+            {
+                return Err(Error::new(422, "账号授权失效，请更新授权后重新预约"));
+            }
+            let saved =
+                crate::quota::latest_result(&row, &state["oauth_results"][id.to_string()], at);
+            let summary = crate::quota::summary_from_result(&row, &saved);
+            let windows = crate::quota::windows_by_key(&summary["ui_windows"]);
+            let seven = windows.get("codex_7d").unwrap_or(&Value::Null);
+            let evidence = if crate::quota::percent(&seven["used_percent"])
+                .is_some_and(|used| used >= 100.0)
+            {
+                crate::credit_rules::upstream_evidence(&runtime.db, &row, at).await?
+            } else {
+                Value::Null
+            };
+            operations::observe_cycle(&row, &saved, &evidence, at)
+        })
+    }
     fn dispatch<'a>(
         &'a self,
         row: &'a Value,

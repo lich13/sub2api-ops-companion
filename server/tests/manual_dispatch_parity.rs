@@ -1997,3 +1997,108 @@ async fn unknown_or_zero_reset_credit_skips_dispatcher_http_before_any_worker_re
         harness.close().await;
     }
 }
+
+#[tokio::test]
+async fn continuous_appointment_uses_real_runtime_quota_refresh_and_stops_independently_of_credit_policy(
+) {
+    let mut harness = Harness::new().await;
+    let row = harness
+        .seed_account("continuous-appointment", true, false, false)
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    let account = harness.runtime.actions.account(id, None).await.unwrap();
+    let request = json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},
+        "repeat":"quota_cycle","expected_version":sub2ops_server::compat::operation_versions(&account)["test"],
+        "request_id":"fixture-runtime-continuous-1","client_id":"fixture-runtime-cycle-client"});
+    let job = harness
+        .runtime
+        .operations
+        .submit(id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(job["status"], "queued", "{}", job["reason"]);
+    assert_eq!(job["requested"]["model_id"], "fixture-model");
+    assert_eq!(
+        parse_datetime(&job["scheduled_at"]).unwrap(),
+        harness.now() + Duration::hours(4) + Duration::seconds(3)
+    );
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 0);
+    let at = harness.now();
+    sqlx::query(
+        "UPDATE accounts SET extra=$2,rate_limited_at=$3,rate_limit_reset_at=$4 WHERE id=$1",
+    )
+    .bind(id)
+    .bind(SqlJson(passive_extra(
+        at,
+        at + Duration::hours(4),
+        at + Duration::days(6),
+        100,
+        100,
+    )))
+    .bind(at - Duration::seconds(30))
+    .bind(at + Duration::hours(4))
+    .execute(&harness.pool)
+    .await
+    .unwrap();
+    harness.runtime.operations.tick().await.unwrap();
+    let stopped = harness
+        .runtime
+        .operations
+        .get(job["id"].as_str().unwrap(), 0)
+        .unwrap();
+    assert_eq!(stopped["repeat_state"], "stopped");
+    assert_eq!(stopped["status"], "cancelled");
+    assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(id, "POST", "/test"), 0);
+    assert_eq!(
+        harness.runtime.config.current().unwrap()["oauth_auto_reset_credit_enabled"],
+        false
+    );
+    let second = harness
+        .seed_account("continuous-expired-auth", true, false, false)
+        .await;
+    let second_id = integer(&second["id"]).unwrap();
+    let account = harness
+        .runtime
+        .actions
+        .account(second_id, None)
+        .await
+        .unwrap();
+    let mut request = request.clone();
+    request["expected_version"] =
+        sub2ops_server::compat::operation_versions(&account)["test"].clone();
+    request["request_id"] = "fixture-runtime-continuous-2".into();
+    let pending = harness
+        .runtime
+        .operations
+        .submit(second_id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(pending["status"], "queued");
+    harness
+        .runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][second_id.to_string()]["quota_query"]["auth_fingerprint"] =
+                oauth_admission::credential_fingerprint(&second).into();
+            Ok(())
+        })
+        .unwrap();
+    harness.runtime.operations.tick().await.unwrap();
+    let blocked = harness
+        .runtime
+        .operations
+        .get(pending["id"].as_str().unwrap(), 0)
+        .unwrap();
+    assert_eq!(blocked["repeat_state"], "needs_confirmation");
+    assert!(blocked["repeat_reason"]
+        .as_str()
+        .unwrap()
+        .contains("授权失效"));
+    assert_eq!(harness.mock.count_for(second_id, "GET", "/usage"), 1);
+    assert_eq!(harness.mock.count_for(second_id, "POST", "/test"), 0);
+    assert!(harness.mock.unexpected().is_empty());
+    harness.close().await;
+}

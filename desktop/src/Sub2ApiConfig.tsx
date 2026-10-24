@@ -659,7 +659,7 @@ export default function Sub2ApiConfig({
         .filter((f) => !f.internal)
         .map((f) => [
           f.path,
-          fields.filter((c) => c.internal && containsPath(f.path, c.path)),
+          fields.filter((c) => c.internal && c.status === "internal" && containsPath(f.path, c.path)),
         ]),
     );
   }, [document]);
@@ -670,14 +670,14 @@ export default function Sub2ApiConfig({
     ? document.catalog.fields.filter((field) => {
         const value = document.values[field.path];
         return (
-          !field.internal &&
+          !field.internal && field.status === "supported" && field.editable &&
+          value?.editable && value.source !== "environment" &&
           (!needle ||
             matches(field) ||
             childrenByPath.get(field.path)?.some(matches)) &&
           (filter === "all" ||
             (filter === "configured" && value?.configured) ||
-            (filter === "changed" && !!draft[field.path]) ||
-            (filter === "environment" && value?.source === "environment"))
+            (filter === "changed" && !!draft[field.path]))
         );
       })
     : [];
@@ -835,7 +835,6 @@ export default function Sub2ApiConfig({
                 <option value="all">全部字段</option>
                 <option value="configured">已配置</option>
                 <option value="changed">已修改</option>
-                <option value="environment">环境变量覆盖</option>
               </select>
             </div>
             <div className="config-layout">
@@ -1020,18 +1019,6 @@ export default function Sub2ApiConfig({
                     </section>
                   );
                 })}
-                {document.unknown.length > 0 && (
-                  <details className="config-unknown">
-                    <summary>
-                      未识别或失效字段 · {document.unknown.length}
-                    </summary>
-                    {document.unknown.map((v) => (
-                      <p key={v.path}>
-                        <code>{v.path}</code> · {v.message}
-                      </p>
-                    ))}
-                  </details>
-                )}
               </div>
             </div>
           </>

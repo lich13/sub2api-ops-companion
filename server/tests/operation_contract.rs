@@ -403,6 +403,10 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
 struct FixtureBackend {
     now: Mutex<chrono::DateTime<chrono::Utc>>,
     pool: sqlx::PgPool,
+    cycle_db: Database,
+    cycle_reads: Mutex<Vec<(i64, bool)>>,
+    cycle_gate: Mutex<Option<Arc<Notify>>>,
+    cycle_refresh_error: Mutex<Option<String>>,
     recover_calls: Mutex<Vec<i64>>,
     recover_failures: Mutex<BTreeSet<i64>>,
     test_model: Mutex<String>,
@@ -436,6 +440,36 @@ impl Backend for FixtureBackend {
             sqlx::query("UPDATE accounts SET status='active',error_message='',rate_limit_reset_at=NULL,overload_until=NULL,temp_unschedulable_until=NULL WHERE id=$1")
                 .bind(id).execute(&self.pool).await.unwrap();
             Ok(json!({"verified":true,"account_id":id}))
+        })
+    }
+
+    fn cycle_observation<'a>(
+        &'a self,
+        id: i64,
+        _key: &'a str,
+        refresh: bool,
+    ) -> BoxFuture<'a, Result<sub2ops_server::operations::CycleObservation>> {
+        Box::pin(async move {
+            self.cycle_reads.lock().unwrap().push((id, refresh));
+            let gate = if refresh {
+                self.cycle_gate.lock().unwrap().take()
+            } else {
+                None
+            };
+            if let Some(gate) = gate {
+                gate.notified().await;
+            }
+            if refresh {
+                if let Some(message) = self.cycle_refresh_error.lock().unwrap().clone() {
+                    return Err(Error::new(502, message));
+                }
+            }
+            let row = sub2ops_server::credit_ownership::account(&self.cycle_db, id).await?;
+            let at = self.now();
+            let saved = sub2ops_server::quota::latest_result(&row, &Value::Null, at);
+            let evidence =
+                sub2ops_server::credit_rules::upstream_evidence(&self.cycle_db, &row, at).await?;
+            sub2ops_server::operations::observe_cycle(&row, &saved, &evidence, at)
         })
     }
 
@@ -533,6 +567,10 @@ impl Harness {
         let backend = Arc::new(FixtureBackend {
             now: Mutex::new(chrono::Utc::now()),
             pool: db.pool.clone(),
+            cycle_db: db.clone(),
+            cycle_reads: Mutex::new(Vec::new()),
+            cycle_gate: Mutex::new(None),
+            cycle_refresh_error: Mutex::new(None),
             recover_calls: Mutex::new(Vec::new()),
             recover_failures: Mutex::new(BTreeSet::new()),
             test_model: Mutex::new(
@@ -2603,5 +2641,549 @@ async fn single_default_test_model_is_frozen_for_immediate_and_scheduled_request
     );
     harness.operations.tick().await.unwrap();
     assert_eq!(harness.mock.test_calls().len(), 4);
+    harness.finish().await;
+}
+
+fn cycle_start() -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339("2030-01-02T01:30:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc)
+}
+
+async fn cycle_quota(
+    harness: &Harness,
+    id: i64,
+    reset: chrono::DateTime<chrono::Utc>,
+    seven: f64,
+    limited: bool,
+) {
+    let at = harness.backend.now();
+    let extra = json!({"codex_usage_updated_at":at.to_rfc3339(),"codex_5h_used_percent":100,
+        "codex_5h_reset_at":reset.to_rfc3339(),"codex_7d_used_percent":seven,
+        "codex_7d_reset_at":(cycle_start()+chrono::Duration::days(6)).to_rfc3339()});
+    sqlx::query(
+        "UPDATE accounts SET extra=$2,rate_limited_at=$3,rate_limit_reset_at=$4 WHERE id=$1",
+    )
+    .bind(id)
+    .bind(SqlJson(extra))
+    .bind(limited.then_some(at - chrono::Duration::seconds(30)))
+    .bind(limited.then_some(at + chrono::Duration::hours(1)))
+    .execute(&harness.db.pool)
+    .await
+    .unwrap();
+}
+
+async fn cycle_request(harness: &Harness, id: i64, suffix: &str) -> Value {
+    json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},
+        "repeat":"quota_cycle","expected_version":harness.expected_versions(&[id], "test").await[&id],
+        "request_id":format!("fixture-cycle-{suffix}"),"client_id":CLIENT_ID})
+}
+
+#[tokio::test]
+async fn continuous_cycle_chains_once_after_reset_and_restart_with_frozen_model() {
+    let mut harness = Harness::new().await;
+    harness
+        .actions
+        .queries
+        .oauth
+        .save_admin_token(ADMIN_KEY)
+        .unwrap();
+    let id = harness.seed_accounts(1, json!({})).await[0];
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    *harness.backend.test_model.lock().unwrap() = "fixture-fixed-cycle-model".into();
+    let reset = cycle_start() + chrono::Duration::minutes(1) + chrono::Duration::milliseconds(200);
+    cycle_quota(&harness, id, reset, 30.0, false).await;
+    let request = cycle_request(&harness, id, "first").await;
+    let first = harness
+        .operations
+        .submit(id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    let first_id = first["id"].as_str().unwrap();
+    let due = cycle_start() + chrono::Duration::seconds(64);
+    assert_eq!(
+        sub2ops_server::operations::scheduled_time(&first["scheduled_at"]).unwrap(),
+        due
+    );
+    assert_eq!(first["repeat_state"], "active");
+    let replay = harness
+        .operations
+        .submit(id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    assert_eq!(replay["id"], first["id"]);
+    assert_eq!(
+        harness
+            .backend
+            .cycle_reads
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, refresh)| *refresh)
+            .count(),
+        1
+    );
+    let duplicate = cycle_request(&harness, id, "duplicate").await;
+    assert_eq!(
+        harness
+            .operations
+            .submit(id, &duplicate, ADMIN_KEY)
+            .await
+            .err()
+            .unwrap()
+            .status
+            .as_u16(),
+        409
+    );
+    *harness.backend.now.lock().unwrap() = due - chrono::Duration::seconds(1);
+    harness.operations.tick().await.unwrap();
+    assert!(harness.mock.test_calls().is_empty());
+    harness.restart().await;
+    *harness.backend.now.lock().unwrap() = due;
+    harness.operations.tick().await.unwrap();
+    harness.wait_status(first_id, "completed").await;
+    assert_eq!(
+        harness
+            .backend
+            .cycle_reads
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, refresh)| *refresh)
+            .count(),
+        2,
+        "dispatch refreshes the quota before sending the connection test"
+    );
+    *harness.backend.test_model.lock().unwrap() = "fixture-changed-model".into();
+    let second_reset = due + chrono::Duration::hours(5);
+    cycle_quota(&harness, id, second_reset, 40.0, true).await;
+    // The completed receipt survives restart before the next appointment is inserted.
+    harness.restart().await;
+    harness.operations.tick().await.unwrap();
+    let previous = harness.operations.get(first_id, 0).unwrap();
+    assert_eq!(previous["repeat_state"], "continued");
+    let next_id = previous["next_operation_id"].as_str().unwrap();
+    let next = harness.operations.get(next_id, 0).unwrap();
+    assert_eq!(next["requested"]["model_id"], "fixture-fixed-cycle-model");
+    assert_eq!(next["repeat_series_id"], first["id"]);
+    assert_eq!(
+        sub2ops_server::operations::scheduled_time(&next["scheduled_at"]).unwrap(),
+        second_reset + chrono::Duration::seconds(3)
+    );
+    harness.operations.tick().await.unwrap();
+    assert_eq!(
+        harness.operations.store.read().unwrap()["jobs"]
+            .as_object()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(harness.operations.listing(None).unwrap()["pending"], 1);
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    *harness.backend.now.lock().unwrap() = second_reset + chrono::Duration::seconds(3);
+    harness.operations.tick().await.unwrap();
+    harness.wait_status(next_id, "completed").await;
+    let third_reset = second_reset + chrono::Duration::hours(5);
+    cycle_quota(&harness, id, third_reset, 50.0, false).await;
+    harness.operations.tick().await.unwrap();
+    let stopped = harness.operations.cancel(first_id).await.unwrap();
+    assert_eq!(stopped["repeat_state"], "stopped");
+    assert_eq!(stopped["status"], "cancelled");
+    assert_ne!(stopped["id"], first["id"]);
+    *harness.backend.now.lock().unwrap() = third_reset + chrono::Duration::seconds(3);
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.mock.test_calls().len(), 2);
+    let state = harness.actions.queries.oauth.snapshot().unwrap();
+    for jid in [first_id, next_id] {
+        assert_eq!(
+            state["recovery_history"][format!("connection-test:{jid}")]["result_status"],
+            "completed"
+        );
+    }
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_pauses_when_predispatch_quota_refresh_fails() {
+    let mut harness = Harness::new().await;
+    harness
+        .actions
+        .queries
+        .oauth
+        .save_admin_token(ADMIN_KEY)
+        .unwrap();
+    let id = harness.seed_accounts(1, json!({})).await[0];
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    let reset = cycle_start() + chrono::Duration::minutes(1);
+    cycle_quota(&harness, id, reset, 20.0, false).await;
+    let job = harness
+        .operations
+        .submit(
+            id,
+            &cycle_request(&harness, id, "dispatch-refresh-failed").await,
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    *harness.backend.cycle_refresh_error.lock().unwrap() =
+        Some("fixture quota refresh unavailable".into());
+    *harness.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
+
+    harness.operations.tick().await.unwrap();
+    let paused = harness
+        .wait_status(job["id"].as_str().unwrap(), "needs_confirmation")
+        .await;
+    assert_eq!(paused["repeat_state"], "needs_confirmation");
+    assert!(paused["repeat_reason"]
+        .as_str()
+        .unwrap()
+        .contains("fixture quota refresh unavailable"));
+    assert!(harness.mock.test_calls().is_empty());
+    harness.restart().await;
+    harness.operations.tick().await.unwrap();
+    assert!(harness.mock.test_calls().is_empty());
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_requires_both_weekly_depletion_and_current_nonlocal_429() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(6, json!({})).await;
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    let reset = cycle_start() + chrono::Duration::hours(5);
+    let mut jobs = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
+        cycle_quota(&harness, *id, reset, 20.0, false).await;
+        jobs.push(
+            harness
+                .operations
+                .submit(
+                    *id,
+                    &cycle_request(&harness, *id, &format!("stop-{index}")).await,
+                    ADMIN_KEY,
+                )
+                .await
+                .unwrap(),
+        );
+        cycle_quota(
+            &harness,
+            *id,
+            reset,
+            if index == 1 { 40.0 } else { 100.0 },
+            index != 0,
+        )
+        .await;
+    }
+    // Completed limits and local/client throttles are not a current upstream 429.
+    sqlx::query("UPDATE accounts SET rate_limit_reset_at=$2 WHERE id=$1")
+        .bind(ids[2])
+        .bind(cycle_start() - chrono::Duration::seconds(1))
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    for (index, owner, message) in [
+        (3, "client", "fixture-client-limit"),
+        (
+            4,
+            "provider",
+            "You have reached the request limit: 10 requests per minute",
+        ),
+    ] {
+        sqlx::query("INSERT INTO ops_error_logs (id,account_id,created_at,platform,error_owner,error_phase,status_code,upstream_status_code,error_message,upstream_error_message) VALUES ($1,$2,$3,'openai',$4,'upstream',429,429,$5,$5)")
+            .bind(ids[index]+1_000_000_000).bind(ids[index]).bind(cycle_start()).bind(owner).bind(message).execute(&harness.db.pool).await.unwrap();
+    }
+    harness.operations.tick().await.unwrap();
+    for (index, job) in jobs.iter().enumerate() {
+        let current = harness
+            .operations
+            .get(job["id"].as_str().unwrap(), 0)
+            .unwrap();
+        assert_eq!(
+            current["repeat_state"],
+            if index == 5 { "stopped" } else { "active" },
+            "case {index}"
+        );
+        assert_eq!(
+            current["status"],
+            if index == 5 { "cancelled" } else { "queued" }
+        );
+    }
+    assert!(harness.mock.test_calls().is_empty());
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_stops_after_a_confirmed_test_without_losing_its_result() {
+    let mut harness = Harness::new().await;
+    let id = harness.seed_accounts(1, json!({})).await[0];
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    let reset = cycle_start() + chrono::Duration::minutes(1);
+    cycle_quota(&harness, id, reset, 90.0, false).await;
+    let job = harness
+        .operations
+        .submit(
+            id,
+            &cycle_request(&harness, id, "after-test").await,
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    let jid = job["id"].as_str().unwrap();
+    harness.mock.set_stream(id, StreamScenario::ExplicitFailure);
+    *harness.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
+    harness.operations.tick().await.unwrap();
+    harness.wait_status(jid, "completed").await;
+    cycle_quota(
+        &harness,
+        id,
+        reset + chrono::Duration::hours(5),
+        100.0,
+        true,
+    )
+    .await;
+    harness.operations.tick().await.unwrap();
+    let stopped = harness.operations.get(jid, 0).unwrap();
+    assert_eq!(stopped["repeat_state"], "stopped");
+    assert_eq!(stopped["result"]["success"], false);
+    assert!(stopped["repeat_reason"].as_str().unwrap().contains("429"));
+    assert!(stopped["next_operation_id"].is_null());
+    assert_eq!(
+        harness.operations.store.read().unwrap()["jobs"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_pauses_unknown_results_and_unavailable_cycles_without_replay() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(3, json!({})).await;
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    let missing = harness
+        .operations
+        .submit(
+            ids[0],
+            &cycle_request(&harness, ids[0], "missing").await,
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing["status"], "needs_confirmation");
+    assert!(missing["scheduled_at"].is_null());
+    let reset = cycle_start() + chrono::Duration::minutes(1);
+    cycle_quota(&harness, ids[1], reset, 20.0, false).await;
+    let unknown = harness
+        .operations
+        .submit(
+            ids[1],
+            &cycle_request(&harness, ids[1], "unknown").await,
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    harness.mock.set_stream(ids[1], StreamScenario::NoTerminal);
+    *harness.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
+    harness.operations.tick().await.unwrap();
+    harness
+        .wait_status(unknown["id"].as_str().unwrap(), "needs_confirmation")
+        .await;
+    harness.restart().await;
+    harness.operations.tick().await.unwrap();
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    assert_eq!(
+        harness
+            .operations
+            .get(unknown["id"].as_str().unwrap(), 0)
+            .unwrap()["repeat_state"],
+        "needs_confirmation"
+    );
+    cycle_quota(
+        &harness,
+        ids[2],
+        reset + chrono::Duration::hours(5),
+        20.0,
+        false,
+    )
+    .await;
+    let changed = harness
+        .operations
+        .submit(
+            ids[2],
+            &cycle_request(&harness, ids[2], "changed").await,
+            ADMIN_KEY,
+        )
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET type='apikey' WHERE id=$1")
+        .bind(ids[2])
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    harness.operations.tick().await.unwrap();
+    assert_eq!(
+        harness
+            .operations
+            .get(changed["id"].as_str().unwrap(), 0)
+            .unwrap()["repeat_state"],
+        "needs_confirmation"
+    );
+    assert_eq!(harness.mock.test_calls().len(), 1);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_cancellation_wins_during_dispatch_and_successor_refresh() {
+    let mut harness = Harness::new().await;
+    let ids = harness.seed_accounts(2, json!({})).await;
+    let reset = cycle_start() + chrono::Duration::minutes(1);
+    for (index, id) in ids.iter().enumerate() {
+        *harness.backend.now.lock().unwrap() = cycle_start();
+        cycle_quota(&harness, *id, reset, 20.0, false).await;
+        let job = harness
+            .operations
+            .submit(
+                *id,
+                &cycle_request(&harness, *id, &format!("cancel-{index}")).await,
+                ADMIN_KEY,
+            )
+            .await
+            .unwrap();
+        let jid = job["id"].as_str().unwrap();
+        if index == 0 {
+            harness.mock.gate_test(*id);
+        }
+        *harness.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
+        harness.operations.tick().await.unwrap();
+        harness.wait_test_calls(index + 1).await;
+        if index == 0 {
+            let cancelled = harness.operations.cancel(jid).await.unwrap();
+            assert_eq!(cancelled["status"], "running");
+            harness.mock.release_test(*id);
+            harness.wait_status(jid, "completed").await;
+        } else {
+            harness.wait_status(jid, "completed").await;
+            cycle_quota(
+                &harness,
+                *id,
+                reset + chrono::Duration::hours(5),
+                30.0,
+                false,
+            )
+            .await;
+            let gate = Arc::new(Notify::new());
+            *harness.backend.cycle_gate.lock().unwrap() = Some(gate.clone());
+            let queue = harness.operations.clone();
+            let tick = tokio::spawn(async move { queue.tick().await });
+            tokio::time::timeout(Duration::from_secs(8), async {
+                while harness.backend.cycle_gate.lock().unwrap().is_some() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            harness.operations.cancel(jid).await.unwrap();
+            gate.notify_one();
+            tick.await.unwrap().unwrap();
+        }
+        harness.operations.tick().await.unwrap();
+        let stopped = harness.operations.get(jid, 0).unwrap();
+        assert_eq!(stopped["repeat_state"], "stopped");
+        assert_eq!(stopped["result"]["success"], true);
+        assert!(stopped["next_operation_id"].is_null());
+    }
+    assert_eq!(harness.mock.test_calls().len(), 2);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn continuous_cycle_validates_mode_account_and_request_identity() {
+    let mut harness = Harness::new().await;
+    let id = harness.seed_accounts(1, json!({})).await[0];
+    *harness.backend.now.lock().unwrap() = cycle_start();
+    cycle_quota(
+        &harness,
+        id,
+        cycle_start() + chrono::Duration::hours(5),
+        10.0,
+        false,
+    )
+    .await;
+    let request = cycle_request(&harness, id, "validation").await;
+    for (field, value) in [
+        ("repeat", json!("every_second")),
+        ("scheduled_at", json!("2030-01-03T00:00:00Z")),
+    ] {
+        let mut invalid = request.clone();
+        invalid[field] = value;
+        assert_eq!(
+            harness
+                .operations
+                .submit(id, &invalid, ADMIN_KEY)
+                .await
+                .err()
+                .unwrap()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    for mode in ["compact", "text"] {
+        let mut invalid = request.clone();
+        invalid["payload"]["mode"] = mode.into();
+        assert_eq!(
+            harness
+                .operations
+                .submit(id, &invalid, ADMIN_KEY)
+                .await
+                .err()
+                .unwrap()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    let first = harness
+        .operations
+        .submit(id, &request, ADMIN_KEY)
+        .await
+        .unwrap();
+    let mut invalid = request.clone();
+    invalid.as_object_mut().unwrap().remove("repeat");
+    assert_eq!(
+        harness
+            .operations
+            .submit(id, &invalid, ADMIN_KEY)
+            .await
+            .err()
+            .unwrap()
+            .status
+            .as_u16(),
+        409
+    );
+    harness
+        .operations
+        .cancel(first["id"].as_str().unwrap())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET type='apikey' WHERE id=$1")
+        .bind(id)
+        .execute(&harness.db.pool)
+        .await
+        .unwrap();
+    let invalid = cycle_request(&harness, id, "unsupported").await;
+    assert_eq!(
+        harness
+            .operations
+            .submit(id, &invalid, ADMIN_KEY)
+            .await
+            .err()
+            .unwrap()
+            .status
+            .as_u16(),
+        422
+    );
     harness.finish().await;
 }

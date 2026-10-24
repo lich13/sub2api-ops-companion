@@ -72,14 +72,19 @@ afterEach(async () => {
   container.remove();
   vi.clearAllMocks();
 });
-it("shows runtime version, explains overrides and keeps them read only", async () => {
+it("shows only supported editable fields and removes unknown and environment sections", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
   expect(container.textContent).toContain("运行 0.2.18");
-  expect(input("server.port").disabled).toBe(true);
-  expect(container.textContent).toContain("SERVER_PORT");
-  await fill(input("搜索配置字段"), "jwt.expire_hour");
-  expect(input("jwt.expire_hour").value).toBe("168");
-  expect(input("jwt.expire_hour").disabled).toBe(true);
+  expect(input("server.port")).toBeNull();
+  expect(container.textContent).not.toContain("SERVER_PORT");
+  expect(container.textContent).not.toContain("未识别或失效字段");
+  expect(container.querySelector('option[value="environment"]')).toBeNull();
+  for (const path of ["jwt.expire_hour", "jwt.refresh_window_minutes", "rate_limit.requests_per_minute"]) {
+    await fill(input("搜索配置字段"), path);
+    expect(container.querySelectorAll(".config-field")).toHaveLength(0);
+  }
+  await fill(input("搜索配置字段"), "log.level");
+  expect(input("log.level").disabled).toBe(false);
 });
 it("keeps edits across tab changes and preserves draft after automatic restoration", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
@@ -211,7 +216,7 @@ it("supports explicit defaults and restoring YAML without turning an unset list 
 it("shows global matches and lets a group narrow them without losing the original group", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
   await fill(input("搜索配置字段"), ".port");
-  for (const path of ["server.port", "database.port", "redis.port"])
+  for (const path of ["database.port", "redis.port"])
     expect(input(path)).not.toBeNull();
   await select("选择配置分组", "database");
   expect(input("database.port")).not.toBeNull();
@@ -286,11 +291,16 @@ it("focuses validation failures even when another group is visible", async () =>
   ).toContain("地址无效");
 });
 
-it("keeps all catalog entries reachable through their groups", async () => {
+it("keeps editable entries reachable with filtered counts and no empty groups", async () => {
   await act(async () => root.render(<Sub2ApiConfig active online />));
   const seen = new Set<string>();
   const internal = new Set<string>();
+  const editable = fixture.catalog.fields.filter(f => !f.internal && f.status === "supported" && f.editable && fixture.values[f.path]?.editable);
   for (const group of fixture.catalog.groups) {
+    if (!editable.some(f => f.group === group.id)) {
+      expect(container.querySelector(`.config-mobile-group option[value="${group.id}"]`)).toBeNull();
+      continue;
+    }
     await select("选择配置分组", group.id);
     for (const element of container.querySelectorAll<HTMLElement>(
       "[data-config-path]",
@@ -298,22 +308,20 @@ it("keeps all catalog entries reachable through their groups", async () => {
       seen.add(element.dataset.configPath!);
     for (const element of container.querySelectorAll(".config-child > code"))
       internal.add(element.textContent!);
-    const expected = fixture.catalog.fields.filter(
-      (f) => f.group === group.id && !f.internal,
-    );
+    const expected = editable.filter(f => f.group === group.id);
+    expect(container.querySelector(`.config-mobile-group option[value="${group.id}"]`)?.textContent).toContain(`（${expected.length}）`);
     expect(container.querySelectorAll(".config-field")).toHaveLength(
       expected.length,
     );
   }
   expect([...seen].sort()).toEqual(
-    fixture.catalog.fields
-      .filter((f) => !f.internal)
+    editable
       .map((f) => f.path)
       .sort(),
   );
   expect([...internal].sort()).toEqual(
     fixture.catalog.fields
-      .filter((f) => f.internal)
+      .filter(f => f.internal && f.status === "internal" && editable.some(parent => f.path.startsWith(`${parent.path}.`) || f.path.startsWith(`${parent.path}[`)))
       .map((f) => f.path)
       .sort(),
   );

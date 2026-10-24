@@ -158,3 +158,40 @@ it('explains a failed directory while allowing the default model and shows offli
   expect(container.textContent).toContain('当前离线');
   expect([...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.disabled).toBe(true);
 });
+
+it.each(['scheduled', 'cycle'])('closes only after the server accepts a %s appointment', async execution => {
+  const close = vi.fn();
+  const current = { ...account, platform: 'openai', type: 'oauth' };
+  await act(async () => root.render(<TestDialog account={current} online close={close}/>));
+  await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, execution);
+  await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.click());
+  expect(close).toHaveBeenCalledTimes(1);
+  const body = vi.mocked(api).mock.calls.find(([method, path]) => method === 'POST' && path.endsWith('/operations'))![2] as Record<string, unknown>;
+  if (execution === 'cycle') {
+    expect(body.repeat).toBe('quota_cycle');
+    expect(body.scheduled_at).toBeUndefined();
+    expect(body.payload).toMatchObject({ mode: 'default', model_id: '' });
+  } else expect(body.repeat).toBeUndefined();
+});
+
+it.each(['rejected', 'needs_confirmation'])('keeps the appointment dialog open when submission is %s', async status => {
+  const close = vi.fn(), previous = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((method, path, body) => method === 'POST'
+    ? status === 'rejected' ? Promise.reject(new Error('fixture submission failed')) : Promise.resolve({ id: 'c'.repeat(32), status, reason: 'fixture confirmation required', requested: {} } as never)
+    : previous(method, path, body));
+  await act(async () => root.render(<TestDialog account={account} online close={close}/>));
+  await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, 'scheduled');
+  await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.click());
+  expect(close).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('fixture');
+});
+
+it('offers continuous appointments only for OpenAI OAuth and prevents a second active series', async () => {
+  await act(async () => root.render(<TestDialog account={account} online close={() => {}}/>));
+  expect(container.querySelector('option[value="cycle"]')).toBeNull();
+  await act(async () => root.render(<TestDialog account={{ ...account, platform: 'openai', type: 'oauth' }} online close={() => {}}/>));
+  await change(container.querySelector<HTMLSelectElement>('[aria-label="执行方式"]')!, 'cycle');
+  await act(async () => setOperations([{ id: 'c'.repeat(32), account_id: 42, account_name: 'Fixture', action: 'test', status: 'running', requested: {}, repeat: 'quota_cycle', repeat_state: 'active', repeat_series_id: 'c'.repeat(32) }]));
+  expect([...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.disabled).toBe(true);
+  expect(container.querySelector('[aria-label="停止连续预约"]')).not.toBeNull();
+});

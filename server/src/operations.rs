@@ -26,6 +26,9 @@ use tokio::{
     task::JoinHandle,
 };
 
+mod cycle;
+pub use cycle::{observe_cycle, repeat_open, CycleObservation};
+
 pub const PENDING: &[&str] = &["queued", "running", "checking", "needs_confirmation"];
 const SUPERSEDE: &[&str] = &[
     "priority",
@@ -41,7 +44,10 @@ pub fn short(job: &Value) -> bool {
     matches!(string(&job["action"]), "schedulable" | "degradation_mark")
 }
 pub fn connection_test(job: &Value) -> bool {
-    job["action"] == "test" && (truthy(&job["batch_id"]) || job["scheduled_at"].is_string())
+    job["action"] == "test"
+        && (truthy(&job["batch_id"])
+            || job["scheduled_at"].is_string()
+            || job["repeat"] == "quota_cycle")
 }
 pub fn native(job: &Value) -> bool {
     truthy(&job["batch_id"])
@@ -80,6 +86,29 @@ pub fn validate_store(data: &Value) -> Result<()> {
                 .is_some_and(|value| job["action"] != "test" || scheduled_time(value).is_err())
         {
             return Err(error());
+        }
+    }
+    for job in data["jobs"].as_object().unwrap().values() {
+        if job.get("repeat").is_some()
+            && (job["repeat"] != "quota_cycle"
+                || job["action"] != "test"
+                || validation::hex(&job["repeat_series_id"], 32).is_err()
+                || !matches!(
+                    string(&job["repeat_state"]),
+                    "active" | "continued" | "stopped" | "needs_confirmation"
+                ))
+        {
+            return Err(error());
+        }
+        if let Some(next) = job.get("next_operation_id") {
+            let successor = &data["jobs"][string(next)];
+            if validation::hex(next, 32).is_err()
+                || successor["account_id"] != job["account_id"]
+                || successor["repeat_series_id"] != job["repeat_series_id"]
+                || job["repeat_state"] != "continued"
+            {
+                return Err(error());
+            }
         }
     }
     for field in ["batches", "batch_requests"] {
@@ -192,6 +221,14 @@ pub trait Backend: Send + Sync {
     fn model_jobs(&self) -> Result<Vec<Value>>;
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>>;
     fn test_config(&self) -> Result<(String, usize)>;
+    fn cycle_observation<'a>(
+        &'a self,
+        _id: i64,
+        _key: &'a str,
+        _refresh: bool,
+    ) -> BoxFuture<'a, Result<CycleObservation>> {
+        Box::pin(async { Err(Error::new(422, "此服务不支持持续预约")) })
+    }
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         None
     }
@@ -318,10 +355,10 @@ impl Operations {
         jobs.sort_by(|a, b| string(&b["created_at"]).cmp(string(&a["created_at"])));
         let mut items: Vec<_> = jobs
             .iter()
-            .filter(|j| PENDING.contains(&string(&j["status"])))
+            .filter(|j| cycle::pending(j))
             .chain(
                 jobs.iter()
-                    .filter(|j| !PENDING.contains(&string(&j["status"])))
+                    .filter(|j| !cycle::pending(j) && j["repeat_state"] != "continued")
                     .take(30),
             )
             .map(|j| self.public(j, false, 0))
@@ -338,9 +375,7 @@ impl Operations {
                 })
                 .map(Self::model_view),
         );
-        Ok(
-            json!({"pending":items.iter().filter(|v|PENDING.contains(&string(&v["status"]))).count(),"items":items}),
-        )
+        Ok(json!({"pending":items.iter().filter(|v|cycle::pending(v)).count(),"items":items}))
     }
     pub fn update(&self, jid: &str, changes: Value) -> Result<Value> {
         self.update_many(&[(jid, changes)])?
@@ -360,6 +395,16 @@ impl Operations {
                         .unwrap()
                         .extend(changes.as_object().cloned().ok_or_else(Error::invalid)?);
                     job["updated_at"] = at.clone().into();
+                    if job["repeat_state"] == "stopped" && job["status"] == "queued" {
+                        job["status"] = "cancelled".into();
+                        job["reason"] = job["repeat_reason"].clone();
+                    }
+                    if job["repeat_state"] == "active"
+                        && matches!(string(&job["status"]), "failed" | "needs_confirmation")
+                    {
+                        job["repeat_state"] = "needs_confirmation".into();
+                        job["repeat_reason"] = job["reason"].clone();
+                    }
                     if !PENDING.contains(&string(&job["status"])) {
                         for name in ["prompt", "image_data_url", "audio_data_url"] {
                             job["payload"].as_object_mut().unwrap().shift_remove(name);
@@ -480,6 +525,7 @@ impl Operations {
                 "expected_version",
                 "payload",
                 "scheduled_at",
+                "repeat",
             ],
             &["action", "request_id", "client_id", "expected_version"],
         )?;
@@ -493,16 +539,25 @@ impl Operations {
             .get("scheduled_at")
             .map(scheduled_time)
             .transpose()?;
-        if scheduled.is_some()
+        let repeat = request.get("repeat");
+        if repeat.is_some_and(|value| value != "quota_cycle")
+            || repeat.is_some() && scheduled.is_some()
+        {
+            return Err(Error::new(422, "连续预约由服务端计算周期时间"));
+        }
+        if (scheduled.is_some() || repeat.is_some())
             && (action != "test"
                 || !matches!(string(&payload["mode"]), "default" | "text")
+                || repeat.is_some() && payload["mode"] != "default"
                 || truthy(&payload["prompt"])
                 || truthy(&payload["image_data_url"])
                 || truthy(&payload["audio_data_url"]))
         {
             return Err(Error::new(422, "预约仅支持普通测试连接"));
         }
-        let signature = if let Some(at) = scheduled {
+        let signature = if let Some(repeat) = repeat {
+            digest(&json!([action, payload, expected, repeat]))
+        } else if let Some(at) = scheduled {
             digest(&json!([
                 action,
                 payload,
@@ -541,6 +596,19 @@ impl Operations {
             None
         };
         let row = self.actions.account(aid, None).await?;
+        if repeat.is_some() {
+            if row["platform"] != "openai" || row["type"] != "oauth" {
+                return Err(Error::new(422, "持续预约仅支持 OpenAI OAuth 账号"));
+            }
+            if data["jobs"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|job| job["account_id"] == aid && repeat_open(job))
+            {
+                return Err(Error::new(409, "此账号已有连续预约，请先停止现有预约"));
+            }
+        }
         if action == "test" {
             self.resolve_test_model(&row, &mut payload)?;
         }
@@ -564,6 +632,9 @@ impl Operations {
             job["status"] = "needs_confirmation".into();
             job["reason"] = "相关字段已变化，请核对后重新提交".into();
             job["current"] = self.current(&row, &job)?;
+        }
+        if repeat.is_some() {
+            self.initialize_cycle(&mut job, key).await?;
         }
         self.store.transaction(|data| {
             for old in data["jobs"].as_object_mut().unwrap().values_mut() {
@@ -931,6 +1002,9 @@ impl Operations {
         let Some(job) = data["jobs"].get(jid) else {
             return Ok(Self::model_view(&self.backend.model_cancel(jid).await?));
         };
+        if job["repeat"] == "quota_cycle" {
+            return self.stop_repeat(jid, "已停止连续预约；已派发的测试保留结果");
+        }
         if connection_test(job) && truthy(&job["started_at"]) {
             return self.get(jid, 0);
         }
@@ -961,6 +1035,7 @@ impl Operations {
         {
             return Ok(());
         }
+        self.prepare_cycles().await?;
         let data = self.store.read()?;
         let jobs = data["jobs"].as_object().unwrap();
         self.record_scheduled_results(jobs.values())?;
@@ -1218,7 +1293,7 @@ impl Operations {
             return Ok(());
         }
         let aid = integer(&job["account_id"]).unwrap();
-        let row = self.read_account(aid).await?;
+        let mut row = self.read_account(aid).await?;
         if self.achieved(row.as_ref(), &job)? {
             let mut result = if let Some(row) = &row {
                 self.current(row, &job)?
@@ -1265,6 +1340,19 @@ impl Operations {
             return Ok(());
         }
         self.actions.upstream.authenticate(&key, true).await?;
+        if !self.cycle_allowed(&job, true).await? {
+            return Ok(());
+        }
+        if job["repeat"] == "quota_cycle" {
+            row = self.read_account(aid).await?;
+            if !row
+                .as_ref()
+                .is_some_and(|row| row["platform"] == "openai" && row["type"] == "oauth")
+            {
+                self.pause_repeat(jid, "账号状态无法确认，请检查账号后重新预约")?;
+                return Ok(());
+            }
+        }
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
