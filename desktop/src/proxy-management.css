@@ -12,6 +12,8 @@
 }
 .feature-tabs {
   display: flex;
+  min-width: 0;
+  overflow-x: auto;
   gap: 24px;
   border-bottom: 1px solid var(--line);
 }
@@ -522,8 +524,9 @@
     justify-content: stretch;
   }
   .feature-tabs button {
-    flex: 1;
+    flex: 1 0 auto;
     min-height: 48px;
+    padding-inline: 8px;
   }
   .proxy-management {
     border-radius: 8px;
@@ -724,8 +727,9 @@
   justify-content: stretch;
 }
 .mobile .feature-tabs button {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 48px;
+  padding-inline: 8px;
 }
 .mobile .proxy-management {
   border-radius: 8px;
