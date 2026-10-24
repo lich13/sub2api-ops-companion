@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops-server"
-version = "0.1.58"
+version = "0.1.59"
 edition = "2021"
 rust-version = "1.99"
 publish = false
@@ -20,6 +20,8 @@ sqlx-core = { version = "0.8", default-features = false, features = ["_rt-tokio"
 sqlx-postgres = { version = "0.8", default-features = false, features = ["json", "chrono", "bigdecimal", "uuid"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10"
+libc = "0.2"
 sha2 = "0.10"
 sha1 = "0.10"
 httpdate = "1"

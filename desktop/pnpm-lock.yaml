@@ -184,6 +184,9 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
     devDependencies:
       '@tauri-apps/cli':
         specifier: 2.12.2
@@ -196,7 +199,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: 6.1.2
-        version: 6.1.2(vite@8.3.4(esbuild@0.28.2))
+        version: 6.1.2(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1))
       jsdom:
         specifier: 26.1.0
         version: 26.1.0
@@ -208,10 +211,10 @@ importers:
         version: 7.0.2
       vite:
         specifier: 8.3.4
-        version: 8.3.4(esbuild@0.28.2)
+        version: 8.3.4(esbuild@0.28.2)(yaml@2.9.1)
       vitest:
         specifier: 5.0.4
-        version: 5.0.4(jsdom@26.1.0)(vite@8.3.4(esbuild@0.28.2))
+        version: 5.0.4(jsdom@26.1.0)(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1))
 
 packages:
 
@@ -1187,6 +1190,11 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
 snapshots:
 
   '@asamuzakjp/css-color@3.2.0':
@@ -1487,19 +1495,19 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@vitejs/plugin-react@6.1.2(vite@8.3.4(esbuild@0.28.2))':
+  '@vitejs/plugin-react@6.1.2(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.4(esbuild@0.28.2)
+      vite: 8.3.4(esbuild@0.28.2)(yaml@2.9.1)
 
-  '@vitest/mocker@5.0.4(vite@8.3.4(esbuild@0.28.2))':
+  '@vitest/mocker@5.0.4(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.4
       estree-walker: 3.0.3
       magic-string: 1.4.3
     optionalDependencies:
-      vite: 8.3.4(esbuild@0.28.2)
+      vite: 8.3.4(esbuild@0.28.2)(yaml@2.9.1)
 
   '@vitest/spy@5.0.4': {}
 
@@ -1802,7 +1810,7 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
-  vite@8.3.4(esbuild@0.28.2):
+  vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -1812,11 +1820,12 @@ snapshots:
     optionalDependencies:
       esbuild: 0.28.2
       fsevents: 2.3.3
+      yaml: 2.9.1
 
-  vitest@5.0.4(jsdom@26.1.0)(vite@8.3.4(esbuild@0.28.2)):
+  vitest@5.0.4(jsdom@26.1.0)(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.4(vite@8.3.4(esbuild@0.28.2))
+      '@vitest/mocker': 5.0.4(vite@8.3.4(esbuild@0.28.2)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -1827,7 +1836,7 @@ snapshots:
       tinybench: 6.2.2
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.4(esbuild@0.28.2)
+      vite: 8.3.4(esbuild@0.28.2)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
       jsdom: 26.1.0
@@ -1858,3 +1867,5 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
+
+  yaml@2.9.1: {}

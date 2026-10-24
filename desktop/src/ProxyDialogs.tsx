@@ -1,3 +1,4 @@
+import DiagnosticText from "./DiagnosticText";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { api } from "./bridge";
@@ -426,7 +427,8 @@ export function ProxyBatchAdd({
       return;
     lock.current = true;
     setBusy(true);
-    let next = 0, succeeded = 0;
+    let next = 0,
+      succeeded = 0;
     await Promise.all(
       Array.from({ length: Math.min(5, parsed.proxies.length) }, async () => {
         while (
@@ -464,20 +466,23 @@ export function ProxyBatchAdd({
       setResults((old) =>
         [
           ...old,
-          ...parsed.proxies
-            .slice(next)
-            .map((p, i) => ({
-              index: next + i,
-              address: proxyAddress(p),
-              ok: false,
-              message: "连接已断开，未提交",
-            })),
+          ...parsed.proxies.slice(next).map((p, i) => ({
+            index: next + i,
+            address: proxyAddress(p),
+            ok: false,
+            message: "连接已断开，未提交",
+          })),
         ].sort((a, b) => a.index - b.index),
       );
       setBusy(false);
     }
     lock.current = false;
-    if (alive.current && connected.current && succeeded === parsed.proxies.length) saved(`已添加 ${succeeded} 个 IP`);
+    if (
+      alive.current &&
+      connected.current &&
+      succeeded === parsed.proxies.length
+    )
+      saved(`已添加 ${succeeded} 个 IP`);
   }
   const done = () =>
     results.length
@@ -520,9 +525,9 @@ export function ProxyBatchAdd({
           {results.map((r) => (
             <li key={r.index}>
               <b>{r.address}</b>
-              <span className={r.ok ? "good-text" : "bad-text"}>
-                {r.message}
-              </span>
+              <div className={r.ok ? "good-text" : "bad-text"}>
+                <DiagnosticText text={r.message} />
+              </div>
             </li>
           ))}
         </ul>
@@ -577,7 +582,7 @@ export function ProxyQualityReport({
         <strong>
           {result.grade} <span>{result.score}/100</span>
         </strong>
-        <p>{result.summary}</p>
+        <DiagnosticText text={result.summary} />
         <div className="muted">
           {[
             result.exit_ip,
@@ -621,7 +626,9 @@ export function ProxyQualityReport({
                 <td>
                   {item.latency_ms == null ? "—" : `${item.latency_ms} ms`}
                 </td>
-                <td>{item.message || "—"}</td>
+                <td>
+                  {item.message ? <DiagnosticText text={item.message} /> : "—"}
+                </td>
               </tr>
             ))}
           </tbody>

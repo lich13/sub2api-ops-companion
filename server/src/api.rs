@@ -193,6 +193,8 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["accounts", _, "model-detection" | "keepalive"] => Some(&["GET", "PUT"]),
         ["errors" | "usage-records", _] => Some(&["GET"]),
         ["proxies", _, "test" | "quality-check"] => Some(&["POST"]),
+        ["sub2api-config"] | ["sub2api-config", "operation"] => Some(&["GET"]),
+        ["sub2api-config", "validate" | "apply"] => Some(&["POST"]),
         ["account-templates"] => Some(&["GET", "PUT", "POST"]),
         ["account-templates", "apply" | "custom"] => Some(&["POST"]),
         ["account-templates", _] | ["account-templates", "custom", _] => Some(&["PUT", "DELETE"]),
@@ -319,12 +321,27 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         }
         return Ok(Json(runtime.upstream.status()).into_response());
     }
-    runtime.authenticate(&key, method != Method::GET).await?;
+    let own_config_operation = path == ["sub2api-config", "operation"]
+        && method == Method::GET
+        && runtime.sub2api_config.owns_operation(&key);
+    if !own_config_operation {
+        runtime.authenticate(&key, method != Method::GET).await?;
+    }
     if method != Method::GET {
         runtime.writable()?;
     }
     let mut status = StatusCode::OK;
     let result: Value = match path.as_slice() {
+        ["sub2api-config", ..] => {
+            if !query.is_empty() {
+                return Err(Error::invalid());
+            }
+            let action = path.get(1).copied().unwrap_or("read");
+            runtime
+                .sub2api_config
+                .request(action, &runtime.upstream.active_url(), &key, &payload)
+                .await?
+        }
         ["account-creation", ..] => {
             let sync_models = path.len() == 1
                 && query.len() == 1
@@ -348,7 +365,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         }
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"sub2api_config":runtime.sub2api_config.available(),"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
         ["config", "key-quota"] => {

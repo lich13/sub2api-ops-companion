@@ -62,3 +62,5 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 Companion 具有账号调度操作权限，不应独立暴露在公网。仅向回环地址或 Docker 内网开放服务，桌面接口经 TLS 反代并验证管理员权限。管理员 API Key 保存在 `USAGE_QUERY_STATE_PATH`，Bark Device Key 保存在 `BARK_CONFIG_PATH`；写入文件及使用的文件锁统一为 `0600`，未写入的历史文件仅给出安全诊断，密钥不写入 URL、页面、日志或审计明文。不要公开 `.env`、`data/` 或生产日志。
 
 Bark 的 HTTPS 目标拒绝非公网字面 IP（含 IPv4 映射及数字写法），支持 `api.day.app` 和公网自建服务；现有 HTTP loopback 方式保留。不进行 DNS 解析校验，域名仍需由部署者配置为可信服务。
+
+配置管理说明：[Sub2API 配置](docs/sub2api-config.md)。

@@ -537,6 +537,7 @@ export async function run(
     return;
   }
   if (name === "api_request") {
+    if (String(args.path).startsWith("/sub2api-config")) return (await import("./sub2apiConfigPreview")).configPreview(String(args.path), (args.body || {}) as Record<string,unknown>);
     if (args.path === "/config/key-quota") {
       if (args.method === "PUT") previewQuotaSeconds = Number((args.body as {seconds:number}).seconds);
       return {seconds:previewQuotaSeconds,revision:"a".repeat(64)};

@@ -1,0 +1,308 @@
+.sub2api-config {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.config-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.config-heading h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.config-heading button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.config-runtime {
+  display: flex;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.config-runtime > span:last-child {
+  color: var(--muted);
+}
+.config-filters {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.config-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 180px;
+}
+.config-search input {
+  width: 100%;
+  min-width: 0;
+}
+.config-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  max-height: calc(100vh - 360px);
+  min-height: 320px;
+}
+.config-groups {
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.config-groups button {
+  flex-shrink: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 9px 10px;
+  white-space: normal;
+}
+.config-groups button[aria-current] {
+  background: var(--bg);
+  color: var(--accent);
+}
+.config-groups span,
+.config-groups small {
+  display: block;
+}
+.config-groups small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.config-fields {
+  overflow-y: auto;
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+.config-mobile-group {
+  display: none;
+}
+.config-field {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.config-field.changed {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.config-field-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+.config-field-title label {
+  flex: 1;
+  min-width: 180px;
+  font-weight: 600;
+}
+.config-field-title code {
+  overflow-wrap: anywhere;
+}
+.config-field-title > span {
+  font-size: 11px;
+}
+.config-source {
+  color: var(--accent);
+}
+.config-explanation {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 9px 0 12px;
+  max-width: 76ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.config-input {
+  display: flex;
+  gap: 8px;
+  max-width: 600px;
+}
+.config-input input {
+  flex: 1;
+  min-width: 0;
+}
+.config-input button {
+  flex-shrink: 0;
+}
+.config-structured textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  min-height: 110px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.config-field-meta {
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+  display: grid;
+  gap: 7px;
+}
+.config-field-meta > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+}
+.config-field-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.config-field-meta dt {
+  color: var(--muted);
+}
+.config-field-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.config-field-actions button {
+  font-size: 12px;
+}
+.config-child {
+  padding: 10px 0;
+  font-size: 12px;
+}
+.config-child code {
+  overflow-wrap: anywhere;
+}
+.config-child p {
+  line-height: 1.6;
+}
+.config-notice {
+  padding: 12px 20px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.config-notice p {
+  margin: 6px 0;
+}
+.config-issue {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-radius: 0 0 10px 10px;
+  z-index: 2;
+}
+.config-footer > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.config-footer > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.config-diff {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+  max-height: 55vh;
+  overflow: auto;
+}
+.config-diff li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.config-diff li > div {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.config-diff strong {
+  font-weight: 500;
+}
+@media (max-width: 760px) {
+  .feature-tabs {
+    gap: 16px;
+    overflow-x: auto;
+  }
+  .feature-tabs button {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .config-layout {
+    display: block;
+    max-height: none;
+    min-height: 0;
+  }
+  .config-groups {
+    display: none;
+  }
+  .config-mobile-group {
+    display: block;
+    width: calc(100% - 32px);
+    margin: 12px 16px;
+  }
+  .config-field {
+    padding: 16px;
+  }
+  .config-heading {
+    padding: 16px;
+    align-items: flex-start;
+  }
+  .config-filters {
+    padding: 12px 16px;
+  }
+  .config-footer {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    bottom: 0;
+  }
+  .config-footer > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .config-footer .primary {
+    grid-column: 1/-1;
+  }
+  .config-field button,
+  .config-field select,
+  .config-footer button,
+  .config-heading button {
+    min-height: 48px;
+  }
+  .config-field-title label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}

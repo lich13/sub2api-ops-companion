@@ -484,7 +484,7 @@ fn proxies_valid(data: &Value) -> bool {
 }
 
 fn proxy_diagnostic_valid(path: &str, data: &Value) -> bool {
-    let text = |key: &str| data[key].as_str().is_some_and(|s| s.len() <= 1000);
+    let text = |key: &str| data[key].is_string();
     let number = |key: &str| {
         data[key].is_null()
             || data[key]
@@ -655,6 +655,87 @@ fn detection_logs_valid(data: &Value) -> bool {
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
+    if path == "/sub2api-config" {
+        return data["available"].is_boolean()
+            && data["editable"].is_boolean()
+            && data["reason"].is_string()
+            && (data["available"] == false
+                || data["healthy"].is_boolean()
+                    && data["catalog"]["version"].is_string()
+                    && data["catalog"]["revision"].is_string()
+                    && data["catalog"]["groups"].as_array().is_some_and(|a| {
+                        a.iter()
+                            .all(|g| g["id"].is_string() && g["label"].is_string())
+                    })
+                    && data["catalog"]["fields"].as_array().is_some_and(|a| {
+                        a.iter().all(|f| {
+                            [
+                                "path",
+                                "group",
+                                "type",
+                                "type_label",
+                                "description",
+                                "range",
+                                "default_text",
+                                "status",
+                                "source_url",
+                            ]
+                            .iter()
+                            .all(|k| f[*k].is_string())
+                                && ["sensitive", "internal", "editable", "has_default"]
+                                    .iter()
+                                    .all(|k| f[*k].is_boolean())
+                                && f["env"]
+                                    .as_array()
+                                    .is_some_and(|a| a.iter().all(Value::is_string))
+                                && (f["choices"].is_null()
+                                    || f["choices"]
+                                        .as_array()
+                                        .is_some_and(|a| a.iter().all(Value::is_string)))
+                                && (f["internal"] == true
+                                    || data["values"][f["path"].as_str().unwrap_or("")].is_object())
+                        })
+                    })
+                    && data["values"].as_object().is_some_and(|m| {
+                        m.values().all(|v| {
+                            v["configured"].is_boolean()
+                                && v["editable"].is_boolean()
+                                && v["source"].is_string()
+                                && (v["environment"].is_null() || v["environment"].is_string())
+                        })
+                    })
+                    && data["unknown"].as_array().is_some_and(|a| {
+                        a.iter()
+                            .all(|v| v["path"].is_string() && v["message"].is_string())
+                    })
+                    && ["version", "commit", "revision", "runtime_revision"]
+                        .iter()
+                        .all(|k| data[*k].is_string()));
+    }
+    if path == "/sub2api-config/validate" {
+        return data["valid"].is_boolean()
+            && data["errors"].as_array().is_some_and(|a| {
+                a.iter()
+                    .all(|e| e["path"].is_string() && e["message"].is_string())
+            });
+    }
+    if matches!(path, "/sub2api-config/apply" | "/sub2api-config/operation") {
+        return matches!(
+            data["status"].as_str(),
+            Some(
+                "idle"
+                    | "saving"
+                    | "restarting"
+                    | "restoring"
+                    | "succeeded"
+                    | "failed"
+                    | "restored"
+                    | "restore_failed"
+                    | "conflict"
+            )
+        ) && (data["message"].is_null() || data["message"].is_string());
+    }
+
     if path == "/account-creation"
         || path.starts_with("/account-creation/")
         || path == "/account-creation?sync_models=true"
@@ -985,6 +1066,9 @@ pub(crate) async fn http_detailed(
         .request(parsed_method, format!("{base}/api/desktop/v1{path}"))
         .header("x-api-key", key)
         .header("Accept", "application/json");
+    if path.starts_with("/sub2api-config") {
+        req = req.timeout(Duration::from_secs(65));
+    }
     if path.starts_with("/proxies/") || path.starts_with("/proxy-management") {
         req = req.timeout(Duration::from_secs(105));
     }
@@ -1096,7 +1180,11 @@ pub(crate) async fn http_detailed(
             },
             &format!(
                 "{} [{}]",
-                message.chars().take(240).collect::<String>(),
+                if path.starts_with("/proxies/") || path.starts_with("/sub2api-config") {
+                    message.to_string()
+                } else {
+                    message.chars().take(240).collect::<String>()
+                },
                 status
             ),
         );
@@ -1543,7 +1631,7 @@ mod tests {
     #[test]
     fn proxy_diagnostic_responses_require_safe_known_shapes() {
         let test = serde_json::json!({
-            "success": true, "message": "fixture ok", "latency_ms": 31,
+            "success": true, "message": format!("https://example.invalid/?token=fixture\n  password=fixture\n{}", "原始错误".repeat(1000)), "latency_ms": 31,
             "ip_address": "203.0.113.7", "city": "Taipei", "region": "Taiwan",
             "country": "Taiwan", "country_code": "TW"
         });
@@ -1560,7 +1648,7 @@ mod tests {
         }
 
         let quality = serde_json::json!({
-            "score": 88, "grade": "yellow", "summary": "fixture summary",
+            "score": 88, "grade": "yellow", "summary": "完整质量报告".repeat(1000),
             "exit_ip": "203.0.113.8", "country": "Taiwan", "country_code": "TW",
             "base_latency_ms": 20, "passed_count": 1, "warn_count": 0,
             "failed_count": 0, "challenge_count": 0, "checked_at": null,

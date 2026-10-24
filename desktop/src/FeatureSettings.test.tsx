@@ -51,6 +51,7 @@ beforeEach(() => {
     if (method === "GET" && path === "/quota-refresh") return { status: "idle", items: [], total: 0, completed: 0 } as never;
     if (method === "GET" && path === "/config") return config as never;
     if (method === "GET" && path === "/model-groups") return { groups: [] } as never;
+    if (method === "GET" && path === "/sub2api-config") return { available: false, editable: false, reason: "fixture" } as never;
     throw new Error(`Unexpected fixture request: ${method} ${path}`);
   });
   container = document.createElement("div");
@@ -80,12 +81,12 @@ function saveButton(target: HTMLFormElement) {
 const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
-  it("keeps unsubmitted recovery fields across all three feature tabs", async () => {
+  it("keeps unsubmitted recovery fields across all four feature tabs", async () => {
     await openFeatures();
     const target=form("恢复、测活与模型检测");
     const model=[...target.querySelectorAll("label.field")].find(n=>n.textContent?.includes("自动检测模型"))!.querySelector("input")!;
     await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(model,"draft-model");model.dispatchEvent(new Event("input",{bubbles:true}));});
-    for(const name of ["models","ip","recovery"]) await act(async()=>container.querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!.click());
+    for(const name of ["models","ip","sub2api","recovery"]) await act(async()=>container.querySelector<HTMLButtonElement>(`#feature-tab-${name}`)!.click());
     expect(model.value).toBe("draft-model");expect(writes()).toEqual([]);
     expect(container.querySelector("#feature-panel-recovery")?.hasAttribute("hidden")).toBe(false);
     expect(container.querySelector("#feature-panel-ip")?.hasAttribute("hidden")).toBe(true);

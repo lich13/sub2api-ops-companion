@@ -18,6 +18,9 @@ async fn main() {
 }
 async fn run() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.first().is_some_and(|s| s == "config-host") {
+        return sub2ops_server::sub2api_config::host::run(&args[1..]).await;
+    }
     if args.iter().any(|arg| arg == "--version") {
         println!(
             "Sub2Ops {} rust {}",

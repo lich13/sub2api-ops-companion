@@ -1,3 +1,4 @@
+import Sub2ApiConfig from "./Sub2ApiConfig";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -1329,11 +1330,11 @@ function SettingsPage({
       {page === "features" ? (
         <>
           <div className="feature-tabs" role="tablist" aria-label="功能分区">
-            {[["recovery", "恢复与检测"], ["models", "模型配置"], ["ip", "IP 管理"]].map(([key, label]) => (
+            {[["recovery", "恢复与检测"], ["models", "模型配置"], ["ip", "IP 管理"], ["sub2api", "Sub2API 配置"]].map(([key, label]) => (
               <button key={key} id={`feature-tab-${key}`} role="tab" aria-selected={featureTab === key} aria-controls={`feature-panel-${key}`} tabIndex={featureTab === key ? 0 : -1} onClick={() => setFeatureTab(key)} onKeyDown={e => {
-                const keys = ["recovery", "models", "ip"];
+                const keys = ["recovery", "models", "ip", "sub2api"];
                 const index = keys.indexOf(key);
-                const next = e.key === "ArrowRight" ? keys[(index + 1) % 3] : e.key === "ArrowLeft" ? keys[(index + 2) % 3] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[2] : null;
+                const next = e.key === "ArrowRight" ? keys[(index + 1) % keys.length] : e.key === "ArrowLeft" ? keys[(index + keys.length - 1) % keys.length] : e.key === "Home" ? keys[0] : e.key === "End" ? keys[keys.length - 1] : null;
                 if (next) { e.preventDefault(); setFeatureTab(next); document.getElementById(`feature-tab-${next}`)?.focus(); }
               }}>{label}</button>
             ))}
@@ -1368,6 +1369,9 @@ function SettingsPage({
           <section className="feature-models" role="tabpanel" id="feature-panel-models" aria-labelledby="feature-tab-models" hidden={featureTab !== "models"}>
             <ModelConfig key={connectionKey} online={state.online}/>
           </section>
+          <div role="tabpanel" id="feature-panel-sub2api" aria-labelledby="feature-tab-sub2api" hidden={featureTab !== "sub2api"}>
+            <Sub2ApiConfig key={connectionKey} active={featureTab === "sub2api"} online={state.online}/>
+          </div>
           <div role="tabpanel" id="feature-panel-ip" aria-labelledby="feature-tab-ip" hidden={featureTab !== "ip"}>
             <ProxyManagement key={connectionKey} connectionKey={connectionKey} active={featureTab === "ip"} online={state.online}/>
           </div>

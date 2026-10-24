@@ -22460,7 +22460,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_native_404_is_reported_as_an_unsupported_diagnostic",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22480,21 +22480,26 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "native 404 becomes the unsupported-diagnostic 502 and uses one native request"
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_quality_result_keeps_safe_items_and_checked_at_without_credentials",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22514,21 +22519,26 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "quality score, checked_at, item fields and exact sanitized result match pinned Python; credential extras are absent"
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_safe_proxy_test_forwards_native_action_with_bounded_timeout",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22548,17 +22558,17 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "the actual diagnostic route forwards one empty-body POST with the exact key and matches the pinned safe-result oracle the real configured 90-second timeout returns within the bounded test window and does not replay the request private proxy address, user, password, and token fields are absent from the public response",
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -22578,11 +22588,16 @@
             "assert_eq!(\n        harness.upstream.matching(Method::POST, &path).len(),\n        1,\n        \"the timed-out request must not be replayed\"\n    )"
           ]
         }
-      ]
+      ],
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_same_proxy_and_action_coalesces_while_different_action_is_independent",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22602,17 +22617,22 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "two concurrent same proxy/action clicks share one upstream request while quality-check receives its own request"
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnostics037Tests.test_timeout_returns_without_replaying_the_native_request",
@@ -22639,7 +22659,7 @@
     },
     {
       "legacy_test_id": "py:tests.test_proxy_diagnostics037:ProxyDiagnosticsRoute037Tests.test_desktop_routes_authenticate_and_forward_quality_check",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22659,17 +22679,17 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "the desktop quality route forwards the exact admin key and returns Python-derived sanitized quality output a bad admin key returns 401 before any upstream call; the diagnostic timeout path also authenticates before dispatch",
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -22689,11 +22709,16 @@
             "assert_eq!(\n        harness.upstream.matching(Method::POST, &path).len(),\n        1,\n        \"the timed-out request must not be replayed\"\n    )"
           ]
         }
-      ]
+      ],
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_native_http037:NativeProxyHttpTests.test_inflight_clicks_share_one_actual_request_and_failure_is_not_replayed",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22713,21 +22738,26 @@
           "assert!(!first.2.contains(private), \"test result exposed {private}\")",
           "assert!(\n            !quality.2.contains(private),\n            \"quality result exposed {private}\"\n        )",
           "assert_eq!(quality.0, 200)",
-          "assert_eq!(\n        quality.1,\n        fixtures()[\"python_oracle\"][\"proxy_diagnostics\"][\"quality_result\"]\n    )",
+          "assert_eq!(quality.1, expected_quality)",
           "assert_eq!(quality.1[\"checked_at\"], 1_735_689_600)",
           "assert_eq!(quality.1[\"items\"].as_array().unwrap().len(), 1)",
           "assert_eq!(unsupported.0, 502)",
-          "assert!(unsupported.1.to_string().contains(\"不支持\"))",
+          "assert!(unsupported.1.to_string().contains(\"http_404\"))",
           "assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2)",
           "assert_eq!(failed.0, 502)",
           "assert_eq!(\n        harness.upstream.matching(Method::POST, &quality_path).len(),\n        2\n    )"
         ]
       },
-      "coverage_note": "concurrent clicks coalesce to one native request; failing native status returns error with one additional non-replayed request"
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_proxy_native_http037:NativeProxyHttpTests.test_native_paths_headers_and_whitelist_arrive_at_real_receiver",
-      "status": "mapped",
+      "status": "superseded",
       "target": {
         "kind": "rust_test",
         "path": "server/tests/account_mutation_parity.rs",
@@ -22736,8 +22766,8 @@
           "assert_eq!(test_status, 200)",
           "assert_eq!(connection, oracle[\"test_result\"])",
           "assert_eq!(connection[\"latency_ms\"], 13)",
-          "assert!(!connection_text.contains(\"fixture-pass\"))",
-          "assert!(!connection_text.contains(\"fixture-user\"))",
+          "assert!(connection_text.contains(\"fixture-pass\"))",
+          "assert!(connection_text.contains(\"fixture-user\"))",
           "assert_eq!(test_calls.len(), 1)",
           "assert_eq!(test_calls[0].path, test_path)",
           "assert_eq!(test_calls[0].uri, test_path)",
@@ -22756,7 +22786,12 @@
           "assert_eq!(quality_calls[0].api_key, ADMIN_KEY)"
         ]
       },
-      "coverage_note": "the real desktop routes send exactly one POST each to /test and /quality-check with an empty JSON body and the configured admin key the test result matches fixed-SHA Python safe_result output with latency 13 and redacts the native proxy URL and credentials the quality result matches fixed-SHA Python safe_result output with score 80 and a challenge item"
+      "coverage_note": "0.1.59 preserves full diagnostic text and HTTP error bodies; authentication, native request deduplication and unrelated credential-field projection remain covered.",
+      "replacement": {
+        "legacy_assertions": "Diagnostic messages and URL targets were hidden or sanitized.",
+        "approved_requirement": "Show all IP diagnostic failures in full plaintext without redaction or truncation.",
+        "replacement_contract": "The authenticated response keeps original diagnostic text and targets, uses plain text rendering, and retains request coalescing with no replay."
+      }
     },
     {
       "legacy_test_id": "py:tests.test_quota_snapshot:PassiveQuotaTests.test_billing_and_money_budgets_are_not_usage_windows",

@@ -488,9 +488,16 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             );
         }
         if !(200..300).contains(&status) {
+            let error_body = state
+                .diagnostic_results
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("http-error")
+                .cloned()
+                .unwrap_or_else(|| json!({"code":status,"message":"fixture diagnostic failure"}));
             return response(
                 StatusCode::from_u16(status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                json!({"code":status,"message":"fixture diagnostic failure"}),
+                error_body,
             );
         }
         let action = path.rsplit('/').next().unwrap_or_default();
@@ -5502,7 +5509,8 @@ async fn native_proxy_partial_cancel_busy_and_idempotency_preserve_child_states(
 async fn proxy_native_http_routes_headers_and_whitelists_match_python_oracle_at_loopback() {
     let mut harness = Harness::new().await;
     let fixture_data = fixtures();
-    let oracle = fixture_data["python_oracle"]["proxy_native_http"].clone();
+    let mut oracle = fixture_data["python_oracle"]["proxy_native_http"].clone();
+    oracle["test_result"]["message"] = oracle["test_input"]["message"].clone();
     harness
         .upstream
         .set_diagnostic_result("test", oracle["test_input"].clone());
@@ -5517,8 +5525,8 @@ async fn proxy_native_http_routes_headers_and_whitelists_match_python_oracle_at_
     assert_eq!(test_status, 200);
     assert_eq!(connection, oracle["test_result"]);
     assert_eq!(connection["latency_ms"], 13);
-    assert!(!connection_text.contains("fixture-pass"));
-    assert!(!connection_text.contains("fixture-user"));
+    assert!(connection_text.contains("fixture-pass"));
+    assert!(connection_text.contains("fixture-user"));
 
     let test_calls = harness.upstream.matching(Method::POST, &test_path);
     assert_eq!(test_calls.len(), 1);
@@ -5668,10 +5676,10 @@ async fn proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_st
         );
     }
     assert_eq!(quality.0, 200);
-    assert_eq!(
-        quality.1,
-        fixtures()["python_oracle"]["proxy_diagnostics"]["quality_result"]
-    );
+    let mut expected_quality =
+        fixtures()["python_oracle"]["proxy_diagnostics"]["quality_result"].clone();
+    expected_quality["items"][0]["target"] = json!("https://example.invalid");
+    assert_eq!(quality.1, expected_quality);
     assert_eq!(quality.1["checked_at"], 1_735_689_600);
     assert_eq!(quality.1["items"].as_array().unwrap().len(), 1);
 
@@ -5683,9 +5691,13 @@ async fn proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_st
         .request(Method::POST, &format!("proxies/{PROXY_ID}/test"), None)
         .await;
     assert_eq!(unsupported.0, 502);
-    assert!(unsupported.1.to_string().contains("不支持"));
+    assert!(unsupported.1.to_string().contains("http_404"));
     assert_eq!(harness.upstream.matching(Method::POST, &test_path).len(), 2);
     harness.upstream.set_diagnostic_status(503);
+    let error_body = json!({"code":503,"message":format!("https://example.invalid/?token=fixture\n  password=fixture\n{}","完整错误".repeat(1000))});
+    harness
+        .upstream
+        .set_diagnostic_result("http-error", error_body.clone());
     let failed = harness
         .request(
             Method::POST,
@@ -5694,6 +5706,10 @@ async fn proxy_diagnostics_route_auth_coalescing_sanitization_and_unsupported_st
         )
         .await;
     assert_eq!(failed.0, 502);
+    assert!(failed.1["detail"]
+        .as_str()
+        .unwrap()
+        .contains(&error_body.to_string()));
     assert_eq!(
         harness.upstream.matching(Method::POST, &quality_path).len(),
         2
@@ -7353,5 +7369,28 @@ async fn key_quota_inflight_parent_change_discards_the_old_result() {
         .await
         .unwrap();
     assert_eq!(value["key_quota"]["plans"][0]["remaining"], 9.0);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn sub2api_config_routes_require_admin_and_validate_before_host_access() {
+    let mut harness = Harness::new().await;
+    let denied = harness
+        .request_with_key(Method::GET, "sub2api-config", None, "fixture-wrong-admin")
+        .await;
+    assert_eq!(denied.0, 401);
+    let read = harness.request(Method::GET, "sub2api-config", None).await;
+    assert_eq!(read.0, 200);
+    assert_eq!(read.1["available"], false);
+    let invalid = harness
+        .request(
+            Method::POST,
+            "sub2api-config/apply",
+            Some(json!({"container":"fixture","path":"fixture"})),
+        )
+        .await;
+    assert_eq!(invalid.0, 422);
+    let valid = harness.request(Method::POST, "sub2api-config/apply", Some(json!({"expected_revision":"a".repeat(64),"runtime_revision":"b".repeat(64),"changes":[{"path":"log.level","remove":false,"value":"info"}]}))).await;
+    assert_eq!(valid.0, 503);
     harness.finish().await;
 }

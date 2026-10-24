@@ -323,6 +323,21 @@ impl Actions {
             request = request.json(value);
         }
         request.send().await.map_err(|error| {
+            if path.starts_with("proxies/")
+                && (path.ends_with("/test") || path.ends_with("/quality-check"))
+            {
+                return Error::new(
+                    if error.is_timeout() { 504 } else { 502 },
+                    format!(
+                        "{}：{error:?}",
+                        if error.is_timeout() {
+                            "代理检测超时，未重放请求"
+                        } else {
+                            "代理检测请求失败"
+                        }
+                    ),
+                );
+            }
             if error.is_timeout() {
                 Error::new(504, "请求超时，未重放操作")
             } else {

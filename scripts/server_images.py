@@ -40,6 +40,12 @@ def run(arguments, **kwargs):
     return subprocess.run(arguments, check=True, **kwargs)
 
 
+def package_host_installer(output_dir: Path) -> str:
+    installer = ROOT / "deploy/install-config-host.py"
+    shutil.copyfile(installer, output_dir / installer.name)
+    return hashlib.sha256(installer.read_bytes()).hexdigest() + "  " + installer.name + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
@@ -103,7 +109,8 @@ def main():
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
         require_no_fixture_layers(bundle)
-        (args.output_dir / "SHA256SUMS").write_text(digest.hexdigest() + "  " + bundle.name + "\n")
+        installer_checksum = package_host_installer(args.output_dir)
+        (args.output_dir / "SHA256SUMS").write_text(digest.hexdigest() + "  " + bundle.name + "\n" + installer_checksum)
         (args.output_dir / "manifest.json").write_text(json.dumps({"version": release_version, "revision": args.revision,
             "image_id": info["Id"], "image_tag": args.rust_image, "image_bytes": info["Size"],
             "image_size_method": "docker image inspect Size; storage-backend metadata, not host disk allocation",

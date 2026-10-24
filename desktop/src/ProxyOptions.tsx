@@ -1,3 +1,4 @@
+import DiagnosticText from "./DiagnosticText";
 import { useEffect, useId, useRef, useState } from "react";
 import { CircleCheck, LoaderCircle, ShieldCheck } from "lucide-react";
 import { api } from "./bridge";
@@ -40,10 +41,10 @@ export default function ProxyOptions({ proxies, value, onChange, online, disable
             <button type="button" aria-label={`检测代理 ${proxy.id}`} disabled={!online || test.busy} onClick={() => void diagnose(proxy.id, "test")}>{test.busy ? <LoaderCircle className="spin" size={14}/> : <CircleCheck size={14}/>}测试连接</button>
             <button type="button" aria-label={`质量检查代理 ${proxy.id}`} disabled={!online || quality.busy} onClick={() => void diagnose(proxy.id, "quality-check")}>{quality.busy ? <LoaderCircle className="spin" size={14}/> : <ShieldCheck size={14}/>}质量检测</button>
           </div>
-          {test.error && <p role="alert" className="bad-text">{test.error}</p>}
-          {test.connection && <div className="proxy-diagnostic-result" role="status"><b>{test.connection.success ? "连接成功" : "连接失败"}</b><span>{test.connection.latency_ms != null && `${test.connection.latency_ms} ms`}</span><span>{[test.connection.ip_address, test.connection.country, test.connection.region, test.connection.city].filter(Boolean).join(" · ")}</span>{test.connection.message && <span>{test.connection.message}</span>}</div>}
-          {quality.error && <p role="alert" className="bad-text">{quality.error}</p>}
-          {quality.quality && <div className="proxy-diagnostic-result" role="status"><b>{quality.quality.score} 分 · {quality.quality.grade}</b><span>{quality.quality.summary}</span><span>{[quality.quality.exit_ip, quality.quality.country].filter(Boolean).join(" · ")}</span>{quality.quality.items.map((item, i) => <div className="proxy-quality-item" key={`${item.target}:${i}`}><span>{item.target}</span><b className={item.status === "fail" ? "bad-text" : ""}>{states[item.status]}</b><span>{item.latency_ms != null ? `${item.latency_ms} ms` : "—"}</span>{item.message && <small>{item.message}</small>}</div>)}</div>}
+          {test.error && <div role="alert" className="bad-text"><DiagnosticText text={test.error}/></div>}
+          {test.connection && <div className="proxy-diagnostic-result" role="status"><b>{test.connection.success ? "连接成功" : "连接失败"}</b><span>{test.connection.latency_ms != null && `${test.connection.latency_ms} ms`}</span><span>{[test.connection.ip_address, test.connection.country, test.connection.region, test.connection.city].filter(Boolean).join(" · ")}</span>{test.connection.message && <DiagnosticText text={test.connection.message}/>}</div>}
+          {quality.error && <div role="alert" className="bad-text"><DiagnosticText text={quality.error}/></div>}
+          {quality.quality && <div className="proxy-diagnostic-result" role="status"><b>{quality.quality.score} 分 · {quality.quality.grade}</b><DiagnosticText text={quality.quality.summary}/><span>{[quality.quality.exit_ip, quality.quality.country].filter(Boolean).join(" · ")}</span>{quality.quality.items.map((item, i) => <div className="proxy-quality-item" key={`${item.target}:${i}`}><span>{item.target}</span><b className={item.status === "fail" ? "bad-text" : ""}>{states[item.status]}</b><span>{item.latency_ms != null ? `${item.latency_ms} ms` : "—"}</span>{item.message && <DiagnosticText text={item.message}/>}</div>)}</div>}
         </article>;
       })}
     </div>

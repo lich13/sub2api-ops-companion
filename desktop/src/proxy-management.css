@@ -960,3 +960,37 @@
 .proxy-table .proxy-address button { flex-shrink: 0; }
 .proxy-table .proxy-location { max-width: 100%; }
 .proxy-table .proxy-quality-cell { min-width: 0; }
+
+.diagnostic-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.diagnostic-text > span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1;
+}
+.diagnostic-text > button {
+  flex-shrink: 0;
+  padding: 4px;
+  min-width: 26px;
+}
+.diagnostic-text > small {
+  flex-basis: 100%;
+}
+.proxy-report-table td:last-child {
+  white-space: normal;
+  min-width: 220px;
+}
+.proxy-result-list .diagnostic-text {
+  width: 100%;
+}
+
+.proxy-quality-item .diagnostic-text {
+  grid-column: 1/-1;
+}

@@ -1,3 +1,4 @@
+import DiagnosticText from "./DiagnosticText";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -290,7 +291,16 @@ export default function ProxyManagement({
                   results.push({
                     name: row.name,
                     ok: true,
-                    message: `${result.grade} · ${result.score}/100`,
+                    message: [
+                      `${result.grade} · ${result.score}/100`,
+                      result.summary,
+                      ...result.items.map(
+                        (item) =>
+                          `${item.target} · ${item.status}${item.http_status == null ? "" : ` · HTTP ${item.http_status}`}\n${item.message}`,
+                      ),
+                    ]
+                      .filter(Boolean)
+                      .join("\n"),
                   });
                   if (rows.length === 1)
                     setDialog({ kind: "quality", row, value: result });
@@ -486,14 +496,20 @@ export default function ProxyManagement({
   function rowActions(row: ProxyRow) {
     return (
       <div className="proxy-row-actions">
-        <button title="测试连接" aria-label="测试连接" disabled={blocked} onClick={() => void diagnose([row], "test")}>
+        <button
+          title="测试连接"
+          aria-label="测试连接"
+          disabled={blocked}
+          onClick={() => void diagnose([row], "test")}
+        >
           <Check size={15} />
           测试
         </button>
         <button
           disabled={blocked}
           onClick={() => void diagnose([row], "quality-check")}
-          title="质量检测" aria-label="质量检测"
+          title="质量检测"
+          aria-label="质量检测"
         >
           <ShieldCheck size={15} />
           质量
@@ -771,7 +787,11 @@ export default function ProxyManagement({
         tabIndex={0}
       >
         <table className="proxy-table">
-          <colgroup>{Array.from({ length: 11 }, (_, i) => <col key={i}/>)}</colgroup>
+          <colgroup>
+            {Array.from({ length: 11 }, (_, i) => (
+              <col key={i} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th className="proxy-pin-select">
@@ -1143,9 +1163,9 @@ export default function ProxyManagement({
             {dialog.rows.map((r, i) => (
               <li key={i}>
                 <b>{r.name}</b>
-                <span className={r.ok ? "good-text" : "bad-text"}>
-                  {r.message}
-                </span>
+                <div className={r.ok ? "good-text" : "bad-text"}>
+                  <DiagnosticText text={r.message} />
+                </div>
               </li>
             ))}
           </ul>

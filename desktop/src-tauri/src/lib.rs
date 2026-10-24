@@ -201,6 +201,13 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
 }
 
 fn allowed_request(method: &str, path: &str) -> bool {
+    if path.starts_with("/sub2api-config") {
+        return matches!(
+            (method, path),
+            ("GET", "/sub2api-config" | "/sub2api-config/operation")
+                | ("POST", "/sub2api-config/validate" | "/sub2api-config/apply")
+        );
+    }
     if path == "/account-creation"
         || path.starts_with("/account-creation/")
         || path.starts_with("/account-creation?")
@@ -767,7 +774,11 @@ async fn api_request(
     let (base, key, generation) = {
         let _gate = state.network.lock().await;
         let view = state.view.lock().await;
-        let diagnostic = method == "GET" && path == "/connection-status";
+        let diagnostic = method == "GET"
+            && matches!(
+                path.as_str(),
+                "/connection-status" | "/sub2api-config/operation"
+            );
         if (!view.online && !diagnostic) || !state.foreground.load(Ordering::SeqCst) {
             return Err("当前离线，请恢复连接后操作".into());
         }
@@ -1712,6 +1723,25 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn configuration_routes_are_explicit_and_reject_arbitrary_targets() {
+        for (method, path) in [
+            ("GET", "/sub2api-config"),
+            ("GET", "/sub2api-config/operation"),
+            ("POST", "/sub2api-config/validate"),
+            ("POST", "/sub2api-config/apply"),
+        ] {
+            assert!(super::allowed_request(method, path));
+        }
+        for (method, path) in [
+            ("DELETE", "/sub2api-config"),
+            ("POST", "/sub2api-config/operation"),
+            ("GET", "/sub2api-config?path=fixture"),
+            ("POST", "/sub2api-config/restart"),
+        ] {
+            assert!(!super::allowed_request(method, path));
+        }
+    }
     use super::*;
     fn runtime() -> Runtime {
         Runtime {

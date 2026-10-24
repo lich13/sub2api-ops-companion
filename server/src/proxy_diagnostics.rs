@@ -2,7 +2,6 @@ use crate::{
     actions::Actions,
     compat::{sha256, string},
     error::{Error, Result},
-    security::clean,
     upstream::read_limited,
 };
 use serde_json::{json, Value};
@@ -12,27 +11,11 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-fn text(value: &Value, limit: usize) -> String {
+fn text(value: &Value) -> String {
     let Some(value) = value.as_str() else {
         return String::new();
     };
-    let lower = value.to_lowercase();
-    if [
-        "authorization",
-        "password",
-        "cookie",
-        "://",
-        "bearer ",
-        "api_key",
-        "token=",
-    ]
-    .iter()
-    .any(|v| lower.contains(v))
-    {
-        "检测详情含敏感信息，已隐藏".into()
-    } else {
-        clean(&json!(value), limit)
-    }
+    value.to_owned()
 }
 fn number(value: &Value, maximum: f64) -> Value {
     if value
@@ -68,9 +51,9 @@ pub fn safe_result(action: &str, data: &Value) -> Result<Value> {
         if !data["success"].is_boolean() {
             return Err(fail());
         }
-        let mut result = json!({"success":data["success"],"message":text(&data["message"],240),"latency_ms":number(&data["latency_ms"],1e12),"ip_address":ip(&data["ip_address"])});
+        let mut result = json!({"success":data["success"],"message":text(&data["message"]),"latency_ms":number(&data["latency_ms"],1e12),"ip_address":ip(&data["ip_address"])});
         for key in ["city", "region", "country", "country_code"] {
-            result[key] = text(&data[key], 100).into();
+            result[key] = text(&data[key]).into();
         }
         return Ok(result);
     }
@@ -80,9 +63,9 @@ pub fn safe_result(action: &str, data: &Value) -> Result<Value> {
     }
     let items=items.iter().map(|item| {
         if !item.is_object() || !matches!(string(&item["status"]),"pass"|"warn"|"fail"|"challenge") {return Err(fail());}
-        Ok(json!({"target":text(&item["target"],80),"status":item["status"],"http_status":number(&item["http_status"],599.0),"latency_ms":number(&item["latency_ms"],1e12),"message":text(&item["message"],240)}))
+        Ok(json!({"target":text(&item["target"]),"status":item["status"],"http_status":number(&item["http_status"],599.0),"latency_ms":number(&item["latency_ms"],1e12),"message":text(&item["message"])}))
     }).collect::<Result<Vec<_>>>()?;
-    let mut result = json!({"score":data["score"],"grade":text(&data["grade"],40),"summary":text(&data["summary"],240),"exit_ip":ip(&data["exit_ip"]),"country":text(&data["country"],100),"country_code":text(&data["country_code"],10),"base_latency_ms":number(&data["base_latency_ms"],1e12),"items":items});
+    let mut result = json!({"score":data["score"],"grade":text(&data["grade"]),"summary":text(&data["summary"]),"exit_ip":ip(&data["exit_ip"]),"country":text(&data["country"]),"country_code":text(&data["country_code"]),"base_latency_ms":number(&data["base_latency_ms"],1e12),"items":items});
     for key in [
         "passed_count",
         "warn_count",
@@ -147,19 +130,41 @@ impl ProxyDiagnostics {
                             )
                             .await?;
                         let status = response.status().as_u16();
-                        if matches!(status, 404 | 405 | 501) {
-                            return Err(Error::new(502, "Sub2API 不支持此代理检测接口"));
-                        }
-                        if !(200..300).contains(&status) {
-                            return Err(Error::new(502, format!("代理检测失败 [http_{status}]")));
-                        }
                         let bytes = read_limited(response, 1024 * 1024).await?;
-                        let body: Value = serde_json::from_slice(&bytes)
-                            .map_err(|_| Error::new(502, "代理检测响应不可用，未重放请求"))?;
-                        if body["code"].as_i64() != Some(0) {
-                            return Err(Error::new(502, "代理检测未成功，请重试"));
+                        if !(200..300).contains(&status) {
+                            return Err(Error::new(
+                                502,
+                                format!(
+                                    "代理检测失败 [http_{status}]\n{}",
+                                    String::from_utf8_lossy(&bytes)
+                                ),
+                            ));
                         }
-                        safe_result(&action, &body["data"])
+                        let body: Value = serde_json::from_slice(&bytes).map_err(|_| {
+                            Error::new(
+                                502,
+                                format!(
+                                    "代理检测响应格式无效\n{}",
+                                    String::from_utf8_lossy(&bytes)
+                                ),
+                            )
+                        })?;
+                        if body["code"].as_i64() != Some(0) {
+                            return Err(Error::new(
+                                502,
+                                String::from_utf8_lossy(&bytes).to_string(),
+                            ));
+                        }
+                        safe_result(&action, &body["data"]).map_err(|e| {
+                            Error::new(
+                                502,
+                                format!(
+                                    "{}\n{}",
+                                    e.detail.as_str().unwrap_or("代理检测响应格式不兼容"),
+                                    String::from_utf8_lossy(&bytes)
+                                ),
+                            )
+                        })
                     })
                     .await
                     .map_err(|_| Error::new(504, "代理检测超时，未重放请求"))?
