@@ -1,3 +1,4 @@
+mod account_creation;
 mod key_quota;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -200,10 +201,21 @@ fn save_preferences(path: &Path, value: &Preferences) -> Result<(), String> {
 }
 
 fn allowed_request(method: &str, path: &str) -> bool {
+    if path == "/account-creation"
+        || path.starts_with("/account-creation/")
+        || path.starts_with("/account-creation?")
+    {
+        return account_creation::allowed(method, path);
+    }
     if path.contains(['#', '\\']) || path.contains("..") {
         return false;
     }
     let plain = path.split('?').next().unwrap_or("");
+    if plain.ends_with("/key-quota-settings/access-token") {
+        return method == "GET"
+            && !path.contains('?')
+            && account_path(plain, "/key-quota-settings/access-token");
+    }
     if plain == "/config/key-quota" || plain.ends_with("/key-quota-settings") {
         return matches!(method, "GET" | "PUT")
             && !path.contains('?')
@@ -1052,6 +1064,16 @@ fn queue_main(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_authorization_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !account_creation::authorization_url(&url) {
+        return Err("授权链接必须是 HTTPS 地址".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|_| "无法打开系统浏览器".into())
+}
+
+#[tauri::command]
 async fn check_updates(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -1653,7 +1675,8 @@ pub fn run() {
         show_quick,
         hide_quick,
         resize_quick,
-        check_updates
+        check_updates,
+        open_authorization_url
     ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -1666,7 +1689,8 @@ pub fn run() {
         cancel_test,
         preferences,
         background,
-        check_updates
+        check_updates,
+        open_authorization_url
     ]);
     builder
         .build(tauri::generate_context!())
@@ -2068,6 +2092,22 @@ mod tests {
     }
     #[test]
     fn command_allowlist() {
+        assert!(allowed_request(
+            "GET",
+            "/accounts/7/key-quota-settings/access-token"
+        ));
+        assert!(!allowed_request(
+            "POST",
+            "/accounts/7/key-quota-settings/access-token"
+        ));
+        assert!(!allowed_request(
+            "GET",
+            "/accounts/7/key-quota-settings/access-token?secret=fixture"
+        ));
+        assert!(!allowed_request(
+            "GET",
+            "/accounts/0/key-quota-settings/access-token"
+        ));
         for path in ["/config/key-quota", "/accounts/7/key-quota-settings"] {
             for method in ["GET", "PUT"] {
                 assert!(allowed_request(method, path));

@@ -93,6 +93,8 @@
   gap: 8px;
   margin-top: 16px;
 }
+.key-quota-token-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.key-quota-token-actions button { min-height: 34px; }
 .mobile .key-quota .usage-action {
   min-width: 48px;
   min-height: 48px;

@@ -154,6 +154,9 @@ fn request_payload(payload: &Value, allowed: &[&str], required: &[&str]) -> Resu
 }
 
 fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
+    if path.first() == Some(&"account-creation") {
+        return crate::account_creation::allowed(path);
+    }
     match path {
         ["capabilities"
         | "connection-status"
@@ -200,6 +203,7 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["quota-refresh"] => Some(&["GET", "POST"]),
         ["config", "key-quota"] => Some(&["GET", "PUT"]),
         ["accounts", _, "key-quota-settings"] => Some(&["GET", "PUT"]),
+        ["accounts", _, "key-quota-settings", "access-token"] => Some(&["GET"]),
         ["config", "oauth" | "bark"] => Some(&["PUT"]),
         ["actions", "bark-test"] => Some(&["POST"]),
         ["model-groups", _, "reasoning"] => Some(&["GET", "PUT", "DELETE"]),
@@ -321,9 +325,30 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     }
     let mut status = StatusCode::OK;
     let result: Value = match path.as_slice() {
+        ["account-creation", ..] => {
+            let sync_models = path.len() == 1
+                && query.len() == 1
+                && query.get("sync_models").is_some_and(|v| v == "true");
+            if !query.is_empty() && !sync_models {
+                return Err(Error::invalid());
+            }
+            let value = crate::account_creation::handle(
+                &runtime.actions,
+                &key,
+                &path,
+                &payload,
+                sync_models,
+            )
+            .await?;
+            let mut response = Json(value).into_response();
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            return Ok(response);
+        }
         ["capabilities"] => {
             json!({"api_version":1,"service":"Sub2API Ops Companion","platforms":["macos","android"],"version":crate::VERSION,
-            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
+            "upstream_connection":runtime.upstream.status(),"implementation":"rust","build_revision":crate::BUILD_REVISION,"features":{"account_creation":true,"key_quota_token_reveal":true,"proxy_management":true,"detection_logs":true,"global_detection_model":true,"account_priority_ordering":true,"account_priority_per_platform":true}})
         }
         ["snapshot"] => runtime.snapshot().await?,
         ["config", "key-quota"] => {
@@ -337,6 +362,18 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             runtime
                 .key_quota_settings(path_id(id)?, (method == Method::PUT).then_some(&payload))
                 .await?
+        }
+        ["accounts", id, "key-quota-settings", "access-token"] => {
+            if !query.is_empty() {
+                return Err(Error::invalid());
+            }
+            let id = path_id(id)?;
+            runtime.key_quota_settings(id, None).await?;
+            let mut response = Json(runtime.key_quota.account_access_token(id)?).into_response();
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            return Ok(response);
         }
         ["accounts", id, "usage"] => {
             if !query.is_empty() {

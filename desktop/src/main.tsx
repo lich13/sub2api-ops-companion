@@ -67,6 +67,7 @@ import { DeleteAccountsDialog, RecoverSelectedButton } from "./AccountManagement
 import { useQuickHeight } from "./useQuickHeight";
 import ModelConfig from "./ModelConfig";
 import AccountTemplates from "./AccountTemplates";
+import { AccountCreationButton } from "./AccountCreationDialog";
 import SchedulingParameters from "./SchedulingParameters";
 import AccountSettingsDialog, { type SettingsSection } from "./AccountSettingsDialog";
 import ProxyBatchDialog from "./ProxyBatchDialog";
@@ -728,7 +729,7 @@ export default function App() {
                 }}/>}
                 {page === "accounts" && (
                   <KeyQuotaProvider key={connectionKey} accounts={accounts} online={state.online} active={state.foreground !== false} enabled={accounts.some(a => a.type === "apikey")}>
-                    {!mobile && <div className="account-toolbar">{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
+                    {!mobile && <div className="account-toolbar"><AccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report} /><label className="account-sort"><span>排序</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></label><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button></div>}
                     {mobile && <div className="mobile-group-entry"><button onClick={() => setPage("groups")}><Layers3 size={18}/>分组管理<ChevronRight size={16}/></button><button onClick={() => setPage("priorities")}><ListOrdered size={18}/>优先级管理<ChevronRight size={16}/></button></div>}
                     <div className="filters">
                       <label className="search">
@@ -790,7 +791,7 @@ export default function App() {
                       {mobile && <button className="primary" onClick={() => setFiltersOpen(false)}>完成</button>}
                       </div>
                     </div>
-                    {mobile && <div className="account-toolbar">{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
+                    {mobile && <div className="account-toolbar"><AccountCreationButton accounts={accounts} online={state.online} connectionKey={connectionKey} report={report}/>{accounts.some(a => a.type === "apikey") && <KeyQuotaRefreshSettings online={state.online}/>}<QuotaRefresh key={connectionKey} connectionKey={connectionKey} online={state.online} active={state.foreground !== false} report={report}/><button onClick={() => { setTemplateAccounts(undefined); setTemplateAccount(null); setTemplatesOpen(true); }}>账号模板</button><button onClick={() => setGroupsOpen(true)}><Layers3 size={17}/>分组动态</button></div>}
                     {mobile && <div className="mobile-sort"><label className="mobile-select-all"><input type="checkbox" aria-label="全选当前筛选账号" checked={filteredAccounts.length > 0 && filteredAccounts.every((a) => selected.has(a.id))} disabled={!state.online} onChange={(e) => setSelected(e.target.checked ? new Set(filteredAccounts.map((a) => a.id)) : new Set())}/>全选</label><span>{filteredAccounts.length} 个账号</span><select aria-label="账号排序" value={accountSort} onChange={(e) => updateAccountSort(e.target.value)}><option value="recent:desc">最近调用</option><option value="recent:asc">最早调用</option><option value="priority:asc">优先级 ↑</option><option value="priority:desc">优先级 ↓</option></select></div>}
                     <div className="table-wrap">
                       {selected.size > 0 && <div className="selection-bar">

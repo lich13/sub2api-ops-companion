@@ -31,6 +31,8 @@ use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 const FIXTURES: &str = include_str!("../../tests/contracts/account-mutation/fixtures.json");
 const REFERENCE_SHA: &str = "6be7c291ed38dcc337cb88f693639040a3463899";
 const ADMIN_KEY: &str = "fixture-account-mutation-admin-040";
+#[path = "common/account_creation.rs"]
+mod account_creation;
 const CLIENT_ID: &str = "fixture-account-mutation-client-0001";
 const PROXY_ID: i64 = 1_520_000_001;
 static NEXT_ACCOUNT_ID: AtomicI64 = AtomicI64::new(820_000_000);
@@ -329,6 +331,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     if let Some(gate) = gate {
         gate.entered.notify_one();
         gate.release.notified().await;
+    }
+    if let Some(result) = account_creation::mock(&method, &path, &body) {
+        return result;
     }
 
     if method == Method::GET && path.starts_with("/fixture-billing/") {
@@ -706,6 +711,18 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
         );
     }
     if let Some(id) = id_from_path(&path, "") {
+        if method == Method::GET {
+            let value: Option<Value> =
+                sqlx::query_scalar("SELECT to_jsonb(a) FROM accounts a WHERE id=$1")
+                    .bind(id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .unwrap();
+            return match value {
+                Some(value) => response(StatusCode::OK, json!({"code":0,"data":value})),
+                None => response(StatusCode::NOT_FOUND, json!({"code":404})),
+            };
+        }
         if method == Method::PUT {
             if body.get("group_ids").is_some() {
                 if state.apply_groups.load(Ordering::Acquire)

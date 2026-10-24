@@ -1,6 +1,6 @@
 /* Desktop columns keep the scheduling and action controls inside the viewport. */
 .filter-options { display: contents; }
-.account-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.account-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-bottom: 12px; }
 .accounts-table { --account-actions-width: 110px; --account-name-width: 128px; table-layout: fixed; width: 100%; min-width: calc(734px + var(--account-actions-width) + var(--account-name-width)); }
 .accounts-table.name-expanded { --account-name-width: 240px; }
 .accounts-table .col-name { width: var(--account-name-width); }
@@ -33,10 +33,12 @@
 .accounts-table .account-actions > button svg { width: 12px; height: 12px; flex-shrink: 0; }
 .account-sort { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--muted); }
 .account-sort select { height: 30px; min-height: 30px; padding: 4px 8px; line-height: 20px; }
-.account-toolbar > button { min-height: 30px; padding: 4px 10px; font-size: 12px; line-height: 20px; }
+.account-toolbar > .quota-batch { margin-bottom: 0; gap: 8px; }
+.account-toolbar > button, .account-toolbar > .quota-batch > button { min-height: 30px; padding: 4px 10px; font-size: 12px; line-height: 20px; }
 .page-surface[data-page="accounts"] .account-sort,
 .page-surface[data-page="accounts"] select[aria-label="账号排序"],
 .page-surface[data-page="accounts"] .account-toolbar > button,
+.page-surface[data-page="accounts"] .account-toolbar > .quota-batch > button,
 .page-surface[data-page="accounts"] .filters select {
   font-size: 12px;
   line-height: 20px;
@@ -75,7 +77,7 @@
 .mobile .switch-cell { align-self: center; }
 .mobile .account-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 8px; }
 .mobile .quota-batch { grid-column: 1 / -1; gap: 6px; margin-bottom: 0; min-width: 0; }
-.mobile .quota-batch > button { font-size: 12px; padding: 0 8px; white-space: nowrap; }
+.mobile .quota-batch > button { width: 100%; font-size: 12px; padding: 0 8px; white-space: nowrap; }
 .mobile .account-toolbar > button { width: 100%; min-width: 0; font-size: 12px; padding: 0 8px; white-space: normal; }
 .mobile .filters { flex-wrap: nowrap; gap: 8px; margin-bottom: 6px; }
 .mobile .filters .search { min-width: 0; flex: 1; }

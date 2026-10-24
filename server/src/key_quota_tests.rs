@@ -312,6 +312,11 @@ fn settings_are_private_persistent_conflict_checked_and_allow_explicit_clear() {
     let public = s.account_settings(1).unwrap();
     assert_eq!(public["has_access_token"], true);
     assert!(!public.to_string().contains("fixture-account"));
+    assert_eq!(
+        s.account_access_token(1).unwrap(),
+        json!({"account_id":1,"access_token":"fixture-account"})
+    );
+    assert_eq!(s.account_access_token(2).unwrap_err().status.as_u16(), 404);
     s.save_settings(&json!({"expected_revision":public["revision"]}), Some(1))
         .unwrap();
     assert_eq!(s.account_settings(1).unwrap(), public);
@@ -332,6 +337,7 @@ fn settings_are_private_persistent_conflict_checked_and_allow_explicit_clear() {
     }
     set_token(&s, 1, "");
     assert_eq!(s.account_settings(1).unwrap()["has_access_token"], false);
+    assert!(s.account_access_token(1).is_err());
 }
 
 #[tokio::test]

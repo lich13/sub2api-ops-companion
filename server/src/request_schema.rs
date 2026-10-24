@@ -15,6 +15,7 @@ pub fn has_body(path: &[&str], method: &str) -> bool {
     matches!(
         path,
         ["proxy-management", ..]
+            | ["account-creation", ..]
             | ["accounts", _]
             | [
                 "accounts",
@@ -181,6 +182,9 @@ pub fn batch(value: &Value, template: bool) -> Result<()> {
 }
 
 pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
+    if path.first() == Some(&"account-creation") {
+        return crate::account_creation::validate(path, value);
+    }
     if path.first() == Some(&"proxy-management") {
         return crate::proxy_management::validate_body(path, method, value);
     }

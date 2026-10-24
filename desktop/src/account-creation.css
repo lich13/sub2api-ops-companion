@@ -1,0 +1,53 @@
+.account-creation-dialog { width: min(780px, calc(100vw - 32px)); }
+.creation-form-fields { display: grid; gap: 12px; border: 0; margin: 0; padding: 0; }
+.creation-form-fields > .creation-grid { margin: 0; }
+.account-creation-dialog > footer { flex-wrap: wrap; }
+.account-creation-dialog > footer button, .account-creation-dialog button svg { flex-shrink: 0; }
+.account-creation-dialog label { display: grid; gap: 5px; font-size: 12px; }
+.account-creation-dialog select, .account-creation-dialog textarea { width: 100%; padding: 7px 8px; min-height: 34px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.account-creation-dialog textarea { min-height: 120px; resize: vertical; overflow-wrap: anywhere; }
+.creation-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 12px 0; }
+.creation-grid > div > label { height: 100%; }
+.creation-wide { grid-column: 1 / -1; }
+.creation-reuse, .creation-confirm { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; }
+.creation-reuse { background: var(--accent-bg); }
+.creation-reuse p, .creation-collection p, .creation-confirm p { margin: 3px 0; font-size: 12px; }
+.creation-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.creation-inline > strong { margin-right: auto; font-size: 12px; }
+.creation-inline > select { flex: 1; width: 0; min-width: 120px; }
+.creation-section { border-top: 1px solid var(--line); margin-top: 12px; }
+.creation-section > summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 12px 0; }
+.creation-section > .creation-grid { margin-top: 0; }
+.creation-choices { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 1px solid var(--line); padding: 10px; margin: 12px 0; border-radius: 6px; max-height: 300px; overflow: auto; }
+.creation-choices legend { font-size: 12px; }
+.account-creation-dialog .creation-choices label, .account-creation-dialog .creation-toggle, .creation-confirm label { display: flex; gap: 6px; align-items: center; min-height: 32px; }
+.creation-choices input, .creation-toggle input { accent-color: var(--accent); }
+.creation-collection { display: grid; gap: 8px; }
+.creation-pair { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) 32px; gap: 6px; }
+.creation-rule { padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.creation-authorization { display: grid; gap: 8px; }
+.creation-summary { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.creation-results { font-size: 12px; line-height: 1.6; padding-left: 22px; }
+.creation-results li { margin: 8px 0; overflow-wrap: anywhere; }
+.mobile .account-creation-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.mobile .account-creation-dialog > .account-settings-body { flex: 1; }
+.mobile .account-creation-dialog .creation-grid { grid-template-columns: minmax(0,1fr); }
+.mobile .account-creation-dialog select, .mobile .account-creation-dialog textarea { min-height: 48px; font-size: 16px; }
+.mobile .account-creation-dialog textarea { min-height: 120px; }
+.mobile .account-creation-dialog .creation-choices label, .mobile .account-creation-dialog .creation-toggle, .mobile .account-creation-dialog .creation-confirm label { min-height: 48px; }
+.mobile .account-creation-dialog .creation-pair { grid-template-columns: minmax(0,1fr) 48px; }
+.mobile .account-creation-dialog .creation-pair input:first-child { grid-column: 1; }
+.mobile .account-creation-dialog .creation-pair input:nth-child(2) { grid-column: 1; grid-row: 2; }
+.mobile .account-creation-dialog .creation-pair button { grid-column: 2; grid-row: 1 / 3; }
+@media (max-width: 600px), (pointer: coarse) {
+  .account-creation-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .account-creation-dialog > .account-settings-body { flex: 1; }
+  .creation-grid { grid-template-columns: minmax(0,1fr); }
+  .account-creation-dialog select, .account-creation-dialog textarea { min-height: 48px; font-size: 16px; }
+  .account-creation-dialog textarea { min-height: 120px; }
+  .account-creation-dialog .creation-choices label, .account-creation-dialog .creation-toggle, .creation-confirm label { min-height: 48px; }
+  .creation-pair { grid-template-columns: minmax(0,1fr) 48px; }
+  .creation-pair input:first-child { grid-column: 1; }
+  .creation-pair input:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .creation-pair button { grid-column: 2; grid-row: 1 / 3; }
+}

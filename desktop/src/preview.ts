@@ -493,7 +493,7 @@ function emit() {
   for (const cb of listeners) cb(structuredClone(state));
 }
 let previewQuotaSeconds = 60;
-const previewQuotaTokens = new Map<number, boolean>();
+const previewQuotaTokens = new Map<number, string>();
 export function subscribe(cb: (s: ViewState) => void) {
   listeners.add(cb);
   return () => {
@@ -530,6 +530,7 @@ export async function run(
   }
   if (["show_main", "resize_quick", "show_quick", "hide_quick"].includes(name))
     return;
+  if (name === "open_authorization_url") return;
   if (name === "check_updates") return `预览模式 · 当前版本 ${appVersion}`;
   if (name === "cancel_test") {
     testCancelled = true;
@@ -542,11 +543,17 @@ export async function run(
     }
     if (/^\/accounts\/\d+\/key-quota-settings$/.test(String(args.path))) {
       const id = Number(String(args.path).split("/")[2]);
-      if (args.method === "PUT" && Object.hasOwn((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, !!(args.body as {access_token:string}).access_token);
-      return {account_id:id,has_access_token:previewQuotaTokens.get(id) ?? false,revision:"b".repeat(64)};
+      if (args.method === "PUT" && Object.hasOwn((args.body || {}) as object, "access_token")) previewQuotaTokens.set(id, (args.body as {access_token:string}).access_token);
+      return {account_id:id,has_access_token:!!previewQuotaTokens.get(id),revision:"b".repeat(64)};
     }
 
-    if (args.path === "/capabilities") return { api_version: 1, features: { detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
+    if (/^\/accounts\/\d+\/key-quota-settings\/access-token$/.test(String(args.path))) {
+      const id=Number(String(args.path).split("/")[2]), token=previewQuotaTokens.get(id);
+      if(!token) throw new Error("尚未配置账户访问令牌 [404]");
+      return {account_id:id,access_token:token};
+    }
+    if (String(args.path).startsWith("/account-creation")) return (await import("./accountCreationPreview")).creationPreview(String(args.path),(args.body||{}) as Record<string,unknown>,state.snapshot?.accounts??[],emit);
+    if (args.path === "/capabilities") return { api_version: 1, features: { account_creation: true, key_quota_token_reveal: true, detection_logs: true, global_detection_model: true, account_priority_ordering: true, account_priority_per_platform: true } };
     if (String(args.path).split("?")[0] === "/account-priorities" || String(args.path).startsWith("/account-priority-orders")) return (await import("./priorityPreview")).priorityPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
     if (String(args.path).startsWith("/detection-logs")) return (await import("./detectionLogPreview")).detectionLogPreview(String(args.path));
     if (args.method === "POST" && typeof args.path === "string" && /^\/proxies\/[1-9]\d*\/(test|quality-check)$/.test(args.path)) {

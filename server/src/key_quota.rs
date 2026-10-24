@@ -193,6 +193,11 @@ impl Service {
             json!({"account_id":id,"has_access_token":token.is_some(),"revision":config_revision(&json!([id,token]))}),
         )
     }
+    pub fn account_access_token(&self, id: i64) -> Result<Value> {
+        let value = token(&self.config.read()?, id)?
+            .ok_or_else(|| Error::new(404, "尚未配置账户访问令牌"))?;
+        Ok(json!({"account_id":id,"access_token":value}))
+    }
     pub fn save_settings(&self, value: &Value, id: Option<i64>) -> Result<Value> {
         settings_request(value, id.is_some())?;
         let changed = self.config.transaction(|raw| {

@@ -1,0 +1,2327 @@
+{
+  "upstream": "Sub2API 0.2.11 / 96f4c115",
+  "platforms": [
+    {
+      "id": "anthropic",
+      "label": "Claude",
+      "types": [
+        "oauth",
+        "setup-token",
+        "apikey",
+        "bedrock",
+        "service_account"
+      ],
+      "base_url": "https://api.anthropic.com"
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "base_url": "https://api.openai.com"
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini",
+      "types": [
+        "oauth",
+        "apikey",
+        "service_account"
+      ],
+      "base_url": "https://generativelanguage.googleapis.com"
+    },
+    {
+      "id": "antigravity",
+      "label": "Antigravity",
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "base_url": ""
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "base_url": "https://api.x.ai/v1"
+    },
+    {
+      "id": "kimi",
+      "label": "Kimi",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.moonshot.cn/v1"
+    },
+    {
+      "id": "zhipu",
+      "label": "智谱",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.deepseek.com"
+    },
+    {
+      "id": "minimax",
+      "label": "MiniMax",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://api.minimaxi.com/v1"
+    },
+    {
+      "id": "opencode_go",
+      "label": "OpenCode",
+      "types": [
+        "apikey"
+      ],
+      "base_url": "https://opencode.ai/zen/v1"
+    }
+  ],
+  "fields": [
+    {
+      "path": "credentials.base_url",
+      "label": "API 地址",
+      "kind": "url",
+      "group": "连接",
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.base_url",
+      "label": "自定义 API 地址",
+      "kind": "url",
+      "group": "连接",
+      "platforms": [
+        "grok"
+      ],
+      "types": [
+        "oauth"
+      ]
+    },
+    {
+      "path": "credentials.auth_mode",
+      "label": "认证方式",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "bedrock"
+      ],
+      "default": "sigv4",
+      "choices": [
+        "sigv4",
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.aws_region",
+      "label": "AWS 区域",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "bedrock"
+      ],
+      "default": "us-east-1"
+    },
+    {
+      "path": "credentials.aws_force_global",
+      "label": "强制 Global",
+      "kind": "stringbool",
+      "group": "连接",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "bedrock"
+      ]
+    },
+    {
+      "path": "credentials.location",
+      "label": "Vertex 区域",
+      "kind": "text",
+      "group": "连接",
+      "types": [
+        "service_account"
+      ],
+      "default": "global"
+    },
+    {
+      "path": "credentials.antigravity_project_id",
+      "label": "Project ID",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "antigravity"
+      ],
+      "types": [
+        "oauth"
+      ]
+    },
+    {
+      "path": "credentials.oauth_type",
+      "label": "授权类型",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "default": "code_assist",
+      "choices": [
+        "code_assist",
+        "google_one",
+        "ai_studio"
+      ]
+    },
+    {
+      "path": "credentials.project_id",
+      "label": "GCP 项目 ID",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "when": {
+        "credentials.oauth_type": "code_assist"
+      }
+    },
+    {
+      "path": "credentials.tier_id",
+      "label": "账号等级",
+      "kind": "tier",
+      "group": "连接",
+      "platforms": [
+        "gemini"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.account_mode",
+      "label": "账号模式",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "kimi",
+        "zhipu",
+        "deepseek",
+        "minimax"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "payg",
+      "choices": [
+        "payg",
+        "coding"
+      ]
+    },
+    {
+      "path": "credentials.account_mode",
+      "label": "账号模式",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "zen",
+      "choices": [
+        "zen",
+        "go"
+      ]
+    },
+    {
+      "path": "credentials.api_protocol",
+      "label": "协议",
+      "kind": "select",
+      "group": "连接",
+      "platforms": [
+        "kimi",
+        "zhipu",
+        "deepseek",
+        "minimax",
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "adaptive",
+      "choices": [
+        "adaptive",
+        "chat_completions",
+        "anthropic",
+        "responses"
+      ]
+    },
+    {
+      "path": "credentials.api_base_urls",
+      "label": "协议地址",
+      "kind": "protocols",
+      "group": "连接",
+      "platforms": [
+        "kimi",
+        "zhipu",
+        "deepseek",
+        "minimax",
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "when": {
+        "credentials.api_protocol": "adaptive"
+      }
+    },
+    {
+      "path": "credentials.protocol_rules",
+      "label": "模型协议规则",
+      "kind": "protocol-rules",
+      "group": "连接",
+      "platforms": [
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.zhipu_organization",
+      "label": "组织 ID",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "zhipu"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "when": {
+        "credentials.account_mode": "coding"
+      }
+    },
+    {
+      "path": "credentials.zhipu_project",
+      "label": "项目 ID",
+      "kind": "text",
+      "group": "连接",
+      "platforms": [
+        "zhipu"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "when": {
+        "credentials.account_mode": "coding"
+      }
+    },
+    {
+      "path": "upstream_billing_probe_enabled",
+      "label": "自动探测上游倍率",
+      "kind": "boolean",
+      "group": "连接",
+      "types": [
+        "apikey"
+      ],
+      "default": true
+    },
+    {
+      "path": "extra.upstream_request_id_header",
+      "label": "上游 Request ID 响应头",
+      "kind": "text",
+      "group": "连接"
+    },
+    {
+      "path": "credentials.model_mapping",
+      "label": "模型白名单与映射",
+      "kind": "mapping",
+      "group": "模型",
+      "types": [
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "credentials.model_mapping",
+      "label": "模型白名单与映射",
+      "kind": "mapping",
+      "group": "模型",
+      "types": [
+        "oauth"
+      ],
+      "platforms": [
+        "openai",
+        "grok",
+        "antigravity"
+      ]
+    },
+    {
+      "path": "credentials.compact_model_mapping",
+      "label": "Compact 模型映射",
+      "kind": "mapping",
+      "group": "模型",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.openai_capabilities",
+      "label": "端点能力",
+      "kind": "strings",
+      "group": "模型",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": [
+        "chat_completions",
+        "embeddings"
+      ],
+      "choices": [
+        "chat_completions",
+        "embeddings",
+        "seedance"
+      ]
+    },
+    {
+      "path": "credentials.pool_mode",
+      "label": "池模式",
+      "kind": "boolean",
+      "group": "请求与重试",
+      "types": [
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "credentials.pool_mode_retry_count",
+      "label": "池模式重试次数",
+      "kind": "number",
+      "group": "请求与重试",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": 3,
+      "when": {
+        "credentials.pool_mode": true
+      },
+      "min": 0,
+      "max": 10
+    },
+    {
+      "path": "credentials.pool_mode_retry_status_codes",
+      "label": "池模式重试状态码",
+      "kind": "numbers",
+      "group": "请求与重试",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "when": {
+        "credentials.pool_mode": true
+      },
+      "min": 100,
+      "max": 599,
+      "default": [
+        401,
+        403,
+        429
+      ]
+    },
+    {
+      "path": "credentials.custom_error_codes_enabled",
+      "label": "自定义错误状态码",
+      "kind": "boolean",
+      "group": "请求与重试",
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.custom_error_codes",
+      "label": "错误状态码",
+      "kind": "numbers",
+      "group": "请求与重试",
+      "types": [
+        "apikey"
+      ],
+      "when": {
+        "credentials.custom_error_codes_enabled": true
+      },
+      "min": 100,
+      "max": 599
+    },
+    {
+      "path": "credentials.header_override_enabled",
+      "label": "请求头覆写",
+      "kind": "boolean",
+      "group": "请求与重试",
+      "platforms": [
+        "anthropic",
+        "openai",
+        "grok",
+        "kimi",
+        "zhipu",
+        "deepseek",
+        "minimax",
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "credentials.header_override_enabled",
+      "label": "请求头覆写",
+      "kind": "boolean",
+      "group": "请求与重试",
+      "platforms": [
+        "grok"
+      ],
+      "types": [
+        "oauth"
+      ]
+    },
+    {
+      "path": "credentials.header_overrides",
+      "label": "请求头",
+      "kind": "headers",
+      "group": "请求与重试",
+      "platforms": [
+        "anthropic",
+        "openai",
+        "grok",
+        "kimi",
+        "zhipu",
+        "deepseek",
+        "minimax",
+        "opencode_go"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "when": {
+        "credentials.header_override_enabled": true
+      }
+    },
+    {
+      "path": "credentials.header_overrides",
+      "label": "请求头",
+      "kind": "headers",
+      "group": "请求与重试",
+      "platforms": [
+        "grok"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "when": {
+        "credentials.header_override_enabled": true
+      }
+    },
+    {
+      "path": "credentials.intercept_warmup_requests",
+      "label": "拦截预热请求",
+      "kind": "boolean",
+      "group": "请求与重试",
+      "platforms": [
+        "anthropic",
+        "antigravity"
+      ],
+      "types": [
+        "oauth",
+        "setup-token",
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "credentials.temp_unschedulable_enabled",
+      "label": "临时不可调度规则",
+      "kind": "boolean",
+      "group": "请求与重试"
+    },
+    {
+      "path": "credentials.temp_unschedulable_rules",
+      "label": "匹配规则",
+      "kind": "pause-rules",
+      "group": "请求与重试",
+      "when": {
+        "credentials.temp_unschedulable_enabled": true
+      }
+    },
+    {
+      "path": "auto_pause_on_expired",
+      "label": "到期自动暂停",
+      "kind": "boolean",
+      "group": "调度",
+      "default": true
+    },
+    {
+      "path": "extra.quota_limit",
+      "label": "总额度",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.quota_daily_limit",
+      "label": "每日额度",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.quota_weekly_limit",
+      "label": "每周额度",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.quota_daily_reset_mode",
+      "label": "每日重置方式",
+      "kind": "select",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "choices": [
+        "rolling",
+        "fixed"
+      ]
+    },
+    {
+      "path": "extra.quota_daily_reset_hour",
+      "label": "每日重置小时",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": 0,
+      "when": {
+        "extra.quota_daily_reset_mode": "fixed"
+      },
+      "min": 0,
+      "max": 23
+    },
+    {
+      "path": "extra.quota_weekly_reset_mode",
+      "label": "每周重置方式",
+      "kind": "select",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "choices": [
+        "rolling",
+        "fixed"
+      ]
+    },
+    {
+      "path": "extra.quota_weekly_reset_hour",
+      "label": "每周重置小时",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": 0,
+      "when": {
+        "extra.quota_weekly_reset_mode": "fixed"
+      },
+      "min": 0,
+      "max": 23
+    },
+    {
+      "path": "extra.quota_weekly_reset_day",
+      "label": "每周重置日",
+      "kind": "number",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": 1,
+      "when": {
+        "extra.quota_weekly_reset_mode": "fixed"
+      },
+      "min": 0,
+      "max": 6
+    },
+    {
+      "path": "extra.quota_reset_timezone",
+      "label": "重置时区",
+      "kind": "text",
+      "group": "额度",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": "UTC"
+    },
+    {
+      "path": "extra.quota_notify_total_enabled",
+      "label": "总额度通知",
+      "kind": "boolean",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "extra.quota_notify_total_threshold",
+      "label": "总额度阈值",
+      "kind": "number",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "when": {
+        "extra.quota_notify_total_enabled": true
+      },
+      "min": 0
+    },
+    {
+      "path": "extra.quota_notify_total_threshold_type",
+      "label": "总额度阈值类型",
+      "kind": "select",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": "fixed",
+      "choices": [
+        "fixed",
+        "percentage"
+      ],
+      "when": {
+        "extra.quota_notify_total_enabled": true
+      }
+    },
+    {
+      "path": "extra.quota_notify_daily_enabled",
+      "label": "每日额度通知",
+      "kind": "boolean",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "extra.quota_notify_daily_threshold",
+      "label": "每日额度阈值",
+      "kind": "number",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "when": {
+        "extra.quota_notify_daily_enabled": true
+      },
+      "min": 0
+    },
+    {
+      "path": "extra.quota_notify_daily_threshold_type",
+      "label": "每日额度阈值类型",
+      "kind": "select",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": "fixed",
+      "choices": [
+        "fixed",
+        "percentage"
+      ],
+      "when": {
+        "extra.quota_notify_daily_enabled": true
+      }
+    },
+    {
+      "path": "extra.quota_notify_weekly_enabled",
+      "label": "每周额度通知",
+      "kind": "boolean",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ]
+    },
+    {
+      "path": "extra.quota_notify_weekly_threshold",
+      "label": "每周额度阈值",
+      "kind": "number",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "when": {
+        "extra.quota_notify_weekly_enabled": true
+      },
+      "min": 0
+    },
+    {
+      "path": "extra.quota_notify_weekly_threshold_type",
+      "label": "每周额度阈值类型",
+      "kind": "select",
+      "group": "额度通知",
+      "types": [
+        "apikey",
+        "bedrock"
+      ],
+      "default": "fixed",
+      "choices": [
+        "fixed",
+        "percentage"
+      ],
+      "when": {
+        "extra.quota_notify_weekly_enabled": true
+      }
+    },
+    {
+      "path": "extra.openai_passthrough",
+      "label": "自动透传",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "default": false
+    },
+    {
+      "path": "extra.openai_long_context_billing_enabled",
+      "label": "长上下文计费",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "default": false
+    },
+    {
+      "path": "extra.openai_oauth_responses_websockets_v2_mode",
+      "label": "Responses WebSocket V2",
+      "kind": "select",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "default": "off",
+      "choices": [
+        "off",
+        "ctx_pool",
+        "passthrough",
+        "http_bridge"
+      ]
+    },
+    {
+      "path": "extra.openai_apikey_responses_websockets_v2_mode",
+      "label": "Responses WebSocket V2",
+      "kind": "select",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "off",
+      "choices": [
+        "off",
+        "ctx_pool",
+        "passthrough",
+        "http_bridge"
+      ]
+    },
+    {
+      "path": "extra.openai_responses_flatten_namespaces",
+      "label": "展开 Namespace",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth"
+      ]
+    },
+    {
+      "path": "extra.codex_cli_only",
+      "label": "仅 Codex CLI",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth"
+      ]
+    },
+    {
+      "path": "extra.codex_cli_only_allow_app_server",
+      "label": "允许 App Server",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "when": {
+        "extra.codex_cli_only": true
+      }
+    },
+    {
+      "path": "extra.codex_fingerprint_mode",
+      "label": "Codex 指纹模式",
+      "kind": "select",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth"
+      ],
+      "default": "off",
+      "choices": [
+        "off",
+        "device",
+        "session",
+        "full"
+      ]
+    },
+    {
+      "path": "extra.openai_compact_mode",
+      "label": "Compact 模式",
+      "kind": "select",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ],
+      "default": "auto",
+      "choices": [
+        "auto",
+        "force_on",
+        "force_off"
+      ]
+    },
+    {
+      "path": "extra.openai_responses_mode",
+      "label": "Responses 模式",
+      "kind": "select",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "auto",
+      "choices": [
+        "auto",
+        "force_responses",
+        "force_chat_completions"
+      ]
+    },
+    {
+      "path": "extra.images_url_to_b64_json",
+      "label": "图片 URL 转 Base64",
+      "kind": "boolean",
+      "group": "OpenAI",
+      "platforms": [
+        "openai"
+      ],
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "extra.anthropic_passthrough",
+      "label": "自动透传",
+      "kind": "boolean",
+      "group": "Claude",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "apikey"
+      ]
+    },
+    {
+      "path": "extra.anthropic_apikey_auth_scheme",
+      "label": "API Key 认证方式",
+      "kind": "select",
+      "group": "Claude",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "x_api_key",
+      "choices": [
+        "x_api_key",
+        "authorization_bearer"
+      ]
+    },
+    {
+      "path": "extra.web_search_emulation",
+      "label": "Web Search 模拟",
+      "kind": "select",
+      "group": "Claude",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "apikey"
+      ],
+      "default": "default",
+      "choices": [
+        "default",
+        "enabled",
+        "disabled"
+      ]
+    },
+    {
+      "path": "extra.window_cost_limit",
+      "label": "窗口消费上限",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.window_cost_sticky_reserve",
+      "label": "粘性预留",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "default": 10,
+      "min": 0
+    },
+    {
+      "path": "extra.max_sessions",
+      "label": "最大会话数",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.session_idle_timeout_minutes",
+      "label": "会话空闲分钟",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "default": 5,
+      "min": 0
+    },
+    {
+      "path": "extra.base_rpm",
+      "label": "基础 RPM",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "path": "extra.rpm_sticky_buffer",
+      "label": "RPM 粘性缓冲",
+      "kind": "number",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "min": 0
+    },
+    {
+      "path": "extra.rpm_strategy",
+      "label": "RPM 策略",
+      "kind": "select",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "default": "tiered",
+      "choices": [
+        "tiered",
+        "sticky_exempt"
+      ]
+    },
+    {
+      "path": "extra.user_msg_queue_mode",
+      "label": "用户消息队列",
+      "kind": "select",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "choices": [
+        "",
+        "serialize",
+        "throttle"
+      ]
+    },
+    {
+      "path": "extra.enable_tls_fingerprint",
+      "label": "TLS 指纹",
+      "kind": "boolean",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ]
+    },
+    {
+      "path": "extra.tls_fingerprint_profile_id",
+      "label": "TLS 指纹配置",
+      "kind": "tls",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "when": {
+        "extra.enable_tls_fingerprint": true
+      }
+    },
+    {
+      "path": "extra.session_id_masking_enabled",
+      "label": "会话 ID 遮蔽",
+      "kind": "boolean",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ]
+    },
+    {
+      "path": "extra.cache_ttl_override_enabled",
+      "label": "缓存 TTL 覆写",
+      "kind": "boolean",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ]
+    },
+    {
+      "path": "extra.cache_ttl_override_target",
+      "label": "缓存 TTL",
+      "kind": "select",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "default": "5m",
+      "choices": [
+        "5m",
+        "1h"
+      ],
+      "when": {
+        "extra.cache_ttl_override_enabled": true
+      }
+    },
+    {
+      "path": "extra.custom_base_url_enabled",
+      "label": "自定义上游地址",
+      "kind": "boolean",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ]
+    },
+    {
+      "path": "extra.custom_base_url",
+      "label": "上游地址",
+      "kind": "url",
+      "group": "Claude OAuth",
+      "platforms": [
+        "anthropic"
+      ],
+      "types": [
+        "oauth",
+        "setup-token"
+      ],
+      "when": {
+        "extra.custom_base_url_enabled": true
+      }
+    },
+    {
+      "path": "extra.mixed_scheduling",
+      "label": "混合调度",
+      "kind": "boolean",
+      "group": "Antigravity",
+      "platforms": [
+        "antigravity"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ]
+    },
+    {
+      "path": "extra.allow_overages",
+      "label": "允许超额请求",
+      "kind": "boolean",
+      "group": "Antigravity",
+      "platforms": [
+        "antigravity"
+      ],
+      "types": [
+        "oauth",
+        "apikey"
+      ]
+    }
+  ],
+  "models": {
+    "anthropic": [
+      "claude-3-5-sonnet-20241022",
+      "claude-3-5-sonnet-20240620",
+      "claude-3-5-haiku-20241022",
+      "claude-3-7-sonnet-20250219",
+      "claude-sonnet-4-20250514",
+      "claude-opus-4-20250514",
+      "claude-opus-4-1-20250805",
+      "claude-sonnet-4-5-20250929",
+      "claude-haiku-4-5-20251001",
+      "claude-opus-4-5-20251101",
+      "claude-opus-4-6",
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "claude-opus-5-5",
+      "claude-opus-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5",
+      "claude-sonnet-4-6",
+      "claude-fable-5-1",
+      "claude-fable-5"
+    ],
+    "openai": [
+      "gpt-5.2",
+      "gpt-5.2-2025-12-11",
+      "gpt-5.2-chat-latest",
+      "gpt-5.2-pro",
+      "gpt-5.2-pro-2025-12-11",
+      "gpt-5.6",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-6",
+      "gpt-6-astra",
+      "gpt-6.1-sol",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.4-2026-03-05",
+      "gpt-5.3-codex-spark",
+      "codex-auto-review",
+      "gpt-4o-audio-preview",
+      "gpt-4o-realtime-preview",
+      "gpt-image-1",
+      "gpt-image-1.5",
+      "gpt-image-2",
+      "gpt-image-2.5-flare",
+      "gpt-image-2.5-sunburst"
+    ],
+    "gemini": [
+      "gemini-3.1-flash-image",
+      "gemini-2.5-flash-image",
+      "gemini-2.0-flash",
+      "gemini-2.5-flash",
+      "gemini-2.5-pro",
+      "gemini-3.5-flash",
+      "gemini-3-flash-preview",
+      "gemini-3-pro-preview"
+    ],
+    "antigravity": [
+      "claude-fable-5-1",
+      "claude-fable-5",
+      "claude-opus-4-6",
+      "claude-opus-4-6-thinking",
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "claude-opus-4-5-thinking",
+      "claude-sonnet-4-6",
+      "claude-sonnet-4-5",
+      "claude-sonnet-4-5-thinking",
+      "gemini-3.1-flash-image",
+      "gemini-2.5-flash-image",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.5-flash-thinking",
+      "gemini-2.5-pro",
+      "gemini-3-flash",
+      "gemini-3-pro-high",
+      "gemini-3-pro-low",
+      "gemini-3.1-pro",
+      "gemini-3.1-pro-high",
+      "gemini-3.1-pro-low",
+      "gemini-3-pro-image",
+      "gpt-oss-120b-medium",
+      "tab_flash_lite_preview"
+    ],
+    "grok": [
+      "grok-4.7",
+      "grok-4.6",
+      "grok-4.5",
+      "grok-4.3",
+      "grok-build-0.1",
+      "grok-composer-2.5-fast",
+      "grok-4.20-0309-reasoning",
+      "grok-4.20-0309-non-reasoning",
+      "grok-4.20-multi-agent-0309",
+      "grok-4.20-multi-agent",
+      "grok-4.20-multi-agent-latest",
+      "grok-4.3-latest",
+      "grok-latest",
+      "grok-4.6-latest",
+      "grok-4.5-latest",
+      "grok-build-latest",
+      "composer-2.5",
+      "grok-4.20-reasoning",
+      "grok-4.20-non-reasoning",
+      "grok-imagine",
+      "grok-imagine-image-quality",
+      "grok-imagine-image",
+      "grok-imagine-image-2.0",
+      "grok-imagine-video",
+      "grok-imagine-video-1.5"
+    ],
+    "kimi": [
+      "moonshot-v1-8k",
+      "moonshot-v1-32k",
+      "moonshot-v1-128k",
+      "kimi-latest",
+      "kimi-for-coding",
+      "kimi-k2"
+    ],
+    "zhipu": [
+      "glm-4",
+      "glm-4v",
+      "glm-4-plus",
+      "glm-4-0520",
+      "glm-4-air",
+      "glm-4-airx",
+      "glm-4-long",
+      "glm-4-flash",
+      "glm-4v-plus",
+      "glm-4.5",
+      "glm-4.5-x",
+      "glm-4.5-air",
+      "glm-4.5-flash",
+      "glm-4.6",
+      "glm-4.7",
+      "glm-4.7-flash",
+      "glm-4.7-flashx",
+      "glm-5",
+      "glm-5-turbo",
+      "glm-5.1",
+      "glm-5.2",
+      "glm-5.3",
+      "glm-5.3-flash",
+      "glm-3-turbo",
+      "glm-4-alltools",
+      "chatglm_turbo",
+      "chatglm_pro",
+      "chatglm_std",
+      "chatglm_lite",
+      "cogview-3",
+      "cogvideo"
+    ],
+    "deepseek": [
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
+      "deepseek-coder",
+      "deepseek-v3",
+      "deepseek-v3-0324",
+      "deepseek-r1",
+      "deepseek-r1-0528",
+      "deepseek-r1-distill-qwen-32b",
+      "deepseek-r1-distill-qwen-14b",
+      "deepseek-r1-distill-qwen-7b",
+      "deepseek-r1-distill-llama-70b",
+      "deepseek-r1-distill-llama-8b"
+    ],
+    "minimax": [
+      "MiniMax-M3",
+      "MiniMax-M2.7",
+      "MiniMax-M2.7-highspeed",
+      "MiniMax-M2.5",
+      "MiniMax-M2.5-highspeed",
+      "MiniMax-M2.1",
+      "MiniMax-M2.1-highspeed",
+      "MiniMax-M2",
+      "abab6.5-chat",
+      "abab6.5s-chat",
+      "abab6.5s-chat-pro",
+      "abab6-chat",
+      "abab5.5-chat",
+      "abab5.5s-chat"
+    ],
+    "opencode_go": [
+      "grok-4.7",
+      "grok-4.6",
+      "gpt-5.6-luna",
+      "glm-5.3-flash",
+      "glm-5.3",
+      "glm-5.2",
+      "glm-5.1",
+      "kimi-k3",
+      "kimi-k2.7-code",
+      "kimi-k2.6",
+      "longcat-2.0",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "mimo-v2.5",
+      "mimo-v2.5-pro",
+      "minimax-m3",
+      "minimax-m2.7",
+      "minimax-m2.5",
+      "muse-spark-1.3-contributor",
+      "muse-spark-1.2-contributor",
+      "qwen3.8-max",
+      "qwen3.8-flash",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "qwen3.6-plus",
+      "hy4-preview",
+      "hy3",
+      "omen-alpha"
+    ]
+  },
+  "blocked_headers": [
+    "host",
+    "content-length",
+    "content-type",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "upgrade",
+    "authorization",
+    "x-api-key",
+    "x-goog-api-key",
+    "cookie",
+    "accept-encoding",
+    "sec-websocket-key",
+    "sec-websocket-version",
+    "sec-websocket-extensions",
+    "sec-websocket-protocol",
+    "sec-websocket-accept",
+    "session_id",
+    "conversation_id",
+    "x-codex-turn-state",
+    "x-codex-turn-metadata",
+    "chatgpt-account-id",
+    "x-claude-code-session-id",
+    "x-client-request-id",
+    "x-grok-conv-id"
+  ],
+  "url_presets": {
+    "kimi": [
+      {
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "label": "Moonshot",
+        "url": "https://api.moonshot.cn/v1"
+      },
+      {
+        "mode": "payg",
+        "protocol": "anthropic",
+        "label": "Moonshot Anthropic",
+        "url": "https://api.moonshot.cn/anthropic"
+      },
+      {
+        "mode": "payg",
+        "protocol": "responses",
+        "label": "Moonshot Responses",
+        "url": "https://api.moonshot.cn/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "chat_completions",
+        "label": "Kimi For Coding",
+        "url": "https://api.kimi.com/coding/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "anthropic",
+        "label": "Kimi Coding Anthropic",
+        "url": "https://api.kimi.com/coding"
+      },
+      {
+        "mode": "coding",
+        "protocol": "responses",
+        "label": "Kimi Coding Responses",
+        "url": "https://api.kimi.com/coding/v1"
+      }
+    ],
+    "zhipu": [
+      {
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "label": "GLM PaaS",
+        "url": "https://open.bigmodel.cn/api/paas/v4"
+      },
+      {
+        "mode": "payg",
+        "protocol": "anthropic",
+        "label": "GLM Anthropic",
+        "url": "https://open.bigmodel.cn/api/anthropic"
+      },
+      {
+        "mode": "coding",
+        "protocol": "chat_completions",
+        "label": "GLM Coding",
+        "url": "https://open.bigmodel.cn/api/coding/paas/v4"
+      },
+      {
+        "mode": "coding",
+        "protocol": "anthropic",
+        "label": "GLM Coding Anthropic",
+        "url": "https://open.bigmodel.cn/api/anthropic"
+      }
+    ],
+    "deepseek": [
+      {
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "label": "DeepSeek",
+        "url": "https://api.deepseek.com"
+      },
+      {
+        "mode": "payg",
+        "protocol": "anthropic",
+        "label": "DeepSeek Anthropic",
+        "url": "https://api.deepseek.com/anthropic"
+      },
+      {
+        "mode": "payg",
+        "protocol": "responses",
+        "label": "DeepSeek Responses",
+        "url": "https://api.deepseek.com"
+      }
+    ],
+    "minimax": [
+      {
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "label": "MiniMax CN",
+        "url": "https://api.minimaxi.com/v1"
+      },
+      {
+        "mode": "payg",
+        "protocol": "anthropic",
+        "label": "MiniMax CN Anthropic",
+        "url": "https://api.minimaxi.com/anthropic"
+      },
+      {
+        "mode": "payg",
+        "protocol": "responses",
+        "label": "MiniMax CN Responses",
+        "url": "https://api.minimaxi.com/v1"
+      },
+      {
+        "mode": "payg",
+        "protocol": "chat_completions",
+        "label": "MiniMax Intl",
+        "url": "https://api.minimax.io/v1"
+      },
+      {
+        "mode": "payg",
+        "protocol": "anthropic",
+        "label": "MiniMax Intl Anthropic",
+        "url": "https://api.minimax.io/anthropic"
+      },
+      {
+        "mode": "payg",
+        "protocol": "responses",
+        "label": "MiniMax Intl Responses",
+        "url": "https://api.minimax.io/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "chat_completions",
+        "label": "MiniMax Coding CN",
+        "url": "https://api.minimaxi.com/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "anthropic",
+        "label": "MiniMax Coding CN Anthropic",
+        "url": "https://api.minimaxi.com/anthropic"
+      },
+      {
+        "mode": "coding",
+        "protocol": "responses",
+        "label": "MiniMax Coding CN Responses",
+        "url": "https://api.minimaxi.com/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "chat_completions",
+        "label": "MiniMax Coding Intl",
+        "url": "https://api.minimax.io/v1"
+      },
+      {
+        "mode": "coding",
+        "protocol": "anthropic",
+        "label": "MiniMax Coding Intl Anthropic",
+        "url": "https://api.minimax.io/anthropic"
+      },
+      {
+        "mode": "coding",
+        "protocol": "responses",
+        "label": "MiniMax Coding Intl Responses",
+        "url": "https://api.minimax.io/v1"
+      }
+    ],
+    "grok": [
+      {
+        "mode": "",
+        "protocol": "",
+        "label": "CLI",
+        "url": "https://cli-chat-proxy.grok.com/v1"
+      },
+      {
+        "mode": "",
+        "protocol": "",
+        "label": "官方",
+        "url": "https://api.x.ai/v1"
+      },
+      {
+        "mode": "",
+        "protocol": "",
+        "label": "us-east-1",
+        "url": "https://us-east-1.api.x.ai/v1"
+      },
+      {
+        "mode": "",
+        "protocol": "",
+        "label": "us-west-2",
+        "url": "https://us-west-2.api.x.ai/v1"
+      },
+      {
+        "mode": "",
+        "protocol": "",
+        "label": "eu-west-1",
+        "url": "https://eu-west-1.api.x.ai/v1"
+      }
+    ]
+  },
+  "protocol_rules": {
+    "go": [
+      {
+        "pattern": "grok-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "gpt-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "muse-spark-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "minimax-*",
+        "protocol": "anthropic"
+      },
+      {
+        "pattern": "qwen*",
+        "protocol": "anthropic"
+      }
+    ],
+    "zen": [
+      {
+        "pattern": "grok-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "gpt-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "muse-spark-*",
+        "protocol": "responses"
+      },
+      {
+        "pattern": "claude-*",
+        "protocol": "anthropic"
+      },
+      {
+        "pattern": "qwen*",
+        "protocol": "anthropic"
+      }
+    ]
+  },
+  "mapping_presets": {
+    "anthropic": [
+      {
+        "label": "Fable 5.1",
+        "from": "claude-fable-5-1",
+        "to": "claude-fable-5-1"
+      },
+      {
+        "label": "Fable 5",
+        "from": "claude-fable-5",
+        "to": "claude-fable-5"
+      },
+      {
+        "label": "Sonnet 5.5",
+        "from": "claude-sonnet-5-5",
+        "to": "claude-sonnet-5-5"
+      },
+      {
+        "label": "Sonnet 5",
+        "from": "claude-sonnet-5",
+        "to": "claude-sonnet-5"
+      },
+      {
+        "label": "Sonnet 4",
+        "from": "claude-sonnet-4-20250514",
+        "to": "claude-sonnet-4-20250514"
+      },
+      {
+        "label": "Sonnet 4.5",
+        "from": "claude-sonnet-4-5-20250929",
+        "to": "claude-sonnet-4-5-20250929"
+      },
+      {
+        "label": "Sonnet 4.6",
+        "from": "claude-sonnet-4-6",
+        "to": "claude-sonnet-4-6"
+      },
+      {
+        "label": "Opus 4.5",
+        "from": "claude-opus-4-5-20251101",
+        "to": "claude-opus-4-5-20251101"
+      },
+      {
+        "label": "Opus 4.6",
+        "from": "claude-opus-4-6",
+        "to": "claude-opus-4-6"
+      },
+      {
+        "label": "Opus 4.7",
+        "from": "claude-opus-4-7",
+        "to": "claude-opus-4-7"
+      },
+      {
+        "label": "Opus 4.8",
+        "from": "claude-opus-4-8",
+        "to": "claude-opus-4-8"
+      },
+      {
+        "label": "Opus 5.5",
+        "from": "claude-opus-5-5",
+        "to": "claude-opus-5-5"
+      },
+      {
+        "label": "Opus 5",
+        "from": "claude-opus-5",
+        "to": "claude-opus-5"
+      },
+      {
+        "label": "Haiku 3.5",
+        "from": "claude-3-5-haiku-20241022",
+        "to": "claude-3-5-haiku-20241022"
+      },
+      {
+        "label": "Haiku 4.5",
+        "from": "claude-haiku-4-5-20251001",
+        "to": "claude-haiku-4-5-20251001"
+      },
+      {
+        "label": "Opus->Sonnet",
+        "from": "claude-opus-4-6",
+        "to": "claude-sonnet-4-5-20250929"
+      }
+    ],
+    "openai": [
+      {
+        "label": "GPT-4o",
+        "from": "gpt-4o",
+        "to": "gpt-4o"
+      },
+      {
+        "label": "GPT-4o Mini",
+        "from": "gpt-4o-mini",
+        "to": "gpt-4o-mini"
+      },
+      {
+        "label": "GPT-4.1",
+        "from": "gpt-4.1",
+        "to": "gpt-4.1"
+      },
+      {
+        "label": "o1",
+        "from": "o1",
+        "to": "o1"
+      },
+      {
+        "label": "o3",
+        "from": "o3",
+        "to": "o3"
+      },
+      {
+        "label": "GPT-5.3 Codex Spark",
+        "from": "gpt-5.3-codex-spark",
+        "to": "gpt-5.3-codex-spark"
+      },
+      {
+        "label": "GPT-5.2",
+        "from": "gpt-5.2",
+        "to": "gpt-5.2"
+      },
+      {
+        "label": "GPT-6",
+        "from": "gpt-6",
+        "to": "gpt-6"
+      },
+      {
+        "label": "GPT-5.6",
+        "from": "gpt-5.6",
+        "to": "gpt-5.6"
+      },
+      {
+        "label": "GPT-6.1 Sol",
+        "from": "gpt-6.1-sol",
+        "to": "gpt-6.1-sol"
+      },
+      {
+        "label": "GPT-6 Sol",
+        "from": "gpt-6-sol",
+        "to": "gpt-6-sol"
+      },
+      {
+        "label": "GPT-5.6 Sol",
+        "from": "gpt-5.6-sol",
+        "to": "gpt-5.6-sol"
+      },
+      {
+        "label": "GPT-5.6 Terra",
+        "from": "gpt-5.6-terra",
+        "to": "gpt-5.6-terra"
+      },
+      {
+        "label": "GPT-6 Luna",
+        "from": "gpt-6-luna",
+        "to": "gpt-6-luna"
+      },
+      {
+        "label": "GPT-5.6 Luna",
+        "from": "gpt-5.6-luna",
+        "to": "gpt-5.6-luna"
+      },
+      {
+        "label": "GPT-6 Astra",
+        "from": "gpt-6-astra",
+        "to": "gpt-6-astra"
+      },
+      {
+        "label": "GPT-5.5",
+        "from": "gpt-5.5",
+        "to": "gpt-5.5"
+      },
+      {
+        "label": "GPT-5.4",
+        "from": "gpt-5.4",
+        "to": "gpt-5.4"
+      },
+      {
+        "label": "Haiku→5.4",
+        "from": "claude-haiku-4-5-20251001",
+        "to": "gpt-5.4"
+      },
+      {
+        "label": "Opus→5.4",
+        "from": "claude-opus-4-6",
+        "to": "gpt-5.4"
+      },
+      {
+        "label": "Sonnet→5.4",
+        "from": "claude-sonnet-4-6",
+        "to": "gpt-5.4"
+      }
+    ],
+    "gemini": [
+      {
+        "label": "Flash 2.0",
+        "from": "gemini-2.0-flash",
+        "to": "gemini-2.0-flash"
+      },
+      {
+        "label": "2.5 Flash",
+        "from": "gemini-2.5-flash",
+        "to": "gemini-2.5-flash"
+      },
+      {
+        "label": "2.5 Image",
+        "from": "gemini-2.5-flash-image",
+        "to": "gemini-2.5-flash-image"
+      },
+      {
+        "label": "2.5 Pro",
+        "from": "gemini-2.5-pro",
+        "to": "gemini-2.5-pro"
+      },
+      {
+        "label": "3.5 Flash",
+        "from": "gemini-3.5-flash",
+        "to": "gemini-3.5-flash"
+      },
+      {
+        "label": "3.1 Image",
+        "from": "gemini-3.1-flash-image",
+        "to": "gemini-3.1-flash-image"
+      }
+    ],
+    "grok": [
+      {
+        "label": "Grok 4.7",
+        "from": "grok-4.7",
+        "to": "grok-4.7"
+      },
+      {
+        "label": "Grok 4.6",
+        "from": "grok-4.6",
+        "to": "grok-4.6"
+      },
+      {
+        "label": "Grok 4.5",
+        "from": "grok-4.5",
+        "to": "grok-4.5"
+      },
+      {
+        "label": "Grok 4.3",
+        "from": "grok-4.3",
+        "to": "grok-4.3"
+      },
+      {
+        "label": "Grok Latest",
+        "from": "grok-latest",
+        "to": "grok-4.5"
+      },
+      {
+        "label": "4.5 Latest",
+        "from": "grok-4.5-latest",
+        "to": "grok-4.5"
+      },
+      {
+        "label": "Build 0.1",
+        "from": "grok-build",
+        "to": "grok-build-0.1"
+      },
+      {
+        "label": "Build Latest",
+        "from": "grok-build-latest",
+        "to": "grok-4.5"
+      },
+      {
+        "label": "Composer 2.5",
+        "from": "grok-composer",
+        "to": "grok-composer-2.5-fast"
+      },
+      {
+        "label": "Composer legacy",
+        "from": "composer-2.5",
+        "to": "grok-composer-2.5-fast"
+      },
+      {
+        "label": "4.20 Reasoning",
+        "from": "grok-4.20-reasoning",
+        "to": "grok-4.20-0309-reasoning"
+      },
+      {
+        "label": "4.20 Non Reasoning",
+        "from": "grok-4.20-non-reasoning",
+        "to": "grok-4.20-0309-non-reasoning"
+      },
+      {
+        "label": "Imagine Image",
+        "from": "grok-imagine",
+        "to": "grok-imagine-image-quality"
+      },
+      {
+        "label": "Imagine Edit",
+        "from": "grok-imagine-edit",
+        "to": "grok-imagine-image-quality"
+      },
+      {
+        "label": "Imagine Video",
+        "from": "grok-imagine-video-1.5",
+        "to": "grok-imagine-video-1.5"
+      }
+    ],
+    "antigravity": [
+      {
+        "label": "Claude→Sonnet",
+        "from": "claude-*",
+        "to": "claude-sonnet-4-5"
+      },
+      {
+        "label": "Fable 5.1",
+        "from": "claude-fable-5-1",
+        "to": "claude-fable-5-1"
+      },
+      {
+        "label": "Fable 5",
+        "from": "claude-fable-5",
+        "to": "claude-fable-5"
+      },
+      {
+        "label": "Sonnet→Sonnet",
+        "from": "claude-sonnet-*",
+        "to": "claude-sonnet-4-5"
+      },
+      {
+        "label": "Opus→Opus",
+        "from": "claude-opus-*",
+        "to": "claude-opus-4-6-thinking"
+      },
+      {
+        "label": "Haiku→Sonnet",
+        "from": "claude-haiku-*",
+        "to": "claude-sonnet-4-5"
+      },
+      {
+        "label": "Sonnet4→4.6",
+        "from": "claude-sonnet-4-20250514",
+        "to": "claude-sonnet-4-6"
+      },
+      {
+        "label": "Sonnet4.5→4.6",
+        "from": "claude-sonnet-4-5-20250929",
+        "to": "claude-sonnet-4-6"
+      },
+      {
+        "label": "Sonnet3.5→4.6",
+        "from": "claude-3-5-sonnet-20241022",
+        "to": "claude-sonnet-4-6"
+      },
+      {
+        "label": "Opus4.5→4.6",
+        "from": "claude-opus-4-5-20251101",
+        "to": "claude-opus-4-6-thinking"
+      },
+      {
+        "label": "3-Pro-Preview→Pro-Agent",
+        "from": "gemini-3-pro-preview",
+        "to": "gemini-pro-agent"
+      },
+      {
+        "label": "3-Pro-High→Pro-Agent",
+        "from": "gemini-3-pro-high",
+        "to": "gemini-pro-agent"
+      },
+      {
+        "label": "3-Pro-Low→3.1-Pro-Low",
+        "from": "gemini-3-pro-low",
+        "to": "gemini-3.1-pro-low"
+      },
+      {
+        "label": "3.1-Pro→Pro-Agent",
+        "from": "gemini-3.1-pro",
+        "to": "gemini-pro-agent"
+      },
+      {
+        "label": "3.1-Pro-High→Pro-Agent",
+        "from": "gemini-3.1-pro-high",
+        "to": "gemini-pro-agent"
+      },
+      {
+        "label": "3.1-Pro-High透传",
+        "from": "gemini-3.1-pro-high",
+        "to": "gemini-3.1-pro-high"
+      },
+      {
+        "label": "3.1-Pro-Low透传",
+        "from": "gemini-3.1-pro-low",
+        "to": "gemini-3.1-pro-low"
+      },
+      {
+        "label": "3.1-Pro-Preview→Pro-Agent",
+        "from": "gemini-3.1-pro-preview",
+        "to": "gemini-pro-agent"
+      },
+      {
+        "label": "Gemini 3→Flash",
+        "from": "gemini-3*",
+        "to": "gemini-3-flash"
+      },
+      {
+        "label": "Gemini 2.5→Flash",
+        "from": "gemini-2.5*",
+        "to": "gemini-2.5-flash"
+      },
+      {
+        "label": "2.5-Flash-Image透传",
+        "from": "gemini-2.5-flash-image",
+        "to": "gemini-2.5-flash-image"
+      },
+      {
+        "label": "3.1-Flash-Image透传",
+        "from": "gemini-3.1-flash-image",
+        "to": "gemini-3.1-flash-image"
+      },
+      {
+        "label": "3-Pro-Image→3.1",
+        "from": "gemini-3-pro-image",
+        "to": "gemini-3.1-flash-image"
+      },
+      {
+        "label": "3-Flash透传",
+        "from": "gemini-3-flash",
+        "to": "gemini-3-flash"
+      },
+      {
+        "label": "2.5-Flash-Lite透传",
+        "from": "gemini-2.5-flash-lite",
+        "to": "gemini-2.5-flash-lite"
+      },
+      {
+        "label": "Sonnet 4.6",
+        "from": "claude-sonnet-4-6",
+        "to": "claude-sonnet-4-6"
+      },
+      {
+        "label": "Sonnet 4.5",
+        "from": "claude-sonnet-4-5",
+        "to": "claude-sonnet-4-5"
+      },
+      {
+        "label": "Opus 4.6",
+        "from": "claude-opus-4-6",
+        "to": "claude-opus-4-6-thinking"
+      },
+      {
+        "label": "Opus 4.6-thinking",
+        "from": "claude-opus-4-6-thinking",
+        "to": "claude-opus-4-6-thinking"
+      },
+      {
+        "label": "Opus 4.7",
+        "from": "claude-opus-4-7",
+        "to": "claude-opus-4-7"
+      },
+      {
+        "label": "Opus 4.8",
+        "from": "claude-opus-4-8",
+        "to": "claude-opus-4-8"
+      }
+    ],
+    "bedrock": [
+      {
+        "label": "Fable 5.1",
+        "from": "claude-fable-5-1",
+        "to": "anthropic.claude-fable-5-1"
+      },
+      {
+        "label": "Fable 5",
+        "from": "claude-fable-5",
+        "to": "anthropic.claude-fable-5"
+      },
+      {
+        "label": "Opus 4.6",
+        "from": "claude-opus-4-6",
+        "to": "us.anthropic.claude-opus-4-6-v1"
+      },
+      {
+        "label": "Opus 4.7",
+        "from": "claude-opus-4-7",
+        "to": "us.anthropic.claude-opus-4-7-v1"
+      },
+      {
+        "label": "Opus 4.8",
+        "from": "claude-opus-4-8",
+        "to": "us.anthropic.claude-opus-4-8-v1"
+      },
+      {
+        "label": "Opus 5",
+        "from": "claude-opus-5",
+        "to": "us.anthropic.claude-opus-5-v1"
+      },
+      {
+        "label": "Sonnet 5.5",
+        "from": "claude-sonnet-5-5",
+        "to": "global.anthropic.claude-sonnet-5-5"
+      },
+      {
+        "label": "Sonnet 5",
+        "from": "claude-sonnet-5",
+        "to": "us.anthropic.claude-sonnet-5-v1"
+      },
+      {
+        "label": "Sonnet 4.6",
+        "from": "claude-sonnet-4-6",
+        "to": "us.anthropic.claude-sonnet-4-6"
+      },
+      {
+        "label": "Opus 4.5",
+        "from": "claude-opus-4-5-thinking",
+        "to": "us.anthropic.claude-opus-4-5-20251101-v1:0"
+      },
+      {
+        "label": "Sonnet 4.5",
+        "from": "claude-sonnet-4-5",
+        "to": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+      },
+      {
+        "label": "Haiku 4.5",
+        "from": "claude-haiku-4-5",
+        "to": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      }
+    ]
+  }
+}

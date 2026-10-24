@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Settings2, X } from "lucide-react";
+import { Copy, EyeOff, Settings2, X } from "lucide-react";
 import { api } from "./bridge";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
@@ -130,7 +130,9 @@ export function KeyQuotaSettingsDialog({
     [seconds, setSeconds] = useState("60"),
     [enabled, setEnabled] = useState(true);
   const [token, setToken] = useState(""),
-    [clear, setClear] = useState(false),
+    [revealed, setRevealed] = useState(""),
+    [visible, setVisible] = useState(false),
+    [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const alive = useRef(true),
@@ -144,11 +146,13 @@ export function KeyQuotaSettingsDialog({
   const path = account
     ? `/accounts/${account.id}/key-quota-settings`
     : "/config/key-quota";
+  const currentPath = useRef(path);
+  currentPath.current = path;
   async function read() {
     setError("");
     try {
       const v = await api<Settings | TokenSettings>("GET", path);
-      if (alive.current) {
+      if (alive.current && currentPath.current === path) {
         setValue(v);
         if ("seconds" in v) {
           setEnabled(v.seconds !== 0);
@@ -156,16 +160,39 @@ export function KeyQuotaSettingsDialog({
         }
       }
     } catch (e) {
-      if (alive.current) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
     }
   }
   useEffect(() => {
     alive.current = true;
+    setValue(null); setBusy(false); guard.current = false;
+    setToken(""); setRevealed(""); setVisible(false); setCopied(false);
     void read();
     return () => {
       alive.current = false;
     };
   }, [path]);
+  async function revealAndCopy() {
+    if (!account || !online || guard.current) return;
+    guard.current = true; setBusy(true); setError(""); setCopied(false);
+    try {
+      const text = token.trim() || (await api<{ account_id: number; access_token: string }>("GET", `${path}/access-token`)).access_token;
+      if (!alive.current || currentPath.current !== path) return;
+      if (!text) throw new Error("尚未配置账户访问令牌");
+      setRevealed(text); setVisible(true);
+      try {
+        await navigator.clipboard.writeText(text);
+        if (alive.current && currentPath.current === path) setCopied(true);
+      } catch {
+        if (alive.current && currentPath.current === path) setError("已显示，复制失败，请手动复制");
+      }
+    } catch (e) {
+      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
+    } finally {
+      guard.current = false;
+      if (alive.current && currentPath.current === path) setBusy(false);
+    }
+  }
   async function save() {
     if (!value || !online || guard.current) return;
     const n = enabled ? Number(seconds) : 0;
@@ -180,23 +207,21 @@ export function KeyQuotaSettingsDialog({
       const v = await api<Settings | TokenSettings>("PUT", path, {
         expected_revision: value.revision,
         ...(account
-          ? clear
-            ? { access_token: "" }
-            : token.trim()
+          ? token.trim()
               ? { access_token: token.trim() }
               : {}
           : { seconds: n }),
       });
-      if (alive.current) {
+      if (alive.current && currentPath.current === path) {
         setToken("");
         close();
         saved(v);
       }
     } catch (e) {
-      if (alive.current) setError(String(e).replace(/^Error: /, ""));
+      if (alive.current && currentPath.current === path) setError(String(e).replace(/^Error: /, ""));
     } finally {
       guard.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current && currentPath.current === path) setBusy(false);
     }
   }
   return (
@@ -239,14 +264,12 @@ export function KeyQuotaSettingsDialog({
                 <span>New API 账户访问令牌</span>
                 <input
                   aria-label="账户访问令牌"
-                  type="password"
+                  type={visible ? "text" : "password"}
                   autoComplete="off"
-                  value={token}
+                  value={token || revealed}
                   disabled={busy || !online}
                   placeholder={
-                    clear
-                      ? "保存后清除"
-                      : value &&
+                    value &&
                           "has_access_token" in value &&
                           value.has_access_token
                         ? "已配置，留空保留"
@@ -254,20 +277,18 @@ export function KeyQuotaSettingsDialog({
                   }
                   onChange={(e) => {
                     setToken(e.target.value);
-                    setClear(false);
+                    setRevealed(""); setCopied(false);
                   }}
                 />
               </label>
-              <button
+              <div className="key-quota-token-actions"><button
                 type="button"
                 disabled={busy || !online}
-                onClick={() => {
-                  setToken("");
-                  setClear(true);
-                }}
+                onClick={() => void revealAndCopy()}
               >
-                清除账户访问令牌
+                <Copy size={14}/>{copied ? "已复制" : "显示并复制"}
               </button>
+              {visible && <button type="button" disabled={busy} onClick={() => { setVisible(false); setRevealed(""); setCopied(false); }}><EyeOff size={14}/>隐藏</button>}</div>
             </>
           ) : (
             <>

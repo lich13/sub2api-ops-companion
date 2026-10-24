@@ -655,6 +655,12 @@ fn detection_logs_valid(data: &Value) -> bool {
 }
 
 fn shape_valid(path: &str, data: &Value) -> bool {
+    if path == "/account-creation"
+        || path.starts_with("/account-creation/")
+        || path == "/account-creation?sync_models=true"
+    {
+        return crate::account_creation::valid(path, data);
+    }
     if path
         .split('?')
         .next()
@@ -665,6 +671,17 @@ fn shape_valid(path: &str, data: &Value) -> bool {
     match path.split('?').next().unwrap_or("") {
         "/snapshot" => snapshot_valid(data),
         "/config/key-quota" => crate::key_quota::settings_valid(data, None),
+        p if p.ends_with("/key-quota-settings/access-token") => p
+            .strip_prefix("/accounts/")
+            .and_then(|p| p.strip_suffix("/key-quota-settings/access-token"))
+            .and_then(|id| id.parse::<u64>().ok())
+            .is_some_and(|id| {
+                data["account_id"].as_u64() == Some(id)
+                    && data["access_token"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 8192)
+                    && data.as_object().is_some_and(|o| o.len() == 2)
+            }),
         p if p.ends_with("/key-quota-settings") => p
             .strip_prefix("/accounts/")
             .and_then(|p| p.strip_suffix("/key-quota-settings"))
@@ -971,6 +988,12 @@ pub(crate) async fn http_detailed(
     if path.starts_with("/proxies/") || path.starts_with("/proxy-management") {
         req = req.timeout(Duration::from_secs(105));
     }
+    if path == "/account-creation"
+        || path.starts_with("/account-creation/")
+        || path == "/account-creation?sync_models=true"
+    {
+        req = req.timeout(Duration::from_secs(390));
+    }
     if path.ends_with("/usage-action") || path.ends_with("/usage") {
         req = req.timeout(Duration::from_secs(105));
     }
@@ -1098,6 +1121,21 @@ pub(crate) async fn http_detailed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn access_token_reveal_requires_the_requested_id_and_a_nonempty_token() {
+        let path = "/accounts/7/key-quota-settings/access-token";
+        assert!(super::shape_valid(
+            path,
+            &serde_json::json!({"account_id":7,"access_token":"fixture-token"})
+        ));
+        for value in [
+            serde_json::json!({"account_id":8,"access_token":"fixture-token"}),
+            serde_json::json!({"account_id":7,"access_token":""}),
+            serde_json::json!({"account_id":7,"access_token":"fixture-token","extra":"unexpected"}),
+        ] {
+            assert!(!super::shape_valid(path, &value));
+        }
+    }
     use super::*;
     use std::{io::Read, net::TcpListener};
 

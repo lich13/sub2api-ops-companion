@@ -1,3 +1,4 @@
+pub mod account_creation;
 pub mod account_locks;
 pub mod account_templates;
 pub mod account_usage;
