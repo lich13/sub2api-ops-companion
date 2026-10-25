@@ -314,8 +314,9 @@ async function unchangedConfig(h, baseline) {
 
 function fixtureAccountActions(account) {
   const openai = account.platform === "openai" && ["oauth", "apikey"].includes(account.type);
+  const detection = openai || account.type === "apikey" && ["anthropic", "grok", "deepseek"].includes(account.platform);
   return {
-    primary: openai ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
+    primary: detection ? ["模型测试", account.degradation_mark?.marked ? "取消标记" : "标记降智", "定时检测"] : [],
     more: ["测试连接", "账号保活", ...(account.recoverable ? ["恢复状态"] : []), ...(openai ? ["应用模板"] : []), "模型白名单", "模型映射", "选择代理", "删除"],
   };
 }
@@ -1878,7 +1879,7 @@ async function runScenario(scenario) {
 async function main() {
   const { chromium } = require("playwright");
   await startServer();
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, ...(process.argv.includes("--chrome") ? { channel: "chrome" } : {}) });
   const viewports = [
     { width: 320, height: 640 }, { width: 360, height: 800 },
     { width: 393, height: 852 }, { width: 430, height: 932 },
