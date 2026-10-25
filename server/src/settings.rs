@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub const OAUTH_FIELDS: &[&str] = &[
     "model_detection_model_id",
+    "model_detection_platforms",
     "oauth_auto_reset_credit_enabled",
     "oauth_daily_test_enabled",
     "oauth_daily_test_time",
@@ -170,6 +171,8 @@ impl Settings {
             .into();
         oauth["model_detection_model_id"] =
             detection_model(&configured("model_detection_model_id"))?.into();
+        oauth["model_detection_platforms"] =
+            detection_platforms(&configured("model_detection_platforms"))?;
         let model = configured("oauth_recovery_test_model_id");
         let model = string(&model).trim();
         oauth["oauth_recovery_test_model_id"] = if model.is_empty() {
@@ -279,4 +282,29 @@ impl Settings {
             "verify_base_url":normalize_url(value["verify_base_url"].as_str().unwrap_or(&self.verify_url))?,
         }))
     }
+}
+
+/// Per-account-platform defaults. Other platform transports are not enabled by this setting.
+pub fn detection_platforms(value: &Value) -> Result<Value> {
+    if value.is_null() {
+        return Ok(serde_json::json!({"openai":{"engine":"modeltrace","sample_count":1}}));
+    }
+    let invalid = || Error::new(422, "检测源平台配置无效");
+    let map = value.as_object().ok_or_else(invalid)?;
+    if map.len() != 1 || !map.contains_key("openai") {
+        return Err(invalid());
+    }
+    let row = value["openai"].as_object().ok_or_else(invalid)?;
+    if row
+        .keys()
+        .any(|k| !matches!(k.as_str(), "engine" | "sample_count"))
+        || !matches!(
+            value["openai"]["engine"].as_str(),
+            Some("modeltrace" | "lm_detector")
+        )
+        || !matches!(value["openai"]["sample_count"].as_i64(), Some(1 | 3))
+    {
+        return Err(invalid());
+    }
+    Ok(value.clone())
 }

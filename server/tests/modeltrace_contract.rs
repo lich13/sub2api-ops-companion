@@ -8,6 +8,40 @@ use axum::{
 };
 use futures_util::{stream, StreamExt};
 use serde_json::{json, Value};
+
+#[test]
+fn detector_request_and_platform_options_preserve_legacy_defaults_and_reject_invalid_modes() {
+    use sub2ops_server::{model_tests::model_request, settings::detection_platforms};
+    let request = json!({"model_id":"gpt-6-sol","expected_version":"a".repeat(64),"request_id":"1".repeat(32)});
+    let legacy = model_request(&request).unwrap();
+    assert_eq!(legacy["engine"], "modeltrace");
+    assert_eq!(legacy["sample_count"], 3);
+    assert_eq!(legacy["tokenizer_probe"], false);
+    let mut lm = request.clone();
+    lm["engine"] = "lm_detector".into();
+    assert_eq!(model_request(&lm).unwrap()["sample_count"], 1);
+    lm["sample_count"] = 3.into();
+    lm["tokenizer_probe"] = true.into();
+    assert!(model_request(&lm).is_ok());
+    for (key, value) in [
+        ("engine", json!("unknown")),
+        ("sample_count", json!(2)),
+        ("tokenizer_probe", json!("true")),
+    ] {
+        let mut invalid = lm.clone();
+        invalid[key] = value;
+        assert!(model_request(&invalid).is_err());
+    }
+    lm["engine"] = "modeltrace".into();
+    assert!(model_request(&lm).is_err());
+    for invalid in [
+        json!({"openai":{"engine":"lm_detector","sample_count":2}}),
+        json!({"anthropic":{"engine":"lm_detector","sample_count":1}}),
+        json!({"openai":{"engine":"lm_detector","sample_count":1,"tokenizer_probe":true}}),
+    ] {
+        assert!(detection_platforms(&invalid).is_err());
+    }
+}
 use std::{
     fs,
     path::Path,

@@ -661,6 +661,8 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
         ),
         case!(GET, "modeltrace/fingerprint-bank"),
         case!(POST, "modeltrace/fingerprint-bank/sync"),
+        case!(GET, "lm-detector/fingerprint-bank"),
+        case!(POST, "lm-detector/fingerprint-bank/sync"),
         case!(GET, "model-tests/00000000-0000-0000-0000-000000000003"),
         case!(
             POST,
@@ -712,7 +714,7 @@ async fn desktop_routes_require_auth_except_safe_connection_status_diagnostics()
             json!({"model":"fixture-model","efforts":["minimal"],"default_effort":"minimal"})
         ),
     ];
-    assert_eq!(cases.len(), 59);
+    assert_eq!(cases.len(), 61);
 
     let mut rejected = Vec::new();
     for (method, route, body) in cases {

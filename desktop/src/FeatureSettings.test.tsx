@@ -81,6 +81,25 @@ function saveButton(target: HTMLFormElement) {
 const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
+  it("saves the OpenAI engine and sample count together only on submit", async () => {
+    config.oauth.model_detection_platforms = { openai: { engine: "modeltrace", sample_count: 1 } };
+    await openFeatures();
+    const target = form("恢复、测活与模型检测");
+    const source = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时检测源"]')!;
+    expect(source.value).toBe("modeltrace");
+    expect(target.querySelector('[aria-label="OpenAI 定时采样组数"]')).toBeNull();
+    await act(async () => { source.value = "lm_detector"; source.dispatchEvent(new Event("change", { bubbles: true })); });
+    const count = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时采样组数"]')!;
+    expect(count.value).toBe("1");
+    await act(async () => { count.value = "3"; count.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(writes()).toEqual([]);
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
+      ? { ...config.oauth, revision: "oauth-r2", model_detection_platforms: { openai: { engine: "lm_detector", sample_count: 3 } } } as never
+      : original(method, path, body));
+    await act(async () => saveButton(target).click());
+    expect(writes()).toEqual([["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { model_detection_platforms: { openai: { engine: "lm_detector", sample_count: 3 } } } }]]);
+  });
   it("keeps unsubmitted recovery fields across all four feature tabs", async () => {
     await openFeatures();
     const target=form("恢复、测活与模型检测");

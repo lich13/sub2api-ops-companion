@@ -7,3 +7,5 @@
 !server/src/**
 !server/resources
 !server/resources/**
+!server/vendor
+!server/vendor/**

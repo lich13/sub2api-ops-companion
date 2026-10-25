@@ -225,6 +225,14 @@ impl Detection {
         value["model_override"] = value["model_override"].clone();
         value["global_model_id"] = self.model_id()?.into();
         value["account_id"] = id.into();
+        let platform =
+            self.monitor.config.current()?["model_detection_platforms"]["openai"].clone();
+        value["engine"] = platform["engine"].clone();
+        value["sample_count"] = if platform["engine"] == crate::lm_detector::ENGINE {
+            platform["sample_count"].clone()
+        } else {
+            json!(3)
+        };
         value["last_automatic_started_at"] =
             data["automatic_starts"][id.to_string()]["started_at"].clone();
         value["next_allowed_at"] = self.next_allowed_at(id)?;
@@ -550,8 +558,28 @@ impl Detection {
             .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
         let model = self.effective_model(&value)?;
         let allowed = self.actions.model_allowed(&row, &model).await?;
-        let bank = self.tests.bank.snapshot();
-        let ready = bank_contains(&bank.0, TARGET);
+        let platform =
+            self.monitor.config.current()?["model_detection_platforms"]["openai"].clone();
+        let lm = causes == ["scheduled"] && platform["engine"] == crate::lm_detector::ENGINE;
+        let engine = if lm {
+            crate::lm_detector::ENGINE
+        } else {
+            "modeltrace"
+        };
+        let count = if lm {
+            platform["sample_count"].clone()
+        } else {
+            json!(3)
+        };
+        let ready = if lm {
+            self.tests
+                .lm_bank
+                .load(self.tests.lm_bank.revision()?)
+                .await
+                .is_ok()
+        } else {
+            bank_contains(&self.tests.bank.snapshot().0, TARGET)
+        };
         if !allowed || !ready {
             let reason = if !allowed {
                 "所选模型不在当前账号上游模型目录中"
@@ -594,7 +622,7 @@ impl Detection {
                     "expected_version": "0".repeat(64),
                     "expected_operation_version": operation_versions(&row)["model_test"],
                     "request_id": request,
-                    "concurrency": 1,
+                    "concurrency": 1, "engine":engine, "sample_count":count,
                 }),
                 Some(&json!({
                         "detection_generation": value["generation"],
@@ -613,12 +641,16 @@ impl Detection {
     }
     pub async fn verdict(&self, job: &Value, report: &Value) -> Result<Value> {
         // The runner supplies either the independent first group or the final aggregate.
-        if !valid_report(report)
-            || !is_downgrade(
-                string(&job["requested_model"]),
-                string(&report["prediction"]),
-            )
-        {
+        let degraded = if crate::lm_verdict::is_lm(job) {
+            crate::lm_verdict::classify(job)["outcome"] == "degraded"
+        } else {
+            valid_report(report)
+                && is_downgrade(
+                    string(&job["requested_model"]),
+                    string(&report["prediction"]),
+                )
+        };
+        if !degraded {
             return Ok(Value::Null);
         }
         self.guard(job).await?;
@@ -650,6 +682,10 @@ impl Detection {
             let mut disposition = json!({
                 "status": "pending",
                 "basis": job["disposition_basis"].as_str().unwrap_or("first_group"),
+                "group_indexes": job["classification"]["group_indexes"],
+                "engine": job["engine"],
+                "sample_count": job["planned_groups"],
+                "group_predictions": job["groups"].as_array().into_iter().flatten().filter(|g|job["classification"]["group_indexes"].as_array().is_some_and(|ids|ids.contains(&g["index"]))).map(|g|json!({"index":g["index"],"prediction":g["report"]["prediction_name"]})).collect::<Vec<_>>(),
                 "job_id": job["id"],
                 "generation": value["generation"],
                 "mark_version": mark["version"],

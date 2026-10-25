@@ -3147,3 +3147,6 @@ fn offline_fingerprint_bank_cache_preserves_hash_schema_rate_state_and_snapshot(
     assert_eq!(error.status.as_u16(), 503);
     assert_eq!(error.detail, "指纹库数据无效");
 }
+
+#[path = "support/lm_detector_runtime.rs"]
+mod lm_detector_runtime;

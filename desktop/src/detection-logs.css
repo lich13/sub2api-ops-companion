@@ -30,3 +30,6 @@
   .detection-badge.is-warning { background: #78350f; color: #fde68a; }
   .detection-badge.is-neutral { background: #374151; color: #e5e7eb; }
 }
+
+.detection-meta-group { display: contents; }
+.detection-log-table td > small { display: block; margin-top: 4px; font-size: 10px; }

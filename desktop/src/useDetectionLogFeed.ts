@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
 
-export type DetectionReceipt = { status: string; basis?: "first_group" | "aggregate" | null; marked: boolean | null; schedule_verified: boolean | null; mark_cleared: boolean | null; reason: string; completed_at: string | null };
+export type DetectionReceipt = { status: string; basis?: "first_group" | "aggregate" | "sample_family" | null; group_indexes?: number[]; marked: boolean | null; schedule_verified: boolean | null; mark_cleared: boolean | null; reason: string; completed_at: string | null };
 export type DetectionLog = {
   job_id: string; account_id: number; account_name: string; model_id: string;
   status: string; created_at: string; started_at: string | null; completed_at: string | null;
   triggers: string[]; error: string; details_available: boolean;
-  summary: { outcome: string; analysis_available: boolean; first_prediction: string; prediction: string;
+  summary: { engine?: string; sample_count?: number; reason?: string; prediction_name?: string; decision?: string;
+    classification?: { basis?: string; group_indexes?: number[] }; bank_version?: { revision?: string }; group_predictions?: { index: number; prediction?: string }[]; outcome: string; analysis_available: boolean; first_prediction: string; prediction: string;
     probability: number | null; first_probability?: number | null; used_outputs: number | null; first_downgrade: boolean | null; aggregate_downgrade: boolean | null;
     disposition: DetectionReceipt | null; recovery: DetectionReceipt | null; verification?: DetectionReceipt | null; restoration?: DetectionReceipt | null };
   notification: { status: string; merged: boolean; delivered_at: string | null; reason: string } | null;

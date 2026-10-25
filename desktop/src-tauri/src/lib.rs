@@ -47,7 +47,11 @@ struct Preferences {
     pinned: bool,
     record_columns: Option<Vec<String>>,
     model_test_concurrency: Option<u8>,
+    model_test_preferences: std::collections::BTreeMap<String, ModelTestPreference>,
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ModelTestPreference { engine: String, sample_count: u8 }
 
 fn normalize_record_columns(columns: Vec<String>) -> Vec<String> {
     let allowed = [
@@ -448,10 +452,10 @@ fn allowed_request(method: &str, path: &str) -> bool {
             _ => false,
         };
     }
-    if plain == "/modeltrace/fingerprint-bank" {
+    if matches!(plain,"/modeltrace/fingerprint-bank"|"/lm-detector/fingerprint-bank") {
         return method == "GET" && !path.contains('?');
     }
-    if plain == "/modeltrace/fingerprint-bank/sync" {
+    if matches!(plain,"/modeltrace/fingerprint-bank/sync"|"/lm-detector/fingerprint-bank/sync") {
         return method == "POST" && !path.contains('?');
     }
     let group_path = |suffix: &str| {
@@ -971,6 +975,7 @@ async fn run_test(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Keep optional fields compatible with existing clients.
 async fn preferences(
     app: tauri::AppHandle,
     state: State<'_, Arc<Runtime>>,
@@ -979,6 +984,7 @@ async fn preferences(
     launch_at_login: bool,
     record_columns: Option<Vec<String>>,
     model_test_concurrency: Option<u8>,
+    model_test_preferences: Option<std::collections::BTreeMap<String, ModelTestPreference>>,
 ) -> Result<(), String> {
     let mut view = state.view.lock().await;
     #[cfg(desktop)]
@@ -997,6 +1003,12 @@ async fn preferences(
             return Err("测试并发必须为 1、2 或 3".into());
         }
         prefs.model_test_concurrency = Some(concurrency);
+    }
+    if let Some(selections) = model_test_preferences {
+        if selections.values().any(|v| !matches!(v.engine.as_str(), "modeltrace" | "lm_detector") || !matches!(v.sample_count, 1 | 3)) {
+            return Err("检测源或采样组数无效".into());
+        }
+        prefs.model_test_preferences = selections;
     }
     prefs.favorites = favorites
         .into_iter()
@@ -2406,13 +2418,20 @@ mod tests {
         assert!(!allowed_request("PUT", "/modeltrace/fingerprint-bank"));
         let old: Preferences = serde_json::from_str("{}").unwrap();
         assert!(old.model_test_concurrency.is_none());
+        assert!(old.model_test_preferences.is_empty());
         let changed = Preferences {
             model_test_concurrency: Some(3),
+            model_test_preferences: std::collections::BTreeMap::from([("https://example.invalid:7".into(), ModelTestPreference {engine:"lm_detector".into(), sample_count:3})]),
             ..old
         };
         let restored: Preferences =
             serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
         assert_eq!(restored.model_test_concurrency, Some(3));
+        assert_eq!(restored.model_test_preferences["https://example.invalid:7"].engine, "lm_detector");
+        assert_eq!(restored.model_test_preferences["https://example.invalid:7"].sample_count, 3);
+        assert!(allowed_request("GET", "/lm-detector/fingerprint-bank"));
+        assert!(allowed_request("POST", "/lm-detector/fingerprint-bank/sync"));
+        assert!(!allowed_request("PUT", "/lm-detector/fingerprint-bank"));
     }
 
     #[test]

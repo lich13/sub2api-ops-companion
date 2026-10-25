@@ -6,12 +6,11 @@ use crate::{
     model_target,
     model_test_stream::{self, Failure, Progress},
     model_tests::{error_text, Context, ModelTests},
-    modeltrace,
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -144,7 +143,7 @@ impl ModelTests {
                 group["status"] = if early { "skipped" } else { "cancelled" }.into();
             }
         }
-        let current = self.get(id)?;
+        let mut current = self.get(id)?;
         let samples = context
             .samples
             .lock()
@@ -165,7 +164,28 @@ impl ModelTests {
         } else {
             "completed"
         };
-        if status == "completed"
+        if crate::lm_verdict::is_lm(&current) {
+            let mut finished = current.clone();
+            finished["status"] = status.into();
+            finished["groups"] = json!(groups);
+            finished["can_retry"] = retryable.into();
+            finished["uncertain"] = fatal.as_ref().is_some_and(|f| f.uncertain).into();
+            finished["error_code"] = json!(fatal.as_ref().map(|f| f.code));
+            let verdict = crate::lm_verdict::classify(&finished);
+            current = self.update(id, json!({"classification":verdict,"groups":groups}))?;
+            if current["automatic"] == true && verdict["outcome"] == "degraded" {
+                finished["classification"] = verdict.clone();
+                finished["disposition_basis"] = verdict["basis"].clone();
+                disposition = self.hooks.verdict(finished,current["report"].clone()).await
+                    .unwrap_or_else(|error|json!({"status":"overridden","reason":crate::security::safe_error(&error.detail,200)}));
+                if disposition.is_object() {
+                    disposition["basis"] = verdict["basis"].clone();
+                    disposition["group_indexes"] = verdict["group_indexes"].clone();
+                }
+            }
+        }
+        if !crate::lm_verdict::is_lm(&current)
+            && status == "completed"
             && current["automatic"] == true
             && crate::model_tests::ACTIVE.contains(&string(&current["status"]))
             && !truthy(&disposition)
@@ -200,10 +220,16 @@ impl ModelTests {
         } else {
             "samples_finished"
         };
+        let probe = current["tokenizer_probe"] == true
+            && fatal.is_none()
+            && groups
+                .iter()
+                .all(|g| g["status"] == "completed" && g["transport_complete"] == true);
         self.update(
             id,
             json!({
-                "status": status,
+                "status": if probe { "running" } else { status },
+                "phase": if probe { "tokenizer" } else { "finished" },
                 "error": error,
                 "error_code": fatal.as_ref().map(|f|f.code),
                 "uncertain": fatal.as_ref().is_some_and(|f|f.uncertain),
@@ -217,6 +243,16 @@ impl ModelTests {
             }),
         )?;
 
+        if probe {
+            self.update(
+                id,
+                json!({"tokenizer":{"status":"running","requests":0,"report":null}}),
+            )?;
+            if let Err(error) = self.run_tokenizer(&current, context.clone()).await {
+                self.update(id,json!({"tokenizer":{"status":"failed","error":crate::security::safe_error(&error.detail,200)}}))?;
+            }
+            self.update(id,json!({"status":status,"phase":"finished","completed_at":crate::compat::now(),"duration_ms":run.started.elapsed().as_millis()}))?;
+        }
         audit::write(
             &self.actions.settings.audit_path,
             "model_test_result",
@@ -227,6 +263,12 @@ impl ModelTests {
                 "attempts": run.attempts.load(Ordering::Acquire),
                 "valid_groups": current["valid_groups"],
                 "completion_reason": reason,
+                "engine": current["engine"],
+                "sample_count": current["planned_groups"],
+                "resource_revision": current["resource_revision"],
+                "analysis_status": current["report"]["decision"],
+                "classification": current["classification"],
+                "disposition_basis": disposition["basis"],
             }),
             false,
         );
@@ -365,7 +407,7 @@ impl ModelTests {
             audit::write(
                 &self.actions.settings.audit_path,
                 "model_test_attempt",
-                json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1}),
+                json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1,"engine":job["engine"],"sample_count":job["planned_groups"],"resource_revision":job["resource_revision"]}),
                 false,
             );
             let callback: Progress = {
@@ -397,7 +439,7 @@ impl ModelTests {
                 .map_err(internal)?;
             let mut transport = diagnostics.clone();
             transport.as_object_mut().unwrap().extend(
-                json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1})
+                json!({"account_id":aid,"job_id":id,"group":index+1,"attempt":attempt+1,"engine":job["engine"],"sample_count":job["planned_groups"],"resource_revision":job["resource_revision"]})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -454,10 +496,10 @@ impl ModelTests {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .clone();
-                    let snapshot = context.snapshot.clone();
-                    let outputs = samples.values().cloned().collect::<Vec<_>>();
+                    let scorer = context.clone();
+                    let scoring_samples = samples.clone();
                     let report = crate::supervision::join(tokio::task::spawn_blocking(move || {
-                        modeltrace::analyze(&outputs, &snapshot)
+                        scorer.analyze(&scoring_samples)
                     }))
                     .await;
                     let report = match report {
@@ -467,7 +509,7 @@ impl ModelTests {
                                 id,
                                 &run,
                                 index,
-                                json!({"status":"completed","error":"样本已完成，本地分析失败"}),
+                                json!({"status":"completed","error":"样本已完成，本地分析失败","transport_complete":matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done")}),
                             )
                             .map_err(internal)?;
                             return Ok(());
@@ -481,14 +523,30 @@ impl ModelTests {
                     }
                     // Retried first groups must be scored independently even
                     // when later groups already contributed to the aggregate.
-                    let first = if index == 0 && job["automatic"] == true && samples.len() > 1 {
-                        modeltrace::analyze(&[samples[&0].clone()], &context.snapshot)
-                            .map_err(internal)?
+                    let independent = if context.lm.is_some()
+                        || index == 0 && job["automatic"] == true && samples.len() > 1
+                    {
+                        let scorer = context.clone();
+                        let one = BTreeMap::from([(index, samples[&index].clone())]);
+                        match crate::supervision::join(tokio::task::spawn_blocking(move || {
+                            scorer.analyze(&one)
+                        }))
+                        .await
+                        {
+                            Ok(Ok(report)) => report,
+                            _ if context.lm.is_some() => Value::Null,
+                            Ok(Err(error)) => return Err(internal(error)),
+                            Err(_) => return Err(Failure::new("internal_error", false)),
+                        }
                     } else {
                         report.clone()
                     };
+                    let first = independent.clone();
                     self.group(id, &run, index, json!({
-                        "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis()
+                        "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis(),
+                        "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
+                        "report": if context.lm.is_some() { independent } else { Value::Null },
+                        "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"),
                     })).map_err(internal)?;
                     let current = self.get(id).map_err(internal)?;
                     let first_group_valid = if index == 0 {
@@ -510,7 +568,8 @@ impl ModelTests {
                         "first_group_prediction": first_group_prediction,
                         "first_group_probability": if index == 0 { &first["probability"] } else { &current["first_group_probability"] },
                     })).map_err(internal)?;
-                    if index == 0
+                    if context.lm.is_none()
+                        && index == 0
                         && job["automatic"] == true
                         && valid_report(&first)
                         && is_downgrade(
@@ -537,9 +596,10 @@ impl ModelTests {
                             "automatic_disposition":disposition, "completion_reason":"automatic_degradation"
                         })).map_err(internal)?;
                     }
-                    if report["probability"]
-                        .as_f64()
-                        .is_some_and(|value| value >= 0.99)
+                    if context.lm.is_none()
+                        && report["probability"]
+                            .as_f64()
+                            .is_some_and(|value| value >= 0.99)
                     {
                         run.early.store(true, Ordering::Release);
                     }

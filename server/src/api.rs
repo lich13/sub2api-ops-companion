@@ -198,8 +198,8 @@ fn allowed(path: &[&str]) -> Option<&'static [&'static str]> {
         ["account-templates"] => Some(&["GET", "PUT", "POST"]),
         ["account-templates", "apply" | "custom"] => Some(&["POST"]),
         ["account-templates", _] | ["account-templates", "custom", _] => Some(&["PUT", "DELETE"]),
-        ["modeltrace", "fingerprint-bank"] => Some(&["GET"]),
-        ["modeltrace", "fingerprint-bank", "sync"] => Some(&["POST"]),
+        ["modeltrace" | "lm-detector", "fingerprint-bank"] => Some(&["GET"]),
+        ["modeltrace" | "lm-detector", "fingerprint-bank", "sync"] => Some(&["POST"]),
         ["model-tests", _] => Some(&["GET"]),
         ["model-tests", _, "cancel" | "retry"] => Some(&["POST"]),
         ["quota-refresh"] => Some(&["GET", "POST"]),
@@ -671,6 +671,8 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             payload = crate::model_detection::detection_request(&payload)?;
             runtime.detection.save(path_id(id)?, &payload).await?
         }
+        ["lm-detector", "fingerprint-bank"] => runtime.tests.lm_bank.public().await?,
+        ["lm-detector", "fingerprint-bank", "sync"] => runtime.tests.lm_bank.request_sync().await?,
         ["modeltrace", "fingerprint-bank"] => runtime.tests.bank.public(),
         ["modeltrace", "fingerprint-bank", "sync"] => runtime.tests.bank.request_sync()?,
         ["accounts", id, "test"] => {

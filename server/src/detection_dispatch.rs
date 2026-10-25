@@ -156,6 +156,7 @@ impl Detection {
                             "prediction": disposition["prediction"],
                             "basis": disposition.get("basis").cloned().unwrap_or(json!("first_group")),
                             "probability": disposition["probability"],
+                            "engine":disposition["engine"],"sample_count":disposition["sample_count"],"group_indexes":disposition["group_indexes"],"group_predictions":disposition["group_predictions"],
                             "triggers": disposition.get("triggers").unwrap_or(&json!([])),
                             "created_at": at,
                             "next_at": at,
@@ -347,12 +348,12 @@ pub fn notification_message(event: &Value) -> (&'static str, String) {
             &labels
         },
         string(&event["model_id"]),
-        if event["basis"] == "aggregate" {
+        if event["basis"] == "aggregate" || event["basis"] == "sample_family" {
             "最终汇总"
         } else {
             "首组"
         },
-        event[if event["basis"] == "aggregate" {
+        event[if event["basis"] == "aggregate" || event["basis"] == "sample_family" {
             "prediction"
         } else {
             "first_group_prediction"
@@ -361,6 +362,21 @@ pub fn notification_message(event: &Value) -> (&'static str, String) {
         .filter(|v| !v.is_empty())
         .unwrap_or(string(&event["prediction"]))
     );
+    if event["engine"] == crate::lm_detector::ENGINE {
+        body.push_str(&format!(
+            "检测源：LM Detector · {} 组\n",
+            integer(&event["sample_count"]).unwrap_or(1)
+        ));
+        if event["basis"] == "sample_family" {
+            for group in event["group_predictions"].as_array().into_iter().flatten() {
+                body.push_str(&format!(
+                    "第 {} 组跨家族证据：{}\n",
+                    integer(&group["index"]).unwrap_or(0),
+                    string(&group["prediction"])
+                ));
+            }
+        }
+    }
     if recovered {
         body.push_str(&format!(
             "本轮指纹推测：{}\n有效组数：{}\n调度保持{}\n",

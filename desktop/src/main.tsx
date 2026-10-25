@@ -62,6 +62,7 @@ import TestDialog from "./TestDialog";
 import { useConnectionBatch, ConnectionBatchResults } from "./ConnectionBatch";
 import { accountRestriction, QuickRestriction, QuickRecover } from "./QuickAccountStatus";
 import ModelTestDialog from "./ModelTestDialog";
+import DetectionPlatformSettings from "./DetectionPlatformSettings";
 import ConnectionStatusCard from "./ConnectionStatusCard";
 import AccountStatus from "./AccountStatus";
 import { DeleteAccountsDialog, RecoverSelectedButton } from "./AccountManagement";
@@ -357,6 +358,7 @@ export default function App() {
           patch.launch_at_login ?? state.preferences.launch_at_login,
         recordColumns: patch.record_columns ?? state.preferences.record_columns,
         modelTestConcurrency: patch.model_test_concurrency ?? state.preferences.model_test_concurrency,
+        modelTestPreferences: patch.model_test_preferences ?? state.preferences.model_test_preferences,
       });
     } catch (e) {
       report(e);
@@ -1185,6 +1187,8 @@ export default function App() {
           online={state.online}
           report={report}
           close={() => setModelTestAccount(null)}
+          preference={state.preferences.model_test_preferences?.[`${state.preferences.base_url}:${modelTestAccount.id}`]}
+          savePreference={value => void prefs({ model_test_preferences: { ...state.preferences.model_test_preferences, [`${state.preferences.base_url}:${modelTestAccount.id}`]: value } })}
           concurrency={state.preferences.model_test_concurrency ?? 1}
           saveConcurrency={(value) => void prefs({ model_test_concurrency: value })}
         />
@@ -1360,6 +1364,7 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
+                {draft.model_detection_platforms != null && <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>}
                 {typeof config.oauth.model_detection_model_id !== "string" && <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
                 <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>
               </>

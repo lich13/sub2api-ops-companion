@@ -63,7 +63,11 @@ pub(crate) fn valid_summary(value: &Value) -> bool {
                             .iter()
                             .all(|field| v.get(*field).is_none_or(|f| f.is_string()))
                         && v.get("basis").is_none_or(|f| {
-                            f.is_null() || matches!(f.as_str(), Some("first_group" | "aggregate"))
+                            f.is_null()
+                                || matches!(
+                                    f.as_str(),
+                                    Some("first_group" | "aggregate" | "sample_family")
+                                )
                         })
                         && ["marked", "schedule_verified", "mark_cleared"]
                             .iter()
@@ -92,7 +96,8 @@ pub fn receipt(value: &Value) -> Value {
         return Value::Null;
     }
     json!({"status":text(&value["status"],40),"marked":value["marked"].as_bool(),
-        "basis":value.get("basis").filter(|v|matches!(v.as_str(),Some("first_group"|"aggregate"))),
+        "group_indexes":value["group_indexes"],
+        "basis":value.get("basis").filter(|v|matches!(v.as_str(),Some("first_group"|"aggregate"|"sample_family"))),
         "schedule_verified":value["schedule_verified"].as_bool(),"mark_cleared":value["mark_cleared"].as_bool(),
         "reason":text(&value["reason"],200),"completed_at":time(&value["completed_at"])})
 }
@@ -111,6 +116,11 @@ pub fn summary(job: &Value) -> Value {
     } else {
         json!({})
     };
+    if job["engine"].is_string() {
+        out["engine"] = job["engine"].clone();
+        out["sample_count"] = job["planned_groups"].clone();
+        out["bank_version"] = job["bank_version"].clone();
+    }
     if has_report {
         out["prediction"] = text(&report["prediction"], 200);
         out["probability"] = probability(&report["probability"]);
@@ -162,6 +172,38 @@ pub fn summary(job: &Value) -> Value {
             "normal".into()
         };
     }
+    if crate::lm_verdict::is_lm(job) {
+        let classification = if job["classification"].is_object() {
+            job["classification"].clone()
+        } else {
+            crate::lm_verdict::classify(job)
+        };
+        out["engine"] = job["engine"].clone();
+        out["sample_count"] = job["planned_groups"].clone();
+        if report.is_object() {
+            out["decision"] = report["decision"].clone();
+            out["prediction_name"] = report["prediction_name"].clone();
+        }
+        out["reason"] = classification["reason"].clone();
+        out["classification"] = classification.clone();
+        out["bank_version"] = job["bank_version"].clone();
+        if job["groups"]
+            .as_array()
+            .is_some_and(|groups| !groups.is_empty())
+        {
+            out["group_predictions"] = json!(job["groups"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|g| json!({"index":g["index"],"prediction":g["report"]["prediction_name"]}))
+                .collect::<Vec<_>>());
+        }
+        if job["status"] == "completed" {
+            out["outcome"] = classification["outcome"].clone();
+        }
+        out["first_downgrade"] = Value::Null;
+        out["aggregate_downgrade"] = Value::Null;
+    }
     out
 }
 
@@ -172,7 +214,7 @@ pub fn preserve_summary(job: &mut Value) {
 }
 
 fn summary_view(value: &Value) -> Value {
-    json!({"outcome":text(&value["outcome"],40),"analysis_available":value["analysis_available"]==true,
+    json!({"engine":value["engine"],"sample_count":value["sample_count"],"decision":value["decision"],"reason":value["reason"],"prediction_name":value["prediction_name"],"classification":value["classification"],"bank_version":value["bank_version"],"group_predictions":value["group_predictions"],"outcome":text(&value["outcome"],40),"analysis_available":value["analysis_available"]==true,
         "first_prediction":text(&value["first_prediction"],200),"prediction":text(&value["prediction"],200),
         "probability":probability(&value["probability"]),"first_probability":probability(&value["first_probability"]),"used_outputs":value["used_outputs"].as_u64(),
         "first_downgrade":value["first_downgrade"].as_bool(),"aggregate_downgrade":value["aggregate_downgrade"].as_bool(),

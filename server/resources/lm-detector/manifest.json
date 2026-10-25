@@ -1,0 +1,112 @@
+{
+  "repository": "Ikaleio/lm-detector",
+  "revision": "567e11d65a48d4fbba2713cc4dfbe685cdd05a73",
+  "analyzer_version": "lmfpd-0.1.0",
+  "files": {
+    "sdk/rust/Cargo.toml": {
+      "sha256": "c83fe3e50e5822566b20f2ad1dfacfc04f52e3b9c58dc3d2b6d90390aba29854",
+      "git_blob": "c6140839f22af35a30a8ee929a69b0cdf6bdd8e1",
+      "bytes": 664
+    },
+    "sdk/rust/README.md": {
+      "sha256": "717cffae89eed19b7bea56b32a638643c7efe69c4ed1fdf2bfbded0145bc6cbd",
+      "git_blob": "a77c5b7bd64d77a29f4023d0ead5f01cd2c7f620",
+      "bytes": 3634
+    },
+    "sdk/rust/src/analysis.rs": {
+      "sha256": "802f12b68b031409e70f7c2a8caa4dc360bc279c9c7b463df29ad14bba5fa1f1",
+      "git_blob": "02d6c14f9529a747c2e8d40a724873168a75a2f5",
+      "bytes": 7366
+    },
+    "sdk/rust/src/challenge.rs": {
+      "sha256": "9e89eee859da5f61421a5ba09623ec0962b46105a35f09e1d9382123202bc521",
+      "git_blob": "e6430c11899532acf55c2fd7a95f2d0d3befe51d",
+      "bytes": 2508
+    },
+    "sdk/rust/src/codec.rs": {
+      "sha256": "045ad789ff58326133390d5ae2350e9594eb5c3638187d46c0bfc7d5562035a7",
+      "git_blob": "72a24fc4a5f39fa09474faaea9fbb556c4e8a07c",
+      "bytes": 5790
+    },
+    "sdk/rust/src/data.rs": {
+      "sha256": "48fda2c433fb8faaaba1b5e3b5627ca1d3a8257ad2b866e52143cd94276c8d51",
+      "git_blob": "ef6e76b0544b71aa2f455328ff8b3ac627589e8d",
+      "bytes": 12756
+    },
+    "sdk/rust/src/error.rs": {
+      "sha256": "10ad6c12c00b0cd1ba496246e04fd96ff1e2233466bbf26758a701ea5fa1cf97",
+      "git_blob": "f2db8fc906ba90f028c00f3c32779363badc91e1",
+      "bytes": 482
+    },
+    "sdk/rust/src/features.rs": {
+      "sha256": "fc18df162c30029a5b3bbeb03b0974988efc7b9a8a745a7372878e2846ea72d4",
+      "git_blob": "9976432a26c72fdab179f24bc229403b6f2dca83",
+      "bytes": 8114
+    },
+    "sdk/rust/src/lib.rs": {
+      "sha256": "060e83263bc5c226326cfe74cdbf93e194eca8a1aebbb90e4a21527a2bc36553",
+      "git_blob": "cd06cd18860ffebfd0b72cb829444e8f0bcab9e9",
+      "bytes": 10639
+    },
+    "sdk/rust/src/ranker.rs": {
+      "sha256": "d23f246f65d571d27e000187081a8adef18f35e48519963ed2d9226fb87f0c6a",
+      "git_blob": "3f12ac7d2e86d04cc44d251cf55d89876c77f876",
+      "bytes": 9992
+    },
+    "sdk/rust/src/request.rs": {
+      "sha256": "844e6d2701dd21936dbbfe40f70dc6b20af60ae3461cfd551d1a82f673adee9f",
+      "git_blob": "ad720d6e4c20fad855f68084f90c04071674dcfb",
+      "bytes": 7957
+    },
+    "sdk/rust/src/sample.rs": {
+      "sha256": "db55194a1606c0af7bbfca65a910d0126763d712739af372689ec0a983ef0d2c",
+      "git_blob": "dea6e15fdcb8d397738d42fdef8f82b5ea26a1b3",
+      "bytes": 19082
+    },
+    "sdk/rust/src/templates.json": {
+      "sha256": "b3af91a3f889a534638308221cc3db3cada36f68395fdc75ed71a9571ac2c5df",
+      "git_blob": "d33e19614172f4c683908ebd7bc7a721b6e6a48d",
+      "bytes": 12013
+    },
+    "LICENSE": {
+      "sha256": "238afb57e498990742f84b9ce6167b4e256ac06104a9938ce953bc41c14bea51",
+      "git_blob": "ce5be481b5259e4df7a182d6df0b2f21661f21a6",
+      "bytes": 1064
+    },
+    "data/unified_bank.json": {
+      "sha256": "fa036cef46d2655d119be797b17f3a4a3d665c8bbc62f8aad554b3708e29b9bb",
+      "git_blob": "a653c29a3cfab358056cce296f3c9df529f59cf4",
+      "bytes": 12537380
+    },
+    "data/shared_detector.bin": {
+      "sha256": "0ef1e825ff08370cda23bdf54678bfc0dbeaedea16cbcc63e5f45a721d601ac7",
+      "git_blob": "6eae4fa9045d85447f31bfda97df250f5b6a3c7f",
+      "bytes": 4526464
+    },
+    "data/tokenizer_bank.json": {
+      "sha256": "6dbf15a693deabfc36c4dfab9da64e9cdeee518f54eecf9cc69567ff5af26723",
+      "git_blob": "a6d83247264eed64550ac3e2a5e76fa6f804c197",
+      "bytes": 78722
+    },
+    "shared/tokenizer-posterior.ts": {
+      "sha256": "6fb12b5aa7eab9f4bafc2b6f8279e1cbd4a4954ce676fb5eeaa54880a403e574",
+      "git_blob": "1fcf945cae317d410921bf3234da7b28fa554e73",
+      "bytes": 17978
+    },
+    "shared/tokenizer-bank.ts": {
+      "sha256": "ff562e84d8c8fa30fad7134b75b7ec926ec82973b8bdbfb3e7b0dddb3245ef13",
+      "git_blob": "f4e8191b8eeae46853375fdfd789a8e9253a7a8a",
+      "bytes": 3578
+    },
+    "shared/tokenizer-probe.ts": {
+      "sha256": "091f6877f08d958f237f92815e54963df6c68dc1b0a65737a06f823afc486ae8",
+      "git_blob": "9a59abe6b2aeade07aa4da16a13ab513839f2824",
+      "bytes": 6879
+    },
+    "shared/tokenizer-usage.ts": {
+      "sha256": "faa5a7ec789767710ba48b257036a3374f4c5eb225722a531e9294caa2ccecda",
+      "git_blob": "aff115f20aaac3c49e3e0d2b4aa3986a02dfbc01",
+      "bytes": 5667
+    }
+  }
+}

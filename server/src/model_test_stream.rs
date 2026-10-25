@@ -599,17 +599,53 @@ pub async fn execute(
     callback: Option<Progress>,
     diag: &mut Value,
 ) -> TransportResult<(String, Option<String>)> {
+    execute_request(target, prompt, expected, client, callback, diag, false).await
+}
+
+pub async fn execute_probe(
+    target: &Target,
+    prompt: &str,
+    client: &reqwest::Client,
+    diag: &mut Value,
+) -> TransportResult<i64> {
+    execute_request(target, prompt, 3000, client, None, diag, true).await?;
+    integer(&diag["input_tokens"]).ok_or_else(|| Failure::new("no_usage", false))
+}
+
+async fn execute_request(
+    target: &Target,
+    prompt: &str,
+    expected: usize,
+    client: &reqwest::Client,
+    callback: Option<Progress>,
+    diag: &mut Value,
+    probe: bool,
+) -> TransportResult<(String, Option<String>)> {
     let started = Instant::now();
     let mut collector = Collector::new(expected);
+    let mut payload = target.payload(prompt);
+    if probe {
+        payload
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("max_output_tokens");
+        payload
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("max_completion_tokens");
+        if target.protocol == "chat_completions" {
+            payload["stream_options"] = json!({"include_usage":true});
+        }
+    }
     *diag = json!({"protocol":target.protocol,"bytes":0,"events":0});
-    if !target.oauth {
+    if !target.oauth && !probe {
         diag["max_output_tokens"] = 4096.into();
     }
     let result = async {
         let response = client
             .post(&target.url)
             .headers(target.headers.clone())
-            .json(&target.payload(prompt))
+            .json(&payload)
             .send()
             .await
             .map_err(|_| Failure::new("network_error", true))?;
@@ -679,7 +715,7 @@ pub async fn execute(
                     frame(&lines, &mut collector, diag, started, &callback).await?;
                     lines.clear();
                     frame_size = 0;
-                    if collector.completed {
+                    if collector.completed && (!probe || integer(&diag["input_tokens"]).is_some()) {
                         return Ok((collector.text(), collector.returned_model.clone()));
                     }
                 } else {

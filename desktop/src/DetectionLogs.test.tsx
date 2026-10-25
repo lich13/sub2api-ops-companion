@@ -252,6 +252,29 @@ describe("automatic detection log feed", () => {
     expect(fact("推送时间", dialog)).not.toBeNull();
   });
 
+  it("shows LM source, null confidence and the exact lower-family group", async () => {
+    const row = log("lm-evidence", "LM 账号", { summary: {
+      engine: "lm_detector", sample_count: 3, probability: null, first_probability: null,
+      decision: "scored", outcome: "degraded", bank_version: { revision: "a".repeat(40) },
+      classification: { basis: "sample_family", group_indexes: [2] },
+      group_predictions: [{ index: 1, prediction: "gpt-6-sol" }, { index: 2, prediction: "grok-4.5" }, { index: 3, prediction: "gpt-6-sol" }],
+    } });
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") return { features: { detection_logs: true } } as never;
+      if (path === "/detection-logs?limit=50") return page([row]) as never;
+      return { id: row.job_id, groups: [] } as never;
+    });
+    await render();
+    await act(async () => rowButton("LM 账号").click());
+    await settle();
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="自动检测日志详情"]')!;
+    expect(fact("检测源", dialog)).toBe("LM Detector · 3 组");
+    expect(fact("处置依据", dialog)).toBe("第 2 组跨家族证据");
+    expect(fact("第 2 组", dialog)).toBe("grok-4.5");
+    expect(fact("汇总匹配度", dialog)).toBe("—");
+    expect(fact("资源版本", dialog)).toBe("a".repeat(40));
+  });
+
   it("does not infer verification or restored scheduling from a normal outcome", async () => {
     const row = log("job-normal-only", "正常结论账号", {
       triggers: ["recovery", "recheck"],

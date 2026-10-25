@@ -61,6 +61,8 @@ impl ConfigService {
             crate::settings::detection_model(&values["model_detection_model_id"])
                 .map_err(|_| Error::new(503, "自动检测模型配置无效"))?
                 .into();
+        values["model_detection_platforms"] =
+            crate::settings::detection_platforms(&values["model_detection_platforms"])?;
         Ok(values)
     }
     pub fn current(&self) -> Result<Value> {
@@ -227,6 +229,8 @@ impl ConfigService {
                 }
                 values["model_detection_model_id"] =
                     crate::settings::detection_model(&values["model_detection_model_id"])?.into();
+                values["model_detection_platforms"] =
+                    crate::settings::detection_platforms(&values["model_detection_platforms"])?;
                 let model = text(&values["oauth_recovery_test_model_id"])
                     .trim()
                     .to_owned();

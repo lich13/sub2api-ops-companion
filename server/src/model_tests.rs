@@ -49,15 +49,28 @@ pub(crate) struct Context {
     pub samples: Mutex<BTreeMap<usize, String>>,
     pub challenges: Vec<(usize, String)>,
     pub snapshot: Arc<(Value, Value)>,
+    pub lm: Option<Arc<crate::lm_detector::Snapshot>>,
     pub row: Value,
     pub owner: Value,
     pub target: Target,
+}
+impl Context {
+    pub fn analyze(&self, samples: &BTreeMap<usize, String>) -> Result<Value> {
+        match &self.lm {
+            Some(lm) => lm.analyze(samples, &self.challenges),
+            None => modeltrace::analyze(
+                &samples.values().cloned().collect::<Vec<_>>(),
+                &self.snapshot,
+            ),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct ModelTests {
     pub actions: Actions,
     pub store: Store,
     pub bank: FingerprintBank,
+    pub lm_bank: crate::lm_detector::Bank,
     pub hooks: Arc<dyn ModelHooks>,
     pub budget: Arc<Semaphore>,
     pub(crate) clock: Arc<dyn Fn() -> chrono::DateTime<chrono::Utc> + Send + Sync>,
@@ -108,6 +121,20 @@ fn normalized(mut value: Value) -> Value {
     }
     value
 }
+fn interruption(job: &Value, error: &str, at: Value) -> Value {
+    let mut changes = json!({"status":"interrupted","error":error,"completed_at":at,"can_retry":false,"uncertain":true});
+    if job["phase"] == "tokenizer" {
+        let mut tokenizer = job["tokenizer"].as_object().cloned().unwrap_or_default();
+        tokenizer.insert("status".into(), "interrupted".into());
+        tokenizer.insert(
+            "error".into(),
+            "服务中断，数字结果已保留；请重新测试以再次探测".into(),
+        );
+        changes["tokenizer"] = tokenizer.into();
+        changes["phase"] = "finished".into();
+    }
+    changes
+}
 impl ModelTests {
     pub fn new(
         actions: Actions,
@@ -122,6 +149,10 @@ impl ModelTests {
             actions.settings.read_only,
         );
         Self {
+            lm_bank: crate::lm_detector::Bank::new(
+                actions.settings.clone(),
+                actions.supervisor.clone(),
+            ),
             actions,
             store,
             bank,
@@ -223,8 +254,29 @@ impl ModelTests {
         if self.actions.settings.read_only {
             return Ok(());
         }
-        self.transaction(|data| {let mut changed=vec![];for job in data["jobs"].as_object_mut().unwrap().values_mut() {if matches!(string(&job["status"]),"running"|"retrying") {job.as_object_mut().unwrap().extend(json!({"status":"interrupted","error":"服务重启，测试已中断","completed_at":crate::compat::now(),"can_retry":false,"uncertain":true}).as_object().unwrap().clone());crate::detection_logs::preserve_summary(job);changed.push(job.clone());}}
-        for job in changed {let aid=integer(&job["account_id"]).ok_or_else(Error::internal)?.to_string();if data["accounts"][&aid]["id"]==job["id"] {data["accounts"][aid]=job;}}Ok(())})
+        self.transaction(|data| {
+            let mut changed = vec![];
+            for job in data["jobs"].as_object_mut().unwrap().values_mut() {
+                if matches!(string(&job["status"]), "running" | "retrying") {
+                    let changes =
+                        interruption(job, "服务重启，测试已中断", crate::compat::now().into());
+                    job.as_object_mut()
+                        .unwrap()
+                        .extend(changes.as_object().unwrap().clone());
+                    crate::detection_logs::preserve_summary(job);
+                    changed.push(job.clone());
+                }
+            }
+            for job in changed {
+                let aid = integer(&job["account_id"])
+                    .ok_or_else(Error::internal)?
+                    .to_string();
+                if data["accounts"][&aid]["id"] == job["id"] {
+                    data["accounts"][aid] = job;
+                }
+            }
+            Ok(())
+        })
     }
     pub fn resume(&self) -> Result<()> {
         if self.actions.settings.read_only
@@ -257,6 +309,17 @@ impl ModelTests {
         }
         let _guard = self.start.lock().await;
         let payload = model_request(payload)?;
+        if automatic.is_some_and(|auto| {
+            payload["tokenizer_probe"] == true
+                || payload["engine"] == crate::lm_detector::ENGINE
+                    && (auto["triggers"] != json!(["scheduled"])
+                        || auto["recovery_context"].is_object())
+        }) {
+            return Err(Error::new(
+                422,
+                "新检测源仅支持手动和定时检测，分词器仅支持手动检测",
+            ));
+        }
         let request = string(&payload["request_id"]);
         let model = string(&payload["model_id"]);
         let data = self.data()?;
@@ -280,6 +343,11 @@ impl ModelTests {
             if old["account_id"] != id
                 || old["requested_model"] != model && !same_recovery
                 || old.get("concurrency").unwrap_or(&json!(1)) != &payload["concurrency"]
+                || old.get("engine").unwrap_or(&json!("modeltrace")) != &payload["engine"]
+                || old.get("tokenizer_probe").unwrap_or(&json!(false))
+                    != &payload["tokenizer_probe"]
+                || payload["engine"] == crate::lm_detector::ENGINE
+                    && old["planned_groups"] != payload["sample_count"]
             {
                 return Err(Error::new(
                     409,
@@ -298,8 +366,24 @@ impl ModelTests {
         let (target, owner) = model_target::target(&self.actions, &row, model).await?;
         let job_id = uuid::Uuid::new_v4().simple().to_string();
         let auto = automatic.cloned().unwrap_or(json!({}));
-        let groups = integer(&auto["planned_groups"]).unwrap_or(3).clamp(1, 3) as usize;
+        let groups = if payload["engine"] == crate::lm_detector::ENGINE {
+            integer(&payload["sample_count"]).unwrap_or(1)
+        } else {
+            integer(&auto["planned_groups"]).unwrap_or(3).clamp(1, 3)
+        } as usize;
+        let lm = if payload["engine"] == crate::lm_detector::ENGINE {
+            Some(self.lm_bank.load(self.lm_bank.revision()?).await?)
+        } else {
+            None
+        };
         let mut job = json!({"id":job_id,"request_id":request,"account_id":id,"account_name":row["name"],"requested_model":model,"forwarded_model":target.model,"returned_models":[],"status":if conflict {"needs_confirmation"}else {"queued"},"completed_groups":0,"valid_groups":0,"attempts":0,"queued_at":crate::compat::now(),"started_at":null,"completed_at":null,"duration_ms":0,"error":if conflict {"测试目标已变化，请重新确认"}else {""},"report":null,"bank_version":null,"concurrency":payload["concurrency"],"trigger_source":if automatic.is_some() {"automatic"}else {"manual"},"automatic":automatic.is_some(),"triggers":auto["triggers"].as_array().into_iter().flatten().filter_map(|v|v.as_str()).collect::<std::collections::BTreeSet<_>>(),"degradation_recheck":auto["degradation_recheck"]==true,"planned_groups":groups,"first_group_prediction":null,"first_group_valid":false,"automatic_disposition":null,"target_signature":model_target::signature(&row),"owner_signature":model_target::signature(&owner),"groups":(0..groups).map(|i|json!({"index":i+1,"status":"queued","attempts":0,"ttft_ms":null,"duration_ms":null,"error":""})).collect::<Vec<_>>()});
+        job["engine"] = payload["engine"].clone();
+        job["sample_count"] = groups.into();
+        job["tokenizer_probe"] = payload["tokenizer_probe"].clone();
+        if let Some(lm) = lm {
+            job["resource_revision"] = lm.version["revision"].clone();
+            job["bank_version"] = lm.version.clone();
+        }
         for key in [
             "detection_generation",
             "detection_mark_version",
@@ -363,7 +447,7 @@ impl ModelTests {
             let result = this.actions.supervisor.guard("model_test", this.wait_and_run(&job, context)).await;
             if result.is_none() {
                 if this.get(&task_id).is_ok_and(|job| ACTIVE.contains(&string(&job["status"])) && job["status"] != "queued") {
-                    let _=this.update(&task_id,json!({"status":"interrupted","error":"测试已中断，结果未确认","completed_at":crate::compat::datetime((this.clock)()),"can_retry":false,"uncertain":true}));
+                    if let Ok(job) = this.get(&task_id) { let _=this.update(&task_id,interruption(&job,"测试已中断，结果未确认",crate::compat::datetime((this.clock)()).into())); }
                 }
                 this.contexts.lock().unwrap_or_else(|e| e.into_inner()).remove(&task_id);
             }
@@ -460,8 +544,18 @@ impl ModelTests {
         let context = if let Some(context) = context {
             context
         } else {
+            let lm = if crate::lm_verdict::is_lm(job) {
+                Some(
+                    self.lm_bank
+                        .load(string(&job["resource_revision"]).into())
+                        .await?,
+                )
+            } else {
+                None
+            };
             let snapshot = self.bank.snapshot();
             if job["automatic"] == true
+                && lm.is_none()
                 && !crate::model_downgrade::bank_contains(
                     &snapshot.0,
                     crate::model_downgrade::LEGACY_TARGET,
@@ -470,6 +564,7 @@ impl ModelTests {
                 return Err(Error::new(409, "当前指纹库缺少降智判定模型"));
             }
             if job["automatic"] == true
+                && lm.is_none()
                 && !crate::model_downgrade::bank_contains(
                     &snapshot.0,
                     string(&job["requested_model"]),
@@ -492,7 +587,13 @@ impl ModelTests {
             };
             Arc::new(Context {
                 samples: Mutex::new(BTreeMap::new()),
-                challenges: modeltrace::challenges(),
+                challenges: if lm.is_some() {
+                    lmfpd::generate_challenges(integer(&job["planned_groups"]).unwrap_or(1) as usize)
+                        .map_err(|_| Error::new(503,"无法生成检测挑战"))?.into_iter().map(|c|(c.expected_count as usize,c.prompt)).collect()
+                } else {
+                    modeltrace::challenges()
+                },
+                lm,
                 snapshot,
                 row,
                 owner,
@@ -516,7 +617,7 @@ impl ModelTests {
         if job["automatic"] == true {
             self.hooks.guard(self.get(id)?).await?;
         }
-        let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.snapshot.1,"can_retry":false}))?;
+        let job=self.update(id,json!({"status":"running","started_at":crate::compat::now(),"error":"","completed_at":null,"waiting_until":null,"bank_version":context.lm.as_ref().map(|lm|&lm.version).unwrap_or(&context.snapshot.1),"can_retry":false}))?;
         self.run(job, context).await
     }
     pub async fn retry_failed(&self, id: &str, request: &str) -> Result<Value> {
@@ -578,7 +679,17 @@ impl ModelTests {
     fn finish_cancel(&self, id: &str) -> Result<()> {
         // The worker has drained before this read, so its final progress write
         // cannot restore an active group after the cancellation is persisted.
-        let mut groups = self.get(id)?["groups"].clone();
+        let current = self.get(id)?;
+        if current["phase"] == "tokenizer" {
+            let mut tokenizer = current["tokenizer"].clone();
+            if !tokenizer.is_object() {
+                tokenizer = json!({});
+            }
+            tokenizer["status"] = "cancelled".into();
+            self.update(id,json!({"status":"completed","phase":"finished","tokenizer":tokenizer,"completed_at":crate::compat::now(),"can_retry":false}))?;
+            return Ok(());
+        }
+        let mut groups = current["groups"].clone();
         for group in groups.as_array_mut().into_iter().flatten() {
             if matches!(
                 string(&group["status"]),
@@ -600,7 +711,12 @@ impl ModelTests {
             if self.get(&id).is_ok_and(|job| {
                 ACTIVE.contains(&string(&job["status"])) && job["status"] != "queued"
             }) {
-                let _=self.update(&id,json!({"status":"interrupted","error":"服务重启，测试已中断","completed_at":crate::compat::now(),"can_retry":false,"uncertain":true}));
+                if let Ok(job) = self.get(&id) {
+                    let _ = self.update(
+                        &id,
+                        interruption(&job, "服务重启，测试已中断", crate::compat::now().into()),
+                    );
+                }
             }
         }
         self.contexts
@@ -618,6 +734,9 @@ pub fn model_request(payload: &Value) -> Result<Value> {
             "expected_operation_version",
             "request_id",
             "concurrency",
+            "engine",
+            "sample_count",
+            "tokenizer_probe",
         ]
         .contains(&key.as_str())
     }) || !crate::account_templates::MODEL_ID.is_match(string(&payload["model_id"]))
@@ -643,6 +762,32 @@ pub fn model_request(payload: &Value) -> Result<Value> {
         .ok_or_else(Error::invalid)?;
     let mut payload = payload.clone();
     payload["concurrency"] = concurrency.into();
+    let engine = payload
+        .get("engine")
+        .and_then(Value::as_str)
+        .unwrap_or("modeltrace");
+    if !matches!(engine, "modeltrace" | "lm_detector")
+        || payload.get("engine").is_some_and(|v| !v.is_string())
+    {
+        return Err(Error::invalid());
+    }
+    let count = payload
+        .get("sample_count")
+        .map(Value::as_i64)
+        .unwrap_or(Some(if engine == "lm_detector" { 1 } else { 3 }))
+        .filter(|n| matches!(n, 1 | 3))
+        .ok_or_else(Error::invalid)?;
+    let tokenizer = payload
+        .get("tokenizer_probe")
+        .map(Value::as_bool)
+        .unwrap_or(Some(false))
+        .ok_or_else(Error::invalid)?;
+    if engine == "modeltrace" && (count != 3 || tokenizer) {
+        return Err(Error::new(422, "此选项仅适用于 LM Detector"));
+    }
+    payload["engine"] = engine.to_owned().into();
+    payload["sample_count"] = count.into();
+    payload["tokenizer_probe"] = tokenizer.into();
     Ok(payload)
 }
 

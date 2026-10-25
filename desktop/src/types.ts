@@ -206,6 +206,7 @@ export type Snapshot = {
   recoveries: Recovery[];
 };
 export type Preferences = {
+  model_test_preferences?: Record<string, import("./modelTestTypes").ModelTestPreference>;
   base_url: string;
   favorites: number[];
   pinned: boolean;

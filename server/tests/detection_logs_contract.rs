@@ -62,6 +62,32 @@ fn saved_summary() -> Value {
     })
 }
 
+#[test]
+fn lm_summary_retains_source_null_confidence_and_group_evidence_after_compaction() {
+    let mut value = job(90, "completed", AT);
+    value["engine"] = "lm_detector".into();
+    value["planned_groups"] = 3.into();
+    value["bank_version"] = json!({"revision":"1".repeat(40)});
+    value["report"] = json!({"decision":"scored","prediction":"gpt-6-sol","prediction_name":"gpt-6-sol","used_outputs":3,"probability":null});
+    value["groups"] = json!(["gpt-6-sol", "grok-4.5", "gpt-6-sol"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| json!({"index":i+1,"report":{"prediction_name":name}}))
+        .collect::<Vec<_>>());
+    value["classification"] =
+        json!({"outcome":"degraded","basis":"sample_family","group_indexes":[2],"reason":""});
+    detection_logs::preserve_summary(&mut value);
+    let summary = value["result_summary"].clone();
+    assert_eq!(summary["engine"], "lm_detector");
+    assert!(summary["probability"].is_null());
+    assert_eq!(summary["classification"]["group_indexes"], json!([2]));
+    assert_eq!(summary["group_predictions"][1]["prediction"], "grok-4.5");
+    value["report"] = Value::Null;
+    value["groups"] = json!([]);
+    detection_logs::preserve_summary(&mut value);
+    assert_eq!(value["result_summary"], summary);
+}
+
 fn receipt(status: &str, job_id: &str) -> Value {
     json!({
         "status":status,

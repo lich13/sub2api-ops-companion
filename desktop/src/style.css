@@ -1796,7 +1796,7 @@ td:last-child {
 .model-test-dialog h2 { margin: 0; font-size: 17px; }
 .model-test-dialog header strong { display: block; margin-top: 5px; color: var(--muted); overflow-wrap: anywhere; }
 .model-test-content { min-height: 0; min-width: 0; overflow-y: auto; padding: 18px 20px; overscroll-behavior: contain; }
-.model-test-controls { display: grid; grid-template-columns: minmax(0, 1fr) 100px; align-items: start; gap: 12px; margin-bottom: 18px; }
+.model-test-controls { display: grid; grid-template-columns: minmax(0, 1fr) 100px 100px; align-items: start; gap: 12px; margin-bottom: 18px; }
 .model-test-model { display: grid; min-width: 0; gap: 6px; font-size: 12px; color: var(--muted); }
 .model-test-model select { width: 100%; min-width: 0; min-height: 38px; padding: 7px 9px; color: var(--ink); background: var(--canvas); border: 1px solid var(--line); border-radius: 7px; font: inherit; }
 .model-test-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 12px; color: var(--muted); font-size: 12px; }
@@ -1817,6 +1817,47 @@ td:last-child {
 .model-test-content .fingerprint-status-row { flex-wrap: wrap; gap: 10px; }
 .model-test-content .fingerprint-status details { min-width: 0; overflow-wrap: anywhere; }
 .model-test-content .fingerprint-status dd { min-width: 0; overflow-wrap: anywhere; }
+
+.model-test-model-main { grid-column: 1 / -1; }
+.model-test-source { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.lm-probe-option { margin: -4px 0 18px; }
+.lm-probe-option label { display: flex; align-items: center; gap: 8px; min-height: 38px; cursor: pointer; }
+.lm-probe-option p { font-size: 12px; line-height: 1.6; margin: 0; }
+.lm-conclusion { display: grid; gap: 5px; margin-bottom: 14px; }
+.lm-conclusion strong { font-size: 16px; overflow-wrap: anywhere; }
+.lm-conclusion > span { font-size: 12px; }
+.lm-fingerprint-result { margin-bottom: 18px; }
+.lm-fingerprint-result p { font-size: 12px; line-height: 1.6; }
+.lm-candidates { margin-top: 16px; border-top: 1px solid var(--line); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lm-candidates > div { display: grid; grid-template-columns: minmax(0, 1fr) 82px 68px; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.lm-candidates > div > span { min-width: 0; overflow-wrap: anywhere; }
+.lm-candidates > div > span:not(:first-child) { text-align: right; }
+.lm-candidates small { color: var(--muted); font-size: 11px; display: inline-block; width: 24px; }
+.lm-candidate-heading { color: var(--muted); }
+.lm-expand { margin-top: 6px; }
+.model-test-group-details, .model-test-request-details { margin: 16px 0; }
+.model-test-group-details > summary, .model-test-request-details > summary, .model-test-version > summary, .lm-tokenizer summary { cursor: pointer; min-height: 30px; line-height: 30px; }
+.model-test-group-prediction { grid-column: 1 / -1; text-align: left !important; overflow-wrap: anywhere; }
+.model-test-version { margin-top: 16px; color: var(--muted); font-size: 12px; }
+.model-test-version p { overflow-wrap: anywhere; line-height: 1.6; }
+.lm-tokenizer { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 16px; }
+.lm-tokenizer h3 { margin: 0 0 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; }
+.lm-tokenizer h3 span { color: var(--muted); font-size: 12px; font-weight: 400; }
+.lm-tokenizer p { font-size: 12px; line-height: 1.6; }
+.lm-tokenizer details { margin-top: 10px; }
+.lm-tokenizer ul { list-style: none; margin: 0; padding: 0; }
+.lm-tokenizer li { display: flex; gap: 12px; justify-content: space-between; padding: 8px 0; font-size: 12px; }
+.lm-tokenizer li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.detection-platform-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.detection-platform-settings > div { flex: 1 1 200px; }
+.detection-platform-settings strong { font-size: 13px; }
+.detection-platform-settings p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; }
+.detection-platform-settings label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
+.detection-platform-settings select { max-width: 100%; min-height: 38px; }
+@media (max-width: 520px) {
+  .lm-candidates > div { grid-template-columns: minmax(0, 1fr) 70px 56px; gap: 6px; }
+}
+
 .connection-diagnostic-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .connection-diagnostic-heading h2 { margin: 0; }
 .connection-diagnostic p { margin: 8px 0; overflow-wrap: anywhere; }

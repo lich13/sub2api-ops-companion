@@ -13,6 +13,11 @@ pub fn owns_pause(value: &Value) -> bool {
         && value["disposition"]["schedule_verified"] == true
 }
 pub fn normal_result(job: &Value) -> bool {
+    if crate::lm_verdict::is_lm(job) {
+        return job["automatic"] == true
+            && job["degradation_recheck"] == true
+            && crate::lm_verdict::classify(job)["outcome"] == "normal";
+    }
     let report = &job["report"];
     let first = string(&job["first_group_prediction"]);
     let prediction = string(&report["prediction"]);
@@ -86,6 +91,7 @@ impl Detection {
                         "recheck_schedulable": job["recheck_schedulable"],
                         "created_at": datetime(self.now()),
                         "model_id": job["requested_model"],
+                        "engine":job["engine"],"sample_count":job["planned_groups"],"basis":job["classification"]["basis"],
                         "prediction": report["prediction"],
                         "first_group_prediction": job["first_group_prediction"],
                         "probability": report["probability"],
@@ -189,6 +195,7 @@ impl Detection {
                         "model_id": receipt["model_id"],
                         "prediction": receipt["prediction"],
                         "first_group_prediction": receipt["first_group_prediction"],
+                        "engine":receipt["engine"],"sample_count":receipt["sample_count"],"basis":receipt["basis"],
                         "probability": receipt["probability"],
                         "valid_groups": receipt["valid_groups"],
                         "schedulable": row["schedulable"],

@@ -1,5 +1,5 @@
 // Development-only, deterministic fixtures. The native build never uses this transport.
-import type { ViewState, Account, Config, TestEvent } from "./types";
+import type { ViewState, Account, Config, TestEvent, Preferences } from "./types";
 import { version as appVersion } from "../package.json";
 const now = new Date().toISOString(),
   before = new Date(Date.now() - 7 * 60e3).toISOString();
@@ -423,12 +423,16 @@ const config: Config = {
     oauth_early_probe_batch_size: 8,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
     model_detection_model_id: "gpt-6-luna",
+    model_detection_platforms: { openai: { engine: "modeltrace", sample_count: 1 } },
   },
   bark: { revision: "2".repeat(64), enabled: true, device_key_set: true },
 };
 const listeners = new Set<(s: ViewState) => void>();
 const scenario = new URLSearchParams(location.search).get("scenario");
-if (state.snapshot && scenario === "priority-platforms") {
+if (state.snapshot && scenario?.startsWith("lm-")) {
+  accounts[0].name = "模型检测与分词器验证 · 跨区域共享账号 · 长名称排版预览";
+  state.preferences.model_test_preferences = { [`${state.preferences.base_url}:101`]: { engine: "lm_detector", sample_count: 3 } };
+} else if (state.snapshot && scenario === "priority-platforms") {
   state.snapshot.accounts.push({ ...structuredClone(accounts[0]), id: 601, name: "Claude · 长名称预览账号", platform: "anthropic", priority: 7, group_ids: [] });
 } else if (state.snapshot && scenario === "group-manager") {
   const empty = state.snapshot.groups[2];
@@ -512,6 +516,7 @@ export async function run(
   if (name === "preferences") {
     state.preferences = { ...state.preferences, ...args };
     if (args.recordColumns) state.preferences.record_columns = args.recordColumns as string[];
+    if (args.modelTestPreferences) state.preferences.model_test_preferences = structuredClone(args.modelTestPreferences) as Preferences["model_test_preferences"];
     if (args.modelTestConcurrency) state.preferences.model_test_concurrency = Number(args.modelTestConcurrency);
     emit();
     return;
@@ -570,9 +575,15 @@ export async function run(
     }
     if (args.path === "/connection-status") return { state: "ok", endpoint: "verify", http_status: 200, message: "Sub2API 管理权限已验证", retryable: false, checked_at: new Date().toISOString() };
     if (/^\/accounts\/[1-9]\d*\/keepalive$/.test(String(args.path))) return (await import('./keepalivePreview')).keepalivePreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
-    if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], String(config.oauth.model_detection_model_id));
+    if (String(args.path).startsWith('/account-templates') || String(args.path).startsWith('/modeltrace/fingerprint-bank') || String(args.path).startsWith('/lm-detector/fingerprint-bank') || /^\/accounts\/\d+\/model-detection$/.test(String(args.path))) return (await import('./detectionPreview')).detectionPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], String(config.oauth.model_detection_model_id), config.oauth.model_detection_platforms);
     if (String(args.path).startsWith('/account-operations') || /^\/accounts\/\d+\/operations$/.test(String(args.path))) return (await import('./operationPreview')).operationPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? [], emit);
-    if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) return (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
+    if (/^\/accounts\/\d+\/model-tests(?:\/latest)?$/.test(String(args.path)) || String(args.path).startsWith("/model-tests/")) {
+      const result = (await import("./modelTestPreview")).modelTestPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>, state.snapshot?.accounts ?? []);
+      if (scenario === "lm-offline" && String(args.path).endsWith("/latest")) {
+        setTimeout(() => { state.online = false; emit(); }, 100);
+      }
+      return result;
+    }
     if (String(args.method) === "PUT" && /^\/accounts\/\d+\/(groups|degradation-mark)$/.test(String(args.path))) {
       const path = String(args.path), body = args.body as Record<string, unknown>;
       const account = state.snapshot?.accounts.find((a) => a.id === Number(path.split("/")[2]));

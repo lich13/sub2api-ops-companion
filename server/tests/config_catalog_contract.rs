@@ -387,7 +387,15 @@ fn settings_priority_parsing_matches_pinned_python() {
         priority["rust_additions_0_1_48"]["model_detection_model_id"],
         "the newly approved detection model key should use its default"
     );
+    assert_eq!(
+        settings.oauth["model_detection_platforms"],
+        json!({"openai":{"engine":"modeltrace","sample_count":1}})
+    );
     let mut legacy_projection = settings.oauth.clone();
+    legacy_projection
+        .as_object_mut()
+        .unwrap()
+        .remove("model_detection_platforms");
     legacy_projection
         .as_object_mut()
         .unwrap()

@@ -556,6 +556,7 @@ impl Runtime {
             self.proxies.close(55),
             self.actions.candidates.close(),
             self.tests.bank.close(55),
+            self.tests.lm_bank.close(55),
             background
         );
         for abort in aborts {

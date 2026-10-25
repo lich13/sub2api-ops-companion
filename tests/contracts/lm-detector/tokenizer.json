@@ -1,0 +1,3691 @@
+{
+  "revision": "567e11d65a48d4fbba2713cc4dfbe685cdd05a73",
+  "initial": [
+    "my-prose",
+    "hi-prose"
+  ],
+  "cases": [
+    {
+      "name": "missing-baseline",
+      "observations": [
+        {
+          "probe": "cjk-common",
+          "tokens": 51
+        },
+        {
+          "probe": "cjk-place",
+          "tokens": 45
+        },
+        {
+          "probe": "arabic",
+          "tokens": 37
+        },
+        {
+          "probe": "hebrew",
+          "tokens": 39
+        },
+        {
+          "probe": "devanagari",
+          "tokens": 39
+        },
+        {
+          "probe": "thai",
+          "tokens": 39
+        },
+        {
+          "probe": "greek",
+          "tokens": 42
+        },
+        {
+          "probe": "zh-news",
+          "tokens": 50
+        }
+      ],
+      "posterior": null,
+      "verdict": null,
+      "next": [
+        "my-prose",
+        "hi-prose",
+        "zh-mixed-num"
+      ],
+      "done": false
+    },
+    {
+      "name": "baseline",
+      "observations": [
+        {
+          "probe": null,
+          "tokens": 31
+        }
+      ],
+      "posterior": {
+        "classes": [
+          {
+            "id": "o200k",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "cl100k",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "r50k",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "whisper",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "codegen",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "llama3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "llama2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "llama4",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "gemma3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "gemma2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "tekken",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "mistral-sp",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-coder",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "qwen2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "qwen3.5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "glm-5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "glm-4",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "glm-ocr",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "chatglm",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "kimi",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "minimax",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "ernie-4.5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "qianfan-vl",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "hunyuan-128k",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "hy3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "hy4",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "youtu",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-1",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "internlm3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "internlm2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "seed-oss",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "ling",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-flash",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "spark-x2.5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "telechat3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "telechat2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "telechat-1",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-1",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "xverse",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "yi",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world-hf",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "command-a-plus",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "command-r",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-4.5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-3.5",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "jamba",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "falcon3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "falcon",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "granite-3",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-105b",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-1",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "openhathi",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "gpt-neox",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "smollm2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          },
+          {
+            "id": "stablelm-2",
+            "exact": 0.012903225806451646,
+            "related": 0.0016129032258064553,
+            "matched": 0,
+            "compared": 0,
+            "overhead": 31
+          }
+        ],
+        "alien": 0.10000000000000034,
+        "answered": 0,
+        "unknown": 0.20000000000000057,
+        "labs": [
+          {
+            "lab": "openai",
+            "lab_name": "OpenAI",
+            "total": 0.058064516129032406
+          },
+          {
+            "lab": "zhipu",
+            "lab_name": "Zhipu AI (Z.ai)",
+            "total": 0.058064516129032406
+          },
+          {
+            "lab": "tencent",
+            "lab_name": "Tencent Hunyuan",
+            "total": 0.058064516129032406
+          },
+          {
+            "lab": "meta",
+            "lab_name": "Meta",
+            "total": 0.043548387096774305
+          },
+          {
+            "lab": "deepseek",
+            "lab_name": "DeepSeek",
+            "total": 0.043548387096774305
+          },
+          {
+            "lab": "openbmb",
+            "lab_name": "OpenBMB",
+            "total": 0.043548387096774305
+          },
+          {
+            "lab": "teleai",
+            "lab_name": "China Telecom TeleAI",
+            "total": 0.043548387096774305
+          },
+          {
+            "lab": "sarvam",
+            "lab_name": "Sarvam AI",
+            "total": 0.043548387096774305
+          },
+          {
+            "lab": "google",
+            "lab_name": "Google",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "mistral",
+            "lab_name": "Mistral AI",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "qwen",
+            "lab_name": "Alibaba Qwen",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "baidu",
+            "lab_name": "Baidu",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "internlm",
+            "lab_name": "Shanghai AI Laboratory",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "meituan",
+            "lab_name": "Meituan LongCat",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "baichuan",
+            "lab_name": "Baichuan",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "rwkv",
+            "lab_name": "RWKV",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "cohere",
+            "lab_name": "Cohere",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "lg",
+            "lab_name": "LG AI Research",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "tii",
+            "lab_name": "TII Falcon",
+            "total": 0.029032258064516203
+          },
+          {
+            "lab": "salesforce",
+            "lab_name": "Salesforce",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "moonshot",
+            "lab_name": "Moonshot AI",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "minimax",
+            "lab_name": "MiniMax",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "bytedance",
+            "lab_name": "ByteDance Seed",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "inclusionai",
+            "lab_name": "Ant Group inclusionAI",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "iflytek",
+            "lab_name": "iFLYTEK",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "xverse",
+            "lab_name": "XVERSE",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "01ai",
+            "lab_name": "01.AI",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "ai21",
+            "lab_name": "AI21 Labs",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "ibm",
+            "lab_name": "IBM Granite",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "eleutherai",
+            "lab_name": "EleutherAI",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "huggingface",
+            "lab_name": "Hugging Face",
+            "total": 0.014516129032258102
+          },
+          {
+            "lab": "stability",
+            "lab_name": "Stability AI",
+            "total": 0.014516129032258102
+          }
+        ]
+      },
+      "verdict": {
+        "kind": "unknown",
+        "top": {
+          "id": "o200k",
+          "exact": 0.012903225806451646,
+          "related": 0.0016129032258064553,
+          "matched": 0,
+          "compared": 0,
+          "overhead": 31
+        },
+        "confidence": 0.20000000000000057,
+        "claim": {
+          "expected": [
+            "o200k"
+          ],
+          "vendor": "OpenAI",
+          "firstParty": true,
+          "probability": 0.012903225806451646,
+          "status": "inconsistent"
+        }
+      },
+      "next": [
+        "my-prose",
+        "ko-casual",
+        "pa-prose"
+      ],
+      "done": false
+    },
+    {
+      "name": "exact",
+      "observations": [
+        {
+          "probe": null,
+          "tokens": 31
+        },
+        {
+          "probe": "cjk-common",
+          "tokens": 51
+        },
+        {
+          "probe": "cjk-place",
+          "tokens": 45
+        },
+        {
+          "probe": "arabic",
+          "tokens": 37
+        },
+        {
+          "probe": "hebrew",
+          "tokens": 39
+        },
+        {
+          "probe": "devanagari",
+          "tokens": 39
+        },
+        {
+          "probe": "thai",
+          "tokens": 39
+        },
+        {
+          "probe": "greek",
+          "tokens": 42
+        },
+        {
+          "probe": "zh-news",
+          "tokens": 50
+        }
+      ],
+      "posterior": {
+        "classes": [
+          {
+            "id": "o200k",
+            "exact": 0.986938221955442,
+            "related": 0.013061770571160371,
+            "matched": 8,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma2",
+            "exact": 1.8469357121124234e-9,
+            "related": 2.747891524137009e-9,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-a-plus",
+            "exact": 1.4064537311001412e-9,
+            "related": 7.913990647698621e-10,
+            "matched": 4,
+            "compared": 8,
+            "overhead": 32
+          },
+          {
+            "id": "tekken",
+            "exact": 4.997334494254433e-11,
+            "related": 4.352679977100376e-10,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma3",
+            "exact": 1.5161359201674575e-12,
+            "related": 9.709911124580362e-11,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama4",
+            "exact": 4.832374738771389e-13,
+            "related": 1.16147271129649e-11,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "spark-x2.5",
+            "exact": 5.997235527259372e-15,
+            "related": 2.286470265107917e-12,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama3",
+            "exact": 5.490691740710329e-15,
+            "related": 1.0397823025252495e-12,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "qwen3.5",
+            "exact": 3.382531871351925e-16,
+            "related": 5.514834842728219e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "seed-oss",
+            "exact": 1.118948599151371e-15,
+            "related": 5.240831271708886e-13,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "exaone-4.5",
+            "exact": 1.7005270549414777e-16,
+            "related": 2.5921713325104476e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-r",
+            "exact": 8.920598621886076e-17,
+            "related": 2.547960873932982e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v3",
+            "exact": 4.3945652814952764e-16,
+            "related": 1.6830942884665795e-13,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "ernie-4.5",
+            "exact": 2.307104027818592e-16,
+            "related": 1.5972539344138018e-13,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "hy4",
+            "exact": 3.4382683730333816e-17,
+            "related": 1.3093663093082978e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat3",
+            "exact": 2.922640469906003e-17,
+            "related": 1.112970831013863e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qianfan-vl",
+            "exact": 5.564337378155702e-17,
+            "related": 9.258787635176603e-14,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen2",
+            "exact": 4.21143367095169e-19,
+            "related": 2.079108247859907e-15,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 34
+          },
+          {
+            "id": "ling",
+            "exact": 5.518578508523525e-20,
+            "related": 1.925448837230417e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy3",
+            "exact": 1.5232194430191625e-19,
+            "related": 1.7460924767272225e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world",
+            "exact": 4.11672883626403e-19,
+            "related": 1.6338878511520838e-15,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "kimi",
+            "exact": 3.7765582560018534e-20,
+            "related": 1.6122329244545966e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minimax",
+            "exact": 7.380216957241107e-20,
+            "related": 9.046705174546703e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-5",
+            "exact": 2.362266450179713e-20,
+            "related": 5.354500196314223e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-1",
+            "exact": 2.939715539684122e-19,
+            "related": 5.050540025943311e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-4",
+            "exact": 1.2337112105524116e-20,
+            "related": 2.7954188093513895e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world-hf",
+            "exact": 1.8206821589174646e-20,
+            "related": 1.6138034863276763e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "jamba",
+            "exact": 1.8554948727156197e-20,
+            "related": 1.0935228713029253e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "glm-ocr",
+            "exact": 2.502194273184669e-21,
+            "related": 1.0213786623579191e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-5",
+            "exact": 3.0048365448595962e-21,
+            "related": 8.784897846130751e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "whisper",
+            "exact": 1.0398166012154401e-20,
+            "related": 5.567873267719637e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "youtu",
+            "exact": 7.076655488692822e-21,
+            "related": 5.41236908855037e-17,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 34
+          },
+          {
+            "id": "xverse",
+            "exact": 2.4107452729576703e-21,
+            "related": 3.0688590862376487e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "granite-3",
+            "exact": 7.41193495260351e-21,
+            "related": 2.960750607436887e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "hunyuan-128k",
+            "exact": 4.715229664234273e-22,
+            "related": 2.0046133120199658e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-105b",
+            "exact": 2.214945671074348e-20,
+            "related": 1.4306764140656257e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-2",
+            "exact": 3.431762051133018e-22,
+            "related": 1.2491852421372355e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "chatglm",
+            "exact": 2.891880972763639e-22,
+            "related": 1.231081800806898e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "mistral-sp",
+            "exact": 2.5125454454835536e-22,
+            "related": 4.795346910905628e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "baichuan-2",
+            "exact": 9.266657716646977e-23,
+            "related": 3.946585397587469e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "cl100k",
+            "exact": 1.5725212963514206e-22,
+            "related": 2.0364145091378243e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "stablelm-2",
+            "exact": 1.5725212963514206e-22,
+            "related": 2.0364145091378243e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "openhathi",
+            "exact": 1.1928621520796646e-22,
+            "related": 1.601113249074582e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v2",
+            "exact": 4.144450772043689e-23,
+            "related": 1.4946174933030259e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-flash",
+            "exact": 3.4987336569486824e-23,
+            "related": 1.4888048230953532e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-3.5",
+            "exact": 3.284957895624485e-23,
+            "related": 1.3946273686037035e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gpt-neox",
+            "exact": 1.711362456119262e-23,
+            "related": 7.278618510065259e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm3",
+            "exact": 1.1258602874123282e-20,
+            "related": 5.8843024990955905e-19,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 33
+          },
+          {
+            "id": "falcon3",
+            "exact": 1.3265378778203648e-23,
+            "related": 5.289103738952854e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat-1",
+            "exact": 8.082508530111093e-24,
+            "related": 2.985403206013567e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama2",
+            "exact": 6.004232057119631e-24,
+            "related": 1.142556902398587e-19,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "minicpm-3",
+            "exact": 1.000680925030978e-24,
+            "related": 4.18676220195072e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-1",
+            "exact": 8.484510830563411e-25,
+            "related": 3.5582078383320964e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm2",
+            "exact": 1.728841650706265e-24,
+            "related": 2.2651586298427365e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-coder",
+            "exact": 2.464044508845663e-23,
+            "related": 1.8133503967202464e-20,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat2",
+            "exact": 1.4916274094578577e-25,
+            "related": 6.0194715358674456e-21,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon",
+            "exact": 1.4972724261765493e-26,
+            "related": 2.808334636479868e-22,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "smollm2",
+            "exact": 2.7256498770361474e-27,
+            "related": 1.1314096800238676e-22,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "yi",
+            "exact": 7.74600199151909e-28,
+            "related": 2.1665256446502482e-23,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "r50k",
+            "exact": 9.492619704634703e-31,
+            "related": 3.473759809587903e-26,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "codegen",
+            "exact": 9.492619704634703e-31,
+            "related": 3.473759809587903e-26,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-1",
+            "exact": 4.831563296693265e-36,
+            "related": 1.260614472563494e-32,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          }
+        ],
+        "alien": 7.915951447896176e-11,
+        "answered": 8,
+        "unknown": 0.01306177473918293,
+        "labs": [
+          {
+            "lab": "openai",
+            "lab_name": "OpenAI",
+            "total": 0.9999999925266025
+          },
+          {
+            "lab": "google",
+            "lab_name": "Google",
+            "total": 4.693442483415403e-9
+          },
+          {
+            "lab": "cohere",
+            "lab_name": "Cohere",
+            "total": 2.1981076811633828e-9
+          },
+          {
+            "lab": "mistral",
+            "lab_name": "Mistral AI",
+            "total": 4.852413474481802e-10
+          },
+          {
+            "lab": "meta",
+            "lab_name": "Meta",
+            "total": 1.3143237695369694e-11
+          },
+          {
+            "lab": "iflytek",
+            "lab_name": "iFLYTEK",
+            "total": 2.292467500635176e-12
+          },
+          {
+            "lab": "qwen",
+            "lab_name": "Alibaba Qwen",
+            "total": 5.53901266851184e-13
+          },
+          {
+            "lab": "bytedance",
+            "lab_name": "ByteDance Seed",
+            "total": 5.252020757700399e-13
+          },
+          {
+            "lab": "lg",
+            "lab_name": "LG AI Research",
+            "total": 2.593885806167571e-13
+          },
+          {
+            "lab": "baidu",
+            "lab_name": "Baidu",
+            "total": 2.5259962356970964e-13
+          },
+          {
+            "lab": "deepseek",
+            "lab_name": "DeepSeek",
+            "total": 1.687503981918897e-13
+          },
+          {
+            "lab": "tencent",
+            "lab_name": "Tencent Hunyuan",
+            "total": 1.327914357854158e-13
+          },
+          {
+            "lab": "teleai",
+            "lab_name": "China Telecom TeleAI",
+            "total": 1.1132661407410917e-13
+          },
+          {
+            "lab": "inclusionai",
+            "lab_name": "Ant Group inclusionAI",
+            "total": 1.9255040230155024e-15
+          },
+          {
+            "lab": "rwkv",
+            "lab_name": "RWKV",
+            "total": 1.7956980794900672e-15
+          },
+          {
+            "lab": "moonshot",
+            "lab_name": "Moonshot AI",
+            "total": 1.6122706900371567e-15
+          },
+          {
+            "lab": "zhipu",
+            "lab_name": "Zhipu AI (Z.ai)",
+            "total": 9.294793359694e-16
+          },
+          {
+            "lab": "minimax",
+            "lab_name": "MiniMax",
+            "total": 9.047443196242427e-16
+          },
+          {
+            "lab": "baichuan",
+            "lab_name": "Baichuan",
+            "total": 5.092946522124641e-16
+          },
+          {
+            "lab": "ai21",
+            "lab_name": "AI21 Labs",
+            "total": 1.0937084207901969e-16
+          },
+          {
+            "lab": "openbmb",
+            "lab_name": "OpenBMB",
+            "total": 8.792943484738721e-17
+          },
+          {
+            "lab": "xverse",
+            "lab_name": "XVERSE",
+            "total": 3.069100160764945e-17
+          },
+          {
+            "lab": "ibm",
+            "lab_name": "IBM Granite",
+            "total": 2.961491800932148e-17
+          },
+          {
+            "lab": "sarvam",
+            "lab_name": "Sarvam AI",
+            "total": 1.59301461326568e-17
+          },
+          {
+            "lab": "meituan",
+            "lab_name": "Meituan LongCat",
+            "total": 1.3981035408009392e-17
+          },
+          {
+            "lab": "stability",
+            "lab_name": "Stability AI",
+            "total": 2.0365717612674593e-18
+          },
+          {
+            "lab": "eleutherai",
+            "lab_name": "EleutherAI",
+            "total": 7.27878964631087e-19
+          },
+          {
+            "lab": "internlm",
+            "lab_name": "Shanghai AI Laboratory",
+            "total": 6.223421679237604e-19
+          },
+          {
+            "lab": "tii",
+            "lab_name": "TII Falcon",
+            "total": 5.292044877104359e-19
+          },
+          {
+            "lab": "huggingface",
+            "lab_name": "Hugging Face",
+            "total": 1.1314369365226378e-22
+          },
+          {
+            "lab": "01ai",
+            "lab_name": "01.AI",
+            "total": 2.1666031046701634e-23
+          },
+          {
+            "lab": "salesforce",
+            "lab_name": "Salesforce",
+            "total": 3.4738547357849493e-26
+          }
+        ]
+      },
+      "verdict": {
+        "kind": "exact",
+        "top": {
+          "id": "o200k",
+          "exact": 0.986938221955442,
+          "related": 0.013061770571160371,
+          "matched": 8,
+          "compared": 8,
+          "overhead": 31
+        },
+        "confidence": 0.986938221955442,
+        "claim": {
+          "expected": [
+            "o200k"
+          ],
+          "vendor": "OpenAI",
+          "firstParty": true,
+          "probability": 0.986938221955442,
+          "status": "consistent"
+        }
+      },
+      "next": [
+        "my-prose",
+        "bo-prose",
+        "zh-chemistry"
+      ],
+      "done": false
+    },
+    {
+      "name": "noisy",
+      "observations": [
+        {
+          "probe": null,
+          "tokens": 31
+        },
+        {
+          "probe": "cjk-common",
+          "tokens": 53
+        },
+        {
+          "probe": "cjk-place",
+          "tokens": 45
+        },
+        {
+          "probe": "arabic",
+          "tokens": 37
+        },
+        {
+          "probe": "hebrew",
+          "tokens": 41
+        },
+        {
+          "probe": "devanagari",
+          "tokens": 39
+        },
+        {
+          "probe": "thai",
+          "tokens": 39
+        },
+        {
+          "probe": "greek",
+          "tokens": 44
+        },
+        {
+          "probe": "zh-news",
+          "tokens": 50
+        }
+      ],
+      "posterior": {
+        "classes": [
+          {
+            "id": "o200k",
+            "exact": 0.45972342167621033,
+            "related": 0.5389788382623666,
+            "matched": 5,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama4",
+            "exact": 0.00005326043574941531,
+            "related": 0.0003205237354752945,
+            "matched": 4,
+            "compared": 8,
+            "overhead": 32
+          },
+          {
+            "id": "gemma2",
+            "exact": 0.000011061314917884287,
+            "related": 0.0003407347066061795,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma3",
+            "exact": 0.00000325123958251998,
+            "related": 0.0002107483154980781,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "tekken",
+            "exact": 5.791171143173115e-7,
+            "related": 0.00009176432050007303,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-a-plus",
+            "exact": 0.0000021460649610776305,
+            "related": 0.000059924760539516555,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 32
+          },
+          {
+            "id": "qwen3.5",
+            "exact": 6.47987144965001e-8,
+            "related": 0.000011022649195291871,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "ernie-4.5",
+            "exact": 1.3786062804976385e-9,
+            "related": 0.0000022911845726947116,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama3",
+            "exact": 3.085849411456694e-9,
+            "related": 0.000002249384266438027,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v3",
+            "exact": 7.143477968397574e-9,
+            "related": 0.000002068275365750655,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "seed-oss",
+            "exact": 3.115878038122432e-10,
+            "related": 0.000001052325286223368,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "spark-x2.5",
+            "exact": 2.0459722584561662e-10,
+            "related": 7.532965150143393e-7,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy4",
+            "exact": 1.262407284455949e-9,
+            "related": 5.909571880322573e-7,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "telechat3",
+            "exact": 1.073010738671568e-9,
+            "related": 5.023139608000151e-7,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "command-r",
+            "exact": 7.208412088633056e-11,
+            "related": 2.8205104935147707e-7,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-4.5",
+            "exact": 6.781295780969884e-11,
+            "related": 2.328813935008788e-7,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "qianfan-vl",
+            "exact": 4.5667872486501374e-11,
+            "related": 1.7381176825621481e-7,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world",
+            "exact": 3.3317111816997155e-12,
+            "related": 1.3173701145339503e-8,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "ling",
+            "exact": 2.2892668836631137e-13,
+            "related": 7.970949555863925e-9,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy3",
+            "exact": 1.185257719475136e-12,
+            "related": 7.447900490873357e-9,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "kimi",
+            "exact": 1.8668236068563137e-13,
+            "related": 6.772351672567026e-9,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen2",
+            "exact": 5.38316674657546e-13,
+            "related": 6.183937649694869e-9,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minimax",
+            "exact": 3.054841962029904e-13,
+            "related": 3.745008468777395e-9,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-5",
+            "exact": 3.978501721879999e-13,
+            "related": 2.7903165418774686e-9,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "baichuan-1",
+            "exact": 4.700706657571704e-13,
+            "related": 1.831367275862907e-9,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-4",
+            "exact": 2.0778523171287939e-13,
+            "related": 1.456736876886233e-9,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "rwkv-world-hf",
+            "exact": 1.8361106261557824e-13,
+            "related": 1.3940348922692137e-9,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "whisper",
+            "exact": 1.9089816316801938e-13,
+            "related": 5.684759177002633e-10,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "jamba",
+            "exact": 5.3789637536718486e-14,
+            "related": 4.717962309613126e-10,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "glm-ocr",
+            "exact": 1.3154249643141468e-14,
+            "related": 4.3171642423250143e-10,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-5",
+            "exact": 1.2389706557654742e-14,
+            "related": 3.636410343190579e-10,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "xverse",
+            "exact": 4.716911799467741e-14,
+            "related": 3.0080045040765846e-10,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "youtu",
+            "exact": 5.5328078035906444e-15,
+            "related": 2.2052380846871443e-10,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "granite-3",
+            "exact": 9.186744411918927e-15,
+            "related": 1.2349993759115925e-10,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hunyuan-128k",
+            "exact": 1.9480233725594843e-15,
+            "related": 8.29741919112327e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-105b",
+            "exact": 8.470800196437121e-14,
+            "related": 5.868641733660483e-11,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-2",
+            "exact": 1.420056813554255e-15,
+            "related": 5.170824037020164e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "chatglm",
+            "exact": 1.195794132066922e-15,
+            "related": 5.095619102628683e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "mistral-sp",
+            "exact": 1.991546406807241e-15,
+            "related": 3.802462670972289e-11,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "baichuan-2",
+            "exact": 3.83450566928083e-16,
+            "related": 1.6336404999899347e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "cl100k",
+            "exact": 1.2464844088399758e-15,
+            "related": 1.6147608495572186e-11,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "stablelm-2",
+            "exact": 1.2464844088399758e-15,
+            "related": 1.6147608495572186e-11,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "openhathi",
+            "exact": 9.4464844273207e-16,
+            "related": 1.269361382953886e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-3.5",
+            "exact": 2.60373066190728e-16,
+            "related": 1.1058792724303316e-11,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v2",
+            "exact": 1.457993927289746e-16,
+            "related": 6.169623985222744e-12,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-flash",
+            "exact": 1.4478658287340453e-16,
+            "related": 6.162820354718647e-12,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gpt-neox",
+            "exact": 1.3565830579973375e-16,
+            "related": 5.771709887498467e-12,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon3",
+            "exact": 1.0515135330374211e-16,
+            "related": 4.194079452338495e-12,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm3",
+            "exact": 4.474972563276282e-14,
+            "related": 2.4281615962724925e-12,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 33
+          },
+          {
+            "id": "telechat-1",
+            "exact": 3.3301425863148617e-17,
+            "related": 1.2357909429984491e-12,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama2",
+            "exact": 4.755796688977566e-17,
+            "related": 9.058283898015198e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "minicpm-3",
+            "exact": 4.133660189449682e-18,
+            "related": 1.7329306615455497e-13,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-1",
+            "exact": 3.510731224549105e-18,
+            "related": 1.4728682230811403e-13,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-coder",
+            "exact": 1.7963674365291734e-16,
+            "related": 1.0661245077056538e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm2",
+            "exact": 6.988296129871484e-18,
+            "related": 9.362355724592043e-14,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat2",
+            "exact": 6.173631623287323e-19,
+            "related": 2.4918031715822382e-14,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon",
+            "exact": 1.1849091730353306e-19,
+            "related": 2.2259853838311094e-15,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "smollm2",
+            "exact": 2.158560278581814e-20,
+            "related": 8.9699274765419e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "yi",
+            "exact": 2.648408803513341e-21,
+            "related": 8.937272611574484e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "r50k",
+            "exact": 7.469553598253983e-24,
+            "related": 2.7501584434467256e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "codegen",
+            "exact": 7.469553598253983e-24,
+            "related": 2.7501584434467256e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-1",
+            "exact": 3.33223392649206e-29,
+            "related": 9.613833512996264e-26,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          }
+        ],
+        "alien": 0.0001823918396837454,
+        "answered": 8,
+        "unknown": 0.5402062007001401,
+        "labs": [
+          {
+            "lab": "openai",
+            "lab_name": "OpenAI",
+            "total": 0.9987022605233925
+          },
+          {
+            "lab": "google",
+            "lab_name": "Google",
+            "total": 0.0005657955766046618
+          },
+          {
+            "lab": "meta",
+            "lab_name": "Meta",
+            "total": 0.00037603664224643524
+          },
+          {
+            "lab": "mistral",
+            "lab_name": "Mistral AI",
+            "total": 0.0000923434756410086
+          },
+          {
+            "lab": "cohere",
+            "lab_name": "Cohere",
+            "total": 0.00006235294863406655
+          },
+          {
+            "lab": "qwen",
+            "lab_name": "Alibaba Qwen",
+            "total": 0.000011093632385754741
+          },
+          {
+            "lab": "baidu",
+            "lab_name": "Baidu",
+            "total": 0.0000024664206151039108
+          },
+          {
+            "lab": "deepseek",
+            "lab_name": "DeepSeek",
+            "total": 0.0000020754251202809245
+          },
+          {
+            "lab": "bytedance",
+            "lab_name": "ByteDance Seed",
+            "total": 0.0000010526368740271803
+          },
+          {
+            "lab": "iflytek",
+            "lab_name": "iFLYTEK",
+            "total": 7.53501112240185e-7
+          },
+          {
+            "lab": "tencent",
+            "lab_name": "Tencent Hunyuan",
+            "total": 5.999721865465173e-7
+          },
+          {
+            "lab": "teleai",
+            "lab_name": "China Telecom TeleAI",
+            "total": 5.033882322815801e-7
+          },
+          {
+            "lab": "lg",
+            "lab_name": "LG AI Research",
+            "total": 2.3296026551178585e-7
+          },
+          {
+            "lab": "rwkv",
+            "lab_name": "RWKV",
+            "total": 1.4571251359853033e-8
+          },
+          {
+            "lab": "inclusionai",
+            "lab_name": "Ant Group inclusionAI",
+            "total": 7.97117848255229e-9
+          },
+          {
+            "lab": "moonshot",
+            "lab_name": "Moonshot AI",
+            "total": 6.7725383549277115e-9
+          },
+          {
+            "lab": "zhipu",
+            "lab_name": "Zhipu AI (Z.ai)",
+            "total": 4.730346019470166e-9
+          },
+          {
+            "lab": "minimax",
+            "lab_name": "MiniMax",
+            "total": 3.745313952973598e-9
+          },
+          {
+            "lab": "baichuan",
+            "lab_name": "Baichuan",
+            "total": 1.8481741349791304e-9
+          },
+          {
+            "lab": "ai21",
+            "lab_name": "AI21 Labs",
+            "total": 4.718500205988494e-10
+          },
+          {
+            "lab": "openbmb",
+            "lab_name": "OpenBMB",
+            "total": 3.639740115584696e-10
+          },
+          {
+            "lab": "xverse",
+            "lab_name": "XVERSE",
+            "total": 3.008476195256531e-10
+          },
+          {
+            "lab": "ibm",
+            "lab_name": "IBM Granite",
+            "total": 1.2350912433557118e-10
+          },
+          {
+            "lab": "sarvam",
+            "lab_name": "Sarvam AI",
+            "total": 7.146568381655087e-11
+          },
+          {
+            "lab": "meituan",
+            "lab_name": "Meituan LongCat",
+            "total": 5.7872625568316714e-11
+          },
+          {
+            "lab": "stability",
+            "lab_name": "Stability AI",
+            "total": 1.6148854979981026e-11
+          },
+          {
+            "lab": "eleutherai",
+            "lab_name": "EleutherAI",
+            "total": 5.771845545804267e-12
+          },
+          {
+            "lab": "tii",
+            "lab_name": "TII Falcon",
+            "total": 4.196410707566547e-12
+          },
+          {
+            "lab": "internlm",
+            "lab_name": "Shanghai AI Laboratory",
+            "total": 2.566541867447306e-12
+          },
+          {
+            "lab": "huggingface",
+            "lab_name": "Hugging Face",
+            "total": 8.97014333256976e-16
+          },
+          {
+            "lab": "01ai",
+            "lab_name": "01.AI",
+            "total": 8.937537452454835e-17
+          },
+          {
+            "lab": "salesforce",
+            "lab_name": "Salesforce",
+            "total": 2.750233138982708e-19
+          }
+        ]
+      },
+      "verdict": {
+        "kind": "related",
+        "top": {
+          "id": "o200k",
+          "exact": 0.45972342167621033,
+          "related": 0.5389788382623666,
+          "matched": 5,
+          "compared": 8,
+          "overhead": 31
+        },
+        "confidence": 0.5389788382623666,
+        "claim": {
+          "expected": [
+            "o200k"
+          ],
+          "vendor": "OpenAI",
+          "firstParty": true,
+          "probability": 0.45972342167621033,
+          "status": "uncertain"
+        }
+      },
+      "next": [
+        "si-prose",
+        "hy-prose",
+        "bo-prose"
+      ],
+      "done": false
+    },
+    {
+      "name": "unknown",
+      "observations": [
+        {
+          "probe": null,
+          "tokens": 31
+        },
+        {
+          "probe": "cjk-common",
+          "tokens": 700
+        },
+        {
+          "probe": "cjk-place",
+          "tokens": 719
+        },
+        {
+          "probe": "arabic",
+          "tokens": 738
+        },
+        {
+          "probe": "hebrew",
+          "tokens": 757
+        },
+        {
+          "probe": "devanagari",
+          "tokens": 776
+        },
+        {
+          "probe": "thai",
+          "tokens": 795
+        },
+        {
+          "probe": "greek",
+          "tokens": 814
+        },
+        {
+          "probe": "zh-news",
+          "tokens": 833
+        }
+      ],
+      "posterior": {
+        "classes": [
+          {
+            "id": "o200k",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "cl100k",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "r50k",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "whisper",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "codegen",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama4",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "tekken",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "mistral-sp",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-coder",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen3.5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-4",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-ocr",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "chatglm",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "kimi",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minimax",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "ernie-4.5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qianfan-vl",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hunyuan-128k",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy4",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "youtu",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-1",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "seed-oss",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "ling",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-flash",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "spark-x2.5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat-1",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-1",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "xverse",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "yi",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world-hf",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-a-plus",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-r",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-4.5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-3.5",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "jamba",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "granite-3",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-105b",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-1",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "openhathi",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gpt-neox",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "smollm2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "stablelm-2",
+            "exact": 0.01290322580645175,
+            "related": 0.0016129032258064826,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          }
+        ],
+        "alien": 0.10000000000000095,
+        "answered": 8,
+        "unknown": 0.2000000000000029,
+        "labs": [
+          {
+            "lab": "openai",
+            "lab_name": "OpenAI",
+            "total": 0.058064516129032934
+          },
+          {
+            "lab": "zhipu",
+            "lab_name": "Zhipu AI (Z.ai)",
+            "total": 0.058064516129032934
+          },
+          {
+            "lab": "tencent",
+            "lab_name": "Tencent Hunyuan",
+            "total": 0.058064516129032934
+          },
+          {
+            "lab": "meta",
+            "lab_name": "Meta",
+            "total": 0.0435483870967747
+          },
+          {
+            "lab": "deepseek",
+            "lab_name": "DeepSeek",
+            "total": 0.0435483870967747
+          },
+          {
+            "lab": "openbmb",
+            "lab_name": "OpenBMB",
+            "total": 0.0435483870967747
+          },
+          {
+            "lab": "teleai",
+            "lab_name": "China Telecom TeleAI",
+            "total": 0.0435483870967747
+          },
+          {
+            "lab": "sarvam",
+            "lab_name": "Sarvam AI",
+            "total": 0.0435483870967747
+          },
+          {
+            "lab": "google",
+            "lab_name": "Google",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "mistral",
+            "lab_name": "Mistral AI",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "qwen",
+            "lab_name": "Alibaba Qwen",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "baidu",
+            "lab_name": "Baidu",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "internlm",
+            "lab_name": "Shanghai AI Laboratory",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "meituan",
+            "lab_name": "Meituan LongCat",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "baichuan",
+            "lab_name": "Baichuan",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "rwkv",
+            "lab_name": "RWKV",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "cohere",
+            "lab_name": "Cohere",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "lg",
+            "lab_name": "LG AI Research",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "tii",
+            "lab_name": "TII Falcon",
+            "total": 0.029032258064516467
+          },
+          {
+            "lab": "salesforce",
+            "lab_name": "Salesforce",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "moonshot",
+            "lab_name": "Moonshot AI",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "minimax",
+            "lab_name": "MiniMax",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "bytedance",
+            "lab_name": "ByteDance Seed",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "inclusionai",
+            "lab_name": "Ant Group inclusionAI",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "iflytek",
+            "lab_name": "iFLYTEK",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "xverse",
+            "lab_name": "XVERSE",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "01ai",
+            "lab_name": "01.AI",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "ai21",
+            "lab_name": "AI21 Labs",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "ibm",
+            "lab_name": "IBM Granite",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "eleutherai",
+            "lab_name": "EleutherAI",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "huggingface",
+            "lab_name": "Hugging Face",
+            "total": 0.014516129032258233
+          },
+          {
+            "lab": "stability",
+            "lab_name": "Stability AI",
+            "total": 0.014516129032258233
+          }
+        ]
+      },
+      "verdict": {
+        "kind": "unknown",
+        "top": {
+          "id": "o200k",
+          "exact": 0.01290322580645175,
+          "related": 0.0016129032258064826,
+          "matched": 0,
+          "compared": 8,
+          "overhead": 31
+        },
+        "confidence": 0.2000000000000029,
+        "claim": {
+          "expected": [
+            "o200k"
+          ],
+          "vendor": "OpenAI",
+          "firstParty": true,
+          "probability": 0.01290322580645175,
+          "status": "inconsistent"
+        }
+      },
+      "next": [
+        "my-prose",
+        "ko-casual",
+        "pa-prose"
+      ],
+      "done": false
+    },
+    {
+      "name": "baseline-drift",
+      "observations": [
+        {
+          "probe": null,
+          "tokens": 31
+        },
+        {
+          "probe": "cjk-common",
+          "tokens": 51
+        },
+        {
+          "probe": "cjk-place",
+          "tokens": 45
+        },
+        {
+          "probe": "arabic",
+          "tokens": 37
+        },
+        {
+          "probe": "hebrew",
+          "tokens": 39
+        },
+        {
+          "probe": "devanagari",
+          "tokens": 39
+        },
+        {
+          "probe": "thai",
+          "tokens": 39
+        },
+        {
+          "probe": "greek",
+          "tokens": 42
+        },
+        {
+          "probe": "zh-news",
+          "tokens": 50
+        },
+        {
+          "probe": null,
+          "tokens": 49
+        }
+      ],
+      "posterior": {
+        "classes": [
+          {
+            "id": "o200k",
+            "exact": 0.9869382215878091,
+            "related": 0.013061770566298559,
+            "matched": 8,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma2",
+            "exact": 1.8456971086654544e-9,
+            "related": 2.7432572090474363e-9,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "command-a-plus",
+            "exact": 1.6517564448576332e-9,
+            "related": 9.252888730171902e-10,
+            "matched": 4,
+            "compared": 8,
+            "overhead": 32
+          },
+          {
+            "id": "tekken",
+            "exact": 4.997678523857678e-11,
+            "related": 4.353768958824515e-10,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "gemma3",
+            "exact": 1.5337767782314539e-12,
+            "related": 9.745054389381812e-11,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama4",
+            "exact": 4.1297534270291845e-13,
+            "related": 1.0477944628642184e-11,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "spark-x2.5",
+            "exact": 5.997238920881247e-15,
+            "related": 2.2865075386626875e-12,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama3",
+            "exact": 5.064954228220567e-15,
+            "related": 1.0091452222901663e-12,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen3.5",
+            "exact": 3.363436541756544e-16,
+            "related": 5.504049436396667e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "seed-oss",
+            "exact": 8.49445943619494e-16,
+            "related": 5.129257861104344e-13,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "command-r",
+            "exact": 9.724105586370845e-17,
+            "related": 2.561856822258402e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-4.5",
+            "exact": 1.6561802433356955e-16,
+            "related": 2.55657050545564e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v3",
+            "exact": 3.790069713762548e-16,
+            "related": 1.5981534430786346e-13,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "ernie-4.5",
+            "exact": 1.7343763481294732e-16,
+            "related": 1.5233152980598205e-13,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "hy4",
+            "exact": 3.435699519156526e-17,
+            "related": 1.3086075703207763e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat3",
+            "exact": 2.9204570967314845e-17,
+            "related": 1.112325906854582e-13,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qianfan-vl",
+            "exact": 5.583050505899935e-17,
+            "related": 9.287807058212389e-14,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "qwen2",
+            "exact": 5.1081336124059895e-19,
+            "related": 2.0900454737305892e-15,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 34
+          },
+          {
+            "id": "ling",
+            "exact": 5.608521415354652e-20,
+            "related": 1.9297918850747073e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "hy3",
+            "exact": 1.396282382067229e-19,
+            "related": 1.708093174411541e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world",
+            "exact": 4.1149134376050645e-19,
+            "related": 1.6290068422564335e-15,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "kimi",
+            "exact": 3.765421309510654e-20,
+            "related": 1.6075363799255135e-15,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minimax",
+            "exact": 6.903716255958588e-20,
+            "related": 8.872974854479661e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-5",
+            "exact": 2.018288956970794e-20,
+            "related": 5.288959505456704e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "baichuan-1",
+            "exact": 2.9454419324619033e-19,
+            "related": 5.055766444994615e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "glm-4",
+            "exact": 1.0540843277832526e-20,
+            "related": 2.761203579212947e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "rwkv-world-hf",
+            "exact": 1.6352829611589907e-20,
+            "related": 1.529180851953106e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "glm-ocr",
+            "exact": 2.523846310525862e-21,
+            "related": 1.0194652883366757e-16,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "jamba",
+            "exact": 1.468459588818718e-20,
+            "related": 1.0029225301219941e-16,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "minicpm-5",
+            "exact": 3.40567780785191e-21,
+            "related": 8.850943018894936e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "youtu",
+            "exact": 1.069127273347528e-20,
+            "related": 5.4572097922118685e-17,
+            "matched": 2,
+            "compared": 8,
+            "overhead": 34
+          },
+          {
+            "id": "whisper",
+            "exact": 7.174990653175676e-21,
+            "related": 4.989320983621535e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "xverse",
+            "exact": 2.180872982846398e-21,
+            "related": 2.9555539640798314e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "granite-3",
+            "exact": 6.324753464853193e-21,
+            "related": 2.764053447705549e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 30
+          },
+          {
+            "id": "hunyuan-128k",
+            "exact": 4.708064678830222e-22,
+            "related": 1.998913493659604e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-105b",
+            "exact": 2.2398640229878757e-20,
+            "related": 1.432963499521674e-17,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-2",
+            "exact": 3.2202922925732614e-22,
+            "related": 1.2388261564573645e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "chatglm",
+            "exact": 2.884688229567341e-22,
+            "related": 1.22753988028518e-17,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "mistral-sp",
+            "exact": 2.08953220837432e-22,
+            "related": 4.546456670123612e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "baichuan-2",
+            "exact": 9.239753532950303e-23,
+            "related": 3.935106086313114e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "cl100k",
+            "exact": 1.1089644669981604e-22,
+            "related": 1.8337554616025494e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "stablelm-2",
+            "exact": 1.1089644669981604e-22,
+            "related": 1.8337554616025494e-18,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 28
+          },
+          {
+            "id": "openhathi",
+            "exact": 1.1486702673297855e-22,
+            "related": 1.5691555542725187e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-v2",
+            "exact": 4.5215624648905204e-23,
+            "related": 1.4928629930661681e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "longcat-flash",
+            "exact": 3.488582490016446e-23,
+            "related": 1.4844750127235125e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "exaone-3.5",
+            "exact": 3.1791478540702537e-23,
+            "related": 1.3503975298287647e-18,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm3",
+            "exact": 1.55289034640411e-20,
+            "related": 7.042688290758526e-19,
+            "matched": 3,
+            "compared": 8,
+            "overhead": 33
+          },
+          {
+            "id": "gpt-neox",
+            "exact": 1.6572498234210752e-23,
+            "related": 7.0481164566584345e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon3",
+            "exact": 1.2533492015727487e-23,
+            "related": 5.111185756803738e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat-1",
+            "exact": 8.276506985965856e-24,
+            "related": 2.9827011949387407e-19,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "llama2",
+            "exact": 4.9938723122371544e-24,
+            "related": 1.0832691125256689e-19,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "minicpm-3",
+            "exact": 9.992164299980833e-25,
+            "related": 4.174894858885456e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "minicpm-1",
+            "exact": 8.460288772651597e-25,
+            "related": 3.547891250262503e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "internlm2",
+            "exact": 1.827406860477209e-24,
+            "related": 2.286723042027192e-20,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "deepseek-coder",
+            "exact": 2.4595747904090604e-23,
+            "related": 1.805618206961131e-20,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "telechat2",
+            "exact": 1.4874957818761832e-25,
+            "related": 6.002141850847074e-21,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "falcon",
+            "exact": 1.2459442364780101e-26,
+            "related": 2.662773786112715e-22,
+            "matched": 1,
+            "compared": 8,
+            "overhead": 29
+          },
+          {
+            "id": "smollm2",
+            "exact": 2.640225629856767e-27,
+            "related": 1.0956494386402583e-22,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "yi",
+            "exact": 8.561100241457228e-28,
+            "related": 2.164463115031918e-23,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "r50k",
+            "exact": 9.20808958465796e-31,
+            "related": 3.3651241173570223e-26,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "codegen",
+            "exact": 9.20808958465796e-31,
+            "related": 3.3651241173570223e-26,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          },
+          {
+            "id": "sarvam-1",
+            "exact": 4.992170225539706e-36,
+            "related": 1.256503488216855e-32,
+            "matched": 0,
+            "compared": 8,
+            "overhead": 31
+          }
+        ],
+        "alien": 7.912268171037497e-11,
+        "answered": 8,
+        "unknown": 0.013061774862802498,
+        "labs": [
+          {
+            "lab": "openai",
+            "lab_name": "OpenAI",
+            "total": 0.9999999921541076
+          },
+          {
+            "lab": "google",
+            "lab_name": "Google",
+            "total": 4.687938638384941e-9
+          },
+          {
+            "lab": "cohere",
+            "lab_name": "Cohere",
+            "total": 2.577301600798105e-9
+          },
+          {
+            "lab": "mistral",
+            "lab_name": "Mistral AI",
+            "total": 4.853536856676939e-10
+          },
+          {
+            "lab": "meta",
+            "lab_name": "Meta",
+            "total": 1.1905130256195394e-11
+          },
+          {
+            "lab": "iflytek",
+            "lab_name": "iFLYTEK",
+            "total": 2.2925047775835687e-12
+          },
+          {
+            "lab": "qwen",
+            "lab_name": "Alibaba Qwen",
+            "total": 5.528318435809342e-13
+          },
+          {
+            "lab": "bytedance",
+            "lab_name": "ByteDance Seed",
+            "total": 5.137752320540539e-13
+          },
+          {
+            "lab": "lg",
+            "lab_name": "LG AI Research",
+            "total": 2.5582401899921887e-13
+          },
+          {
+            "lab": "baidu",
+            "lab_name": "Baidu",
+            "total": 2.454388685279779e-13
+          },
+          {
+            "lab": "deepseek",
+            "lab_name": "DeepSeek",
+            "total": 1.6019586226822625e-13
+          },
+          {
+            "lab": "tencent",
+            "lab_name": "Tencent Hunyuan",
+            "total": 1.3267791922485686e-13
+          },
+          {
+            "lab": "teleai",
+            "lab_name": "China Telecom TeleAI",
+            "total": 1.1126209953711212e-13
+          },
+          {
+            "lab": "inclusionai",
+            "lab_name": "Ant Group inclusionAI",
+            "total": 1.9298479702888607e-15
+          },
+          {
+            "lab": "rwkv",
+            "lab_name": "RWKV",
+            "total": 1.7823527716251163e-15
+          },
+          {
+            "lab": "moonshot",
+            "lab_name": "Moonshot AI",
+            "total": 1.6075740341386087e-15
+          },
+          {
+            "lab": "zhipu",
+            "lab_name": "Zhipu AI (Z.ai)",
+            "total": 9.192717721514654e-16
+          },
+          {
+            "lab": "minimax",
+            "lab_name": "MiniMax",
+            "total": 8.873665226105257e-16
+          },
+          {
+            "lab": "baichuan",
+            "lab_name": "Baichuan",
+            "total": 5.098063871765561e-16
+          },
+          {
+            "lab": "ai21",
+            "lab_name": "AI21 Labs",
+            "total": 1.003069376080876e-16
+          },
+          {
+            "lab": "openbmb",
+            "lab_name": "OpenBMB",
+            "total": 8.859006557309399e-17
+          },
+          {
+            "lab": "xverse",
+            "lab_name": "XVERSE",
+            "total": 2.955772051378116e-17
+          },
+          {
+            "lab": "ibm",
+            "lab_name": "IBM Granite",
+            "total": 2.7646859230520342e-17
+          },
+          {
+            "lab": "sarvam",
+            "lab_name": "Sarvam AI",
+            "total": 1.5921304056745883e-17
+          },
+          {
+            "lab": "meituan",
+            "lab_name": "Meituan LongCat",
+            "total": 1.3873093492351315e-17
+          },
+          {
+            "lab": "stability",
+            "lab_name": "Stability AI",
+            "total": 1.8338663580492492e-18
+          },
+          {
+            "lab": "internlm",
+            "lab_name": "Shanghai AI Laboratory",
+            "total": 7.426667903670261e-19
+          },
+          {
+            "lab": "eleutherai",
+            "lab_name": "EleutherAI",
+            "total": 7.048282181640776e-19
+          },
+          {
+            "lab": "tii",
+            "lab_name": "TII Falcon",
+            "total": 5.113973990104431e-19
+          },
+          {
+            "lab": "huggingface",
+            "lab_name": "Hugging Face",
+            "total": 1.095675840896557e-22
+          },
+          {
+            "lab": "01ai",
+            "lab_name": "01.AI",
+            "total": 2.1645487260343327e-23
+          },
+          {
+            "lab": "salesforce",
+            "lab_name": "Salesforce",
+            "total": 3.365216198252869e-26
+          }
+        ]
+      },
+      "verdict": {
+        "kind": "exact",
+        "top": {
+          "id": "o200k",
+          "exact": 0.9869382215878091,
+          "related": 0.013061770566298559,
+          "matched": 8,
+          "compared": 8,
+          "overhead": 31
+        },
+        "confidence": 0.9869382215878091,
+        "claim": {
+          "expected": [
+            "o200k"
+          ],
+          "vendor": "OpenAI",
+          "firstParty": true,
+          "probability": 0.9869382215878091,
+          "status": "consistent"
+        }
+      },
+      "next": [
+        "my-prose",
+        "bo-prose",
+        "zh-chemistry"
+      ],
+      "done": false
+    }
+  ]
+}

@@ -146,17 +146,22 @@ impl Detection {
             let report = &job["report"];
             let valid = job["status"] == "completed" && valid_report(report);
             // Historical aggregate summaries alone must never initiate disposition.
-            let confirmed = valid
-                && (job["first_group_valid"] == true
-                    && is_downgrade(
-                        string(&job["requested_model"]),
-                        string(&job["first_group_prediction"]),
-                    )
-                    || job["automatic_disposition"]["basis"] == "aggregate"
+            let confirmed = if crate::lm_verdict::is_lm(&job) {
+                job["automatic_disposition"].is_object()
+                    && crate::lm_verdict::classify(&job)["outcome"] == "degraded"
+            } else {
+                valid
+                    && (job["first_group_valid"] == true
                         && is_downgrade(
                             string(&job["requested_model"]),
-                            string(&report["prediction"]),
-                        ));
+                            string(&job["first_group_prediction"]),
+                        )
+                        || job["automatic_disposition"]["basis"] == "aggregate"
+                            && is_downgrade(
+                                string(&job["requested_model"]),
+                                string(&report["prediction"]),
+                            ))
+            };
             let triggers = job["triggers"]
                 .as_array()
                 .into_iter()
@@ -173,7 +178,9 @@ impl Detection {
                     "failed"
                 },
                 if confirmed {
-                    if job["automatic_disposition"]["basis"] == "aggregate" {
+                    if job["automatic_disposition"]["basis"] == "sample_family" {
+                        "跨家族采样确认降智"
+                    } else if job["automatic_disposition"]["basis"] == "aggregate" {
                         "最终汇总确认降智"
                     } else {
                         "首组指纹确认降智"
@@ -188,7 +195,7 @@ impl Detection {
                 },
                 job["id"].as_str(),
             )?;
-            let mut changes = json!({"handled_job":job["id"],"handled_completed_at":job["completed_at"],"last_result":pick(&job,&["id","status","report","completed_at","error","bank_version"])});
+            let mut changes = json!({"handled_job":job["id"],"handled_completed_at":job["completed_at"],"last_result":pick(&job,&["id","status","report","completed_at","error","bank_version","engine","planned_groups","classification"])});
             changes["last_result"]["disposition"] = job["automatic_disposition"].clone();
             if value["generation"] == job["detection_generation"] {
                 let ended = parse_datetime(&job["completed_at"]).unwrap_or_else(|| self.now());

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "./bridge";
+import { engineName } from "./modelTestTypes";
 import { fullTime } from "./types";
 import { useBackAction } from "./mobile";
 import { useDialogFocus } from "./dialogFocus";
@@ -12,7 +13,8 @@ const outcomes: Record<string, string> = { normal: "未确认降智", degraded: 
 const triggers: Record<string, string> = { scheduled: "定时检测", recheck: "降智复查", error: "错误触发", slow: "慢首字", recovery: "额度恢复验证", credit: "用卡恢复验证" };
 const notices: Record<string, string> = { pending: "待推送", queued: "待推送", retry: "待重试", delivered: "已推送", suppressed: "已取消", failed: "投递失败" };
 const basis = (summary: DetectionLog["summary"]) => summary.disposition?.basis ?? summary.recovery?.basis;
-const result = (row: DetectionLog) => basis(row.summary) === "aggregate" ? "最终汇总判定降智" : outcomes[row.summary.outcome] || "待核对";
+const evidence = (row: DetectionLog) => { const kind = basis(row.summary) ?? row.summary.classification?.basis; return kind === "sample_family" ? `第 ${(row.summary.disposition?.group_indexes ?? row.summary.classification?.group_indexes ?? []).join("、")} 组跨家族证据` : kind === "aggregate" ? "最终汇总" : "单组预测"; };
+const result = (row: DetectionLog) => row.summary.engine === "lm_detector" ? ({ degraded: "判定降智", unavailable: "无法判断", normal: "未确认降智" } as Record<string, string>)[row.summary.outcome] || outcomes[row.summary.outcome] || "待核对" : basis(row.summary) === "aggregate" ? "最终汇总判定降智" : outcomes[row.summary.outcome] || "待核对";
 const executionTone: Record<string, string> = { completed: "neutral", failed: "bad", cancelled: "neutral", interrupted: "interrupted", needs_confirmation: "warning" };
 const outcomeTone: Record<string, string> = { normal: "good", degraded: "bad", aggregate_degraded: "bad", unavailable: "warning", ...executionTone };
 const noticeTone: Record<string, string> = { pending: "warning", queued: "warning", retry: "warning", delivered: "neutral", suppressed: "neutral", failed: "bad" };
@@ -34,10 +36,12 @@ function Facts({ row }: { row: DetectionLog }) {
   const { summary, notification } = row;
   return <dl className="detection-meta">
     <dt>请求模型</dt><dd>{row.model_id}</dd><dt>触发</dt><dd>{row.triggers.map(t => triggers[t] || "自动检测").join("、") || "自动检测"}</dd>
+    <dt>检测源</dt><dd>{engineName(summary.engine)} · {summary.sample_count ?? 3} 组</dd>
     <dt>执行状态</dt><dd>{statuses[row.status] || "待核对"}</dd><dt>检测结论</dt><dd>{result(row)}</dd>
-    {basis(summary) && <><dt>处置依据</dt><dd>{basis(summary) === "aggregate" ? "最终汇总" : "首组指纹"}</dd></>}
-    <dt>首组预测</dt><dd>{summary.first_prediction || "暂无记录"}</dd><dt>汇总预测</dt><dd>{summary.prediction || "暂无记录"}</dd>
-    <dt>汇总匹配度</dt><dd>{summary.probability === null ? "暂无记录" : `${(summary.probability * 100).toFixed(1)}%`}</dd>
+    {(basis(summary) || summary.classification?.basis) && <><dt>处置依据</dt><dd>{summary.engine === "lm_detector" ? evidence(row) : basis(summary) === "aggregate" ? "最终汇总" : "首组指纹"}</dd></>}
+    {summary.engine === "lm_detector" && <><dt>分析状态</dt><dd>{({ partial: "初步结果", scored: "汇总结果", not_model: "序列异常", unscorable: "样本不足" } as Record<string, string>)[summary.decision ?? ""] || "—"}</dd>{summary.reason && <><dt>无法判断原因</dt><dd>{summary.reason}</dd></>}{summary.group_predictions?.map(g => <div className="detection-meta-group" key={g.index}><dt>第 {g.index} 组</dt><dd>{g.prediction || "无排名"}</dd></div>)}<dt>资源版本</dt><dd>{summary.bank_version?.revision || "—"}</dd></>}
+    <dt>首组预测</dt><dd>{summary.first_prediction || "暂无记录"}</dd><dt>汇总预测</dt><dd>{summary.prediction_name || summary.prediction || "暂无记录"}</dd>
+    <dt>汇总匹配度</dt><dd>{summary.probability == null ? "—" : `${(summary.probability * 100).toFixed(1)}%`}</dd>
     {typeof summary.first_probability === "number" && <><dt>首组匹配度</dt><dd>{(summary.first_probability * 100).toFixed(1)}%</dd></>}
     {summary.disposition && <><dt>降智处置</dt><dd>{summary.disposition.marked ? "标记已保存" : "标记待核对"} · {summary.disposition.schedule_verified ? "停调度已确认" : "停调度待核对"}{summary.disposition.reason && ` · ${summary.disposition.reason}`}</dd></>}
     {summary.recovery && <><dt>复查恢复</dt><dd>{summary.recovery.mark_cleared ? "已取消降智标记" : summary.recovery.reason || "恢复待核对"}</dd></>}
@@ -87,10 +91,10 @@ export default function DetectionLogs({ active, online, connectionKey }: { activ
       <td><time>{fullTime(row.created_at)}</time></td>
       <td><button className="detection-account" title={row.account_name} onClick={e => { e.stopPropagation(); open(row, e.currentTarget); }}><span>{row.account_name || `账号 #${row.account_id}`}</span><small>#{row.account_id}</small></button></td>
       <td><span className="detection-ellipsis" title={row.model_id}>{row.model_id}</span></td>
-      <td><span className="detection-ellipsis" title={row.triggers.map(t => triggers[t] || "自动检测").join("、")}>{row.triggers.map(t => triggers[t] || "自动检测").join("、") || "自动检测"}</span></td>
+      <td><span className="detection-ellipsis" title={row.triggers.map(t => triggers[t] || "自动检测").join("、")}>{row.triggers.map(t => triggers[t] || "自动检测").join("、") || "自动检测"}</span><small className="muted">{engineName(row.summary.engine)} · {row.summary.sample_count ?? 3} 组</small></td>
       <td><Badge text={statuses[row.status] || "待核对"} tone={executionTone[row.status]}/></td>
       <td><Badge text={result(row)} tone={outcomeTone[row.summary.outcome]}/></td>
-      <td><div className="detection-pair"><span>首组 <b title={row.summary.first_prediction}>{row.summary.first_prediction || "—"}</b></span><span>汇总 <b title={row.summary.prediction}>{row.summary.prediction || "—"}</b></span></div></td>
+      <td><div className="detection-pair"><span>首组 <b title={row.summary.first_prediction}>{row.summary.first_prediction || "—"}</b></span><span>汇总 <b title={row.summary.prediction_name || row.summary.prediction}>{row.summary.prediction_name || row.summary.prediction || "—"}</b></span></div></td>
       <td><div className="detection-pair"><span>首组 <b>{probability(row.summary.first_probability)}</b></span><span>汇总 <b>{probability(row.summary.probability)}</b></span></div></td>
       <td><Receipts row={row}/></td>
       <td>{row.notification ? <div className="detection-notice"><Badge text={notices[row.notification.status] || "待核对"} tone={noticeTone[row.notification.status]} title={row.notification.reason}/>{row.notification.merged && <small>合并用卡通知</small>}</div> : <span className="muted">无通知记录</span>}</td>

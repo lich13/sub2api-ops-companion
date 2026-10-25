@@ -447,3 +447,45 @@ describe("Key model test preference", () => {
     expect(start.disabled).toBe(false);
   });
 });
+
+describe("LM Detector manual preferences and reports", () => {
+  it("keeps manual preferences apart from automatic history and saves only accepted submissions", async () => {
+    const savePreference = vi.fn();
+    let reject = true;
+    const original = vi.mocked(api).getMockImplementation()!;
+    const result = { id: "fixture-lm", status: "completed", requested_model: "gpt-6-sol", engine: "lm_detector", returned_models: [], completed_groups: 1, valid_groups: 1, attempts: 1, duration_ms: 10 };
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.startsWith("/lm-detector/fingerprint-bank")) return fingerprintBank as never;
+      if (path.endsWith("/latest")) return { ...result, automatic: true, planned_groups: 3 } as never;
+      if (method === "POST" && path.endsWith("/model-tests")) { if (reject) throw new Error("fixture rejected"); return result as never; }
+      return original(method, path, body);
+    });
+    const props = { account, online: true, close: vi.fn(), report: vi.fn(), preference: { engine: "modeltrace" as const, sample_count: 1 as const }, savePreference };
+    await act(async () => root.render(<ModelTestDialog {...props}/>)); await settle();
+    const source = container.querySelector<HTMLSelectElement>('select[aria-label="检测源"]')!;
+    expect(source.value).toBe("modeltrace"); expect(savePreference).not.toHaveBeenCalled();
+    await act(async () => { source.value = "lm_detector"; source.dispatchEvent(new Event("change", { bubbles: true })); });
+    const count = container.querySelector<HTMLSelectElement>('select[aria-label="采样组数"]')!;
+    await act(async () => { count.value = "3"; count.dispatchEvent(new Event("change", { bubbles: true })); container.querySelector<HTMLInputElement>('.lm-probe-option input')!.click(); });
+    const submit = [...container.querySelectorAll("footer button")].find(b => b.textContent?.includes("重新测试")) as HTMLButtonElement;
+    await act(async () => submit.click()); expect(savePreference).not.toHaveBeenCalled();
+    reject = false; await act(async () => submit.click());
+    expect(savePreference).toHaveBeenCalledWith({ engine: "lm_detector", sample_count: 3 });
+    expect([...vi.mocked(api).mock.calls].reverse().find(([method, path]) => method === "POST" && path.endsWith("/model-tests"))?.[2]).toMatchObject({ engine: "lm_detector", sample_count: 3, tokenizer_probe: true, concurrency: 1 });
+    await act(async () => root.render(<ModelTestDialog key="reopen" {...props} preference={{ engine: "lm_detector", sample_count: 3 }}/>)); await settle();
+    expect(container.querySelector<HTMLInputElement>('.lm-probe-option input')!.checked).toBe(false);
+  });
+  it("shows uncalibrated scores, merged names and all candidates without inventing confidence", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    const names = ["gpt-6-astra/6.1-sol", "claude-opus-5", "gpt-6-sol", "grok-4", "deepseek-v4", "qwen-3"];
+    vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/latest") ? {
+      id: "fixture-lm", status: "completed", engine: "lm_detector", requested_model: "gpt-6-sol", returned_models: [], planned_groups: 1, completed_groups: 1, valid_groups: 1, attempts: 1, duration_ms: 10,
+      report: { decision: "partial", prediction_name: names[0], merged_class: true, probability: null, used_outputs: 1, results: names.map((name, i) => ({ model: name, display_name: name, score: 2.83452 - i * .1, probability: null })) },
+    } as never : original(method, path, body));
+    await act(async () => root.render(<ModelTestDialog account={account} online close={vi.fn()} report={vi.fn()}/>)); await settle();
+    expect(container.querySelectorAll('.lm-candidates [role="row"]')).toHaveLength(6);
+    expect(container.textContent).toContain("初步结果"); expect(container.textContent).toContain("合并类别，无法区分"); expect(container.textContent).toContain("2.8345"); expect(container.textContent).not.toContain("0.0%");
+    await act(async () => (container.querySelector('.lm-expand') as HTMLButtonElement).click());
+    expect(container.querySelectorAll('.lm-candidates [role="row"]')).toHaveLength(7);expect(container.textContent).toContain("qwen-3");
+  });
+});

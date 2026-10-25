@@ -10,7 +10,7 @@ let templates = { configured: true, version: '9'.repeat(64), templates: structur
 const accountProfiles = new Map<number, Profile>();
 const detections = new Map<number, Record<string, unknown>>();
 const bank = { version: { revision: 'a'.repeat(40), sha256: 'b'.repeat(64), built_at: '2026-09-30T22:05:57Z', analyzer_version: 1 }, source: 'bundled', status: 'idle', result: 'up-to-date', checked_at: Date.now()/1000, synced_at: 0 };
-export function detectionPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], model = "gpt-6-luna") {
+export function detectionPreview(method: string, path: string, body: Record<string, unknown>, accounts: Account[], model = "gpt-6-luna", platforms?: unknown) {
   if (path === '/account-templates/apply' && method === 'POST') {
     const id = String(body.template_id), profile = templates.templates[id];
     if (!profile || body.template_version !== templates.template_versions[id]) throw new Error('模板内容已变化');
@@ -47,14 +47,16 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     const eligible = !!account && account.platform === 'openai' && ['oauth', 'apikey'].includes(account.type) && !account.parent_account_id;
     return structuredClone({ ...templates, ...(account ? { account: { id: aid, version: account.version, eligible, passthrough: false, reason: eligible ? '' : '仅支持独立 OpenAI OAuth 或 Key 账号', config: accountProfiles.get(aid) ?? values.full } } : {}) });
   }
-  if (path.startsWith('/modeltrace/fingerprint-bank')) {
+  if (path.startsWith('/modeltrace/fingerprint-bank') || path.startsWith('/lm-detector/fingerprint-bank')) {
     if (method === 'POST') { bank.status = 'checking'; setTimeout(() => { bank.status = 'idle'; bank.checked_at = Date.now()/1000; }, 800); }
-    return structuredClone(bank);
+    return structuredClone(path.startsWith("/lm-detector/") ? { ...bank, version: { ...bank.version, analyzer_version: "lmfpd-0.1.0" } } : bank);
   }
   const aid = Number(path.split('/')[2]);
   let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
+  const selection = (platforms as { openai?: { engine: string; sample_count: number } })?.openai;
+  value = { ...value, engine: selection?.engine ?? "modeltrace", sample_count: selection?.engine === "lm_detector" ? selection.sample_count : 3 };
   const effectiveModel = value.model_override ?? model;
   if (value.model_id !== effectiveModel) value = { ...value, version: version() };
   value = { ...value, model_id: effectiveModel, model_source: value.model_override ? "account" : "global", model_override: value.model_override ?? null, global_model_id: model };

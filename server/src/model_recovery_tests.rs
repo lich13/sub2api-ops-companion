@@ -836,6 +836,7 @@ async fn prepare_loopback_worker(h: &Harness, job: &Value) -> Arc<super::Context
     .unwrap();
     target.url = format!("{}/v1/responses", h.base_url);
     Arc::new(super::Context {
+        lm: None,
         samples: StdMutex::new(Default::default()),
         challenges: modeltrace::challenges(),
         snapshot: h.runtime.tests.bank.snapshot(),
@@ -905,10 +906,20 @@ async fn run_natural_model(h: &Harness, id: i64, intent: &Value, usage: &Value) 
 #[tokio::test]
 async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
     let h = Harness::new().await;
+    h.runtime
+        .config
+        .oauth
+        .transaction(|v| {
+            v["model_detection_platforms"] =
+                json!({"openai":{"engine":"lm_detector","sample_count":3}});
+            Ok(())
+        })
+        .unwrap();
     let (row, usage, intent) = seed_recovery(&h, false).await;
     let id = integer(&row["id"]).unwrap();
     let job = run_natural_model(&h, id, &intent, &usage).await;
     assert_eq!(job["status"], "completed");
+    assert_eq!(job["engine"], "modeltrace");
     assert_eq!(job["completed_groups"], 1);
     assert_eq!(job["valid_groups"], 1);
     assert_eq!(job["attempts"], 1);
@@ -988,6 +999,85 @@ async fn recovery_model_degradation_stops_scheduling_without_recovery_write() {
     natural_cycle(&h, id, &intent, &usage).await;
     assert_eq!(h.mock.count("POST", "/v1/responses"), 1);
     assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn lm_uncertain_group_blocks_disposition_then_lower_family_records_exact_evidence() {
+    let h = Harness::new().await;
+    h.runtime
+        .config
+        .oauth
+        .transaction(|v| {
+            v["model_detection_platforms"] =
+                json!({"openai":{"engine":"lm_detector","sample_count":3}});
+            v["model_detection_model_id"] = "gpt-6-luna".into();
+            Ok(())
+        })
+        .unwrap();
+    let row = h.seed_account("apikey", true, false).await;
+    let id = integer(&row["id"]).unwrap();
+    h.runtime
+        .detection
+        .update(id, json!({"enabled":true,"schedule_mode":"fixed"}))
+        .unwrap();
+    let hold = h
+        .runtime
+        .budget
+        .clone()
+        .acquire_many_owned(h.runtime.budget.available_permits() as u32)
+        .await
+        .unwrap();
+    let mut job = h
+        .runtime
+        .detection
+        .trigger(id, &["scheduled".into()])
+        .await
+        .unwrap();
+    let report = |model: &str, count: i64| json!({"decision":if count==1{"partial"}else{"scored"},"prediction":model,"prediction_name":model,"used_outputs":count,"probability":null});
+    job["status"] = "completed".into();
+    job["report"] = report("gpt-6-luna", 3);
+    job["groups"] = json!(["gpt-6-luna","grok-4.5","gemini-3.1-pro-preview"].iter().enumerate().map(|(i,m)|json!({"index":i+1,"status":"completed","transport_complete":true,"report":report(m,1)})).collect::<Vec<_>>());
+    assert!(h
+        .runtime
+        .detection
+        .verdict(&job, &job["report"])
+        .await
+        .unwrap()
+        .is_null());
+    assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], false);
+    assert_eq!(h.mock.count("POST", "/schedulable"), 0);
+    job["groups"][2]["report"] = report("gpt-6-luna", 1);
+    job["classification"] = crate::lm_verdict::classify(&job);
+    job["disposition_basis"] = job["classification"]["basis"].clone();
+    let result = h
+        .runtime
+        .detection
+        .verdict(&job, &job["report"])
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "completed");
+    assert_eq!(result["basis"], "sample_family");
+    assert_eq!(result["group_indexes"], json!([2]));
+    assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], true);
+    assert_eq!(
+        h.runtime.monitor.row(id).await.unwrap()["schedulable"],
+        false
+    );
+    assert_eq!(h.mock.count("POST", "/schedulable"), 1);
+    let notice = h.runtime.detection.store.read().unwrap()["disposition_notifications"]
+        [job["id"].as_str().unwrap()]
+    .clone();
+    let (_, message) = crate::detection_dispatch::notification_message(&notice);
+    assert!(message.contains("第 2 组跨家族证据：grok-4.5"));
+    assert!(message.contains("LM Detector · 3 组"));
+    assert!(notice["probability"].is_null());
+    h.runtime
+        .tests
+        .cancel(job["id"].as_str().unwrap())
+        .await
+        .unwrap();
+    drop(hold);
     h.close().await;
 }
 
@@ -1371,6 +1461,15 @@ async fn run_credit_model(h: &Harness, id: i64) -> Value {
 async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_query_delay() {
     for cooldown in [false, true] {
         let h = Harness::new().await;
+        h.runtime
+            .config
+            .oauth
+            .transaction(|v| {
+                v["model_detection_platforms"] =
+                    json!({"openai":{"engine":"lm_detector","sample_count":3}});
+                Ok(())
+            })
+            .unwrap();
         let (id, _) = seed_credit(&h).await;
         if cooldown {
             let at = datetime(h.now() - Duration::seconds(30));
@@ -1414,6 +1513,7 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
         task.await.unwrap().unwrap();
         let job = h.runtime.tests.latest(id).unwrap();
         assert_eq!(job["status"], "completed");
+        assert_eq!(job["engine"], "modeltrace");
         assert_eq!(job["planned_groups"], 1);
         assert_eq!(job["groups"].as_array().unwrap().len(), 1);
         assert_eq!(

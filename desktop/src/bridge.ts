@@ -40,7 +40,7 @@ export async function command<T>(
   args: Record<string, unknown> = {},
 ): Promise<T> {
   if (native) return invoke<T>(name, args);
-  if (preview) {
+  if (import.meta.env.DEV && preview) {
     const demo = await import("./preview");
     return demo.run(name, args) as Promise<T>;
   }
@@ -73,6 +73,6 @@ export async function runTest(accountId: number, body: Record<string, unknown>, 
     onEvent.onmessage = callback;
     return invoke<void>("run_test", {accountId, body, onEvent});
   }
-  if (preview) return (await import("./preview")).testStream(body, callback);
+  if (import.meta.env.DEV && preview) return (await import("./preview")).testStream(body, callback);
   throw new Error("请在 Sub2Ops 客户端中打开");
 }
