@@ -41394,14 +41394,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 270,
+          "rust_source_line": 271,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41438,7 +41438,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 274,
+          "rust_source_line": 275,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41488,14 +41488,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 270,
+          "rust_source_line": 271,
           "supporting_targets": [
             {
               "assertions": [
@@ -41507,7 +41507,7 @@
               "fixtures": [],
               "helper_assertions": [],
               "kind": "rust_test",
-              "line": 386,
+              "line": 387,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "stale_revision_cannot_overwrite_new_account_but_partial_save_keeps_it",
@@ -41550,7 +41550,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 274,
+          "rust_source_line": 275,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41600,14 +41600,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 266,
+          "rust_source_line": 267,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41657,14 +41657,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 254,
+          "rust_source_line": 255,
           "supporting_targets": [
             {
               "assertions": [
@@ -41691,12 +41691,12 @@
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 183,
+                  "line": 184,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 258,
+              "line": 259,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "explicit_selection_keeps_both_modes_and_records_seen_baseline",
@@ -41739,7 +41739,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 460,
+          "rust_source_line": 461,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -41789,14 +41789,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 249,
+          "rust_source_line": 250,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43362,7 +43362,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 427,
+          "rust_source_line": 428,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43400,7 +43400,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 323,
+          "rust_source_line": 324,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43438,7 +43438,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 303,
+          "rust_source_line": 304,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43488,14 +43488,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 249,
+          "rust_source_line": 250,
           "supporting_targets": [
             {
               "assertions": [
@@ -43522,12 +43522,12 @@
                     "assert_eq!(reloaded.oauth[C], json!([]))",
                     "assert_eq!(reloaded.oauth[M], json!([]))"
                   ],
-                  "line": 183,
+                  "line": 184,
                   "name": "scenario"
                 }
               ],
               "kind": "rust_test",
-              "line": 262,
+              "line": 263,
               "module": "recovery_selection_parity",
               "path": "server/tests/recovery_selection_parity.rs",
               "test_name": "manual_removal_and_reappearance_never_reselect_seen_accounts",
@@ -43625,14 +43625,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 266,
+          "rust_source_line": 267,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43669,7 +43669,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 386,
+          "rust_source_line": 387,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43705,7 +43705,7 @@
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 356,
+          "rust_source_line": 357,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,
@@ -43755,14 +43755,14 @@
                 "assert_eq!(reloaded.oauth[C], json!([]))",
                 "assert_eq!(reloaded.oauth[M], json!([]))"
               ],
-              "line": 183,
+              "line": 184,
               "name": "scenario"
             }
           ],
           "mapping_file": "tests/contracts/coverage-map.json",
           "python_reference_sha": "6be7c291ed38dcc337cb88f693639040a3463899",
           "rust_source": "server/tests/recovery_selection_parity.rs",
-          "rust_source_line": 254,
+          "rust_source_line": 255,
           "verification_command": ".venv/bin/python scripts/server_test.py --test recovery_selection_parity"
         },
         "gap": null,

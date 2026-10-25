@@ -116,10 +116,11 @@ fn row(id: i64) -> Value {
 
 fn without_detection_model(value: &Value) -> Value {
     let mut projected = value.clone();
-    projected
+    let object = projected
         .as_object_mut()
-        .expect("configuration value must be an object")
-        .remove(D);
+        .expect("configuration value must be an object");
+    object.remove(D);
+    object.remove("model_detection_platforms");
     projected
 }
 
