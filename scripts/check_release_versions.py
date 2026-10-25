@@ -49,6 +49,7 @@ def check(root: Path = ROOT) -> list[str]:
     rust_image = re.search(r'^FROM rust:([0-9.]+)-', (root / "Dockerfile").read_text(), re.MULTILINE)
     nodes = re.findall(r"node-version:\s*'([0-9.]+)'", workflow)
     rust = rust_image.group(1) if rust_image else ""
+    pinned_rust = tomllib.loads((root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     pnpm = package.get("packageManager", "").removeprefix("pnpm@")
 
     def toolchain(source: str, values: list[str], expected: str) -> None:
@@ -61,6 +62,7 @@ def check(root: Path = ROOT) -> list[str]:
     toolchain("CI pnpm", re.findall(r'uses: pnpm/action-setup@[^\n]+\n\s+with:\n\s+version:\s*([0-9.]+)', workflow), pnpm)
     toolchain("desktop/README.md Rust", re.findall(r'Rust ([0-9.]+)', desktop_doc), rust)
     toolchain("CI Rust", re.findall(r'rustup (?:toolchain install|override set) ([0-9.]+)', workflow), rust)
+    toolchain("repository Rust", [pinned_rust], rust)
     desktop_rust = tomllib.loads((root / "desktop/src-tauri/Cargo.toml").read_text())["package"].get("rust-version", "")
     toolchain("desktop Rust minimum", [desktop_rust], ".".join(rust.split(".")[:2]))
     return errors

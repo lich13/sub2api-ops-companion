@@ -974,6 +974,12 @@ export default function App() {
                                 ) : (
                                   <span className="muted">暂无记录</span>
                                 )}
+                                <div className="account-last-success">
+                                  <span>最后成功</span>
+                                  <time className={a.success_after_error ? "good-text" : undefined}>
+                                    {fullTime(a.last_success_at)}
+                                  </time>
+                                </div>
                               </td>
                               <td>{schedule(a)}</td>
                               <td>

@@ -37,7 +37,10 @@ export default function MobileAccounts(props: Props) {
         </div>
         <UsageCell account={a} online={props.online} active={props.active} connectionKey={props.connectionKey} refresh={() => command("refresh")} report={props.report}/>
         <footer>
-          {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已成功</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}
+          <div className="mobile-error-summary">
+            {a.last_error_id ? <button className="mobile-error" onClick={() => props.error(a.last_error_id!)}><span className="bad-text">{a.last_error_code || a.last_error_status || "上游错误"}</span><time>{fullTime(a.last_error_at)}</time>{a.success_after_error && <span className="good-text">之后已有成功调用</span>}</button> : <span className="muted">{a.error_message ? "错误时间未知" : "暂无错误记录"}</span>}
+            <div className="account-last-success"><span>最后成功</span><time className={a.success_after_error ? "good-text" : undefined}>{fullTime(a.last_success_at)}</time></div>
+          </div>
           <span className="priority-value">优先级 {a.priority}</span>
         </footer>
         {a.platform === "openai" && ["oauth", "apikey"].includes(a.type) && <div className="mobile-primary-actions">

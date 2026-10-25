@@ -74,6 +74,30 @@ afterEach(async () => {
 });
 
 describe("mobile accounts", () => {
+  it.each([
+    ["success after error", "2026-10-01T04:05:06Z", 10, true, "10-01 12:05:06"],
+    ["success before error", "2026-10-01T02:00:00Z", 10, false, "10-01 10:00:00"],
+    ["success at error time", "2026-10-01T03:00:00Z", 10, false, "10-01 11:00:00"],
+    ["no error", "2026-10-01T04:05:06Z", null, false, "10-01 12:05:06"],
+    ["no successful call", null, 10, false, "暂无记录"],
+    ["empty history", null, null, false, "暂无记录"],
+    ["invalid success time", "invalid", 10, false, "时间未知"],
+  ] as const)("shows the last successful call for %s", async (_label, success, errorId, recovered, expected) => {
+    const openError = vi.fn();
+    await render(props({ accounts: [{ ...account, last_success_at: success, last_error_at: errorId ? "2026-10-01T03:00:00Z" : null, last_error_id: errorId, last_error_status: errorId ? 502 : null, success_after_error: recovered }], error: openError }));
+
+    const summary = container.querySelector<HTMLElement>(".account-last-success")!;
+    expect(summary.textContent).toBe(`最后成功${expected}`);
+    expect(summary.querySelector("time")!.classList.contains("good-text")).toBe(recovered);
+    const errorButton = container.querySelector<HTMLButtonElement>(".mobile-error");
+    expect(!!errorButton).toBe(errorId !== null);
+    expect(errorButton?.textContent?.includes("之后已有成功调用") ?? false).toBe(recovered);
+    if (errorButton) {
+      await act(async () => errorButton.click());
+      expect(openError).toHaveBeenCalledExactlyOnceWith(errorId);
+    }
+  });
+
   it("disables account selection while offline", async () => {
     const select = vi.fn();
     await render(props({ online: false, select }));

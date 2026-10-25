@@ -137,6 +137,39 @@ afterEach(async () => {
 });
 
 describe("main page surface ownership", () => {
+  it.each([
+    ["success after error", "2026-10-01T04:05:06Z", 10, true, "10-01 12:05:06"],
+    ["success before error", "2026-10-01T02:00:00Z", 10, false, "10-01 10:00:00"],
+    ["success at error time", "2026-10-01T03:00:00Z", 10, false, "10-01 11:00:00"],
+    ["no error", "2026-10-01T04:05:06Z", null, false, "10-01 12:05:06"],
+    ["no successful call", null, 10, false, "暂无记录"],
+    ["empty history", null, null, false, "暂无记录"],
+    ["invalid success time", "invalid", 10, false, "时间未知"],
+  ] as const)("shows the last successful call for %s", async (_label, success, errorId, recovered, expected) => {
+    const initial = state();
+    initial.snapshot!.accounts = [{ ...account(1, errorId), last_success_at: success, success_after_error: recovered }];
+    vi.mocked(command).mockImplementation(async (name) => name === "get_state" ? initial as never : undefined as never);
+    await act(async () => root.render(<App />));
+
+    const summary = container.querySelector<HTMLElement>(".accounts-table .account-last-success")!;
+    expect(summary.textContent).toBe(`最后成功${expected}`);
+    expect(summary.querySelector("time")!.classList.contains("good-text")).toBe(recovered);
+    const errorButton = container.querySelector(".accounts-table .error-time");
+    expect(!!errorButton).toBe(errorId !== null);
+    expect(errorButton?.textContent?.includes("之后已有成功调用") ?? false).toBe(recovered);
+  });
+
+  it("keeps the error detail action separate from the last successful call", async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => path === "/errors/10"
+      ? error(10, "Fixture account") as never : original(method, path, body));
+    await act(async () => root.render(<App />));
+    await act(async () => container.querySelector<HTMLButtonElement>(".accounts-table .error-time")!.click());
+    expect(vi.mocked(api).mock.calls.some(([method, path]) => method === "GET" && path === "/errors/10")).toBe(true);
+    expect(container.querySelector(".drawer")).not.toBeNull();
+    expect(container.querySelector(".account-last-success button")).toBeNull();
+  });
+
   it("adds a desktop priority page while keeping five mobile navigation items", async () => {
     await act(async () => root.render(<App />));
     expect([...container.querySelectorAll<HTMLButtonElement>("aside nav button")].map((button) => button.textContent?.trim())).toEqual([

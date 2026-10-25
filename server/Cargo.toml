@@ -1,6 +1,6 @@
 [package]
 name = "sub2ops-server"
-version = "0.1.64"
+version = "0.1.65"
 edition = "2021"
 rust-version = "1.99"
 publish = false

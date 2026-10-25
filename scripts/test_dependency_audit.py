@@ -30,7 +30,7 @@ def forwarder_finding(*, advisory_id: str = "RUSTSEC-2026-0381", **package_overr
         "dependencies": [
             {
                 "name": "webpki-roots",
-                "version": "1.0.10",
+                "version": "1.0.11",
                 "source": audit.REGISTRY,
             }
         ],
@@ -88,12 +88,12 @@ class DependencyAuditTests(unittest.TestCase):
         server_roots = [
             package
             for package in server
-            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.10"
+            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.11"
         ]
         desktop_roots = [
             package
             for package in desktop
-            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.10"
+            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.11"
         ]
 
         self.assertEqual(len(server_forwarders), 1)
@@ -101,7 +101,7 @@ class DependencyAuditTests(unittest.TestCase):
         self.assertEqual(len(desktop_roots), 1)
         self.assertEqual(server_forwarders[0]["source"], audit.REGISTRY)
         self.assertEqual(server_forwarders[0]["checksum"], audit.FORWARDER_SHA)
-        self.assertEqual(server_forwarders[0]["dependencies"], ["webpki-roots 1.0.10"])
+        self.assertEqual(server_forwarders[0]["dependencies"], ["webpki-roots 1.0.11"])
         self.assertEqual(server_roots[0]["source"], audit.REGISTRY)
         self.assertEqual(server_roots[0]["checksum"], audit.PATCHED_ROOTS_SHA)
         self.assertEqual(desktop_roots[0]["source"], audit.REGISTRY)
@@ -138,7 +138,7 @@ class DependencyAuditTests(unittest.TestCase):
                 ("wrong forwarder source", forwarder_finding(), self._with_forwarder(base_packages, source="git+https://example.invalid/webpki-roots")),
                 ("wrong root source", forwarder_finding(), self._with_root(base_packages, source="git+https://example.invalid/webpki-roots")),
                 ("missing parent edge", forwarder_finding(), self._with_forwarder(base_packages, dependencies=[])),
-                ("extra parent edge", forwarder_finding(), self._with_forwarder(base_packages, dependencies=["webpki-roots 1.0.10", "webpki-roots 0.26.11"])),
+                ("extra parent edge", forwarder_finding(), self._with_forwarder(base_packages, dependencies=["webpki-roots 1.0.11", "webpki-roots 0.26.11"])),
                 ("other advisory", forwarder_finding(advisory_id="RUSTSEC-2099-9999"), copy.deepcopy(base_packages)),
                 ("other package", forwarder_finding(name="other-package"), copy.deepcopy(base_packages)),
                 ("other version", forwarder_finding(version="0.26.12"), copy.deepcopy(base_packages)),
@@ -155,7 +155,7 @@ class DependencyAuditTests(unittest.TestCase):
             for package in packages
             if not (
                 package.get("name") == "webpki-roots"
-                and package.get("version") == "1.0.10"
+                and package.get("version") == "1.0.11"
             )
         ]
 
@@ -279,7 +279,7 @@ class DependencyAuditTests(unittest.TestCase):
     def _with_root(packages: list[dict], **updates: object) -> list[dict]:
         copied = copy.deepcopy(packages)
         for package in copied:
-            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.10":
+            if package.get("name") == "webpki-roots" and package.get("version") == "1.0.11":
                 package.update(updates)
         return copied
 

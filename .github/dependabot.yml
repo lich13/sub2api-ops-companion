@@ -1,0 +1,159 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directories: ['/server', '/desktop/src-tauri']
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    versioning-strategy: lockfile-only
+    allow:
+      - dependency-type: all
+    groups:
+      rust-compatible:
+        applies-to: version-updates
+        patterns: ['*']
+      rust-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    allow:
+      # New and 0.x packages default to patches. Minor updates below are only
+      # for the existing stable families; allow.update-types never blocks security fixes.
+      - dependency-type: all
+        update-types: ['version-update:semver-patch']
+      - dependency-name: 'react*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: '@types/react*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: yaml
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: prettier
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: typescript
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: vite
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: vitest
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: jsdom
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+    groups:
+      react:
+        applies-to: version-updates
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      tauri-js:
+        applies-to: version-updates
+        patterns: ['@tauri-apps/*']
+      frontend-other:
+        applies-to: version-updates
+        patterns: ['*']
+      frontend-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    allow:
+      - dependency-type: all
+        update-types: ['version-update:semver-patch']
+      - dependency-name: starlette
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: 'psycopg*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+    groups:
+      python-test-tools:
+        applies-to: version-updates
+        patterns: ['*']
+      python-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    # Keep the current compiler and Debian series; refresh their pinned digests.
+    # Docker security-update PRs are unsupported. Toolchain/security version
+    # changes are reviewed together with CI and the repository toolchain pin.
+    ignore:
+      - dependency-name: rust
+        update-types: ['version-update:semver-major', 'version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: debian
+        update-types: ['version-update:semver-major', 'version-update:semver-minor', 'version-update:semver-patch']
+    groups:
+      base-image-digests:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    allow:
+      - dependency-type: all
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+    groups:
+      actions-compatible:
+        applies-to: version-updates
+        patterns: ['*']
+      actions-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: gradle
+    directory: /desktop/src-tauri/gen/android
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    # AGP, Kotlin and the Gradle wrapper are maintained as one toolchain.
+    allow:
+      - dependency-name: 'androidx.*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: 'com.google.android.material:material'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+      - dependency-name: 'junit:junit'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
+    groups:
+      android-libraries:
+        patterns: ['*']

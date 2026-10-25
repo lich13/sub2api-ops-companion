@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     tags: ['desktop-v*']
-    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example', 'README.md', 'UPGRADING.md', 'docs/**']
+    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', 'rust-toolchain.toml', '.dockerignore', '.env.example', 'README.md', 'UPGRADING.md', 'docs/**']
   pull_request:
-    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', '.dockerignore', '.env.example', 'README.md', 'UPGRADING.md', 'docs/**']
+    paths: ['desktop/**', 'server/**', 'tests/**', 'scripts/**', 'Dockerfile', 'docker-compose.yml', '.github/workflows/desktop.yml', 'requirements.txt', 'rust-toolchain.toml', '.dockerignore', '.env.example', 'README.md', 'UPGRADING.md', 'docs/**']
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

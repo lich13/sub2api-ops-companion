@@ -574,6 +574,24 @@ td:last-child {
 .error-time small {
   margin: 0;
 }
+.account-last-success {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.account-last-success time {
+  white-space: nowrap;
+}
+.mobile-error-summary {
+  min-width: 0;
+  flex: 1;
+}
+.mobile-error-summary .account-last-success {
+  font-size: 11px;
+}
 .text-button {
   background: none;
   border: 0;
