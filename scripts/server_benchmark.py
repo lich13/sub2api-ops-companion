@@ -21,7 +21,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import traceback
 import uuid
 
 import psycopg
@@ -33,6 +32,8 @@ BENCHMARK_FIELDS = frozenset({
     "Os", "Architecture", "Id", "Size", "Config", "Labels", "State", "ExitCode",
     "OOMKilled", "Error", "accounts", "id", "operation_versions", "test", "items",
     "batch_id", "pending", "status", "result", "success", "binary_bytes",
+    "schema_version", "observed_at", "groups", "errors", "recoveries", "data", "ok",
+    "error", "code", "message", "detail",
 })
 
 
@@ -176,17 +177,29 @@ class Sampler:
 
 
 def failure_location(error: Exception) -> str:
-    frames = traceback.extract_tb(error.__traceback__)
     script = Path(__file__).resolve()
-    frame = next(
-        (item for item in reversed(frames) if Path(item.filename).resolve() == script),
-        None,
-    )
+    current = error.__traceback__
+    frame = None
+    while current is not None:
+        if Path(current.tb_frame.f_code.co_filename).resolve() == script:
+            frame = current
+        current = current.tb_next
     if frame is None:
         return type(error).__name__
     field = error.args[0] if isinstance(error, KeyError) and error.args else None
     field_hint = f" field={field}" if isinstance(field, str) and field in BENCHMARK_FIELDS else ""
-    return f"{type(error).__name__} at {script.name}:{frame.lineno} ({frame.name}){field_hint}"
+    local = frame.tb_frame.f_locals
+    runtime = local.get("implementation")
+    runtime_hint = f" runtime={runtime}" if runtime in {"python", "rust"} else ""
+    count = local.get("count")
+    count_hint = f" workload_accounts={count}" if type(count) is int and count in {20, 100, 1000} else ""
+    snapshot = local.get("snapshot")
+    response_hint = ""
+    if isinstance(snapshot, dict):
+        fields = sorted(key for key in snapshot if isinstance(key, str) and key in BENCHMARK_FIELDS)
+        response_hint = " response_fields=" + (",".join(fields) if fields else "none")
+    return (f"{type(error).__name__} at {script.name}:{frame.tb_lineno} "
+            f"({frame.tb_frame.f_code.co_name}){field_hint}{runtime_hint}{count_hint}{response_hint}")
 
 
 def shutdown_summary(implementation: str, state: dict, logs: str) -> dict:
