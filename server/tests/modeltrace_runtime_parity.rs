@@ -405,6 +405,9 @@ impl Scenario {
 }
 
 struct MockState {
+    pool: Mutex<Option<sqlx::PgPool>>,
+    quotas: Mutex<HashMap<i64, Value>>,
+    directory_headers: Mutex<HashMap<i64, HeaderMap>>,
     directories: Mutex<HashMap<i64, Value>>,
     directory_statuses: Mutex<HashMap<i64, u16>>,
     directory_calls: Mutex<Vec<i64>>,
@@ -421,6 +424,9 @@ struct MockState {
 impl MockState {
     fn new() -> Arc<Self> {
         Arc::new(Self {
+            pool: Default::default(),
+            quotas: Default::default(),
+            directory_headers: Default::default(),
             directories: Default::default(),
             directory_statuses: Default::default(),
             directory_calls: Default::default(),
@@ -543,14 +549,48 @@ async fn mock_model_upstream(State(state): State<Arc<MockState>>, request: Reque
     let path = parts.uri.path().to_owned();
     let method = parts.method;
     let headers = parts.headers;
+    if method == Method::GET && path == "/api/v1/admin/groups/all" {
+        return axum::Json(json!({"code":0,"data":[]})).into_response();
+    }
+    if method == Method::GET
+        && path.starts_with("/api/v1/admin/accounts/")
+        && path.ends_with("/usage")
+    {
+        let id = path.split('/').nth(5).unwrap().parse::<i64>().unwrap();
+        return axum::Json(json!({"code":0,"data":state.quotas.lock().unwrap().get(&id).cloned().unwrap_or(Value::Null)})).into_response();
+    }
+    if method == Method::POST
+        && path.starts_with("/api/v1/admin/accounts/")
+        && path.ends_with("/schedulable")
+    {
+        let id = path.split('/').nth(5).unwrap().parse::<i64>().unwrap();
+        let payload: Value = serde_json::from_slice(&to_bytes(body, 10000).await.unwrap()).unwrap();
+        let pool = state.pool.lock().unwrap().clone().unwrap();
+        sqlx::query("UPDATE accounts SET schedulable=$1,updated_at=now() WHERE id=$2")
+            .bind(payload["schedulable"].as_bool().unwrap())
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        return axum::Json(json!({"code":0,"data":{"id":id,"schedulable":payload["schedulable"]}}))
+            .into_response();
+    }
     if method == Method::GET && path.starts_with("/fixture-models/") {
-        assert!(!headers.contains_key("x-api-key"));
+        assert_ne!(
+            headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+            Some("fixture-model-admin-key")
+        );
         let id = path
             .strip_prefix("/fixture-models/")
             .unwrap()
             .parse::<i64>()
             .unwrap();
         state.directory_calls.lock().unwrap().push(id);
+        state
+            .directory_headers
+            .lock()
+            .unwrap()
+            .insert(id, headers.clone());
         let authorization = headers
             .get(header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
@@ -798,7 +838,7 @@ async fn account_model_candidates_ignore_other_accounts_and_allowlists_but_retai
         empty.is_empty(),
         "a valid empty provider directory stays empty"
     );
-    let detection = harness.runtime.detection.view(child).unwrap();
+    let detection = harness.runtime.detection.view(child).await.unwrap();
     let missing = harness
         .runtime
         .detection
@@ -990,7 +1030,7 @@ async fn account_model_candidates_reject_malformed_directories_and_late_changed_
     assert_eq!(error.status.as_u16(), 502);
     assert_eq!(error.detail, "上游模型列表格式无效");
     let before = harness.runtime.detection.control(id).unwrap();
-    let detection = harness.runtime.detection.view(id).unwrap();
+    let detection = harness.runtime.detection.view(id).await.unwrap();
     let error = harness.runtime.detection.save(id, &json!({"enabled":true,"interval_minutes":30,"model_id":"gpt-6-luna","expected_version":detection["version"]})).await.unwrap_err();
     assert_eq!(error.status.as_u16(), 502);
     assert_eq!(
@@ -1153,6 +1193,7 @@ impl RuntimeHarness {
         let runtime = Runtime::new(settings)
             .await
             .expect("construct real Runtime with temporary PostgreSQL and loopback provider");
+        *state.pool.lock().unwrap() = Some(runtime.db.pool.clone());
         runtime
             .actions
             .set_model_directory_endpoint(&format!("{upstream_url}/fixture-models"))

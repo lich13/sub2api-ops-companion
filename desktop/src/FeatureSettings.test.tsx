@@ -87,6 +87,11 @@ describe("feature settings drafts", () => {
     const target = form("恢复、测活与模型检测");
     const source = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时检测源"]')!;
     expect(source.value).toBe("modeltrace");
+    for (const platform of ["Claude", "Grok", "DeepSeek"]) {
+      const fixed = target.querySelector<HTMLSelectElement>(`[aria-label="${platform} 定时检测源"]`)!;
+      expect(fixed.value).toBe("lm_detector"); expect(fixed.disabled).toBe(true);
+      expect(target.querySelector<HTMLSelectElement>(`[aria-label="${platform} 定时采样组数"]`)!.value).toBe("1");
+    }
     expect(target.querySelector('[aria-label="OpenAI 定时采样组数"]')).toBeNull();
     await act(async () => { source.value = "lm_detector"; source.dispatchEvent(new Event("change", { bubbles: true })); });
     const count = target.querySelector<HTMLSelectElement>('[aria-label="OpenAI 定时采样组数"]')!;

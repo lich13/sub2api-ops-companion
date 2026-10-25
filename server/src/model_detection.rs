@@ -115,10 +115,11 @@ impl Detection {
             &self.monitor.config.current()?["model_detection_model_id"],
         )
     }
-    pub(crate) fn effective_model(&self, value: &Value) -> Result<String> {
+    pub(crate) fn effective_model(&self, value: &Value, row: &Value) -> Result<String> {
         match value["model_override"].as_str() {
             Some(model) => Ok(model.to_owned()),
-            None => self.model_id(),
+            None if row["platform"] == "openai" => self.model_id(),
+            None => Ok(String::new()),
         }
     }
     fn effective_version(value: &Value, model: &str) -> String {
@@ -197,7 +198,12 @@ impl Detection {
             self.actions.settings.read_only,
         );
     }
-    pub fn view(&self, id: i64) -> Result<Value> {
+    pub async fn view(&self, id: i64) -> Result<Value> {
+        let row = model_target::account(&self.actions, id).await?;
+        self.view_account(&row)
+    }
+    pub fn view_account(&self, row: &Value) -> Result<Value> {
+        let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
         let data = self.store.read()?;
         let mut value = data["accounts"]
             .get(id.to_string())
@@ -213,20 +219,26 @@ impl Detection {
             .unwrap()
             .entry("min_interval_minutes")
             .or_insert(json!(5));
-        let model = self.effective_model(&value)?;
+        let model = self.effective_model(&value, row)?;
         value["version"] = Self::effective_version(&value, &model).into();
         value["model_id"] = model.into();
-        value["model_source"] = if value["model_override"].is_string() {
-            "account"
-        } else {
-            "global"
-        }
-        .into();
+        value["model_source"] =
+            if row["platform"] != "openai" || value["model_override"].is_string() {
+                "account"
+            } else {
+                "global"
+            }
+            .into();
         value["model_override"] = value["model_override"].clone();
-        value["global_model_id"] = self.model_id()?.into();
+        value["global_model_id"] = if row["platform"] == "openai" {
+            self.model_id()?.into()
+        } else {
+            "".into()
+        };
         value["account_id"] = id.into();
-        let platform =
-            self.monitor.config.current()?["model_detection_platforms"]["openai"].clone();
+        let platform = self.monitor.config.current()?["model_detection_platforms"]
+            [string(&row["platform"])]
+        .clone();
         value["engine"] = platform["engine"].clone();
         value["sample_count"] = if platform["engine"] == crate::lm_detector::ENGINE {
             platform["sample_count"].clone()
@@ -278,10 +290,10 @@ impl Detection {
         let request = detection_request(payload)?;
         let row = model_target::account(&self.actions, id).await?;
         if request.get("model_override").is_some() && row["type"] != "apikey" {
-            return Err(Error::new(422, "仅 OpenAI Key 账号可单独指定检测模型"));
+            return Err(Error::new(422, "仅 API Key 账号可单独指定检测模型"));
         }
         let current = self.control(id)?;
-        let previous_model = self.effective_model(&current)?;
+        let previous_model = self.effective_model(&current, &row)?;
         let mut candidate = current.clone();
         for field in ["schedule_mode", "min_interval_minutes"] {
             if let Some(value) = request.get(field) {
@@ -291,15 +303,18 @@ impl Detection {
         if let Some(model) = request.get("model_override") {
             candidate["model_override"] = model.clone();
         }
-        let model = self.effective_model(&candidate)?;
+        let model = self.effective_model(&candidate, &row)?;
+        if request["enabled"] == true && model.is_empty() {
+            return Err(Error::new(422, "请先选择该账号的检测模型"));
+        }
         let allowed = if request["enabled"] == true {
             self.actions.model_allowed(&row, &model).await
         } else {
             Ok(true)
         };
         let _config = self.monitor.config.lock.lock().await;
-        if self.effective_model(&candidate)? != model
-            || self.effective_model(&current)? != previous_model
+        if self.effective_model(&candidate, &row)? != model
+            || self.effective_model(&current, &row)? != previous_model
         {
             return Err(Error::new(409, "自动检测模型已变化，请重新读取"));
         }
@@ -313,7 +328,7 @@ impl Detection {
                 .unwrap()
                 .entry(id.to_string())
                 .or_insert_with(defaults);
-            if Self::effective_version(value, &self.effective_model(value)?)
+            if Self::effective_version(value, &self.effective_model(value, &row)?)
                 != request["expected_version"]
             {
                 return Err(Error::new(409, "检测设置已变化，请重新读取"));
@@ -353,14 +368,10 @@ impl Detection {
             self.refresh_call_frequency().await?;
             self.update_smart_schedule(id, &self.control(id)?)?;
         }
-        self.view(id)
+        self.view_account(&row)
     }
     pub async fn reason(&self, row: &Value, mark: &Value, recheck: bool) -> Result<String> {
-        if !row.is_object()
-            || row["platform"] != "openai"
-            || !matches!(string(&row["type"]), "oauth" | "apikey")
-            || truthy(&row["deleted_at"])
-        {
+        if !model_target::supported(row) || truthy(&row["deleted_at"]) {
             return Ok("账号已删除或不支持检测".into());
         }
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
@@ -538,6 +549,9 @@ impl Detection {
             }
         }
         let row = self.actions.account(id, None).await?;
+        if row["platform"] != "openai" && causes != ["scheduled"] {
+            return Ok(Value::Null);
+        }
         let mark = self.mark(id)?;
         let recheck = causes.iter().any(|v| v == "scheduled")
             && value["enabled"] == true
@@ -556,10 +570,11 @@ impl Detection {
             .filter(|v| !v.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-        let model = self.effective_model(&value)?;
+        let model = self.effective_model(&value, &row)?;
         let allowed = self.actions.model_allowed(&row, &model).await?;
-        let platform =
-            self.monitor.config.current()?["model_detection_platforms"]["openai"].clone();
+        let platform = self.monitor.config.current()?["model_detection_platforms"]
+            [string(&row["platform"])]
+        .clone();
         let lm = causes == ["scheduled"] && platform["engine"] == crate::lm_detector::ENGINE;
         let engine = if lm {
             crate::lm_detector::ENGINE
@@ -610,7 +625,7 @@ impl Detection {
         )?;
 
         let _config = self.monitor.config.lock.lock().await;
-        if self.effective_model(&self.control(id)?)? != model {
+        if self.effective_model(&self.control(id)?, &row)? != model {
             return Err(Error::new(409, "自动检测模型已变化，等待重新核对"));
         }
         let job = self
@@ -736,7 +751,7 @@ impl Detection {
             return Ok(d);
         }
         let row = self.actions.account(id, None).await?;
-        if row["platform"] != "openai" || !matches!(string(&row["type"]), "oauth" | "apikey") {
+        if !model_target::supported(&row) {
             d["status"] = "needs_confirmation".into();
             d["reason"] = "账号资格已变化".into();
             self.update(id, json!({"disposition":d}))?;

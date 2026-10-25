@@ -475,17 +475,39 @@ describe("LM Detector manual preferences and reports", () => {
     await act(async () => root.render(<ModelTestDialog key="reopen" {...props} preference={{ engine: "lm_detector", sample_count: 3 }}/>)); await settle();
     expect(container.querySelector<HTMLInputElement>('.lm-probe-option input')!.checked).toBe(false);
   });
-  it("shows uncalibrated scores, merged names and all candidates without inventing confidence", async () => {
+  it("shows only five candidates with three decimal scores and missing confidence", async () => {
     const original = vi.mocked(api).getMockImplementation()!;
     const names = ["gpt-6-astra/6.1-sol", "claude-opus-5", "gpt-6-sol", "grok-4", "deepseek-v4", "qwen-3"];
     vi.mocked(api).mockImplementation(async (method, path, body) => path.endsWith("/latest") ? {
       id: "fixture-lm", status: "completed", engine: "lm_detector", requested_model: "gpt-6-sol", returned_models: [], planned_groups: 1, completed_groups: 1, valid_groups: 1, attempts: 1, duration_ms: 10,
-      report: { decision: "partial", prediction_name: names[0], merged_class: true, probability: null, used_outputs: 1, results: names.map((name, i) => ({ model: name, display_name: name, score: 2.83452 - i * .1, probability: null })) },
+      report: { decision: "partial", prediction_name: names[0], merged_class: true, probability: null, used_outputs: 1, results: names.map((name, i) => ({ model: name, display_name: name, score: i === 1 ? null : 2.83452 - i * .1, probability: i === 2 ? .123456 : null })) },
     } as never : original(method, path, body));
     await act(async () => root.render(<ModelTestDialog account={account} online close={vi.fn()} report={vi.fn()}/>)); await settle();
     expect(container.querySelectorAll('.lm-candidates [role="row"]')).toHaveLength(6);
-    expect(container.textContent).toContain("初步结果"); expect(container.textContent).toContain("合并类别，无法区分"); expect(container.textContent).toContain("2.8345"); expect(container.textContent).not.toContain("0.0%");
-    await act(async () => (container.querySelector('.lm-expand') as HTMLButtonElement).click());
-    expect(container.querySelectorAll('.lm-candidates [role="row"]')).toHaveLength(7);expect(container.textContent).toContain("qwen-3");
+    expect(container.textContent).toContain("初步结果"); expect(container.textContent).toContain("合并类别，无法区分"); expect(container.textContent).toContain("2.835"); expect(container.textContent).not.toContain("0.0%");
+    expect(container.textContent).toContain("12.35%");
+    expect(container.querySelector(".lm-expand")).toBeNull();
+    expect(container.textContent).not.toContain("qwen-3");
+  });
+});
+
+describe("additional API Key platforms", () => {
+  it.each(["anthropic", "grok", "deepseek"])("uses LM Detector and exposes safe retry for %s", async (platform) => {
+    const latest = { id: "fixture-retry", account_id: account.id, status: "completed", engine: "lm_detector", requested_model: "gpt-6-sol", forwarded_model: "gpt-6-sol", returned_models: [], planned_groups: 3, completed_groups: 2, valid_groups: 2, attempts: 5, duration_ms: 10, can_retry: true };
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return latest as never;
+      if (path.endsWith("/model-detection")) return { model_id: "gpt-6-sol" } as never;
+      if (path.endsWith("/retry")) return { ...latest, can_retry: false } as never;
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={{ ...account, platform, type: "apikey" }} online close={vi.fn()} report={vi.fn()} preference={{ engine: "modeltrace", sample_count: 1 }}/>));
+    await settle();
+    const source = container.querySelector<HTMLSelectElement>('[aria-label="检测源"]')!;
+    expect([...source.options].map(o => o.value)).toEqual(["lm_detector"]);
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("footer button")].find(b => b.textContent?.includes("重试失败组"))!;
+    expect(retry.disabled).toBe(false);
+    await act(async () => retry.click());
+    expect(api).toHaveBeenCalledWith("POST", "/model-tests/fixture-retry/retry", expect.objectContaining({ request_id: expect.any(String) }));
   });
 });

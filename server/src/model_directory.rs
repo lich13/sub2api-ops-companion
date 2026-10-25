@@ -16,6 +16,7 @@ pub fn endpoint(target: &Target) -> Result<reqwest::Url> {
     let base = target
         .url
         .strip_suffix("/responses")
+        .or_else(|| target.url.strip_suffix("/messages"))
         .or_else(|| target.url.strip_suffix("/chat/completions"))
         .ok_or_else(|| Error::new(422, "模型目录地址无效"))?;
     let mut url = reqwest::Url::parse(&format!("{base}/models"))

@@ -210,6 +210,7 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
                     "request_id",
                     "client_id",
                     "scheduled_at",
+                    "repeat",
                 ],
                 &["action", "expected_version", "request_id", "client_id"],
             )?;
@@ -242,6 +243,12 @@ pub fn validate(path: &[&str], method: &str, value: &mut Value) -> Result<()> {
                     return Err(Error::invalid());
                 }
                 crate::operations::scheduled_time(at)?;
+            }
+            if let Some(repeat) = value.get("repeat") {
+                choice(repeat, &["quota_cycle"])?;
+                if value["action"] != "test" || value.get("scheduled_at").is_some() {
+                    return Err(Error::invalid());
+                }
             }
             if let Some(payload) = value.get("payload") {
                 object(payload)?;

@@ -1,9 +1,7 @@
-import { useState } from "react";
 import type { ModelTestResult } from "./modelTestTypes";
 
-const confidence = (value?: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+const confidence = (value?: number | null) => value == null ? "—" : `${(value * 100).toFixed(2)}%`;
 export function ModelFingerprintResult({ job }: { job: ModelTestResult }) {
-  const [expanded, setExpanded] = useState(false);
   const report = job.report, candidates = report?.results ?? [];
   const label = report?.decision === "not_model" ? "序列异常，无法分析" : report?.decision === "unscorable" ? "有效样本不足，无法分析" : report?.prediction_name || "等待分析";
   return <div className="lm-fingerprint-result">
@@ -12,8 +10,8 @@ export function ModelFingerprintResult({ job }: { job: ModelTestResult }) {
     {job.classification?.outcome === "unavailable" && <p className="muted">{job.classification.reason}</p>}
     {!!candidates.length && <><div className="lm-candidates" role="table" aria-label="模型候选排名">
       <div role="row" className="lm-candidate-heading"><span role="columnheader">候选模型</span><span role="columnheader">排名分数</span><span role="columnheader">置信度</span></div>
-      {(expanded ? candidates : candidates.slice(0, 5)).map((candidate, index) => <div role="row" key={candidate.model}><span role="cell"><small>{index + 1}</small>{candidate.display_name || candidate.model}</span><span role="cell">{candidate.score.toFixed(4)}</span><span role="cell">{confidence(candidate.probability)}</span></div>)}
-    </div>{candidates.length > 5 && <button className="text-button lm-expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "收起候选" : `展开全部 ${candidates.length} 个候选`}</button>}</>}
+      {candidates.slice(0, 5).map((candidate, index) => <div role="row" key={candidate.model}><span role="cell"><small>{index + 1}</small>{candidate.display_name || candidate.model}</span><span role="cell">{candidate.score == null ? "—" : candidate.score.toFixed(3)}</span><span role="cell">{confidence(candidate.probability)}</span></div>)}
+    </div></>}
   </div>;
 }
 

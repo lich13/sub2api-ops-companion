@@ -803,7 +803,7 @@ impl Harness {
         model_id: &str,
     ) -> Value {
         self.set_detection_model(model_id).await;
-        let control = self.runtime().detection.view(id).unwrap();
+        let control = self.runtime().detection.view(id).await.unwrap();
         self.runtime()
             .detection
             .save(
@@ -1048,7 +1048,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
         .detection
         .update(id, json!({"model_id":persisted_legacy}))
         .unwrap();
-    let initial = harness.runtime().detection.view(id).unwrap();
+    let initial = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(initial["model_id"], "gpt-6-luna");
     assert_eq!(initial["model_source"], "global");
     assert_eq!(
@@ -1057,7 +1057,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
     );
 
     harness.set_detection_model("gpt-6-astra").await;
-    let changed = harness.runtime().detection.view(id).unwrap();
+    let changed = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(changed["model_id"], "gpt-6-astra");
     assert_eq!(changed["model_source"], "global");
     assert_ne!(changed["version"], initial["version"]);
@@ -1072,7 +1072,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
     .into_iter()
     .enumerate()
     {
-        let current = harness.runtime().detection.view(id).unwrap();
+        let current = harness.runtime().detection.view(id).await.unwrap();
         let saved = harness
             .runtime()
             .detection
@@ -1096,7 +1096,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
         );
     }
 
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     for payload in [
         json!({
             "enabled":"true",
@@ -1146,7 +1146,7 @@ async fn global_detection_model_overlays_legacy_fields_and_keeps_put_validation(
         .unwrap_err();
     assert_eq!(stale.status.as_u16(), 409);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["model_id"],
+        harness.runtime().detection.view(id).await.unwrap()["model_id"],
         "gpt-6-astra"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -1160,7 +1160,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
         .mock
         .set_models(vec![json!({"id":"gpt-6-sol"}), json!({"id":"gpt-6-luna"})]);
     let id = integer(&harness.seed_account("apikey", true, json!({})).await["id"]).unwrap();
-    let initial = harness.runtime().detection.view(id).unwrap();
+    let initial = harness.runtime().detection.view(id).await.unwrap();
     assert!(initial["model_override"].is_null());
     let saved = harness
         .runtime()
@@ -1180,7 +1180,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     assert_eq!(saved["global_model_id"], "gpt-6-luna");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     harness.set_detection_model("gpt-6-astra").await;
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(current["version"], saved["version"]);
     assert_eq!(current["model_id"], "gpt-6-sol");
     assert_eq!(current["global_model_id"], "gpt-6-astra");
@@ -1198,7 +1198,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
         .unwrap_err();
     assert_eq!(missing.status.as_u16(), 422);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["version"],
+        harness.runtime().detection.view(id).await.unwrap()["version"],
         current["version"]
     );
     let stale = harness
@@ -1216,7 +1216,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     assert_eq!(stale.status.as_u16(), 409);
     harness.restart_runtime().await;
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["model_override"],
+        harness.runtime().detection.view(id).await.unwrap()["model_override"],
         "gpt-6-sol"
     );
     let budget = harness
@@ -1247,7 +1247,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     let done = harness.wait_job_terminal(&job_id).await;
     assert_eq!(done["status"], "completed");
     assert_eq!(done["requested_model"], "gpt-6-sol");
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     let following = harness
         .runtime()
         .detection
@@ -1264,7 +1264,7 @@ async fn key_detection_override_uses_shared_candidates_and_survives_global_chang
     assert_eq!(following["model_id"], "gpt-6-astra");
     assert_eq!(following["model_source"], "global");
     let oauth = integer(&harness.seed_account("oauth", true, json!({})).await["id"]).unwrap();
-    let current = harness.runtime().detection.view(oauth).unwrap();
+    let current = harness.runtime().detection.view(oauth).await.unwrap();
     let error = harness
         .runtime()
         .detection
@@ -1329,7 +1329,7 @@ async fn global_detection_model_normalizes_and_changed_model_rejects_pending_can
 
     harness.set_detection_model("gpt-6-luna").await;
     let before_control = harness.runtime().detection.control(id).unwrap();
-    let before_view = harness.runtime().detection.view(id).unwrap();
+    let before_view = harness.runtime().detection.view(id).await.unwrap();
     let gate = Gate::new();
     harness.mock.set_model_directory_gate(Some(gate.clone()));
     let runtime = Arc::clone(harness.runtime());
@@ -1360,7 +1360,7 @@ async fn global_detection_model_normalizes_and_changed_model_rejects_pending_can
         before_control,
         "a stale candidate response cannot persist the prior model selection"
     );
-    let after_view = harness.runtime().detection.view(id).unwrap();
+    let after_view = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(after_view["model_id"], "gpt-6-astra");
     assert_eq!(after_view["model_source"], "global");
     assert_eq!(after_view["enabled"], false);
@@ -1380,7 +1380,7 @@ async fn detection_scheduler_consumes_duplicate_clues_and_honors_exact_persisted
     let row = harness.seed_account("apikey", true, json!({})).await;
     let id = integer(&row["id"]).unwrap();
 
-    let default = harness.runtime().detection.view(id).unwrap();
+    let default = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(default["enabled"], false);
     assert_eq!(
         default["interval_minutes"],
@@ -2472,7 +2472,7 @@ async fn automatic_sol_prediction_uses_requested_astra_model_and_stops_after_fir
     let queued = harness.runtime().tests.get(&job_id).unwrap();
     assert_eq!(queued["requested_model"], "gpt-6-astra");
     assert_eq!(queued["forwarded_model"], "gpt-6-astra");
-    let visible = harness.runtime().detection.view(id).unwrap();
+    let visible = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(visible["model_id"], "gpt-6-astra");
     assert_eq!(visible["model_source"], "global");
     assert_eq!(
@@ -2601,7 +2601,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         schedule_writes[0].path,
         format!("/api/v1/admin/accounts/{id}/schedulable")
     );
-    let control = harness.runtime().detection.view(id).unwrap();
+    let control = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(control["disposition"]["status"], "completed");
     assert_eq!(control["disposition"]["marked"], true);
     assert_eq!(control["disposition"]["schedule_verified"], true);
@@ -2654,7 +2654,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         .unwrap();
     assert_eq!(harness.mock.count("POST", "/push"), 1);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "delivered"
     );
     harness.restart_runtime().await;
@@ -2721,7 +2721,7 @@ async fn automatic_first_group_verdict_confirms_schedulable_write_before_bark_an
         .unwrap();
     assert_eq!(harness.mock.count("POST", "/push"), 1);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "delivered"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -2768,7 +2768,7 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
             .unwrap();
         let attempt = index as i64 + 1;
         let event =
-            harness.runtime().detection.view(id).unwrap()["disposition_notification"].clone();
+            harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
         assert_eq!(event["status"], "retry");
         assert_eq!(event["attempts"], attempt);
         assert_eq!(
@@ -2793,7 +2793,7 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
         .unwrap();
     assert_eq!(harness.mock.count("POST", "/push"), delays.len() + 1);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "delivered"
     );
     harness
@@ -2833,8 +2833,12 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
         .deliver_notifications()
         .await
         .unwrap();
-    let body_error_retry = harness.runtime().detection.view(body_error_id).unwrap()
-        ["disposition_notification"]
+    let body_error_retry = harness
+        .runtime()
+        .detection
+        .view(body_error_id)
+        .await
+        .unwrap()["disposition_notification"]
         .clone();
     assert_eq!(body_error_retry["status"], "retry");
     assert_eq!(body_error_retry["attempts"], 1);
@@ -2849,8 +2853,12 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
     );
 
     harness.restart_runtime().await;
-    let persisted_body_error = harness.runtime().detection.view(body_error_id).unwrap()
-        ["disposition_notification"]
+    let persisted_body_error = harness
+        .runtime()
+        .detection
+        .view(body_error_id)
+        .await
+        .unwrap()["disposition_notification"]
         .clone();
     assert_eq!(persisted_body_error["status"], "retry");
     assert_eq!(persisted_body_error["attempts"], 1);
@@ -2878,8 +2886,12 @@ async fn automatic_notification_retries_use_durable_backoff_and_send_once_after_
         harness.mock.count("POST", "/push"),
         pushes_before_body_error + 2
     );
-    let delivered_body_error = harness.runtime().detection.view(body_error_id).unwrap()
-        ["disposition_notification"]
+    let delivered_body_error = harness
+        .runtime()
+        .detection
+        .view(body_error_id)
+        .await
+        .unwrap()["disposition_notification"]
         .clone();
     assert_eq!(delivered_body_error["status"], "delivered");
     assert_eq!(delivered_body_error["attempts"], 2);
@@ -2993,8 +3005,9 @@ async fn confirmed_bark_waits_for_enabled_valid_config_and_invalid_config_preser
         .to_owned();
     let first_job = harness.wait_job_terminal(&first_job_id).await;
     assert_eq!(first_job["automatic_disposition"]["status"], "completed");
-    let first_notice =
-        harness.runtime().detection.view(first_id).unwrap()["disposition_notification"].clone();
+    let first_notice = harness.runtime().detection.view(first_id).await.unwrap()
+        ["disposition_notification"]
+        .clone();
     assert_eq!(first_notice["status"], "queued");
     assert_eq!(first_notice["attempts"], 0);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -3004,8 +3017,9 @@ async fn confirmed_bark_waits_for_enabled_valid_config_and_invalid_config_preser
         .deliver_notifications()
         .await
         .unwrap();
-    let suppressed =
-        harness.runtime().detection.view(first_id).unwrap()["disposition_notification"].clone();
+    let suppressed = harness.runtime().detection.view(first_id).await.unwrap()
+        ["disposition_notification"]
+        .clone();
     assert_eq!(suppressed["status"], "suppressed");
     assert_eq!(suppressed["reason"], "disabled");
     assert_eq!(suppressed["attempts"], 0);
@@ -3043,8 +3057,9 @@ async fn confirmed_bark_waits_for_enabled_valid_config_and_invalid_config_preser
         .deliver_notifications()
         .await
         .unwrap();
-    let invalid_config =
-        harness.runtime().detection.view(second_id).unwrap()["disposition_notification"].clone();
+    let invalid_config = harness.runtime().detection.view(second_id).await.unwrap()
+        ["disposition_notification"]
+        .clone();
     assert_eq!(invalid_config["status"], "queued");
     assert_eq!(invalid_config["attempts"], 0);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -3063,7 +3078,8 @@ async fn confirmed_bark_waits_for_enabled_valid_config_and_invalid_config_preser
     assert_eq!(bark[0].payload["level"], "critical");
     assert_eq!(bark[0].payload["sound"], "alarm");
     assert_eq!(
-        harness.runtime().detection.view(second_id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(second_id).await.unwrap()["disposition_notification"]
+            ["status"],
         "delivered"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -3120,7 +3136,7 @@ async fn disposition_response_timeout_verifies_committed_write_without_replay() 
     .expect(
         "after the gated response times out, PostgreSQL readback must confirm the committed write",
     );
-    let disposition = harness.runtime().detection.view(id).unwrap()["disposition"].clone();
+    let disposition = harness.runtime().detection.view(id).await.unwrap()["disposition"].clone();
     assert_eq!(disposition["status"], "completed");
     assert_eq!(disposition["schedule_verified"], true);
     assert_eq!(
@@ -4745,7 +4761,12 @@ async fn non_degraded_and_empty_automatic_reports_create_no_disposition_notifica
         harness.runtime().detection.mark(automatic_id).unwrap()["marked"],
         false
     );
-    let automatic_control = harness.runtime().detection.view(automatic_id).unwrap();
+    let automatic_control = harness
+        .runtime()
+        .detection
+        .view(automatic_id)
+        .await
+        .unwrap();
     assert_eq!(automatic_control["status"], "waiting");
     assert!(automatic_control["disposition"].is_null());
     assert_eq!(
@@ -5004,7 +5025,7 @@ async fn missing_admin_authorization_preserves_the_mark_without_schedule_or_bark
     gate.release.notify_one();
     harness.mock.set_model_gate(None);
     let job = harness.wait_job_terminal(&job_id).await;
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(job["first_group_prediction"], "gpt-5.6-luna");
     assert_eq!(current["disposition"]["status"], "needs_confirmation");
     assert_eq!(current["disposition"]["marked"], true);
@@ -5112,7 +5133,7 @@ async fn verified_schedule_response_is_required_before_a_degraded_result_enters_
             .count("POST", &format!("/api/v1/admin/accounts/{id}/schedulable")),
         1
     );
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(current["disposition"]["marked"], true);
     assert_eq!(current["disposition"]["schedule_verified"], false);
     assert_eq!(current["disposition"]["status"], "checking");
@@ -5149,7 +5170,7 @@ async fn verified_schedule_response_is_required_before_a_degraded_result_enters_
         1
     );
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "queued"
     );
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5161,7 +5182,7 @@ async fn verified_schedule_response_is_required_before_a_degraded_result_enters_
         .unwrap();
     assert_eq!(harness.mock.count("POST", "/push"), 1);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "delivered"
     );
     assert!(harness.mock.unexpected().is_empty());
@@ -5275,7 +5296,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
         1
     );
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "queued"
     );
 
@@ -5288,7 +5309,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
         .is_err());
     drop(read_only);
     let reservation =
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"].clone();
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
     assert_eq!(reservation["status"], "queued");
     assert_eq!(reservation["attempts"], 0);
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5311,7 +5332,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     assert!(delivery_result.is_err());
     drop(read_only);
     let receipt_pending =
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"].clone();
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
     assert_eq!(receipt_pending["status"], "queued");
     assert_eq!(receipt_pending["attempts"], 1);
     assert_eq!(
@@ -5322,7 +5343,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
     let receipt_retry_at = receipt_pending["next_at"].clone();
     harness.restart_runtime().await;
     let persisted_receipt =
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"].clone();
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"].clone();
     assert_eq!(persisted_receipt["status"], "queued");
     assert_eq!(persisted_receipt["attempts"], 1);
     assert_eq!(persisted_receipt["next_at"], receipt_retry_at);
@@ -5350,7 +5371,7 @@ async fn disposition_outbox_and_bark_receipts_recover_from_local_write_failures(
         .unwrap();
     assert_eq!(harness.mock.count("POST", "/push"), 2);
     assert_eq!(
-        harness.runtime().detection.view(id).unwrap()["disposition_notification"]["status"],
+        harness.runtime().detection.view(id).await.unwrap()["disposition_notification"]["status"],
         "delivered"
     );
     assert_eq!(
@@ -5431,7 +5452,7 @@ async fn manual_override_suppresses_a_queued_verified_disposition_notification()
         .unwrap()
         .to_owned();
     let job = harness.wait_job_terminal(&job_id).await;
-    let before = harness.runtime().detection.view(id).unwrap();
+    let before = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(job["automatic_disposition"]["status"], "completed");
     assert_eq!(before["disposition_notification"]["status"], "queued");
     assert_eq!(harness.mock.count("POST", "/push"), 0);
@@ -5442,7 +5463,7 @@ async fn manual_override_suppresses_a_queued_verified_disposition_notification()
         .deliver_notifications()
         .await
         .unwrap();
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(
         current["generation"],
         before["generation"].as_i64().unwrap() + 1
@@ -5514,7 +5535,7 @@ async fn manual_generation_change_during_schedule_write_blocks_receipt_and_bark(
         .deliver_notifications()
         .await
         .unwrap();
-    let current = harness.runtime().detection.view(id).unwrap();
+    let current = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(job["automatic_disposition"]["status"], "overridden");
     assert_eq!(current["status"], "paused");
     assert_eq!(current["hold"], false);
@@ -5680,7 +5701,7 @@ async fn automatic_detection_state_persists_across_runtime_restart() {
     let mut harness = Harness::new(sample_text("above_99", 0)).await;
     let row = harness.seed_account("apikey", true, json!({})).await;
     let id = integer(&row["id"]).unwrap();
-    let default = harness.runtime().detection.view(id).unwrap();
+    let default = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(default["enabled"], false);
     assert_eq!(
         default["interval_minutes"],
@@ -5704,7 +5725,7 @@ async fn automatic_detection_state_persists_across_runtime_restart() {
         datetime(harness.now() + Duration::minutes(20))
     );
     harness.restart_runtime().await;
-    let resumed = harness.runtime().detection.view(id).unwrap();
+    let resumed = harness.runtime().detection.view(id).await.unwrap();
     assert_eq!(resumed["enabled"], true);
     assert_eq!(resumed["interval_minutes"], 20);
     assert_eq!(resumed["generation"], saved["generation"]);
@@ -7215,7 +7236,7 @@ impl Harness {
     }
     async fn smart_detection(&self, id: i64, minimum: i64) -> Value {
         self.set_detection_model("gpt-6-luna").await;
-        let value = self.runtime().detection.view(id).unwrap();
+        let value = self.runtime().detection.view(id).await.unwrap();
         self.runtime().detection.save(id, &json!({"enabled":true,"interval_minutes":37,"schedule_mode":"smart","min_interval_minutes":minimum,"expected_version":value["version"]})).await.unwrap()
     }
 }
@@ -7252,7 +7273,7 @@ async fn smart_frequency_tiers_floor_pause_failure_and_restart_do_not_drift() {
         let live = h.runtime().actions.account(id, None).await.unwrap();
         let lease = h.runtime().actions.locks.try_account(&live).unwrap();
         h.runtime().detection.tick().await.unwrap();
-        let value = h.runtime().detection.view(id).unwrap();
+        let value = h.runtime().detection.view(id).await.unwrap();
         assert_eq!(value["recent_request_count"], count);
         assert_eq!(value["effective_interval_minutes"], minutes);
         assert_eq!(
@@ -7287,13 +7308,13 @@ async fn smart_frequency_tiers_floor_pause_failure_and_restart_do_not_drift() {
     h.runtime().detection.migrate_dispatches().unwrap();
     h.runtime().detection.tick().await.unwrap();
     assert_eq!(
-        h.runtime().detection.view(id).unwrap()["next_at"],
+        h.runtime().detection.view(id).await.unwrap()["next_at"],
         floor["next_at"]
     );
     h.business_requests(id, 0).await;
     h.advance(60);
     h.runtime().detection.tick().await.unwrap();
-    let paused = h.runtime().detection.view(id).unwrap();
+    let paused = h.runtime().detection.view(id).await.unwrap();
     assert_eq!(paused["recent_request_count"], 0);
     assert_eq!(paused["status"], "paused");
     assert!(paused["effective_interval_minutes"].is_null());
@@ -7311,13 +7332,13 @@ async fn smart_frequency_tiers_floor_pause_failure_and_restart_do_not_drift() {
         .await
         .unwrap();
     tick.unwrap();
-    let failed = h.runtime().detection.view(id).unwrap();
+    let failed = h.runtime().detection.view(id).await.unwrap();
     assert!(failed["recent_request_count"].is_null());
     assert!(failed["reason"].as_str().unwrap().contains("暂不可用"));
     h.business_requests(id, 1).await;
     h.advance(60);
     h.runtime().detection.tick().await.unwrap();
-    let restored = h.runtime().detection.view(id).unwrap();
+    let restored = h.runtime().detection.view(id).await.unwrap();
     assert_eq!(restored["status"], "waiting");
     let resumed_at = parse_datetime(&restored["schedule_anchor_at"]).unwrap();
     assert!(resumed_at > anchor);
@@ -7339,14 +7360,17 @@ async fn smart_idle_cancels_waiting_periodic_work_and_pauses_marked_rechecks() {
     let lease = h.runtime().actions.locks.try_account(&live).unwrap();
     h.advance(300);
     h.runtime().detection.tick().await.unwrap();
-    let queued = h.runtime().detection.view(id).unwrap();
+    let queued = h.runtime().detection.view(id).await.unwrap();
     let job = queued["job_id"].as_str().unwrap();
     assert_eq!(h.runtime().tests.get(job).unwrap()["status"], "queued");
     h.advance(3600);
     h.runtime().detection.tick().await.unwrap();
     assert_eq!(h.runtime().tests.get(job).unwrap()["status"], "cancelled");
     h.runtime().detection.tick().await.unwrap();
-    assert_eq!(h.runtime().detection.view(id).unwrap()["status"], "paused");
+    assert_eq!(
+        h.runtime().detection.view(id).await.unwrap()["status"],
+        "paused"
+    );
     assert!(h.runtime().detection.next_allowed_at(id).unwrap().is_null());
     drop(lease);
     let mark = h.runtime().detection.mark(id).unwrap();
@@ -7364,7 +7388,7 @@ async fn smart_idle_cancels_waiting_periodic_work_and_pauses_marked_rechecks() {
         .unwrap();
     h.runtime().detection.update(id,json!({"hold":true,"disposition":{"status":"completed","marked":true,"schedule_verified":true,"job_id":"fixture-mark"}})).unwrap();
     h.runtime().detection.tick().await.unwrap();
-    assert!(h.runtime().detection.view(id).unwrap()["reason"]
+    assert!(h.runtime().detection.view(id).await.unwrap()["reason"]
         .as_str()
         .unwrap()
         .contains("无业务调用"));
@@ -7391,7 +7415,7 @@ async fn smart_idle_cancels_waiting_periodic_work_and_pauses_marked_rechecks() {
     h.runtime().detection.tick().await.unwrap();
     assert!(done["started_at"].is_string());
     assert_eq!(
-        h.runtime().detection.view(id).unwrap()["recent_request_count"],
+        h.runtime().detection.view(id).await.unwrap()["recent_request_count"],
         0,
         "detector traffic is not business usage"
     );
@@ -7422,12 +7446,12 @@ async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() 
         })
         .unwrap();
     h.runtime().detection.migrate_dispatches().unwrap();
-    let migrated = h.runtime().detection.view(id).unwrap();
+    let migrated = h.runtime().detection.view(id).await.unwrap();
     assert_eq!(migrated["schedule_mode"], "smart");
     assert_eq!(migrated["min_interval_minutes"], 5);
     assert_eq!(migrated["interval_minutes"], 37);
     assert_eq!(
-        h.runtime().detection.view(disabled).unwrap()["enabled"],
+        h.runtime().detection.view(disabled).await.unwrap()["enabled"],
         false
     );
     let configured = h.smart_detection(id, 19).await;
@@ -7476,11 +7500,11 @@ async fn smart_migration_is_once_only_and_old_clients_preserve_mode_and_floor() 
     h.restart_runtime().await;
     h.runtime().detection.migrate_dispatches().unwrap();
     assert_eq!(
-        h.runtime().detection.view(id).unwrap()["schedule_mode"],
+        h.runtime().detection.view(id).await.unwrap()["schedule_mode"],
         "fixed"
     );
     assert_eq!(
-        h.runtime().detection.view(disabled).unwrap()["enabled"],
+        h.runtime().detection.view(disabled).await.unwrap()["enabled"],
         false
     );
     h.close().await;
@@ -7496,7 +7520,7 @@ async fn smart_dispatch_rechecks_activity_but_allows_started_work_to_complete() 
     let lease = h.runtime().actions.locks.try_account(&row).unwrap();
     h.advance(300);
     h.runtime().detection.tick().await.unwrap();
-    let queued = h.runtime().detection.view(id).unwrap()["job_id"]
+    let queued = h.runtime().detection.view(id).await.unwrap()["job_id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -7517,7 +7541,7 @@ async fn smart_dispatch_rechecks_activity_but_allows_started_work_to_complete() 
     tokio::time::timeout(StdDuration::from_secs(3), gate.entered.notified())
         .await
         .unwrap();
-    let running = h.runtime().detection.view(id).unwrap()["job_id"]
+    let running = h.runtime().detection.view(id).await.unwrap()["job_id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -7534,11 +7558,11 @@ async fn smart_dispatch_rechecks_activity_but_allows_started_work_to_complete() 
     assert_eq!(completed["status"], "completed");
     h.runtime().detection.tick().await.unwrap();
     assert_eq!(
-        h.runtime().detection.view(id).unwrap()["schedule_anchor_at"],
+        h.runtime().detection.view(id).await.unwrap()["schedule_anchor_at"],
         completed["completed_at"]
     );
     assert_eq!(
-        h.runtime().detection.view(id).unwrap()["recent_request_count"],
+        h.runtime().detection.view(id).await.unwrap()["recent_request_count"],
         0
     );
     h.close().await;

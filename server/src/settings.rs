@@ -286,25 +286,31 @@ impl Settings {
 
 /// Per-account-platform defaults. Other platform transports are not enabled by this setting.
 pub fn detection_platforms(value: &Value) -> Result<Value> {
+    let mut result = serde_json::json!({
+        "openai":{"engine":"modeltrace","sample_count":1},
+        "anthropic":{"engine":"lm_detector","sample_count":1},
+        "grok":{"engine":"lm_detector","sample_count":1},
+        "deepseek":{"engine":"lm_detector","sample_count":1}
+    });
     if value.is_null() {
-        return Ok(serde_json::json!({"openai":{"engine":"modeltrace","sample_count":1}}));
+        return Ok(result);
     }
     let invalid = || Error::new(422, "检测源平台配置无效");
-    let map = value.as_object().ok_or_else(invalid)?;
-    if map.len() != 1 || !map.contains_key("openai") {
-        return Err(invalid());
+    for (platform, settings) in value.as_object().ok_or_else(invalid)? {
+        if result.get(platform).is_none() {
+            return Err(invalid());
+        }
+        let row = settings.as_object().ok_or_else(invalid)?;
+        if row
+            .keys()
+            .any(|key| !matches!(key.as_str(), "engine" | "sample_count"))
+            || !(settings["engine"] == "lm_detector"
+                || platform == "openai" && settings["engine"] == "modeltrace")
+            || !matches!(settings["sample_count"].as_i64(), Some(1 | 3))
+        {
+            return Err(invalid());
+        }
+        result[platform] = settings.clone();
     }
-    let row = value["openai"].as_object().ok_or_else(invalid)?;
-    if row
-        .keys()
-        .any(|k| !matches!(k.as_str(), "engine" | "sample_count"))
-        || !matches!(
-            value["openai"]["engine"].as_str(),
-            Some("modeltrace" | "lm_detector")
-        )
-        || !matches!(value["openai"]["sample_count"].as_i64(), Some(1 | 3))
-    {
-        return Err(invalid());
-    }
-    Ok(value.clone())
+    Ok(result)
 }

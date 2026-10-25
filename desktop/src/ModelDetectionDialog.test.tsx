@@ -689,3 +689,22 @@ it("shows idle and failed statistics distinctly", async () => {
   expect(container.textContent).toContain('等待调用统计');
   expect(container.textContent).toContain('调用统计暂不可用');
 });
+
+it.each(["anthropic", "grok", "deepseek"])("requires a per-account model only when enabling %s detection", async (platform) => {
+  vi.mocked(api).mockImplementation(async (method, path, body) => {
+    if (path.endsWith("/models?purpose=model_test")) return [{ id: "fixture-model", display_name: "Fixture model" }] as never;
+    if (path.endsWith("/model-detection")) return { ...baseDetection, model_id: "", model_source: "account", global_model_id: "", model_override: null, ...(method === "PUT" ? body as object : {}) } as never;
+    return undefined as never;
+  });
+  await act(async () => root.render(<ModelDetectionDialog account={{ ...account, platform, type: "apikey" }} online close={vi.fn()} report={vi.fn()}/>));
+  expect(button("保存").disabled).toBe(false);
+  expect(container.textContent).toContain("请先选择该账号的检测模型");
+  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(button("保存").disabled).toBe(true);
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+  expect(select.options[0].textContent).toBe("请选择检测模型");
+  await act(async () => { select.value = "fixture-model"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(button("保存").disabled).toBe(false);
+  await act(async () => button("保存").click());
+  expect(api).toHaveBeenCalledWith("PUT", `/accounts/${account.id}/model-detection`, expect.objectContaining({ enabled: true, model_override: "fixture-model" }));
+});

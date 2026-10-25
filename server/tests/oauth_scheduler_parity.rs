@@ -4803,6 +4803,94 @@ async fn successful_traffic_supersedes_old_rate_only_intents_including_restart()
 }
 
 #[tokio::test]
+async fn early_quota_reset_retires_old_waits_and_recovers_only_remaining_blocks() {
+    for already_unblocked in [true, false] {
+        let mut h = Harness::new().await;
+        let due = h.now() + Duration::hours(4);
+        let row = h
+            .seed_account("plus", "fixture-early-reset", json!({}))
+            .await;
+        let id = integer(&row["id"]).unwrap();
+        prepare_expired_recovery(&h, &row, due).await;
+        h.set_now(due - Duration::hours(1));
+        h.runtime.monitor.startup().await.unwrap();
+        h.runtime.monitor.tick().await.unwrap();
+        let initial = h.runtime.monitor.state().unwrap();
+        assert_eq!(
+            initial["scheduler"][id.to_string()]["recovery_intent"]["kind"],
+            "quota_exhausted"
+        );
+        assert!(
+            parse_datetime(&initial["scheduler"][id.to_string()]["recovery_intent"]["due_at"])
+                .unwrap()
+                > h.now()
+        );
+        h.runtime
+            .monitor
+            .store
+            .transaction(|state| {
+                let intent = &mut state["scheduler"][id.to_string()]["recovery_intent"];
+                intent["status"] = "waiting_quota".into();
+                intent["waiting_reason"] = "wait_reset".into();
+                intent["waiting_until"] = intent["due_at"].clone();
+                intent["next_retry_at"] = intent["due_at"].clone();
+                Ok(())
+            })
+            .unwrap();
+
+        h.set_now(due - Duration::minutes(30));
+        h.mock.set_usage(200, Some(default_usage(h.now())));
+        if already_unblocked {
+            sqlx::query(
+                "UPDATE accounts SET rate_limited_at=NULL,rate_limit_reset_at=NULL WHERE id=$1",
+            )
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        } else {
+            h.mock.clear_block_on_test(id);
+        }
+        let report = h.runtime.monitor.force_refresh().await.unwrap();
+        let state = h.runtime.monitor.state().unwrap();
+        let intent = &state["scheduler"][id.to_string()]["recovery_intent"];
+        let expected_status = if already_unblocked {
+            "cancelled"
+        } else {
+            "recovered"
+        };
+        assert_eq!(intent["status"], expected_status, "{report}");
+        assert_eq!(intent["waiting_until"], "");
+        assert_eq!(intent["next_retry_at"], "");
+        assert_eq!(h.mock.count("GET", "/usage"), 1);
+        assert_eq!(
+            h.mock.count("POST", "/test"),
+            usize::from(!already_unblocked)
+        );
+        assert_eq!(h.mock.count("POST", "/recover-state"), 0);
+        assert_eq!(
+            h.runtime.monitor.row(id).await.unwrap()["rate_limited_at"],
+            Value::Null
+        );
+
+        h.restart_runtime().await;
+        h.runtime.monitor.startup().await.unwrap();
+        h.runtime.monitor.tick().await.unwrap();
+        let state = h.runtime.monitor.state().unwrap();
+        assert_eq!(
+            state["scheduler"][id.to_string()]["recovery_intent"]["status"],
+            expected_status
+        );
+        assert_eq!(
+            h.mock.count("POST", "/test"),
+            usize::from(!already_unblocked)
+        );
+        assert!(h.mock.unexpected().is_empty());
+        h.close().await;
+    }
+}
+
+#[tokio::test]
 async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
     let h = Harness::new().await;
     let due = h.now() + Duration::hours(4);

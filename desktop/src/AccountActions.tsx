@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, BellOff, Clock3, LoaderCircle, ListFilter, Network, Route, CircleCheck, RotateCcw, LayoutTemplate, Trash2 } from "lucide-react";
 import { accountOperation } from "./accountOperations";
 import { command } from "./bridge";
+import { supportsModelDetection } from "./modelTestTypes";
 import AccountActionMenu from "./AccountActionMenu";
 import type { Account, DegradationMark } from "./types";
 
@@ -76,7 +77,7 @@ export function useAccountActions(options: Options): (account: Account) => Accou
     const pending = (action: string) => running.current.has(`${options.connectionKey}:${account.id}:${action}`);
     const mark = marks[account.id]?.base === account.degradation_mark?.version ? marks[account.id]?.value ?? account.degradation_mark : account.degradation_mark;
     const items: AccountActionItem[] = [];
-    if (openai) items.push(
+    if (supportsModelDetection(account)) items.push(
       { id: "model_test", label: "模型测试", icon: <Activity size={12}/>, className: "degradation-action", disabled: !options.online, run: () => options.modelTest(account) },
       { id: "degradation_mark", label: mark?.error ? "标记读取失败" : mark?.marked ? "取消标记" : "标记降智",
         icon: pending("degradation_mark") ? <LoaderCircle size={12} className="spin"/> : <BellOff size={12}/>, className: "degradation-action",

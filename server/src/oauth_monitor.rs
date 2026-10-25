@@ -365,7 +365,7 @@ impl Monitor {
                 | "model_verification_pending") => value,
                 _ => "verification_backoff",
             };
-            let boundary = oauth_admission::reset_not_before(row, &saved);
+            let boundary = recovery_rules::reset_not_before(row, &saved, meta, now);
             let retry = parse_datetime(&intent["next_retry_at"]);
             if let Some((at, bound)) = [
                 (until, reason),

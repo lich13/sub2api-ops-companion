@@ -509,7 +509,7 @@ impl ModelTests {
                                 id,
                                 &run,
                                 index,
-                                json!({"status":"completed","error":"样本已完成，本地分析失败","transport_complete":matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done")}),
+                                json!({"status":"completed","error":"样本已完成，本地分析失败","transport_complete":matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop")}),
                             )
                             .map_err(internal)?;
                             return Ok(());
@@ -546,7 +546,7 @@ impl ModelTests {
                         "status":"completed", "analysis_ms":analysis_started.elapsed().as_millis(),
                         "error": if context.lm.is_some() && independent.is_null() { "样本已完成，本地分析失败" } else { error },
                         "report": if context.lm.is_some() { independent } else { Value::Null },
-                        "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"),
+                        "transport_complete": matches!(string(&diagnostics["end_reason"]),"completed"|"stop"|"done"|"end_turn"|"stop_sequence"|"message_stop"),
                     })).map_err(internal)?;
                     let current = self.get(id).map_err(internal)?;
                     let first_group_valid = if index == 0 {

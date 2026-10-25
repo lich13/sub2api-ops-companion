@@ -20,7 +20,6 @@ impl ModelTests {
         };
         let id = string(&job["id"]);
         let account = integer(&job["account_id"]).ok_or_else(Error::internal)?;
-        let concurrency = integer(&job["concurrency"]).unwrap_or(1).clamp(1, 3) as usize;
         let client = context
             .target
             .client()
@@ -33,16 +32,6 @@ impl ModelTests {
         let mut error = String::new();
         let mut baseline_drift = false;
         let mut next: Vec<Option<String>> = vec![None];
-        let bank = snapshot.clone();
-        next.extend(
-            crate::supervision::join(tokio::task::spawn_blocking(move || {
-                bank.tokenizer.next(None, &BTreeSet::new(), concurrency - 1)
-            }))
-            .await
-            .map_err(|_| Error::internal())?
-            .into_iter()
-            .map(Some),
-        );
         let mut ending = false;
         loop {
             let mut pending = FuturesUnordered::new();
@@ -131,7 +120,7 @@ impl ModelTests {
             let bank = snapshot.clone();
             let p = posterior.clone();
             let seen = asked.clone();
-            let count = concurrency.min(20usize.saturating_sub(asked.len()));
+            let count = usize::from(asked.len() < 20);
             let probes = if finished {
                 vec![]
             } else {

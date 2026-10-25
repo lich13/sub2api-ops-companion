@@ -90,9 +90,7 @@ impl Runtime {
             let id = integer(&account["id"]).unwrap();
             usage::attach_stats(id, &mut account["usage"], &cache.stats, 500_000);
             account["usage_windows"] = account["usage"]["windows"].clone();
-            if account["platform"] == "openai"
-                && matches!(string(&account["type"]), "oauth" | "apikey")
-            {
+            if crate::model_target::supported(account) {
                 account["degradation_mark"] = match &marks {
                     Ok(state) => {
                         crate::capacity_alerts::mark_view(id, &state["marks"][id.to_string()])
@@ -102,7 +100,7 @@ impl Runtime {
                 if marks.is_ok() {
                     account["model_detection"] = self
                         .detection
-                        .view(id)
+                        .view_account(account)
                         .unwrap_or(json!({"status":"error","reason":"检测状态暂不可读取"}));
                 }
             }

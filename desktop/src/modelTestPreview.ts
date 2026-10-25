@@ -1,6 +1,8 @@
 import type { ModelTestResult, FingerprintReport } from "./modelTestTypes";
 import type { Account } from "./types";
 export function modelTestCandidates(account: Account) {
+  if (account.platform === "anthropic") return ["claude-opus-4-6", "claude-sonnet-4-6"].map(id => ({ id, display_name: id, type: "model" }));
+  if (account.platform === "deepseek") return ["deepseek-v4-pro", "deepseek-v4-flash"].map(id => ({ id, display_name: id, type: "model" }));
   if (account.platform === "grok") return ["grok-4.5", "grok-imagine-image", "grok-imagine-video", "grok-search", "grok-tts"].map((id) => ({ id, display_name: id, type: "model" }));
   if (account.platform !== "openai") throw new Error("该平台没有模型目录");
   return (account.type === "apikey" ? ["gpt-6-sol", "gpt-6-luna"] : [

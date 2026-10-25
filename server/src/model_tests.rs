@@ -357,6 +357,9 @@ impl ModelTests {
             return Ok(old);
         }
         let row = model_target::account(&self.actions, id).await?;
+        if row["platform"] != "openai" && payload["engine"] != crate::lm_detector::ENGINE {
+            return Err(Error::new(422, "此平台仅支持 LM Detector"));
+        }
         let live = self.actions.account(id, None).await?;
         let conflict = if truthy(&payload["expected_operation_version"]) {
             operation_versions(&live)["model_test"] != payload["expected_operation_version"]
@@ -653,7 +656,54 @@ impl ModelTests {
             ));
         }
         let context = context.unwrap();
-        let stored=self.transaction(|data| {let job=&mut data["jobs"][id];for group in job["groups"].as_array_mut().unwrap() {let index=integer(&group["index"]).unwrap_or(1) as usize-1;if !context.samples.lock().unwrap_or_else(|e|e.into_inner()).contains_key(&index) {group.as_object_mut().unwrap().extend(json!({"status":"queued","error":"","attempts":0,"ttft_ms":null}).as_object().unwrap().clone());}}job["previous_attempts"]=json!(integer(&job["previous_attempts"]).unwrap_or(0)+integer(&job["attempts"]).unwrap_or(0));job.as_object_mut().unwrap().extend(json!({"status":"queued","can_retry":false,"queued_at":crate::compat::now(),"error":""}).as_object().unwrap().clone());let stored=job.clone();data["accounts"][integer(&stored["account_id"]).unwrap().to_string()]=stored.clone();data["requests"][request]=id.into();Ok(stored)})?;
+        let pending = job["groups"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|group| {
+                group["status"] == "failed"
+                    && group["retryable"] == true
+                    && group["uncertain"] != true
+            })
+            .filter_map(|group| integer(&group["index"]))
+            .collect::<std::collections::BTreeSet<_>>();
+        let aid = integer(&job["account_id"]).ok_or_else(Error::internal)?;
+        let row = model_target::account(&self.actions, aid).await?;
+        let owner = model_target::account(
+            &self.actions,
+            integer(&context.owner["id"]).ok_or_else(Error::internal)?,
+        )
+        .await?;
+        if pending.is_empty()
+            || model_target::signature(&row) != model_target::signature(&context.row)
+            || model_target::signature(&owner) != model_target::signature(&context.owner)
+        {
+            return Err(Error::new(
+                409,
+                json!({"code":"retry_unavailable","message":"原测试上下文已失效，请重新测试"}),
+            ));
+        }
+        if state["jobs"].as_object().unwrap().values().any(|other| {
+            other["id"] != id
+                && other["account_id"] == aid
+                && ACTIVE.contains(&string(&other["status"]))
+        }) {
+            return Err(Error::new(409, "该账号已有测试正在运行"));
+        }
+        let stored = self.transaction(|data| {
+            let job = &mut data["jobs"][id];
+            for group in job["groups"].as_array_mut().unwrap() {
+                if integer(&group["index"]).is_some_and(|index| pending.contains(&index)) {
+                    group.as_object_mut().unwrap().extend(json!({"status":"queued","error":"","attempts":0,"ttft_ms":null,"retryable":false}).as_object().unwrap().clone());
+                }
+            }
+            job["previous_attempts"] = json!(integer(&job["previous_attempts"]).unwrap_or(0) + integer(&job["attempts"]).unwrap_or(0));
+            job.as_object_mut().unwrap().extend(json!({"status":"queued","can_retry":false,"completed_at":null,"queued_at":crate::compat::now(),"error":""}).as_object().unwrap().clone());
+            let stored = job.clone();
+            data["accounts"][aid.to_string()] = stored.clone();
+            data["requests"][request] = id.into();
+            Ok(stored)
+        })?;
         self.launch(stored.clone(), Some(context))?;
         Ok(Self::public(&stored))
     }

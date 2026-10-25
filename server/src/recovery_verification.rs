@@ -220,6 +220,16 @@ impl Monitor {
             );
         }
         let saved = quota::latest_result(&row, usage, self.now());
+        if recovery_rules::obsolete_healthy_intent(&row, &saved, meta, self.now()) {
+            self.save_intent(
+                id,
+                &intent,
+                &recovery_rules::cancel_healthy_intent(&intent),
+                generation,
+                method_generation,
+            )?;
+            return Ok(json!({"success":false,"skipped":true,"error_code":"already_serving"}));
+        }
         let summary = quota::summary_from_result(&row, &saved);
         if recovery_rules::obsolete_rate_intent(&row, &summary, &intent, self.now()) {
             self.save_intent(

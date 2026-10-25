@@ -238,6 +238,108 @@ pub fn cancel_obsolete_rate_intent(intent: &Value) -> Value {
     next["last_error"] = "限制到期后已有成功调用，无需恢复测试".into();
     next
 }
+/// A fresh, complete quota observation and an unblocked account supersede a
+/// pending recovery, including when the provider releases quota before due_at.
+pub fn obsolete_healthy_intent(
+    row: &Value,
+    result: &Value,
+    meta: &Value,
+    at: DateTime<Utc>,
+) -> bool {
+    let intent = &meta["recovery_intent"];
+    matches!(
+        string(&intent["status"]),
+        "pending" | "ready" | "retry" | "waiting_quota"
+    ) && !truthy(&intent["verification_dispatched"])
+        && !truthy(&intent["verification_receipt"])
+        && !truthy(&intent["recovery_write_dispatched"])
+        && confirmed(row)
+        && oauth_admission::fresh_quota(row, result, at)
+        && all_available(&quota::summary_from_result(row, result))
+        && parse_datetime(&result["queried_at"]).is_some_and(|observed| {
+            parse_datetime(&meta["last_error_at"]).is_none_or(|failed| observed > failed)
+        })
+}
+pub fn cancel_healthy_intent(intent: &Value) -> Value {
+    let mut next = cancel_obsolete_rate_intent(intent);
+    next["waiting_until"] = "".into();
+    next["due_at"] = "".into();
+    next["deferred_until"] = "".into();
+    next["last_error"] = "额度已可用且账号限制已解除，无需恢复测试".into();
+    next
+}
+pub fn early_quota_release(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>) -> bool {
+    let intent = &meta["recovery_intent"];
+    let summary = quota::summary_from_result(row, result);
+    let Some(observed) = parse_datetime(&result["queried_at"]) else {
+        return false;
+    };
+    if !matches!(
+        string(&intent["kind"]),
+        "quota_exhausted" | "account_scheduling_threshold"
+    ) || matches!(
+        string(&intent["status"]),
+        "cancelled" | "recovered" | "blocked" | "auth_failed"
+    ) || !oauth_admission::automatic_eligible(row, at)
+        || !oauth_admission::fresh_quota(row, result, at)
+        || !all_available(&summary)
+        || [&row["rate_limited_at"], &meta["last_error_at"]]
+            .into_iter()
+            .filter_map(parse_datetime)
+            .any(|changed| changed >= observed)
+        || intent["status"] == "retry"
+            && parse_datetime(&intent["tested_at"]).is_some_and(|tested| tested >= observed)
+        || parse_datetime(&row["overload_until"]).is_some_and(|until| until > at)
+    {
+        return false;
+    }
+    let threshold = threshold_descriptor(row, &summary, at);
+    if truthy(&threshold) && !threshold_available(&summary, &threshold) {
+        return false;
+    }
+    let windows = quota::windows_by_key(&summary["ui_windows"]);
+    let mut changed = false;
+    let mut old_boundaries = vec![];
+    for part in string(&intent["fingerprint"])
+        .trim_start_matches("early:")
+        .split('|')
+    {
+        let Some((key, old_reset)) = part.split_once('@') else {
+            return false;
+        };
+        let Some(old_reset) = parse_datetime(&json!(old_reset)) else {
+            return false;
+        };
+        let Some(new_reset) = windows
+            .get(key)
+            .and_then(|win| parse_datetime(&win["reset_at"]))
+        else {
+            return false;
+        };
+        changed |= observed < old_reset && new_reset != old_reset;
+        old_boundaries.push(old_reset);
+    }
+    changed
+        && [
+            &row["rate_limit_reset_at"],
+            &row["temp_unschedulable_until"],
+        ]
+        .into_iter()
+        .filter_map(parse_datetime)
+        .all(|until| until <= at || old_boundaries.contains(&until))
+}
+pub fn reset_not_before(
+    row: &Value,
+    result: &Value,
+    meta: &Value,
+    at: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    if early_quota_release(row, result, meta, at) {
+        None
+    } else {
+        oauth_admission::reset_not_before(row, result)
+    }
+}
 pub fn retry_at(at: DateTime<Utc>, attempt: i64) -> String {
     datetime(
         at + Duration::seconds(
@@ -260,14 +362,15 @@ pub fn quota_ready(row: &Value, result: &Value, meta: &Value, at: DateTime<Utc>)
     if !all_available(&summary) {
         return false;
     }
-    if [
-        &row["rate_limit_reset_at"],
-        &row["temp_unschedulable_until"],
-        &meta["recovery_intent"]["due_at"],
-    ]
-    .into_iter()
-    .filter_map(parse_datetime)
-    .any(|boundary| observed < boundary)
+    if !early_quota_release(row, result, meta, at)
+        && [
+            &row["rate_limit_reset_at"],
+            &row["temp_unschedulable_until"],
+            &meta["recovery_intent"]["due_at"],
+        ]
+        .into_iter()
+        .filter_map(parse_datetime)
+        .any(|boundary| observed < boundary)
     {
         return false;
     }
@@ -313,6 +416,9 @@ pub fn candidates(
         }
         let result = quota::latest_result(row, &results[id.to_string()], at);
         let meta = &scheduler[id.to_string()];
+        if obsolete_healthy_intent(row, &result, meta, at) {
+            continue;
+        }
         if !control_allows(row, &result, meta, at) {
             continue;
         }
@@ -344,7 +450,7 @@ pub fn candidates(
         } else {
             descriptor
         };
-        if oauth_admission::reset_not_before(row, &result).is_some_and(|due| at < due) {
+        if reset_not_before(row, &result, meta, at).is_some_and(|due| at < due) {
             continue;
         }
         let reusable = quota_ready(row, &result, meta, at);

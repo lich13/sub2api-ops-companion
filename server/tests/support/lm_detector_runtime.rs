@@ -4,6 +4,9 @@ struct LmState {
     mode: usize,
     numeric: AtomicUsize,
     baselines: AtomicUsize,
+    probes_active: AtomicUsize,
+    probes_peak: AtomicUsize,
+    failed_prompt: Mutex<Option<String>>,
     requests: Mutex<Vec<Value>>,
     release: Arc<Semaphore>,
 }
@@ -22,6 +25,9 @@ async fn provider(h: &RuntimeHarness, mode: usize) -> LmProvider {
         mode,
         numeric: AtomicUsize::new(0),
         baselines: AtomicUsize::new(0),
+        probes_active: AtomicUsize::new(0),
+        probes_peak: AtomicUsize::new(0),
+        failed_prompt: Mutex::new(None),
         requests: Mutex::new(vec![]),
         release: Arc::new(Semaphore::new(0)),
     });
@@ -63,6 +69,10 @@ async fn lm_response(State(state): State<Arc<LmState>>, request: Request) -> Res
             )
             .into_response();
         }
+        let active = state.probes_active.fetch_add(1, Ordering::SeqCst) + 1;
+        state.probes_peak.fetch_max(active, Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        state.probes_active.fetch_sub(1, Ordering::SeqCst);
         let tokens = if text.is_empty() {
             let n = state.baselines.fetch_add(1, Ordering::SeqCst);
             if state.mode == 2 && n > 0 {
@@ -82,7 +92,20 @@ async fn lm_response(State(state): State<Arc<LmState>>, request: Request) -> Res
         ("OK".to_owned(), tokens)
     } else {
         let n = state.numeric.fetch_add(1, Ordering::SeqCst);
-        if state.mode == 8 && n < 3 {
+        if state.mode == 9 && n == 1 {
+            *state.failed_prompt.lock().unwrap() = Some(prompt.into());
+        }
+        let failed_group = state.mode == 9
+            && state.failed_prompt.lock().unwrap().as_deref() == Some(prompt)
+            && state
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|p| prompt_from_payload(p) == Some(prompt))
+                .count()
+                <= 3;
+        if state.mode == 8 && n < 3 || failed_group {
             return status_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 json!({"error":{"message":"fixture retryable rejection"}}),
@@ -122,6 +145,14 @@ async fn lm_response(State(state): State<Arc<LmState>>, request: Request) -> Res
     response["object"] = "response".into();
     if !(state.mode == 1 && probe.is_some()) {
         response["usage"] = json!({"input_tokens":tokens,"output_tokens":1});
+    }
+    if payload.get("messages").is_some() {
+        response = if payload.get("max_tokens").is_some() && payload.get("stream_options").is_none()
+        {
+            json!({"type":"message","model":payload["model"],"content":[{"type":"text","text":text}],"stop_reason":"end_turn","usage":{"input_tokens":tokens,"output_tokens":1}})
+        } else {
+            json!({"model":payload["model"],"choices":[{"message":{"content":text},"finish_reason":"stop"}],"usage":{"prompt_tokens":tokens,"completion_tokens":1}})
+        };
     }
     ResponsePlan::bytes(
         StatusCode::OK,
@@ -198,6 +229,13 @@ async fn lm_manual_counts_tokenizer_missing_usage_drift_and_invalid_ranking() {
             assert_eq!(result["tokenizer"]["status"], "completed");
             assert!(result["tokenizer"]["requests"].as_u64().unwrap() <= 22);
             assert_eq!(p.state.baselines.load(Ordering::SeqCst), 2);
+            assert_eq!(p.state.probes_peak.load(Ordering::SeqCst), 1);
+            let steps = result["tokenizer"]["steps"].as_array().unwrap();
+            assert!(steps.first().unwrap()["probe"].is_null());
+            assert!(steps.last().unwrap()["probe"].is_null());
+            assert!(steps[1..steps.len() - 1]
+                .iter()
+                .all(|s| s["probe"].is_string()));
         }
         if mode == 2 {
             assert_eq!(result["tokenizer"]["baseline_drift"], true);
@@ -475,5 +513,329 @@ async fn lm_definite_failures_retry_the_pinned_context_and_tokenizer_holds_accou
     let second = h.wait_for_terminal(second["id"].as_str().unwrap()).await;
     assert_eq!(second["status"], "completed");
     assert_eq!(probes.state.numeric.load(Ordering::SeqCst), 2);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn lm_retry_preserves_successes_and_original_probes_and_rejects_changed_context() {
+    let h = RuntimeHarness::new().await;
+    let p = provider(&h, 9).await;
+    let id = h.seed_account("apikey", None, json!({})).await;
+    let job = start(&h, id, 3, true, 1).await;
+    let key = job["id"].as_str().unwrap();
+    let failed = h.wait_for_terminal(key).await;
+    assert_eq!(failed["can_retry"], true);
+    assert_eq!(failed["completed_groups"], 2);
+    assert_eq!(p.state.baselines.load(Ordering::SeqCst), 0);
+    let retry = uuid::Uuid::new_v4().simple().to_string();
+    let first = h.runtime.tests.retry_failed(key, &retry).await.unwrap();
+    assert_eq!(
+        h.runtime.tests.retry_failed(key, &retry).await.unwrap()["id"],
+        first["id"]
+    );
+    let completed = h.wait_for_terminal(key).await;
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["bank_version"], failed["bank_version"]);
+    for i in [0, 2] {
+        assert_eq!(completed["groups"][i], failed["groups"][i]);
+    }
+    assert_eq!(p.state.numeric.load(Ordering::SeqCst), 6);
+    assert_eq!(completed["tokenizer"]["status"], "completed");
+    assert_eq!(p.state.baselines.load(Ordering::SeqCst), 2);
+    assert_eq!(p.state.probes_peak.load(Ordering::SeqCst), 1);
+    let _p = provider(&h, 8).await;
+    let failed_job = start(&h, id, 1, false, 1).await;
+    let key = failed_job["id"].as_str().unwrap();
+    assert_eq!(h.wait_for_terminal(key).await["can_retry"], true);
+    sqlx::query("UPDATE accounts SET credentials=credentials || '{\"header_override_enabled\":true,\"header_overrides\":{\"X-Fixture\":\"changed\"}}'::jsonb WHERE id=$1").bind(id).execute(&h.runtime.db.pool).await.unwrap();
+    assert_eq!(
+        h.runtime
+            .tests
+            .retry_failed(key, &uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        409
+    );
+    h.runtime.tests.close().await;
+    let restarted = sub2ops_server::model_tests::ModelTests::new(
+        h.runtime.actions.clone(),
+        h.runtime.tests.bank.clone(),
+        h.runtime.tests.hooks.clone(),
+        h.runtime.budget.clone(),
+    );
+    restarted.startup().unwrap();
+    assert_eq!(
+        restarted
+            .retry_failed(key, &uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        409
+    );
+    restarted.close().await;
+    h.close().await;
+}
+
+#[tokio::test]
+async fn api_key_platforms_use_their_protocol_auth_directory_and_scheduled_recheck() {
+    let h = RuntimeHarness::new().await;
+    let _p = provider(&h, 0).await;
+    for (platform, configured, protocol, endpoint, auth) in [
+        ("openai", "", "responses", "/v1/responses", "authorization"),
+        ("anthropic", "", "messages", "/v1/messages", "x-api-key"),
+        (
+            "grok",
+            "",
+            "chat_completions",
+            "/v1/chat/completions",
+            "authorization",
+        ),
+        (
+            "deepseek",
+            "adaptive",
+            "chat_completions",
+            "/v1/chat/completions",
+            "authorization",
+        ),
+        (
+            "deepseek",
+            "responses",
+            "responses",
+            "/v1/responses",
+            "authorization",
+        ),
+        (
+            "deepseek",
+            "anthropic",
+            "messages",
+            "/v1/messages",
+            "x-api-key",
+        ),
+    ] {
+        let id = h.seed_account("apikey", None, json!({})).await;
+        sqlx::query("UPDATE accounts SET platform=$1,credentials=credentials || $2 WHERE id=$3")
+            .bind(platform).bind(SqlJson(json!({"api_protocol":configured,"header_override_enabled":true,"header_overrides":{"X-Fixture":"preserved"}}))).bind(id).execute(&h.runtime.db.pool).await.unwrap();
+        let target = h.target_for(id).await;
+        assert_eq!(target.protocol, protocol);
+        if protocol == "chat_completions" {
+            let payload = target.payload("fixture");
+            assert_eq!(payload["max_tokens"], 4096);
+            assert_eq!(payload["stream_options"]["include_usage"], true);
+            assert!(payload.get("max_completion_tokens").is_none());
+        }
+        assert!(target.url.ends_with(endpoint));
+        assert!(model_directory::endpoint(&target)
+            .unwrap()
+            .path()
+            .ends_with("/v1/models"));
+        assert_eq!(target.headers["x-fixture"], "preserved");
+        assert!(target.headers.contains_key(auth));
+        assert_eq!(
+            h.state.directory_headers.lock().unwrap()[&id]["x-fixture"],
+            "preserved"
+        );
+        assert!(h.state.directory_headers.lock().unwrap()[&id].contains_key(auth));
+        if protocol == "messages" {
+            assert_eq!(target.headers["anthropic-version"], "2023-06-01");
+            assert!(!target.headers.contains_key("authorization"));
+            sqlx::query("UPDATE accounts SET extra=extra || '{\"anthropic_apikey_auth_scheme\":\"authorization_bearer\"}'::jsonb WHERE id=$1").bind(id).execute(&h.runtime.db.pool).await.unwrap();
+            let bearer = h.target_for(id).await;
+            assert!(bearer.headers.contains_key("authorization"));
+            assert!(!bearer.headers.contains_key("x-api-key"));
+            assert!(h.state.directory_headers.lock().unwrap()[&id].contains_key("authorization"));
+        }
+        let view = h.runtime.detection.view(id).await.unwrap();
+        assert_eq!(view["enabled"], false);
+        if platform != "openai" {
+            assert_eq!(view["model_id"], "");
+            let request =
+                json!({"expected_version":view["version"],"enabled":true,"interval_minutes":15});
+            assert!(h
+                .runtime
+                .detection
+                .save(id, &request)
+                .await
+                .unwrap_err()
+                .detail
+                .as_str()
+                .unwrap()
+                .contains("选择"));
+            let disabled = h.runtime.detection.save(id,&json!({"expected_version":view["version"],"enabled":false,"interval_minutes":15})).await.unwrap();
+            assert_eq!(disabled["model_id"], "");
+            assert!(h
+                .runtime
+                .detection
+                .trigger(id, &["slow:fixture".into()])
+                .await
+                .unwrap()
+                .is_null());
+            let row = h.runtime.actions.account(id, None).await.unwrap();
+            assert_eq!(h.runtime.tests.start(id,&json!({"model_id":"gpt-6-luna","engine":"modeltrace","expected_version":account_version(&row),"request_id":uuid::Uuid::new_v4().simple().to_string()}),None).await.unwrap_err().status.as_u16(),422);
+        }
+        h.runtime.config.save("oauth", &json!({"model_detection_platforms":{platform:{"engine":"lm_detector","sample_count":1}}}), "fixture", None).await.unwrap();
+        let current = h.runtime.detection.view(id).await.unwrap();
+        let saved = h.runtime.detection.save(id, &json!({"expected_version":current["version"],"enabled":true,"schedule_mode":"fixed","min_interval_minutes":5,"interval_minutes":15,"model_override":"gpt-6-luna"})).await.unwrap();
+        assert_eq!(saved["model_source"], "account");
+        assert_eq!(saved["enabled"], true);
+        let mark = h.runtime.detection.mark(id).unwrap();
+        assert_eq!(
+            h.runtime
+                .set_degradation(
+                    id,
+                    &json!({"marked":true,"expected_mark_version":mark["version"]})
+                )
+                .await
+                .unwrap()["degradation_mark"]["marked"],
+            true
+        );
+        let job = h
+            .runtime
+            .detection
+            .trigger(id, &["scheduled".into()])
+            .await
+            .unwrap();
+        assert_eq!(job["engine"], "lm_detector");
+        assert_eq!(job["planned_groups"], 1);
+        assert_eq!(job["degradation_recheck"], true);
+        let result = h.wait_for_terminal(job["id"].as_str().unwrap()).await;
+        assert_eq!(result["status"], "completed");
+        assert_eq!(
+            result["groups"][0]["diagnostics"]["response_protocol"],
+            protocol
+        );
+        assert_eq!(
+            h.runtime.detection.complete_recheck(&result).await.unwrap()["mark_cleared"],
+            true
+        );
+        assert_eq!(
+            h.runtime.actions.account(id, None).await.unwrap()["schedulable"],
+            true
+        );
+    }
+    for platform in ["anthropic", "grok", "deepseek"] {
+        let id = h.seed_account("apikey", None, json!({})).await;
+        sqlx::query("UPDATE accounts SET platform=$1 WHERE id=$2")
+            .bind(platform)
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        h.state
+            .directories
+            .lock()
+            .unwrap()
+            .insert(id, json!({"data":[{"id":"claude-opus-5"}]}));
+        h.runtime
+            .detection
+            .update(
+                id,
+                json!({"enabled":true,"schedule_mode":"fixed","model_override":"claude-opus-5"}),
+            )
+            .unwrap();
+        let job = h
+            .runtime
+            .detection
+            .trigger(id, &["scheduled".into()])
+            .await
+            .unwrap();
+        let result = h.wait_for_terminal(job["id"].as_str().unwrap()).await;
+        assert_eq!(result["classification"]["outcome"], "degraded");
+        assert_eq!(result["automatic_disposition"]["schedule_verified"], true);
+        assert_eq!(h.runtime.detection.mark(id).unwrap()["marked"], true);
+        assert_eq!(
+            h.runtime.actions.account(id, None).await.unwrap()["schedulable"],
+            false
+        );
+    }
+    let settings = h.runtime.config.current().unwrap();
+    for platform in ["openai", "anthropic", "grok", "deepseek"] {
+        assert_eq!(
+            settings["model_detection_platforms"][platform]["engine"],
+            "lm_detector"
+        );
+    }
+    for platform in ["anthropic", "grok", "deepseek"] {
+        let id = h.seed_account("oauth", None, json!({})).await;
+        sqlx::query("UPDATE accounts SET platform=$1 WHERE id=$2")
+            .bind(platform)
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+        assert!(model_target::account(&h.runtime.actions, id).await.is_err());
+    }
+    h.close().await;
+}
+
+#[tokio::test]
+async fn continuous_appointment_is_accepted_through_the_real_http_router() {
+    let h = RuntimeHarness::new().await;
+    let id = h
+        .seed_account("oauth", None, json!({"codex_plan_type":"plus"}))
+        .await;
+    let reset = chrono::Utc::now() + chrono::Duration::hours(2);
+    h.state.quotas.lock().unwrap().insert(id,json!({"five_hour":{"utilization":0,"resets_at":reset.to_rfc3339()},"seven_day":{"utilization":0,"resets_at":(reset+chrono::Duration::days(7)).to_rfc3339()}}));
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let base = format!("http://{}/api/desktop/v1", listener.local_addr().unwrap());
+    let routes = sub2ops_server::api::router(h.runtime.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, routes).await.unwrap();
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let row = h.runtime.actions.account(id, None).await.unwrap();
+    let request = json!({"action":"test","payload":{"confirmed":true,"mode":"default","model_id":""},"repeat":"quota_cycle","expected_version":sub2ops_server::compat::operation_versions(&row)["test"],"request_id":uuid::Uuid::new_v4().simple().to_string(),"client_id":"fixture-cycle-http"});
+    let send = |body: Value| {
+        client
+            .post(format!("{base}/accounts/{id}/operations"))
+            .header("x-api-key", "fixture-model-admin-key")
+            .json(&body)
+            .send()
+    };
+    for patch in [
+        json!({"repeat":"unknown"}),
+        json!({"scheduled_at":"2031-04-05T10:00:00Z"}),
+        json!({"payload":{"confirmed":true,"mode":"text","model_id":""}}),
+    ] {
+        let mut invalid = request.clone();
+        invalid
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert_eq!(
+            send(invalid).await.unwrap().status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    let response = send(request.clone()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let job: Value = response.json().await.unwrap();
+    assert_eq!(job["repeat_state"], "active");
+    assert!(sub2ops_server::compat::parse_datetime(&job["scheduled_at"]).unwrap() > reset);
+    let replay: Value = send(request.clone()).await.unwrap().json().await.unwrap();
+    assert_eq!(replay["id"], job["id"]);
+    let mut duplicate = request;
+    duplicate["request_id"] = uuid::Uuid::new_v4().simple().to_string().into();
+    assert_eq!(
+        send(duplicate).await.unwrap().status(),
+        StatusCode::CONFLICT
+    );
+    let cancelled: Value = client
+        .post(format!(
+            "{base}/account-operations/{}/cancel",
+            job["id"].as_str().unwrap()
+        ))
+        .header("x-api-key", "fixture-model-admin-key")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cancelled["repeat_state"], "stopped");
+    task.abort();
     h.close().await;
 }

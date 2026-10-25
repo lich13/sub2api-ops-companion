@@ -55,20 +55,23 @@ export function detectionPreview(method: string, path: string, body: Record<stri
   let value = detections.get(aid) || { account_id: aid, version: 'd'.repeat(64), enabled: false, interval_minutes: 15, schedule_mode: 'smart', min_interval_minutes: 5, recent_request_count: aid === 102 ? 0 : 60, effective_interval_minutes: aid === 102 ? null : 10, schedule_anchor_at: null, model_id: 'gpt-6-luna', status: 'disabled', next_at: null,
     last_automatic_started_at: aid === 102 ? '2026-10-01T02:30:00Z' : null,
     last_result: aid === 102 ? { status: 'completed', report: { prediction_name: '预览模型' }, completed_at: '2026-10-01T02:30:12Z' } : null };
-  const selection = (platforms as { openai?: { engine: string; sample_count: number } })?.openai;
-  value = { ...value, engine: selection?.engine ?? "modeltrace", sample_count: selection?.engine === "lm_detector" ? selection.sample_count : 3 };
-  const effectiveModel = value.model_override ?? model;
+  const account = accounts.find(a => a.id === aid);
+  const openai = account?.platform === "openai";
+  const selection = (platforms as Record<string, { engine: string; sample_count: number }>)?.[account?.platform ?? "openai"];
+  const defaultModel = openai ? model : "";
+  value = { ...value, engine: selection?.engine ?? (openai ? "modeltrace" : "lm_detector"), sample_count: selection?.engine === "lm_detector" ? selection.sample_count : openai ? 3 : 1 };
+  const effectiveModel = value.model_override ?? defaultModel;
   if (value.model_id !== effectiveModel) value = { ...value, version: version() };
-  value = { ...value, model_id: effectiveModel, model_source: value.model_override ? "account" : "global", model_override: value.model_override ?? null, global_model_id: model };
+  value = { ...value, model_id: effectiveModel, model_source: value.model_override || !openai ? "account" : "global", model_override: value.model_override ?? null, global_model_id: defaultModel };
   detections.set(aid, value);
   if (method === 'PUT') {
     if (body.expected_version !== value.version) throw new Error('检测设置已变化');
     const account = accounts.find((a) => a.id === aid);
-    if (body.model_override !== undefined && (account?.platform !== "openai" || account.type !== "apikey")) throw new Error('仅 OpenAI Key 账号可单独指定检测模型');
+    if (body.model_override !== undefined && account?.type !== "apikey") throw new Error('仅 API Key 账号可单独指定检测模型');
     const requested = body.model_override !== undefined ? body.model_override : value.model_override;
     const override = typeof requested === "string" ? requested.trim() : requested;
     if (override !== null && (typeof override !== "string" || !/^[A-Za-z0-9._:/-]{1,200}$/.test(override))) throw new Error('检测模型无效');
-    const selected = override ?? model;
+    const selected = override ?? defaultModel;
     if (body.enabled && (!account || !modelTestCandidates(account).some((m) => m.id === selected))) throw new Error('所选模型不在当前账号上游模型目录中');
     const schedule = body.schedule_mode ?? value.schedule_mode;
     const minimum = body.min_interval_minutes ?? value.min_interval_minutes;
@@ -78,7 +81,7 @@ export function detectionPreview(method: string, path: string, body: Record<stri
     const tier = count >= 120 ? 5 : count >= 60 ? 10 : count >= 30 ? 15 : count >= 10 ? 20 : count >= 3 ? 25 : count > 0 ? 30 : null;
     const effective = schedule === 'smart' ? tier === null ? null : Math.max(tier, Number(minimum)) : Number(body.interval_minutes);
     const anchor = value.schedule_anchor_at ?? new Date().toISOString();
-    value = { ...value, schedule_mode: schedule, min_interval_minutes: minimum, effective_interval_minutes: effective, schedule_anchor_at: anchor, model_override: override, model_id: selected, model_source: override ? "account" : "global", enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? effective === null ? 'paused' : 'waiting' : 'disabled', reason: body.enabled && effective === null ? '最近一小时无业务调用，已暂停定时检测' : '', next_at: body.enabled && effective !== null ? new Date((schedule === 'smart' ? Date.parse(String(anchor)) : Date.now()) + effective*60000).toISOString() : null };
+    value = { ...value, schedule_mode: schedule, min_interval_minutes: minimum, effective_interval_minutes: effective, schedule_anchor_at: anchor, model_override: override, model_id: selected, model_source: override || !openai ? "account" : "global", enabled: body.enabled, interval_minutes: body.interval_minutes, version: version(), status: body.enabled ? effective === null ? 'paused' : 'waiting' : 'disabled', reason: body.enabled && effective === null ? '最近一小时无业务调用，已暂停定时检测' : '', next_at: body.enabled && effective !== null ? new Date((schedule === 'smart' ? Date.parse(String(anchor)) : Date.now()) + effective*60000).toISOString() : null };
     detections.set(aid, value);
   }
   return structuredClone(value);

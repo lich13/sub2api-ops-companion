@@ -118,14 +118,20 @@ pub fn signature(row: &Value) -> String {
         &row["extra"],
         &["openai_responses_mode", "openai_responses_supported"],
     );
+    if let Some(auth) = row["extra"].get("anthropic_apikey_auth_scheme") {
+        stable["protocol"]["anthropic_apikey_auth_scheme"] = auth.clone();
+    }
     config_revision(&stable)
+}
+pub fn supported(row: &Value) -> bool {
+    row["platform"] == "openai" && matches!(string(&row["type"]), "oauth" | "apikey")
+        || row["type"] == "apikey"
+            && matches!(string(&row["platform"]), "anthropic" | "grok" | "deepseek")
 }
 pub async fn account(actions: &Actions, id: i64) -> Result<Value> {
     let row=actions.queries.db.one("SELECT id,name,platform,type,status,schedulable,credentials,extra,proxy_id,nullif(to_jsonb(accounts)->>'parent_account_id','')::bigint AS parent_account_id,ARRAY(SELECT ag.group_id FROM account_groups ag JOIN groups g ON g.id=ag.group_id AND g.deleted_at IS NULL WHERE ag.account_id=accounts.id ORDER BY ag.group_id) AS group_ids FROM accounts WHERE id=$1 AND deleted_at IS NULL",&[id.into()]).await?;
-    row.filter(|row| {
-        row["platform"] == "openai" && matches!(string(&row["type"]), "oauth" | "apikey")
-    })
-    .ok_or_else(|| Error::new(422, "仅支持 Codex OAuth 和 Key 账号"))
+    row.filter(supported)
+        .ok_or_else(|| Error::new(422, "此账号类型不支持模型检测"))
 }
 pub async fn target(actions: &Actions, row: &Value, model: &str) -> Result<(Target, Value)> {
     let target = connection(actions, row, model).await?;
@@ -156,34 +162,62 @@ pub(crate) async fn connection(
     if truthy(&owner["parent_account_id"]) || truthy(&owner["extra"]["parent_account_id"]) {
         return Err(Error::new(422, "母账号关系无效"));
     }
-    if owner["type"] != row["type"] {
+    if owner["type"] != row["type"] || owner["platform"] != row["platform"] {
         return Err(Error::new(422, "母账号凭据类型不一致"));
     }
+    let platform = string(&owner["platform"]);
     let oauth = owner["type"] == "oauth";
     let credentials = &owner["credentials"];
+    let extra = &owner["extra"];
     let token = credentials[if oauth { "access_token" } else { "api_key" }]
         .as_str()
         .filter(|v| !v.is_empty())
         .ok_or_else(|| Error::new(409, "账号凭据不可用"))?;
+    let protocol = match platform {
+        "anthropic" => "messages",
+        "grok" => "chat_completions",
+        "deepseek" => match string(&credentials["api_protocol"]) {
+            "" | "adaptive" | "chat_completions" => "chat_completions",
+            "responses" => "responses",
+            "anthropic" => "messages",
+            _ => return Err(Error::new(422, "账号请求协议不受支持")),
+        },
+        "openai"
+            if oauth
+                || extra["openai_responses_mode"] == "force_responses"
+                || extra["openai_responses_mode"] != "force_chat_completions"
+                    && extra["openai_responses_supported"] != false =>
+        {
+            "responses"
+        }
+        "openai" => "chat_completions",
+        _ => return Err(Error::new(422, "此平台不支持模型检测")),
+    };
+    let default_base = match platform {
+        "anthropic" => "https://api.anthropic.com",
+        "grok" => "https://api.x.ai",
+        "deepseek" if protocol == "messages" => "https://api.deepseek.com/anthropic",
+        "deepseek" => "https://api.deepseek.com",
+        _ => "https://api.openai.com",
+    };
+    let adaptive_base = (platform == "deepseek"
+        && matches!(string(&credentials["api_protocol"]), "" | "adaptive"))
+    .then(|| credentials["api_base_urls"][protocol].as_str())
+    .flatten();
     let base = if oauth {
         "https://chatgpt.com/backend-api/codex"
     } else {
-        credentials["base_url"]
-            .as_str()
+        adaptive_base
             .filter(|v| !v.is_empty())
-            .unwrap_or("https://api.openai.com")
+            .or_else(|| credentials["base_url"].as_str().filter(|v| !v.is_empty()))
+            .unwrap_or(default_base)
     };
     let explicit = base.ends_with('#');
     let base = base.strip_suffix('#').unwrap_or(base).trim_end_matches('/');
-    let extra = &owner["extra"];
-    let use_responses = oauth
-        || extra["openai_responses_mode"] == "force_responses"
-        || extra["openai_responses_mode"] != "force_chat_completions"
-            && extra["openai_responses_supported"] != false;
-    let endpoint = if use_responses {
-        "/responses"
-    } else {
-        "/chat/completions"
+    let endpoint = match protocol {
+        "messages" => "/messages",
+        "responses" => "/responses",
+        _ => "/chat/completions",
     };
     let url = format!(
         "{base}{}{endpoint}",
@@ -201,16 +235,23 @@ pub(crate) async fn connection(
     {
         return Err(Error::new(422, "上游地址无效"));
     }
-    let rows=actions.queries.db.all("SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced')",&[]).await.unwrap_or_default();
-    let values = rows
-        .into_iter()
-        .filter_map(|row| {
-            row["key"]
-                .as_str()
-                .map(|key| (key.to_owned(), row["value"].clone()))
-        })
-        .collect::<serde_json::Map<_, _>>();
-    let (version, agent) = identity(&Value::Object(values));
+    let (version, agent) = if platform == "openai" {
+        let rows=actions.queries.db.all("SELECT key,value FROM settings WHERE key IN ('openai_codex_user_agent','openai_codex_client_version','openai_codex_client_version_synced')",&[]).await.unwrap_or_default();
+        let values = rows
+            .into_iter()
+            .filter_map(|row| {
+                row["key"]
+                    .as_str()
+                    .map(|key| (key.to_owned(), row["value"].clone()))
+            })
+            .collect::<serde_json::Map<_, _>>();
+        identity(&Value::Object(values))
+    } else {
+        (
+            String::new(),
+            format!("Sub2Ops/{}", env!("CARGO_PKG_VERSION")),
+        )
+    };
     let mut headers = reqwest::header::HeaderMap::new();
     for (key, value) in [
         ("authorization", format!("Bearer {token}")),
@@ -224,6 +265,21 @@ pub(crate) async fn connection(
                 .parse()
                 .map_err(|_| Error::new(409, "账号凭据不可用"))?,
         );
+    }
+    if protocol == "messages" {
+        headers.insert(
+            "anthropic-version",
+            reqwest::header::HeaderValue::from_static("2023-06-01"),
+        );
+        if extra["anthropic_apikey_auth_scheme"] != "authorization_bearer" {
+            headers.remove("authorization");
+            headers.insert(
+                "x-api-key",
+                token
+                    .parse()
+                    .map_err(|_| Error::new(409, "账号凭据不可用"))?,
+            );
+        }
     }
     if oauth {
         for (key, value) in [
@@ -251,6 +307,28 @@ pub(crate) async fn connection(
             );
         }
     }
+    if credentials["header_override_enabled"] == true {
+        for (name, value) in credentials["header_overrides"]
+            .as_object()
+            .ok_or_else(|| Error::new(422, "账号请求头配置无效"))?
+        {
+            let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| Error::new(422, "账号请求头配置无效"))?;
+            let value = value
+                .as_str()
+                .ok_or_else(|| Error::new(422, "账号请求头配置无效"))?;
+            if value.is_empty() {
+                headers.remove(name);
+            } else {
+                headers.insert(
+                    name,
+                    value
+                        .parse()
+                        .map_err(|_| Error::new(422, "账号请求头配置无效"))?,
+                );
+            }
+        }
+    }
     let proxy_id = integer(&row["proxy_id"])
         .filter(|v| *v > 0)
         .or_else(|| integer(&owner["proxy_id"]).filter(|v| *v > 0));
@@ -275,17 +353,13 @@ pub(crate) async fn connection(
     };
     Ok((
         Target {
+            platform: platform.into(),
             url,
             headers,
             proxy,
             model: model.into(),
             oauth,
-            protocol: if use_responses {
-                "responses"
-            } else {
-                "chat_completions"
-            }
-            .into(),
+            protocol: protocol.into(),
         },
         owner,
     ))

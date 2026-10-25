@@ -282,10 +282,21 @@ impl Detection {
             }
             let allowed = self
                 .actions
-                .model_allowed(&row, &self.effective_model(&value)?)
+                .model_allowed(&row, &self.effective_model(&value, &row)?)
                 .await?;
-            let bank = self.tests.bank.snapshot();
-            if !allowed || !bank_contains(&bank.0, TARGET) {
+            let platform = self.monitor.config.current()?["model_detection_platforms"]
+                [string(&row["platform"])]
+            .clone();
+            let ready = if platform["engine"] == crate::lm_detector::ENGINE {
+                self.tests
+                    .lm_bank
+                    .load(self.tests.lm_bank.revision()?)
+                    .await
+                    .is_ok()
+            } else {
+                bank_contains(&self.tests.bank.snapshot().0, TARGET)
+            };
+            if !allowed || !ready {
                 self.update(
                     id,
                     json!({"candidate_recheck_at":datetime(self.now()+Duration::minutes(1))}),

@@ -1856,7 +1856,7 @@
           "persist_synthetic_schedulable(&harness.mock, id, false).await;",
           "assert_eq!(confirmed[\"schedule_verified\"], true);",
           "assert_eq!(\n        harness\n            .mock\n            .count(\"POST\", &format!(\"/api/v1/admin/accounts/{id}/schedulable\")),\n        1\n    );",
-          "assert_eq!(harness.runtime().detection.view(id).unwrap()[\"disposition_notification\"][\"status\"], \"queued\");",
+          "assert_eq!(harness.runtime().detection.view(id).await.unwrap()[\"disposition_notification\"][\"status\"], \"queued\");",
           "assert_eq!(harness.mock.count(\"POST\", \"/push\"), 1);"
         ],
         "fixtures": [

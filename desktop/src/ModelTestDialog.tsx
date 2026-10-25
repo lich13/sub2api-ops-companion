@@ -15,7 +15,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
   concurrency?: number; saveConcurrency?: (value: number) => void;
   preference?: ModelTestPreference; savePreference?: (value: ModelTestPreference) => void;
 }) {
-  const [engine, setEngine] = useState<DetectionEngine>(preference?.engine === "lm_detector" ? "lm_detector" : "modeltrace");
+  const [engine, setEngine] = useState<DetectionEngine>(account.platform !== "openai" || preference?.engine === "lm_detector" ? "lm_detector" : "modeltrace");
   const [samples, setSamples] = useState<1 | 3>(preference?.sample_count === 3 ? 3 : 1);
   const [tokenizer, setTokenizer] = useState(false);
   const [slots, setSlots] = useState([1, 2, 3].includes(concurrency) ? concurrency : 1);
@@ -34,7 +34,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
     if (activeAccount.current !== account.id) {
       activeAccount.current = account.id;
       setModels([]); setModel(""); setJob(null); setTokenizer(false);
-      setEngine(preference?.engine === "lm_detector" ? "lm_detector" : "modeltrace"); setSamples(preference?.sample_count === 3 ? 3 : 1);
+      setEngine(account.platform !== "openai" || preference?.engine === "lm_detector" ? "lm_detector" : "modeltrace"); setSamples(preference?.sample_count === 3 ? 3 : 1);
       selectionTouched.current = false; submitted.current = false;
     }
     setBusy(false);
@@ -53,7 +53,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
   useEffect(() => {
     let alive = true; const current = scope.current;
     if (!online) return;
-    const keyAccount = account.platform === "openai" && account.type === "apikey";
+    const keyAccount = account.type === "apikey";
     setDefaultsLoading(keyAccount);
     void Promise.allSettled([
       api<Result | null>("GET", `/accounts/${account.id}/model-tests/latest`),
@@ -125,7 +125,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
       {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
       {!loading && online && !modelError && model && !available && <span className="bad-text">所选模型不在当前账号上游模型目录中。</span>}
     </label>
-    <label className="model-test-model">检测源<select aria-label="检测源" value={engine} disabled={running || busy || !online} onChange={e => setEngine(e.target.value as DetectionEngine)}><option value="modeltrace">ModelTrace</option><option value="lm_detector">LM Detector</option></select></label>
+    <label className="model-test-model">检测源<select aria-label="检测源" value={engine} disabled={running || busy || !online} onChange={e => setEngine(e.target.value as DetectionEngine)}>{account.platform === "openai" && <option value="modeltrace">ModelTrace</option>}<option value="lm_detector">LM Detector</option></select></label>
     <label className="model-test-model">组数<select aria-label="采样组数" value={engine === "lm_detector" ? samples : 3} disabled={engine !== "lm_detector" || running || busy || !online} onChange={e => setSamples(Number(e.target.value) as 1 | 3)}>{engine === "lm_detector" && <option value={1}>1 组</option>}<option value={3}>3 组</option></select></label>
     <label className="model-test-model">并发<select aria-label="测试并发" value={slots} disabled={running || busy} onChange={(e) => { const value = Number(e.target.value); setSlots(value); saveConcurrency?.(value); }}>{[1, 2, 3].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
     </div>
@@ -136,7 +136,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
       <p className="model-test-source">{engineName(job.engine)} · {job.planned_groups ?? 3} 组</p>
       {job.engine === "lm_detector" && <ModelFingerprintResult key={job.id} job={job}/>}
       {job.groups && <details className="model-test-group-details" open={job.engine !== "lm_detector" || running}><summary>各组采样与预测</summary><div className="model-test-groups">{job.groups.map((group) => <div key={group.index}><strong>第 {group.index} 组</strong><span>{({ queued: "等待", running: "等待响应", receiving: "接收中", analyzing: "分析中", skipped: "提前结束", retrying: "等待重试", completed: "完成", failed: "失败", cancelled: "已停止" } as Record<string, string>)[group.status] ?? group.status}</span><span>{group.attempts} 次</span><span>首字 {group.ttft_ms == null ? "—" : `${(group.ttft_ms / 1000).toFixed(1)}s`}</span><span>耗时 {group.duration_ms == null ? "—" : `${(group.duration_ms / 1000).toFixed(1)}s`}</span>{group.report && <span className="model-test-group-prediction">{group.report.prediction_name || "无排名"}{group.report.merged_class ? " · 合并类别，无法区分" : ""}</span>}{group.error && <span className="bad-text">{group.error}</span>}</div>)}</div></details>}
-      <details className="model-test-request-details" open={job.engine !== "lm_detector"}><summary>请求模型与耗时</summary><dl><div><dt>请求模型</dt><dd>{job.requested_model}</dd></div><div><dt>转发模型</dt><dd>{job.forwarded_model}</dd></div><div><dt>返回模型</dt><dd>{job.returned_models.length ? job.returned_models.join("、") : "—"}</dd></div><div><dt>指纹推测</dt><dd>{reportResult?.prediction_name || "—"}</dd></div><div><dt>匹配度</dt><dd>{reportResult?.probability == null ? "—" : `${(reportResult.probability * 100).toFixed(1)}%`}</dd></div><div><dt>有效组数</dt><dd>{reportResult?.used_outputs ?? job.valid_groups}/{job.planned_groups ?? 3}</dd></div><div><dt>耗时</dt><dd>{job.duration_ms ? `${(job.duration_ms / 1000).toFixed(1)}s` : "—"}</dd></div></dl></details>
+      <details className="model-test-request-details" open={job.engine !== "lm_detector"}><summary>请求模型与耗时</summary><dl><div><dt>请求模型</dt><dd>{job.requested_model}</dd></div><div><dt>转发模型</dt><dd>{job.forwarded_model}</dd></div><div><dt>返回模型</dt><dd>{job.returned_models.length ? job.returned_models.join("、") : "—"}</dd></div><div><dt>指纹推测</dt><dd>{reportResult?.prediction_name || "—"}</dd></div><div><dt>匹配度</dt><dd>{reportResult?.probability == null ? "—" : `${(reportResult.probability * 100).toFixed(job?.engine === "lm_detector" ? 2 : 1)}%`}</dd></div><div><dt>有效组数</dt><dd>{reportResult?.used_outputs ?? job.valid_groups}/{job.planned_groups ?? 3}</dd></div><div><dt>耗时</dt><dd>{job.duration_ms ? `${(job.duration_ms / 1000).toFixed(1)}s` : "—"}</dd></div></dl></details>
       <TokenizerResult job={job}/>
       {job.groups?.some((group) => group.diagnostics) && <details className="model-test-diagnostics"><summary>请求诊断</summary>{job.groups.filter((group) => group.diagnostics).map((group) => <dl key={group.index}><div><dt>第 {group.index} 组</dt><dd>{group.diagnostics?.response_protocol || group.diagnostics?.protocol || '—'}</dd></div><div><dt>HTTP</dt><dd>{group.diagnostics?.http_status ?? '—'} · {group.diagnostics?.content_type || '—'}</dd></div><div><dt>首事件</dt><dd>{group.diagnostics?.first_event_type || '—'} · {group.diagnostics?.first_event_ms == null ? '—' : `${(group.diagnostics.first_event_ms / 1000).toFixed(2)}s`}</dd></div><div><dt>末事件</dt><dd>{group.diagnostics?.last_event_type || '—'}</dd></div><div><dt>输出 Token</dt><dd>{group.diagnostics?.output_tokens ?? '—'}{group.diagnostics?.max_output_tokens != null ? ` / ${group.diagnostics.max_output_tokens}` : ''}</dd></div><div><dt>思考 Token</dt><dd>{group.diagnostics?.reasoning_tokens ?? '—'}</dd></div><div><dt>接收</dt><dd>{group.diagnostics?.bytes ?? 0} bytes</dd></div><div><dt>结束</dt><dd>{group.diagnostics?.end_reason || '—'}</dd></div></dl>)}</details>}
       {job.automatic_disposition && <p>{job.automatic_disposition.basis === "sample_family" ? `第 ${job.automatic_disposition.group_indexes?.join("、")} 组跨家族证据` : job.automatic_disposition.basis === "aggregate" ? "最终汇总" : "单组"} · {job.automatic_disposition.kind === "recheck" ? job.automatic_disposition.reason : <>{job.automatic_disposition.marked ? "标记已保存" : "标记待核对"} · {job.automatic_disposition.schedule_verified ? "停调度已确认" : "停调度未确认"}{job.automatic_disposition.reason && `：${job.automatic_disposition.reason}`}</>}</p>}
@@ -145,6 +145,6 @@ export default function ModelTestDialog({ account, online, close, report, concur
     {job?.bank_version && <details className="model-test-version"><summary>本轮库版本 · {engineName(job.engine)}</summary><p>{job.bank_version.revision} · {job.bank_version.analyzer_version}</p></details>}
     <FingerprintBankStatus key={engine} engine={engine} online={online} taskVersion={job?.engine === engine || (!job?.engine && engine === "modeltrace") ? job?.bank_version : undefined}/>
     </div>
-    <footer>{job?.can_retry && job.engine !== "lm_detector" && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy || !online} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || defaultsLoading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
+    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy || !online} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || defaultsLoading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
   </section></div>;
 }

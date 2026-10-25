@@ -34,9 +34,22 @@ fn detector_request_and_platform_options_preserve_legacy_defaults_and_reject_inv
     }
     lm["engine"] = "modeltrace".into();
     assert!(model_request(&lm).is_err());
+    let settings =
+        detection_platforms(&json!({"openai":{"engine":"lm_detector","sample_count":3}})).unwrap();
+    for platform in ["anthropic", "grok", "deepseek"] {
+        assert_eq!(
+            settings[platform],
+            json!({"engine":"lm_detector","sample_count":1})
+        );
+        assert_eq!(
+            detection_platforms(&json!({platform:{"engine":"lm_detector","sample_count":3}}))
+                .unwrap()[platform]["sample_count"],
+            3
+        );
+    }
     for invalid in [
         json!({"openai":{"engine":"lm_detector","sample_count":2}}),
-        json!({"anthropic":{"engine":"lm_detector","sample_count":1}}),
+        json!({"anthropic":{"engine":"modeltrace","sample_count":1}}),
         json!({"openai":{"engine":"lm_detector","sample_count":1,"tokenizer_probe":true}}),
     ] {
         assert!(detection_platforms(&invalid).is_err());
@@ -812,6 +825,7 @@ async fn execute_matches_pinned_http_and_stream_fixtures_without_replaying() {
         };
         let mock = MockServer::start(reply).await;
         let target = model_test_stream::Target {
+            platform: "openai".into(),
             url: mock.url.clone(),
             headers: reqwest::header::HeaderMap::new(),
             proxy: None,
@@ -903,6 +917,7 @@ async fn cancelling_a_live_stream_does_not_resubmit_the_loopback_request() {
     .await;
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let target = model_test_stream::Target {
+        platform: "openai".into(),
         url: mock.url.clone(),
         headers: reqwest::header::HeaderMap::new(),
         proxy: None,
@@ -953,4 +968,79 @@ async fn cancelling_a_live_stream_does_not_resubmit_the_loopback_request() {
     assert!(task.await.unwrap_err().is_cancelled());
     assert_eq!(mock.state.requests.load(Ordering::SeqCst), 1);
     mock.stop().await;
+}
+
+#[tokio::test]
+async fn messages_stream_requires_terminal_and_merges_cached_token_usage() {
+    let events = [
+        json!({"type":"message_start","message":{"model":"claude-opus-4-6","usage":{"input_tokens":12,"cache_read_input_tokens":20,"cache_creation_input_tokens":3}}}),
+        json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"ignore"}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" hidden"}}),
+        json!({"type":"content_block_start","index":1,"content_block":{"type":"text","text":"1, "}}),
+        json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"2, 3"}}),
+        json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}}),
+        json!({"type":"message_stop"}),
+    ];
+    for terminal in [false, true] {
+        let body = events[..if terminal {
+            events.len()
+        } else {
+            events.len() - 1
+        }]
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>();
+        let mock = MockServer::start(ReplyPlan {
+            status: 200,
+            content_type: "text/event-stream".into(),
+            body: body.into_bytes(),
+            disconnect: false,
+            hang: false,
+        })
+        .await;
+        let target = model_test_stream::Target {
+            platform: "openai".into(),
+            url: mock.url.clone(),
+            headers: Default::default(),
+            proxy: None,
+            model: "claude-opus-4-6".into(),
+            oauth: false,
+            protocol: "messages".into(),
+        };
+        let client = target.client().unwrap();
+        let mut diag = json!({});
+        let result =
+            model_test_stream::execute(&target, "fixture prompt", 3, &client, None, &mut diag)
+                .await;
+        if terminal {
+            let (text, model) = result.unwrap();
+            assert_eq!(text, "1, 2, 3");
+            assert_eq!(model.as_deref(), Some("claude-opus-4-6"));
+            assert_eq!(diag["input_tokens"], 35);
+            assert_eq!(diag["output_tokens"], 8);
+            assert_eq!(diag["end_reason"], "end_turn");
+            let mut probe_diag = json!({});
+            assert_eq!(
+                model_test_stream::execute_probe(
+                    &target,
+                    "fixture probe",
+                    &client,
+                    &mut probe_diag
+                )
+                .await
+                .unwrap(),
+                35
+            );
+            let payloads = mock.state.payloads.lock().await;
+            assert_eq!(payloads[1]["max_tokens"], 4096);
+            assert!(payloads[1].get("max_output_tokens").is_none());
+        } else {
+            assert_eq!(result.unwrap_err().code, "incomplete_stream");
+        }
+        mock.stop().await;
+    }
+    let mut whole = model_test_stream::Collector::new(3);
+    whole.accept(&json!({"type":"message","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"1, 2, 3"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":3}}),"",true).unwrap();
+    assert_eq!(whole.text(), "1, 2, 3");
+    assert!(whole.completed);
 }

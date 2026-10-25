@@ -112,6 +112,13 @@ pub fn discover(
         }
         let meta = &previous["scheduler"][id.to_string()];
         let saved = quota::latest_result(row, &previous["oauth_results"][id.to_string()], at);
+        if recovery_rules::obsolete_healthy_intent(row, &saved, meta, at) {
+            changes.push((
+                id,
+                recovery_rules::cancel_healthy_intent(&meta["recovery_intent"]),
+            ));
+            continue;
+        }
         if !recovery_rules::control_allows(row, &saved, meta, at) {
             continue;
         }
@@ -128,6 +135,29 @@ pub fn discover(
             continue;
         }
         let old = &meta["recovery_intent"];
+        if recovery_rules::early_quota_release(row, &saved, meta, at)
+            && !truthy(&old["verification_dispatched"])
+            && !truthy(&old["verification_receipt"])
+            && !truthy(&old["recovery_write_dispatched"])
+        {
+            let mut intent = old.clone();
+            intent["status"] = "ready".into();
+            intent["due_at"] = saved["queried_at"].clone();
+            for key in [
+                "next_retry_at",
+                "waiting_reason",
+                "waiting_until",
+                "deferred_until",
+                "last_error",
+                "last_error_code",
+            ] {
+                intent[key] = "".into();
+            }
+            if intent != *old {
+                changes.push((id, intent));
+            }
+            continue;
+        }
         if recovery_rules::obsolete_rate_intent(row, &summary, old, at) {
             changes.push((id, recovery_rules::cancel_obsolete_rate_intent(old)));
             continue;
@@ -308,6 +338,11 @@ pub fn quota_update(
             .map(|(key, _)| key.clone()),
     );
     let summary = quota::summary_from_result(row, result);
+    if recovery_rules::obsolete_healthy_intent(row, result, meta, at) {
+        metadata["recovery_intent"] = recovery_rules::cancel_healthy_intent(&intent);
+        update.scheduler.insert(id, metadata);
+        return (update, None, false);
+    }
     let quota_descriptor = recovery_rules::quota_descriptor(&summary, at);
     let threshold = recovery_rules::threshold_descriptor(row, &summary, at);
     let descriptor = if truthy(&quota_descriptor) {
@@ -316,6 +351,7 @@ pub fn quota_update(
         &threshold
     };
     let depleted = truthy(&quota_descriptor);
+    let released_early = recovery_rules::early_quota_release(row, result, meta, at);
     let transition = recovery_transition(&item["previous_summary"], &summary, at);
     if !truthy(descriptor)
         && !truthy(&transition)
@@ -344,7 +380,9 @@ pub fn quota_update(
             intent["last_error_code"] = "quota_not_released".into();
         }
         metadata["recovery_intent"] = intent.clone();
-        if due.is_none() || due.is_some_and(|t| at < t) || depleted || threshold_blocked {
+        if !released_early
+            && (due.is_none() || due.is_some_and(|t| at < t) || depleted || threshold_blocked)
+        {
             update.scheduler.insert(id, metadata);
             return (update, None, depleted);
         }
@@ -367,7 +405,14 @@ pub fn quota_update(
         update.scheduler.insert(id, metadata);
         return (update, None, depleted);
     }
-    if truthy(&transition)
+    if released_early {
+        intent["due_at"] = result["queried_at"].clone();
+        intent["next_retry_at"] = "".into();
+        intent["waiting_reason"] = "".into();
+        intent["waiting_until"] = "".into();
+    }
+    if !released_early
+        && truthy(&transition)
         && truthy(&transition["fingerprint"])
         && transition["fingerprint"] != intent["fingerprint"]
     {

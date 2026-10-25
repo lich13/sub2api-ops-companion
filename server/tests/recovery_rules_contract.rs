@@ -646,3 +646,185 @@ fn rate_only_recovery_requires_fresh_evidence_and_preserves_real_blocks() {
         ));
     }
 }
+
+#[test]
+fn early_quota_release_retires_old_waits_without_erasing_query_budget_or_live_restrictions() {
+    use sub2ops_server::{quota, recovery_events};
+    let at = date(&json!("2031-04-05T10:00:00Z"));
+    let row = json!({"id":73,"platform":"openai","type":"oauth","status":"active","schedulable":true,
+        "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T09:59:00Z","codex_5h_used_percent":0,"codex_7d_used_percent":0,"codex_5h_reset_at":"2031-04-05T15:00:00Z","codex_7d_reset_at":"2031-04-12T10:00:00Z"}});
+    let result = quota::latest_result(&row, &Value::Null, at);
+    let intent = json!({"status":"pending","kind":"quota_exhausted","fingerprint":"fixture-old-cycle",
+        "due_at":"2031-04-06T10:00:00Z","next_retry_at":"2031-04-05T11:00:00Z","waiting_reason":"query_cooldown","waiting_until":"2031-04-05T11:00:00Z"});
+    let meta = json!({"recovery_intent":intent,"quota_query":{"last_query_at":"2031-04-05T09:50:00Z","automatic_attempts":["2031-04-05T09:50:00Z"]}});
+    assert!(recovery_rules::obsolete_healthy_intent(
+        &row, &result, &meta, at
+    ));
+    for patch in [
+        json!({"schedulable":false}),
+        json!({"rate_limit_reset_at":"2031-04-05T12:00:00Z"}),
+        json!({"temp_unschedulable_reason":"fixture manual restriction"}),
+        json!({"status":"error"}),
+    ] {
+        let mut changed = row.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::obsolete_healthy_intent(
+            &changed, &result, &meta, at
+        ));
+    }
+    for patch in [
+        json!({"success":false}),
+        json!({"queried_at":"2031-04-05T08:00:00Z"}),
+        json!({"queried_at":"2031-04-05T11:00:00Z"}),
+        json!({"oauth_quota":{"plan_type":"plus","ui_windows":[{"key":"codex_7d","used_percent":0}]}}),
+    ] {
+        let mut changed = result.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::obsolete_healthy_intent(
+            &row, &changed, &meta, at
+        ));
+    }
+    let mut inflight = meta.clone();
+    inflight["recovery_intent"]["verification_dispatched"] = true.into();
+    assert!(!recovery_rules::obsolete_healthy_intent(
+        &row, &result, &inflight, at
+    ));
+    let directory = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(directory.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["73"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    recovery_events::discover(
+        &store,
+        std::slice::from_ref(&row),
+        &json!({"oauth_recovery_connection_account_ids":[73]}),
+        at,
+    )
+    .unwrap();
+    let state = store.snapshot().unwrap();
+    let saved = &state["scheduler"]["73"];
+    assert_eq!(saved["recovery_intent"]["status"], "cancelled");
+    for field in ["due_at", "next_retry_at", "waiting_until", "waiting_reason"] {
+        assert_eq!(saved["recovery_intent"][field], "");
+    }
+    assert!(recovery_events::project(saved).is_null());
+    assert_eq!(saved["quota_query"], meta["quota_query"]);
+    assert!(recovery_rules::candidates(
+        std::slice::from_ref(&row),
+        &json!({"73":result}),
+        &json!({"73":meta}),
+        at,
+        true
+    )
+    .unwrap()
+    .is_empty());
+    let (update, runnable, _) = recovery_events::quota_update(
+        &json!({"account_id":73,"row":row,"reason":"manual"}),
+        &result,
+        &json!({"scheduler":{"73":meta}}),
+        at,
+        true,
+        false,
+    );
+    assert!(runnable.is_none());
+    assert_eq!(
+        update.scheduler[&73]["recovery_intent"]["status"],
+        "cancelled"
+    );
+}
+
+#[test]
+fn early_new_cycle_bypasses_only_obsolete_quota_waits_before_recovery_verification() {
+    use sub2ops_server::{quota, recovery_events};
+    let at = date(&json!("2031-04-05T10:00:00Z"));
+    let row = json!({"id":74,"platform":"openai","type":"oauth","status":"active","schedulable":true,
+        "rate_limited_at":"2031-04-05T08:00:00Z","rate_limit_reset_at":"2031-04-06T10:00:00Z",
+        "extra":{"codex_plan_type":"plus","codex_usage_updated_at":"2031-04-05T09:59:00Z","codex_5h_used_percent":0,"codex_7d_used_percent":0,"codex_5h_reset_at":"2031-04-05T15:00:00Z","codex_7d_reset_at":"2031-04-12T10:00:00Z"}});
+    let result = quota::latest_result(&row, &Value::Null, at);
+    let meta = json!({"recovery_intent":{"kind":"quota_exhausted","status":"pending","fingerprint":"codex_7d@2031-04-06T10:00:00+00:00","window_keys":["codex_7d"],"due_at":"2031-04-06T10:00:00Z","next_retry_at":"2031-04-06T10:00:00Z","waiting_reason":"waiting_reset","waiting_until":"2031-04-06T10:00:00Z"},"quota_query":{"last_query_at":"2031-04-05T09:59:00Z","automatic_attempts":[]}});
+    assert!(recovery_rules::early_quota_release(
+        &row, &result, &meta, at
+    ));
+    assert!(recovery_rules::quota_ready(&row, &result, &meta, at));
+    assert!(!recovery_rules::obsolete_healthy_intent(
+        &row, &result, &meta, at
+    ));
+    let mut verifying = meta.clone();
+    verifying["recovery_intent"]["status"] = "testing".into();
+    verifying["recovery_intent"]["tested_at"] = "2031-04-05T10:00:00Z".into();
+    verifying["recovery_intent"]["verification_dispatched"] = true.into();
+    assert!(recovery_rules::quota_ready(&row, &result, &verifying, at));
+    verifying["recovery_intent"]["status"] = "retry".into();
+    assert!(!recovery_rules::quota_ready(&row, &result, &verifying, at));
+    let directory = tempfile::tempdir().unwrap();
+    let store = OAuthState::new(directory.path().join("state.json"), false);
+    store
+        .transaction(|state| {
+            state["scheduler"]["74"] = meta.clone();
+            Ok(())
+        })
+        .unwrap();
+    recovery_events::discover(
+        &store,
+        std::slice::from_ref(&row),
+        &json!({"oauth_recovery_connection_account_ids":[74]}),
+        at,
+    )
+    .unwrap();
+    let scheduler = store.snapshot().unwrap()["scheduler"].clone();
+    assert_eq!(scheduler["74"]["recovery_intent"]["status"], "ready");
+    assert_eq!(scheduler["74"]["recovery_intent"]["waiting_until"], "");
+    let candidates = recovery_rules::candidates(
+        std::slice::from_ref(&row),
+        &json!({"74":result}),
+        &scheduler,
+        at,
+        true,
+    )
+    .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates[0]["reuse_quota"].is_object());
+    let (_, runnable, _) = recovery_events::quota_update(
+        &candidates[0],
+        &result,
+        &json!({"scheduler":scheduler}),
+        at,
+        true,
+        true,
+    );
+    assert!(runnable.is_some());
+    for patch in [
+        json!({"rate_limited_at":"2031-04-05T10:00:00Z"}),
+        json!({"rate_limit_reset_at":"2031-04-07T10:00:00Z"}),
+        json!({"schedulable":false}),
+        json!({"overload_until":"2031-04-05T11:00:00Z"}),
+    ] {
+        let mut changed = row.clone();
+        changed
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(!recovery_rules::early_quota_release(
+            &changed, &result, &meta, at
+        ));
+    }
+    let mut stale = meta.clone();
+    stale["recovery_intent"]["fingerprint"] = "codex_7d@2031-04-12T10:00:00+00:00".into();
+    assert!(!recovery_rules::early_quota_release(
+        &row, &result, &stale, at
+    ));
+    stale = meta.clone();
+    stale["last_error_at"] = "2031-04-05T10:00:00Z".into();
+    assert!(!recovery_rules::early_quota_release(
+        &row, &result, &stale, at
+    ));
+}

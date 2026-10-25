@@ -134,7 +134,7 @@ pub fn automatic_gate(
         bounds.push((t, "query_backoff"));
     }
     if wait_reset {
-        if let Some(t) = reset_not_before(row, saved) {
+        if let Some(t) = crate::recovery_rules::reset_not_before(row, saved, meta, at) {
             bounds.push((t, "waiting_reset"));
         }
     }

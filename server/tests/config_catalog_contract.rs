@@ -389,7 +389,7 @@ fn settings_priority_parsing_matches_pinned_python() {
     );
     assert_eq!(
         settings.oauth["model_detection_platforms"],
-        json!({"openai":{"engine":"modeltrace","sample_count":1}})
+        json!({"openai":{"engine":"modeltrace","sample_count":1},"anthropic":{"engine":"lm_detector","sample_count":1},"grok":{"engine":"lm_detector","sample_count":1},"deepseek":{"engine":"lm_detector","sample_count":1}})
     );
     let mut legacy_projection = settings.oauth.clone();
     legacy_projection

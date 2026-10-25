@@ -617,8 +617,8 @@ impl Actions {
     }
     async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
         let row = self.account(id, None).await?;
-        if row["platform"] != "openai" {
-            return Err(Error::new(422, "仅支持 Codex 模型测试"));
+        if !crate::model_target::supported(&row) {
+            return Err(Error::new(422, "此账号类型不支持模型检测"));
         }
         let parent = integer(&row["parent_account_id"])
             .or_else(|| integer(&row["extra"]["parent_account_id"]))
@@ -634,6 +634,7 @@ impl Actions {
             "parent_account_id",
             "openai_responses_mode",
             "openai_responses_supported",
+            "anthropic_apikey_auth_scheme",
             "openai_passthrough",
             "openai_oauth_passthrough",
         ];

@@ -1834,7 +1834,6 @@ td:last-child {
 .lm-candidates > div > span:not(:first-child) { text-align: right; }
 .lm-candidates small { color: var(--muted); font-size: 11px; display: inline-block; width: 24px; }
 .lm-candidate-heading { color: var(--muted); }
-.lm-expand { margin-top: 6px; }
 .model-test-group-details, .model-test-request-details { margin: 16px 0; }
 .model-test-group-details > summary, .model-test-request-details > summary, .model-test-version > summary, .lm-tokenizer summary { cursor: pointer; min-height: 30px; line-height: 30px; }
 .model-test-group-prediction { grid-column: 1 / -1; text-align: left !important; overflow-wrap: anywhere; }

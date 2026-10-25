@@ -1,12 +1,16 @@
 import type { BankVersion } from "./FingerprintBankStatus";
 
+export const supportsModelDetection = (account: { platform: string; type: string }) =>
+  account.platform === "openai" && ["oauth", "apikey"].includes(account.type)
+  || account.type === "apikey" && ["anthropic", "grok", "deepseek"].includes(account.platform);
+
 export type DetectionEngine = "modeltrace" | "lm_detector";
 export type ModelTestPreference = { engine: DetectionEngine; sample_count: 1 | 3 };
 export const engineName = (engine?: string | null) => engine === "lm_detector" ? "LM Detector" : "ModelTrace";
 export type FingerprintReport = {
   prediction?: string; prediction_name?: string; probability?: number | null; used_outputs?: number;
   decision?: string; merged_class?: boolean; ranking_score?: number | null;
-  results?: { model: string; display_name: string; score: number; probability?: number | null }[];
+  results?: { model: string; display_name: string; score?: number | null; probability?: number | null }[];
 };
 export type ModelTestResult = {
   id: string; account_id: number; account_name: string; requested_model: string;

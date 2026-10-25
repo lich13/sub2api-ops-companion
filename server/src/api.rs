@@ -592,8 +592,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             let account_id = path_id(id)?;
             if purpose == Some("model_test") {
                 let row = runtime.actions.account(account_id, None).await?;
-                if row["platform"] == "openai" && matches!(string(&row["type"]), "oauth" | "apikey")
-                {
+                if crate::model_target::supported(&row) {
                     json!(runtime.actions.models(account_id, &key, true).await?)
                 } else {
                     match runtime.catalog.account_models(account_id).await {
@@ -660,8 +659,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 .edit(Some(id), &payload, method == Method::DELETE)?
         }
         ["accounts", id, "model-detection"] if method == Method::GET => {
-            crate::model_target::account(&runtime.actions, path_id(id)?).await?;
-            runtime.detection.view(path_id(id)?)?
+            runtime.detection.view(path_id(id)?).await?
         }
         ["accounts", id, "keepalive"] if method == Method::GET => {
             runtime.keepalive.view(path_id(id)?).await?

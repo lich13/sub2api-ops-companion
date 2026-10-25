@@ -195,8 +195,8 @@ impl Runtime {
     pub async fn set_degradation(&self, id: i64, payload: &Value) -> Result<Value> {
         self.writable()?;
         let row = self.actions.account(id, None).await?;
-        if row["platform"] != "openai" || !matches!(string(&row["type"]), "oauth" | "apikey") {
-            return Err(Error::new(422, "仅支持 OpenAI OAuth 或 Key 账号"));
+        if !crate::model_target::supported(&row) {
+            return Err(Error::new(422, "此账号类型不支持降智标记"));
         }
         let _control = self.actions.locks.control(id).await;
         let expected = string(&payload["expected_mark_version"]);

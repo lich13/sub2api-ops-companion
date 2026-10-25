@@ -201,7 +201,12 @@ impl ConfigService {
                 let raw = self.oauth.read()?;
                 let mut values = self.oauth_values(&raw)?;
                 for (key, value) in changes {
-                    if key != "oauth_7d_probe_interval_seconds" {
+                    if key == "model_detection_platforms" {
+                        if !value.is_object() {
+                            return Err(Error::new(422, "检测源平台配置无效"));
+                        }
+                        values[key] = crate::model_rules::merge(&values[key], value);
+                    } else if key != "oauth_7d_probe_interval_seconds" {
                         values[key] = value.clone();
                     }
                 }

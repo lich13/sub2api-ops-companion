@@ -113,6 +113,9 @@ pub fn isolated_answer(text: &str) -> String {
 #[derive(Clone)]
 pub struct Collector {
     expected: usize,
+    input_tokens: Option<i64>,
+    cache_read: i64,
+    cache_creation: i64,
     parts: BTreeMap<(i64, i64), String>,
     channels: BTreeMap<(i64, i64), bool>,
     pub completed: bool,
@@ -126,6 +129,9 @@ impl Collector {
     pub fn new(expected: usize) -> Self {
         Self {
             expected,
+            input_tokens: None,
+            cache_read: 0,
+            cache_creation: 0,
             parts: BTreeMap::new(),
             channels: BTreeMap::new(),
             completed: false,
@@ -151,6 +157,18 @@ impl Collector {
             self.metadata["provider_status"] = response["status"].clone();
         }
         let usage = &response["usage"];
+        if self.protocol == Some("messages") {
+            let valid = |v: &Value| v.as_i64().filter(|n| (0..=1_000_000_000_000).contains(n));
+            if let Some(n) = valid(&usage["input_tokens"]) {
+                self.input_tokens = Some(n);
+            }
+            if let Some(n) = valid(&usage["cache_read_input_tokens"]) {
+                self.cache_read = n;
+            }
+            if let Some(n) = valid(&usage["cache_creation_input_tokens"]) {
+                self.cache_creation = n;
+            }
+        }
         let details = usage
             .get("output_tokens_details")
             .or_else(|| usage.get("completion_tokens_details"))
@@ -175,6 +193,12 @@ impl Collector {
                     .is_some_and(|n| (0..=1_000_000_000_000).contains(&n))
             }) {
                 self.metadata[key] = value.clone();
+            }
+        }
+        if self.protocol == Some("messages") {
+            if let Some(input) = self.input_tokens {
+                self.metadata["input_tokens"] =
+                    json!(input + self.cache_read + self.cache_creation);
             }
         }
     }
@@ -312,12 +336,103 @@ impl Collector {
         if !response.is_object() {
             return Err(Failure::new("protocol_mismatch", false));
         }
+        if matches!(
+            kind,
+            "message"
+                | "message_start"
+                | "message_delta"
+                | "message_stop"
+                | "content_block_start"
+                | "content_block_delta"
+                | "content_block_stop"
+        ) {
+            self.protocol = Some("messages");
+            self.recognized = true;
+        }
+        if kind == "message_start" {
+            self.response_metadata(&event["message"]);
+        }
         self.response_metadata(if truthy(response) { response } else { event });
         if truthy(&event["error"])
             || truthy(&response["error"])
             || matches!(kind, "error" | "response.failed")
         {
             return Err(failure(0, if truthy(response) { response } else { event }));
+        }
+        if self.protocol == Some("messages") {
+            let message = if kind == "message_start" {
+                &event["message"]
+            } else {
+                event
+            };
+            if let Some(model) = message["model"].as_str() {
+                self.returned_model = Some(model.chars().take(200).collect());
+            }
+            if whole && kind == "message" {
+                for (i, block) in event["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                {
+                    let reasoning = block["type"] != "text";
+                    self.update(
+                        (i as i64, 0),
+                        if reasoning {
+                            &block["thinking"]
+                        } else {
+                            &block["text"]
+                        },
+                        true,
+                        reasoning,
+                        false,
+                    )?;
+                }
+                self.completed = !event["stop_reason"].is_null();
+                self.end_reason = string(&event["stop_reason"]).into();
+            } else if kind == "content_block_start" {
+                let i = event["index"].as_i64().unwrap_or(0);
+                let block = &event["content_block"];
+                let reasoning = block["type"] != "text";
+                self.update(
+                    (i, 0),
+                    if reasoning {
+                        &block["thinking"]
+                    } else {
+                        &block["text"]
+                    },
+                    true,
+                    reasoning,
+                    false,
+                )?;
+                self.channels.insert((i, 0), reasoning);
+            } else if kind == "content_block_delta" {
+                let i = event["index"].as_i64().unwrap_or(0);
+                let delta = &event["delta"];
+                let reasoning = delta["type"] != "text_delta"
+                    || self.channels.get(&(i, 0)).copied().unwrap_or(false);
+                self.update(
+                    (i, 0),
+                    if reasoning {
+                        &delta["thinking"]
+                    } else {
+                        &delta["text"]
+                    },
+                    false,
+                    reasoning,
+                    true,
+                )?;
+            } else if kind == "message_delta" {
+                if let Some(reason) = event["delta"]["stop_reason"].as_str() {
+                    self.end_reason = reason.chars().take(40).collect();
+                }
+            } else if kind == "message_stop" {
+                self.completed = true;
+                if self.end_reason.is_empty() {
+                    self.end_reason = "message_stop".into();
+                }
+            }
+            return Ok(());
         }
         if kind == "response.incomplete" {
             self.recognized = true;
@@ -462,6 +577,7 @@ impl Collector {
 }
 #[derive(Clone)]
 pub struct Target {
+    pub platform: String,
     pub url: String,
     pub headers: reqwest::header::HeaderMap,
     pub proxy: Option<String>,
@@ -485,8 +601,19 @@ impl Target {
             .map_err(|_| Failure::new("network_error", false))
     }
     pub fn payload(&self, prompt: &str) -> Value {
-        if self.protocol == "chat_completions" {
-            json!({"model":self.model,"messages":[{"role":"user","content":prompt}],"stream":true,"max_completion_tokens":4096})
+        if self.protocol == "messages" {
+            json!({"model":self.model,"messages":[{"role":"user","content":prompt}],"stream":true,"max_tokens":4096})
+        } else if self.protocol == "chat_completions" {
+            let mut payload = json!({"model":self.model,"messages":[{"role":"user","content":prompt}],"stream":true});
+            payload[if self.platform == "openai" {
+                "max_completion_tokens"
+            } else {
+                "max_tokens"
+            }] = 4096.into();
+            if self.platform != "openai" {
+                payload["stream_options"] = json!({"include_usage":true});
+            }
+            payload
         } else {
             let mut payload = json!({"model":self.model,"input":[{"role":"user","content":[{"type":"input_text","text":prompt}]}],"instructions":"You are a helpful assistant.","stream":true,"store":false});
             if !self.oauth {
@@ -634,6 +761,7 @@ async fn execute_request(
             .unwrap()
             .shift_remove("max_completion_tokens");
         if target.protocol == "chat_completions" {
+            payload.as_object_mut().unwrap().shift_remove("max_tokens");
             payload["stream_options"] = json!({"include_usage":true});
         }
     }

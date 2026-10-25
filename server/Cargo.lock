@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "sub2ops-server"
-version = "0.1.62"
+version = "0.1.63"
 dependencies = [
  "axum",
  "base64 0.22.1",

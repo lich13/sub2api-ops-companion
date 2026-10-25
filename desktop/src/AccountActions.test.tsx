@@ -160,6 +160,16 @@ afterEach(async () => {
 });
 
 describe("shared account actions", () => {
+  it.each(["anthropic", "grok", "deepseek"])("exposes detection and marks only for %s API Key accounts", async (platform) => {
+    for (const type of ["apikey", "oauth"]) {
+      await act(async () => root.render(null));
+      await render(state([account(1, { platform, type })]));
+      const panel = container.querySelector<HTMLElement>(".accounts-table .account-actions")!;
+      for (const label of ["模型测试", "定时检测", "标记降智"]) {
+        expect(labels(panel).includes(label)).toBe(type === "apikey");
+      }
+    }
+  });
   it.each(["oauth", "apikey"])("expands every supported OpenAI %s action in the account table while retaining the group menu", async (type) => {
     await render(state([account(1, { type })]));
     const panel = container.querySelector<HTMLElement>(".accounts-table .account-actions")!;

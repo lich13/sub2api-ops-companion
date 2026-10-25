@@ -654,6 +654,19 @@ fn detection_logs_valid(data: &Value) -> bool {
         })
 }
 
+fn detection_platforms_valid(value: &Value) -> bool {
+    value.as_object().is_some_and(|platforms| {
+        platforms.iter().all(|(platform, selection)| {
+            matches!(
+                platform.as_str(),
+                "openai" | "anthropic" | "grok" | "deepseek"
+            ) && (selection["engine"] == "lm_detector"
+                || platform == "openai" && selection["engine"] == "modeltrace")
+                && matches!(selection["sample_count"].as_u64(), Some(1 | 3))
+        })
+    })
+}
+
 fn shape_valid(path: &str, data: &Value) -> bool {
     if path == "/sub2api-config" {
         return data["available"].is_boolean()
@@ -776,6 +789,9 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && data["oauth"]
                     .get("model_detection_model_id")
                     .is_none_or(Value::is_string)
+                && data["oauth"]
+                    .get("model_detection_platforms")
+                    .is_none_or(detection_platforms_valid)
         }
         "/capabilities" => {
             data["api_version"].as_u64() == Some(1)
@@ -870,6 +886,14 @@ fn shape_valid(path: &str, data: &Value) -> bool {
                 && (data["recent_request_count"].is_null()
                     || data["recent_request_count"].as_u64().is_some())
                 && data["model_id"].is_string()
+                && (data["enabled"] != true
+                    || data["model_id"].as_str().is_some_and(|v| !v.is_empty()))
+                && data
+                    .get("engine")
+                    .is_none_or(|v| v == "modeltrace" || v == "lm_detector")
+                && data
+                    .get("sample_count")
+                    .is_none_or(|v| matches!(v.as_u64(), Some(1 | 3)))
                 && data
                     .get("model_source")
                     .is_none_or(|v| v == "global" || v == "account")
@@ -1725,6 +1749,28 @@ mod tests {
             assert!(!recoveries_valid(&serde_json::json!([row])));
         }
         assert!(!recoveries_valid(&serde_json::json!({"items":[]})));
+    }
+
+    #[test]
+    fn detection_platforms_accept_legacy_and_four_platform_configuration() {
+        use serde_json::json;
+        let mut config = json!({"oauth":{"revision":"fixture","model_detection_platforms":{"openai":{"engine":"modeltrace","sample_count":1}}},"bark":{"revision":"fixture"}});
+        assert!(shape_valid("/config", &config));
+        for platform in ["anthropic", "grok", "deepseek"] {
+            config["oauth"]["model_detection_platforms"][platform] =
+                json!({"engine":"lm_detector","sample_count":3});
+        }
+        assert!(shape_valid("/config", &config));
+        config["oauth"]["model_detection_platforms"]["anthropic"]["engine"] = "modeltrace".into();
+        assert!(!shape_valid("/config", &config));
+        let mut detection = json!({"account_id":1,"version":"fixture","enabled":false,"interval_minutes":15,"model_id":"","model_source":"account","global_model_id":"","model_override":null,"status":"disabled","engine":"lm_detector","sample_count":1});
+        assert!(shape_valid("/accounts/1/model-detection", &detection));
+        detection["enabled"] = true.into();
+        assert!(!shape_valid("/accounts/1/model-detection", &detection));
+        detection["model_id"] = "claude-opus-4-6".into();
+        assert!(shape_valid("/accounts/1/model-detection", &detection));
+        detection["sample_count"] = 2.into();
+        assert!(!shape_valid("/accounts/1/model-detection", &detection));
     }
 
     #[test]
