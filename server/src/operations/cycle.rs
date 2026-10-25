@@ -152,8 +152,8 @@ impl Operations {
         }
     }
 
-    pub(super) async fn prepare_cycles(&self) -> Result<()> {
-        let data = self.store.read()?;
+    pub(super) async fn prepare_cycles(&self, data: &Value) -> Result<bool> {
+        let mut prepared = false;
         for job in data["jobs"]
             .as_object()
             .unwrap()
@@ -162,17 +162,19 @@ impl Operations {
         {
             if job["status"] == "queued" {
                 self.cycle_allowed(job, false).await?;
+                prepared = true;
             } else if job["status"] == "completed" {
                 self.advance_cycle(job).await?;
+                prepared = true;
             }
         }
-        Ok(())
+        Ok(prepared)
     }
 
     async fn advance_cycle(&self, previous: &Value) -> Result<()> {
         let _submit = self.submit_lock.lock().await;
         let jid = string(&previous["id"]);
-        if self.store.read()?["jobs"][jid]["repeat_state"] != "active" {
+        if self.store.read_shared()?["jobs"][jid]["repeat_state"] != "active" {
             return Ok(());
         }
         if !self.cycle_allowed(previous, false).await? {

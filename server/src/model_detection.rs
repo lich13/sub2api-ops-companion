@@ -141,7 +141,7 @@ impl Detection {
         (self.clock)()
     }
     pub fn control(&self, id: i64) -> Result<Value> {
-        let mut value = self.store.read()?["accounts"]
+        let mut value = self.store.read_shared()?["accounts"]
             .get(id.to_string())
             .cloned()
             .unwrap_or_else(defaults);
@@ -160,7 +160,7 @@ impl Detection {
     pub fn mark(&self, id: i64) -> Result<Value> {
         Ok(mark_view(
             id,
-            &self.capacity.store.snapshot()?["marks"][id.to_string()],
+            &self.capacity.store.shared_snapshot()?["marks"][id.to_string()],
         ))
     }
     pub fn held(&self, id: i64) -> bool {
@@ -203,8 +203,12 @@ impl Detection {
         self.view_account(&row)
     }
     pub fn view_account(&self, row: &Value) -> Result<Value> {
+        let data = self.store.read_shared()?;
+        let config = self.monitor.config.current()?;
+        Self::project_account(row, &data, &config)
+    }
+    pub(crate) fn project_account(row: &Value, data: &Value, config: &Value) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let data = self.store.read()?;
         let mut value = data["accounts"]
             .get(id.to_string())
             .cloned()
@@ -219,7 +223,15 @@ impl Detection {
             .unwrap()
             .entry("min_interval_minutes")
             .or_insert(json!(5));
-        let model = self.effective_model(&value, row)?;
+        let global_model = if row["platform"] == "openai" {
+            crate::settings::detection_model(&config["model_detection_model_id"])?
+        } else {
+            String::new()
+        };
+        let model = value["model_override"]
+            .as_str()
+            .unwrap_or(&global_model)
+            .to_owned();
         value["version"] = Self::effective_version(&value, &model).into();
         value["model_id"] = model.into();
         value["model_source"] =
@@ -230,15 +242,9 @@ impl Detection {
             }
             .into();
         value["model_override"] = value["model_override"].clone();
-        value["global_model_id"] = if row["platform"] == "openai" {
-            self.model_id()?.into()
-        } else {
-            "".into()
-        };
+        value["global_model_id"] = global_model.into();
         value["account_id"] = id.into();
-        let platform = self.monitor.config.current()?["model_detection_platforms"]
-            [string(&row["platform"])]
-        .clone();
+        let platform = &config["model_detection_platforms"][string(&row["platform"])];
         value["engine"] = platform["engine"].clone();
         value["sample_count"] = if platform["engine"] == crate::lm_detector::ENGINE {
             platform["sample_count"].clone()
@@ -247,7 +253,7 @@ impl Detection {
         };
         value["last_automatic_started_at"] =
             data["automatic_starts"][id.to_string()]["started_at"].clone();
-        value["next_allowed_at"] = self.next_allowed_at(id)?;
+        value["next_allowed_at"] = Self::next_allowed_in(data, id)?;
         value["recent_request_count"] = value["recent_request_count"].clone();
         value["effective_interval_minutes"] =
             crate::detection_schedule::effective_interval(&value).into();
@@ -495,7 +501,7 @@ impl Detection {
             .as_str()
             .filter(|v| !v.is_empty())
         {
-            let jobs = self.tests.data()?;
+            let jobs = self.tests.shared_data()?;
             if let Some(job_id) = jobs["requests"][request].as_str() {
                 let job = self.tests.get(job_id)?;
                 if job["account_id"] != id || job["automatic"] != true {
@@ -759,7 +765,7 @@ impl Detection {
         }
         if d["marked"] != true {
             let current = self.mark(id)?;
-            let state = self.capacity.store.snapshot()?["marks"][id.to_string()].clone();
+            let state = self.capacity.store.shared_snapshot()?["marks"][id.to_string()].clone();
             if current["version"] != d["mark_version"] && state["detection_job_id"] != d["job_id"] {
                 d["status"] = "needs_confirmation".into();
                 d["reason"] = "降智标记已变化".into();

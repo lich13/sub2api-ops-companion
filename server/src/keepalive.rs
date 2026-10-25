@@ -47,8 +47,8 @@ impl Drop for Running {
 }
 
 struct Gates {
-    marks: Value,
-    detection: Value,
+    marks: Arc<Value>,
+    detection: Arc<Value>,
     oauth: Value,
     models: BTreeSet<i64>,
     operations: BTreeSet<i64>,
@@ -128,7 +128,7 @@ impl Keepalive {
         );
     }
     fn gates(&self) -> Result<Gates> {
-        let active = |data: Value, statuses: &[&str]| {
+        let active = |data: &Value, statuses: &[&str]| {
             data["jobs"]
                 .as_object()
                 .into_iter()
@@ -145,11 +145,17 @@ impl Keepalive {
                 .collect()
         };
         Ok(Gates {
-            marks: self.detection.capacity.store.snapshot()?,
-            detection: self.detection.store.read()?,
+            marks: self.detection.capacity.store.shared_snapshot()?,
+            detection: self.detection.store.read_shared()?,
             oauth: self.detection.monitor.state()?,
-            models: active(self.detection.tests.data()?, crate::model_tests::ACTIVE),
-            operations: active(self.operations.store.read()?, crate::operations::PENDING),
+            models: active(
+                self.detection.tests.shared_data()?.as_ref(),
+                crate::model_tests::ACTIVE,
+            ),
+            operations: active(
+                self.operations.store.read_shared()?.as_ref(),
+                crate::operations::PENDING,
+            ),
         })
     }
     fn blocked_in(&self, id: i64, row: &Value, gates: &Gates) -> &'static str {

@@ -85,7 +85,12 @@ impl Runtime {
             cache.stats_at = Some(Instant::now());
             cache.stats_signature = signature;
         }
-        let marks = self.detection.capacity.store.snapshot();
+        let marks = self.detection.capacity.store.shared_snapshot();
+        let detection = self
+            .detection
+            .store
+            .read_shared()
+            .and_then(|state| self.config.current().map(|config| (state, config)));
         for account in &mut accounts {
             let id = integer(&account["id"]).unwrap();
             usage::attach_stats(id, &mut account["usage"], &cache.stats, 500_000);
@@ -98,9 +103,14 @@ impl Runtime {
                     Err(_) => json!({"error":"降智标记暂不可读取"}),
                 };
                 if marks.is_ok() {
-                    account["model_detection"] = self
-                        .detection
-                        .view_account(account)
+                    account["model_detection"] = detection
+                        .as_ref()
+                        .map_err(Clone::clone)
+                        .and_then(|(state, config)| {
+                            crate::model_detection::Detection::project_account(
+                                account, state, config,
+                            )
+                        })
                         .unwrap_or(json!({"status":"error","reason":"检测状态暂不可读取"}));
                 }
             }

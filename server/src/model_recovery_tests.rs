@@ -696,6 +696,99 @@ impl Harness {
     }
 }
 
+#[tokio::test]
+async fn shared_model_reads_keep_legacy_jobs_and_owned_results_independent() {
+    let h = Harness::new().await;
+    let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let job = json!({"id":id,"account_id":7,"status":"completed","target_signature":"fixture-private-signature","report":{"prediction":"fixture-model"}});
+    let legacy = json!({"version":1,"accounts":{"7":job}});
+    crate::store::write_json(h.runtime.tests.store.path(), &legacy).unwrap();
+    let mut read = h.runtime.tests.get(id).unwrap();
+    assert!(read.get("target_signature").is_none());
+    read["report"]["prediction"] = "changed-by-caller".into();
+    assert_eq!(
+        h.runtime.tests.latest(7).unwrap()["report"]["prediction"],
+        "fixture-model"
+    );
+    assert_eq!(
+        h.runtime.tests.store.read().unwrap(),
+        legacy,
+        "legacy reads do not migrate on disk"
+    );
+    h.runtime
+        .tests
+        .update(id, json!({"error":"fixture-result"}))
+        .unwrap();
+    let retained = h.runtime.tests.shared_data().unwrap();
+    assert!(Arc::ptr_eq(
+        &retained,
+        &h.runtime.tests.shared_data().unwrap()
+    ));
+    h.runtime
+        .tests
+        .update(id, json!({"error":"fixture-new-result"}))
+        .unwrap();
+    assert_eq!(retained["jobs"][id]["error"], "fixture-result");
+    assert_eq!(
+        h.runtime.tests.get(id).unwrap()["error"],
+        "fixture-new-result"
+    );
+    assert_eq!(
+        h.runtime
+            .tests
+            .get("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            .unwrap_err()
+            .status
+            .as_u16(),
+        404
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn unchanged_smart_schedule_skips_transactions_and_honors_manual_generation() {
+    let h = Harness::new().await;
+    let detection = &h.runtime.detection;
+    let mut control = crate::model_detection::defaults();
+    control["enabled"] = true.into();
+    control["recent_request_count"] = 1.into();
+    control["schedule_anchor_at"] = datetime(h.now()).into();
+    detection.update(7, control).unwrap();
+    let control = detection.control(7).unwrap();
+    let due = detection.update_smart_schedule(7, &control).unwrap();
+    assert_eq!(due, Some(h.now() + Duration::minutes(30)));
+    let control = detection.control(7).unwrap();
+    let retained = detection.store.read_shared().unwrap();
+    assert_eq!(detection.update_smart_schedule(7, &control).unwrap(), due);
+    assert!(Arc::ptr_eq(
+        &retained,
+        &detection.store.read_shared().unwrap()
+    ));
+    detection
+        .update(7, json!({"recent_request_count":0}))
+        .unwrap();
+    let idle = detection.control(7).unwrap();
+    assert_eq!(detection.update_smart_schedule(7, &idle).unwrap(), None);
+    assert_eq!(detection.control(7).unwrap()["schedule_idle_paused"], true);
+    let idle = detection.control(7).unwrap();
+    let retained = detection.store.read_shared().unwrap();
+    detection.update_smart_schedule(7, &idle).unwrap();
+    assert!(Arc::ptr_eq(
+        &retained,
+        &detection.store.read_shared().unwrap()
+    ));
+    detection
+        .update(
+            7,
+            json!({"enabled":false,"generation":1,"status":"disabled"}),
+        )
+        .unwrap();
+    detection.update_smart_schedule(7, &control).unwrap();
+    assert_eq!(detection.control(7).unwrap()["status"], "disabled");
+    assert_eq!(detection.control(7).unwrap()["generation"], 1);
+    h.close().await;
+}
+
 async fn close_schedule(harness: &Harness, id: i64) -> Value {
     set_schedulable(harness, id, false).await
 }

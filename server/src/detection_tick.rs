@@ -19,13 +19,13 @@ impl Detection {
             return Ok(());
         };
         self.refresh_call_frequency().await?;
-        let alerts = self.capacity.store.snapshot()?;
+        let alerts = self.capacity.store.shared_snapshot()?;
         for (key, event) in alerts["detection_events"].as_object().into_iter().flatten() {
-            if self.store.read()?["consumed"].get(key).is_none() {
+            if self.store.read_shared()?["consumed"].get(key).is_none() {
                 let id = integer(&event["account_id"]).ok_or_else(Error::invalid)?;
                 // A persisted job is also the receipt if the process stopped
                 // between enqueueing it and acknowledging this clue.
-                let existing = self.tests.data()?["jobs"]
+                let existing = self.tests.shared_data()?["jobs"]
                     .as_object()
                     .unwrap()
                     .values()
@@ -72,7 +72,7 @@ impl Detection {
                 Ok(())
             })?;
         }
-        let ids = self.store.read()?["accounts"]
+        let ids = self.store.read_shared()?["accounts"]
             .as_object()
             .unwrap()
             .keys()
@@ -123,13 +123,15 @@ impl Detection {
                 self.tests.cancel(string(&job["id"])).await?;
                 return Ok(());
             }
-            self.store.transaction(|data| {
-                let current = &mut data["accounts"][id.to_string()];
-                if current["generation"] == job["detection_generation"] {
-                    current["status"] = job["status"].clone();
-                }
-                Ok(())
-            })?;
+            if value["status"] != job["status"] {
+                self.store.transaction(|data| {
+                    let current = &mut data["accounts"][id.to_string()];
+                    if current["generation"] == job["detection_generation"] {
+                        current["status"] = job["status"].clone();
+                    }
+                    Ok(())
+                })?;
+            }
             return Ok(());
         }
         if truthy(&job)

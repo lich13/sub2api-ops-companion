@@ -1658,7 +1658,8 @@ pub fn run() {
                 refresh_inner(&handle,&state).await;
                 loop {
                     if std::time::SystemTime::now()>=due {break;}
-                    tokio::select! { _=tokio::time::sleep(Duration::from_millis(100))=>(), _=state.wake.notified()=>break }
+                    let delay=due.duration_since(std::time::SystemTime::now()).unwrap_or_default().min(Duration::from_secs(1));
+                    tokio::select! { _=tokio::time::sleep(delay)=>(), _=state.wake.notified()=>break }
                 }
             }});
             Ok(())

@@ -165,8 +165,13 @@ impl OperationStore {
         }
     }
     pub fn read(&self) -> Result<Value> {
-        let mut data = self.0.read()?;
-        Self::normalize(&mut data);
+        Ok((*self.read_shared()?).clone())
+    }
+    pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
+        let mut data = self.0.read_shared()?;
+        if data.get("batches").is_none() || data.get("batch_requests").is_none() {
+            Self::normalize(Arc::make_mut(&mut data));
+        }
         Ok(data)
     }
     pub fn transaction<T>(&self, f: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
@@ -328,7 +333,7 @@ impl Operations {
         if validation::hex(&json!(jid), 32).is_err() {
             return Err(Error::new(404, "操作不存在"));
         }
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if let Some(job) = data["jobs"].get(jid) {
             Ok(self.public(job, true, after))
         } else {
@@ -336,7 +341,7 @@ impl Operations {
         }
     }
     pub fn listing(&self, bid: Option<&str>) -> Result<Value> {
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if let Some(bid) = bid {
             if validation::hex(&json!(bid), 32).is_err() || data["batches"].get(bid).is_none() {
                 return Err(Error::new(404, "批量操作不存在"));
@@ -568,7 +573,7 @@ impl Operations {
             digest(&json!([action, payload, expected]))
         };
         let _submit = self.submit_lock.lock().await;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if data["batch_requests"].get(rid).is_some() {
             return Err(idempotency("请求 ID 已用于批量操作"));
         }
@@ -781,7 +786,7 @@ impl Operations {
             vec![]
         };
         let _submit = self.submit_lock.lock().await;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if data["requests"].get(rid).is_some() {
             return Err(idempotency("请求 ID 已用于其他操作"));
         }
@@ -998,7 +1003,7 @@ impl Operations {
         self.listing(Some(bid))
     }
     pub async fn cancel(&self, jid: &str) -> Result<Value> {
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         let Some(job) = data["jobs"].get(jid) else {
             return Ok(Self::model_view(&self.backend.model_cancel(jid).await?));
         };
@@ -1035,10 +1040,18 @@ impl Operations {
         {
             return Ok(());
         }
-        self.prepare_cycles().await?;
-        let data = self.store.read()?;
+        let mut data = self.store.read_shared()?;
+        if self.prepare_cycles(&data).await? {
+            data = self.store.read_shared()?;
+        }
         let jobs = data["jobs"].as_object().unwrap();
         self.record_scheduled_results(jobs.values())?;
+        if !jobs
+            .values()
+            .any(|job| matches!(string(&job["status"]), "queued" | "checking"))
+        {
+            return Ok(());
+        }
         let mut running: BTreeSet<_> = self
             .tasks
             .lock()
@@ -1081,7 +1094,7 @@ impl Operations {
             .filter_map(|jid| jobs.get(jid))
             .filter(|j| connection_test(j))
             .count();
-        let limit = self.backend.test_config()?.1.clamp(1, 8);
+        let mut test_limit = None;
         let mut waiting = BTreeMap::new();
         for job in jobs.values() {
             let jid = string(&job["id"]);
@@ -1102,9 +1115,19 @@ impl Operations {
                 waiting.insert(jid, "等待预约时间");
                 continue;
             }
-            if connection_test(job) && job["status"] == "queued" && active_tests >= limit {
-                waiting.insert(jid, "等待测试执行容量");
-                continue;
+            if connection_test(job) && job["status"] == "queued" {
+                let limit = match test_limit {
+                    Some(limit) => limit,
+                    None => {
+                        let limit = self.backend.test_config()?.1.clamp(1, 8);
+                        test_limit = Some(limit);
+                        limit
+                    }
+                };
+                if active_tests >= limit {
+                    waiting.insert(jid, "等待测试执行容量");
+                    continue;
+                }
             }
             if !short(job) && running.len() >= 8 {
                 waiting.insert(jid, "等待操作执行容量");
@@ -1170,14 +1193,24 @@ impl Operations {
         Ok(())
     }
     fn record_scheduled_results<'a>(&self, jobs: impl Iterator<Item = &'a Value>) -> Result<()> {
-        let state = self.actions.queries.oauth.snapshot()?;
+        let mut jobs = jobs
+            .filter(|job| {
+                job["scheduled_at"].is_string()
+                    && !matches!(string(&job["status"]), "queued" | "running" | "checking")
+            })
+            .peekable();
+        if jobs.peek().is_none() {
+            return Ok(());
+        }
+        // Connection-test receipts need no legacy recovery normalization.
+        let state = self.actions.queries.oauth.0.read_shared()?;
         let mut history = BTreeMap::new();
-        for job in jobs.filter(|job| {
-            job["scheduled_at"].is_string()
-                && !matches!(string(&job["status"]), "queued" | "running" | "checking")
-        }) {
+        for job in jobs {
             let key = format!("connection-test:{}", string(&job["id"]));
-            if state["recovery_history"].get(&key).is_some() {
+            if state["recovery_history"]
+                .get(&key)
+                .is_some_and(Value::is_object)
+            {
                 continue;
             }
             let result = &job["result"];
@@ -1263,7 +1296,7 @@ impl Operations {
             let _permit = permit;
             let result = queue.actions.supervisor.guard("native_batch", queue.run_native(&task_id)).await;
             if let Some(Err(error)) = result {
-                if let Ok(data) = queue.store.read() {
+                if let Ok(data) = queue.store.read_shared() {
                     for jid in data["batches"][&task_id]["job_ids"]
                         .as_array()
                         .into_iter()
@@ -1288,7 +1321,7 @@ impl Operations {
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        let job = self.store.read()?["jobs"][jid].clone();
+        let job = self.store.read_shared()?["jobs"][jid].clone();
         if !matches!(string(&job["status"]), "queued" | "checking") {
             return Ok(());
         }
@@ -1356,7 +1389,7 @@ impl Operations {
         if self.actions.supervisor.is_stopping() {
             return Ok(());
         }
-        if self.store.read()?["jobs"][jid]["status"] != "queued" {
+        if self.store.read_shared()?["jobs"][jid]["status"] != "queued" {
             return Ok(());
         }
         let mut started = json!({"status":"running","reason":"","started_at":now()});
@@ -1394,7 +1427,7 @@ impl Operations {
         self.actions.queries.oauth.admin_token()
     }
     fn run_error(&self, jid: &str, error: Error) -> Result<()> {
-        let job = self.store.read()?["jobs"][jid].clone();
+        let job = self.store.read_shared()?["jobs"][jid].clone();
         let message = if error.detail.is_object() {
             error
                 .detail

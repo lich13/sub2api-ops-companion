@@ -39,6 +39,7 @@ struct Fixture {
 
 struct FixtureBackend {
     dispatch_calls: Arc<AtomicUsize>,
+    test_config_reads: AtomicUsize,
 }
 
 impl Backend for FixtureBackend {
@@ -69,6 +70,7 @@ impl Backend for FixtureBackend {
     }
 
     fn test_config(&self) -> Result<(String, usize)> {
+        self.test_config_reads.fetch_add(1, Ordering::SeqCst);
         Ok(("fixture-test-model".into(), 1))
     }
 }
@@ -113,6 +115,7 @@ impl Fixture {
         )
         .expect("construct operation actions");
         let backend = Arc::new(FixtureBackend {
+            test_config_reads: AtomicUsize::new(0),
             dispatch_calls: Arc::new(AtomicUsize::new(0)),
         });
         let operations = Operations::new(actions, backend.clone(), Arc::new(Semaphore::new(8)))
@@ -235,6 +238,30 @@ fn assert_read_error<T>(result: Result<T>, case: &str) {
     };
     assert_eq!(error.status.as_u16(), 503, "{case}");
     assert_eq!(error.detail, "操作状态无法读取", "{case}");
+}
+
+#[tokio::test]
+async fn waiting_queue_skips_execution_config_but_records_completed_appointments() {
+    let fixture = Fixture::new().await;
+    let mut data = valid_state_with_job_ids(json!([JOB_ID]));
+    data["jobs"][JOB_ID]["scheduled_at"] = "2099-01-01T00:00:00Z".into();
+    fixture.replace_state(&data);
+    fixture.operations.tick().await.unwrap();
+    assert_eq!(fixture.backend.test_config_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.backend.dispatch_calls.load(Ordering::SeqCst), 0);
+    data["jobs"][JOB_ID]["status"] = "completed".into();
+    data["jobs"][JOB_ID]["result"] = json!({"success":true});
+    fixture.replace_state(&data);
+    fixture.operations.tick().await.unwrap();
+    fixture.operations.tick().await.unwrap();
+    assert_eq!(fixture.backend.test_config_reads.load(Ordering::SeqCst), 0);
+    let state = fixture.operations.actions.queries.oauth.snapshot().unwrap();
+    assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        state["recovery_history"][format!("connection-test:{JOB_ID}")]["result_status"],
+        "completed"
+    );
+    fixture.close().await;
 }
 
 #[tokio::test]

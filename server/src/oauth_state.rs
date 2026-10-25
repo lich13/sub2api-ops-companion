@@ -512,7 +512,7 @@ impl OAuthState {
         Self(Store::with_lock(path, lock, json!({}), validate, read_only))
     }
     pub fn snapshot(&self) -> Result<Value> {
-        Ok(normalize(&self.0.read()?))
+        self.0.read_shared().map(|value| normalize(&value))
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|value| {
@@ -521,16 +521,25 @@ impl OAuthState {
         })
     }
     pub fn admin_token(&self) -> Result<String> {
-        Ok(string(&self.snapshot()?["settings"]["sub2api_admin_token"])
-            .trim()
-            .to_owned())
+        Ok(
+            string(&self.0.read_shared()?["settings"]["sub2api_admin_token"])
+                .trim()
+                .to_owned(),
+        )
     }
     pub fn save_admin_token(&self, key: &str) -> Result<()> {
-        if key.trim().is_empty() {
+        let key = key.trim();
+        if key.is_empty() {
+            return Ok(());
+        }
+        if self.0.is_read_only() {
+            return Err(Error::read_only());
+        }
+        if self.admin_token()? == key {
             return Ok(());
         }
         self.transaction(|v| {
-            v["settings"]["sub2api_admin_token"] = key.trim().into();
+            v["settings"]["sub2api_admin_token"] = key.into();
             Ok(())
         })
     }

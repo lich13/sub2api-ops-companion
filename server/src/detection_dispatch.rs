@@ -11,7 +11,10 @@ use serde_json::{json, Value};
 
 impl Detection {
     pub fn next_allowed_at(&self, id: i64) -> Result<Value> {
-        let state = self.store.read()?;
+        let state = self.store.read_shared()?;
+        Self::next_allowed_in(&state, id)
+    }
+    pub(crate) fn next_allowed_in(state: &Value, id: i64) -> Result<Value> {
         let record = &state["automatic_starts"][id.to_string()];
         if !truthy(record) {
             return Ok(Value::Null);
@@ -50,10 +53,10 @@ impl Detection {
     }
     pub fn migrate_dispatches(&self) -> Result<()> {
         if self.actions.settings.read_only {
-            self.store.read()?;
+            self.store.read_shared()?;
             return Ok(());
         }
-        let jobs = self.tests.data()?;
+        let jobs = self.tests.shared_data()?;
         self.store.transaction(|state| {
             if !state["automatic_starts"].is_object() {
                 state["automatic_starts"] = json!({});
@@ -194,7 +197,7 @@ impl Detection {
         Ok(true)
     }
     async fn deliver_one(&self, key: &str) -> Result<()> {
-        let event = self.store.read()?["disposition_notifications"][key].clone();
+        let event = self.store.read_shared()?["disposition_notifications"][key].clone();
         if !matches!(string(&event["status"]), "queued" | "retry") {
             return Ok(());
         }
@@ -238,7 +241,7 @@ impl Detection {
         if reserved.is_null() {
             return Ok(());
         }
-        let latest = self.store.read()?["disposition_notifications"][key].clone();
+        let latest = self.store.read_shared()?["disposition_notifications"][key].clone();
         if !self.notification_current(&latest, &self.control(id)?)? {
             self.store.transaction(|data| {
                 data["disposition_notifications"][key]["status"] = "suppressed".into();
@@ -289,7 +292,7 @@ impl Detection {
         let Ok(_guard) = self.notice_lock.try_lock() else {
             return Ok(());
         };
-        let keys = self.store.read()?["disposition_notifications"]
+        let keys = self.store.read_shared()?["disposition_notifications"]
             .as_object()
             .into_iter()
             .flatten()

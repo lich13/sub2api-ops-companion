@@ -220,10 +220,16 @@ impl operations::Backend for Hooks {
         self.runtime()?.tests.get(id)
     }
     fn model_jobs(&self) -> Result<Vec<Value>> {
-        Ok(self.runtime()?.tests.data()?["jobs"]
+        Ok(self.runtime()?.tests.shared_data()?["jobs"]
             .as_object()
             .unwrap()
             .values()
+            .filter(|job| {
+                matches!(
+                    string(&job["status"]),
+                    "queued" | "running" | "retrying" | "needs_confirmation"
+                )
+            })
             .map(model_tests::ModelTests::public)
             .collect())
     }

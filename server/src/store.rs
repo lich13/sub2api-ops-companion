@@ -44,12 +44,12 @@ impl From<&fs::Metadata> for FileStamp {
 struct Inner {
     path: PathBuf,
     lock_path: PathBuf,
-    defaults: Value,
+    defaults: Arc<Value>,
     existed: AtomicBool,
     mutex: Mutex<()>,
     read_only: bool,
     validate: Validator,
-    cache: Mutex<Option<(FileStamp, Value)>>,
+    cache: Mutex<Option<(FileStamp, Arc<Value>)>>,
 }
 
 #[derive(Clone)]
@@ -95,7 +95,7 @@ impl Store {
         Self(Arc::new(Inner {
             path,
             lock_path,
-            defaults,
+            defaults: Arc::new(defaults),
             existed: AtomicBool::new(existed),
             mutex: Mutex::new(()),
             read_only,
@@ -117,6 +117,12 @@ impl Store {
     }
 
     pub fn read(&self) -> Result<Value> {
+        Ok((*self.read_shared()?).clone())
+    }
+
+    /// Immutable snapshots outlive the cache lock and remain stable after a write.
+    /// Callers can project a record without copying unrelated history.
+    pub(crate) fn read_shared(&self) -> Result<Arc<Value>> {
         match fs::metadata(&self.0.path) {
             Ok(metadata) => {
                 let stamp = FileStamp::from(&metadata);
@@ -134,7 +140,7 @@ impl Store {
         self.read_disk()
     }
 
-    fn read_disk(&self) -> Result<Value> {
+    fn read_disk(&self) -> Result<Arc<Value>> {
         match File::open(&self.0.path) {
             Ok(mut file) => {
                 let before = FileStamp::from(&file.metadata()?);
@@ -143,6 +149,7 @@ impl Store {
                 let value: Value = serde_json::from_slice(&bytes)
                     .map_err(|_| Error::new(503, "控制状态文件无效"))?;
                 (self.0.validate)(&value)?;
+                let value = Arc::new(value);
                 self.0.existed.store(true, Ordering::Release);
                 // Never label bytes with metadata from a replacement file.
                 // Transactions always read under the file lock; read snapshots
@@ -196,11 +203,11 @@ impl Store {
         private_permissions(&lock)?;
         // A write must always reconcile the current on-disk value after taking
         // the shared advisory lock, even when a read snapshot is cached.
-        let mut value = self.read_disk()?;
-        let previous = value.clone();
+        let previous = self.read_disk()?;
+        let mut value = (*previous).clone();
         let result = action(&mut value)?;
         (self.0.validate)(&value)?;
-        if value != previous || !self.0.existed.load(Ordering::Acquire) {
+        if value != *previous || !self.0.existed.load(Ordering::Acquire) {
             write_json(&self.0.path, &value)?;
             *self.0.cache.lock().map_err(|_| Error::internal())? = None;
         }
@@ -278,17 +285,23 @@ mod tests {
         let path = directory.path().join("state.json");
         let store = Store::new(&path, json!({"version":1,"value":1}), validate, false);
         store.transaction(|_| Ok(())).unwrap();
-        assert_eq!(store.read().unwrap()["value"], 1);
+        let first = store.read_shared().unwrap();
+        assert_eq!(first["value"], 1);
         let validations = VALIDATIONS.load(Ordering::SeqCst);
+        assert!(Arc::ptr_eq(&first, &store.read_shared().unwrap()));
         assert_eq!(store.read().unwrap()["value"], 1);
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations);
         write_json(&path, &json!({"version":1,"value":2})).unwrap();
         assert_eq!(store.read().unwrap()["value"], 2);
+        assert_eq!(
+            first["value"], 1,
+            "external replacement cannot mutate retained snapshots"
+        );
         assert_eq!(VALIDATIONS.load(Ordering::SeqCst), validations + 1);
         fs::write(&path, b"{\"version\":1,\"value\":3}").unwrap();
         assert_eq!(store.read().unwrap()["value"], 3);
         fs::write(&path, b"{fixture-corrupt-state}").unwrap();
-        assert!(store.read().is_err());
+        assert!(store.read_shared().is_err());
         assert!(store
             .transaction(|value| {
                 value["value"] = 4.into();
@@ -299,6 +312,52 @@ mod tests {
         fs::remove_file(&path).unwrap();
         assert!(store.read().is_err());
         assert!(store.0.cache.lock().unwrap().is_none());
+    }
+    #[test]
+    fn shared_snapshots_remain_stable_across_concurrent_and_rejected_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::policy(dir.path().join("state.json"), json!({"value":1}), false);
+        store.transaction(|_| Ok(())).unwrap();
+        let retained = store.read_shared().unwrap();
+        let writer = store.clone();
+        std::thread::spawn(move || {
+            writer.transaction(|data| {
+                data["value"] = json!(2);
+                Ok(())
+            })
+        })
+        .join()
+        .unwrap()
+        .unwrap();
+        let current = store.read_shared().unwrap();
+        assert_eq!(retained["value"], 1);
+        assert_eq!(current["value"], 2);
+        let mut owned = store.read().unwrap();
+        owned["value"] = json!(3);
+        assert_eq!(store.read_shared().unwrap()["value"], 2);
+        let rejected: Result<()> = store.transaction(|data| {
+            data["value"] = json!(4);
+            Err(Error::invalid())
+        });
+        assert!(rejected.is_err());
+        assert_eq!(retained["value"], 1);
+        assert_eq!(current["value"], 2);
+        assert_eq!(store.read_shared().unwrap()["value"], 2);
+    }
+    #[test]
+    fn unchanged_admin_token_does_not_enter_a_transaction() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::oauth_state::OAuthState::new(dir.path().join("state.json"), false);
+        state.save_admin_token("fixture-admin").unwrap();
+        let before = state.0.read_shared().unwrap();
+        state.save_admin_token("  fixture-admin  ").unwrap();
+        assert!(Arc::ptr_eq(&before, &state.0.read_shared().unwrap()));
+        state.save_admin_token("fixture-replacement").unwrap();
+        assert_eq!(state.admin_token().unwrap(), "fixture-replacement");
+        assert_eq!(before["settings"]["sub2api_admin_token"], "fixture-admin");
+        fs::write(state.0.path(), b"{broken").unwrap();
+        assert!(state.save_admin_token("fixture-replacement").is_err());
+        assert_eq!(fs::read(state.0.path()).unwrap(), b"{broken");
     }
     #[test]
     fn transactions_merge_disk_changes_and_reject_lost_or_corrupt_state() {

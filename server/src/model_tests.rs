@@ -106,7 +106,7 @@ fn validate(value: &Value) -> Result<()> {
     }
     Ok(())
 }
-fn normalized(mut value: Value) -> Value {
+fn normalize(value: &mut Value) {
     if value.get("requests").is_none() {
         value["requests"] = json!({});
     }
@@ -119,7 +119,6 @@ fn normalized(mut value: Value) -> Value {
             .collect::<serde_json::Map<_, _>>()
             .into();
     }
-    value
 }
 fn interruption(job: &Value, error: &str, at: Value) -> Value {
     let mut changes = json!({"status":"interrupted","error":error,"completed_at":at,"can_retry":false,"uncertain":true});
@@ -185,11 +184,18 @@ impl ModelTests {
         Ok(())
     }
     pub fn data(&self) -> Result<Value> {
-        Ok(normalized(self.store.read()?))
+        Ok((*self.shared_data()?).clone())
+    }
+    pub(crate) fn shared_data(&self) -> Result<Arc<Value>> {
+        let mut data = self.store.read_shared()?;
+        if data.get("requests").is_none() || data.get("jobs").is_none() {
+            normalize(Arc::make_mut(&mut data));
+        }
+        Ok(data)
     }
     pub fn transaction<T>(&self, change: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.store.transaction(|data| {
-            *data = normalized(data.clone());
+            normalize(data);
             change(data)
         })
     }
@@ -218,14 +224,14 @@ impl ModelTests {
         {
             return Err(Error::new(404, "测试结果不存在"));
         }
-        let state = self.data()?;
+        let state = self.shared_data()?;
         state["jobs"]
             .get(id)
             .map(Self::public)
             .ok_or_else(|| Error::new(404, "测试结果不存在"))
     }
     pub fn latest(&self, id: i64) -> Result<Value> {
-        Ok(self.data()?["accounts"]
+        Ok(self.shared_data()?["accounts"]
             .get(id.to_string())
             .map(Self::public)
             .unwrap_or(Value::Null))
@@ -250,7 +256,7 @@ impl ModelTests {
         })
     }
     pub fn startup(&self) -> Result<()> {
-        self.data()?;
+        self.shared_data()?;
         if self.actions.settings.read_only {
             return Ok(());
         }
@@ -285,7 +291,7 @@ impl ModelTests {
         {
             return Ok(());
         }
-        for job in self.data()?["jobs"]
+        for job in self.shared_data()?["jobs"]
             .as_object()
             .unwrap()
             .values()
@@ -322,7 +328,7 @@ impl ModelTests {
         }
         let request = string(&payload["request_id"]);
         let model = string(&payload["model_id"]);
-        let data = self.data()?;
+        let data = self.shared_data()?;
         if let Some(previous) = data["requests"].get(request) {
             let old = self.get(string(previous))?;
             let same_recovery = automatic.is_some_and(|auto| {
@@ -497,7 +503,7 @@ impl ModelTests {
             }
             let mut manual_waiting = false;
             if job["automatic"] == true {
-                let ids = self.data()?["jobs"]
+                let ids = self.shared_data()?["jobs"]
                     .as_object()
                     .unwrap()
                     .values()
@@ -629,7 +635,7 @@ impl ModelTests {
         }
         crate::validation::request_id(&json!(request))?;
         let _guard = self.start.lock().await;
-        let state = self.data()?;
+        let state = self.shared_data()?;
         if let Some(previous) = state["requests"].get(request) {
             if previous != id {
                 return Err(Error::new(

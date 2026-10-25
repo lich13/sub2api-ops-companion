@@ -53,7 +53,7 @@ pub fn pause_reason(value: &Value) -> &'static str {
 impl Detection {
     pub(crate) async fn refresh_call_frequency(&self) -> Result<()> {
         let _guard = self.frequency_lock.lock().await;
-        let state = self.store.read()?;
+        let state = self.store.read_shared()?;
         let accounts: Vec<_> = state["accounts"]
             .as_object()
             .unwrap()
@@ -128,6 +128,23 @@ impl Detection {
         } else {
             self.smart_due(id, value)?
         };
+        let next_at = due.map(datetime).map_or(Value::Null, Value::from);
+        let status = if due.is_some() { "waiting" } else { "paused" };
+        let reason = if due.is_some() {
+            ""
+        } else {
+            pause_reason(value)
+        };
+        let idle = interval.is_none() && value["recent_request_count"].as_u64() == Some(0);
+        if !resuming
+            && !value["schedule_anchor_at"].is_null()
+            && (!idle || value["schedule_idle_paused"] == true)
+            && value["next_at"] == next_at
+            && value["status"] == status
+            && value["reason"] == reason
+        {
+            return Ok(due);
+        }
         self.store.transaction(|state| {
             let current = &mut state["accounts"][id.to_string()];
             if current["generation"] != value["generation"]
@@ -139,19 +156,14 @@ impl Detection {
             if resuming || current["schedule_anchor_at"].is_null() {
                 current["schedule_anchor_at"] = datetime(self.now()).into();
             }
-            if interval.is_none() && value["recent_request_count"].as_u64() == Some(0) {
+            if idle {
                 current["schedule_idle_paused"] = true.into();
             } else if resuming {
                 current["schedule_idle_paused"] = false.into();
             }
-            current["next_at"] = due.map(datetime).map_or(Value::Null, Value::from);
-            current["status"] = if due.is_some() { "waiting" } else { "paused" }.into();
-            current["reason"] = if due.is_some() {
-                ""
-            } else {
-                pause_reason(value)
-            }
-            .into();
+            current["next_at"] = next_at;
+            current["status"] = status.into();
+            current["reason"] = reason.into();
             Ok(())
         })?;
         Ok(due)

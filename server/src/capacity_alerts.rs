@@ -147,8 +147,16 @@ impl CapacityStore {
         }
     }
     pub fn snapshot(&self) -> Result<Value> {
-        let mut data = self.0.read()?;
-        Self::normalize(&mut data);
+        Ok((*self.shared_snapshot()?).clone())
+    }
+    pub(crate) fn shared_snapshot(&self) -> Result<std::sync::Arc<Value>> {
+        let mut data = self.0.read_shared()?;
+        if ["slow_ttft", "slow_pending", "detection_events"]
+            .iter()
+            .any(|key| data.get(*key).is_none())
+        {
+            Self::normalize(std::sync::Arc::make_mut(&mut data));
+        }
         Ok(data)
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
@@ -249,7 +257,7 @@ impl CapacityAlerts {
         );
     }
     pub fn retire_legacy(&self, at: DateTime<Utc>) -> Result<()> {
-        if truthy(&self.store.snapshot()?["clue_mode_since"]) {
+        if truthy(&self.store.shared_snapshot()?["clue_mode_since"]) {
             return Ok(());
         }
         self.store.transaction(|data| {
@@ -285,7 +293,7 @@ impl CapacityAlerts {
         }
         let at = Utc::now();
         self.retire_legacy(at)?;
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         for key in ["gateway_since", "apikey_since"] {
             if !truthy(&state[key]) {
                 self.store.transaction(|data| {
@@ -312,7 +320,8 @@ impl CapacityAlerts {
             return Ok(());
         }
         for _ in 0..20 {
-            let cursor = integer(&self.store.snapshot()?["cursor"]).ok_or_else(Error::internal)?;
+            let cursor =
+                integer(&self.store.shared_snapshot()?["cursor"]).ok_or_else(Error::internal)?;
             let rows=self.db.all(&format!("SELECT {} FROM ops_error_logs e LEFT JOIN accounts a ON a.id=e.account_id WHERE e.id>$1 ORDER BY e.id LIMIT 200",sql::CAPACITY_FIELDS),&[cursor.into()]).await?;
             if rows.is_empty() {
                 break;

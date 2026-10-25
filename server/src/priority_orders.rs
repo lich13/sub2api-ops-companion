@@ -270,7 +270,7 @@ impl PriorityGate {
         if active(&self.legacy.read()?).is_some() {
             return Err(Error::new(409, "旧版排序正在收束，请稍后重新核对"));
         }
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if let Some(id) = active(&data) {
             if !ORDER.try_with(|owner| owner == id).unwrap_or(false) {
                 return Err(busy());
@@ -295,7 +295,7 @@ impl PriorityGate {
         let Ok(owner) = ORDER.try_with(Clone::clone) else {
             return Ok(());
         };
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         let rows = account_rows(db, Some(string(&data["jobs"][&owner]["platform"]))).await?;
         if active(&data) != Some(owner.as_str())
             || !PriorityOrders::matches(&data["jobs"][&owner], &rows)
@@ -523,7 +523,7 @@ impl PriorityOrders {
     pub async fn view(&self, v2: bool) -> Result<Value> {
         let rows = self.rows(None).await?;
         let legacy = self.legacy.read()?;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         let items: Vec<_> = rows
             .iter()
             .map(|row| {
@@ -577,7 +577,7 @@ impl PriorityOrders {
             return Err(Error::new(404, "优先级排序任务不存在"));
         }
         if v2 {
-            let data = self.store.read()?;
+            let data = self.store.read_shared()?;
             if let Some(job) = data["jobs"].get(id) {
                 return Ok(public_job_v2(job, details));
             }
@@ -599,7 +599,7 @@ impl PriorityOrders {
         validate_request(request)?;
         let _submit = self.operations.submit_lock.lock().await;
         let _gate = self.actions.priorities.admission.write().await;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         let rid = string(&request["request_id"]);
         let mut request_identity = vec![
             request["platform"].clone(),
@@ -627,7 +627,7 @@ impl PriorityOrders {
         if self.legacy.read()?["requests"].get(rid).is_some() {
             return Err(Error::new(409, "请求 ID 已用于旧版排序"));
         }
-        if self.operations.store.read()?["jobs"]
+        if self.operations.store.read_shared()?["jobs"]
             .as_object()
             .ok_or_else(invalid_state)?
             .values()
@@ -703,7 +703,7 @@ impl PriorityOrders {
         }
         validate_parallelism_request(request)?;
         let _gate = self.actions.priorities.admission.write().await;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if active(&data).is_some() || active(&self.legacy.read()?).is_some() {
             return Err(busy());
         }
@@ -761,7 +761,7 @@ impl PriorityOrders {
     }
     pub async fn recover_startup(&self) -> Result<()> {
         self.legacy.read()?;
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if self.actions.settings.read_only {
             return Ok(());
         }
@@ -847,7 +847,7 @@ impl PriorityOrders {
     }
     fn waiting(&self, id: &str, ids: &[i64]) -> Result<()> {
         let value = json!(ids);
-        if self.store.read()?["jobs"][id]["waiting_account_ids"] == value {
+        if self.store.read_shared()?["jobs"][id]["waiting_account_ids"] == value {
             return Ok(());
         }
         self.store.transaction(|data| {
@@ -898,7 +898,7 @@ impl PriorityOrders {
             if self.actions.supervisor.is_stopping() {
                 return Ok(());
             }
-            let data = self.store.read()?;
+            let data = self.store.read_shared()?;
             if active(&data) != Some(id) {
                 return Ok(());
             }
@@ -1009,7 +1009,7 @@ impl PriorityOrders {
                     busy_ids.insert(aid);
                 }
                 Err(error) => {
-                    let current = self.store.read()?;
+                    let current = self.store.read_shared()?;
                     if current["jobs"][id]["items"]
                         .as_array()
                         .unwrap()
@@ -1048,7 +1048,7 @@ impl PriorityOrders {
         if !self.retire_legacy().await? {
             return Ok(());
         }
-        let Some(id) = active(&self.store.read()?).map(str::to_owned) else {
+        let Some(id) = active(self.store.read_shared()?.as_ref()).map(str::to_owned) else {
             return Ok(());
         };
         if self
