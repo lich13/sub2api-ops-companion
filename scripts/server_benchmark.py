@@ -28,14 +28,6 @@ import psycopg
 from server_http_contract import (ADMIN_KEY, API, HttpClient, REFERENCE_SHA, ROOT,
     TemporaryPostgres, archive_reference_app, free_port, require, seed_fingerprint_cache)
 
-BENCHMARK_FIELDS = frozenset({
-    "Os", "Architecture", "Id", "Size", "Config", "Labels", "State", "ExitCode",
-    "OOMKilled", "Error", "accounts", "id", "operation_versions", "test", "items",
-    "batch_id", "pending", "status", "result", "success", "binary_bytes",
-    "schema_version", "observed_at", "groups", "errors", "recoveries", "data", "ok",
-    "error", "code", "message", "detail",
-})
-
 
 def docker(*arguments: str, include_stderr: bool = False) -> str:
     result = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False)
@@ -176,32 +168,6 @@ class Sampler:
         self.thread.join(3)
 
 
-def failure_location(error: Exception) -> str:
-    script = Path(__file__).resolve()
-    current = error.__traceback__
-    frame = None
-    while current is not None:
-        if Path(current.tb_frame.f_code.co_filename).resolve() == script:
-            frame = current
-        current = current.tb_next
-    if frame is None:
-        return type(error).__name__
-    field = error.args[0] if isinstance(error, KeyError) and error.args else None
-    field_hint = f" field={field}" if isinstance(field, str) and field in BENCHMARK_FIELDS else ""
-    local = frame.tb_frame.f_locals
-    runtime = local.get("implementation")
-    runtime_hint = f" runtime={runtime}" if runtime in {"python", "rust"} else ""
-    count = local.get("count")
-    count_hint = f" workload_accounts={count}" if type(count) is int and count in {20, 100, 1000} else ""
-    snapshot = local.get("snapshot")
-    response_hint = ""
-    if isinstance(snapshot, dict):
-        fields = sorted(key for key in snapshot if isinstance(key, str) and key in BENCHMARK_FIELDS)
-        response_hint = " response_fields=" + (",".join(fields) if fields else "none")
-    return (f"{type(error).__name__} at {script.name}:{frame.tb_lineno} "
-            f"({frame.tb_frame.f_code.co_name}){field_hint}{runtime_hint}{count_hint}{response_hint}")
-
-
 def shutdown_summary(implementation: str, state: dict, logs: str) -> dict:
     code = state.get("ExitCode")
     application_complete = "Application shutdown complete." in logs
@@ -243,7 +209,8 @@ def service(image: str, implementation: str, database: str, upstream: str, state
     try:
         docker(*command)
         created = True
-        client = HttpClient(f"http://127.0.0.1:{port}", timeout=30)
+        # The 1,000-account snapshot is larger than the default contract read limit.
+        client = HttpClient(f"http://127.0.0.1:{port}", timeout=30, max_response_bytes=8_000_000)
         deadline = time.monotonic() + 40
         while True:
             try:
@@ -391,6 +358,5 @@ if __name__ == "__main__":
     except Exception as error:
         # Exceptions from Docker/SQL must not emit credentials or host paths.
         from server_http_contract import CheckFailure
-        diagnostic = str(error) if isinstance(error, CheckFailure) else failure_location(error)
-        print(json.dumps({"status": "failed", "error": diagnostic}))
+        print(json.dumps({"status": "failed", "error": str(error) if isinstance(error, CheckFailure) else type(error).__name__}))
         raise SystemExit(1)

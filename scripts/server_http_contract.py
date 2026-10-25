@@ -372,9 +372,10 @@ class HttpResponse:
 
 
 class HttpClient:
-    def __init__(self, base_url: str, timeout: float = 8) -> None:
+    def __init__(self, base_url: str, timeout: float = 8, *, max_response_bytes: int = 4_000_000) -> None:
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
+        self.max_response_bytes = max_response_bytes
         self.opener = build_opener(ProxyHandler({}))
 
     def request(self, method: str, path: str, *, body: object | None = None,
@@ -391,7 +392,8 @@ class HttpClient:
         except HTTPError as exc:
             response = exc
         with response:
-            raw = response.read(4_000_000)
+            raw = response.read(self.max_response_bytes + 1)
+            require(len(raw) <= self.max_response_bytes, "HTTP response exceeds fixture read limit")
             status = response.status
             content_type = response.headers.get("Content-Type", "")
             response_headers = {key.lower(): value for key, value in response.headers.items()}
