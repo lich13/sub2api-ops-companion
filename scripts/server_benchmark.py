@@ -21,12 +21,19 @@ import subprocess
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 
 import psycopg
 
 from server_http_contract import (ADMIN_KEY, API, HttpClient, REFERENCE_SHA, ROOT,
     TemporaryPostgres, archive_reference_app, free_port, require, seed_fingerprint_cache)
+
+BENCHMARK_FIELDS = frozenset({
+    "Os", "Architecture", "Id", "Size", "Config", "Labels", "State", "ExitCode",
+    "OOMKilled", "Error", "accounts", "id", "operation_versions", "test", "items",
+    "batch_id", "pending", "status", "result", "success", "binary_bytes",
+})
 
 
 def docker(*arguments: str, include_stderr: bool = False) -> str:
@@ -166,6 +173,20 @@ class Sampler:
     def close(self):
         self.stop.set()
         self.thread.join(3)
+
+
+def failure_location(error: Exception) -> str:
+    frames = traceback.extract_tb(error.__traceback__)
+    script = Path(__file__).resolve()
+    frame = next(
+        (item for item in reversed(frames) if Path(item.filename).resolve() == script),
+        None,
+    )
+    if frame is None:
+        return type(error).__name__
+    field = error.args[0] if isinstance(error, KeyError) and error.args else None
+    field_hint = f" field={field}" if isinstance(field, str) and field in BENCHMARK_FIELDS else ""
+    return f"{type(error).__name__} at {script.name}:{frame.lineno} ({frame.name}){field_hint}"
 
 
 def shutdown_summary(implementation: str, state: dict, logs: str) -> dict:
@@ -357,5 +378,6 @@ if __name__ == "__main__":
     except Exception as error:
         # Exceptions from Docker/SQL must not emit credentials or host paths.
         from server_http_contract import CheckFailure
-        print(json.dumps({"status": "failed", "error": str(error) if isinstance(error, CheckFailure) else type(error).__name__}))
+        diagnostic = str(error) if isinstance(error, CheckFailure) else failure_location(error)
+        print(json.dumps({"status": "failed", "error": diagnostic}))
         raise SystemExit(1)
