@@ -3676,7 +3676,7 @@ name = "sub2ops"
 version = "0.1.65"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "keyring",
  "objc2",
  "objc2-app-kit",
