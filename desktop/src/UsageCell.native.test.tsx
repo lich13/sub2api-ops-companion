@@ -30,6 +30,17 @@ it("keeps existing windows when a single native read fails", async () => {
   await render(account({ usage: { ...summary(), windows: [{ key: "weekly", label: "7d", used_percent: 42, source: "upstream_snapshot", observed_at: null, reset_at: null, status: "stale" }] } }));
   expect(container.textContent).toContain("42%"); expect(container.textContent).toContain("异常"); expect(container.textContent).toContain("0 req");
 });
+it("keeps native statistics failures visible until a successful retry", async () => {
+  const row = () => account({ usage: { ...summary(), stats_status: "ok" } });
+  vi.mocked(api).mockResolvedValue({ ...summary(), stats_status: "error", today: null });
+  await render(row());
+  expect(container.textContent).toContain("统计暂不可用，请重试");
+  expect(container.textContent).not.toContain("A $0.00");
+  vi.mocked(api).mockResolvedValue({ ...summary(), stats_status: "ok" });
+  await act(async () => vi.advanceTimersByTimeAsync(60_000)); await render(row());
+  expect(container.textContent).not.toContain("统计暂不可用");
+  expect(container.textContent).toContain("A $0.00");
+});
 it("retains the last native sample as error data after the next read fails", async () => {
   vi.mocked(api).mockResolvedValue({ ...summary(), windows: [{ key: "model", label: "模型", used_percent: 32, source: "upstream_usage", status: "known" }], balances: [{ currency: "CNY", balance: 2 }] });
   await render();

@@ -184,7 +184,8 @@ pub fn quota_windows(row: &Value, at: Option<DateTime<Utc>>) -> Value {
             continue;
         };
         let remaining = number(&extra[format!("{key}_reset_after_seconds")]);
-        let minutes = number(&extra[format!("{key}_window_minutes")]);
+        let minutes = number(&extra[format!("{key}_window_minutes")])
+            .filter(|v| (1.0..=5_256_000.0).contains(v) && v.fract() == 0.0);
         let (reset, source) = reset_details(
             &extra[format!("{key}_reset_at")],
             &json!(remaining),
@@ -385,16 +386,29 @@ pub fn usage_windows(row: &Value, at: DateTime<Utc>, result: &Value) -> Vec<Valu
             .iter()
             .map(|key| {
                 let value = windows.get(*key).unwrap_or(&Value::Null);
-                window(
+                let minutes = number(&value["window_minutes"])
+                    .filter(|v| (1.0..=5_256_000.0).contains(v) && v.fract() == 0.0)
+                    .map(|v| v as i64);
+                let label = match minutes {
+                    Some(v) if v % 1440 == 0 => format!("{}d", v / 1440),
+                    Some(v) if v % 60 == 0 => format!("{}h", v / 60),
+                    Some(v) => format!("{v}m"),
+                    None => if *key == "codex_5h" { "5h" } else { "7d" }.into(),
+                };
+                let mut item = window(
                     key,
-                    if *key == "codex_5h" { "5h" } else { "7d" },
+                    &label,
                     nonnegative(&value["used_percent"]),
                     &value["reset_at"],
                     observed,
                     at,
                     "passive",
                     truthy(&latest) && !truthy(&latest["success"]),
-                )
+                );
+                if let Some(minutes) = minutes {
+                    item["window_minutes"] = minutes.into();
+                }
+                item
             })
             .collect();
     }

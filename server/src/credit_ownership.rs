@@ -120,7 +120,7 @@ pub fn save(store: &OAuthState, id: i64, task: &Value, changes: Value) -> Result
 }
 pub fn reconcile(store: &OAuthState, row: &Value) -> Result<Value> {
     let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-    let state = store.snapshot()?;
+    let state = store.shared_snapshot()?;
     let task = state["scheduler"][id.to_string()]["auto_reset_credit"]
         .as_object()
         .cloned()
@@ -155,7 +155,7 @@ pub fn prepare(store: &OAuthState, row: &Value, field: &str, value: &Value) -> R
     if task["owns_pause"] != true {
         return Ok(());
     }
-    let state = store.snapshot()?;
+    let state = store.shared_snapshot()?;
     if !owned(row, &task, &state, true) {
         return Err(Error::new(409, "用卡暂停归属待核对，未修改参数"));
     }
@@ -179,7 +179,7 @@ pub fn prepare(store: &OAuthState, row: &Value, field: &str, value: &Value) -> R
     Ok(())
 }
 pub fn cancel(store: &OAuthState, id: i64) -> Result<()> {
-    let state = store.snapshot()?;
+    let state = store.shared_snapshot()?;
     let task = &state["scheduler"][id.to_string()]["auto_reset_credit"];
     if truthy(task) && string(&task["stage"]) != "recovered" {
         save(

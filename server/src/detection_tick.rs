@@ -81,17 +81,48 @@ impl Detection {
                     .map_err(|_| Error::new(503, "模型检测账号编号无效"))
             })
             .collect::<Result<Vec<_>>>()?;
+        let mut waiting = Vec::new();
         for id in ids {
-            if let Err(error) = self.tick_account(id).await {
+            let result = self.tick_account(id).await;
+            if let Ok(Some((value, mark, recheck))) = &result {
+                waiting.push((id, value.clone(), mark.clone(), *recheck));
+            }
+            if let Err(error) = result {
                 if error.status.as_u16() >= 500 {
                     return Err(error);
                 }
                 self.update(id,json!({"status":"paused","reason":safe_error(&error.detail,200),"next_at":null}))?;
             }
         }
+        if !waiting.is_empty() {
+            let ids = waiting.iter().map(|(id, ..)| *id).collect::<Vec<_>>();
+            let rows = self
+                .actions
+                .accounts(&ids)
+                .await?
+                .into_iter()
+                .filter_map(|row| integer(&row["id"]).map(|id| (id, row)))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            for (id, value, mark, recheck) in waiting {
+                // A manual control change during the batch read wins this tick.
+                if self.control(id)? != value {
+                    continue;
+                }
+                let result = match rows.get(&id) {
+                    Some(row) => self.tick_waiting(id, &value, &mark, recheck, row).await,
+                    None => Err(Error::new(404, "账号不存在")),
+                };
+                if let Err(error) = result {
+                    if error.status.as_u16() >= 500 {
+                        return Err(error);
+                    }
+                    self.update(id,json!({"status":"paused","reason":safe_error(&error.detail,200),"next_at":null}))?;
+                }
+            }
+        }
         Ok(())
     }
-    async fn tick_account(&self, id: i64) -> Result<()> {
+    async fn tick_account(&self, id: i64) -> Result<Option<(Value, Value, bool)>> {
         let mut value = self.control(id)?;
         if matches!(
             string(&value["disposition"]["status"]),
@@ -117,11 +148,11 @@ impl Detection {
         }
         if ACTIVE.contains(&string(&job["status"])) {
             if value["disposition"]["job_id"] == job["id"] {
-                return Ok(());
+                return Ok(None);
             }
             if self.guard(&job).await.is_err() {
                 self.tests.cancel(string(&job["id"])).await?;
-                return Ok(());
+                return Ok(None);
             }
             if value["status"] != job["status"] {
                 self.store.transaction(|data| {
@@ -132,7 +163,7 @@ impl Detection {
                     Ok(())
                 })?;
             }
-            return Ok(());
+            return Ok(None);
         }
         if truthy(&job)
             && (value["handled_job"] != job["id"]
@@ -256,19 +287,28 @@ impl Detection {
                     json!({"status":"paused","next_at":null,"reason":reason}),
                 )?;
             }
-            return Ok(());
+            return Ok(None);
         }
         if value["enabled"] != true {
-            return Ok(());
+            return Ok(None);
         }
         if crate::detection_schedule::smart(&value)
             && crate::detection_schedule::effective_interval(&value).is_none()
         {
             self.update_smart_schedule(id, &value)?;
-            return Ok(());
+            return Ok(None);
         }
-        let row = self.actions.account(id, None).await?;
-        let reason = self.reason(&row, &mark, recheck).await?;
+        Ok(Some((value, mark, recheck)))
+    }
+    async fn tick_waiting(
+        &self,
+        id: i64,
+        value: &Value,
+        mark: &Value,
+        recheck: bool,
+        row: &Value,
+    ) -> Result<()> {
+        let reason = self.reason(row, mark, recheck).await?;
         if !reason.is_empty() {
             if value["status"] != "paused" || value["reason"] != reason {
                 self.update(
@@ -284,7 +324,7 @@ impl Detection {
             }
             let allowed = self
                 .actions
-                .model_allowed(&row, &self.effective_model(&value, &row)?)
+                .model_allowed(row, &self.effective_model(value, row)?)
                 .await?;
             let platform = self.monitor.config.current()?["model_detection_platforms"]
                 [string(&row["platform"])]
@@ -310,9 +350,9 @@ impl Detection {
                 json!({"candidate_blocked":false,"candidate_recheck_at":null}),
             )?;
         }
-        if crate::detection_schedule::smart(&value) {
+        if crate::detection_schedule::smart(value) {
             if self
-                .update_smart_schedule(id, &value)?
+                .update_smart_schedule(id, value)?
                 .is_some_and(|due| self.now() >= due)
             {
                 self.trigger(id, &["scheduled".into()]).await?;

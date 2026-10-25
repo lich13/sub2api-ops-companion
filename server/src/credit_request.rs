@@ -120,7 +120,7 @@ impl CreditController {
                 }
                 {
                     let _control = self.actions.locks.control(id).await;
-                    active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(&live),"next_at":null,"control_generation":credit_ownership::generation(&self.store.snapshot()?,id)}))?;
+                    active=self.save(id,task,json!({"stage":"pausing","signature":credit_ownership::signature(&live),"next_at":null,"control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id)}))?;
                     let paused = actions::set_schedulable(&self.actions, id, false, key, 3).await;
                     let after = self.row(id).await?;
                     let latest = self.state(id)?;
@@ -128,8 +128,10 @@ impl CreditController {
                         if after.is_object()
                             && after["schedulable"] == false
                             && credit_ownership::signature(&after) == active["signature"]
-                            && json!(credit_ownership::generation(&self.store.snapshot()?, id))
-                                == active["control_generation"]
+                            && json!(credit_ownership::generation(
+                                self.store.shared_snapshot()?.as_ref(),
+                                id
+                            )) == active["control_generation"]
                         {
                             self.save(
                                 id,

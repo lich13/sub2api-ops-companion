@@ -444,6 +444,16 @@ impl ModelTests {
         let cleanup = self.clone();
         let cleanup_id = id.clone();
         let registration = crate::supervision::on_drop(move || {
+            if !cleanup
+                .get(&cleanup_id)
+                .is_ok_and(|job| job["can_retry"] == true && job["uncertain"] != true)
+            {
+                cleanup
+                    .contexts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&cleanup_id);
+            }
             cleanup
                 .tasks
                 .lock()
@@ -733,6 +743,10 @@ impl ModelTests {
         self.get(id)
     }
     fn finish_cancel(&self, id: &str) -> Result<()> {
+        self.contexts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
         // The worker has drained before this read, so its final progress write
         // cannot restore an active group after the cancellation is persisted.
         let current = self.get(id)?;

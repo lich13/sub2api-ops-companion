@@ -1,8 +1,10 @@
 //! Reference data: offline directories, mirror downloads, and the cache.
 
 use std::fs;
+#[cfg(feature = "network")]
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "network")]
 use std::time::{Duration, SystemTime};
 
 use serde::Deserialize;
@@ -15,12 +17,16 @@ use crate::{Calibration, Error, codec};
 /// `lmfpd-data` npm package with the same layout as the site's `/data/`.
 pub const DEFAULT_DATA_URLS: &[&str] = &["https://lm.ikale.io/data/", "https://cdn.jsdmirror.com/npm/lmfpd-data@latest/"];
 /// Bump when the bundle layout changes; older SDKs then refuse the data instead of misreading it.
+#[cfg(feature = "network")]
 const DATA_SCHEMA: &str = "lmfpd-data-v1";
 const DETECTOR_SCHEMA: &str = "shared-detector-v2";
 const BANK: &str = "unified_bank.json";
+#[cfg(feature = "network")]
 const BUNDLE: &str = "bundle.json";
 const DETECTOR: &str = "shared_detector.bin";
+#[cfg(feature = "network")]
 const BUNDLE_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(feature = "network")]
 const PART_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(crate) struct Model {
@@ -133,6 +139,7 @@ fn read_dir(dir: &Path) -> Result<ReferenceData, Error> {
     decode_data(&bank, &detector, &bank_path.display().to_string(), &detector_path.display().to_string())
 }
 
+#[cfg(feature = "network")]
 struct Cached {
     data: ReferenceData,
     /// The detector's SHA-256 from the cached `bundle.json`.
@@ -142,6 +149,7 @@ struct Cached {
 
 /// The cache file holds the u32 little-endian length of `bundle.json`, `bundle.json`, then `shared_detector.bin`.
 /// A missing or damaged cache is `None` and is downloaded again.
+#[cfg(feature = "network")]
 fn read_cache(path: &Path) -> Option<Cached> {
     let bytes = fs::read(path).ok()?;
     let checked_at = fs::metadata(path).and_then(|info| info.modified()).ok()?;
@@ -167,12 +175,14 @@ pub(crate) fn default_cache_path() -> PathBuf {
     root.join("lmfpd").join("data.bin")
 }
 
+#[cfg(feature = "network")]
 fn random_hex() -> String {
     let mut bytes = [0u8; 8];
     getrandom::fill(&mut bytes).expect("the OS random source is available");
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+#[cfg(feature = "network")]
 fn download(url: &str, timeout: Duration) -> Result<Vec<u8>, String> {
     let mut response = crate::request::agent()
         .get(url)
@@ -190,6 +200,7 @@ fn download(url: &str, timeout: Duration) -> Result<Vec<u8>, String> {
 }
 
 /// Best effort: a failed write only means the next load downloads again.
+#[cfg(feature = "network")]
 fn write_cache(path: &Path, bundle: &[u8], detector: &[u8]) {
     let mut staging = path.as_os_str().to_owned();
     staging.push(format!(".tmp-{}", random_hex()));
@@ -205,10 +216,12 @@ fn write_cache(path: &Path, bundle: &[u8], detector: &[u8]) {
 }
 
 /// Marks the cache as checked now.
+#[cfg(feature = "network")]
 fn touch(path: &Path) -> std::io::Result<()> {
     fs::File::options().write(true).open(path)?.set_modified(SystemTime::now())
 }
 
+#[cfg(feature = "network")]
 fn decompress(compressed: &[u8]) -> Result<Vec<u8>, String> {
     let mut decoder = ruzstd::decoding::StreamingDecoder::new(compressed).map_err(|e| e.to_string())?;
     let mut content = Vec::new();
@@ -216,6 +229,7 @@ fn decompress(compressed: &[u8]) -> Result<Vec<u8>, String> {
     Ok(content)
 }
 
+#[cfg(feature = "network")]
 fn schema_text(value: &Value) -> String {
     match value {
         Value::Null => "undefined".into(),
@@ -225,6 +239,7 @@ fn schema_text(value: &Value) -> String {
 }
 
 /// One source's attempt: `None` when it still serves `cached_version` (the cache is then marked as checked).
+#[cfg(feature = "network")]
 fn refresh_from(source: &str, cache: &Path, cached_version: Option<&str>) -> Result<Option<ReferenceData>, String> {
     let bundle_bytes = download(&format!("{source}{BUNDLE}"), BUNDLE_TIMEOUT)?;
     let bundle: Value = serde_json::from_slice(&bundle_bytes).map_err(|e| e.to_string())?;
@@ -255,6 +270,7 @@ fn refresh_from(source: &str, cache: &Path, cached_version: Option<&str>) -> Res
 }
 
 /// Downloads the data from the first working source and caches it.
+#[cfg(feature = "network")]
 fn refresh(sources: &[String], cache: &Path, cached_version: Option<&str>) -> Result<Option<ReferenceData>, Error> {
     let mut failures = Vec::with_capacity(sources.len());
     for source in sources {
@@ -280,16 +296,35 @@ pub(crate) fn load(sources: &[String], cache: &Path, ttl: f64) -> Result<Referen
     {
         return read_dir(Path::new(source));
     }
-    let Some(cached) = read_cache(cache) else {
-        let data = refresh(sources, cache, None)?;
-        return Ok(data.expect("a refresh without a cached version returns data"));
-    };
-    // A modification time in the future counts as fresh.
-    if SystemTime::now().duration_since(cached.checked_at).is_ok_and(|age| age.as_secs_f64() >= ttl) {
-        let (sources, cache, version) = (sources.to_vec(), cache.to_path_buf(), cached.version);
-        std::thread::spawn(move || {
-            let _ = refresh(&sources, &cache, Some(&version));
-        });
+    #[cfg(not(feature = "network"))]
+    {
+        let _ = (cache, ttl);
+        Err(Error::new("lmfpd: URL sources require the network feature"))
     }
-    Ok(cached.data)
+    #[cfg(feature = "network")]
+    {
+        let Some(cached) = read_cache(cache) else {
+            let data = refresh(sources, cache, None)?;
+            return Ok(data.expect("a refresh without a cached version returns data"));
+        };
+        // A modification time in the future counts as fresh.
+        if SystemTime::now().duration_since(cached.checked_at).is_ok_and(|age| age.as_secs_f64() >= ttl) {
+            let (sources, cache, version) = (sources.to_vec(), cache.to_path_buf(), cached.version);
+            std::thread::spawn(move || {
+                let _ = refresh(&sources, &cache, Some(&version));
+            });
+        }
+        Ok(cached.data)
+    }
+}
+
+#[cfg(all(test, not(feature = "network")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_load_rejects_remote_sources_without_touching_a_cache() {
+        let result = load(&["https://example.invalid/data/".into()], Path::new("unused-fixture-cache"), 0.0);
+        assert!(matches!(result, Err(error) if error.message().contains("network feature")));
+    }
 }

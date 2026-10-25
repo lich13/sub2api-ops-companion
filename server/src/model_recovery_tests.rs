@@ -985,6 +985,15 @@ async fn run_natural_model(h: &Harness, id: i64, intent: &Value, usage: &Value) 
         .await
         .unwrap();
     let completed = h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        h.runtime
+            .tests
+            .contexts
+            .lock()
+            .unwrap()
+            .contains_key(job["id"].as_str().unwrap()),
+        completed["can_retry"] == true
+    );
     assert_eq!(completed["planned_groups"], 1);
     assert_eq!(completed["groups"].as_array().unwrap().len(), 1);
     assert_eq!(h.mock.count("POST", "/test"), 0);
@@ -2899,5 +2908,53 @@ async fn keepalive_dispatch_is_limited_to_eight_and_releases_capacity_and_locks(
     }
     h.runtime.keepalive.tick().await.unwrap();
     assert_eq!(h.mock.temp_delete_ids().len(), 9);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn batched_waiting_accounts_handle_deleted_and_changed_configuration() {
+    let h = Harness::new().await;
+    let first = h.seed_account("apikey", true, false).await;
+    let second = h.seed_account("apikey", true, false).await;
+    let first_id = integer(&first["id"]).unwrap();
+    let second_id = integer(&second["id"]).unwrap();
+    for id in [first_id, second_id] {
+        h.runtime.detection.update(id,json!({"enabled":true,"schedule_mode":"fixed","interval_minutes":15,"status":"waiting","next_at":datetime(h.now()+Duration::minutes(15))})).unwrap();
+    }
+    h.runtime.detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime.detection.control(first_id).unwrap()["status"],
+        "waiting"
+    );
+    assert_eq!(
+        h.runtime.detection.control(second_id).unwrap()["status"],
+        "waiting"
+    );
+    sqlx::query("UPDATE accounts SET deleted_at=now() WHERE id=$1")
+        .bind(second_id)
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    h.runtime
+        .detection
+        .update(
+            first_id,
+            json!({"enabled":false,"status":"disabled","generation":1}),
+        )
+        .unwrap();
+    h.runtime.detection.tick().await.unwrap();
+    assert_eq!(
+        h.runtime.detection.control(first_id).unwrap()["status"],
+        "disabled"
+    );
+    assert_eq!(
+        h.runtime.detection.control(second_id).unwrap()["status"],
+        "paused"
+    );
+    assert_eq!(
+        h.runtime.detection.control(second_id).unwrap()["reason"],
+        "账号不存在"
+    );
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
     h.close().await;
 }

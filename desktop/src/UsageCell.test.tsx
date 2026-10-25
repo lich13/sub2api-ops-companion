@@ -243,3 +243,21 @@ describe("Sub2API usage cell", () => {
     expect(api).not.toHaveBeenCalled();
   });
 });
+
+
+it("shows actual OAuth duration and distinguishes failed statistics from zero usage", () => {
+  const usage = { branch: "openai_oauth", actions: [], today: null, windows: [{
+    key: "codex_7d", label: "30d", window_minutes: 43200, used_percent: 32,
+    reset_at: null, observed_at: null, status: "known", source: "passive",
+    stats: { requests: 0, tokens: 0, cost: 0, user_cost: 0 },
+  }] };
+  const render = (stats_status?: "ok" | "error") => renderToStaticMarkup(<UsageCell
+    account={{ id: 1, usage: { ...usage, stats_status } } as unknown as Account}
+    online refresh={async () => {}} report={() => {}} />);
+  expect(render("error")).toContain("统计暂不可用，请重试");
+  for (const status of [undefined, "ok"] as const) {
+    expect(render(status)).toContain("30d");
+    expect(render(status)).not.toContain("统计暂不可用");
+    expect(render(status)).not.toContain("A $");
+  }
+});

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import platform
 import re
 import subprocess
 import sys
@@ -68,7 +69,9 @@ def main() -> int:
         parser.error("--filter requires --lib or one ordinary integration test binary")
     ordinary = sorted(tests - special.keys())
     exit_code = 0
-    with tempfile.TemporaryDirectory(prefix="sub2ops-rust-tests-") as directory:
+    # Darwin's default TMPDIR is long enough to overflow sockaddr_un after
+    # adding the isolated scratch directory and a test socket filename.
+    with tempfile.TemporaryDirectory(prefix="sub2ops-rust-tests-", dir="/tmp" if platform.system() == "Darwin" else None) as directory:
         scratch = Path(directory)
         postgres = TemporaryPostgres(scratch, args.postgres_bin_dir)
         try:

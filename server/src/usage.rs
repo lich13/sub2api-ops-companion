@@ -141,16 +141,23 @@ pub fn project(row: &Value, at: DateTime<Utc>, result: &Value) -> Value {
         }
         for mut item in usage_windows(row, at, result) {
             let short = item["key"] == "codex_5h";
-            let duration = if short {
-                Duration::hours(5)
-            } else {
-                Duration::days(7)
-            };
-            let reset = parse_datetime(&item["reset_at"])
+            let duration = item["window_minutes"]
+                .as_i64()
+                .map(Duration::minutes)
+                .unwrap_or_else(|| {
+                    if short {
+                        Duration::hours(5)
+                    } else {
+                        Duration::days(7)
+                    }
+                });
+            let start = parse_datetime(&item["reset_at"])
                 .filter(|v| *v > at)
-                .unwrap_or(at);
+                .and_then(|v| v.checked_sub_signed(duration))
+                .filter(|v| *v <= at)
+                .unwrap_or(at - duration);
             item["color"] = if short { "indigo" } else { "emerald" }.into();
-            item["stats_start"] = datetime(reset - duration).into();
+            item["stats_start"] = datetime(start).into();
             windows.push(item);
         }
     } else if row["platform"] == "grok" && row["type"] == "oauth" {

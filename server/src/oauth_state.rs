@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
+    sync::{Arc, Mutex},
 };
 
 fn invalid(message: &str) -> Error {
@@ -492,7 +493,12 @@ pub fn block_signature(row: &Value) -> String {
 }
 
 #[derive(Clone)]
-pub struct OAuthState(pub Store);
+pub struct OAuthState(pub Store, Arc<Mutex<Option<Normalized>>>);
+
+struct Normalized {
+    source: Arc<Value>,
+    value: Arc<Value>,
+}
 
 #[derive(Default)]
 pub struct Update {
@@ -509,10 +515,31 @@ pub struct Update {
 impl OAuthState {
     pub fn new(path: PathBuf, read_only: bool) -> Self {
         let lock = PathBuf::from(format!("{}.lock", path.display()));
-        Self(Store::with_lock(path, lock, json!({}), validate, read_only))
+        Self(
+            Store::with_lock(path, lock, json!({}), validate, read_only),
+            Arc::new(Mutex::new(None)),
+        )
     }
     pub fn snapshot(&self) -> Result<Value> {
-        self.0.read_shared().map(|value| normalize(&value))
+        self.shared_snapshot().map(|value| (*value).clone())
+    }
+    pub fn shared_snapshot(&self) -> Result<Arc<Value>> {
+        // Always consult Store first: its file stamp also catches external
+        // replacements and corrupt writes even when this projection is cached.
+        let source = self.0.read_shared()?;
+        let mut cache = self.1.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(cached) = cache
+            .as_ref()
+            .filter(|cached| Arc::ptr_eq(&cached.source, &source))
+        {
+            return Ok(cached.value.clone());
+        }
+        let value = Arc::new(normalize(&source));
+        *cache = Some(Normalized {
+            source,
+            value: value.clone(),
+        });
+        Ok(value)
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|value| {
@@ -634,5 +661,45 @@ impl OAuthState {
             state["pending_events"].as_object_mut().unwrap().retain(|_,v|integer(&v["account_id"]) != Some(id) || v["stage"] == "active_usage");
             Ok(generation)
         })
+    }
+}
+
+#[cfg(test)]
+mod shared_tests {
+    use super::*;
+
+    #[test]
+    fn normalized_snapshots_reuse_reads_and_observe_external_changes_and_damage() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("oauth.json");
+        let legacy = json!({"results":{"1":{"template_type":"oauth","success":true}},"scheduler":{"1":{"last_regular_at":"legacy"}}});
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let state = OAuthState::new(path.clone(), false);
+        let first = state.shared_snapshot().unwrap();
+        assert_eq!(*first, normalize(&legacy));
+        assert!(Arc::ptr_eq(
+            &first,
+            &state.clone().shared_snapshot().unwrap()
+        ));
+        let mut owned = state.snapshot().unwrap();
+        owned["oauth_results"] = json!({});
+        assert!(state.shared_snapshot().unwrap()["oauth_results"]["1"].is_object());
+        state
+            .transaction(|value| {
+                value["scheduler"]["1"]["last_reason"] = "fixture".into();
+                Ok(())
+            })
+            .unwrap();
+        let second = state.shared_snapshot().unwrap();
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert!(first["scheduler"]["1"]["last_reason"].is_null());
+        let replacement = root.path().join("replacement.json");
+        std::fs::write(&replacement, b"{}").unwrap();
+        std::fs::rename(replacement, &path).unwrap();
+        assert_eq!(state.shared_snapshot().unwrap()["oauth_results"], json!({}));
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(state.shared_snapshot().is_err());
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert_eq!(*state.shared_snapshot().unwrap(), *first);
     }
 }

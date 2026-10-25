@@ -105,30 +105,33 @@ pub const CAPACITY_FIELDS: &str = r####"e.id,e.account_id,e.created_at,e.error_o
  to_jsonb(e)->'upstream_errors' AS upstream_errors,
  a.name AS account_name,a.platform AS account_platform,a.type AS account_type,a.deleted_at AS account_deleted_at"####;
 
+// Keep the ordered candidate scan separate so expensive JSON/media filters
+// are evaluated only until ten qualifying samples have been found. OFFSET 0
+// prevents predicate pushdown across that boundary; ties still sort by id.
 pub const CAPACITY_SLOW_SQL: &str = r####"
-            WITH ranked AS (
-              SELECT u.id,u.account_id,u.created_at,u.model,u.upstream_model,u.stream,
+            SELECT r.id,a.id AS account_id,r.created_at,r.model,r.upstream_model,r.stream,
+                   r.first_token_ms,r.duration_ms,r.output_tokens,r.inbound_endpoint,
+                   r.image_count,r.image_output_tokens,r.video_count,r.video_duration_seconds,
+                   a.name AS account_name,a.platform AS account_platform,a.type AS account_type
+            FROM accounts a LEFT JOIN LATERAL (
+              SELECT u.id,u.created_at,u.model,u.upstream_model,u.stream,
                      u.first_token_ms,u.duration_ms,u.output_tokens,u.inbound_endpoint,
                      u.image_count,u.image_output_tokens,
                      to_jsonb(u)->>'video_count' AS video_count,
-                     to_jsonb(u)->>'video_duration_seconds' AS video_duration_seconds,
-                     a.name AS account_name,a.platform AS account_platform,a.type AS account_type,
-                     row_number() OVER (PARTITION BY u.account_id ORDER BY u.created_at DESC,u.id DESC) AS sample_rank
-              FROM usage_logs u JOIN accounts a ON a.id=u.account_id
-              WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey')
-                AND u.created_at >= $1 AND u.created_at <= $2
-                AND u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
+                     to_jsonb(u)->>'video_duration_seconds' AS video_duration_seconds
+              FROM (
+                SELECT u.* FROM usage_logs u
+                WHERE u.account_id=a.id AND u.created_at >= $1 AND u.created_at <= $2
+                ORDER BY u.created_at DESC,u.id DESC OFFSET 0
+              ) u
+              WHERE u.stream IS TRUE AND u.first_token_ms > 0 AND u.duration_ms > u.first_token_ms
                 AND u.output_tokens >= 0 AND coalesce(u.image_count,0)=0 AND coalesce(u.image_output_tokens,0)=0
                 AND coalesce(to_jsonb(u)->>'video_count','0') IN ('0','0.0')
                 AND coalesce(to_jsonb(u)->>'video_duration_seconds','0') IN ('0','0.0')
                 AND coalesce(u.upstream_model,u.model,'') <> ''
                 AND (coalesce(u.inbound_endpoint,'') || ' ' || coalesce(u.upstream_model,u.model,'')) !~* '(/audio|/images|/videos|-image|-video|-tts|-stt|realtime|whisper|dall-e)'
-            )
-            SELECT r.id,a.id AS account_id,r.created_at,r.model,r.upstream_model,r.stream,
-                   r.first_token_ms,r.duration_ms,r.output_tokens,r.inbound_endpoint,
-                   r.image_count,r.image_output_tokens,r.video_count,r.video_duration_seconds,
-                   a.name AS account_name,a.platform AS account_platform,a.type AS account_type
-            FROM accounts a LEFT JOIN ranked r ON r.account_id=a.id AND r.sample_rank <= 10
+              ORDER BY u.created_at DESC,u.id DESC LIMIT 10
+            ) r ON true
             WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','apikey')
             ORDER BY account_id,r.created_at DESC,r.id DESC
         "####;

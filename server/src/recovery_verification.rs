@@ -56,7 +56,7 @@ impl Monitor {
         method_generation: i64,
         method: &str,
     ) -> Result<bool> {
-        let state = self.state()?;
+        let state = self.shared_state()?;
         Ok(credit_ownership::generation(&state, id) == generation
             && integer(&state["scheduler"][id.to_string()]["recovery_method_generation"])
                 .unwrap_or(0)
@@ -105,7 +105,7 @@ impl Monitor {
         Ok(json!({"success":false,"skipped":true,"error_code":code}))
     }
     pub async fn reconcile_unknown(&self, id: i64) -> Result<()> {
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
         let intent = &meta["recovery_intent"];
         if !truthy(intent) || matches!(string(&intent["status"]), "recovered" | "cancelled") {
@@ -167,7 +167,7 @@ impl Monitor {
         lease: Lease,
     ) -> Result<Value> {
         let mut lease = Some(lease);
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let meta = &state["scheduler"][id.to_string()];
         let mut intent = meta["recovery_intent"].clone();
         if intent["fingerprint"] != original["fingerprint"]
@@ -198,7 +198,7 @@ impl Monitor {
         if truthy(&intent["recovery_write_dispatched"]) {
             self.reconcile_unknown(id).await?;
             return Ok(
-                json!({"success":self.state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","recovered":self.state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","reused":true}),
+                json!({"success":self.shared_state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","recovered":self.shared_state()?["scheduler"][id.to_string()]["recovery_intent"]["status"]=="recovered","reused":true}),
             );
         }
         if truthy(&intent["verification_dispatched"]) && !truthy(&intent["verification_receipt"]) {
@@ -511,7 +511,10 @@ impl Monitor {
             row,
             &quota::latest_result(
                 row,
-                &self.state().unwrap_or(json!({}))["oauth_results"][id.to_string()],
+                &self
+                    .shared_state()
+                    .unwrap_or_else(|_| std::sync::Arc::new(json!({})))["oauth_results"]
+                    [id.to_string()],
                 at,
             ),
         );
@@ -576,7 +579,7 @@ impl Monitor {
         let mut update = Update::default();
         let mut meta = json!({"recovery_intent":next});
         if !auth.is_empty() {
-            let state = self.state()?;
+            let state = self.shared_state()?;
             let mut query = crate::oauth_state::query_metadata(
                 &state["scheduler"][id.to_string()],
                 &state["oauth_results"][id.to_string()],
@@ -602,7 +605,7 @@ impl Monitor {
             if auth.is_empty() { code } else { auth },
         );
         let key = string(&event["dedupe_key"]).to_owned();
-        if !recovery_events::known(&key, id, &self.state()?) {
+        if !recovery_events::known(&key, id, self.shared_state()?.as_ref()) {
             update.pending.insert(key, event);
         }
         update.generations = Some(BTreeMap::from([(id, generation)]));
@@ -670,7 +673,7 @@ impl Monitor {
         update.scheduler.insert(id, json!({"recovery_intent":next}));
         let key = format!("recovery:{id}:{}:success", string(&intent["fingerprint"]));
         let event = self.recovery_event(id, row, intent, test, "recovered", "");
-        if !recovery_events::known(&key, id, &self.state()?) {
+        if !recovery_events::known(&key, id, self.shared_state()?.as_ref()) {
             update.pending.insert(key.clone(), event);
         }
         update.history.insert(key,json!({"account_id":id,"account_name":row["name"],"model_test_job_id":test["job_id"],"model_id":test["model_id"],"legacy":false,"test_completed_at":test["completed_at"],"recovered_at":datetime(at)}));

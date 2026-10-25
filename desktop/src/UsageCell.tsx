@@ -80,7 +80,10 @@ export default function UsageCell({
   const request = useRef(0);
   const parent = account.type === "apikey" && account.parent_account_id ? quotaSettings.accounts.find(a => a.id === account.parent_account_id) : undefined;
   const identity = `${connectionKey}:${account.id}:${account.operation_versions?.usage ?? account.version}:${parent?.operation_versions?.usage ?? parent?.version ?? ""}`;
-  const usage = native?.identity === identity ? { ...native.value, today: account.usage?.today ?? native.value.today } : account.usage;
+  const usage = native?.identity === identity ? { ...native.value,
+    today: account.usage?.stats_status === "error" ? null : account.usage?.today ?? native.value.today,
+    stats_status: native.value.stats_status === "error" ? "error" : account.usage?.stats_status ?? native.value.stats_status,
+  } : account.usage;
   const latestUsage = useRef(usage); latestUsage.current = usage;
   const acceptNative = (value: UsageSummary) => setNative(previous => {
     if (previous?.identity === identity && (value.status === "error" || value.status === "authorization_required")) {
@@ -186,7 +189,8 @@ export default function UsageCell({
     <div className="usage-cell">
       {account.type === "apikey" && <KeyQuotaView quota={usage?.key_quota} busy={quotaBusy || busy !== null} online={online} refresh={() => void run("query_usage")} settings={() => setQuotaDialog(true)}/>}
       {quotaDialog && <KeyQuotaSettingsDialog account={account} online={online} close={() => setQuotaDialog(false)} saved={() => { ++request.current; latestUsage.current = account.usage; setNative(null); void run("query_usage"); }}/>}
-      {(usage?.branch === "apikey" || usage?.today) &&
+      {usage?.stats_status === "error" && <span className="usage-unknown">统计暂不可用，请重试</span>}
+      {usage?.stats_status !== "error" && (usage?.branch === "apikey" || usage?.today) &&
         (usage.today ? (
           <Stats stats={usage.today} />
         ) : (

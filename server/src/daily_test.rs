@@ -98,7 +98,7 @@ impl Schedule {
     }
     pub fn startup(&self, config: &Value, at: DateTime<Utc>) -> Result<()> {
         if self.store.0.is_read_only() {
-            self.store.snapshot()?;
+            self.store.shared_snapshot()?;
             return Ok(());
         }
         self.store.transaction(|state| {
@@ -122,7 +122,7 @@ impl Schedule {
                 .get("oauth_daily_test_time")
                 .unwrap_or(&json!("05:00")),
         )?;
-        let snapshot = self.store.snapshot()?;
+        let snapshot = self.store.shared_snapshot()?;
         let state = &snapshot["daily_test"];
         if state["enabled"] == enabled
             && state["time"] == time
@@ -140,7 +140,7 @@ impl Schedule {
         if self.store.0.is_read_only() {
             return Err(crate::error::Error::read_only());
         }
-        if !self.store.snapshot()?["daily_test"]["batches"]
+        if !self.store.shared_snapshot()?["daily_test"]["batches"]
             .as_object()
             .into_iter()
             .flat_map(|batches| batches.values())

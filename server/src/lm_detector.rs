@@ -8,11 +8,12 @@ use crate::{
     tokenizer,
 };
 use futures_util::StreamExt;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Duration,
 };
 
@@ -51,7 +52,7 @@ fn unavailable() -> Error {
 pub struct Snapshot {
     pub detector: lmfpd::Detector,
     pub tokenizer: tokenizer::Bank,
-    pub bank: Value,
+    merged_models: BTreeSet<String>,
     pub version: Value,
 }
 impl Snapshot {
@@ -68,20 +69,33 @@ impl Snapshot {
             ttl: 0.0,
         })
         .map_err(|_| unavailable())?;
-        let bank: Value = serde_json::from_slice(&std::fs::read(path.join("unified_bank.json"))?)
-            .map_err(|_| unavailable())?;
-        if bank["models"]
-            .as_array()
-            .is_none_or(|v| v.is_empty() || v.len() > 256)
-        {
+        #[derive(Deserialize)]
+        struct Model {
+            id: String,
+            display_name: String,
+        }
+        #[derive(Deserialize)]
+        struct Metadata {
+            models: Vec<Model>,
+        }
+        let bank: Metadata =
+            serde_json::from_slice(&std::fs::read(path.join("unified_bank.json"))?)
+                .map_err(|_| unavailable())?;
+        if bank.models.is_empty() || bank.models.len() > 256 {
             return Err(unavailable());
         }
+        let merged_models = bank
+            .models
+            .into_iter()
+            .filter(|m| m.display_name.contains('/'))
+            .map(|m| m.id)
+            .collect();
         let tokenizer = tokenizer::Bank::parse(&std::fs::read(path.join("tokenizer_bank.json"))?)?;
         let version = json!({"revision":meta["revision"],"sha256":meta["files"]["shared_detector.bin"]["sha256"],"files":meta["files"],"built_at":detector.built_at(),"tokenizer_built_at":tokenizer.built_at(),"analyzer_version":"lmfpd-0.1.0"});
         Ok(Self {
             detector,
             tokenizer,
-            bank,
+            merged_models,
             version,
         })
     }
@@ -106,20 +120,20 @@ impl Snapshot {
         Ok(report)
     }
     fn merged(&self, id: &str) -> bool {
-        self.bank["models"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|m| m["id"] == id)
-            .is_some_and(|m| string(&m["display_name"]).contains('/'))
+        self.merged_models.contains(id)
     }
+}
+#[derive(Default)]
+struct Snapshots {
+    active: Option<Arc<Snapshot>>,
+    history: BTreeMap<String, Weak<Snapshot>>,
 }
 #[derive(Clone)]
 pub struct Bank {
     settings: Arc<Settings>,
     state: Store,
     root: PathBuf,
-    snapshots: Arc<Mutex<BTreeMap<String, Arc<Snapshot>>>>,
+    snapshots: Arc<Mutex<Snapshots>>,
     sync_lock: Arc<tokio::sync::Mutex<()>>,
     sync_error: Arc<Mutex<Option<String>>>,
     tasks: crate::tasks::Tasks,
@@ -136,7 +150,7 @@ impl Bank {
             ),
             root,
             settings,
-            snapshots: Arc::new(Mutex::new(BTreeMap::new())),
+            snapshots: Arc::new(Mutex::new(Snapshots::default())),
             sync_lock: Arc::new(tokio::sync::Mutex::new(())),
             sync_error: Arc::new(Mutex::new(None)),
             tasks: crate::tasks::Tasks::supervised(supervisor),
@@ -155,8 +169,13 @@ impl Bank {
             return Err(unavailable());
         }
         let mut cache = self.snapshots.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(snapshot) = cache.get(revision) {
-            return Ok(snapshot.clone());
+        let active = self.revision()?;
+        cache.active = cache.history.get(&active).and_then(Weak::upgrade);
+        cache
+            .history
+            .retain(|_, snapshot| snapshot.strong_count() > 0);
+        if let Some(snapshot) = cache.history.get(revision).and_then(Weak::upgrade) {
+            return Ok(snapshot);
         }
         let mut path = self.root.join(revision);
         let mut temporary = None;
@@ -193,7 +212,12 @@ impl Bank {
         }
         let loaded = Arc::new(Snapshot::load(&path, &meta)?);
         drop(temporary);
-        cache.insert(revision.into(), loaded.clone());
+        cache
+            .history
+            .insert(revision.into(), Arc::downgrade(&loaded));
+        if revision == active {
+            cache.active = Some(loaded.clone());
+        }
         Ok(loaded)
     }
     pub async fn load(&self, revision: String) -> Result<Arc<Snapshot>> {
@@ -379,10 +403,15 @@ impl Bank {
             state["synced_at"] = crate::compat::now().into();
             Ok(())
         })?;
-        self.snapshots
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(revision.into(), Arc::new(snapshot));
+        let mut cache = self.snapshots.lock().unwrap_or_else(|e| e.into_inner());
+        let snapshot = Arc::new(snapshot);
+        cache
+            .history
+            .insert(revision.into(), Arc::downgrade(&snapshot));
+        cache.active = Some(snapshot);
+        cache
+            .history
+            .retain(|_, snapshot| snapshot.strong_count() > 0);
         Ok(())
     }
 }
@@ -489,6 +518,7 @@ mod tests {
             &pinned,
             &bank.load(REVISION.into()).await.unwrap()
         ));
+        let old = Arc::downgrade(&pinned);
         let restarted = test_bank(root.path(), false);
         assert_eq!(
             restarted.public().await.unwrap()["version"]["revision"],
@@ -497,6 +527,22 @@ mod tests {
         assert_eq!(
             restarted.load(REVISION.into()).await.unwrap().version,
             pinned.version
+        );
+        drop(pinned);
+        assert!(
+            old.upgrade().is_none(),
+            "an unused historical detector is released immediately"
+        );
+        let active = bank.load("2".repeat(40)).await.unwrap();
+        let active_weak = Arc::downgrade(&active);
+        drop(active);
+        assert!(
+            active_weak.upgrade().is_some(),
+            "the active detector stays warm"
+        );
+        assert_eq!(
+            bank.load(REVISION.into()).await.unwrap().version["revision"],
+            REVISION
         );
         let (stage, mut meta) = fixture();
         meta["revision"] = "3".repeat(40).into();

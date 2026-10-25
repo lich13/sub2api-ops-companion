@@ -103,8 +103,14 @@ impl Monitor {
     pub fn state(&self) -> Result<Value> {
         self.store.snapshot()
     }
+    pub fn shared_state(&self) -> Result<Arc<Value>> {
+        self.store.shared_snapshot()
+    }
     pub fn generation(&self, id: i64) -> Result<i64> {
-        Ok(credit_ownership::generation(&self.state()?, id))
+        Ok(credit_ownership::generation(
+            self.shared_state()?.as_ref(),
+            id,
+        ))
     }
     pub fn model(&self) -> Result<String> {
         Ok(string(&self.config.current()?["oauth_recovery_test_model_id"]).to_owned())
@@ -176,7 +182,7 @@ impl Monitor {
         if rows.is_empty() {
             return Ok(vec![]);
         }
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let ids = rows
             .iter()
             .filter_map(|v| integer(&v["id"]))
@@ -216,7 +222,7 @@ impl Monitor {
         Ok(live)
     }
     pub async fn startup(&self) -> Result<()> {
-        self.state()?;
+        self.shared_state()?;
         if self.actions.settings.read_only {
             return Ok(());
         }
@@ -302,13 +308,13 @@ impl Monitor {
             })
             .collect::<Vec<_>>();
         let enabled = config["oauth_recovery_monitor_enabled"] != false;
-        let state = self.state()?;
+        let state = self.shared_state()?;
         self.queries
             .observe_gates(&rows, &state["oauth_results"], &state["scheduler"], now)?;
         if enabled {
             recovery_events::discover(&self.store, &rows, &config, now)?;
         }
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let mut candidates = recovery_rules::candidates(
             &rows,
             &state["oauth_results"],
@@ -551,9 +557,10 @@ impl Monitor {
             );
         }
         let config = self.config.current()?;
-        let method_generation =
-            integer(&self.state()?["scheduler"][id.to_string()]["recovery_method_generation"])
-                .unwrap_or(0);
+        let method_generation = integer(
+            &self.shared_state()?["scheduler"][id.to_string()]["recovery_method_generation"],
+        )
+        .unwrap_or(0);
         let result = if truthy(&item["reuse_quota"]) {
             item["reuse_quota"].clone()
         } else {
@@ -575,7 +582,7 @@ impl Monitor {
         if generation != self.generation(id)? {
             return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
         }
-        let current = self.state()?;
+        let current = self.shared_state()?;
         let (mut update, intent, depleted) = recovery_events::quota_update(
             &item,
             &result,
@@ -684,7 +691,7 @@ impl Monitor {
                 "error_code":"missing_sub2api_admin_credentials","error":"缺少 Sub2API 地址或 Admin API Key"}),
             );
         }
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let config = self.config.current()?;
         let results = stream::iter(rows.into_iter().map(|row| {
             let this = self.clone();
@@ -720,14 +727,14 @@ impl Monitor {
         if !config.valid {
             return Ok(());
         }
-        let events = self.state()?["pending_events"]
+        let events = self.shared_state()?["pending_events"]
             .as_object()
             .into_iter()
             .flatten()
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         for key in events {
-            let state = self.state()?;
+            let state = self.shared_state()?;
             let event = &state["pending_events"][&key];
             if !event.is_object() {
                 continue;

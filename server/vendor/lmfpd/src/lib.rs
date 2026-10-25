@@ -1,7 +1,7 @@
 //! Language-model fingerprint detection.
 //!
 //! Load the reference data with [`Detector::load`] from the published URLs (cached) or a local directory, then score
-//! saved replies with [`Detector::analyze`] or run one live round with [`Detector::detect`].
+//! saved replies with [`Detector::analyze`] or run one live round with `Detector::detect` (the default `network` feature).
 
 mod analysis;
 mod challenge;
@@ -10,10 +10,13 @@ mod data;
 mod error;
 mod features;
 mod ranker;
+#[cfg(feature = "network")]
 mod request;
+#[cfg(feature = "network")]
 mod sample;
 
 use std::path::PathBuf;
+#[cfg(feature = "network")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -22,7 +25,9 @@ pub use challenge::generate_challenges;
 pub use data::DEFAULT_DATA_URLS;
 pub use error::Error;
 pub use features::parse_numbers;
+#[cfg(feature = "network")]
 pub use request::{Request, build_request};
+#[cfg(feature = "network")]
 pub use sample::request_sample;
 
 /// One model reply and the number count its challenge asked for.
@@ -200,6 +205,7 @@ pub struct Sample {
     pub error: Option<String>,
 }
 
+#[cfg(feature = "network")]
 impl Sample {
     fn accepted(&self) -> bool {
         matches!(self.state, SampleState::Complete | SampleState::Truncated)
@@ -262,6 +268,7 @@ impl Detector {
     }
 
     /// Sends one round of challenges to the model API and scores the replies. Errors only on an invalid config.
+    #[cfg(feature = "network")]
     pub fn detect(&self, config: &DetectConfig) -> Result<DetectResult, Error> {
         let options = request::Options::new(config)?;
         let challenges = generate_challenges(options.count)?;
@@ -292,6 +299,7 @@ impl Detector {
         Ok(DetectResult { challenges, samples, analysis, error })
     }
 
+    #[cfg(feature = "network")]
     fn score_round(&self, samples: &[Sample], strict: bool) -> (Option<Analysis>, Option<String>) {
         let accepted = samples.iter().filter(|sample| sample.accepted()).count();
         if strict && accepted != 3 {

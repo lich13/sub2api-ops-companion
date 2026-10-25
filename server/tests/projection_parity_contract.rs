@@ -1597,6 +1597,26 @@ async fn desktop_runtime_snapshot_reuses_shared_stats_without_upstream_io() {
             &first_usage["today"],
             "the next snapshot retains the shared stats entry",
         );
+        assert_eq!(second_usage["stats_status"], "ok");
+        runtime.invalidate().await;
+        let failed = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        assert_eq!(failed["usage"]["stats_status"], "error");
+        assert!(failed["usage"]["today"].is_null());
+        assert_eq!(
+            runtime
+                .account_usage(ACCOUNT_ID, "fixture-admin", false)
+                .await
+                .unwrap()["stats_status"],
+            "error"
+        );
+        sqlx::query("UPDATE projection_stats_fail_gate SET fail_stats=false")
+            .execute(&seed.pool)
+            .await
+            .unwrap();
+        runtime.invalidate().await;
+        let restored = runtime.account_snapshot(ACCOUNT_ID).await.unwrap();
+        assert_eq!(restored["usage"]["stats_status"], "ok");
+        assert_eq!(restored["usage"]["today"]["requests"], 3);
         assert!(mock.recorded_calls().is_empty());
     })
     .catch_unwind()
@@ -4089,4 +4109,54 @@ async fn native_account_usage_http_contract_is_private_isolated_and_keeps_child_
         .any(|v| v["account_id"] == 969_801 && v["status"] == "partial"));
     task.abort();
     fixture.close().await;
+}
+
+#[tokio::test]
+async fn slow_samples_keep_tie_order_and_filter_before_limiting() {
+    let _serial = POSTGRES_PROJECTION_LOCK.lock().await;
+    let db = open_test_database("slow-indexed-samples").await;
+    let id = 967_901;
+    for (account, platform, deleted) in [
+        (id, "openai", false),
+        (id + 1, "openai", false),
+        (id + 2, "openai", true),
+        (id + 3, "anthropic", false),
+    ] {
+        insert_account(&db.pool, account, platform, "oauth", json!({}), deleted).await;
+    }
+    let at = Utc::now();
+    for offset in 0..24_i64 {
+        sqlx::query("INSERT INTO usage_logs(id,account_id,created_at,model,stream,first_token_ms,duration_ms,output_tokens,inbound_endpoint,image_count) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+            .bind(967_901_000 + offset).bind(id).bind(at - Duration::minutes(1))
+            .bind(if offset == 23 { "fixture-image" } else { "fixture-model" })
+            .bind(offset != 22).bind(if offset == 21 { 0_i64 } else { 100_i64 })
+            .bind(if offset == 20 { 50_i64 } else { 200_i64 })
+            .bind(if offset == 19 { -1_i64 } else { 10_i64 })
+            .bind(if offset == 18 { "/v1/audio" } else { "/v1/responses" })
+            .bind(if offset == 17 { 1_i32 } else { 0_i32 })
+            .execute(&db.pool).await.unwrap();
+    }
+    let rows = db
+        .all(
+            sub2ops_server::sql::CAPACITY_SLOW_SQL,
+            &[(at - Duration::days(1)).into(), at.into()],
+        )
+        .await
+        .unwrap();
+    let selected = rows
+        .iter()
+        .filter(|r| r["account_id"] == id)
+        .map(|r| r["id"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        selected,
+        (7..=16).rev().map(|i| 967_901_000 + i).collect::<Vec<_>>()
+    );
+    assert!(rows
+        .iter()
+        .any(|r| r["account_id"] == id + 1 && r["id"].is_null()));
+    assert!(!rows
+        .iter()
+        .any(|r| r["account_id"] == id + 2 || r["account_id"] == id + 3));
+    db.close().await;
 }

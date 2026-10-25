@@ -103,7 +103,7 @@ pub fn discover(
     config: &Value,
     at: DateTime<Utc>,
 ) -> Result<()> {
-    let previous = store.snapshot()?;
+    let previous = store.shared_snapshot()?;
     let mut changes = vec![];
     for row in rows {
         let id = integer(&row["id"]).unwrap_or(0);

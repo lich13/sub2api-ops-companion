@@ -20,6 +20,7 @@ pub(crate) struct Cache {
     stats_at: Option<Instant>,
     stats_signature: Value,
     stats: usage::Stats,
+    stats_failed: bool,
 }
 
 impl Runtime {
@@ -37,7 +38,7 @@ impl Runtime {
             return Ok(cache.snapshot.clone());
         }
         let now = chrono::Utc::now();
-        let state = self.actions.queries.oauth.snapshot()?;
+        let state = self.actions.queries.oauth.shared_snapshot()?;
         let rows = self.actions.queries.accounts().await?;
         let mut specs = vec![];
         let mut accounts = Vec::with_capacity(rows.len());
@@ -70,8 +71,8 @@ impl Runtime {
                 .is_none_or(|at| at.elapsed() >= Duration::from_secs(15))
             || cache.stats_signature != signature
         {
-            cache.stats = if specs.is_empty() {
-                usage::Stats::new()
+            let stats = if specs.is_empty() {
+                Ok(usage::Stats::new())
             } else {
                 self.db
                     .all(
@@ -80,8 +81,9 @@ impl Runtime {
                     )
                     .await
                     .map(usage::stats_rows)
-                    .unwrap_or_default()
             };
+            cache.stats_failed = stats.is_err();
+            cache.stats = stats.unwrap_or_default();
             cache.stats_at = Some(Instant::now());
             cache.stats_signature = signature;
         }
@@ -94,6 +96,8 @@ impl Runtime {
         for account in &mut accounts {
             let id = integer(&account["id"]).unwrap();
             usage::attach_stats(id, &mut account["usage"], &cache.stats, 500_000);
+            account["usage"]["stats_status"] =
+                if cache.stats_failed { "error" } else { "ok" }.into();
             account["usage_windows"] = account["usage"]["windows"].clone();
             if crate::model_target::supported(account) {
                 account["degradation_mark"] = match &marks {

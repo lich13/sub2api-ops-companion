@@ -52,7 +52,7 @@ impl CreditController {
         let mut model = string(&config["oauth_recovery_test_model_id"]).to_owned();
         let attempts = integer(&task["test_attempts"]).unwrap_or(0) + 1;
         let mut task=self.save(id,task,json!({"stage":"testing","verification_dispatched":true,"test_attempts":attempts,"next_at":recovery_rules::retry_at(at,attempts)}))?;
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let generation = credit_ownership::generation(&state, id);
         let method = recovery_policy::method(&config, id);
         let selection =
@@ -77,7 +77,7 @@ impl CreditController {
             }
             _ => return Ok(()),
         };
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         if credit_ownership::generation(&state, id) != generation
             || method != recovery_policy::method(&self.hooks.config()?, id)
             || selection
@@ -116,7 +116,7 @@ impl CreditController {
             "test",
             json!({"success":truthy(&test["success"]),"error_code":string(&test["error_code"])}),
         );
-        if credit_ownership::generation(&self.store.snapshot()?, id) != generation {
+        if credit_ownership::generation(self.store.shared_snapshot()?.as_ref(), id) != generation {
             return Ok(());
         }
         let live = self.row(id).await?;
@@ -245,7 +245,7 @@ impl CreditController {
             }
         }
         let config = self.hooks.config()?;
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         if truthy(&task["verification_method"])
             && task["verification_method"] != json!(recovery_policy::method(&config, id))
             || integer(&task["verification_generation"]).unwrap_or(0)
@@ -317,7 +317,7 @@ impl CreditController {
             self.save(id,&task,json!({"stage":"confirming","error_code":"recovery_failed","next_at":datetime(at+Duration::seconds(2))}))?;
             return Ok(());
         }
-        task=self.save(id,&task,json!({"stage":"releasing","owned_version":cleared["updated_at"],"next_at":null,"release_requested_at":datetime(self.now()),"release_control_generation":credit_ownership::generation(&self.store.snapshot()?,id),"release_credential_fingerprint":credential_fingerprint(&cleared)}))?;
+        task=self.save(id,&task,json!({"stage":"releasing","owned_version":cleared["updated_at"],"next_at":null,"release_requested_at":datetime(self.now()),"release_control_generation":credit_ownership::generation(self.store.shared_snapshot()?.as_ref(),id),"release_credential_fingerprint":credential_fingerprint(&cleared)}))?;
         let verified = self.row(id).await?;
         if !self.owned(&verified, &task, true)?
             || !self.processing_eligible(&verified, &task, self.now())?
@@ -369,7 +369,7 @@ impl CreditController {
             return Ok(false);
         }
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         Ok(truthy(&task["owns_pause"])
             && truthy(&task["release_requested_at"])
@@ -490,8 +490,10 @@ impl CreditController {
         let actual = self.row(id).await?;
         if truthy(&task["pause_undo_requested_at"]) {
             if actual["schedulable"] == true
-                && json!(credit_ownership::generation(&self.store.snapshot()?, id))
-                    == task["control_generation"]
+                && json!(credit_ownership::generation(
+                    self.store.shared_snapshot()?.as_ref(),
+                    id
+                )) == task["control_generation"]
             {
                 self.save(
                     id,
@@ -509,8 +511,10 @@ impl CreditController {
             actions::set_schedulable(&self.actions, id, true, &self.store.admin_token()?, 3).await;
         let actual = self.row(id).await?;
         if actual["schedulable"] == true
-            && json!(credit_ownership::generation(&self.store.snapshot()?, id))
-                == task["control_generation"]
+            && json!(credit_ownership::generation(
+                self.store.shared_snapshot()?.as_ref(),
+                id
+            )) == task["control_generation"]
         {
             self.save(
                 id,

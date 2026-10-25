@@ -297,7 +297,7 @@ impl Runtime {
     /// Validation is also used by --check-state. It performs no business writes,
     /// migrations, task dispatch or state-file creation.
     pub async fn preflight(&self) -> Result<Value> {
-        startup("oauth_state", self.actions.queries.oauth.snapshot())?;
+        startup("oauth_state", self.actions.queries.oauth.shared_snapshot())?;
         startup("oauth_config", self.config.snapshot(None))?;
         startup("model_tests", self.tests.data())?;
         startup("detection", self.detection.store.read())?;

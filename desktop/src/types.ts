@@ -79,6 +79,7 @@ export type KeyQuota = {
   total_usage: { requests: number | null; tokens: number | null; cost: number | null } | null;
 };
 export type UsageSummary = {
+  stats_status?: "ok" | "error";
   key_quota?: KeyQuota;
   branch: "none" | "apikey" | "openai_oauth" | "grok_free" | "grok_paid" | "native";
   native_read?: boolean;
@@ -98,6 +99,7 @@ export type UsageSummary = {
   monthly_used?: number | null;
 };
 export type UsageWindow = {
+  window_minutes?: number;
   estimated?: boolean;
   key: string;
   label: string;

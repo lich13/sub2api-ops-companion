@@ -73,7 +73,7 @@ impl CreditController {
     }
     pub fn state(&self, id: i64) -> Result<Value> {
         Ok(
-            self.store.snapshot()?["scheduler"][id.to_string()]["auto_reset_credit"]
+            self.store.shared_snapshot()?["scheduler"][id.to_string()]["auto_reset_credit"]
                 .as_object()
                 .cloned()
                 .map(Value::Object)
@@ -104,7 +104,8 @@ impl CreditController {
     pub fn saved_quota(&self, row: &Value, at: DateTime<Utc>) -> Result<Value> {
         Ok(quota::latest_result(
             row,
-            &self.store.snapshot()?["oauth_results"][integer(&row["id"]).unwrap_or(0).to_string()],
+            &self.store.shared_snapshot()?["oauth_results"]
+                [integer(&row["id"]).unwrap_or(0).to_string()],
             at,
         ))
     }
@@ -145,7 +146,7 @@ impl CreditController {
         Ok(credit_ownership::owned(
             row,
             task,
-            &self.store.snapshot()?,
+            self.store.shared_snapshot()?.as_ref(),
             same_version,
         ))
     }
@@ -161,7 +162,7 @@ impl CreditController {
         if !self.eligible(row, at, held)? {
             return Ok(Value::Null);
         }
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][integer(&row["id"]).unwrap_or(0).to_string()];
         let query = &meta["quota_query"];
         if query["auth_fingerprint"] == credential_fingerprint(row)
@@ -196,7 +197,7 @@ impl CreditController {
         if count <= 0 {
             return Ok("no_credit");
         }
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][integer(&row["id"]).unwrap_or(0).to_string()];
         Ok(
             if credit_rules::credit_reason(row, evidence, meta, &self.saved_quota(row, at)?, at)?
@@ -223,7 +224,7 @@ impl CreditController {
             if !why.is_empty() {Ok(Value::Null)} else {let mut evidence=evidence.clone();evidence["evidence_at"]=datetime(trigger).into();Ok(evidence)}
         })?;
         if changed {
-            self.audit(id,if result.is_null() {"credit_skipped"} else {"credit_admitted"},json!({"reason":self.store.snapshot()?["scheduler"][id.to_string()]["credit_admission"]["reason"]}));
+            self.audit(id,if result.is_null() {"credit_skipped"} else {"credit_admitted"},json!({"reason":self.store.shared_snapshot()?["scheduler"][id.to_string()]["credit_admission"]["reason"]}));
         }
         Ok(result)
     }
@@ -235,7 +236,7 @@ impl CreditController {
             return Ok(());
         }
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?.to_string();
-        let value = self.store.snapshot()?["scheduler"][&id]["credit_admission"].clone();
+        let value = self.store.shared_snapshot()?["scheduler"][&id]["credit_admission"].clone();
         if truthy(&value) && !truthy(&value["recovered_at"]) {
             self.store.transaction(|state| {
                 let current = &mut state["scheduler"][&id]["credit_admission"];
@@ -334,7 +335,7 @@ impl CreditController {
         }
         let trigger = parse_datetime(&task["evidence_at"]);
         let completed = parse_datetime(&task["reset_completed_at"]);
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         self.save(id,task,json!({"policy_version":1,"trigger_at":trigger.map(datetime),"consume_deadline_at":trigger.map(|t|datetime(t+Duration::seconds(300))),"verification_deadline_at":completed.map(|t|datetime(t+Duration::seconds(300))),"policy_credential_fingerprint":credential_fingerprint(&self.row(id).await?),"policy_control_generation":task.get("control_generation").filter(|v|!v.is_null()).cloned().unwrap_or(json!(credit_ownership::generation(&state,id))),"policy_detection_version":self.hooks.detection_version(id)?,"policy_method":recovery_policy::method(&self.hooks.config()?,id),"policy_method_generation":integer(&meta["recovery_method_generation"]).unwrap_or(0),"verification_dispatched":truthy(&task["verification_dispatched"]) || task["stage"]=="testing" && integer(&task["test_attempts"]).unwrap_or(0)>0 && !truthy(&task["test_completed_at"]),"policy_checked_at":datetime(at)}))
     }
@@ -345,7 +346,7 @@ impl CreditController {
         task: &Value,
         at: DateTime<Utc>,
     ) -> Result<&'static str> {
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         let meta = &state["scheduler"][id.to_string()];
         if parse_datetime(&task["policy_checked_at"])
             .is_some_and(|checked| self.now() < checked - Duration::seconds(1))
@@ -532,7 +533,7 @@ impl CreditController {
         if !config.valid {
             return Ok(());
         }
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         for (id, meta) in state["scheduler"].as_object().into_iter().flatten() {
             for (episode, notice) in meta["credit_result_notifications"]
                 .as_object()

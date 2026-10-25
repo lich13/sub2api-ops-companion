@@ -18,6 +18,71 @@ fn native(row: &Value, data: Value) -> Value {
 }
 
 #[test]
+fn oauth_cost_windows_use_actual_duration_and_never_start_in_the_future() {
+    use chrono::Duration;
+    use sub2ops_server::compat::{datetime, parse_datetime};
+    for (key, minutes, label, fallback) in [
+        ("codex_5h", json!(300), "5h", 300),
+        ("codex_7d", json!(10080), "7d", 10080),
+        ("codex_7d", json!(43200), "30d", 10080),
+        ("codex_7d", json!(90), "90m", 10080),
+        ("codex_7d", Value::Null, "7d", 10080),
+        ("codex_7d", json!(-1), "7d", 10080),
+        ("codex_7d", json!(5256001), "7d", 10080),
+    ] {
+        let duration = minutes
+            .as_i64()
+            .filter(|m| (1..=5256000).contains(m))
+            .unwrap_or(fallback);
+        let mut account = row("openai", "oauth", "");
+        account["quota_plan_type"] = "plus".into();
+        account["extra"][format!("{key}_used_percent")] = json!(32);
+        account["extra"]["codex_usage_updated_at"] = datetime(at()).into();
+        account["extra"][format!("{key}_window_minutes")] = minutes;
+        for (reset, start) in [
+            (
+                json!(datetime(at() + Duration::minutes(duration - 30))),
+                at() - Duration::minutes(30),
+            ),
+            (
+                json!(datetime(at() + Duration::minutes(duration + 1))),
+                at() - Duration::minutes(duration),
+            ),
+            (
+                json!(datetime(at() - Duration::minutes(1))),
+                at() - Duration::minutes(duration),
+            ),
+            (Value::Null, at() - Duration::minutes(duration)),
+        ] {
+            account["extra"][format!("{key}_reset_at")] = reset;
+            let mut usage = usage::project(&account, at(), &Value::Null);
+            let window = usage["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|w| w["key"] == key)
+                .unwrap();
+            assert_eq!(window["label"], label);
+            assert_eq!(parse_datetime(&window["stats_start"]), Some(start));
+            let stats = usage::stats_rows(vec![
+                json!({"account_id":1,"key":key,"requests":2,"tokens":100,"cost":8,"standard_cost":9,"user_cost":10}),
+            ]);
+            usage::attach_stats(1, &mut usage, &stats, 500_000);
+            let window = usage["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|w| w["key"] == key)
+                .unwrap();
+            assert_eq!(window["stats"]["cost"], 8.0);
+            if key == "codex_7d" {
+                assert_eq!(window["estimated_total_cost"], 25.0);
+            }
+        }
+    }
+}
+
+#[test]
 fn every_native_platform_and_valid_account_type_uses_its_upstream_source() {
     for (platform, kind, mode, source) in [
         ("anthropic", "apikey", "", ""),

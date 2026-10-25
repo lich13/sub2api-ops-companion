@@ -25,7 +25,7 @@ impl Monitor {
     ) -> Result<()> {
         let started = self.now();
         let model = self.model()?;
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let generations = rows
             .iter()
             .filter_map(|row| {
@@ -166,7 +166,7 @@ impl Monitor {
             }
             Err(e) => return Err(e),
         };
-        let state = self.state()?;
+        let state = self.shared_state()?;
         let saved = quota::latest_result(&row, &state["oauth_results"][id.to_string()], self.now());
         let metadata = &state["scheduler"][id.to_string()];
         let result = if let Some(cycle) = &cycle {

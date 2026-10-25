@@ -393,7 +393,7 @@ impl Detection {
         if row["schedulable"] != true {
             return Ok("调度已关闭".into());
         }
-        let state = self.monitor.state()?;
+        let state = self.monitor.shared_state()?;
         let result = &state["oauth_results"][id.to_string()];
         if row["type"] == "oauth" {
             let auth = &state["scheduler"][id.to_string()]["quota_query"]["auth_fingerprint"];

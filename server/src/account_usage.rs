@@ -466,7 +466,7 @@ impl Runtime {
 
     async fn local_account_usage(&self, row: &Value) -> Result<Value> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
-        let state = self.actions.queries.oauth.snapshot()?;
+        let state = self.actions.queries.oauth.shared_snapshot()?;
         let result = crate::queries::latest_completed_result(
             &state["oauth_results"][id.to_string()],
             &state["scheduler"][id.to_string()],
@@ -474,7 +474,7 @@ impl Runtime {
         let mut usage = crate::usage::project(row, Utc::now(), &result);
         let specs = crate::usage::stats_specs(id, &usage);
         let stats = if specs.is_empty() {
-            crate::usage::Stats::new()
+            Ok(crate::usage::Stats::new())
         } else {
             self.db
                 .all(
@@ -483,9 +483,9 @@ impl Runtime {
                 )
                 .await
                 .map(crate::usage::stats_rows)
-                .unwrap_or_default()
         };
-        crate::usage::attach_stats(id, &mut usage, &stats, 500_000);
+        usage["stats_status"] = if stats.is_err() { "error" } else { "ok" }.into();
+        crate::usage::attach_stats(id, &mut usage, &stats.unwrap_or_default(), 500_000);
         Ok(usage)
     }
 

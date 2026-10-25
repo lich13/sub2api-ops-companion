@@ -157,7 +157,7 @@ impl operations::Backend for Hooks {
                 row = runtime.monitor.row(id).await?;
             }
             let at = runtime.monitor.now();
-            let state = runtime.monitor.store.snapshot()?;
+            let state = runtime.monitor.store.shared_snapshot()?;
             let meta = &state["scheduler"][id.to_string()];
             if meta["quota_query"]["auth_fingerprint"]
                 == crate::oauth_admission::credential_fingerprint(&row)

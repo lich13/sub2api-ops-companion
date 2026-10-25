@@ -19,7 +19,7 @@ impl CreditController {
             .iter()
             .filter_map(|row| integer(&row["id"]).map(|id| (id, row.clone())))
             .collect::<BTreeMap<_, _>>();
-        let state = self.store.snapshot()?;
+        let state = self.store.shared_snapshot()?;
         for (key, meta) in state["scheduler"].as_object().into_iter().flatten() {
             let id = key.parse::<i64>().map_err(|_| Error::internal())?;
             let mut task = meta["auto_reset_credit"]
@@ -104,7 +104,7 @@ impl CreditController {
             return Ok(());
         }
         if self.hooks.config()?["oauth_auto_reset_credit_enabled"] != true
-            && !self.store.snapshot()?["scheduler"]
+            && !self.store.shared_snapshot()?["scheduler"]
                 .as_object()
                 .into_iter()
                 .flatten()
@@ -189,8 +189,9 @@ impl CreditController {
                 )?;
                 return Ok(());
             }
-            let control =
-                self.store.snapshot()?["scheduler"][id.to_string()]["manual_control"].clone();
+            let control = self.store.shared_snapshot()?["scheduler"][id.to_string()]
+                ["manual_control"]
+                .clone();
             let changed = parse_datetime(&control["at"]);
             let evidence = if row.is_object() && enabled && !truthy(&task["attempt_at"]) {
                 self.depletion(&row, at, false).await?
@@ -254,8 +255,9 @@ impl CreditController {
             if !truthy(&evidence) {
                 return Ok(());
             }
-            let control =
-                self.store.snapshot()?["scheduler"][id.to_string()]["manual_control"].clone();
+            let control = self.store.shared_snapshot()?["scheduler"][id.to_string()]
+                ["manual_control"]
+                .clone();
             let observed = parse_datetime(&evidence["evidence_at"]);
             if [&task["recovered_at"], &control["at"]]
                 .into_iter()

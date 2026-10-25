@@ -275,7 +275,7 @@ impl ModelTests {
         self.contexts
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|key, old| key == id || old.row["id"] != aid);
+            .retain(|key, old| key == id && retryable || old.row["id"] != aid);
         Ok(())
     }
     async fn sample(

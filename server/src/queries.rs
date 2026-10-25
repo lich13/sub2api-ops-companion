@@ -401,7 +401,7 @@ impl Queries {
         Ok(error_dto(&row, true))
     }
     pub async fn recoveries(&self, before: Option<i64>, limit: usize) -> Result<Value> {
-        let state = self.oauth.snapshot()?;
+        let state = self.oauth.shared_snapshot()?;
         let mut rows: Vec<Value> = state["recovery_history"]
             .as_object()
             .into_iter()
