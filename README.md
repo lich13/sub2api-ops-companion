@@ -32,7 +32,7 @@ Compose 默认只将端口发布到宿主机 `127.0.0.1:18081`；容器内服务
 
 Dependabot 每周一 09:00（Asia/Taipei）检查两份 Cargo 锁文件、前端、Python 测试工具、基础镜像、GitHub Actions 和 Android 应用库；普通版本观察七天后提出更新。Cargo、Python、镜像、Actions、Android 各最多一个普通 PR，前端按 React、Tauri、其他依赖最多三个。安全修复不等待普通周期，所有合并仍由维护者完成。仓库设置需开启漏洞告警、自动安全修复及合并后删分支；无告警不等于依赖图已成功识别。
 
-Cargo 使用 `lockfile-only`，包含直接和间接依赖，保留 manifest 的兼容约束；其他生态的 `0.x` 包默认只提出补丁更新。新增包默认仅开放补丁，确认兼容策略后再扩充普通小版本更新名单。React 与 React DOM 保持相同版本，类型包一起检查；Tauri JS 包一起更新并与 Rust 侧及 Mac／Android 构建联动验证；普通自动更新仅开放已验证系列的补丁，新的小版本由维护者把 JS 包、Rust 核心、构建辅助和插件成组更新。安全修复需要跨兼容线时单独验证，不通过忽略漏洞、放宽检查或自动合并处理。
+Cargo 使用 `lockfile-only`，包含直接和间接依赖，并显式限制普通更新候选，避免解析器尝试跨越 `0.x` 兼容线；各生态的 `0.x` 包默认只提出补丁更新，已确认的稳定依赖族允许兼容小版本。新增包默认仅开放补丁，确认兼容策略后再扩充普通小版本更新名单。React 与 React DOM 保持相同版本，类型包一起检查；Tauri JS 包一起更新并与 Rust 侧及 Mac／Android 构建联动验证；普通自动更新仅开放已验证系列的补丁，新的小版本由维护者把 JS 包、Rust 核心、构建辅助和插件成组更新。安全修复需要跨兼容线时单独验证，不通过忽略漏洞、放宽检查或自动合并处理。
 
 pnpm 保留 `packageManager` 中的精确版本，由 Corepack 和 CI 的 pnpm 安装步骤选择该版本。`pmOnFail: ignore` 关闭 pnpm 自身的版本切换，使锁文件保持单文档，供 GitHub 依赖图识别；本机在 `desktop` 目录运行 Corepack；从父目录使用 `pnpm --dir` 不会让 Corepack 读取子目录的版本声明。直接调用其他 pnpm 二进制前先核对版本。依赖变更后使用指定版本重新生成锁文件并验证 `(cd desktop && corepack pnpm install --frozen-lockfile)`，不手工删除锁文件中的文档。
 
@@ -43,6 +43,8 @@ pnpm 保留 `packageManager` 中的精确版本，由 Corepack 和 CI 的 pnpm �
 当前延期：jsdom 30、lucide-react 1.x、应用直接使用的 reqwest 0.13，以及其他没有安全或实际功能需要的跨兼容线升级。每月复核延期项和维护状态；生产服务仍为 Rust，Python 依赖仅用于隔离测试及固定历史参考代码。
 
 Tauri 当前使用 2.12 核心／运行库与 2.7 构建辅助组件；其内部接口不能与旧 2.11 核心混用，更新时保持整组一致。Python 参考测试及依赖审计使用现有 Python 3.12 环境，例如 `uvx --python 3.12 pip-audit -r requirements.txt --progress-spinner off`，避免审计工具自动选择尚无依赖轮子的更新解释器。
+
+桌面锁文件中的 `glib 0.18.5` 有 `GHSA-wrw7-89jp-8q8g` 告警，但它仅属于未交付的 Linux 桌面依赖；Mac ARM64、Android ARM64 的实际依赖图和服务端均不包含它。告警保持开放，不加入审计忽略；新增 Linux 桌面支持前必须更新其 GTK／glib 依赖链。
 
 ## 环境变量
 
