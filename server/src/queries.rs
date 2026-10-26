@@ -447,6 +447,9 @@ impl Queries {
                 )
                 .into();
                 value["model_id"] = clean(&row["model_id"], 160).into();
+                if let Some(attempts) = row["attempt_count"].as_u64() {
+                    value["attempt_count"] = attempts.into();
+                }
                 if row["kind"] == "quota_recovery" {
                     value["kind"] = "quota_recovery".into();
                 }

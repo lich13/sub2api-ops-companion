@@ -1295,7 +1295,8 @@ const oauthLabels: Record<string, string> = {
   oauth_daily_test_time: "测活时间（北京时间）",
   oauth_usage_refresh_concurrency: "额度查询并发",
   oauth_recovery_test_concurrency: "测活并发",
-  oauth_early_probe_batch_size: "单轮账号上限",
+  connection_test_retry_interval_seconds: "连接测试重试间隔（秒）",
+  connection_test_max_retries: "连接测试最大重试次数",
   oauth_recovery_test_model_id: "测活模型",
   model_detection_model_id: "自动检测模型",
 };
@@ -1361,7 +1362,7 @@ function SettingsPage({
           >
             {(draft, set) => (
               <>
-                {Object.entries(oauthLabels).filter(([key]) => key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string").map(([key, label]) => (
+                {Object.entries(oauthLabels).filter(([key]) => (key !== "model_detection_model_id" || typeof config.oauth.model_detection_model_id === "string") && (!key.startsWith("connection_test_") || typeof config.oauth[key] === "number")).map(([key, label]) => (
                   <Field
                     key={key}
                     label={label}
@@ -1370,6 +1371,7 @@ function SettingsPage({
                     set={(v) => set(key, v)}
                   />
                 ))}
+                {typeof config.oauth.connection_test_max_retries === "number" && <p>预约测试和额度恢复连接测活共用重试设置；次数不含首次执行，0 表示不重试，保存后对新一轮测试生效。</p>}
                 {draft.model_detection_platforms != null && <DetectionPlatformSettings value={draft.model_detection_platforms} set={v => set("model_detection_platforms", v)}/>}
                 {typeof config.oauth.model_detection_model_id !== "string" && <p className="bad-text">请升级服务端以配置全局自动检测模型。</p>}
                 <fieldset className="recovery-compatibility" disabled={typeof config.oauth.model_detection_model_id !== "string"}><RecoveryAccounts accounts={accounts} connection={(draft.oauth_recovery_connection_account_ids as number[]) ?? []} models={(draft.oauth_recovery_model_account_ids as number[]) ?? []} change={(connection, models) => { set("oauth_recovery_connection_account_ids", connection); set("oauth_recovery_model_account_ids", models); }}/></fieldset>

@@ -123,6 +123,21 @@ async function renderPanel(connectionKey: string) {
 }
 
 describe("operation panel batch history", () => {
+  it("shows attempts and lets the user cancel a scheduled retry after its first attempt", async () => {
+    const job=operation({action:"test",status:"queued",started_at:"2030-01-02T01:31:00Z",scheduled_at:"2030-01-02T01:31:00Z",attempt_count:1,next_retry_at:"2030-01-02T01:31:10Z",reason:"等待连接测试重试"});
+    vi.mocked(api).mockImplementation(async (method,path) => {
+      if(method === "GET") return {items:[job]} as never;
+      if(path.endsWith("/cancel")) return {...job,status:"cancelled"} as never;
+      throw new Error(path);
+    });
+    await renderPanel("retry-connection");
+    await act(async () => entryButton().click());
+    expect(container.textContent).toContain("已尝试 1 次");
+    expect(container.textContent).toContain("下次重试");
+    await act(async () => buttonByText("取消").click());
+    expect(vi.mocked(api).mock.calls.some(([method,path]) => method === "POST" && path.endsWith("/cancel"))).toBe(true);
+  });
+
   it("does not start a new series on another connection after a delayed stop response", async () => {
     const job = operation({ action: "test", status: "needs_confirmation", repeat: "quota_cycle", repeat_state: "needs_confirmation", requested: { confirmed: true } });
     const stopped = deferred<Operation>();

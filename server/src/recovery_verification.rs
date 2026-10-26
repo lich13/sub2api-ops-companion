@@ -175,6 +175,18 @@ impl Monitor {
         {
             return Ok(json!({"success":false,"skipped":true,"error_code":"manual_intervention"}));
         }
+        if intent["status"] == "retry_exhausted" {
+            return Ok(json!({"success":false,"skipped":true,"error_code":"retry_exhausted"}));
+        }
+        if method == "connection"
+            && integer(&intent["connection_attempt_count"]).unwrap_or(0) > 0
+            && crate::compat::parse_datetime(&intent["next_retry_at"])
+                .is_some_and(|due| due > self.now())
+        {
+            return Ok(
+                json!({"success":false,"deferred":true,"error_code":"verification_backoff"}),
+            );
+        }
         let row = match self.row(id).await {
             Ok(row) => row,
             Err(error)
@@ -283,7 +295,17 @@ impl Monitor {
             intent["block_signature"] = block_signature(&row).into();
             intent["tested_at"] = datetime(self.now()).into();
             intent["attempt_count"] = json!(integer(&intent["attempt_count"]).unwrap_or(0) + 1);
+            if method == "connection" {
+                let policy = match crate::connection_retry::Policy::saved(&intent)? {
+                    Some(policy) => policy,
+                    None => crate::connection_retry::Policy::config(&self.config.current()?)?,
+                };
+                intent["retry_policy"] = serde_json::to_value(policy)?;
+                intent["connection_attempt_count"] =
+                    (integer(&intent["connection_attempt_count"]).unwrap_or(0) + 1).into();
+            }
             intent["verification_dispatched"] = true.into();
+            intent["next_retry_at"] = "".into();
             intent["waiting_reason"] = "".into();
             if !self.save_intent(id, original, &intent, generation, method_generation)? {
                 return Ok(
@@ -320,6 +342,15 @@ impl Monitor {
                 intent["attempt_count"] = json!(integer(&intent["attempt_count"])
                     .unwrap_or(1)
                     .saturating_sub(1));
+                if method == "connection" {
+                    let attempts = integer(&intent["connection_attempt_count"])
+                        .unwrap_or(1)
+                        .saturating_sub(1);
+                    intent["connection_attempt_count"] = attempts.into();
+                    if attempts == 0 {
+                        intent.as_object_mut().unwrap().remove("retry_policy");
+                    }
+                }
                 intent["next_retry_at"] = result
                     .get("next_at")
                     .filter(|v| truthy(v))
@@ -401,6 +432,17 @@ impl Monitor {
         let after = self.row(id).await?;
         if !truthy(&result["success"]) {
             self.recovery_failed(id, &after, &intent, &result, generation, method_generation)?;
+            let mut result = result;
+            if let Some(attempts) = intent.get("connection_attempt_count") {
+                result["attempt_count"] = attempts.clone();
+                let state = self.shared_state()?;
+                let next = &state["scheduler"][id.to_string()]["recovery_intent"]["next_retry_at"];
+                result["next_retry_at"] = if truthy(next) {
+                    next.clone()
+                } else {
+                    Value::Null
+                };
+            }
             return Ok(result);
         }
         if !self.selected(id, generation, method_generation, method)? {
@@ -526,6 +568,9 @@ impl Monitor {
         };
         let key = format!("recovery:{id}:{fingerprint}:{suffix}");
         let mut event = json!({"account_id":id,"account_name":row["name"].as_str().filter(|v|!v.is_empty()).unwrap_or("-"),"plan_type":quota::account_plan(row),"window_labels":intent["window_keys"].as_array().into_iter().flatten().map(|v|string(v).trim_start_matches("codex_")).collect::<Vec<_>>(),"status":status,"stage":if status=="auth_failed" {"account_test"} else {"recovery"},"checked_at":datetime(at),"model_id":test["model_id"],"duration_ms":test["duration_ms"],"test_success":truthy(&test["success"]),"error_code":code,"error":safe_error(&test["error"],800),"dedupe_key":key,"reset_at":intent["due_at"],"reset_source":intent["source"],"fingerprint":fingerprint,"remaining_summary":summary["remaining_summary"]});
+        if let Some(attempts) = intent.get("connection_attempt_count") {
+            event["attempt_count"] = attempts.clone();
+        }
         if test["job_id"].is_string() {
             event["model_test_job_id"] = test["job_id"].clone();
         }
@@ -554,22 +599,43 @@ impl Monitor {
         let code = string(&test["error_code"]);
         let auth = recovery_events::auth_code(code);
         let mut next = intent.clone();
+        let connection = test["recovery_method"] == "connection";
+        let connection_next = if connection && crate::connection_retry::retryable(test) {
+            crate::connection_retry::Policy::saved(intent)?
+                .unwrap_or_default()
+                .next(
+                    integer(&intent["connection_attempt_count"]).unwrap_or(1),
+                    crate::compat::parse_datetime(&test["completed_at"])
+                        .unwrap_or_else(|| self.now()),
+                )
+        } else {
+            None
+        };
+        let exhausted =
+            connection && crate::connection_retry::retryable(test) && connection_next.is_none();
         next["status"] = if !auth.is_empty() {
             "auth_failed"
-        } else if truthy(&test["skipped"]) {
+        } else if exhausted {
+            "retry_exhausted"
+        } else if connection && connection_next.is_none() || truthy(&test["skipped"]) {
             "blocked"
         } else {
             "retry"
         }
         .into();
-        next["next_retry_at"] = if !auth.is_empty() || truthy(&test["skipped"]) {
+        next["next_retry_at"] = if connection {
+            connection_next.unwrap_or_default()
+        } else if !auth.is_empty() || truthy(&test["skipped"]) {
             String::new()
         } else {
             recovery_rules::retry_at(self.now(), integer(&intent["attempt_count"]).unwrap_or(1))
         }
         .into();
-        next["last_error_code"] = code.into();
+        next["last_error_code"] = if exhausted { "retry_exhausted" } else { code }.into();
         next["last_error"] = safe_error(&test["error"], 800).into();
+        next["test_completed_at"] = test["completed_at"].clone();
+        next["waiting_reason"] = "".into();
+        next["waiting_until"] = "".into();
         next.as_object_mut()
             .unwrap()
             .shift_remove("verification_dispatched");
@@ -682,6 +748,10 @@ impl Monitor {
         self.store.commit(update)?;
         let mut result = test.clone();
         result["recovered"] = true.into();
+        if let Some(attempts) = intent.get("connection_attempt_count") {
+            result["attempt_count"] = attempts.clone();
+            result["next_retry_at"] = Value::Null;
+        }
         Ok(result)
     }
 }

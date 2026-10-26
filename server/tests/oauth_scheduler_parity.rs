@@ -169,6 +169,7 @@ struct MockUpstream {
     clear_status: Arc<StdMutex<u16>>,
     temp_status: Arc<StdMutex<u16>>,
     readonly_after_usage: Arc<StdMutex<Option<PathBuf>>>,
+    push_status: Arc<StdMutex<u16>>,
 }
 
 impl MockUpstream {
@@ -192,6 +193,7 @@ impl MockUpstream {
             clear_status: Arc::new(StdMutex::new(200)),
             temp_status: Arc::new(StdMutex::new(200)),
             readonly_after_usage: Arc::new(StdMutex::new(None)),
+            push_status: Arc::new(StdMutex::new(200)),
         }
     }
 
@@ -418,7 +420,10 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
     }
 
     if method == Method::POST && path == "/push" {
-        return json_response(200, json!({"code":200,"data":"fixture-delivered"}));
+        return json_response(
+            *state.push_status.lock().unwrap(),
+            json!({"code":200,"data":"fixture-delivered"}),
+        );
     }
 
     state
@@ -592,7 +597,11 @@ impl Harness {
     }
 
     async fn restart_runtime(&mut self) {
-        let settings = (*self.runtime.settings).clone();
+        let mut settings = (*self.runtime.settings).clone();
+        if settings.bark_path.exists() {
+            settings.bark =
+                serde_json::from_slice(&fs::read(&settings.bark_path).unwrap()).unwrap();
+        }
         let old = self.runtime.0.take().expect("old harness Runtime exists");
         old.close().await;
         drop(old);
@@ -3084,7 +3093,7 @@ async fn recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retr
             assert_eq!(intent["last_error_code"], "http_500");
             assert_eq!(
                 intent["next_retry_at"],
-                datetime(due + Duration::seconds(60))
+                datetime(due + Duration::seconds(10))
             );
             let event = state["pending_events"]
                 .as_object()
@@ -3442,9 +3451,9 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
                         && event["test_success"] == true
                 })
             });
-            if intent["status"] == "retry"
+            if intent["status"] == "blocked"
                 && intent["last_error_code"] == "recovery_state_changed"
-                && intent["next_retry_at"] == datetime(due + Duration::seconds(60))
+                && intent["next_retry_at"] == ""
                 && event_committed
             {
                 break;
@@ -3457,12 +3466,9 @@ async fn monitor_recovery_stops_if_account_concurrency_changes_during_test() {
 
     let intent =
         &harness.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"];
-    assert_eq!(intent["status"], "retry");
+    assert_eq!(intent["status"], "blocked");
     assert_eq!(intent["last_error_code"], "recovery_state_changed");
-    assert_eq!(
-        intent["next_retry_at"],
-        datetime(due + Duration::seconds(60))
-    );
+    assert_eq!(intent["next_retry_at"], "");
     let state = harness.runtime.monitor.state().unwrap();
     let event = state["pending_events"]
         .as_object()
@@ -4941,5 +4947,358 @@ async fn traffic_arriving_after_enqueue_cancels_rate_probe_at_dispatch() {
         .execute(&h.runtime.db.pool)
         .await
         .unwrap();
+    h.close().await;
+}
+
+async fn wait_connection_attempt(h: &Harness, id: i64, attempts: i64, status: &str) -> Value {
+    tokio::time::timeout(StdDuration::from_secs(8), async {
+        loop {
+            let intent = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]
+                .clone();
+            if intent["connection_attempt_count"] == attempts
+                && intent["status"] == status
+                && intent["verification_dispatched"] != true
+            {
+                return intent;
+            }
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("connection recovery attempt must reach its final state")
+}
+
+#[tokio::test]
+async fn recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe() {
+    for (retries, interval, success) in [(3, 10, false), (0, 10, false), (1, 7, true)] {
+        let mut h = Harness::new().await;
+        let due = h.now() + Duration::hours(1);
+        let row = h
+            .seed_account("plus", "fixture-connection-retry", json!({}))
+            .await;
+        let id = integer(&row["id"]).unwrap();
+        prepare_expired_recovery(&h, &row, due).await;
+        h.runtime
+            .config
+            .oauth
+            .transaction(|config| {
+                config["connection_test_retry_interval_seconds"] = interval.into();
+                config["connection_test_max_retries"] = retries.into();
+                Ok(())
+            })
+            .unwrap();
+        h.runtime.monitor.startup().await.unwrap();
+        h.mock.set_test_sse(
+            "data: {\"type\":\"error\",\"code\":\"http_500\",\"message\":\"fixture failure\"}\n\n",
+        );
+        for attempt in 1..=retries + 1 {
+            let at = due + Duration::seconds(interval * (attempt - 1));
+            h.set_now(at);
+            if success && attempt > 1 {
+                h.mock
+                    .set_test_sse("data: {\"type\":\"test_complete\",\"success\":true}\n\n");
+            }
+            h.runtime.monitor.tick().await.unwrap();
+            let status = if success && attempt > 1 {
+                "recovered"
+            } else if attempt <= retries {
+                "retry"
+            } else {
+                "retry_exhausted"
+            };
+            let intent = wait_connection_attempt(&h, id, attempt, status).await;
+            if status == "retry" {
+                assert_eq!(
+                    intent["next_retry_at"],
+                    datetime(at + Duration::seconds(interval))
+                );
+                h.runtime
+                    .config
+                    .oauth
+                    .transaction(|config| {
+                        config["connection_test_max_retries"] = 0.into();
+                        config["connection_test_retry_interval_seconds"] = 300.into();
+                        Ok(())
+                    })
+                    .unwrap();
+                h.restart_runtime().await;
+                h.runtime.monitor.startup().await.unwrap();
+                h.set_now(at + Duration::seconds(interval - 1));
+                h.runtime.monitor.tick().await.unwrap();
+                assert_eq!(h.mock.count("POST", "/test"), attempt as usize);
+                let saved = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                    ["recovery_intent"]
+                    .clone();
+                assert_eq!(saved["connection_attempt_count"], attempt);
+                assert_eq!(saved["next_retry_at"], intent["next_retry_at"]);
+            }
+        }
+        assert_eq!(h.mock.count("POST", "/test"), (retries + 1) as usize);
+        assert_eq!(h.mock.count("GET", "/usage"), 1);
+        h.set_now(due + Duration::minutes(5));
+        h.runtime.monitor.tick().await.unwrap();
+        assert_eq!(h.mock.count("POST", "/test"), (retries + 1) as usize);
+        if !success {
+            let intent = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]
+                .clone();
+            assert_eq!(intent["status"], "retry_exhausted");
+            assert_eq!(intent["last_error_code"], "retry_exhausted");
+            let projection =
+                sub2ops_server::recovery_events::project(&json!({"recovery_intent":intent}));
+            assert_eq!(projection["attempt_count"], retries + 1);
+            assert!(projection["next_retry_at"].is_null());
+            // Explicitly disabling/re-enabling the account starts a new round.
+            for selection in [json!([]), json!([id])] {
+                let config = h.runtime.config.snapshot(Some("oauth")).unwrap();
+                h.runtime
+                    .config
+                    .save(
+                        "oauth",
+                        &json!({"oauth_recovery_connection_account_ids":selection}),
+                        "fixture-client",
+                        config["oauth"]["revision"].as_str(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            h.runtime.monitor.tick().await.unwrap();
+            let rearmed = wait_connection_attempt(&h, id, 1, "retry_exhausted").await;
+            assert_eq!(rearmed["retry_policy"]["max_retries"], 0);
+            assert_eq!(h.mock.count("POST", "/test"), (retries + 2) as usize);
+            // A genuinely new upstream limit also permits a fresh round.
+            let limited = h.now() + Duration::seconds(1);
+            sqlx::query(
+                "UPDATE accounts SET rate_limited_at=$1,rate_limit_reset_at=$2 WHERE id=$3",
+            )
+            .bind(limited)
+            .bind(limited + Duration::seconds(1))
+            .bind(id)
+            .execute(&h.runtime.db.pool)
+            .await
+            .unwrap();
+            h.set_now(limited + Duration::seconds(2));
+            let rows = vec![h.runtime.monitor.row(id).await.unwrap()];
+            sub2ops_server::recovery_events::discover(
+                &h.runtime.monitor.store,
+                &rows,
+                &h.runtime.config.current().unwrap(),
+                h.now(),
+            )
+            .unwrap();
+            let fresh = h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]
+                ["recovery_intent"]
+                .clone();
+            assert_eq!(fresh["status"], "pending");
+            assert!(fresh["retry_policy"].is_null());
+            assert!(fresh["connection_attempt_count"].is_null());
+        }
+        h.close().await;
+    }
+}
+
+#[tokio::test]
+async fn connection_retry_config_defaults_bounds_and_retired_batch_compatibility() {
+    let h = Harness::new().await;
+    let before = h.runtime.config.snapshot(Some("oauth")).unwrap();
+    assert_eq!(
+        before["oauth"]["connection_test_retry_interval_seconds"],
+        10
+    );
+    assert_eq!(before["oauth"]["connection_test_max_retries"], 3);
+    for changes in [
+        json!({"connection_test_max_retries":-1}),
+        json!({"connection_test_max_retries":11}),
+        json!({"connection_test_retry_interval_seconds":0}),
+        json!({"connection_test_retry_interval_seconds":3601}),
+        json!({"connection_test_max_retries":1.5}),
+    ] {
+        assert_eq!(
+            h.runtime
+                .config
+                .save(
+                    "oauth",
+                    &changes,
+                    "fixture-client",
+                    before["oauth"]["revision"].as_str()
+                )
+                .await
+                .unwrap_err()
+                .status
+                .as_u16(),
+            422
+        );
+    }
+    let saved=h.runtime.config.save("oauth",&json!({"connection_test_max_retries":0,"connection_test_retry_interval_seconds":1,"oauth_early_probe_batch_size":7}),"fixture-client",before["oauth"]["revision"].as_str()).await.unwrap();
+    assert_eq!(saved["connection_test_max_retries"], 0);
+    assert_eq!(saved["connection_test_retry_interval_seconds"], 1);
+    assert_eq!(saved["oauth_early_probe_batch_size"], 7);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn scheduled_bark_queue_survives_delivery_failure_restart_and_disabled_push() {
+    let mut h = Harness::new().await;
+    let row = h
+        .seed_account("plus", "fixture-scheduled-bark", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    let event = json!({"dedupe_key":"connection-test:fixture-notification","account_id":id,"account_name":"fixture-scheduled-bark","kind":"connection_test","result_status":"failed","model_id":"fixture-model","attempt_count":4,"error":"fixture failure","test_completed_at":datetime(h.now())});
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["pending_events"]["connection-test:fixture-notification"] = event.clone();
+            state["recovery_history"]["connection-test:fixture-notification"] = event.clone();
+            Ok(())
+        })
+        .unwrap();
+    let snapshot = h.runtime.config.snapshot(Some("bark")).unwrap();
+    h.runtime
+        .config
+        .save(
+            "bark",
+            &json!({"enabled":true}),
+            "fixture-client",
+            snapshot["bark"]["revision"].as_str(),
+        )
+        .await
+        .unwrap();
+    *h.mock.push_status.lock().unwrap() = 500;
+    h.runtime.monitor.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 1);
+    assert_eq!(
+        h.runtime.monitor.state().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+    h.restart_runtime().await;
+    *h.mock.push_status.lock().unwrap() = 200;
+    h.runtime.monitor.deliver().await.unwrap();
+    h.runtime.monitor.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 2);
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    assert!(h.runtime.monitor.state().unwrap()["pending_events"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+    let push = h
+        .mock
+        .calls()
+        .into_iter()
+        .rev()
+        .find(|call| call.path == "/push")
+        .unwrap()
+        .body;
+    assert_eq!(push["title"], "预约测试失败");
+    for expected in [
+        "fixture-scheduled-bark",
+        "fixture-model",
+        "4",
+        "fixture failure",
+    ] {
+        assert!(push["body"].as_str().unwrap().contains(expected));
+    }
+    let snapshot = h.runtime.config.snapshot(Some("bark")).unwrap();
+    h.runtime
+        .config
+        .save(
+            "bark",
+            &json!({"enabled":false}),
+            "fixture-client",
+            snapshot["bark"]["revision"].as_str(),
+        )
+        .await
+        .unwrap();
+    h.runtime.monitor.store.transaction(|state| {
+        state["pending_events"]["connection-test:fixture-disabled"]=json!({"dedupe_key":"connection-test:fixture-disabled", "account_id":id,"kind":"connection_test","result_status":"needs_confirmation"});
+        Ok(())
+    }).unwrap();
+    h.runtime.monitor.deliver().await.unwrap();
+    assert_eq!(h.mock.count("POST", "/push"), 2);
+    assert!(h.runtime.monitor.state().unwrap()["pending_events"]
+        .as_object()
+        .unwrap()
+        .is_empty());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn recovery_failure_receipt_restart_preserves_original_retry_deadline_without_retesting() {
+    let mut h = Harness::new().await;
+    let due = h.now() + Duration::hours(1);
+    let row = h
+        .seed_account("plus", "fixture-receipt-restart", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    prepare_expired_recovery(&h, &row, due).await;
+    h.set_now(due);
+    let usage = cached_result(&row, due, default_usage(due));
+    save_cached(&h, id, usage.clone()).await;
+    let row = h.runtime.monitor.row(id).await.unwrap();
+    let descriptor = sub2ops_server::recovery_rules::rate_descriptor(
+        &row,
+        &quota::summary_from_result(&row, &usage),
+        due,
+    );
+    let mut intent = sub2ops_server::recovery_events::new_intent(&descriptor, "testing", Some(due));
+    intent["attempt_count"] = 1.into();
+    intent["connection_attempt_count"] = 1.into();
+    intent["tested_at"] = datetime(due).into();
+    intent["retry_policy"] = json!({"interval_seconds":10,"max_retries":3});
+    intent["verification_dispatched"] = true.into();
+    intent["verification_receipt"] = json!({"result":{"success":false,"error_code":"http_500","error":"fixture failure","completed_at":datetime(due),"recovery_method":"connection","recovery_method_generation":0},"manual_generation":0,"credential_fingerprint":sub2ops_server::oauth_admission::credential_fingerprint(&row),"block_state":row});
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][id.to_string()]["recovery_intent"] = intent.clone();
+            Ok(())
+        })
+        .unwrap();
+    h.set_now(due + Duration::seconds(4));
+    h.restart_runtime().await;
+    let lease = h.runtime.monitor.lease(&row).unwrap();
+    let result = h
+        .runtime
+        .monitor
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .await
+        .unwrap();
+    assert_eq!(result["attempt_count"], 1);
+    assert_eq!(
+        result["next_retry_at"],
+        datetime(due + Duration::seconds(10))
+    );
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    assert_eq!(
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+            ["next_retry_at"],
+        datetime(due + Duration::seconds(10))
+    );
+    h.set_now(due + Duration::seconds(9));
+    let lease = h.runtime.monitor.lease(&row).unwrap();
+    let deferred = h
+        .runtime
+        .monitor
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .await
+        .unwrap();
+    assert_eq!(deferred["deferred"], true);
+    assert_eq!(h.mock.count("POST", "/test"), 0);
+    h.set_now(due + Duration::seconds(10));
+    let lease = h.runtime.monitor.lease(&row).unwrap();
+    let success = h
+        .runtime
+        .monitor
+        .verify_recovery(id, &intent, &usage, 0, 0, "connection", lease)
+        .await
+        .unwrap();
+    assert_eq!(success["recovered"], true);
+    assert_eq!(success["attempt_count"], 2);
+    assert_eq!(h.mock.count("POST", "/test"), 1);
     h.close().await;
 }

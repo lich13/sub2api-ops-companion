@@ -330,6 +330,13 @@ pub fn validate(value: &Value) -> Result<()> {
         }
         let intent = &meta["recovery_intent"];
         if intent.is_object() {
+            crate::connection_retry::Policy::saved(intent)?;
+            if intent
+                .get("connection_attempt_count")
+                .is_some_and(|value| value.as_u64().is_none())
+            {
+                return Err(invalid("连接测试尝试次数无效"));
+            }
             if intent
                 .get("verification_dispatched")
                 .is_some_and(|v| !v.is_boolean())
@@ -658,7 +665,7 @@ impl OAuthState {
             }
             // Do not materialize an absent optional control record as null.
             if meta["auto_reset_credit"].is_null() { meta.as_object_mut().unwrap().shift_remove("auto_reset_credit"); }
-            state["pending_events"].as_object_mut().unwrap().retain(|_,v|integer(&v["account_id"]) != Some(id) || v["stage"] == "active_usage");
+            state["pending_events"].as_object_mut().unwrap().retain(|_,v|integer(&v["account_id"]) != Some(id) || v["stage"] == "active_usage" || v["kind"] == "connection_test");
             Ok(generation)
         })
     }

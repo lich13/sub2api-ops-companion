@@ -421,6 +421,8 @@ const config: Config = {
     oauth_usage_refresh_concurrency: 4,
     oauth_recovery_test_concurrency: 2,
     oauth_early_probe_batch_size: 8,
+    connection_test_retry_interval_seconds: 10,
+    connection_test_max_retries: 3,
     oauth_recovery_test_model_id: "gpt-5.6-luna",
     model_detection_model_id: "gpt-6-luna",
     model_detection_platforms: { openai: { engine: "modeltrace", sample_count: 1 } },

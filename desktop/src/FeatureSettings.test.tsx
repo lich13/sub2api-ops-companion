@@ -40,6 +40,7 @@ beforeEach(() => {
     oauth: {
       revision: "oauth-r1", oauth_recovery_monitor_enabled: true, oauth_auto_reset_credit_enabled: false,
       oauth_daily_test_enabled: false, oauth_daily_test_time: "09:00", oauth_usage_refresh_concurrency: 3,
+      connection_test_retry_interval_seconds: 10, connection_test_max_retries: 3,
       oauth_recovery_test_concurrency: 2, oauth_early_probe_batch_size: 5, oauth_recovery_test_model_id: "fixture-model",
       model_detection_model_id: "gpt-6-luna",
       oauth_recovery_connection_account_ids: [1], oauth_recovery_model_account_ids: [2],
@@ -81,6 +82,27 @@ function saveButton(target: HTMLFormElement) {
 const writes = () => vi.mocked(api).mock.calls.filter(([method]) => method !== "GET");
 
 describe("feature settings drafts", () => {
+  it("saves shared retry controls including zero without exposing the retired batch cap", async () => {
+    await openFeatures();
+    const target = form("恢复、测活与模型检测");
+    const field = (label: string) => [...target.querySelectorAll("label.field")].find(node => node.textContent?.includes(label))!.querySelector<HTMLInputElement>("input")!;
+    expect(target.textContent).not.toContain("单轮账号上限");
+    expect(field("连接测试重试间隔").value).toBe("10");
+    expect(field("连接测试最大重试次数").value).toBe("3");
+    for (const [label,value] of [["连接测试重试间隔","7"],["连接测试最大重试次数","0"]]) {
+      await act(async () => {
+        const input = field(label);
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,value);
+        input.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+    }
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation(async (method,path,body) => method === "PUT" && path === "/config/oauth"
+      ? {...config.oauth,revision:"oauth-r2",connection_test_retry_interval_seconds:7,connection_test_max_retries:0} as never : original(method,path,body));
+    await act(async () => saveButton(target).click());
+    expect(writes()).toEqual([["PUT","/config/oauth",{expected_revision:"oauth-r1",changes:{connection_test_retry_interval_seconds:7,connection_test_max_retries:0}}]]);
+  });
+
   it("saves the OpenAI engine and sample count together only on submit", async () => {
     config.oauth.model_detection_platforms = { openai: { engine: "modeltrace", sample_count: 1 } };
     await openFeatures();

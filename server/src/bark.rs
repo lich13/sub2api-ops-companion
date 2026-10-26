@@ -158,6 +158,28 @@ fn safe(value: &Value, limit: usize) -> String {
     )
 }
 pub fn oauth_message(event: &Value) -> (String, String) {
+    if event["kind"] == "connection_test" {
+        let status = match string(&event["result_status"]) {
+            "completed" => "成功",
+            "needs_confirmation" => "需确认",
+            _ => "失败",
+        };
+        let mut body = format!(
+            "账号：{} #{}\n模型：{}\n结果：{status}\n尝试次数：{}\n完成时间：{}",
+            safe(&event["account_name"], 120),
+            integer(&event["account_id"]).unwrap_or(0),
+            safe(&event["model_id"], 200),
+            integer(&event["attempt_count"]).unwrap_or(0),
+            beijing_time(&event["test_completed_at"])
+        );
+        if let Some(ms) = event["duration_ms"].as_u64() {
+            body.push_str(&format!("\n最后一次耗时：{ms} ms"));
+        }
+        if truthy(&event["error"]) {
+            body.push_str(&format!("\n原因：{}", safe(&event["error"], 400)));
+        }
+        return (format!("预约测试{status}"), body);
+    }
     let status = string(&event["status"]);
     let credit = &event["reset_credit"];
     if status == "recovered"

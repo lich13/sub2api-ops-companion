@@ -72,6 +72,7 @@ enum StreamScenario {
     NoModel,
     NativeError,
     HttpError,
+    AuthError,
 }
 
 #[derive(Clone, Default)]
@@ -303,6 +304,9 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
             if matches!(scenario, StreamScenario::HttpError) {
                 return (StatusCode::SERVICE_UNAVAILABLE, CONTENT_MARKER).into_response();
             }
+            if matches!(scenario, StreamScenario::AuthError) {
+                return (StatusCode::UNAUTHORIZED, "fixture auth expired").into_response();
+            }
             let actual = mapped.unwrap_or_else(|| {
                 if requested.is_empty() {
                     "fixture-grok-native-model".to_owned()
@@ -338,7 +342,7 @@ async fn mock_upstream(State(state): State<MockUpstream>, request: Request) -> R
                     ));
                 }
                 StreamScenario::NativeError => stream.push_str(&sse_event(json!({"type":"error","error":format!("provider rejected: Bearer {BEARER_MARKER}; api_key={PROVIDER_MARKER}")}))),
-                StreamScenario::Disconnected | StreamScenario::HttpError => unreachable!(),
+                StreamScenario::Disconnected | StreamScenario::HttpError | StreamScenario::AuthError => unreachable!(),
             }
             return Response::builder()
                 .status(StatusCode::OK)
@@ -411,9 +415,13 @@ struct FixtureBackend {
     recover_failures: Mutex<BTreeSet<i64>>,
     test_model: Mutex<String>,
     test_concurrency: AtomicI64,
+    retry_policy: Mutex<sub2ops_server::connection_retry::Policy>,
 }
 
 impl Backend for FixtureBackend {
+    fn retry_config(&self) -> Result<sub2ops_server::connection_retry::Policy> {
+        Ok(*self.retry_policy.lock().unwrap())
+    }
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
         *self.now.lock().unwrap()
     }
@@ -580,6 +588,7 @@ impl Harness {
                     .to_owned(),
             ),
             test_concurrency: AtomicI64::new(2),
+            retry_policy: Mutex::new(Default::default()),
         });
         let operations = Operations::new(
             actions.clone(),
@@ -781,6 +790,7 @@ fn assert_summary(item: &Value, requested: &str, actual: Option<&str>, success: 
         "duration_ms",
         "completed_at",
         "error",
+        "error_code",
         "uncertain"
     ]
     .contains(&key.as_str())));
@@ -2932,7 +2942,7 @@ async fn continuous_cycle_stops_after_a_confirmed_test_without_losing_its_result
     harness.mock.set_stream(id, StreamScenario::ExplicitFailure);
     *harness.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
     harness.operations.tick().await.unwrap();
-    harness.wait_status(jid, "completed").await;
+    wait_attempt(&harness, jid, 1, "queued").await;
     cycle_quota(
         &harness,
         id,
@@ -2945,6 +2955,12 @@ async fn continuous_cycle_stops_after_a_confirmed_test_without_losing_its_result
     let stopped = harness.operations.get(jid, 0).unwrap();
     assert_eq!(stopped["repeat_state"], "stopped");
     assert_eq!(stopped["result"]["success"], false);
+    assert_eq!(stopped["status"], "completed");
+    assert_eq!(
+        harness.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            [format!("connection-test:{jid}")]["result_status"],
+        "failed"
+    );
     assert!(stopped["repeat_reason"].as_str().unwrap().contains("429"));
     assert!(stopped["next_operation_id"].is_null());
     assert_eq!(
@@ -3093,6 +3109,11 @@ async fn continuous_cycle_cancellation_wins_during_dispatch_and_successor_refres
         assert_eq!(stopped["repeat_state"], "stopped");
         assert_eq!(stopped["result"]["success"], true);
         assert!(stopped["next_operation_id"].is_null());
+        assert!(
+            harness.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+                .get(format!("connection-test:{jid}"))
+                .is_none()
+        );
     }
     assert_eq!(harness.mock.test_calls().len(), 2);
     harness.finish().await;
@@ -3186,4 +3207,305 @@ async fn continuous_cycle_validates_mode_account_and_request_identity() {
         422
     );
     harness.finish().await;
+}
+
+async fn scheduled_fixture(
+    h: &Harness,
+    id: i64,
+    suffix: &str,
+    due: chrono::DateTime<chrono::Utc>,
+) -> Value {
+    h.actions.queries.oauth.save_admin_token(ADMIN_KEY).unwrap();
+    *h.backend.now.lock().unwrap() = due - chrono::Duration::seconds(1);
+    h.operations.submit(id,&json!({"action":"test","payload":{"mode":"default","confirmed":true,"model_id":"fixture-model"},
+        "scheduled_at":due.to_rfc3339(),"expected_version":h.expected_versions(&[id],"test").await[&id],
+        "request_id":format!("fixture-retry-{suffix}"),"client_id":CLIENT_ID}),ADMIN_KEY).await.unwrap()
+}
+async fn wait_attempt(h: &Harness, jid: &str, count: i64, status: &str) -> Value {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let job = h.operations.get(jid, 0).unwrap();
+            if job["attempt_count"] == count && job["status"] == status {
+                return job;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("connection attempt must complete")
+}
+
+#[tokio::test]
+async fn scheduled_retry_freezes_policy_survives_restart_and_notifies_only_final_result() {
+    let mut h = Harness::new().await;
+    let id = h.seed_accounts(1, json!({})).await[0];
+    let due = cycle_start();
+    let job = scheduled_fixture(&h, id, "restart", due).await;
+    let jid = job["id"].as_str().unwrap();
+    h.mock.set_stream(id, StreamScenario::ExplicitFailure);
+    *h.backend.now.lock().unwrap() = due;
+    h.operations.tick().await.unwrap();
+    let waiting = wait_attempt(&h, jid, 1, "queued").await;
+    assert_eq!(
+        waiting["next_retry_at"],
+        sub2ops_server::compat::datetime(due + chrono::Duration::seconds(10))
+    );
+    h.operations.tick().await.unwrap();
+    assert!(
+        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(h.operations.budget.available_permits(), 8);
+    h.backend.retry_policy.lock().unwrap().max_retries = 0;
+    h.backend.retry_policy.lock().unwrap().interval_seconds = 99;
+    h.restart().await;
+    *h.backend.now.lock().unwrap() = due + chrono::Duration::seconds(9);
+    h.operations.tick().await.unwrap();
+    assert_eq!(h.mock.test_calls().len(), 1);
+    h.mock.set_stream(id, StreamScenario::Success);
+    *h.backend.now.lock().unwrap() = due + chrono::Duration::seconds(10);
+    h.operations.tick().await.unwrap();
+    wait_attempt(&h, jid, 2, "completed").await;
+    h.operations.tick().await.unwrap();
+    let key = format!("connection-test:{jid}");
+    let state = h.actions.queries.oauth.snapshot().unwrap();
+    let event = &state["pending_events"][&key];
+    assert_eq!(event["attempt_count"], 2);
+    assert_eq!(event["result_status"], "completed");
+    assert_eq!(state["pending_events"].as_object().unwrap().len(), 1);
+    assert!(h.operations.keys.lock().unwrap().is_empty());
+    let (_, body) = sub2ops_server::bark::oauth_message(event);
+    assert!(body.contains("2"));
+    h.actions
+        .queries
+        .oauth
+        .mark_delivered(std::slice::from_ref(event), false)
+        .unwrap();
+    h.restart().await;
+    h.operations.tick().await.unwrap();
+    assert!(
+        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(h.mock.test_calls().len(), 2);
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn scheduled_retry_limit_zero_custom_interval_and_cancellation_are_bounded() {
+    for (retries, interval, cancel) in
+        [(3, 10, false), (0, 10, false), (1, 7, false), (3, 10, true)]
+    {
+        let mut h = Harness::new().await;
+        let id = h.seed_accounts(1, json!({})).await[0];
+        *h.backend.retry_policy.lock().unwrap() = sub2ops_server::connection_retry::Policy {
+            interval_seconds: interval,
+            max_retries: retries,
+        };
+        let due = cycle_start();
+        let job = scheduled_fixture(&h, id, "bounded", due).await;
+        let jid = job["id"].as_str().unwrap();
+        h.mock.set_stream(id, StreamScenario::ExplicitFailure);
+        for attempt in 1..=retries + 1 {
+            *h.backend.now.lock().unwrap() =
+                due + chrono::Duration::seconds(interval * (attempt - 1));
+            h.operations.tick().await.unwrap();
+            let status = if attempt <= retries {
+                "queued"
+            } else {
+                "completed"
+            };
+            let job = wait_attempt(&h, jid, attempt, status).await;
+            if cancel {
+                h.operations.cancel(jid).await.unwrap();
+                *h.backend.now.lock().unwrap() = due + chrono::Duration::hours(1);
+                h.operations.tick().await.unwrap();
+                assert_eq!(h.operations.get(jid, 0).unwrap()["status"], "cancelled");
+                assert_eq!(h.mock.test_calls().len(), 1);
+                assert!(
+                    h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+                        .as_object()
+                        .unwrap()
+                        .is_empty()
+                );
+                break;
+            }
+            if attempt <= retries {
+                assert_eq!(
+                    job["next_retry_at"],
+                    sub2ops_server::compat::datetime(
+                        due + chrono::Duration::seconds(interval * attempt)
+                    )
+                );
+            }
+        }
+        if !cancel {
+            h.operations.tick().await.unwrap();
+            let state = h.actions.queries.oauth.snapshot().unwrap();
+            let event = &state["pending_events"][format!("connection-test:{jid}")];
+            assert_eq!(event["result_status"], "failed");
+            assert_eq!(event["attempt_count"], retries + 1);
+            assert_eq!(h.mock.test_calls().len(), (retries + 1) as usize);
+            assert!(h.operations.keys.lock().unwrap().is_empty());
+        }
+        h.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn continuous_retry_finishes_the_round_before_handing_authorization_to_successor() {
+    let mut h = Harness::new().await;
+    let id = h.seed_accounts(1, json!({})).await[0];
+    *h.backend.now.lock().unwrap() = cycle_start();
+    let reset = cycle_start() + chrono::Duration::minutes(1);
+    cycle_quota(&h, id, reset, 20.0, false).await;
+    let job = h
+        .operations
+        .submit(id, &cycle_request(&h, id, "retry-handoff").await, ADMIN_KEY)
+        .await
+        .unwrap();
+    let jid = job["id"].as_str().unwrap();
+    h.mock.set_stream(id, StreamScenario::ExplicitFailure);
+    *h.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(3);
+    h.operations.tick().await.unwrap();
+    wait_attempt(&h, jid, 1, "queued").await;
+    h.operations.tick().await.unwrap();
+    assert!(h.operations.get(jid, 0).unwrap()["next_operation_id"].is_null());
+    assert!(h.operations.keys.lock().unwrap().contains_key(jid));
+    h.mock.set_stream(id, StreamScenario::Success);
+    *h.backend.now.lock().unwrap() = reset + chrono::Duration::seconds(13);
+    h.operations.tick().await.unwrap();
+    wait_attempt(&h, jid, 2, "completed").await;
+    cycle_quota(&h, id, reset + chrono::Duration::hours(5), 30.0, false).await;
+    h.operations.tick().await.unwrap();
+    let old = h.operations.get(jid, 0).unwrap();
+    let next = old["next_operation_id"].as_str().unwrap();
+    assert!(!h.operations.keys.lock().unwrap().contains_key(jid));
+    assert_eq!(h.operations.keys.lock().unwrap()[next], ADMIN_KEY);
+    assert_eq!(
+        h.operations.get(next, 0).unwrap()["attempt_count"],
+        Value::Null
+    );
+    assert_eq!(
+        h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+            [format!("connection-test:{jid}")]["attempt_count"],
+        2
+    );
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn scheduled_auth_failure_and_unknown_result_are_final_without_automatic_replay() {
+    for (scenario, status) in [
+        (StreamScenario::AuthError, "completed"),
+        (StreamScenario::NoTerminal, "needs_confirmation"),
+    ] {
+        let mut h = Harness::new().await;
+        let id = h.seed_accounts(1, json!({})).await[0];
+        let due = cycle_start();
+        let job = scheduled_fixture(&h, id, "no-replay", due).await;
+        let jid = job["id"].as_str().unwrap();
+        h.mock.set_stream(id, scenario);
+        *h.backend.now.lock().unwrap() = due;
+        h.operations.tick().await.unwrap();
+        wait_attempt(&h, jid, 1, status).await;
+        h.restart().await;
+        *h.backend.now.lock().unwrap() = due + chrono::Duration::hours(1);
+        h.operations.tick().await.unwrap();
+        assert_eq!(h.mock.test_calls().len(), 1);
+        assert_eq!(
+            h.actions.queries.oauth.snapshot().unwrap()["pending_events"]
+                .as_object()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(h.operations.keys.lock().unwrap().is_empty());
+        h.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn batched_cycle_observations_match_live_reads_and_keep_per_account_failures() {
+    let mut h = Harness::new().await;
+    let ids = h.seed_accounts(6, json!({})).await;
+    let at = cycle_start();
+    *h.backend.now.lock().unwrap() = at;
+    for (index, id) in ids.iter().enumerate() {
+        cycle_quota(
+            &h,
+            *id,
+            at + chrono::Duration::hours(5),
+            if index == 0 { 30.0 } else { 100.0 },
+            index > 0,
+        )
+        .await;
+    }
+    for (index, owner, message) in [
+        (1, "upstream", "too many requests"),
+        (
+            2,
+            "provider",
+            "You have reached the request limit: 10 requests per minute",
+        ),
+        (3, "client", "too many requests"),
+    ] {
+        sqlx::query("INSERT INTO ops_error_logs(id,account_id,created_at,status_code,upstream_status_code,error_owner,error_message) VALUES($1,$2,$3,429,429,$4,$5)")
+            .bind(ids[index]+1_000_000_000).bind(ids[index]).bind(at).bind(owner).bind(message).execute(&h.db.pool).await.unwrap();
+    }
+    let runtime = sub2ops_server::runtime::Runtime::new_with_clock(
+        (*h.actions.settings).clone(),
+        Arc::new(move || at),
+    )
+    .await
+    .unwrap();
+    runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][ids[4].to_string()] = json!({"last_error_code":"http_401"});
+            Ok(())
+        })
+        .unwrap();
+    sqlx::query("UPDATE accounts SET deleted_at=$1 WHERE id=$2")
+        .bind(at)
+        .bind(ids[5])
+        .execute(&h.db.pool)
+        .await
+        .unwrap();
+    let batch = runtime
+        .operations
+        .backend
+        .cycle_observations(&ids)
+        .await
+        .unwrap();
+    for id in &ids[..5] {
+        match (
+            runtime
+                .operations
+                .backend
+                .cycle_observation(*id, ADMIN_KEY, false)
+                .await,
+            &batch[id],
+        ) {
+            (Ok(single), Ok(all)) => {
+                assert_eq!(single.windows, all.windows);
+                assert_eq!(single.stopped, all.stopped);
+            }
+            (Err(single), Err(all)) => assert_eq!(single.detail, all.detail),
+            _ => panic!("batch and individual cycle outcomes differ"),
+        }
+    }
+    assert!(!batch[&ids[0]].as_ref().unwrap().stopped);
+    assert!(batch[&ids[1]].as_ref().unwrap().stopped);
+    assert!(!batch[&ids[2]].as_ref().unwrap().stopped);
+    assert!(!batch[&ids[3]].as_ref().unwrap().stopped);
+    assert!(batch[&ids[4]].is_err());
+    assert!(!batch.contains_key(&ids[5]));
+    runtime.close().await;
+    h.finish().await;
 }

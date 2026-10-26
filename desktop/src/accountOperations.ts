@@ -7,6 +7,7 @@ export type Operation = {
   result?: Record<string, unknown>; events?: TestEvent[]; next_event?: number;
   execution_mode?: 'native' | 'compatibility';
   started_at?: string; scheduled_at?: string;
+  attempt_count?: number; next_retry_at?: string | null;
   repeat?: 'quota_cycle'; repeat_series_id?: string;
   repeat_state?: 'active' | 'continued' | 'stopped' | 'needs_confirmation'; repeat_reason?: string;
   next_operation_id?: string;

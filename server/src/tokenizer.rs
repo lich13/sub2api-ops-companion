@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Deserialize)]
@@ -44,13 +44,14 @@ struct RawBank {
     pub classes: Vec<Class>,
     api_models: Vec<ApiModel>,
 }
+type Roots = BTreeMap<(usize, usize, u8), Arc<[f64]>>;
 pub struct Bank {
     raw: RawBank,
     values: Vec<Vec<Vec<f64>>>,
     scales: Vec<f64>,
     aliases: Vec<Vec<Regex>>,
     api_patterns: Vec<Regex>,
-    roots: Mutex<BTreeMap<(usize, usize, u8), Vec<f64>>>,
+    roots: Mutex<Roots>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Observation {
@@ -369,7 +370,7 @@ impl Bank {
                         .map(|(a, b, _)| {
                             roots[*a]
                                 .iter()
-                                .zip(&roots[*b])
+                                .zip(roots[*b].iter())
                                 .map(|(a, b)| a * b)
                                 .sum::<f64>()
                         })
@@ -407,7 +408,7 @@ impl Bank {
         }
         chosen
     }
-    fn roots(&self, j: usize, c: usize, kind: u8) -> Vec<f64> {
+    fn roots(&self, j: usize, c: usize, kind: u8) -> Arc<[f64]> {
         let key = (j, c, kind);
         let mut cache = self.roots.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(v) = cache.get(&key) {
@@ -435,6 +436,7 @@ impl Bank {
         for v in &mut raw {
             *v = (*v / norm).sqrt();
         }
+        let raw: Arc<[f64]> = raw.into();
         cache.insert(key, raw.clone());
         raw
     }

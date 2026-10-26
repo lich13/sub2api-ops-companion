@@ -88,15 +88,27 @@ fn leaf(data: &Value, jid: &str) -> Result<String> {
 }
 
 impl Operations {
-    pub(super) fn stop_repeat(&self, jid: &str, reason: &str) -> Result<Value> {
+    pub(super) fn stop_repeat(&self, jid: &str, reason: &str, cancelled: bool) -> Result<Value> {
         let job = self.store.transaction(|data| {
             let current = leaf(data, jid)?;
             let job = &mut data["jobs"][&current];
             if repeat_open(job) {
+                if cancelled {
+                    job["notification_suppressed"] = true.into();
+                }
                 job["repeat_state"] = "stopped".into();
                 job["repeat_reason"] = reason.into();
                 if matches!(string(&job["status"]), "queued" | "needs_confirmation") {
-                    job["status"] = "cancelled".into();
+                    job["status"] = if !cancelled
+                        && job["status"] == "queued"
+                        && integer(&job["attempt_count"]).unwrap_or(0) > 0
+                        && job["result"]["success"] == false
+                    {
+                        "completed"
+                    } else {
+                        "cancelled"
+                    }
+                    .into();
                     job["reason"] = reason.into();
                 }
                 job["updated_at"] = now().into();
@@ -130,17 +142,26 @@ impl Operations {
         if job["repeat_state"] != "active" {
             return Ok(false);
         }
-        match self
+        let observation = self
             .backend
             .cycle_observation(
                 integer(&job["account_id"]).unwrap(),
                 &self.key(jid)?,
                 refresh,
             )
-            .await
-        {
+            .await;
+        self.apply_cycle_observation(job, observation.as_ref())
+    }
+
+    fn apply_cycle_observation(
+        &self,
+        job: &Value,
+        observation: std::result::Result<&CycleObservation, &Error>,
+    ) -> Result<bool> {
+        let jid = string(&job["id"]);
+        match observation {
             Ok(observation) if observation.stopped => {
-                self.stop_repeat(jid, DEPLETED)?;
+                self.stop_repeat(jid, DEPLETED, false)?;
                 Ok(false)
             }
             Ok(_) => Ok(true),
@@ -154,6 +175,19 @@ impl Operations {
 
     pub(super) async fn prepare_cycles(&self, data: &Value) -> Result<bool> {
         let mut prepared = false;
+        let waiting = data["jobs"]
+            .as_object()
+            .unwrap()
+            .values()
+            .filter(|job| job["repeat_state"] == "active" && job["status"] == "queued")
+            .map(|job| integer(&job["account_id"]).unwrap())
+            .collect::<Vec<_>>();
+        let observations = if waiting.is_empty() {
+            Ok(BTreeMap::new())
+        } else {
+            self.backend.cycle_observations(&waiting).await
+        };
+        let missing = Error::new(404, "账号不存在");
         for job in data["jobs"]
             .as_object()
             .unwrap()
@@ -161,7 +195,14 @@ impl Operations {
             .filter(|job| job["repeat_state"] == "active")
         {
             if job["status"] == "queued" {
-                self.cycle_allowed(job, false).await?;
+                let observation = match &observations {
+                    Ok(all) => all
+                        .get(&integer(&job["account_id"]).unwrap())
+                        .map(Result::as_ref)
+                        .unwrap_or(Err(&missing)),
+                    Err(error) => Err(error),
+                };
+                self.apply_cycle_observation(job, observation)?;
                 prepared = true;
             } else if job["status"] == "completed" {
                 self.advance_cycle(job).await?;
@@ -190,7 +231,7 @@ impl Operations {
             }
         };
         if observation.stopped {
-            self.stop_repeat(jid, DEPLETED)?;
+            self.stop_repeat(jid, DEPLETED, false)?;
             return Ok(());
         }
         let Some(due) = next_cycle(
@@ -208,6 +249,9 @@ impl Operations {
             "scheduled_at":crate::compat::datetime(due),"repeat":"quota_cycle",
             "repeat_series_id":previous["repeat_series_id"],"repeat_state":"active"});
         next["payload"]["prompt"] = "".into();
+        // Publishing the successor and handing over its authorization must be
+        // observed together by a concurrent dispatcher.
+        let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
         let inserted = self.store.transaction(|data| {
             let old = &mut data["jobs"][jid];
             if old["repeat_state"] != "active" || old["status"] != "completed" {
@@ -219,10 +263,8 @@ impl Operations {
             Ok(true)
         })?;
         if inserted {
-            self.keys
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(next_id, key);
+            keys.insert(next_id, key);
+            keys.remove(jid);
         }
         Ok(())
     }

@@ -239,6 +239,62 @@ pub async fn upstream_evidence(db: &Database, row: &Value, at: DateTime<Utc>) ->
         json!({"id":format!("account-rate-limit:{fingerprint}"),"created_at":datetime(start),"source":"account_rate_limit"}),
     )
 }
+pub async fn upstream_evidence_batch(
+    db: &Database,
+    rows: &[Value],
+    at: DateTime<Utc>,
+) -> Result<std::collections::BTreeMap<i64, Value>> {
+    let windows: Vec<Value> = rows.iter().filter_map(|row| {
+        let start = parse_datetime(&row["rate_limited_at"])?;
+        let reset = parse_datetime(&row["rate_limit_reset_at"])?;
+        (start <= at && reset > at && reset > start).then(|| json!({
+            "account_id":row["id"],"start":datetime(start),"since":datetime(start-TimeDelta::seconds(5)),"reset":datetime(reset)
+        }))
+    }).collect();
+    let mut evidence = std::collections::BTreeMap::new();
+    if windows.is_empty() {
+        return Ok(evidence);
+    }
+    let sql = format!("SELECT w.account_id AS requested_account_id,c.*,
+        EXISTS (SELECT 1 FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.created_at>=w.since AND e.created_at<=$2
+            AND (e.upstream_status_code IN (401,402) OR {local} OR (e.error_owner='client' AND (e.status_code=429 OR e.upstream_status_code=429)))) AS excluded
+        FROM jsonb_to_recordset($1::jsonb) AS w(account_id bigint,since timestamptz)
+        LEFT JOIN LATERAL (SELECT e.id,e.created_at,e.error_owner,e.error_phase,
+            to_jsonb(e)->>'upstream_error_message' AS upstream_error_message,to_jsonb(e)->>'error_message' AS error_message,
+            to_jsonb(e)->'error_body' AS error_body,to_jsonb(e)->'upstream_error_detail' AS upstream_error_detail,to_jsonb(e)->'upstream_errors' AS upstream_errors
+            FROM ops_error_logs e WHERE e.account_id=w.account_id AND e.upstream_status_code=429 AND coalesce(e.error_owner,'')<>'client'
+            AND NOT {local} AND e.created_at>=w.since AND e.created_at<=$2
+            AND NOT EXISTS (SELECT 1 FROM ops_error_logs x WHERE x.account_id=e.account_id AND x.created_at>e.created_at AND x.upstream_status_code IN (401,402))
+            ORDER BY e.created_at ASC,e.id ASC LIMIT 1) c ON TRUE",local=sql::ERRORS_LOCAL_THROTTLE);
+    let results = db
+        .all(&sql, &[crate::db::Param::Json(json!(windows)), at.into()])
+        .await
+        .map_err(|_| Error::new(503, "限流证据无法可靠读取"))?;
+    let windows: std::collections::BTreeMap<_, _> = windows
+        .into_iter()
+        .map(|window| (window["account_id"].as_i64().unwrap_or(0), window))
+        .collect();
+    for mut candidate in results {
+        let id = candidate["requested_account_id"].as_i64().unwrap_or(0);
+        if !candidate["id"].is_null() && !error_evidence::local_throttle(&candidate) {
+            let fields = candidate.as_object_mut().unwrap();
+            fields.remove("requested_account_id");
+            fields.remove("excluded");
+            candidate["source"] = "upstream_error".into();
+            evidence.insert(id, candidate);
+        } else if candidate["excluded"] != true {
+            let window = &windows[&id];
+            let fingerprint = sha256(format!(
+                "{}:{}:{}",
+                id,
+                string(&window["start"]),
+                string(&window["reset"])
+            ));
+            evidence.insert(id,json!({"id":format!("account-rate-limit:{fingerprint}"),"created_at":window["start"],"source":"account_rate_limit"}));
+        }
+    }
+    Ok(evidence)
+}
 pub fn depletion_evidence(
     row: &Value,
     saved: &Value,

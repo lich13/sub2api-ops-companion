@@ -136,6 +136,7 @@ pub fn discover(
         }
         let old = &meta["recovery_intent"];
         if recovery_rules::early_quota_release(row, &saved, meta, at)
+            && integer(&old["connection_attempt_count"]).unwrap_or(0) == 0
             && !truthy(&old["verification_dispatched"])
             && !truthy(&old["verification_receipt"])
             && !truthy(&old["recovery_write_dispatched"])
@@ -173,6 +174,15 @@ pub fn discover(
         } else {
             recovery_rules::threshold_descriptor(row, &summary, at)
         };
+        if old["status"] == "retry_exhausted"
+            && !truthy(&descriptor)
+            && parse_datetime(&row["rate_limited_at"]).is_none_or(|limited| {
+                parse_datetime(&old["test_completed_at"])
+                    .is_some_and(|completed| limited <= completed)
+            })
+        {
+            continue;
+        }
         if !truthy(&descriptor)
             && matches!(
                 string(&old["status"]),
@@ -198,10 +208,11 @@ pub fn discover(
         {
             continue;
         }
-        let unfinished = matches!(
-            string(&old["status"]),
-            "pending" | "ready" | "retry" | "waiting_quota"
-        );
+        let unfinished = old["retry_policy"].is_null()
+            && matches!(
+                string(&old["status"]),
+                "pending" | "ready" | "retry" | "waiting_quota"
+            );
         let mut intent = if unfinished { old.clone() } else { json!({}) };
         intent
             .as_object_mut()
@@ -244,6 +255,50 @@ pub fn discover(
     Ok(())
 }
 pub fn quota_update(
+    item: &Value,
+    result: &Value,
+    state: &Value,
+    at: DateTime<Utc>,
+    recovery_enabled: bool,
+    reused: bool,
+) -> (Update, Option<Value>, bool) {
+    let (mut update, mut runnable, depleted) =
+        quota_update_inner(item, result, state, at, recovery_enabled, reused);
+    let id = integer(&item["account_id"]).unwrap_or(0);
+    let previous = &state["scheduler"][id.to_string()]["recovery_intent"];
+    if integer(&previous["connection_attempt_count"]).unwrap_or(0) > 0 {
+        if let Some(intent) = update
+            .scheduler
+            .get_mut(&id)
+            .and_then(|meta| meta.get_mut("recovery_intent"))
+        {
+            if intent["fingerprint"] == previous["fingerprint"] {
+                // Quota refreshes cannot restart a connection verification round or
+                // replace its failure deadline with the quota-query backoff.
+                if previous["status"] == "retry_exhausted" {
+                    *intent = previous.clone();
+                    runnable = None;
+                } else if !matches!(
+                    string(&intent["status"]),
+                    "auth_failed" | "blocked" | "cancelled" | "recovered"
+                ) {
+                    intent["next_retry_at"] = previous["next_retry_at"].clone();
+                    if crate::compat::parse_datetime(&intent["next_retry_at"])
+                        .is_some_and(|due| at < due)
+                    {
+                        intent["status"] = "retry".into();
+                        runnable = None;
+                    } else if runnable.is_some() {
+                        runnable = Some(intent.clone());
+                    }
+                }
+            }
+        }
+    }
+    (update, runnable, depleted)
+}
+
+fn quota_update_inner(
     item: &Value,
     result: &Value,
     state: &Value,
@@ -532,6 +587,7 @@ pub fn project(meta: &Value) -> Value {
             "account_busy" => "等待账号操作完成",
             "incomplete_quota" => "缺少跨恢复点的完整额度证据",
             "verification_backoff" => "等待验证重试",
+            "retry_exhausted" => "连接测试重试次数已用尽，请重新启用恢复或等待新恢复事件",
             "model_verification_pending" => "等待模型验证",
             "model_cooldown" => "模型验证冷却中",
             "model_busy" => "等待当前模型测试结束",
@@ -540,5 +596,14 @@ pub fn project(meta: &Value) -> Value {
             _ => "等待恢复验证",
         }
     };
-    json!({"status":if truthy(&intent["status"]) {string(&intent["status"])} else {"pending"},"label":label,"reason":reason,"next_at":if truthy(&intent["waiting_until"]) {&intent["waiting_until"]} else if truthy(&intent["next_retry_at"]) {&intent["next_retry_at"]} else {&Value::Null}})
+    let mut projected = json!({"status":if truthy(&intent["status"]) {string(&intent["status"])} else {"pending"},"label":label,"reason":reason,"next_at":if truthy(&intent["waiting_until"]) {&intent["waiting_until"]} else if truthy(&intent["next_retry_at"]) {&intent["next_retry_at"]} else {&Value::Null}});
+    if let Some(attempts) = intent.get("connection_attempt_count") {
+        projected["attempt_count"] = attempts.clone();
+        projected["next_retry_at"] = if truthy(&intent["next_retry_at"]) {
+            intent["next_retry_at"].clone()
+        } else {
+            Value::Null
+        };
+    }
+    projected
 }

@@ -40,6 +40,7 @@ impl Runtime {
         let now = chrono::Utc::now();
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let rows = self.actions.queries.accounts().await?;
+        self.key_quota.retain_accounts(&rows);
         let mut specs = vec![];
         let mut accounts = Vec::with_capacity(rows.len());
         for row in &rows {

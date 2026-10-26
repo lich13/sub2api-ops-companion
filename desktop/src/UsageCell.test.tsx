@@ -128,6 +128,7 @@ describe("Sub2API usage cell", () => {
               status: "waiting",
               label: "等待额度恢复时间",
               reason: "waiting_reset",
+              attempt_count: 2,
               next_at: "2026-09-30T16:05:02Z",
             },
           } as unknown as Account
@@ -139,6 +140,7 @@ describe("Sub2API usage cell", () => {
     );
     expect(html).toContain('<details class="auto-reset-status"><summary>等待额度恢复时间</summary>');
     expect(html).toContain("下次 10-01 00:05:02");
+    expect(html).toContain("已尝试 2 次");
     expect(api).not.toHaveBeenCalled();
   });
 

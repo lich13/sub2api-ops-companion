@@ -248,13 +248,14 @@ impl Runtime {
             crate::priority_orders::PriorityOrders::new(actions.clone(), operations.clone());
         let catalog = Catalog::new(&settings, db.clone(), upstream.clone())?;
         let proxies = ProxyDiagnostics::new(actions.clone());
-        let key_quota = startup(
+        let mut key_quota = startup(
             "key_quota",
             crate::key_quota::Service::new(
                 settings.data_dir().join("api-key-quota-config.json"),
                 settings.read_only,
             ),
         )?;
+        key_quota.supervise(actions.supervisor.clone());
         let requests = crate::tasks::Tasks::supervised(actions.supervisor.clone());
         let (stop, _) = watch::channel(false);
         let runtime = Arc::new(Self {
@@ -554,6 +555,7 @@ impl Runtime {
             self.keepalive.close(),
             self.requests.close(55),
             self.proxies.close(55),
+            self.key_quota.close(),
             self.actions.candidates.close(),
             self.tests.bank.close(55),
             self.tests.lm_bank.close(55),

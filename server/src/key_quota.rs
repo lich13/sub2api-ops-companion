@@ -102,6 +102,7 @@ pub struct Service {
     shared: Arc<Shared>,
     config: Store,
     client: reqwest::Client,
+    tasks: crate::tasks::Tasks,
 }
 pub struct Query {
     pub id: String,
@@ -170,6 +171,7 @@ impl Service {
                 valid_object,
                 read_only,
             ),
+            tasks: crate::tasks::Tasks::default(),
             client: reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
@@ -178,6 +180,36 @@ impl Service {
         };
         service.settings()?;
         Ok(service)
+    }
+    pub(crate) fn supervise(&mut self, supervisor: crate::supervision::Supervisor) {
+        self.tasks = crate::tasks::Tasks::supervised(supervisor);
+    }
+    pub async fn close(&self) {
+        self.shared.permits.close();
+        self.tasks.close(0).await;
+        self.shared
+            .entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+    pub fn forget(&self, id: i64) {
+        self.shared
+            .entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id.to_string());
+    }
+    pub(crate) fn retain_accounts(&self, rows: &[Value]) {
+        let ids: std::collections::HashSet<String> = rows
+            .iter()
+            .filter_map(|row| row["id"].as_i64().map(|id| id.to_string()))
+            .collect();
+        self.shared
+            .entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|id, _| ids.contains(id));
     }
     pub fn settings(&self) -> Result<Value> {
         let raw = self.config.read()?;
@@ -264,6 +296,9 @@ impl Service {
             view.success_at.is_some() && (view.state == "error" || view.state == "unsupported");
     }
     pub async fn query(&self, input: Query, force: bool) -> Result<QuotaView> {
+        if self.tasks.is_closed() {
+            return Err(Error::new(503, "服务正在停止"));
+        }
         let interval = self.settings()?["seconds"].as_u64().unwrap();
         let mut rx = {
             let mut entries = self.shared.entries.lock().unwrap();
@@ -290,13 +325,32 @@ impl Service {
                 let (tx, rx) = watch::channel(None);
                 e.flight = Some(rx.clone());
                 let service = self.clone();
-                tokio::spawn(async move {
-                    let _permit = service
-                        .shared
-                        .permits
-                        .acquire()
-                        .await
-                        .expect("quota semaphore open");
+                let flight = rx.clone();
+                if let Err(error) = self.tasks.spawn(async move {
+                    let shared = service.shared.clone();
+                    let id = input.id.clone();
+                    let _cleanup = crate::supervision::on_drop(move || {
+                        if let Some(entry) = shared
+                            .entries
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .get_mut(&id)
+                        {
+                            if entry
+                                .flight
+                                .as_ref()
+                                .is_some_and(|current| current.same_channel(&flight))
+                            {
+                                entry.flight = None;
+                            }
+                        }
+                    });
+                    let Ok(_permit) = service.shared.permits.acquire().await else {
+                        return;
+                    };
+                    if service.tasks.is_closed() {
+                        return;
+                    }
                     let result = if input.token.is_empty() {
                         Err(Failure::new("账号 API Key 未配置"))
                     } else {
@@ -338,13 +392,21 @@ impl Service {
                         .lock()
                         .unwrap()
                         .get_mut(&input.id)
-                        .filter(|e| e.view.version == input.version)
+                        .filter(|e| {
+                            e.view.version == input.version
+                                && e.flight
+                                    .as_ref()
+                                    .is_some_and(|current| current.same_channel(&tx.subscribe()))
+                        })
                     {
                         e.view = view.clone();
                         e.flight = None;
                     }
                     tx.send_replace(Some(view));
-                });
+                }) {
+                    e.flight = None;
+                    return Err(error);
+                }
                 rx
             }
         };

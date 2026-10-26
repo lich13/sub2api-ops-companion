@@ -392,6 +392,15 @@ fn settings_priority_parsing_matches_pinned_python() {
         json!({"openai":{"engine":"modeltrace","sample_count":1},"anthropic":{"engine":"lm_detector","sample_count":1},"grok":{"engine":"lm_detector","sample_count":1},"deepseek":{"engine":"lm_detector","sample_count":1}})
     );
     let mut legacy_projection = settings.oauth.clone();
+    for (field, expected) in [
+        ("connection_test_retry_interval_seconds", 10),
+        ("connection_test_max_retries", 3),
+    ] {
+        assert_eq!(
+            legacy_projection.as_object_mut().unwrap().remove(field),
+            Some(json!(expected))
+        );
+    }
     legacy_projection
         .as_object_mut()
         .unwrap()

@@ -977,7 +977,11 @@ impl Actions {
             )
             .await?;
         if response.status().as_u16() != 200 {
-            let _=sender.send(json!({"type":"error","error":format!("测试请求失败 [http_{}]",response.status().as_u16())})).await;
+            let mut event = json!({"type":"error","error":format!("测试请求失败 [http_{}]",response.status().as_u16())});
+            if summary {
+                event["error_code"] = format!("http_{}", response.status().as_u16()).into();
+            }
+            let _ = sender.send(event).await;
             return Ok(());
         }
         let mut pending = Vec::new();
@@ -1035,6 +1039,14 @@ impl Actions {
                     continue;
                 }
                 let mut value = json!({"type":kind});
+                if summary && kind == "error" {
+                    let parsed = crate::oauth_native::parse_test_sse(&format!("data: {event}"));
+                    value["error_code"] = safe_error(&parsed["error_code"], 80).into();
+                    value["error"] = parsed["error"].clone();
+                    if parsed["uncertain"] == true {
+                        value["uncertain"] = true.into();
+                    }
+                }
                 for field in ["text", "model", "error"] {
                     if let Some(entry) = event.get(field) {
                         if kind == "content" && field == "text" {

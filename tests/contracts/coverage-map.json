@@ -19444,9 +19444,9 @@
         "assertions": [
           "assert_eq!(initial_concurrency, Some(2))",
           "assert_eq!(changed_concurrency, Some(3))",
-          "assert_eq!(intent[\"status\"], \"retry\")",
+          "assert_eq!(intent[\"status\"], \"blocked\")",
           "assert_eq!(intent[\"last_error_code\"], \"recovery_state_changed\")",
-          "assert_eq!(\n        intent[\"next_retry_at\"],\n        datetime(due + Duration::seconds(60))\n    )",
+          "assert_eq!(intent[\"next_retry_at\"], \"\")",
           "assert_eq!(event[\"test_success\"], true)",
           "assert_eq!(harness.mock.count(\"GET\", \"/usage\"), 1)",
           "assert_eq!(harness.mock.count(\"POST\", \"/test\"), 1)",
@@ -19457,7 +19457,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“concurrency signature change stops recovery mutation”映射到 monitor_recovery_stops_if_account_concurrency_changes_during_test；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“concurrency signature change stops recovery mutation”映射到 monitor_recovery_stops_if_account_concurrency_changes_during_test；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 已批准仅重试明确失败且仍符合执行条件的连接请求；验证成功后账号条件变化保留停止恢复写入断言，状态改为 blocked。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_concurrent_force_refresh_calls_share_one_cycle",
@@ -19613,7 +19613,7 @@
           "assert_eq!(event[\"error_code\"], \"http_401\")",
           "assert_eq!(event[\"test_success\"], false)",
           "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
-          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
           "assert_eq!(event[\"status\"], \"test_failed\")",
           "assert_eq!(event[\"error_code\"], \"http_500\")",
           "assert_eq!(event[\"test_success\"], false)",
@@ -19625,7 +19625,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“http 401 and 402 create auth events”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“http 401 and 402 create auth events”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 连接测活失败默认间隔改为 10 秒、最多额外 3 次，额度查询预算和投递失败不重测的断言保持；范围、重启和上限由 recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe 补充。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_idle_ticks_do_not_reread_database_or_state_file",
@@ -19827,7 +19827,7 @@
           "assert_eq!(event[\"error_code\"], \"http_401\")",
           "assert_eq!(event[\"test_success\"], false)",
           "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
-          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
           "assert_eq!(event[\"status\"], \"test_failed\")",
           "assert_eq!(event[\"error_code\"], \"http_500\")",
           "assert_eq!(event[\"test_success\"], false)",
@@ -19839,7 +19839,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“test auth failure alerts without recovery or retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“test auth failure alerts without recovery or retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 连接测活失败默认间隔改为 10 秒、最多额外 3 次，额度查询预算和投递失败不重测的断言保持；范围、重启和上限由 recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe 补充。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_failure_cannot_bypass_query_cooldown",
@@ -19856,7 +19856,7 @@
           "assert_eq!(event[\"error_code\"], \"http_401\")",
           "assert_eq!(event[\"test_success\"], false)",
           "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
-          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
           "assert_eq!(event[\"status\"], \"test_failed\")",
           "assert_eq!(event[\"error_code\"], \"http_500\")",
           "assert_eq!(event[\"test_success\"], false)",
@@ -19868,7 +19868,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“test failure cannot bypass query cooldown”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“test failure cannot bypass query cooldown”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 连接测活失败默认间隔改为 10 秒、最多额外 3 次，额度查询预算和投递失败不重测的断言保持；范围、重启和上限由 recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe 补充。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_failure_is_cached_and_does_not_retest_for_delivery_retry",
@@ -19885,7 +19885,7 @@
           "assert_eq!(event[\"error_code\"], \"http_401\")",
           "assert_eq!(event[\"test_success\"], false)",
           "assert_eq!(intent[\"last_error_code\"], \"http_500\")",
-          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(60))\n            )",
+          "assert_eq!(\n                intent[\"next_retry_at\"],\n                datetime(due + Duration::seconds(10))\n            )",
           "assert_eq!(event[\"status\"], \"test_failed\")",
           "assert_eq!(event[\"error_code\"], \"http_500\")",
           "assert_eq!(event[\"test_success\"], false)",
@@ -19897,7 +19897,7 @@
         ],
         "fixtures": []
       },
-      "coverage_note": "固定旧断言“test failure is cached and does not retest for delivery retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked."
+      "coverage_note": "固定旧断言“test failure is cached and does not retest for delivery retry”映射到 recovery_model_failure_is_persisted_once_and_auth_failure_does_not_retry；the Rust Monitor runs with an injected clock, temporary PostgreSQL, and loopback HTTP; persisted state and dispatched calls are checked. 0.1.67 连接测活失败默认间隔改为 10 秒、最多额外 3 次，额度查询预算和投递失败不重测的断言保持；范围、重启和上限由 recovery_connection_retry_policy_is_frozen_bounded_and_restart_safe 补充。"
     },
     {
       "legacy_test_id": "py:tests.test_oauth_monitor:OAuthMonitorExecutionTests.test_test_may_clear_one_old_block_before_recover_state",

@@ -374,3 +374,89 @@ async fn unit_query_backoff_keeps_raw_values_and_respects_http_date_and_fraction
         assert_eq!(requests.load(Ordering::SeqCst), 3);
     }
 }
+
+#[tokio::test]
+async fn shutdown_releases_coalesced_waiters_queued_slots_and_blocks_new_queries() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let count = hits.clone();
+    let site = site(move |_| {
+        let count = count.clone();
+        async move {
+            count.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<Response<Body>>().await
+        }
+    })
+    .await;
+    let (_dir, s) = fixture();
+    let mut queries = Vec::new();
+    for id in [1, 1, 2, 3, 4] {
+        let q = input(&s, &site, id);
+        let service = s.clone();
+        queries.push(tokio::spawn(async move { service.query(q, true).await }));
+    }
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while hits.load(Ordering::SeqCst) < 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    s.close().await;
+    for query in queries {
+        assert!(tokio::time::timeout(Duration::from_secs(1), query)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 3);
+    assert!(s.shared.entries.lock().unwrap().is_empty());
+    assert_eq!(s.shared.permits.available_permits(), 3);
+    assert!(s.query(input(&s, &site, 5), true).await.is_err());
+    assert_eq!(hits.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn removed_accounts_do_not_repopulate_samples_and_keep_live_cache_and_settings() {
+    let gate = Arc::new(Notify::new());
+    let started = Arc::new(Notify::new());
+    let (g, n) = (gate.clone(), started.clone());
+    let site = site(move |_| {
+        let (g, n) = (g.clone(), n.clone());
+        async move {
+            n.notify_one();
+            g.notified().await;
+            reply(200, json!({"balance":12}))
+        }
+    })
+    .await;
+    let (_dir, s) = fixture();
+    let service = s.clone();
+    let q = input(&s, &site, 1);
+    set_token(&s, 1, "fixture-saved-access-token");
+    let settings = s.account_settings(1).unwrap();
+    let query = tokio::spawn(async move { service.query(q, true).await });
+    started.notified().await;
+    s.forget(1);
+    gate.notify_one();
+    assert_eq!(query.await.unwrap().unwrap().state, "ok");
+    assert!(!s.shared.entries.lock().unwrap().contains_key("1"));
+    let service = s.clone();
+    let q = input(&s, &site, 2);
+    let query = tokio::spawn(async move { service.query(q, true).await });
+    started.notified().await;
+    gate.notify_one();
+    let live = query.await.unwrap().unwrap();
+    s.retain_accounts(&[json!({"id":2})]);
+    assert_eq!(
+        s.query(input(&s, &site, 2), false)
+            .await
+            .unwrap()
+            .checked_at,
+        live.checked_at
+    );
+    assert_eq!(s.account_settings(1).unwrap(), settings);
+    s.retain_accounts(&[]);
+    assert!(s.shared.entries.lock().unwrap().is_empty());
+    s.close().await;
+}

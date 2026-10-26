@@ -27,6 +27,7 @@ use tokio::{
 };
 
 mod cycle;
+mod retry;
 pub use cycle::{observe_cycle, repeat_open, CycleObservation};
 
 pub const PENDING: &[&str] = &["queued", "running", "checking", "needs_confirmation"];
@@ -77,6 +78,16 @@ pub fn validate_store(data: &Value) -> Result<()> {
         return Err(error());
     }
     for job in data["jobs"].as_object().unwrap().values() {
+        crate::connection_retry::Policy::saved(job)?;
+        if job
+            .get("attempt_count")
+            .is_some_and(|v| v.as_u64().is_none())
+            || job
+                .get("next_retry_at")
+                .is_some_and(|v| !v.is_null() && crate::compat::parse_datetime(v).is_none())
+        {
+            return Err(error());
+        }
         if !job.is_object()
             || !job["account_id"].is_i64()
             || !job["payload"].is_object()
@@ -226,6 +237,9 @@ pub trait Backend: Send + Sync {
     fn model_jobs(&self) -> Result<Vec<Value>>;
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>>;
     fn test_config(&self) -> Result<(String, usize)>;
+    fn retry_config(&self) -> Result<crate::connection_retry::Policy> {
+        Ok(crate::connection_retry::Policy::default())
+    }
     fn cycle_observation<'a>(
         &'a self,
         _id: i64,
@@ -233,6 +247,18 @@ pub trait Backend: Send + Sync {
         _refresh: bool,
     ) -> BoxFuture<'a, Result<CycleObservation>> {
         Box::pin(async { Err(Error::new(422, "此服务不支持持续预约")) })
+    }
+    fn cycle_observations<'a>(
+        &'a self,
+        accounts: &'a [i64],
+    ) -> BoxFuture<'a, Result<BTreeMap<i64, Result<CycleObservation>>>> {
+        Box::pin(async move {
+            let mut observations = BTreeMap::new();
+            for id in accounts {
+                observations.insert(*id, self.cycle_observation(*id, "", false).await);
+            }
+            Ok(observations)
+        })
     }
     fn test_slots(&self) -> Option<crate::execution::TestSlots> {
         None
@@ -296,6 +322,8 @@ impl Operations {
             "template_target",
             "managed_child_ids",
             "detached",
+            "retry_policy",
+            "notification_suppressed",
         ] {
             map.shift_remove(field);
         }
@@ -388,7 +416,7 @@ impl Operations {
             .ok_or_else(Error::internal)
     }
     pub(crate) fn update_many(&self, changes: &[(&str, Value)]) -> Result<Vec<Value>> {
-        self.store.transaction(|data| {
+        let updated = self.store.transaction(|data| {
             let at = now();
             let mut updated = Vec::with_capacity(changes.len());
             for (jid, changes) in changes {
@@ -419,7 +447,14 @@ impl Operations {
                 updated.push(job.clone());
             }
             Ok(updated)
-        })
+        })?;
+        let mut keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
+        for job in &updated {
+            if !Self::needs_key(job) {
+                keys.remove(string(&job["id"]));
+            }
+        }
+        Ok(updated)
     }
     pub fn fingerprint(&self, row: &Value, job: &Value) -> Result<String> {
         let id = integer(&row["id"]).ok_or_else(Error::invalid)?;
@@ -1008,9 +1043,9 @@ impl Operations {
             return Ok(Self::model_view(&self.backend.model_cancel(jid).await?));
         };
         if job["repeat"] == "quota_cycle" {
-            return self.stop_repeat(jid, "已停止连续预约；已派发的测试保留结果");
+            return self.stop_repeat(jid, "已停止连续预约；已派发的测试保留结果", true);
         }
-        if connection_test(job) && truthy(&job["started_at"]) {
+        if connection_test(job) && truthy(&job["started_at"]) && job["status"] != "queued" {
             return self.get(jid, 0);
         }
         if matches!(string(&job["status"]), "queued" | "needs_confirmation") {
@@ -1045,6 +1080,10 @@ impl Operations {
             data = self.store.read_shared()?;
         }
         let jobs = data["jobs"].as_object().unwrap();
+        self.keys
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|id, _| jobs.get(id).is_none_or(Self::needs_key));
         self.record_scheduled_results(jobs.values())?;
         if !jobs
             .values()
@@ -1106,6 +1145,13 @@ impl Operations {
                 if !running.contains(string(&job["batch_id"])) {
                     waiting.insert(jid, "等待操作执行容量");
                 }
+                continue;
+            }
+            if job["status"] == "queued"
+                && crate::compat::parse_datetime(&job["next_retry_at"])
+                    .is_some_and(|at| at > self.backend.now())
+            {
+                waiting.insert(jid, "等待连接测试重试");
                 continue;
             }
             if job["status"] == "queued"
@@ -1195,7 +1241,7 @@ impl Operations {
     fn record_scheduled_results<'a>(&self, jobs: impl Iterator<Item = &'a Value>) -> Result<()> {
         let mut jobs = jobs
             .filter(|job| {
-                job["scheduled_at"].is_string()
+                (job["scheduled_at"].is_string() || job["repeat"] == "quota_cycle")
                     && !matches!(string(&job["status"]), "queued" | "running" | "checking")
             })
             .peekable();
@@ -1205,6 +1251,7 @@ impl Operations {
         // Connection-test receipts need no legacy recovery normalization.
         let state = self.actions.queries.oauth.0.read_shared()?;
         let mut history = BTreeMap::new();
+        let mut pending = BTreeMap::new();
         for job in jobs {
             let key = format!("connection-test:{}", string(&job["id"]));
             if state["recovery_history"]
@@ -1219,7 +1266,25 @@ impl Operations {
             } else {
                 string(&job["status"])
             };
-            history.insert(key, json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status}));
+            let entry = json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status,"attempt_count":job.get("attempt_count").cloned().unwrap_or(json!(u64::from(truthy(&job["started_at"]))))});
+            if matches!(status, "completed" | "failed" | "needs_confirmation")
+                && job["notification_suppressed"] != true
+            {
+                let mut event = entry.clone();
+                event["dedupe_key"] = key.clone().into();
+                event["duration_ms"] = result["duration_ms"].clone();
+                event["error"] = crate::security::safe_error(
+                    if truthy(&result["error"]) {
+                        &result["error"]
+                    } else {
+                        &job["reason"]
+                    },
+                    400,
+                )
+                .into();
+                pending.insert(key.clone(), event);
+            }
+            history.insert(key, entry);
         }
         if !history.is_empty() {
             self.actions
@@ -1227,6 +1292,7 @@ impl Operations {
                 .oauth
                 .commit(crate::oauth_state::Update {
                     history,
+                    pending,
                     ..Default::default()
                 })?;
         }
@@ -1402,6 +1468,17 @@ impl Operations {
             // A future connection test follows this account's current credentials,
             // including routine OAuth refreshes since the appointment was created.
             started["expected_version"] = self.fingerprint(row.as_ref().unwrap(), &job)?.into();
+            let policy = if integer(&job["attempt_count"]).unwrap_or(0) == 0 {
+                self.backend.retry_config()?
+            } else {
+                match crate::connection_retry::Policy::saved(&job)? {
+                    Some(policy) => policy,
+                    None => self.backend.retry_config()?,
+                }
+            };
+            started["retry_policy"] = serde_json::to_value(policy)?;
+            started["attempt_count"] = (integer(&job["attempt_count"]).unwrap_or(0) + 1).into();
+            started["next_retry_at"] = Value::Null;
         }
         let job = self.update(jid, started)?;
         if job["status"] != "running" {
@@ -1416,6 +1493,9 @@ impl Operations {
             .scope(context, self.dispatch(&row, &job, &key))
             .await?;
         let uncertain = connection_test(&job) && truthy(&result["uncertain"]);
+        if scheduled && self.retry_scheduled(&job, &result)? {
+            return Ok(());
+        }
         self.update(jid,json!({"status":if uncertain {"needs_confirmation"} else {"completed"},"reason":if uncertain {result.get("error").cloned().unwrap_or(json!(""))} else {json!("")},"result":result}))?;
         self.audit(&job, "completed");
         Ok(())
@@ -1452,6 +1532,12 @@ impl Operations {
             && (error.detail["code"] == "account_busy" || error.status.as_u16() == 409)
         {
             changes["started_at"] = Value::Null;
+            if job["status"] == "running" && job["retry_policy"].is_object() {
+                let attempts = integer(&job["attempt_count"])
+                    .unwrap_or(1)
+                    .saturating_sub(1);
+                changes["attempt_count"] = attempts.into();
+            }
         }
         self.update(jid, changes)?;
         Ok(())
@@ -1530,6 +1616,9 @@ impl Operations {
                     result["success"] = false.into();
                     result["error"] =
                         clean(&event["error"], if summary { 240 } else { 16000 }).into();
+                    if summary && event["error_code"].is_string() {
+                        result["error_code"] = event["error_code"].clone();
+                    }
                     if event["uncertain"] == true {
                         result["uncertain"] = true.into();
                     }

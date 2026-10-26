@@ -9,6 +9,7 @@ pub mod bark;
 pub mod capacity_alerts;
 pub mod compat;
 pub mod config_service;
+pub mod connection_retry;
 pub mod credit;
 pub mod credit_ownership;
 pub mod credit_policy;

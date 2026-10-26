@@ -319,6 +319,7 @@ export default function UsageCell({
       {account.recovery_monitor && !["cancelled", "recovered"].includes(account.recovery_monitor.status) && (!account.auto_reset_credit || !!account.auto_reset_credit.outcome) && (
         <details className="auto-reset-status">
           <summary>{account.recovery_monitor.label}</summary>
+          {account.recovery_monitor.attempt_count != null && <span>已尝试 {account.recovery_monitor.attempt_count} 次</span>}
           {account.recovery_monitor.next_at && <time>下次 {fullTime(account.recovery_monitor.next_at)}</time>}
         </details>
       )}

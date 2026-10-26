@@ -145,6 +145,7 @@ impl Runtime {
                 json!({"message":"删除未确认，请刷新核对实际状态","code":if code == "ok" {"readback_mismatch"} else {&code}}),
             ));
         }
+        self.key_quota.forget(id);
         Ok(json!({"account_id":id,"deleted":true,"verified":true}))
     }
     pub async fn recover_account(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {

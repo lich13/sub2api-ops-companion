@@ -63,6 +63,9 @@ impl ConfigService {
                 .into();
         values["model_detection_platforms"] =
             crate::settings::detection_platforms(&values["model_detection_platforms"])?;
+        let retry = crate::connection_retry::Policy::config(&values)?;
+        values["connection_test_retry_interval_seconds"] = retry.interval_seconds.into();
+        values["connection_test_max_retries"] = retry.max_retries.into();
         Ok(values)
     }
     pub fn current(&self) -> Result<Value> {
@@ -222,6 +225,8 @@ impl ConfigService {
                 values["oauth_daily_test_time"] =
                     daily_time(&values["oauth_daily_test_time"])?.into();
                 for (key, low, high) in [
+                    ("connection_test_retry_interval_seconds", 1, 3600),
+                    ("connection_test_max_retries", 0, 10),
                     ("oauth_usage_refresh_concurrency", 1, 16),
                     ("oauth_recovery_test_concurrency", 1, 8),
                     ("oauth_early_probe_batch_size", 1, 50),

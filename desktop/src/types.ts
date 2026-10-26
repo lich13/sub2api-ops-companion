@@ -36,7 +36,7 @@ export type Account = {
   success_after_error: boolean;
   usage_windows: UsageWindow[];
   usage?: UsageSummary;
-  recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null } | null;
+  recovery_monitor?: { status: string; label: string; reason: string; next_at?: string | null; attempt_count?: number; next_retry_at?: string | null } | null;
   auto_reset_credit?: {
     trigger_at?: string | null;
     consume_deadline_at?: string | null;
@@ -198,6 +198,7 @@ export type Recovery = {
   legacy: boolean;
   kind?: "quota_recovery" | "reset_credit" | "connection_test";
   result_status?: string;
+  attempt_count?: number;
   reset_credit?: { consumed?: boolean; completed_at: string; verification_method: "connection" | "model" };
 };
 export type Snapshot = {

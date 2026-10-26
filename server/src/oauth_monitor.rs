@@ -249,7 +249,7 @@ impl Monitor {
             if intent.is_object()
                 && !matches!(
                     string(&intent["status"]),
-                    "recovered" | "blocked" | "auth_failed" | "cancelled"
+                    "recovered" | "blocked" | "auth_failed" | "cancelled" | "retry_exhausted"
                 )
             {
                 intent["waiting_reason"] = reason.into();
@@ -350,7 +350,7 @@ impl Monitor {
             if !intent.is_object()
                 || matches!(
                     string(&intent["status"]),
-                    "cancelled" | "recovered" | "blocked" | "auth_failed"
+                    "cancelled" | "recovered" | "blocked" | "auth_failed" | "retry_exhausted"
                 )
             {
                 continue;

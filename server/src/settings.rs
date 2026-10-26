@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub const OAUTH_FIELDS: &[&str] = &[
+    "connection_test_retry_interval_seconds",
+    "connection_test_max_retries",
     "model_detection_model_id",
     "model_detection_platforms",
     "oauth_auto_reset_credit_enabled",
@@ -152,6 +154,8 @@ impl Settings {
             oauth[key] = bool_value(&configured(key), default).into();
         }
         for (key, default, min, max) in [
+            ("connection_test_retry_interval_seconds", 10, 1, 3600),
+            ("connection_test_max_retries", 3, 0, 10),
             ("oauth_usage_refresh_concurrency", 4, 1, 16),
             ("oauth_recovery_test_concurrency", 2, 1, 8),
             // Historical early-probe setting: retain storage, validation and

@@ -35,6 +35,23 @@ struct Cache {
     status: Value,
     group_locks: BTreeMap<i64, Arc<tokio::sync::Mutex<()>>>,
 }
+impl Cache {
+    fn baseline(&mut self, key: (i64, String, String), value: Value) {
+        let at = Instant::now();
+        self.baselines
+            .retain(|_, (saved, _)| at.duration_since(*saved) < Duration::from_secs(60));
+        self.baselines.insert(key, (at, value));
+        while self.baselines.len() > 128 {
+            let oldest = self
+                .baselines
+                .iter()
+                .min_by_key(|(_, value)| value.0)
+                .map(|(key, _)| key.clone())
+                .unwrap();
+            self.baselines.remove(&oldest);
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Catalog {
     db: Database,
@@ -330,10 +347,9 @@ impl Catalog {
                             self.cache
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner())
-                                .baselines
-                                .insert(
+                                .baseline(
                                     (id, version.into(), "admin-preview".into()),
-                                    (Instant::now(), body.clone()),
+                                    body.clone(),
                                 );
                             return Ok((body, "native".into()));
                         }
@@ -515,20 +531,10 @@ impl Catalog {
         let original: Value = serde_json::from_slice(raw)?;
         {
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            cache.baselines.insert(
+            cache.baseline(
                 (id, string(&group["version"]).into(), query.into()),
-                (Instant::now(), original.clone()),
+                original.clone(),
             );
-            if cache.baselines.len() > 128 {
-                if let Some(key) = cache
-                    .baselines
-                    .iter()
-                    .min_by_key(|(_, v)| v.0)
-                    .map(|(k, _)| k.clone())
-                {
-                    cache.baselines.remove(&key);
-                }
-            }
         }
         let accounts = if group["platform"] == "composite" || truthy(&saved["reasoning"]) {
             self.accounts(id).await?
@@ -1288,5 +1294,48 @@ impl Catalog {
             .responses
             .clear();
         self.read_reasoning(id, key).await
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[test]
+    fn preview_and_public_baselines_share_capacity_and_expiration() {
+        let mut cache = Cache {
+            baselines: BTreeMap::new(),
+            responses: BTreeMap::new(),
+            sources: BTreeMap::new(),
+            version: None,
+            status: Value::Null,
+            group_locks: BTreeMap::new(),
+        };
+        for id in 0..200 {
+            cache.baseline(
+                (
+                    id,
+                    "fixture-version".into(),
+                    if id % 2 == 0 {
+                        "admin-preview"
+                    } else {
+                        "fixture-query"
+                    }
+                    .into(),
+                ),
+                json!({"models":[id]}),
+            );
+        }
+        assert_eq!(cache.baselines.len(), 128);
+        assert!(cache.baselines.keys().all(|(id, _, _)| *id >= 72));
+        let current = Instant::now();
+        for (saved, _) in cache.baselines.values_mut() {
+            *saved = current - Duration::from_secs(61);
+        }
+        cache.baseline(
+            (201, "fixture-version".into(), "admin-preview".into()),
+            json!({"models":[201]}),
+        );
+        assert_eq!(cache.baselines.len(), 1);
     }
 }
