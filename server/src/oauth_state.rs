@@ -534,19 +534,22 @@ impl OAuthState {
         // Always consult Store first: its file stamp also catches external
         // replacements and corrupt writes even when this projection is cached.
         let source = self.0.read_shared()?;
+        Ok(self.normalized_snapshot(source))
+    }
+    pub(crate) fn normalized_snapshot(&self, source: Arc<Value>) -> Arc<Value> {
         let mut cache = self.1.lock().unwrap_or_else(|error| error.into_inner());
         if let Some(cached) = cache
             .as_ref()
             .filter(|cached| Arc::ptr_eq(&cached.source, &source))
         {
-            return Ok(cached.value.clone());
+            return cached.value.clone();
         }
         let value = Arc::new(normalize(&source));
         *cache = Some(Normalized {
             source,
             value: value.clone(),
         });
-        Ok(value)
+        value
     }
     pub fn transaction<T>(&self, action: impl FnOnce(&mut Value) -> Result<T>) -> Result<T> {
         self.0.transaction(|value| {
@@ -683,6 +686,7 @@ mod shared_tests {
         std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
         let state = OAuthState::new(path.clone(), false);
         let first = state.shared_snapshot().unwrap();
+        let original_source = state.0.read_shared().unwrap();
         assert_eq!(*first, normalize(&legacy));
         assert!(Arc::ptr_eq(
             &first,
@@ -700,6 +704,8 @@ mod shared_tests {
         let second = state.shared_snapshot().unwrap();
         assert!(!Arc::ptr_eq(&first, &second));
         assert!(first["scheduler"]["1"]["last_reason"].is_null());
+        assert_eq!(*state.normalized_snapshot(original_source), *first);
+        assert_eq!(*state.shared_snapshot().unwrap(), *second);
         let replacement = root.path().join("replacement.json");
         std::fs::write(&replacement, b"{}").unwrap();
         std::fs::rename(replacement, &path).unwrap();

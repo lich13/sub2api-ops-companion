@@ -329,9 +329,9 @@ impl Detection {
             return Err(Error::invalid());
         }
         let before = before.map(decode).transpose()?;
-        let jobs = self.tests.data()?;
-        let detection = self.store.read()?;
-        let raw_oauth = self.monitor.store.0.read()?;
+        let jobs = self.tests.shared_data()?;
+        let detection = self.store.read_shared()?;
+        let raw_oauth = self.monitor.store.0.read_shared()?;
         if ["pending_events", "recovery_history"].iter().any(|key| {
             raw_oauth.get(*key).is_some_and(|v| {
                 v.as_object()
@@ -340,7 +340,7 @@ impl Detection {
         }) {
             return Err(Error::new(503, "检测恢复状态无效"));
         }
-        let oauth = crate::oauth_state::normalize(&raw_oauth);
+        let oauth = self.monitor.store.normalized_snapshot(raw_oauth);
         if detection.get("disposition_notifications").is_some_and(|v| {
             v.as_object().is_none_or(|notices| {
                 notices

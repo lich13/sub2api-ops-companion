@@ -193,16 +193,54 @@ pub fn validate_overrides(overrides: &Value, bases: &Value) -> Result<()> {
     }
     Ok(())
 }
+enum ModelPattern<'a> {
+    Exact(&'a str),
+    Wildcard(Option<regex::Regex>),
+}
+impl<'a> ModelPattern<'a> {
+    fn new(pattern: &'a str) -> Self {
+        // Keep the regex engine's size-limit behavior for oversized literals.
+        if !pattern.contains('*') && pattern.len() <= 4096 {
+            return Self::Exact(pattern);
+        }
+        let regex = format!(
+            "^(?:{})$",
+            pattern
+                .split('*')
+                .map(regex::escape)
+                .collect::<Vec<_>>()
+                .join(".*")
+        );
+        Self::Wildcard(regex::Regex::new(&regex).ok())
+    }
+    fn matches(&self, model: &str) -> bool {
+        match self {
+            Self::Exact(pattern) => *pattern == model,
+            Self::Wildcard(regex) => regex.as_ref().is_some_and(|regex| regex.is_match(model)),
+        }
+    }
+}
+pub(crate) struct Allowlist<'a>(Option<Vec<ModelPattern<'a>>>);
+impl<'a> Allowlist<'a> {
+    pub(crate) fn new(value: &'a Value) -> Self {
+        Self(truthy(&value["enabled"]).then(|| {
+            value["models"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(ModelPattern::new)
+                .collect()
+        }))
+    }
+    pub(crate) fn admits(&self, model: &str) -> bool {
+        self.0
+            .as_ref()
+            .is_none_or(|patterns| patterns.iter().any(|pattern| pattern.matches(model)))
+    }
+}
 pub fn matches(pattern: &str, model: &str) -> bool {
-    let regex = format!(
-        "^(?:{})$",
-        pattern
-            .split('*')
-            .map(regex::escape)
-            .collect::<Vec<_>>()
-            .join(".*")
-    );
-    regex::Regex::new(&regex).is_ok_and(|v| v.is_match(model))
+    ModelPattern::new(pattern).matches(model)
 }
 pub fn admitted(allowlist: &Value, model: &str) -> bool {
     !truthy(&allowlist["enabled"])
@@ -374,6 +412,7 @@ pub fn transform(
     allowlist: &Value,
     aliases: &Value,
 ) -> Result<Value> {
+    let allowlist = Allowlist::new(allowlist);
     let mut models = body["models"]
         .as_array()
         .filter(|v| v.iter().all(|m| m.is_object() && m["slug"].is_string()))
@@ -381,7 +420,7 @@ pub fn transform(
         .ok_or_else(|| Error::new(422, "原始 Codex 目录格式无效"))?;
     let present: BTreeSet<String> = models.iter().map(|v| string(&v["slug"]).into()).collect();
     for (model, descriptor) in aliases.as_object().into_iter().flatten() {
-        if !present.contains(model) && admitted(allowlist, model) {
+        if !present.contains(model) && allowlist.admits(model) {
             let mut value = descriptor.clone();
             value["slug"] = model.clone().into();
             models.push(value);
@@ -389,7 +428,7 @@ pub fn transform(
     }
     let mut entries = vec![];
     for model in models {
-        if !admitted(allowlist, string(&model["slug"])) {
+        if !allowlist.admits(string(&model["slug"])) {
             continue;
         }
         let patch = &overrides[string(&model["slug"])];
@@ -401,4 +440,91 @@ pub fn transform(
     let mut output = body.clone();
     output["models"] = entries.into();
     Ok(output)
+}
+
+#[cfg(test)]
+mod matching_tests {
+    use super::*;
+
+    fn legacy(pattern: &str) -> Option<regex::Regex> {
+        regex::Regex::new(&format!(
+            "^(?:{})$",
+            pattern
+                .split('*')
+                .map(regex::escape)
+                .collect::<Vec<_>>()
+                .join(".*")
+        ))
+        .ok()
+    }
+
+    #[test]
+    fn exact_and_batch_matching_preserve_unicode_escaping_and_newline_semantics() {
+        let patterns = [
+            "",
+            "*",
+            "gpt-*",
+            "中文*模型",
+            "a+b.[x]$",
+            "a\\b",
+            "ab**cd",
+            "a\nb",
+            "*\nb",
+            "模型🦀",
+        ];
+        let models = [
+            "",
+            "gpt-fixture",
+            "GPT-fixture",
+            "中文测试模型",
+            "a+b.[x]$",
+            "axb",
+            "a\\b",
+            "abcd",
+            "ab\ncd",
+            "a\nb",
+            "gpt-fixture\n",
+            "模型🦀",
+        ];
+        for pattern in patterns {
+            let old = legacy(pattern).unwrap();
+            let value = json!({"enabled":true,"models":[pattern,null,4]});
+            let batch = Allowlist::new(&value);
+            for model in models {
+                let expected = old.is_match(model);
+                assert_eq!(matches(pattern, model), expected, "{pattern:?} / {model:?}");
+                assert_eq!(
+                    batch.admits(model),
+                    expected,
+                    "batch: {pattern:?} / {model:?}"
+                );
+                assert_eq!(admitted(&value, model), expected);
+            }
+        }
+        for value in [
+            Value::Null,
+            json!({"enabled":false}),
+            json!({"enabled":true}),
+            json!({"enabled":true,"models":[null,4]}),
+        ] {
+            let batch = Allowlist::new(&value);
+            for model in models {
+                assert_eq!(batch.admits(model), admitted(&value, model));
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_patterns_keep_regex_resource_limits() {
+        for pattern in ["a".repeat(5000), "*".repeat(100_000)] {
+            let old = legacy(&pattern);
+            assert_eq!(
+                matches(&pattern, &pattern),
+                old.as_ref().is_some_and(|v| v.is_match(&pattern))
+            );
+            if pattern.starts_with('*') {
+                assert!(old.is_none());
+            }
+        }
+    }
 }

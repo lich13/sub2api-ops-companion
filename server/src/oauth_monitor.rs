@@ -141,6 +141,7 @@ impl Monitor {
                 self.config.reconcile(&rows).await?;
                 self.initialize_queries(&rows)?;
             }
+            self.queries.retain_accounts(&rows);
             *cache = (Some(Instant::now()), rows);
         }
         Ok(cache.1.clone())

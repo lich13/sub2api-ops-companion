@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    sync::atomic::Ordering,
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
@@ -16,7 +16,7 @@ use std::{
 pub(crate) struct Cache {
     epoch: u64,
     observed: Option<Instant>,
-    snapshot: Value,
+    snapshot: Arc<Value>,
     stats_at: Option<Instant>,
     stats_signature: Value,
     stats: usage::Stats,
@@ -28,6 +28,9 @@ impl Runtime {
         self.cache_epoch.fetch_add(1, Ordering::AcqRel);
     }
     pub async fn snapshot(&self) -> Result<Value> {
+        self.shared_snapshot().await.map(|value| (*value).clone())
+    }
+    async fn shared_snapshot(&self) -> Result<Arc<Value>> {
         let mut cache = self.snapshot.lock().await;
         let epoch = self.cache_epoch.load(Ordering::Acquire);
         if cache.epoch == epoch
@@ -41,6 +44,7 @@ impl Runtime {
         let state = self.actions.queries.oauth.shared_snapshot()?;
         let rows = self.actions.queries.accounts().await?;
         self.key_quota.retain_accounts(&rows);
+        self.monitor.queries.retain_accounts(&rows);
         let mut specs = vec![];
         let mut accounts = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -123,8 +127,10 @@ impl Runtime {
         let groups = self.actions.queries.groups(&rows).await?;
         let errors = self.actions.queries.errors(None, None, 20, None).await?;
         let recoveries = self.actions.queries.recoveries(None, 20).await?;
-        let result = json!({"schema_version":1,"observed_at":datetime(now),"accounts":accounts,"groups":groups,
-            "errors":errors["items"],"recoveries":recoveries["items"]});
+        let result = Arc::new(
+            json!({"schema_version":1,"observed_at":datetime(now),"accounts":accounts,"groups":groups,
+            "errors":errors["items"],"recoveries":recoveries["items"]}),
+        );
         if self.cache_epoch.load(Ordering::Acquire) == epoch {
             cache.epoch = epoch;
             cache.observed = Some(Instant::now());
@@ -135,7 +141,7 @@ impl Runtime {
         Ok(result)
     }
     pub async fn account_snapshot(&self, id: i64) -> Result<Value> {
-        Ok(self.snapshot().await?["accounts"]
+        Ok(self.shared_snapshot().await?["accounts"]
             .as_array()
             .unwrap()
             .iter()

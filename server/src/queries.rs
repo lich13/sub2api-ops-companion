@@ -402,12 +402,11 @@ impl Queries {
     }
     pub async fn recoveries(&self, before: Option<i64>, limit: usize) -> Result<Value> {
         let state = self.oauth.shared_snapshot()?;
-        let mut rows: Vec<Value> = state["recovery_history"]
+        let mut rows: Vec<&Value> = state["recovery_history"]
             .as_object()
             .into_iter()
             .flat_map(|v| v.values())
             .filter(|v| before.is_none_or(|b| integer(&v["id"]).unwrap_or(0) < b))
-            .cloned()
             .collect();
         rows.sort_by_key(|v| std::cmp::Reverse(integer(&v["id"]).unwrap_or(0)));
         let names: BTreeMap<i64, Value> = if rows.is_empty() {

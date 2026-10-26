@@ -689,6 +689,24 @@ async fn invalid_query_and_corrupt_store_inputs_have_bounded_status_errors() {
         );
         fs::write(path, original).unwrap();
     }
+    let path = &runtime.settings.usage_path;
+    let original = fs::read(path).unwrap();
+    for section in ["pending_events", "recovery_history"] {
+        runtime.detection.logs(None, 10).unwrap();
+        let mut corrupt: Value = serde_json::from_slice(&original).unwrap();
+        corrupt[section]["fixture-invalid-row"] = json!(false);
+        fs::write(path, serde_json::to_vec(&corrupt).unwrap()).unwrap();
+        assert_eq!(
+            runtime
+                .detection
+                .logs(None, 10)
+                .unwrap_err()
+                .status
+                .as_u16(),
+            503
+        );
+        fs::write(path, &original).unwrap();
+    }
     harness.close().await;
 }
 

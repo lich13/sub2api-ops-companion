@@ -357,6 +357,9 @@ fn model_config_revision_read_only_and_corrupt_state_match_pinned_python() {
         corrupt.read().is_err(),
         "invalid model config schema must be rejected"
     );
+    assert!(corrupt
+        .group(contract["group_id"].as_i64().unwrap())
+        .is_err());
     assert_eq!(fs::read(&corrupt_path).unwrap(), before_corrupt);
     assert_eq!(contract["corrupt_rejected"].as_bool(), Some(true));
     assert_eq!(contract["corrupt_unchanged"].as_bool(), Some(true));

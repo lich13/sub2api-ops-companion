@@ -7,7 +7,7 @@ use crate::{
     db::Param,
     error::{Error, Result},
     model_candidates::{Candidates, Failure},
-    model_rules::admitted,
+    model_rules::Allowlist,
     queries::{settings_capabilities, Queries},
     security::{clean, safe_error},
     settings::Settings,
@@ -201,9 +201,14 @@ pub fn exact_models(allowlists: &[Value]) -> Vec<Value> {
 pub fn filter_models(items: &[Value], allowlists: &[Value]) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let unrestricted = allowlists.is_empty() || allowlists.iter().any(|v| !truthy(&v["enabled"]));
+    let allowlists: Vec<_> = if unrestricted {
+        vec![]
+    } else {
+        allowlists.iter().map(Allowlist::new).collect()
+    };
     items.iter().filter_map(|item| {
         item["id"].as_str()?;let id=clean(&item["id"],200).trim().to_owned();if id.is_empty() || !seen.insert(id.clone()) {return None;}
-        if !unrestricted && !allowlists.iter().any(|v|admitted(v,&id)) {return None;}
+        if !unrestricted && !allowlists.iter().any(|v|v.admits(&id)) {return None;}
         Some(json!({"id":clean(&item["id"],200),"display_name":clean(&item["display_name"],200),"type":clean(&item["type"],200)}))
     }).collect()
 }

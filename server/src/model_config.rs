@@ -53,7 +53,7 @@ impl ModelConfig {
         self.0.read()
     }
     pub fn group(&self, id: i64) -> Result<Value> {
-        let data = self.read()?;
+        let data = self.0.read_shared()?;
         let mut saved = data["groups"][id.to_string()]
             .as_object()
             .cloned()

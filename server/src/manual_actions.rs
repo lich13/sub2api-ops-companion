@@ -146,6 +146,7 @@ impl Runtime {
             ));
         }
         self.key_quota.forget(id);
+        self.monitor.queries.forget(id);
         Ok(json!({"account_id":id,"deleted":true,"verified":true}))
     }
     pub async fn recover_account(&self, id: i64, payload: &Value, key: &str) -> Result<Value> {

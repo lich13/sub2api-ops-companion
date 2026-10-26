@@ -7,7 +7,7 @@ use crate::{
         complete_descriptor, forwarding, model_id, patch_descriptor, reasoning_fields,
         reasoning_values, routing_binding, same_reasoning, FIELDS,
     },
-    model_rules::{admitted, revision, transform, validate_overrides},
+    model_rules::{admitted, revision, transform, validate_overrides, Allowlist},
     security::clean,
     settings::Settings,
     upstream::{read_limited, Upstream},
@@ -36,6 +36,14 @@ struct Cache {
     group_locks: BTreeMap<i64, Arc<tokio::sync::Mutex<()>>>,
 }
 impl Cache {
+    fn group_lock(&mut self, id: i64) -> Arc<tokio::sync::Mutex<()>> {
+        if let Some(lock) = self.group_locks.get(&id) {
+            return lock.clone();
+        }
+        self.group_locks
+            .retain(|_, lock| Arc::strong_count(lock) > 1);
+        self.group_locks.entry(id).or_default().clone()
+    }
     fn baseline(&mut self, key: (i64, String, String), value: Value) {
         let at = Instant::now();
         self.baselines
@@ -386,8 +394,9 @@ impl Catalog {
             .iter()
             .map(|v| (string(&v["slug"]), v))
             .collect();
+        let allowlist = Allowlist::new(&group["model_allowlist"]);
         for (model, entry) in saved["reasoning"].as_object().into_iter().flatten() {
-            if entry["mode"] != "active" || !admitted(&group["model_allowlist"], model) {
+            if entry["mode"] != "active" || !allowlist.admits(model) {
                 continue;
             }
             let (binding, available) = routing_binding(group, model, accounts, routes);
@@ -1176,10 +1185,7 @@ impl Catalog {
         self.cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .group_locks
-            .entry(id)
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
+            .group_lock(id)
     }
     pub async fn save_reasoning(&self, id: i64, key: &str, payload: &Value) -> Result<Value> {
         if self.read_only {
@@ -1301,16 +1307,43 @@ impl Catalog {
 mod cache_tests {
     use super::*;
 
-    #[test]
-    fn preview_and_public_baselines_share_capacity_and_expiration() {
-        let mut cache = Cache {
+    fn empty() -> Cache {
+        Cache {
             baselines: BTreeMap::new(),
             responses: BTreeMap::new(),
             sources: BTreeMap::new(),
             version: None,
             status: Value::Null,
             group_locks: BTreeMap::new(),
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn group_lock_cleanup_keeps_borrowed_guards_and_waiters_exclusive() {
+        let mut cache = empty();
+        let lock = cache.group_lock(1);
+        let held = lock.lock().await;
+        let queued_lock = cache.group_lock(1);
+        let mut queued = Box::pin(queued_lock.lock());
+        assert!(futures_util::poll!(&mut queued).is_pending());
+        drop(cache.group_lock(2));
+        assert!(Arc::ptr_eq(&lock, &cache.group_lock(1)));
+        drop(held);
+        drop(lock);
+        drop(cache.group_lock(3));
+        let acquired = tokio::time::timeout(Duration::from_secs(1), queued)
+            .await
+            .unwrap();
+        assert!(cache.group_lock(1).try_lock().is_err());
+        drop(acquired);
+        drop(queued_lock);
+        drop(cache.group_lock(4));
+        assert_eq!(cache.group_locks.keys().copied().collect::<Vec<_>>(), [4]);
+    }
+
+    #[test]
+    fn preview_and_public_baselines_share_capacity_and_expiration() {
+        let mut cache = empty();
         for id in 0..200 {
             cache.baseline(
                 (

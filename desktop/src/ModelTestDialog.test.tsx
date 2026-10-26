@@ -260,6 +260,70 @@ describe("ModelTestDialog candidates", () => {
     expect(container.querySelector(".model-test-status")?.textContent).toContain("已完成");
   });
 
+  it("continues polling a running test when a failed model directory is retried", async () => {
+    vi.useFakeTimers();
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = {
+      id: "fixture-running", status: "running", requested_model: "gpt-6-luna", forwarded_model: "gpt-6-luna",
+      returned_models: [], completed_groups: 0, valid_groups: 0, attempts: 1, duration_ms: 0,
+    };
+    let reads = 0;
+    let polls = 0;
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path.endsWith("/latest")) return job as never;
+      if (path === "/accounts/101/models?purpose=model_test" && ++reads === 1) throw new Error("目录失败");
+      if (path === `/model-tests/${job.id}`) {
+        polls += 1;
+        return (polls === 1 ? job : { ...job, status: "completed", completed_groups: 3, valid_groups: 3 }) as never;
+      }
+      return original(method, path, body);
+    });
+    await act(async () => root.render(<ModelTestDialog account={account} online close={vi.fn()} report={vi.fn()}/>));
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(polls).toBe(1);
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "重试")!;
+    await act(async () => retry.click());
+    expect(reads).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(polls).toBe(2);
+    expect(container.querySelector(".model-test-status")?.textContent).toContain("已完成");
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(polls).toBe(2);
+  });
+
+  it.each(["switch", "close"] as const)("discards an outstanding poll after %s", async (action) => {
+    vi.useFakeTimers();
+    const original = vi.mocked(api).getMockImplementation()!;
+    const job = { id: "fixture-old", status: "running", requested_model: "gpt-6-luna", returned_models: [], completed_groups: 0, valid_groups: 0, attempts: 1, duration_ms: 0 };
+    let resolvePoll!: (value: unknown) => void;
+    const pending = new Promise(resolve => { resolvePoll = resolve; });
+    vi.mocked(api).mockImplementation(async (method, path, body) => {
+      if (path === "/accounts/101/model-tests/latest") return job as never;
+      if (path === `/model-tests/${job.id}`) return pending as never;
+      if (path === "/accounts/202/models?purpose=model_test") return [{ id: "fixture-new", display_name: "New", type: "model" }] as never;
+      if (path === "/accounts/202/model-tests/latest") return null as never;
+      return original(method, path, body);
+    });
+    const report = vi.fn();
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => root.render(null)} report={report}/>));
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    if (action === "switch") {
+      await act(async () => root.render(<ModelTestDialog account={{ ...account, id: 202 }} online close={vi.fn()} report={report}/>));
+    } else {
+      await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭模型测试"]')!.click());
+    }
+    await settle();
+    await act(async () => resolvePoll({ ...job, status: "completed" }));
+    expect(container.querySelector(".model-test-status")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(vi.mocked(api).mock.calls.filter(([, path]) => path === `/model-tests/${job.id}`)).toHaveLength(1);
+    if (action === "switch") expect(container.querySelector<HTMLSelectElement>('select[aria-label="测试模型"]')!.value).toBe("fixture-new");
+    else expect(container.textContent).toBe("");
+    expect(report).not.toHaveBeenCalled();
+  });
+
   it("ignores candidate responses after the dialog is unmounted", async () => {
     let resolveModels!: (value: unknown) => void;
     const pendingModels = new Promise((resolve) => { resolveModels = resolve; });

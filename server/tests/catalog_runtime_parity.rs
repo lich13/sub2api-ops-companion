@@ -961,6 +961,22 @@ async fn snapshot_invalidation_never_waits_or_republishes_inflight_cache() {
         second,
         "the subsequent uncontended snapshot is cached normally"
     );
+    let mut account = harness.runtime.account_snapshot(12).await.unwrap();
+    assert_eq!(account, second["accounts"][0]);
+    account["name"] = "fixture-caller-mutation".into();
+    assert_eq!(
+        harness.runtime.account_snapshot(12).await.unwrap(),
+        second["accounts"][0]
+    );
+    assert_eq!(
+        harness.runtime.account_snapshot(-1).await.unwrap(),
+        Value::Null
+    );
+    harness.runtime.invalidate().await;
+    assert_eq!(
+        harness.runtime.account_snapshot(12).await.unwrap()["name"],
+        "fixture-unobserved"
+    );
     assert!(harness.mock.calls.lock().unwrap().is_empty());
     harness.close().await;
 }

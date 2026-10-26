@@ -15,7 +15,7 @@ use crate::{
 use chrono::{DateTime, Duration as TimeDelta, Utc};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -65,6 +65,16 @@ struct Flights {
     tasks: BTreeMap<i64, tokio::task::JoinHandle<()>>,
     closed: bool,
 }
+impl Flights {
+    fn forget(&mut self, id: i64) {
+        self.completed.remove(&id);
+        self.deferred.remove(&id);
+    }
+    fn retain_accounts(&mut self, ids: &BTreeSet<i64>) {
+        self.completed.retain(|id, _| ids.contains(id));
+        self.deferred.retain(|id, _| ids.contains(id));
+    }
+}
 #[derive(Clone)]
 pub struct Coordinator {
     pub actions: Actions,
@@ -95,6 +105,19 @@ async fn wait(mut pending: Pending, seconds: u64) -> Value {
         .unwrap_or_else(|_| json!({"success":false,"uncertain":true,"error_code":"timeout"}))
 }
 impl Coordinator {
+    pub(crate) fn forget(&self, id: i64) {
+        self.flights
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .forget(id);
+    }
+    pub(crate) fn retain_accounts(&self, rows: &[Value]) {
+        let ids: BTreeSet<_> = rows.iter().filter_map(|row| integer(&row["id"])).collect();
+        self.flights
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain_accounts(&ids);
+    }
     pub fn new(actions: Actions, capacity: Arc<dyn Fn() -> usize + Send + Sync>) -> Self {
         Self {
             actions,
@@ -714,5 +737,50 @@ impl Coordinator {
             .unwrap_or_else(|e| e.into_inner())
             .pending
             .clear();
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deleted_account_cleanup_keeps_live_results_and_pending_tasks() {
+        let mut flights = Flights::default();
+        for id in 1..=3 {
+            flights.completed.insert(
+                id,
+                (Instant::now(), "fixture".into(), json!({"account_id":id})),
+            );
+            flights.deferred.insert(id, ("query_cooldown".into(), None));
+        }
+        let (result, receiver) = watch::channel(None);
+        let (release, waiting) = tokio::sync::oneshot::channel();
+        flights.pending.insert(2, receiver);
+        flights.tasks.insert(
+            2,
+            tokio::spawn(async move {
+                waiting.await.unwrap();
+                result.send(Some(json!({"success":true}))).unwrap();
+            }),
+        );
+        flights.forget(2);
+        assert_eq!(
+            flights.completed.keys().copied().collect::<Vec<_>>(),
+            [1, 3]
+        );
+        assert_eq!(flights.deferred.keys().copied().collect::<Vec<_>>(), [1, 3]);
+        flights.retain_accounts(&BTreeSet::from([3]));
+        assert_eq!(flights.completed[&3].2, json!({"account_id":3}));
+        assert_eq!(flights.completed.len(), 1);
+        assert_eq!(flights.deferred.keys().copied().collect::<Vec<_>>(), [3]);
+        assert_eq!(flights.pending.len(), 1);
+        assert_eq!(flights.tasks.len(), 1);
+        release.send(()).unwrap();
+        assert_eq!(
+            wait(flights.pending[&2].clone(), 1).await,
+            json!({"success":true})
+        );
+        flights.tasks.remove(&2).unwrap().await.unwrap();
     }
 }

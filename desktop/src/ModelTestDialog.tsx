@@ -48,7 +48,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
       if (!alive || current !== scope.current) return;
       setModels(items); setModel((old) => old || items[0]?.id || "");
     }).catch((e) => { if (alive && current === scope.current) { setModelError(e instanceof Error ? e.message : "模型候选读取失败"); reportRef.current(e); } }).finally(() => { if (alive && current === scope.current) setLoading(false); });
-    return () => { alive = false; ++generation.current; clearTimeout(timer.current); };
+    return () => { alive = false; };
   }, [account.id, online, modelReload]);
   useEffect(() => {
     let alive = true; const current = scope.current;
@@ -86,7 +86,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
     };
     timer.current = setTimeout(() => void poll(), 400);
     return () => { ++generation.current; clearTimeout(timer.current); };
-  }, [job?.id, job?.status, online]);
+  }, [job?.id, job?.status, account.id, online]);
   async function start() {
     if (busy || defaultsLoading || !online || !model || modelError || !models.some((item) => item.id === model)) return;
     const current = scope.current;

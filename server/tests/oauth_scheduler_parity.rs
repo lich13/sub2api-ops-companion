@@ -1817,6 +1817,85 @@ async fn concurrent_automatic_and_manual_coordinator_queries_coalesce_once() {
 }
 
 #[tokio::test]
+async fn deleted_account_cache_cleanup_preserves_inflight_queries_and_live_results() {
+    let harness = Harness::new().await;
+    let live = harness
+        .seed_account("plus", "fixture-live-cache", json!({}))
+        .await;
+    let live_id = integer(&live["id"]).unwrap();
+    let requested_at = Instant::now();
+    let live_result = harness
+        .runtime
+        .monitor
+        .queries
+        .query(
+            live_id,
+            ADMIN_KEY,
+            query_options(Source::Manual, harness.now()),
+        )
+        .await;
+    assert_eq!(live_result["success"], true);
+    let row = harness
+        .seed_account("plus", "fixture-deleted-cache", json!({}))
+        .await;
+    let id = integer(&row["id"]).unwrap();
+    let gate = Gate::new();
+    *harness.mock.usage_gate.lock().unwrap() = Some(gate.clone());
+    let coordinator = harness.runtime.monitor.queries.clone();
+    let options = query_options(Source::Manual, harness.now());
+    let owner = tokio::spawn(async move { coordinator.query(id, ADMIN_KEY, options).await });
+    tokio::time::timeout(StdDuration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET deleted_at=$1 WHERE id=$2")
+        .bind(harness.now())
+        .bind(id)
+        .execute(&harness.runtime.db.pool)
+        .await
+        .unwrap();
+    harness.runtime.monitor.inventory(true).await.unwrap();
+    let mut follower = Box::pin(
+        harness
+            .runtime
+            .monitor
+            .queries
+            .join_existing(id, requested_at),
+    );
+    assert!(futures_util::poll!(&mut follower).is_pending());
+    *harness.mock.usage_gate.lock().unwrap() = None;
+    gate.release.notify_one();
+    let result = owner.await.unwrap();
+    assert_eq!(result["success"], true);
+    let joined = follower.await.unwrap();
+    assert_eq!(joined["success"], true);
+    assert_eq!(joined["coalesced"], true);
+    assert_eq!(harness.mock.count("GET", "/usage"), 2);
+    let persisted = harness.runtime.monitor.state().unwrap()["oauth_results"].clone();
+    assert!(persisted[id.to_string()].is_object());
+    // A late completion may refill the cache; the next full inventory removes it.
+    harness.runtime.snapshot().await.unwrap();
+    assert!(harness
+        .runtime
+        .monitor
+        .queries
+        .join_existing(id, requested_at)
+        .await
+        .is_none());
+    assert!(harness
+        .runtime
+        .monitor
+        .queries
+        .join_existing(live_id, requested_at)
+        .await
+        .is_some());
+    assert_eq!(
+        harness.runtime.monitor.state().unwrap()["oauth_results"],
+        persisted
+    );
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn single_and_batch_runtime_queries_coalesce_and_keep_request_locks() {
     let harness = Harness::new().await;
     let row = harness
