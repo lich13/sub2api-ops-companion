@@ -836,6 +836,56 @@ async fn keepalive_desktop_api_requires_auth_and_rejects_stale_versions() {
 }
 
 #[tokio::test]
+async fn keepalive_reads_preserve_history_and_validate_the_entire_changed_state() {
+    use sub2ops_server::store::write_json;
+
+    let h = Harness::new().await;
+    let keepalive = &h.runtime.keepalive;
+    let mut control = serde_json::to_value(keepalive.control(47_007).unwrap()).unwrap();
+    control["enabled"] = true.into();
+    control["generation"] = 7.into();
+    control["restores"] = json!(["2030-01-01T00:00:00Z"]);
+    control["reservations"] = json!([{"id":"fixture-reservation","at":"2030-01-01T00:01:00Z"}]);
+    control["pending"] = json!({"id":"fixture-reservation","generation":7,"fingerprint":"a".repeat(64),
+        "before_until":"2030-01-01T00:02:00Z","reason":"流响应超时","dispatched_at":"2030-01-01T00:01:00Z"});
+    control["notifications"] = json!([{"id":"fixture-notice","generation":7,"status":"pending",
+        "attempts":2,"next_at":"2030-01-01T00:03:00Z"}]);
+    let mut state = json!({"version":1,"accounts":{"47007":control}});
+    write_json(keepalive.store.path(), &state).unwrap();
+    let before = fs::read(keepalive.store.path()).unwrap();
+    for _ in 0..2 {
+        let mut read = keepalive.control(47_007).unwrap();
+        assert_eq!(
+            serde_json::to_value(&read).unwrap(),
+            state["accounts"]["47007"]
+        );
+        read.restores.clear();
+        read.notifications.clear();
+    }
+    assert!(!keepalive.control(47_008).unwrap().enabled);
+    assert_eq!(fs::read(keepalive.store.path()).unwrap(), before);
+
+    // A malformed unrelated record must invalidate the whole snapshot,
+    // including reads that were cached before the external replacement.
+    state["accounts"]["47008"] = json!({"enabled":"invalid","generation":0});
+    write_json(keepalive.store.path(), &state).unwrap();
+    let error = keepalive
+        .control(47_007)
+        .err()
+        .expect("reject corrupt state");
+    assert_eq!(error.status.as_u16(), 503);
+    assert!(keepalive.control(47_009).is_err());
+    state["accounts"]
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("47008");
+    state["accounts"]["47007"]["generation"] = 8.into();
+    write_json(keepalive.store.path(), &state).unwrap();
+    assert_eq!(keepalive.control(47_007).unwrap().generation, 8);
+    h.close().await;
+}
+
+#[tokio::test]
 async fn desktop_parameter_and_body_shape_errors_keep_422_before_authentication() {
     let h = Harness::new().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

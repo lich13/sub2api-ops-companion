@@ -11,6 +11,7 @@ use crate::{
     tasks::Tasks,
 };
 use chrono::{DateTime, Duration, Utc};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -85,17 +86,15 @@ impl Keepalive {
         self.detection.now()
     }
     pub fn control(&self, id: i64) -> Result<Control> {
-        match self.store.read()?["accounts"].get(id.to_string()) {
-            Some(value) => serde_json::from_value(value.clone()).map_err(|_| state::invalid()),
+        match self.store.read_shared()?["accounts"].get(id.to_string()) {
+            Some(value) => Control::deserialize(value).map_err(|_| state::invalid()),
             None => Ok(Control::default()),
         }
     }
     fn change<T>(&self, id: i64, change: impl FnOnce(&mut Control) -> Result<T>) -> Result<T> {
         self.store.transaction(|data| {
             let mut control = match data["accounts"].get(id.to_string()) {
-                Some(value) => {
-                    serde_json::from_value(value.clone()).map_err(|_| state::invalid())?
-                }
+                Some(value) => Control::deserialize(value).map_err(|_| state::invalid())?,
                 None => Control::default(),
             };
             let result = change(&mut control)?;
@@ -271,14 +270,13 @@ impl Keepalive {
         self.view(id).await
     }
     pub fn startup(&self) -> Result<()> {
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         if self.detection.actions.settings.read_only {
             return Ok(());
         }
         // A crash after sending a notification cannot prove it was not delivered.
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
-            let control: Control =
-                serde_json::from_value(value.clone()).map_err(|_| state::invalid())?;
+            let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
             if control.notifications.iter().any(|n| n.status == "sending") {
                 self.change(id.parse().map_err(|_| state::invalid())?, |c| {
                     for notice in &mut c.notifications {
@@ -300,11 +298,10 @@ impl Keepalive {
         let Ok(_tick) = self.tick_lock.try_lock() else {
             return Ok(());
         };
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         let mut controls = BTreeMap::new();
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
-            let control: Control =
-                serde_json::from_value(value.clone()).map_err(|_| state::invalid())?;
+            let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
             if control.enabled || control.pending.is_some() {
                 controls.insert(id.parse::<i64>().map_err(|_| state::invalid())?, control);
             }
@@ -553,10 +550,9 @@ impl Keepalive {
         if !config.valid {
             return Ok(());
         }
-        let data = self.store.read()?;
+        let data = self.store.read_shared()?;
         for (id, value) in data["accounts"].as_object().into_iter().flatten() {
-            let control: Control =
-                serde_json::from_value(value.clone()).map_err(|_| state::invalid())?;
+            let control: Control = Control::deserialize(value).map_err(|_| state::invalid())?;
             let id: i64 = id.parse().map_err(|_| state::invalid())?;
             for notice in control.notifications {
                 if notice.status != "pending" || notice.next_at.is_some_and(|t| t > self.now()) {

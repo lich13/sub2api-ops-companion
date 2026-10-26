@@ -2349,6 +2349,24 @@ async fn connection_batch_keeps_sanitized_summary_and_single_test_keeps_ephemera
         .unwrap()
         .iter()
         .any(|event| event["type"] == "content" && event["text"] == CONTENT_MARKER));
+    let events = result["events"].as_array().unwrap();
+    let saved_before_read = fs::read(harness.operations.store.0.path()).unwrap();
+    let next = harness
+        .operations
+        .get(single["id"].as_str().unwrap(), 1)
+        .unwrap();
+    assert_eq!(next["events"], json!(&events[1..]));
+    assert_eq!(next["next_event"], events.len());
+    let end = harness
+        .operations
+        .get(single["id"].as_str().unwrap(), usize::MAX)
+        .unwrap();
+    assert_eq!(end["events"], json!([]));
+    assert_eq!(end["next_event"], events.len());
+    assert_eq!(
+        fs::read(harness.operations.store.0.path()).unwrap(),
+        saved_before_read
+    );
     assert_eq!(
         harness.mock.test_calls().last().unwrap().body["model_id"],
         "fixture-single-model"

@@ -385,6 +385,40 @@ async fn historical_ownership_fields_are_omitted_without_rewriting_saved_jobs() 
 }
 
 #[tokio::test]
+async fn public_views_keep_requested_options_without_private_payloads_or_state_writes() {
+    let fixture = Fixture::new().await;
+    let mut state = valid_state_with_job_ids(json!([JOB_ID]));
+    let job = &mut state["jobs"][JOB_ID];
+    job["payload"] = json!({"confirmed":true,"mode":"default","model_id":"fixture-test-model",
+        "prompt":"fixture prompt","image_data_url":"data:image/png;base64,Zml4dHVyZQ==",
+        "audio_data_url":"data:audio/wav;base64,Zml4dHVyZQ==","expected_version":"0".repeat(64),
+        "detach_managed":true,"future_option":{"values":[false,0,null]}});
+    job["template_target"] = json!({"fixture":true});
+    job["retry_policy"] = json!({"max_retries":3,"interval_seconds":10});
+    job["notification_suppressed"] = true.into();
+    let before = fixture.replace_state(&state);
+    let job = &state["jobs"][JOB_ID];
+    let mut expected = json!({"id":JOB_ID,"batch_id":BATCH_ID,"account_id":1,"account_name":"fixture-account",
+        "action":"test","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+        "status":"queued","reason":"等待执行","result":null,
+        "requested":{"confirmed":true,"mode":"default","model_id":"fixture-test-model","future_option":{"values":[false,0,null]}}});
+    assert_eq!(fixture.operations.public(job, false, 0), expected);
+    assert_eq!(
+        fixture.operations.listing(Some(BATCH_ID)).unwrap()["items"][0],
+        expected
+    );
+    expected["events"] = json!([]);
+    expected["next_event"] = 0.into();
+    assert_eq!(
+        fixture.operations.get(JOB_ID, usize::MAX).unwrap(),
+        expected
+    );
+    assert_eq!(fs::read(fixture.state_path()).unwrap(), before);
+    assert_eq!(fixture.operations.store.0.read().unwrap(), state);
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn stopped_continuous_test_cannot_be_requeued_by_a_late_busy_result() {
     let fixture = Fixture::new().await;
     let mut state = valid_state_with_job_ids(json!([JOB_ID]));

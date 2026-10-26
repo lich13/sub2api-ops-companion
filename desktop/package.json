@@ -1,6 +1,6 @@
 {
   "name": "sub2ops-desktop",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.11.2",

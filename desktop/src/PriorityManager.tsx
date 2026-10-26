@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Check, GripVertical, Minus, Plus, RefreshCw, Search, Undo2 } from "lucide-react";
 import { api, command } from "./bridge";
 import { clientId } from "./accountOperations";
@@ -31,15 +31,34 @@ export default function PriorityManager(props: Props) {
   const requests = useRef<Record<string, { signature: string; body: Record<string, unknown> }>>({});
   const completed = useRef(new Set<string>());
   latest.current = props; draftsRef.current = drafts; viewRef.current = view; dragRef.current = drag;
-  const liveAccounts = new Map(props.accounts.map(account => [account.id, account]));
-  const fallback: PriorityAccount[] = props.accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? "", editable: false, reason: "请升级服务端以按平台管理优先级", status: a.status, schedulable: a.schedulable }));
-  const groups = [...(view?.platforms ?? groupPriorityAccounts(fallback))];
-  for (const [platform, draft] of Object.entries(drafts)) if (draft && !groups.some(group => group.platform === platform)) groups.push({ platform, items: [], version: "", last_task: null });
-  const platforms = sortPriorityPlatforms(groups);
+  const liveAccounts = useMemo(() => new Map(props.accounts.map(account => [account.id, account])), [props.accounts]);
+  const fallback = useMemo<PriorityAccount[]>(() => props.accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? "", editable: false, reason: "请升级服务端以按平台管理优先级", status: a.status, schedulable: a.schedulable })), [props.accounts]);
+  const platforms = useMemo(() => {
+    const groups = [...(view?.platforms ?? groupPriorityAccounts(fallback))];
+    for (const [platform, draft] of Object.entries(drafts)) if (draft && !groups.some(group => group.platform === platform)) groups.push({ platform, items: [], version: "", last_task: null });
+    return sortPriorityPlatforms(groups);
+  }, [view, fallback, drafts]);
+  const states = useMemo(() => new Map(platforms.map(group => {
+    const draft = drafts[group.platform], accounts = draft?.accounts ?? group.items;
+    const byId = new Map(accounts.map(account => [account.id, account]));
+    const parallelism = Math.max(1, Math.min(8, draft?.parallelism ?? group.parallelism ?? 1));
+    const slots = draft?.slots ?? (parallelism === 1 && draft ? draft.ids.map((id, index) => ({ id, priority: index + 1 })) : prioritySlots(accounts, parallelism));
+    const occupied = slots.filter(slot => slot.id !== null), ids = occupied.map(slot => slot.id!), targets = occupied.map(slot => slot.priority);
+    const rows = ids.map(id => byId.get(id)!).filter(Boolean), changes = rows.filter((a, index) => a.priority !== targets[index]);
+    const conflict = !!draft && (draft.version !== group.version || !samePriorityAccounts(draft.ids, group.items));
+    const blocked = changes.filter(a => !a.editable);
+    const lanes = new Map<number, { priority: number; slots: ((typeof slots)[number] & { index: number })[] }>();
+    slots.forEach((slot, index) => {
+      let lane = lanes.get(slot.priority);
+      if (!lane) { lane = { priority: slot.priority, slots: [] }; lanes.set(slot.priority, lane); }
+      lane.slots.push({ ...slot, index });
+    });
+    return [group.platform, { draft, accounts, ids, rows, slots, targets, byId, changes, conflict, blocked, parallelism, lanes: [...lanes.values()] }] as const;
+  })), [platforms, drafts]);
   const columns = !mobile && platforms.length > 1 && platforms.length <= 3 && width >= Math.max(960, platforms.reduce((sum, group) => sum + Math.max(320, (group.parallelism ?? 1) * 220 + 72), 0) + (platforms.length - 1) * 12);
   const selectedPlatform = platforms.some(p => p.platform === selected) ? selected : platforms[0]?.platform;
   const activeTask = view?.active_task ?? null, busy = !!submitting || priorityPending(activeTask), filtered = !!query.trim();
-  const changedCount = groups.reduce((count, group) => { const s = state(group); return count + s.changes.length; }, 0);
+  const changedCount = [...states.values()].reduce((count, s) => count + (s.draft ? s.changes.length : 0), 0);
   const connected = () => alive.current && latest.current.connectionKey === connectionKey;
   const current = (epoch: number) => connected() && epoch === generation.current && latest.current.active && latest.current.online && !document.hidden;
   useEffect(() => { props.changed(changedCount); }, [changedCount]);
@@ -97,7 +116,7 @@ export default function PriorityManager(props: Props) {
       const finished = previousTask && next.platforms.find(group => group.last_task?.id === previousTask.id)?.last_task;
       if (priorityPending(previousTask) && finished && !priorityPending(finished)) await finishTask(finished, epoch, next);
       if (!current(epoch)) return;
-      setView(next); setReadRevision(revision => revision + 1);
+      setView(next);
       if (reprepare) {
         const group = next.platforms.find(group => group.platform === reprepare);
         const previous = draftsRef.current[reprepare];
@@ -111,7 +130,13 @@ export default function PriorityManager(props: Props) {
         setNotices(old => ({ ...old, [reprepare]: target && !same ? "账号集合已变化，已按当前优先级重新准备" : "已重新读取实际优先级，请核对后应用" }));
       }
     } catch (error) { if (current(epoch)) setError(cleanError(error)); }
-    finally { if (current(epoch)) setLoading(false); }
+    finally {
+      if (current(epoch)) {
+        setLoading(false);
+        // A failed list read also invalidated the old poll's generation.
+        setReadRevision(revision => revision + 1);
+      }
+    }
   }
   useEffect(() => {
     if (active && online && visible) void read(); else { setLoading(false); if (!online) caps.current = null; }
@@ -147,16 +172,9 @@ export default function PriorityManager(props: Props) {
     return () => { disposed = true; clearTimeout(timer); };
   }, [activeTask?.id, active, online, visible, readRevision]);
   function state(group: PriorityPlatform) {
-    const draft = drafts[group.platform], accounts = draft?.accounts ?? group.items;
-    const byId = new Map(accounts.map(account => [account.id, account]));
-    const parallelism = Math.max(1, Math.min(8, draft?.parallelism ?? group.parallelism ?? 1));
-    const slots = draft?.slots ?? (parallelism === 1 && draft ? draft.ids.map((id, index) => ({ id, priority: index + 1 })) : prioritySlots(accounts, parallelism));
-    const occupied = slots.filter(slot => slot.id !== null), ids = occupied.map(slot => slot.id!), targets = occupied.map(slot => slot.priority);
-    const rows = ids.map(id => byId.get(id)!).filter(Boolean), changes = rows.filter((a, index) => a.priority !== targets[index]);
-    const conflict = !!draft && (draft.version !== group.version || !samePriorityAccounts(draft.ids, group.items));
-    const blocked = changes.filter(a => !a.editable);
-    const editing = online && supported === true && !loading && !setting && !filtered && !conflict && submitting !== group.platform && !(priorityPending(activeTask) && activeTask?.platform === group.platform);
-    return { draft, accounts, ids, rows, slots, targets, byId, changes, conflict, blocked, editing, parallelism };
+    const s = states.get(group.platform)!;
+    const editing = online && supported === true && view !== null && !loading && !setting && !filtered && !s.conflict && submitting !== group.platform && !(priorityPending(activeTask) && activeTask?.platform === group.platform);
+    return { ...s, editing };
   }
   function move(platform: string, id: number, target: number) {
     const group = platforms.find(group => group.platform === platform);
@@ -274,11 +292,11 @@ export default function PriorityManager(props: Props) {
     <div className={`priority-platforms${columns ? " is-columns" : ""}`} style={columns ? { gridTemplateColumns: platforms.map(group => `minmax(0, ${Math.max(320, (group.parallelism ?? 1) * 220 + 72)}fr)`).join(" ") } : undefined}>
       {platforms.map(group => {
         const platform = group.platform, s = state(group), undo = history[platform] ?? [], task = activeTask?.platform === platform ? activeTask : group.last_task;
-        const lanes = [...new Set(s.slots.map(slot => slot.priority))].map(priority => ({ priority, slots: s.slots.map((slot, index) => ({ ...slot, index })).filter(slot => slot.priority === priority) }));
+        const lanes = s.lanes;
         return <section key={platform} id={`priority-platform-${platform}`} data-priority-platform={platform} className="priority-column" hidden={!columns && selectedPlatform !== platform} aria-label={`${priorityPlatformName(platform)} 优先级`}>
           <header className="priority-column-heading"><h2>{priorityPlatformName(platform)}</h2><span>{s.rows.length} 个账号</span><div className="priority-parallelism" aria-label={`${priorityPlatformName(platform)}并列值`}><span>并列</span><button className="icon-button" aria-label={`减少${priorityPlatformName(platform)}并列值`} disabled={s.parallelism <= 1 || !!setting || !!drafts[platform] || !s.editing} onClick={() => void changeParallelism(group, s.parallelism - 1)}><Minus size={14}/></button><output>{s.parallelism}</output><button className="icon-button" aria-label={`增加${priorityPlatformName(platform)}并列值`} disabled={s.parallelism >= 8 || !!setting || !!drafts[platform] || !s.editing} onClick={() => void changeParallelism(group, s.parallelism + 1)}><Plus size={14}/></button></div>{s.changes.length > 0 && <b>{s.changes.length} 项变更</b>}</header>
           {s.conflict && <p role="alert" className="bad-text">该平台账号集合或优先级已变化，草稿已保留，请重新核对。<button disabled={!online || loading || busy} onClick={() => void read(platform)}>重新核对</button></p>}
-          {supported === true && s.blocked.length > 0 && <p role="alert" className="bad-text">重编号会修改不可编辑账号：{s.blocked.map(a => `${a.name} #${a.id}`).join("、")}，当前不能应用。</p>}
+          {supported === true && view !== null && s.blocked.length > 0 && <p role="alert" className="bad-text">重编号会修改不可编辑账号：{s.blocked.map(a => `${a.name} #${a.id}`).join("、")}，当前不能应用。</p>}
           <ol className={`priority-list${s.parallelism > 1 ? " has-parallel-slots" : ""}`} aria-label={`${priorityPlatformName(platform)} 账号顺序`} ref={node => { if (node) lists.current.set(platform, node); else lists.current.delete(platform); }}>{lanes.filter(lane => !filtered || lane.slots.some(slot => slot.id !== null && `${s.byId.get(slot.id)?.name} #${slot.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))).map(lane => <li key={`${platform}-lane-${lane.priority}`} className="priority-lane"><span className="priority-lane-label">{lane.priority}</span><div className="priority-slot-grid" style={{ "--priority-parallelism": s.parallelism } as CSSProperties}>{lane.slots.map(slot => {
             const index = slot.index, a = slot.id === null ? undefined : s.byId.get(slot.id);
             if (!a) return <div key={`${platform}-slot-${index}`} className={`priority-slot priority-slot-empty${drag?.platform === platform && drag.target === index ? " is-target" : ""}`} data-priority-slot data-priority-index={index} data-platform={platform}><Plus size={15}/></div>;

@@ -75,7 +75,7 @@ pub fn validate(value: &Value) -> Result<()> {
         {
             return Err(invalid());
         }
-        let control: Control = serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+        let control: Control = Control::deserialize(value).map_err(|_| invalid())?;
         if control.generation > 9_007_199_254_740_991
             || !matches!(control.paused_reason.as_str(), "" | "恢复过于频繁")
             || control.restores.len() > LIMIT

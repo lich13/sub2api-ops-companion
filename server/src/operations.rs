@@ -311,34 +311,46 @@ impl Operations {
         }))
     }
     pub fn public(&self, job: &Value, detail: bool, after: usize) -> Value {
-        let mut out = job.clone();
-        let map = out.as_object_mut().unwrap();
-        for field in [
-            "client_id",
-            "request_id",
-            "request_hash",
-            "expected_version",
-            "payload",
-            "template_target",
-            "managed_child_ids",
-            "detached",
-            "retry_policy",
-            "notification_suppressed",
-        ] {
-            map.shift_remove(field);
-        }
-        let mut requested = job["payload"].clone();
-        if let Some(map) = requested.as_object_mut() {
-            for field in [
-                "prompt",
-                "image_data_url",
-                "audio_data_url",
-                "expected_version",
-                "detach_managed",
-            ] {
-                map.shift_remove(field);
-            }
-        }
+        let mut out: Value = job
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(field, _)| {
+                !matches!(
+                    field.as_str(),
+                    "client_id"
+                        | "request_id"
+                        | "request_hash"
+                        | "expected_version"
+                        | "payload"
+                        | "template_target"
+                        | "managed_child_ids"
+                        | "detached"
+                        | "retry_policy"
+                        | "notification_suppressed"
+                )
+            })
+            .map(|(field, value)| (field.clone(), value.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let requested = match &job["payload"] {
+            Value::Object(map) => map
+                .iter()
+                .filter(|(field, _)| {
+                    !matches!(
+                        field.as_str(),
+                        "prompt"
+                            | "image_data_url"
+                            | "audio_data_url"
+                            | "expected_version"
+                            | "detach_managed"
+                    )
+                })
+                .map(|(field, value)| (field.clone(), value.clone()))
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
+            value => value.clone(),
+        };
         out["requested"] = requested;
         if let Some(result) = out["result"].as_object_mut() {
             result.shift_remove("detached");

@@ -165,6 +165,120 @@ afterEach(async () => {
 });
 
 describe("platform priority manager", () => {
+  it.each([true, false])("waits for actual editability before showing a restriction (%s)", async editable => {
+    const items = [priorityItem(101, "Alpha", 10, "openai", { editable })];
+    let resolve!: (value: PriorityView) => void;
+    const pending = new Promise<PriorityView>(done => { resolve = done; });
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+      if (path === "/account-priorities?schema=2") return pending as never;
+      throw new Error(path);
+    });
+    await render({ accounts: items.map(account) });
+    expect(container.textContent).toContain("正在读取优先级");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(button("应用变更").disabled).toBe(true);
+    await act(async () => { resolve(view({ platforms: [platform("openai", items)] })); });
+    expect(container.textContent?.includes("重编号会修改不可编辑账号")).toBe(!editable);
+    expect(button("应用变更").disabled).toBe(!editable);
+  });
+
+  it("keeps an initial list failure visible without enabling fallback edits", async () => {
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+      throw new Error("fixture list unavailable");
+    });
+    await render({ accounts: [account(priorityItem(101, "Alpha", 10))] });
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("fixture list unavailable");
+    expect(container.textContent).not.toContain("重编号会修改不可编辑账号");
+    expect(button("应用变更").disabled).toBe(true);
+  });
+
+  it.each(["capabilities", "list"])("continues task polling after a failed %s refresh", async failure => {
+    vi.useFakeTimers();
+    const running = task("running"), finished = task("completed", { verified_count: 2, reason: "全部已确认" });
+    let capsReads = 0, listReads = 0, polls = 0;
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") {
+        if (++capsReads === 2 && failure === "capabilities") throw new Error("fixture refresh failed");
+        return { features: { account_priority_per_platform: true } } as never;
+      }
+      if (path === "/account-priorities?schema=2") {
+        if (++listReads === 2 && failure === "list") throw new Error("fixture refresh failed");
+        return view({ active_task: polls >= 2 ? null : running, platforms: [platform("openai", openaiItems, "openai-version", polls >= 2 ? finished : running)] }) as never;
+      }
+      if (path.endsWith("&details=0")) return (++polls >= 2 ? finished : running) as never;
+      throw new Error(path);
+    });
+    await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新优先级"]')!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("fixture refresh failed");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(polls).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(polls).toBe(2);
+    expect(container.querySelector(".priority-result")?.textContent).toContain("全部已确认 · 2/2 已确认");
+    expect(command).toHaveBeenCalledExactlyOnceWith("refresh");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(polls).toBe(2);
+  });
+
+  it.each(["inactive", "offline", "hidden", "connection"])("ignores an in-flight task response after becoming %s", async change => {
+    vi.useFakeTimers();
+    const running = task("running");
+    let resolve!: (value: PriorityTask) => void;
+    const pending = new Promise<PriorityTask>(done => { resolve = done; });
+    let listReads = 0, polls = 0;
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+      if (path === "/account-priorities?schema=2") return view({ active_task: ++listReads === 1 ? running : null }) as never;
+      if (path.endsWith("&details=0")) { ++polls; return pending as never; }
+      throw new Error(path);
+    });
+    await render();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(polls).toBe(1);
+    if (change === "hidden") {
+      vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    } else await rerender(change === "inactive" ? { active: false } : change === "offline" ? { online: false } : { connectionKey: "new-fixture-connection" });
+    await act(async () => { resolve(task("completed", { verified_count: 2 })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(polls).toBe(1);
+    expect(container.querySelector(".priority-result")).toBeNull();
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it("protects only edited drafts while preserving normalization previews", async () => {
+    const changed = vi.fn(), items = [priorityItem(101, "Alpha", 10), priorityItem(102, "Beta", 20)];
+    vi.mocked(api).mockImplementation(async (method, path) => {
+      if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+      if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", items)] }) as never;
+      if (method === "POST") return task("queued") as never;
+      throw new Error(path);
+    });
+    const input = { changed, accounts: items.map(account) };
+    await render({ ...input, active: false });
+    expect(changed).toHaveBeenLastCalledWith(0);
+    await rerender(input);
+    expect(changed).toHaveBeenLastCalledWith(0);
+    expect(button("应用变更").disabled).toBe(false);
+    const move = async () => act(async () => list().querySelector<HTMLButtonElement>('[aria-label="下移 Alpha"]')!.click());
+    await move();
+    expect(changed).toHaveBeenLastCalledWith(2);
+    await rerender({ ...input, active: false });
+    expect(changed).toHaveBeenLastCalledWith(2);
+    await rerender(input);
+    await act(async () => button("撤销").click());
+    expect(changed).toHaveBeenLastCalledWith(0);
+    await move();
+    await act(async () => button("放弃全部").click());
+    expect(changed).toHaveBeenLastCalledWith(0);
+    await move();
+    await act(async () => button("应用变更").click());
+    expect(changed).toHaveBeenLastCalledWith(0);
+  });
+
   it("reads the schema 2 view, uses platform tabs, and preserves drafts while switching tabs", async () => {
     await render();
     expect(api).toHaveBeenCalledWith("GET", "/account-priorities?schema=2");
@@ -473,6 +587,8 @@ it("renders scheduling from live accounts while retaining a priority draft", asy
   });
   await render();
   expect(list().querySelectorAll(".priority-slot-empty")).toHaveLength(7);
+  expect([...list().querySelectorAll(".priority-lane-label")].map(node => node.textContent)).toEqual(["1", "2", "3"]);
+  expect([...list().querySelectorAll(".priority-slot-grid")].map(node => node.children.length)).toEqual([3, 3, 3]);
   await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="拖动 Beta"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
   await act(async () => button("应用变更").click());
   expect(api).toHaveBeenCalledWith("POST", "/account-priority-orders?schema=2", expect.objectContaining({ ordered_account_ids: [101, 102], target_priorities: [1, 1], parallelism: 3 }));
