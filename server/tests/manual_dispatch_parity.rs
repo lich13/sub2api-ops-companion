@@ -1838,11 +1838,11 @@ async fn new_rate_limit_after_recovered_intent_retests_from_passive_quota() {
 }
 
 #[tokio::test]
-async fn failed_test_retries_after_one_minute_without_quota_cooldown_or_budget() {
+async fn failed_test_retries_after_ten_seconds_without_quota_cooldown_or_budget() {
     let mut harness = Harness::new().await;
     let now = harness.now();
     let row = harness
-        .seed_account("one-minute-test-retry", true, true, true)
+        .seed_account("ten-second-test-retry", true, true, true)
         .await;
     let id = integer(&row["id"]).unwrap();
     configure_recovery(&harness, &[id], 1, 1, "connection").await;
@@ -1863,7 +1863,7 @@ async fn failed_test_retries_after_one_minute_without_quota_cooldown_or_budget()
     assert_eq!(failed_intent["last_error_code"], "http_502");
     assert_eq!(
         parse_datetime(&failed_intent["next_retry_at"]),
-        Some(now + Duration::seconds(60))
+        Some(now + Duration::seconds(10))
     );
     assert_eq!(harness.mock.count_for(id, "GET", "/usage"), 0);
     assert_eq!(harness.mock.count_for(id, "POST", "/test"), 1);
@@ -1887,7 +1887,7 @@ async fn failed_test_retries_after_one_minute_without_quota_cooldown_or_budget()
             Ok(())
         })
         .unwrap();
-    harness.set_now(now + Duration::seconds(60));
+    harness.set_now(now + Duration::seconds(10));
     harness.runtime.monitor.tick().await.unwrap();
     let recovered = wait_for_recovered(&harness, id).await;
     let query = &recovered["scheduler"][id.to_string()]["quota_query"];

@@ -40393,13 +40393,13 @@
         "evidence": {
           "assertions": [
             "assert_eq!(failed_intent[\"last_error_code\"], \"http_502\")",
-            "assert_eq!(parse_datetime(&failed_intent[\"next_retry_at\"]), Some(now + Duration::seconds(60)))",
+            "assert_eq!(parse_datetime(&failed_intent[\"next_retry_at\"]), Some(now + Duration::seconds(10)))",
             "assert_eq!(harness.mock.count_for(id, \"GET\", \"/usage\"), 0)",
             "assert_eq!(harness.mock.count_for(id, \"POST\", \"/test\"), 2)",
             "assert_eq!(harness.mock.count_for(id, \"POST\", \"/recover-state\"), 1)",
             "assert_eq!(query[\"automatic_attempts\"], json!(attempts))"
           ],
-          "coverage_note": "真实 Runtime 用被动 quota 先得到 http_502 test failure，再把 clock 推进 60 秒；即使 query cooldown 与六次自动预算均占满，也不发 GET 并成功重测/恢复。",
+          "coverage_note": "0.1.67 批准的连接测试默认重试间隔将旧 60 秒替换为 10 秒；真实 Runtime 用被动 quota 先得到 http_502 test failure，再把 clock 推进 10 秒。即使 query cooldown 与六次自动预算均占满，也不发 GET 并成功重测/恢复。",
           "execution_status": "mapping_only",
           "fixtures": [],
           "helper_assertions": [],
@@ -40413,7 +40413,7 @@
         "module": "manual_dispatch_parity",
         "replacement": null,
         "status": "mapped",
-        "test_name": "failed_test_retries_after_one_minute_without_quota_cooldown_or_budget"
+        "test_name": "failed_test_retries_after_ten_seconds_without_quota_cooldown_or_budget"
       },
       "service_capability": "recovery",
       "source": {
