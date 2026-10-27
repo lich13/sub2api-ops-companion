@@ -1630,7 +1630,9 @@ async function desktopMenuChecks(h, fixture) {
       const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, width: box.width };
     };
-    const toolbarChildren = [...(toolbar?.children ?? [])].map(rect);
+    const toolbarChildren = [...(toolbar?.children ?? [])]
+      .filter((element) => getComputedStyle(element).display !== "none")
+      .map(rect);
     const controls = [...section.querySelectorAll(
       ".records-toolbar input:not([type=checkbox]), .records-toolbar select, .records-toolbar .record-filter-trigger, .records-toolbar > button[type=submit]",
     )];
