@@ -86,3 +86,11 @@ it("reserves slots for every priority, moves only the selected account and adds 
   expect(last.slice(-3)).toEqual(Array.from({length:3}, () => ({ priority: 5, id: null })));
   expect(slots[0].id).toBe(1);
 });
+
+it("preserves account order and overfull parallel lanes without changing the input", () => {
+  const rows = Array.from({ length: 40 }, (_, index) => account(40 - index, "openai", 2));
+  const slots = prioritySlots(rows, 3);
+  expect(slots.filter(slot => slot.id !== null)).toEqual(Array.from({ length: 40 }, (_, index) => ({ priority: 2, id: index + 1 })));
+  expect(slots.slice(-3)).toEqual(Array.from({ length: 3 }, () => ({ priority: 3, id: null })));
+  expect(rows.map(row => row.id)).toEqual(Array.from({ length: 40 }, (_, index) => 40 - index));
+});

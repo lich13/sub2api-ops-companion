@@ -263,6 +263,8 @@ describe("group manager drafts", () => {
     await act(async () => render([initial]));
     await moveTo("Alpha", "右组");
 
+    await act(async () => render([{ ...initial, version: "version-changed" }], { active: false }));
+    expect(container.querySelector(".group-account")).toBeNull();
     await act(async () => render([{ ...initial, version: "version-changed" }]));
     expect(container.textContent).toContain("冲突");
     expect(draftApplyButton().disabled).toBe(true);
@@ -326,6 +328,26 @@ describe("group manager drafts", () => {
     expect(menu()).toBeNull();
     await act(async () => render(accounts));
     expect(menu()).toBeNull();
+  });
+
+  it("keeps a draft through hiding and accepts an apply result while hidden", async () => {
+    const accounts = [account(1, "Alpha", [1])], changed = vi.fn();
+    await act(async () => render(accounts, { changed }));
+    await moveTo("Alpha", "右组");
+    await act(async () => render(accounts, { changed, active: false }));
+    expect(container.querySelector(".group-account")).toBeNull();
+    expect(changed).toHaveBeenLastCalledWith(1, false);
+    await act(async () => render(accounts, { changed }));
+    expect(container.querySelector(".zone-right .group-account.dirty strong")?.textContent).toBe("Alpha");
+    let finish!: (value: never) => void;
+    vi.mocked(api).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    await act(async () => draftApplyButton().click());
+    await act(async () => render(accounts, { changed, active: false }));
+    await act(async () => finish({ batch_id: "a".repeat(32), pending: 0, items: [{ id: "b".repeat(32), account_id: 1, action: "groups", status: "completed", requested: { scope_group_ids: [1, 2], group_ids: [2] }, result: { verified: true } }] } as never));
+    expect(changed).toHaveBeenLastCalledWith(0, false);
+    await act(async () => render([{ ...accounts[0], group_ids: [2] }], { changed }));
+    expect(container.textContent).not.toContain("个账号待应用");
+    expect(container.querySelector(".zone-right .group-account strong")?.textContent).toBe("Alpha");
   });
 
   it("drops only a deleted account's draft and never restores it through undo", async () => {

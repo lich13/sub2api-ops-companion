@@ -13,6 +13,7 @@ type Caps = { account_priority_ordering?: boolean; account_priority_per_platform
 const taskLabels: Record<string, string> = { queued: "等待执行", running: "正在保存", checking: "正在核对", completed: "全部已确认", needs_confirmation: "需要重新核对", failed: "保存失败", cancelled: "已停止" };
 const cleanError = (error: unknown) => String(error).replace(/^Error: /, "");
 const taskPath = (id: string, summary = false) => `/account-priority-orders/${id}?schema=2${summary ? "&details=0" : ""}`;
+const fallbackAccount = (a: Account): PriorityAccount => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? "", editable: false, reason: "请升级服务端以按平台管理优先级", status: a.status, schedulable: a.schedulable });
 export default function PriorityManager(props: Props) {
   const { active, online, mobile, connectionKey } = props;
   const [view, setView] = useState<PriorityView | null>(null), [supported, setSupported] = useState<boolean | null>(null);
@@ -31,13 +32,16 @@ export default function PriorityManager(props: Props) {
   const requests = useRef<Record<string, { signature: string; body: Record<string, unknown> }>>({});
   const completed = useRef(new Set<string>());
   latest.current = props; draftsRef.current = drafts; viewRef.current = view; dragRef.current = drag;
-  const liveAccounts = useMemo(() => new Map(props.accounts.map(account => [account.id, account])), [props.accounts]);
-  const fallback = useMemo<PriorityAccount[]>(() => props.accounts.map(a => ({ id: a.id, name: a.name, platform: a.platform, type: a.type, priority: a.priority, version: a.operation_versions?.priority ?? "", editable: false, reason: "请升级服务端以按平台管理优先级", status: a.status, schedulable: a.schedulable })), [props.accounts]);
+  const liveSource = active ? props.accounts : undefined;
+  const fallbackSource = active && (view === null || supported === false) ? props.accounts : undefined;
+  const liveAccounts = useMemo(() => new Map(liveSource?.map(account => [account.id, account])), [liveSource]);
+  const fallback = useMemo(() => fallbackSource?.map(fallbackAccount) ?? [], [fallbackSource]);
   const platforms = useMemo(() => {
+    if (!active) return [];
     const groups = [...(view?.platforms ?? groupPriorityAccounts(fallback))];
     for (const [platform, draft] of Object.entries(drafts)) if (draft && !groups.some(group => group.platform === platform)) groups.push({ platform, items: [], version: "", last_task: null });
     return sortPriorityPlatforms(groups);
-  }, [view, fallback, drafts]);
+  }, [active, view, fallback, drafts]);
   const states = useMemo(() => new Map(platforms.map(group => {
     const draft = drafts[group.platform], accounts = draft?.accounts ?? group.items;
     const byId = new Map(accounts.map(account => [account.id, account]));
@@ -58,7 +62,13 @@ export default function PriorityManager(props: Props) {
   const columns = !mobile && platforms.length > 1 && platforms.length <= 3 && width >= Math.max(960, platforms.reduce((sum, group) => sum + Math.max(320, (group.parallelism ?? 1) * 220 + 72), 0) + (platforms.length - 1) * 12);
   const selectedPlatform = platforms.some(p => p.platform === selected) ? selected : platforms[0]?.platform;
   const activeTask = view?.active_task ?? null, busy = !!submitting || priorityPending(activeTask), filtered = !!query.trim();
-  const changedCount = [...states.values()].reduce((count, s) => count + (s.draft ? s.changes.length : 0), 0);
+  const changedCount = useMemo(() => Object.values(drafts).reduce((count, draft) => {
+    if (!draft) return count;
+    const priorities = new Map(draft.accounts.map(account => [account.id, account.priority]));
+    const parallelism = Math.max(1, Math.min(8, draft.parallelism ?? 1));
+    const slots = draft.slots ?? (parallelism === 1 ? draft.ids.map((id, index) => ({ id, priority: index + 1 })) : prioritySlots(draft.accounts, parallelism));
+    return count + slots.filter(slot => slot.id !== null && priorities.has(slot.id) && priorities.get(slot.id) !== slot.priority).length;
+  }, 0), [drafts]);
   const connected = () => alive.current && latest.current.connectionKey === connectionKey;
   const current = (epoch: number) => connected() && epoch === generation.current && latest.current.active && latest.current.online && !document.hidden;
   useEffect(() => { props.changed(changedCount); }, [changedCount]);
@@ -111,7 +121,7 @@ export default function PriorityManager(props: Props) {
       else if (features.account_priority_ordering) {
         const old = await api<LegacyPriorityView>("GET", "/account-priorities");
         next = { platforms: groupPriorityAccounts(old.items.map(item => ({ ...item, editable: false })), old.version), active_task: null, legacy_last_task: null };
-      } else next = { platforms: groupPriorityAccounts(fallback), active_task: null, legacy_last_task: null };
+      } else next = { platforms: groupPriorityAccounts(props.accounts.map(fallbackAccount)), active_task: null, legacy_last_task: null };
       if (!current(epoch)) return;
       const finished = previousTask && next.platforms.find(group => group.last_task?.id === previousTask.id)?.last_task;
       if (priorityPending(previousTask) && finished && !priorityPending(finished)) await finishTask(finished, epoch, next);

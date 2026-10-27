@@ -34,7 +34,10 @@ export function prioritySlots(accounts: PriorityAccount[], width: number): Prior
   const ordered = [...accounts].sort((a, b) => a.priority - b.priority || a.id - b.id);
   if (width === 1) return ordered.map((account, index) => ({ id: account.id, priority: index + 1 }));
   const groups = new Map<number, number[]>();
-  for (const account of ordered) groups.set(account.priority, [...(groups.get(account.priority) ?? []), account.id]);
+  for (const account of ordered) {
+    const group = groups.get(account.priority);
+    if (group) group.push(account.id); else groups.set(account.priority, [account.id]);
+  }
   const slots = [...groups].flatMap(([priority, ids]) => Array.from({ length: Math.max(width, ids.length) }, (_, i) => ({ priority, id: ids[i] ?? null })));
   const next = Math.max(0, ...groups.keys()) + 1;
   return [...slots, ...Array.from({ length: width }, () => ({ priority: next, id: null }))];

@@ -348,12 +348,37 @@ impl CapacityAlerts {
         self.poll_slow(Utc::now()).await
     }
     pub fn collect(&self, rows: &[Value], advance: bool, at: DateTime<Utc>) -> Result<()> {
+        if self.read_only {
+            return Err(Error::read_only());
+        }
+        let keep_seen = |key: &str, time: &Value, cursor: i64| {
+            key.parse::<i64>().is_ok_and(|id| id > cursor)
+                || parse_datetime(time).is_some_and(|t| t >= at - Duration::minutes(10))
+        };
+        {
+            let data = self.store.shared_snapshot()?;
+            let cursor = integer(&data["cursor"]).unwrap_or(0);
+            if data["cursor"].is_i64()
+                && rows.iter().filter_map(|row| integer(&row["id"])).all(|id| {
+                    (!advance || id <= cursor)
+                        && (data["seen"].get(id.to_string()).is_some()
+                            || data["pending"].get(id.to_string()).is_some())
+                })
+                && data["seen"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .all(|(key, time)| keep_seen(key, time, cursor))
+            {
+                return Ok(());
+            }
+        }
         let emitted = self.store.transaction(|data| {
             let cursor = integer(&data["cursor"]).unwrap_or(0);
-            data["seen"].as_object_mut().unwrap().retain(|key, t| {
-                key.parse::<i64>().is_ok_and(|id| id > cursor)
-                    || parse_datetime(t).is_some_and(|t| t >= at - Duration::minutes(10))
-            });
+            data["seen"]
+                .as_object_mut()
+                .unwrap()
+                .retain(|key, t| keep_seen(key, t, cursor));
             let mut emitted = vec![];
             for row in rows {
                 let Some(id) = integer(&row["id"]) else {

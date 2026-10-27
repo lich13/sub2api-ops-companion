@@ -577,7 +577,29 @@ it("renders scheduling from live accounts while retaining a priority draft", asy
   expect(vi.mocked(api).mock.calls.some(([method]) => method === "POST")).toBe(false);
 });
 
- it("keeps empty slots at every priority and applies a move into a slot without renumbering peers", async () => {
+it("retains an accepted submission while hidden and refreshes the result on reentry", async () => {
+  const changed = vi.fn(), terminal = task("completed", { verified_count: 2 });
+  let finish!: (value: PriorityTask) => void, accepted = false;
+  vi.mocked(api).mockImplementation(async (method, path) => {
+    if (path === "/capabilities") return { features: { account_priority_per_platform: true } } as never;
+    if (path === "/account-priorities?schema=2") return view({ platforms: [platform("openai", accepted ? [priorityItem(102, "Beta", 1), priorityItem(101, "Alpha", 2)] : openaiItems, "openai-version", accepted ? terminal : null)] }) as never;
+    if (method === "POST") return new Promise<PriorityTask>(resolve => { finish = resolve; }) as never;
+    throw new Error(path);
+  });
+  await render({ changed });
+  await act(async () => list().querySelector<HTMLButtonElement>('[aria-label="下移 Alpha"]')!.click());
+  await act(async () => button("应用变更").click());
+  await rerender({ changed, active: false });
+  expect(changed).toHaveBeenLastCalledWith(2);
+  await act(async () => { accepted = true; finish(terminal); });
+  expect(changed).toHaveBeenLastCalledWith(0);
+  await rerender({ changed });
+  expect(order()).toEqual([102, 101]);
+  expect(container.querySelector('[aria-label="有未应用草稿"]')).toBeNull();
+  expect(vi.mocked(api).mock.calls.filter(([method]) => method === "POST")).toHaveLength(1);
+});
+
+it("keeps empty slots at every priority and applies a move into a slot without renumbering peers", async () => {
   const parallel = view({ platforms: [{ ...platform("openai", openaiItems), parallelism: 3 }] });
   vi.mocked(api).mockImplementation(async (method, path) => {
     if (path === "/capabilities") return { features: { account_priority_ordering: true, account_priority_per_platform: true } } as never;

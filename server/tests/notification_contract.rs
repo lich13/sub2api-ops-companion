@@ -2490,3 +2490,80 @@ async fn runtime_persists_provider_and_gateway_clues_within_three_seconds_withou
     let _ = unrelated.await;
     runtime.close().await;
 }
+
+#[tokio::test]
+async fn capacity_duplicate_rescans_preserve_progress_cleanup_and_validation() {
+    let _serial = DB_TEST_LOCK.lock().await;
+    let database = database().await;
+    let root = tempfile::tempdir().unwrap();
+    let alerts = capacity_alerts(root.path(), database.clone());
+    let at = reference_time();
+    seed_capacity_baseline(&alerts, at);
+    let row = synthetic_provider_row(20, 1, "fixture-account", at);
+    alerts
+        .collect(std::slice::from_ref(&row), true, at)
+        .unwrap();
+    let first = alerts.store.snapshot().unwrap();
+    alerts
+        .collect(std::slice::from_ref(&row), false, at + Duration::seconds(2))
+        .unwrap();
+    assert_eq!(alerts.store.snapshot().unwrap(), first);
+
+    alerts.store.transaction(|data| {
+        data["pending"]["15"] = json!({"id":15,"account_id":1,"account_name":"fixture-account","attempts":0,"created_at":datetime(at),"next_at":datetime(at),"requested_model":"fixture-model","upstream_model":"fixture-model","message":"fixture"});
+        Ok(())
+    }).unwrap();
+    let pending = alerts.store.snapshot().unwrap();
+    alerts
+        .collect(
+            &[synthetic_provider_row(15, 1, "fixture-account", at)],
+            false,
+            at,
+        )
+        .unwrap();
+    assert_eq!(alerts.store.snapshot().unwrap(), pending);
+
+    // A known log still advances the forward cursor after an earlier rescan.
+    let ahead = synthetic_provider_row(30, 1, "fixture-account", at);
+    alerts
+        .collect(std::slice::from_ref(&ahead), false, at)
+        .unwrap();
+    assert_eq!(alerts.store.snapshot().unwrap()["cursor"], 20);
+    alerts.collect(&[ahead], true, at).unwrap();
+    assert_eq!(alerts.store.snapshot().unwrap()["cursor"], 30);
+    // A lower id can arrive late, and old seen entries must still expire.
+    alerts
+        .collect(
+            &[synthetic_provider_row(10, 1, "fixture-account", at)],
+            false,
+            at,
+        )
+        .unwrap();
+    assert!(alerts.store.snapshot().unwrap()["detection_events"]
+        .get("error:10")
+        .is_some());
+    alerts
+        .collect(&[], false, at + Duration::minutes(11))
+        .unwrap();
+    let cleaned = alerts.store.snapshot().unwrap();
+    assert!(cleaned["seen"].as_object().unwrap().is_empty());
+    assert_eq!(cleaned["cursor"], 30);
+    assert_eq!(cleaned["detection_events"].as_object().unwrap().len(), 3);
+
+    let mut read_only = settings(root.path(), database_url(), json!({}), true, String::new());
+    read_only.read_only = true;
+    let restricted = CapacityAlerts::new(database.clone(), &read_only);
+    assert_eq!(
+        restricted.collect(&[], false, at).unwrap_err().status,
+        StatusCode::CONFLICT
+    );
+    write_json(
+        alerts.store.0.path(),
+        &json!({"version":1,"seen":"damaged"}),
+    );
+    assert_eq!(
+        alerts.collect(&[], false, at).unwrap_err().status,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    database.close().await;
+}

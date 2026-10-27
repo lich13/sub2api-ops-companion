@@ -20,17 +20,18 @@ export default function GroupManager(props: Props) {
   const pointer = useRef<{ id: number; x: number; y: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
   const batchRequest = useRef<{ signature: string; id: string } | null>(null);
   latest.current = props; draftRef.current = drafts; dragRef.current = drag;
-  const available = platformGroups(groups, platform);
+  const available = active ? platformGroups(groups, platform) : [];
   const pair = available.slice(0, 2).map((group) => group.id);
   const pairRef = useRef(pair); pairRef.current = pair;
-  const pending = Object.values(drafts), conflicts = pending.filter((d) => draftConflict(d, accounts, groups));
-  const candidates = accounts.filter((a) => a.platform === platform).sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id);
+  const pending = Object.values(drafts), conflicts = active ? pending.filter((d) => draftConflict(d, accounts, groups)) : [];
+  const candidates = active ? accounts.filter((a) => a.platform === platform).sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id) : [];
   const members = (a: Account) => drafts[a.id]?.target ?? a.group_ids;
   const matches = (a: Account) => !query.trim() || `${a.name} #${a.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   useEffect(() => { props.changed(pending.length, busy); }, [pending.length, busy]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(pointer.current?.timer); }; }, []);
   useEffect(() => { if (!active) { clearTimeout(pointer.current?.timer); pointer.current = null; setDrag(null); } }, [active]);
   useEffect(() => {
+    if (!Object.keys(draftRef.current).length && !history.length) return;
     const ids = new Set(accounts.map((account) => account.id));
     const keepLive = (value: Drafts): Drafts => Object.values(value).every((draft) => ids.has(draft.id))
       ? value : Object.fromEntries(Object.entries(value).filter(([, draft]) => ids.has(draft.id)));
@@ -137,6 +138,7 @@ export default function GroupManager(props: Props) {
       <div className="membership-accounts">{values.filter(matches).map(card)}{!values.filter(matches).length && <span className="group-empty">{query ? "无匹配账号" : "暂无账号"}</span>}</div>
     </section>;
   }
+  if (!active) return null;
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name || `#${id}`;
   const region = (name: Zone) => candidates.filter((a) => membershipZone(members(a), pair) === name);
   const unassigned = region("none").filter((a) => !members(a).some((id) => groups.some((g) => g.id === id)));

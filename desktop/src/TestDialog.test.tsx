@@ -24,13 +24,91 @@ beforeEach(() => {
     throw new Error(path);
   });
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 async function change(element: HTMLInputElement | HTMLSelectElement, value: string) {
   await act(async () => {
     Object.getOwnPropertyDescriptor(element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value')!.set!.call(element, value);
     element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
+function controlledReaders() {
+  const readers: Reader[] = [];
+  class Reader {
+    static LOADING = 1;
+    readyState = 0;
+    result: string | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    readAsDataURL() { this.readyState = 1; readers.push(this); }
+    abort = vi.fn(() => { this.readyState = 2; this.onabort?.(); });
+    complete(value: string) { this.result = value; this.readyState = 2; this.onload?.(); }
+  }
+  vi.stubGlobal('FileReader', Reader);
+  return readers;
+}
+function modeSelect() { return [...container.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'text' || option.value === 'compact'))!; }
+function startButton() { return [...container.querySelectorAll('button')].find(button => button.textContent === '开始测试')!; }
+async function mediaDialog(platform = 'grok') {
+  const previous = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((method, path, body) => {
+    if (path.endsWith('/models?purpose=model_test')) return Promise.resolve([{ id: platform === 'openai' ? 'gpt-image-fixture' : 'grok-imagine-image', type: 'model' }] as never);
+    if (method === 'POST' && path === '/accounts/42/operations') return Promise.resolve({ id: 'c'.repeat(32), account_id: 42, action: 'test', status: 'completed', requested: {}, result: { success: true } } as never);
+    return previous(method, path, body);
+  });
+  const close = vi.fn();
+  await act(async () => root.render(<TestDialog account={{ ...account, platform }} online close={close}/>));
+  if (platform === 'openai') await change(container.querySelector<HTMLSelectElement>('[aria-label="测试模型"]')!, 'gpt-image-fixture');
+  else await change(modeSelect(), 'image');
+  return close;
+}
+async function chooseMedia(name: string) {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, 'files', { configurable: true, value: [new File(['fixture'], name, { type: 'image/png' })] });
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+}
+it('submits only the newest selected image even when an aborted reader finishes last', async () => {
+  const readers = controlledReaders();
+  await mediaDialog();
+  await chooseMedia('old.png');
+  expect(startButton().disabled).toBe(true);
+  await act(async () => startButton().click());
+  expect(vi.mocked(api).mock.calls.filter(([method]) => method === 'POST')).toHaveLength(0);
+  await chooseMedia('new.png');
+  expect(readers[0].abort).toHaveBeenCalledOnce();
+  await act(async () => { readers[1].complete('data:image/png;base64,bmV3'); readers[0].complete('data:image/png;base64,b2xk'); readers[0].onerror?.(); });
+  expect(container.textContent).toContain('new.png');
+  expect(container.textContent).not.toContain('old.png');
+  expect(startButton().disabled).toBe(false);
+  await act(async () => startButton().click());
+  expect(api).toHaveBeenCalledWith('POST', '/accounts/42/operations', expect.objectContaining({ payload: expect.objectContaining({ image_data_url: 'data:image/png;base64,bmV3' }) }));
+});
+it.each(['mode', 'model', 'close', 'unmount'])('invalidates pending media on %s changes', async kind => {
+  const readers = controlledReaders();
+  const close = await mediaDialog(kind === 'model' ? 'openai' : 'grok');
+  await chooseMedia('stale.png');
+  if (kind === 'mode') await change(modeSelect(), 'stt');
+  else if (kind === 'model') await change(container.querySelector<HTMLSelectElement>('[aria-label="测试模型"]')!, '');
+  else if (kind === 'close') await act(async () => container.querySelector<HTMLButtonElement>('[title="关闭测试"]')!.click());
+  else await act(async () => root.render(null));
+  expect(readers[0].abort).toHaveBeenCalledOnce();
+  if (kind === 'close') expect(close).toHaveBeenCalledOnce();
+  await act(async () => { readers[0].complete('data:image/png;base64,b2xk'); readers[0].onerror?.(); });
+  expect(container.textContent).not.toContain('stale.png');
+  expect(container.textContent).not.toContain('素材读取失败');
+});
+it('reports a read failure and requires a successful replacement before submitting', async () => {
+  const readers = controlledReaders();
+  await mediaDialog();
+  await chooseMedia('failed.png');
+  await act(async () => readers[0].onerror?.());
+  expect(container.textContent).toContain('素材读取失败，请重新选择文件');
+  expect(startButton().disabled).toBe(true);
+  await chooseMedia('retry.png');
+  await act(async () => readers[1].complete('data:image/png;base64,bmV3'));
+  expect(container.textContent).not.toContain('素材读取失败');
+  expect(startButton().disabled).toBe(false);
+});
 it('uses the complete upstream directory and submits one connection test at a Beijing minute, then cancels it', async () => {
   await act(async () => root.render(<TestDialog account={account} online close={() => {}}/>));
   const model = container.querySelector<HTMLSelectElement>('[aria-label="测试模型"]')!;

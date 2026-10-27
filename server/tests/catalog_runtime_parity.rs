@@ -1197,3 +1197,50 @@ async fn single_account_usage_is_independent_of_groups_history_and_snapshot_lock
     assert!(h.mock.calls.lock().unwrap().is_empty());
     h.close().await;
 }
+
+#[tokio::test]
+async fn model_operation_summaries_preserve_fields_status_and_full_details() {
+    let h = Harness::new().await;
+    let jobs: Vec<_> = ["queued", "running", "retrying", "needs_confirmation", "completed"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, status)| {
+            let mut job = json!({"id":format!("{:032x}", index + 1),"account_id":7,"account_name":"fixture-account","status":status,"requested_model":"fixture-model","concurrency":2,"report":{"detail":"fixture".repeat(1024)}});
+            if index == 1 {
+                job["error"] = Value::Null;
+            } else if index > 1 {
+                job["error"] = json!("fixture-error");
+            }
+            job
+        })
+        .collect();
+    h.runtime
+        .tests
+        .transaction(|data| {
+            for job in &jobs {
+                data["jobs"][job["id"].as_str().unwrap()] = job.clone();
+            }
+            Ok(())
+        })
+        .unwrap();
+    let listing = h.runtime.operations.listing(None).unwrap();
+    let expected: Vec<_> = jobs[..4]
+        .iter()
+        .map(|job| {
+            sub2ops_server::operations::Operations::model_view(
+                &sub2ops_server::model_tests::ModelTests::public(job),
+            )
+        })
+        .collect();
+    assert_eq!(listing["items"], json!(expected));
+    assert_eq!(listing["items"][0]["reason"], "");
+    assert_eq!(listing["items"][1]["reason"], Value::Null);
+    assert_eq!(listing["items"][2]["status"], "running");
+    for job in &jobs {
+        assert_eq!(
+            h.runtime.tests.get(job["id"].as_str().unwrap()).unwrap(),
+            *job
+        );
+    }
+    h.close().await;
+}

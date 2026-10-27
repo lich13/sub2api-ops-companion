@@ -290,7 +290,22 @@ impl operations::Backend for Hooks {
                     "queued" | "running" | "retrying" | "needs_confirmation"
                 )
             })
-            .map(model_tests::ModelTests::public)
+            .map(|job| {
+                Value::Object(
+                    [
+                        "id",
+                        "account_id",
+                        "account_name",
+                        "status",
+                        "error",
+                        "requested_model",
+                        "concurrency",
+                    ]
+                    .into_iter()
+                    .filter_map(|key| job.get(key).map(|value| (key.to_owned(), value.clone())))
+                    .collect(),
+                )
+            })
             .collect())
     }
     fn model_cancel<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Value>> {

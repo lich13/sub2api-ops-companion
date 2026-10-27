@@ -175,49 +175,60 @@ impl Operations {
     }
     pub(crate) fn refresh_chunks(&self, bid: &str) -> Result<()> {
         self.store.transaction(|data| {
-            let jobs = data["jobs"].clone();
-            for chunk in data["batches"][bid]
-                .get_mut("chunks")
-                .and_then(Value::as_array_mut)
+            let jobs = &data["jobs"];
+            let updates = data["batches"][bid]
+                .get("chunks")
+                .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-            {
-                if chunk["status"] == "unsupported" {
-                    continue;
-                }
-                let states: Vec<_> = chunk["job_ids"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|jid| string(&jobs[string(jid)]["status"]))
-                    .collect();
-                if states
-                    .iter()
-                    .all(|s| !matches!(*s, "running" | "checking" | "queued"))
-                {
-                    chunk["status"] = if states.contains(&"needs_confirmation") {
-                        "needs_confirmation"
-                    } else {
-                        "checked"
+                .enumerate()
+                .filter_map(|(index, chunk)| {
+                    if chunk["status"] == "unsupported" {
+                        return None;
                     }
-                    .into();
-                } else if states.contains(&"checking") {
-                    chunk["status"] = "checking".into();
-                }
+                    let states: Vec<_> = chunk["job_ids"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|jid| string(&jobs[string(jid)]["status"]))
+                        .collect();
+                    if states
+                        .iter()
+                        .all(|s| !matches!(*s, "running" | "checking" | "queued"))
+                    {
+                        Some((
+                            index,
+                            if states.contains(&"needs_confirmation") {
+                                "needs_confirmation"
+                            } else {
+                                "checked"
+                            },
+                        ))
+                    } else if states.contains(&"checking") {
+                        Some((index, "checking"))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            for (index, status) in updates {
+                data["batches"][bid]["chunks"][index]["status"] = status.into();
             }
             Ok(())
         })
     }
     pub(crate) async fn run_native(&self, bid: &str) -> Result<()> {
-        let data = self.store.read()?;
-        let jobs: Vec<_> = data["batches"][bid]["job_ids"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|jid| &data["jobs"][string(jid)])
-            .filter(|j| native(j))
-            .cloned()
-            .collect();
+        let jobs: Vec<_> = {
+            let data = self.store.read_shared()?;
+            data["batches"][bid]["job_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|jid| &data["jobs"][string(jid)])
+                .filter(|j| native(j))
+                .cloned()
+                .collect()
+        };
         if jobs.is_empty() {
             return Ok(());
         }
@@ -321,7 +332,7 @@ impl Operations {
         for job in jobs {
             let jid = string(&job["id"]);
             let aid = integer(&job["account_id"]).unwrap();
-            if self.store.read()?["jobs"][jid]["status"] != "queued" {
+            if self.store.read_shared()?["jobs"][jid]["status"] != "queued" {
                 continue;
             }
             if needed
@@ -381,7 +392,7 @@ impl Operations {
         for jobs in groups.into_values() {
             if delete {
                 self.delete_native_chunk(bid, jobs, key).await?;
-            } else if self.store.read()?["batches"][bid]["native_unsupported"] == true {
+            } else if self.store.read_shared()?["batches"][bid]["native_unsupported"] == true {
                 for job in jobs {
                     self.send_native(bid, vec![job], key, true, false).await?;
                 }
@@ -424,7 +435,7 @@ impl Operations {
                 allowed.push(job);
             }
         }
-        let compatibility = self.store.read()?["batches"][bid]["native_unsupported"] == true;
+        let compatibility = self.store.read_shared()?["batches"][bid]["native_unsupported"] == true;
         let groups = if compatibility {
             allowed.into_iter().map(|j| vec![j]).collect::<Vec<_>>()
         } else {

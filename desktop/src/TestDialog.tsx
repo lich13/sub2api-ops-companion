@@ -42,7 +42,7 @@ export function nextCycleAppointment(usage: UsageSummary | undefined, windows: U
   return resets.length ? Math.min(...resets) : null;
 }
 export default function TestDialog({ account, online, close }: {account: Account; online: boolean; close: () => void}) {
-  useBackAction(true, close);
+  useBackAction(true, dismiss);
   const operations = useSyncExternalStore(subscribeOperations, getOperations);
   const scheduled = operations.filter(job => job.account_id === account.id && (job.scheduled_at || job.repeat) && operationPending(job));
   const [execution, setExecution] = useState("now");
@@ -57,6 +57,8 @@ export default function TestDialog({ account, online, close }: {account: Account
   const [prompt, setPrompt] = useState("");
   const [media, setMedia] = useState("");
   const [fileName, setFileName] = useState("");
+  const [mediaState, setMediaState] = useState<"" | "reading" | "failed">("");
+  const mediaReader = useRef<FileReader | null>(null);
   const [busy, setBusy] = useState(false);
   const [cycleBusy, setCycleBusy] = useState(false);
   const cycleReading = useRef(false);
@@ -74,7 +76,7 @@ export default function TestDialog({ account, online, close }: {account: Account
       if (!alive.current) return;
       setModels(list);
     }).catch(() => { if (alive.current) setError("模型列表读取失败，仍可使用默认模型测试。"); }).finally(() => { if (alive.current) setLoading(false); });
-    return () => { alive.current = false; if (running.current && !account.operation_versions) void command("cancel_test"); };
+    return () => { alive.current = false; stopMediaRead(); if (running.current && !account.operation_versions) void command("cancel_test"); };
   }, [account.id]);
   const choices: {id: TestMode; label: string}[] = account.platform === "grok"
     ? [{id:"text",label:"文本"},{id:"image",label:"图像"},{id:"video",label:"视频"},{id:"search",label:"搜索"},{id:"tts",label:"TTS"},{id:"stt",label:"STT"},{id:"realtime",label:"Realtime"}]
@@ -83,17 +85,28 @@ export default function TestDialog({ account, online, close }: {account: Account
   const standalone = ["search", "tts", "stt", "realtime"].includes(mode);
   const imageModel = account.platform === "openai" && mode === "default" && model.startsWith("gpt-image-");
   const hasPrompt = ["image", "video", "search", "tts"].includes(mode) || imageModel;
+  function stopMediaRead() {
+    const reader = mediaReader.current; mediaReader.current = null;
+    if (reader?.readyState === FileReader.LOADING) reader.abort();
+  }
+  function clearMedia() { stopMediaRead(); setMedia(""); setFileName(""); setMediaState(""); }
+  function dismiss() { clearMedia(); close(); }
+  useEffect(() => { clearMedia(); }, [mode, imageModel, account.id]);
   function changeMode(next: TestMode) {
-    setMode(next); setModel(preferredModel(models, account.platform, next)); setPrompt(defaults[next] ?? ""); setMedia(""); setFileName("");
+    clearMedia(); setMode(next); setModel(preferredModel(models, account.platform, next)); setPrompt(defaults[next] ?? "");
   }
   async function chooseFile(file: File | undefined) {
-    setMedia(""); setFileName(""); if (!file) return;
+    clearMedia(); setError(""); if (!file) return;
     const audio = mode === "stt";
-    if (!file.type.startsWith(audio ? "audio/" : "image/")) { setError("文件格式不支持"); return; }
-    if (file.size > (audio ? 6 : 4) * 1024 * 1024) { setError(audio ? "音频不得超过 6 MiB" : "图片不得超过 4 MiB"); return; }
+    if (!file.type.startsWith(audio ? "audio/" : "image/")) { setMediaState("failed"); setError("文件格式不支持"); return; }
+    if (file.size > (audio ? 6 : 4) * 1024 * 1024) { setMediaState("failed"); setError(audio ? "音频不得超过 6 MiB" : "图片不得超过 4 MiB"); return; }
     const reader = new FileReader();
-    reader.onload = () => { if (alive.current) { setMedia(String(reader.result)); setFileName(file.name); setError(""); } };
-    reader.onerror = () => setError("素材读取失败"); reader.readAsDataURL(file);
+    mediaReader.current = reader; setMediaState("reading");
+    const current = () => alive.current && mediaReader.current === reader;
+    const failed = () => { if (current()) { mediaReader.current = null; setMediaState("failed"); setError("素材读取失败，请重新选择文件"); } };
+    reader.onload = () => { if (current()) { mediaReader.current = null; setMedia(String(reader.result)); setFileName(file.name); setMediaState(""); setError(""); } };
+    reader.onerror = failed; reader.onabort = failed;
+    try { reader.readAsDataURL(file); } catch { failed(); }
   }
   async function cancel() { cancelled.current = true; if (operationId.current) await api("POST", `/account-operations/${operationId.current}/cancel`, {}); else await command("cancel_test"); }
   async function fillCycleTime() {
@@ -109,7 +122,7 @@ export default function TestDialog({ account, online, close }: {account: Account
     finally { cycleReading.current = false; if (alive.current) setCycleBusy(false); }
   }
   async function start() {
-    if (running.current || cycleReading.current || !online) return;
+    if (running.current || cycleReading.current || mediaReader.current || mediaState || !online) return;
     if (appointment) {
       const scheduleTimestamp = appointmentTimestamp(scheduledAt);
       if (!continuous && !scheduledAt) { setError("请填写预约时间。"); return; }
@@ -155,15 +168,15 @@ export default function TestDialog({ account, online, close }: {account: Account
       void command("refresh");
     }
   }
-  return <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } }}>
+  return <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); dismiss(); } }}>
     <section className="test-dialog" role="dialog" aria-modal="true" aria-label="测试连接">
-      <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={close}><X size={18}/></button></header>
+      <header><div><h2>测试连接</h2><strong title={account.name}>{account.name}</strong></div><button className="icon-button" title="关闭测试" onClick={dismiss}><X size={18}/></button></header>
       <div className="test-controls">
         {account.operation_versions?.test && <label>执行<select aria-label="执行方式" disabled={busy || cycleBusy} value={execution} onChange={e => { setExecution(e.target.value); if (e.target.value !== "now") { setScheduledAt(previous => previous || nextBeijingMinute()); if (mode !== (account.platform === "grok" ? "text" : "default")) changeMode(account.platform === "grok" ? "text" : "default"); } }}><option value="now">立即</option><option value="scheduled">指定时间</option>{account.platform === "openai" && account.type === "oauth" && <option value="cycle">持续预约 · 最近周期 +3 秒</option>}</select></label>}
         {execution === "scheduled" && <div className="test-schedule-time"><label>预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={1} value={scheduledAt} disabled={busy || cycleBusy} onChange={e => setScheduledAt(e.target.value)}/></label><button type="button" disabled={busy || cycleBusy || !online} onClick={() => void fillCycleTime()}>{cycleBusy ? <LoaderCircle size={13} className="spin"/> : null}最近周期 +3 秒</button></div>}
         {continuous && <p className="muted">按最近额度周期重置后 3 秒持续测试，7d 额度满 100% 且上游 429 时停止。可在操作待办停止后续预约。</p>}
         <label>模式<select disabled={busy || appointment} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-        {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
+        {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { if (imageModel !== (account.platform === "openai" && mode === "default" && e.target.value.startsWith("gpt-image-"))) clearMedia(); setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
         {((account.platform === "grok" && ["image", "video", "stt"].includes(mode)) || imageModel) && <label className="test-upload">{mode === "stt" ? "音频素材（可选）" : "图片素材（可选）"}<input key={`${mode}-${imageModel}`} type="file" accept={mode === "stt" ? "audio/*,.wav,.mp3,.m4a,.ogg,.webm" : "image/png,image/jpeg,image/webp,image/gif"} disabled={busy} onChange={(e) => void chooseFile(e.target.files?.[0])}/>{fileName && <span>{fileName}</span>}</label>}
       </div>
@@ -171,12 +184,13 @@ export default function TestDialog({ account, online, close }: {account: Account
       <div className="test-result" aria-live="polite">
         {!online && <p className="bad-text">当前离线，请恢复连接后操作。</p>}
         {loading && <p className="muted">正在读取模型列表，可直接使用默认模型测试。</p>}
+        {mediaState === "reading" && <p className="muted" role="status">正在读取素材</p>}
         {status && <div className="test-status">{busy && <LoaderCircle size={14} className="spin"/>}{status}{result?.duration_ms != null && <span>{(result.duration_ms / 1000).toFixed(2)} s · {fullTime(result.completed_at)}</span>}</div>}
         {text && <pre>{text}</pre>}
         {outputs.map((event, i) => <div className="test-media" key={i}>{event.image_url && <img src={event.image_url} alt="测试生成图片"/>}{event.audio_url && <audio src={event.audio_url} controls/>}{event.video_url && <video src={event.video_url} controls/>}</div>)}
         {error && <p className="bad-text" role="alert">{error}</p>}
       </div>
-      <footer>{busy ? appointment ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || cycleBusy || (continuous && existingCycle)} onClick={() => void start()}><Play size={13}/>{appointment ? "预约测试" : "开始测试"}</button>}</footer>
+      <footer>{busy ? appointment ? <button disabled><LoaderCircle size={13} className="spin"/>正在提交预约</button> : <button onClick={() => void cancel()}><Square size={13}/>取消</button> : <button disabled={!online || cycleBusy || !!mediaState || (continuous && existingCycle)} onClick={() => void start()}><Play size={13}/>{appointment ? "预约测试" : "开始测试"}</button>}</footer>
     </section>
   </div>;
 }
