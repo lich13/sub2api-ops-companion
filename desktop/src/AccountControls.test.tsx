@@ -69,6 +69,10 @@ async function render(records: Recovery[]) {
 const cell = (row: Element, label: string) => row.querySelector(`[data-label="${label}"]`)?.textContent;
 
 describe("recovery history provenance", () => {
+  it("shows actual attempts including zero and leaves unknown history blank", async () => {
+    await render([recovery({ id: 4, attempt_count: 3 }), recovery({ id: 3, attempt_count: 1 }), recovery({ id: 2, attempt_count: 0, kind: "connection_test", result_status: "cancelled" }), recovery({ id: 1, legacy: true })]);
+    expect([...container.querySelectorAll('tbody tr')].map(row => cell(row, "尝试次数"))).toEqual(["3", "1", "0", "—"]);
+  });
   it("keeps legacy and ordinary recoveries as quota recovery without inventing card-use evidence", async () => {
     await render([
       recovery({ id: 1 }),

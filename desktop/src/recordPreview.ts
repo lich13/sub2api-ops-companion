@@ -1,3 +1,4 @@
+import type { Account } from "./types";
 import type { RecordOption, UsageRecord } from "./records";
 const now = Date.now();
 const scenario = new URLSearchParams(location.search).get("scenario");
@@ -110,7 +111,8 @@ const rows = Array.from(
     video_resolution: null,
   }),
 );
-export function recordPreview(path: string) {
+export function recordPreview(path: string, accounts: Account[] = []) {
+  const records = accounts.length ? rows.map((row, index) => { const account = accounts[index % accounts.length]; return { ...row, account_id: account.id, account_name: account.name }; }) : rows;
   const url = new URL(path, "https://preview.invalid");
   const p = url.searchParams;
   if (url.pathname === "/usage-record-options") {
@@ -139,13 +141,13 @@ export function recordPreview(path: string) {
     };
   }
   if (url.pathname !== "/usage-records") {
-    const row = rows.find(
+    const row = records.find(
       (r) => r.id === Number(url.pathname.split("/").at(-1)),
     );
     if (!row) throw new Error("记录不存在");
     return structuredClone(row);
   }
-  const filtered = rows.filter(
+  const filtered = records.filter(
     (r) =>
       (!p.has("start_date") ||
         Date.parse(r.created_at) >=
@@ -155,6 +157,7 @@ export function recordPreview(path: string) {
           Date.parse(`${p.get("end_date")}T00:00:00+08:00`) + 86400000) &&
       (!p.has("from_at") || r.created_at >= p.get("from_at")!) &&
       (!p.has("to_at") || r.created_at <= p.get("to_at")!) &&
+      (!p.has("platform") || accounts.find(account => account.id === r.account_id)?.platform === p.get("platform")) &&
       (!p.has("account_id") || r.account_id === Number(p.get("account_id"))) &&
       (!p.has("user_id") || r.user_id === Number(p.get("user_id"))) &&
       (!p.has("api_key_id") || r.api_key_id === Number(p.get("api_key_id"))) &&

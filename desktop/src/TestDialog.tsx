@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { LoaderCircle, Play, Square, X } from "lucide-react";
+import { LoaderCircle, RefreshCw, Play, Square, X } from "lucide-react";
 import { api, command, runTest } from "./bridge";
 import { fullTime, type Account, type TestEvent, type UsageSummary, type UsageWindow } from "./types";
 import { submitOperation, followOperation, subscribeOperations, getOperations, setOperations, publishOperation, repeating, operationPending, type Operation } from "./accountOperations";
+import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import { useBackAction } from "./mobile";
 
 export type TestMode = "default" | "compact" | "text" | "image" | "video" | "search" | "tts" | "stt" | "realtime";
@@ -50,6 +51,8 @@ export default function TestDialog({ account, online, close }: {account: Account
   const appointment = execution !== "now";
   const existingCycle = scheduled.some(repeating);
   const [scheduledAt, setScheduledAt] = useState("");
+  const directoryRequest = useRef(0);
+  const [modelError, setModelError] = useState("");
   const [models, setModels] = useState<TestModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<TestMode>(account.platform === "grok" ? "text" : "default");
@@ -72,12 +75,15 @@ export default function TestDialog({ account, online, close }: {account: Account
   useEffect(() => {
     alive.current = true;
     if (account.operation_versions?.test) void api<{ items: Operation[] }>("GET", "/account-operations").then(data => { if (alive.current) setOperations(data.items); }).catch(e => { if (alive.current) setError(String(e)); });
-    void api<TestModel[]>("GET", `/accounts/${account.id}/models?purpose=model_test`).then((list) => {
-      if (!alive.current) return;
-      setModels(list);
-    }).catch(() => { if (alive.current) setError("模型列表读取失败，仍可使用默认模型测试。"); }).finally(() => { if (alive.current) setLoading(false); });
-    return () => { alive.current = false; stopMediaRead(); if (running.current && !account.operation_versions) void command("cancel_test"); };
+    void readModels();
+    return () => { ++directoryRequest.current; alive.current = false; stopMediaRead(); if (running.current && !account.operation_versions) void command("cancel_test"); };
   }, [account.id]);
+  async function readModels(refresh = false) {
+    const request = ++directoryRequest.current; setLoading(true); setModelError("");
+    try { const list = await readAccountModels<TestModel>(account.id, refresh); if (alive.current && request === directoryRequest.current) setModels(list); }
+    catch (error) { if (alive.current && request === directoryRequest.current) { if (modelDirectoryRevoked(error)) setModels([]); setModelError(`模型列表读取失败：${String(error).replace(/^Error: /, "")}`); } }
+    finally { if (alive.current && request === directoryRequest.current) setLoading(false); }
+  }
   const choices: {id: TestMode; label: string}[] = account.platform === "grok"
     ? [{id:"text",label:"文本"},{id:"image",label:"图像"},{id:"video",label:"视频"},{id:"search",label:"搜索"},{id:"tts",label:"TTS"},{id:"stt",label:"STT"},{id:"realtime",label:"Realtime"}]
     : account.platform === "openai" ? [{id:"default",label:"普通"},{id:"compact",label:"Compact"}] : [{id:"default",label:"普通"}];
@@ -176,14 +182,14 @@ export default function TestDialog({ account, online, close }: {account: Account
         {execution === "scheduled" && <div className="test-schedule-time"><label>预约时间（北京时间）<input aria-label="预约时间" type="datetime-local" step={1} value={scheduledAt} disabled={busy || cycleBusy} onChange={e => setScheduledAt(e.target.value)}/></label><button type="button" disabled={busy || cycleBusy || !online} onClick={() => void fillCycleTime()}>{cycleBusy ? <LoaderCircle size={13} className="spin"/> : null}最近周期 +3 秒</button></div>}
         {continuous && <p className="muted">按最近额度周期重置后 3 秒持续测试，7d 额度满 100% 且上游 429 时停止。可在操作待办停止后续预约。</p>}
         <label>模式<select disabled={busy || appointment} value={mode} onChange={(e) => changeMode(e.target.value as TestMode)}>{choices.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-        {!standalone && <label>模型<select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { if (imageModel !== (account.platform === "openai" && mode === "default" && e.target.value.startsWith("gpt-image-"))) clearMedia(); setModel(e.target.value); }}><option value="">默认模型</option>{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select></label>}
+        {!standalone && <label>模型<span className="model-directory-control"><select aria-label="测试模型" disabled={busy || loading} value={model} onChange={(e) => { if (imageModel !== (account.platform === "openai" && mode === "default" && e.target.value.startsWith("gpt-image-"))) clearMedia(); setModel(e.target.value); }}><option value="">默认模型</option>{model && !available.some(item => item.id === model) && <option value={model}>{model}（当前不可用）</option>}{available.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.id}</option>)}</select><button type="button" className="icon-button" aria-label="刷新模型列表" disabled={busy || loading || !online} onClick={() => void readModels(true)}><RefreshCw size={16} className={loading ? "spin" : undefined}/></button></span></label>}
         {hasPrompt && <label className="test-prompt">提示词<textarea value={prompt} placeholder={imageModel ? defaults.image : defaults[mode]} maxLength={16000} disabled={busy} onChange={(e) => setPrompt(e.target.value)}/></label>}
         {((account.platform === "grok" && ["image", "video", "stt"].includes(mode)) || imageModel) && <label className="test-upload">{mode === "stt" ? "音频素材（可选）" : "图片素材（可选）"}<input key={`${mode}-${imageModel}`} type="file" accept={mode === "stt" ? "audio/*,.wav,.mp3,.m4a,.ogg,.webm" : "image/png,image/jpeg,image/webp,image/gif"} disabled={busy} onChange={(e) => void chooseFile(e.target.files?.[0])}/>{fileName && <span>{fileName}</span>}</label>}
       </div>
       {scheduled.length > 0 && <ul className="test-schedules">{scheduled.map(job => <li key={job.id}><div><time>{fullTime(job.scheduled_at)}</time><span>{`${job.repeat ? "持续预约 · " : ""}${String(job.requested.model_id || "默认模型")}`}</span></div><span>{job.repeat_reason || ({ queued: "待执行", running: "测试中", checking: "核对中", needs_confirmation: "待核对", completed: "准备下一次预约" } as Record<string, string>)[job.status]}</span>{(job.status === "queued" || repeating(job)) && <button className="icon-button" aria-label={repeating(job) ? "停止连续预约" : `取消预约 ${fullTime(job.scheduled_at)}`} disabled={busy || !online} onClick={() => { void api<Operation>("POST", `/account-operations/${job.id}/cancel`, {}).then(result => { if (alive.current) publishOperation(result); }).catch(e => { if (alive.current) setError(String(e)); }); }}><X size={15}/></button>}</li>)}</ul>}
       <div className="test-result" aria-live="polite">
         {!online && <p className="bad-text">当前离线，请恢复连接后操作。</p>}
-        {loading && <p className="muted">正在读取模型列表，可直接使用默认模型测试。</p>}
+        {modelError && <p className="bad-text" role="alert">{modelError}</p>}
         {mediaState === "reading" && <p className="muted" role="status">正在读取素材</p>}
         {status && <div className="test-status">{busy && <LoaderCircle size={14} className="spin"/>}{status}{result?.duration_ms != null && <span>{(result.duration_ms / 1000).toFixed(2)} s · {fullTime(result.completed_at)}</span>}</div>}
         {text && <pre>{text}</pre>}

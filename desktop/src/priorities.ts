@@ -54,8 +54,8 @@ export function movePrioritySlot(slots: PrioritySlot[], id: number, target: numb
   }
   return next;
 }
-const preferredPlatforms = ["openai", "grok", "anthropic"];
-export const priorityPlatformName = (platform: string) => ({ openai: "Codex", grok: "Grok", anthropic: "Claude" }[platform] ?? platform);
+export const preferredPlatforms = ["openai", "grok", "anthropic", "gemini", "antigravity", "deepseek", "kimi", "zhipu", "minimax", "opencodego"];
+export const priorityPlatformName = (platform: string) => ({ openai: "Codex", grok: "Grok", anthropic: "Claude", gemini: "Gemini", antigravity: "Antigravity", deepseek: "DeepSeek", kimi: "Kimi", zhipu: "智谱", minimax: "MiniMax", opencodego: "OpenCode Go" }[platform] ?? platform);
 export function sortPriorityPlatforms<T extends { platform: string }>(platforms: T[]): T[] {
   const rank = (p: string) => { const i = preferredPlatforms.indexOf(p); return i < 0 ? preferredPlatforms.length : i; };
   return [...platforms].sort((a, b) => rank(a.platform) - rank(b.platform) || (a.platform < b.platform ? -1 : a.platform > b.platform ? 1 : 0));

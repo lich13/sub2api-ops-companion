@@ -262,8 +262,8 @@ impl Actions {
             locks,
             templates,
             priorities: crate::priority_orders::PriorityGate::new(&settings),
+            candidates: Candidates::new(supervisor.clone()).persisted(&settings)?,
             settings,
-            candidates: Candidates::new(supervisor.clone()),
             supervisor,
             client,
             #[cfg(any(test, feature = "test-fixtures"))]
@@ -602,7 +602,7 @@ impl Actions {
     }
     pub async fn models(&self, id: i64, key: &str, model_test: bool) -> Result<Vec<Value>> {
         if model_test {
-            return self.model_test_candidates(id, key, None).await;
+            return self.model_test_candidates(id, key, false).await;
         }
         let row = self.account(id, None).await?;
         let allowlists = self.allowlists(&row, false).await?;
@@ -620,11 +620,8 @@ impl Actions {
             .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
         Ok(filter_models(&list[..list.len().min(1000)], &allowlists))
     }
-    async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
+    pub(crate) async fn candidate_source(&self, id: i64, key: &str) -> Result<(String, String)> {
         let row = self.account(id, None).await?;
-        if !crate::model_target::supported(&row) {
-            return Err(Error::new(422, "此账号类型不支持模型检测"));
-        }
         let parent = integer(&row["parent_account_id"])
             .or_else(|| integer(&row["extra"]["parent_account_id"]))
             .filter(|id| *id > 0);
@@ -689,11 +686,11 @@ impl Actions {
         ]));
         Ok((identity, base))
     }
-    async fn model_test_candidates(
+    pub(crate) async fn model_test_candidates(
         &self,
         id: i64,
         key: &str,
-        required: Option<&str>,
+        refresh: bool,
     ) -> Result<Vec<Value>> {
         if key.is_empty() {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
@@ -716,7 +713,7 @@ impl Actions {
             }
             Ok(values)
         };
-        self.candidates.get(identity, required, fetch).await
+        self.candidates.get(identity, refresh, fetch).await
     }
     pub async fn model_allowed(&self, row: &Value, model: &str) -> Result<bool> {
         if !text_model(model) {
@@ -727,11 +724,7 @@ impl Actions {
             return Err(Error::new(503, "管理员授权不可用，无法核对模型目录"));
         }
         Ok(self
-            .model_test_candidates(
-                integer(&row["id"]).ok_or_else(Error::invalid)?,
-                &key,
-                Some(model),
-            )
+            .model_test_candidates(integer(&row["id"]).ok_or_else(Error::invalid)?, &key, false)
             .await?
             .iter()
             .any(|v| v["id"] == model))
@@ -805,9 +798,6 @@ impl Actions {
         let row = self
             .account(id, Some(string(&payload["expected_version"])))
             .await?;
-        if !matches!(string(&row["platform"]), "openai" | "grok") {
-            return Err(Error::new(422, "仅支持 OpenAI 与 Grok 分组"));
-        }
         let groups = self
             .queries
             .db

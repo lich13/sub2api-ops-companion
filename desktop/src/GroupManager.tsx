@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, GripVertical, Layers3, RefreshCw, Search, Undo2, X } from "lucide-react";
 import { followAccountBatch, operationEpoch, operationTerminal, submitAccountBatch } from "./accountOperations";
 import type { Account, Group } from "./types";
@@ -7,6 +7,7 @@ import { DegradationBadge } from "./DegradationMark";
 import AccountActions, { type AccountActionItem } from "./AccountActions";
 import { draftConflict, membershipZone, moveAccount, platformGroups, type Drafts, type Zone } from "./groupDraft";
 import "./group-manager.css";
+import { priorityPlatformName, sortPriorityPlatforms } from "./priorities";
 
 type Props = { accounts: Account[]; groups: Group[]; active: boolean; mobile: boolean; online: boolean; connectionKey: string; back: () => void; report: (error: unknown) => void; accountActions: (account: Account) => AccountActionItem[]; schedule: (account: Account, disabled?: boolean) => ReactNode; changed: (count: number, busy: boolean) => void };
 type Drag = { id: number; x: number; y: number; zone?: Zone };
@@ -20,6 +21,8 @@ export default function GroupManager(props: Props) {
   const pointer = useRef<{ id: number; x: number; y: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null);
   const batchRequest = useRef<{ signature: string; id: string } | null>(null);
   latest.current = props; draftRef.current = drafts; dragRef.current = drag;
+  const platforms = useMemo(() => active ? sortPriorityPlatforms([...new Set([...accounts, ...groups].map(item => item.platform))].map(platform => ({ platform }))) : [], [active, accounts, groups]);
+  useEffect(() => { if (active && !platforms.some(item => item.platform === platform) && platforms.length) setPlatform(platforms[0].platform); }, [active, platform, platforms.map(item => item.platform).join(",")]);
   const available = active ? platformGroups(groups, platform) : [];
   const pair = available.slice(0, 2).map((group) => group.id);
   const pairRef = useRef(pair); pairRef.current = pair;
@@ -146,7 +149,7 @@ export default function GroupManager(props: Props) {
   return <section className="group-manager" hidden={!active} aria-hidden={!active}>
     <div className="group-manager-toolbar">
       {mobile && <button className="icon-button" aria-label="返回账号" onClick={props.back}><ArrowLeft size={20}/></button>}
-      <div className="group-platforms" role="tablist" aria-label="分组平台">{[["openai", "Codex"], ["grok", "Grok"]].map(([id, label]) => <button key={id} role="tab" aria-selected={platform === id} className={platform === id ? "active" : ""} disabled={busy || !!drag} onClick={() => { setPlatform(id); setQuery(""); }}>{label}</button>)}</div>
+      <div className="group-platforms" role="tablist" aria-label="分组平台">{platforms.map(({ platform: id }) => <button key={id} role="tab" aria-selected={platform === id} className={platform === id ? "active" : ""} disabled={busy || !!drag} onClick={() => { setPlatform(id); setQuery(""); }}>{priorityPlatformName(id)}</button>)}</div>
       <label className="group-search"><Search size={16}/><input value={query} placeholder="搜索名称或账号 ID" aria-label="搜索分组账号" onChange={(e) => setQuery(e.target.value)}/></label>
       <button className="icon-button" aria-label="刷新分组" disabled={!online || busy} onClick={() => void command("refresh").catch(props.report)}><RefreshCw size={17}/></button>
     </div>

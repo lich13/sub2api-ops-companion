@@ -14728,12 +14728,12 @@
           "assert_eq!(writes[0].api_key, ADMIN_KEY)",
           "assert!(!public.contains(\"fixture-account-secret\"))",
           "assert_eq!(harness.linked_groups(account_id).await, vec![second])",
-          "assert_eq!(\n        wrong_result.0, 422,\n        \"unsupported account platforms cannot edit groups\"\n    )",
+          "assert_eq!(\n        wrong_result.0, 409,\n        \"accounts can only join groups of their own platform\"\n    )",
           "assert_eq!(deleted_result.0, 404)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(Method::PUT, &format!(\"/api/v1/admin/accounts/{account_id}\"))\n            .len(),\n        1,\n        \"unsupported/deleted account requests must not add an upstream group write\"\n    )"
         ]
       },
-      "coverage_note": "unsupported account platform and deleted account are rejected; stale account version returns conflict",
+      "coverage_note": "all platforms may edit matching groups; cross-platform and deleted accounts are rejected; stale account version returns conflict",
       "supporting_targets": [
         {
           "kind": "rust_test",
@@ -14797,7 +14797,7 @@
             "assert_eq!(writes[0].api_key, ADMIN_KEY)",
             "assert!(!public.contains(\"fixture-account-secret\"))",
             "assert_eq!(harness.linked_groups(account_id).await, vec![second])",
-            "assert_eq!(\n        wrong_result.0, 422,\n        \"unsupported account platforms cannot edit groups\"\n    )",
+            "assert_eq!(\n        wrong_result.0, 409,\n        \"accounts can only join groups of their own platform\"\n    )",
             "assert_eq!(deleted_result.0, 404)",
             "assert_eq!(\n        harness\n            .upstream\n            .matching(Method::PUT, &format!(\"/api/v1/admin/accounts/{account_id}\"))\n            .len(),\n        1,\n        \"unsupported/deleted account requests must not add an upstream group write\"\n    )"
           ]
@@ -14824,7 +14824,7 @@
           "assert_eq!(writes[0].api_key, ADMIN_KEY)",
           "assert!(!public.contains(\"fixture-account-secret\"))",
           "assert_eq!(harness.linked_groups(account_id).await, vec![second])",
-          "assert_eq!(\n        wrong_result.0, 422,\n        \"unsupported account platforms cannot edit groups\"\n    )",
+          "assert_eq!(\n        wrong_result.0, 409,\n        \"accounts can only join groups of their own platform\"\n    )",
           "assert_eq!(deleted_result.0, 404)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(Method::PUT, &format!(\"/api/v1/admin/accounts/{account_id}\"))\n            .len(),\n        1,\n        \"unsupported/deleted account requests must not add an upstream group write\"\n    )"
         ]
@@ -14875,7 +14875,7 @@
           "assert_eq!(writes[0].api_key, ADMIN_KEY)",
           "assert!(!public.contains(\"fixture-account-secret\"))",
           "assert_eq!(harness.linked_groups(account_id).await, vec![second])",
-          "assert_eq!(\n        wrong_result.0, 422,\n        \"unsupported account platforms cannot edit groups\"\n    )",
+          "assert_eq!(\n        wrong_result.0, 409,\n        \"accounts can only join groups of their own platform\"\n    )",
           "assert_eq!(deleted_result.0, 404)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(Method::PUT, &format!(\"/api/v1/admin/accounts/{account_id}\"))\n            .len(),\n        1,\n        \"unsupported/deleted account requests must not add an upstream group write\"\n    )"
         ]
@@ -14902,7 +14902,7 @@
           "assert_eq!(writes[0].api_key, ADMIN_KEY)",
           "assert!(!public.contains(\"fixture-account-secret\"))",
           "assert_eq!(harness.linked_groups(account_id).await, vec![second])",
-          "assert_eq!(\n        wrong_result.0, 422,\n        \"unsupported account platforms cannot edit groups\"\n    )",
+          "assert_eq!(\n        wrong_result.0, 409,\n        \"accounts can only join groups of their own platform\"\n    )",
           "assert_eq!(deleted_result.0, 404)",
           "assert_eq!(\n        harness\n            .upstream\n            .matching(Method::PUT, &format!(\"/api/v1/admin/accounts/{account_id}\"))\n            .len(),\n        1,\n        \"unsupported/deleted account requests must not add an upstream group write\"\n    )"
         ]

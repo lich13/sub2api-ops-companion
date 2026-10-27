@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, Play, RotateCcw, Square, X } from "lucide-react";
+import { LoaderCircle, Play, RefreshCw, RotateCcw, Square, X } from "lucide-react";
 import { api } from "./bridge";
+import { readAccountModels, modelDirectoryRevoked } from "./accountModels";
 import type { Account } from "./types";
 import FingerprintBankStatus from "./FingerprintBankStatus";
 import { ModelFingerprintResult, TokenizerResult } from "./ModelFingerprintResult";
@@ -20,6 +21,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
   const [tokenizer, setTokenizer] = useState(false);
   const [slots, setSlots] = useState([1, 2, 3].includes(concurrency) ? concurrency : 1);
   const [models, setModels] = useState<Model[]>([]), [model, setModel] = useState("");
+  const refreshDirectory = useRef(false);
   const selectionTouched = useRef(false), submitted = useRef(false);
   const scope = useRef(0), activeAccount = useRef(account.id);
   const [job, setJob] = useState<Result | null>(null), [loading, setLoading] = useState(true);
@@ -44,10 +46,11 @@ export default function ModelTestDialog({ account, online, close, report, concur
     let alive = true; const current = scope.current;
     if (!online) { setLoading(false); return; }
     setLoading(true); setModelError("");
-    void api<Model[]>("GET", `/accounts/${account.id}/models?purpose=model_test`).then((items) => {
+    const refresh = refreshDirectory.current; refreshDirectory.current = false;
+    void readAccountModels<Model>(account.id, refresh).then((items) => {
       if (!alive || current !== scope.current) return;
       setModels(items); setModel((old) => old || items[0]?.id || "");
-    }).catch((e) => { if (alive && current === scope.current) { setModelError(e instanceof Error ? e.message : "模型候选读取失败"); reportRef.current(e); } }).finally(() => { if (alive && current === scope.current) setLoading(false); });
+    }).catch((e) => { if (alive && current === scope.current) { if (modelDirectoryRevoked(e)) setModels([]); setModelError(e instanceof Error ? e.message : "模型候选读取失败"); reportRef.current(e); } }).finally(() => { if (alive && current === scope.current) setLoading(false); });
     return () => { alive = false; };
   }, [account.id, online, modelReload]);
   useEffect(() => {
@@ -88,7 +91,7 @@ export default function ModelTestDialog({ account, online, close, report, concur
     return () => { ++generation.current; clearTimeout(timer.current); };
   }, [job?.id, job?.status, account.id, online]);
   async function start() {
-    if (busy || defaultsLoading || !online || !model || modelError || !models.some((item) => item.id === model)) return;
+    if (busy || defaultsLoading || !online || !model || !models.some((item) => item.id === model)) return;
     const current = scope.current;
     submitted.current = true;
     setBusy(true);
@@ -121,8 +124,8 @@ export default function ModelTestDialog({ account, online, close, report, concur
     <header><div><h2>模型测试</h2><strong>{account.name} <span>#{account.id}</span></strong></div><button className="icon-button" aria-label="关闭模型测试" onClick={dismiss}><X size={18}/></button></header>
     <div className="model-test-content">
     <div className="model-test-controls">
-    <label className="model-test-model model-test-model-main">模型<select aria-label="测试模型" value={model} disabled={loading || !!modelError || !models.length || running || busy || !online} onChange={(e) => { selectionTouched.current = true; setModel(e.target.value); }}>{model && !available && <option value={model}>{model}{!loading && !modelError && online ? "（当前不可用）" : ""}</option>}{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select>
-      {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
+    <label className="model-test-model model-test-model-main">模型<span className="model-directory-control"><select aria-label="测试模型" value={model} disabled={loading || !models.length || running || busy || !online} onChange={(e) => { selectionTouched.current = true; setModel(e.target.value); }}>{model && !available && <option value={model}>{model}{!loading && !modelError && online ? "（当前不可用）" : ""}</option>}{models.map((item) => <option key={item.id} value={item.id}>{item.display_name || item.id}</option>)}</select><button type="button" className="icon-button" aria-label="刷新模型列表" disabled={loading || running || busy || !online} onClick={() => { refreshDirectory.current = true; setModelReload(value => value + 1); }}><RefreshCw size={16} className={loading ? "spin" : undefined}/></button></span>
+      {modelError ? <span className="bad-text" role="alert">{modelError} <button type="button" className="link-button" onClick={() => { refreshDirectory.current = true; setModelError(""); setLoading(true); setModelReload((value) => value + 1); }}>重试</button></span> : !loading && !models.length ? <span className="muted">暂无可用模型</span> : null}
       {!loading && online && !modelError && model && !available && <span className="bad-text">所选模型不在当前账号上游模型目录中。</span>}
     </label>
     <label className="model-test-model">检测源<select aria-label="检测源" value={engine} disabled={running || busy || !online} onChange={e => setEngine(e.target.value as DetectionEngine)}>{account.platform === "openai" && <option value="modeltrace">ModelTrace</option>}<option value="lm_detector">LM Detector</option></select></label>
@@ -145,6 +148,6 @@ export default function ModelTestDialog({ account, online, close, report, concur
     {job?.bank_version && <details className="model-test-version"><summary>本轮库版本 · {engineName(job.engine)}</summary><p>{job.bank_version.revision} · {job.bank_version.analyzer_version}</p></details>}
     <FingerprintBankStatus key={engine} engine={engine} online={online} taskVersion={job?.engine === engine || (!job?.engine && engine === "modeltrace") ? job?.bank_version : undefined}/>
     </div>
-    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy || !online} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || defaultsLoading || !!modelError || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
+    <footer>{job?.can_retry && !running && <button disabled={busy || !online} onClick={() => void retryFailed()}>重试失败组</button>}{job?.status === "needs_confirmation" && <button disabled={busy || !online} onClick={() => void cancel()}>取消任务</button>}{running ? <button className="danger-text" disabled={busy || !online} onClick={() => void cancel()}><Square size={15}/>停止</button> : <><button disabled={loading || defaultsLoading || !models.length || busy || !model || !available || !online} onClick={() => void start()}>{busy ? <LoaderCircle size={15} className="spin"/> : job ? <RotateCcw size={15}/> : <Play size={15}/>} {job ? "重新测试" : "开始测试"}</button></>}</footer>
   </section></div>;
 }

@@ -273,3 +273,22 @@ it('offers continuous appointments only for OpenAI OAuth and prevents a second a
   expect([...container.querySelectorAll('button')].find(button => button.textContent === '预约测试')!.disabled).toBe(true);
   expect(container.querySelector('[aria-label="停止连续预约"]')).not.toBeNull();
 });
+
+it('keeps the selected connection model during refresh and failure, then drops revoked candidates', async () => {
+  await act(async () => root.render(<TestDialog account={account} online close={() => {}}/>));
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="测试模型"]')!;
+  await change(select, models[0].id);
+  const original = vi.mocked(api).getMockImplementation()!;
+  let error = '目录暂不可用';
+  vi.mocked(api).mockImplementation((method, path, body) => path.endsWith('refresh=true') ? Promise.reject(new Error(error)) : original(method, path, body));
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!.click());
+  expect(api).toHaveBeenCalledWith('GET', '/accounts/42/models?purpose=model_test&refresh=true');
+  expect(select.value).toBe(models[0].id);
+  expect(select.textContent).not.toContain('当前不可用');
+  expect(container.textContent).toContain(error);
+  error = '上游授权失效 [http_403]';
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!.click());
+  expect(select.value).toBe(models[0].id);
+  expect(select.textContent).toContain('当前不可用');
+  expect(select.options).toHaveLength(2);
+});

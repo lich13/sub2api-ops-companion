@@ -412,6 +412,9 @@ impl CreditController {
         finished.as_object_mut().unwrap().extend(json!({"revision":integer(&task["revision"]).unwrap_or(0)+1,"stage":"recovered","owns_pause":false,"recovered_at":completed,"error_code":"","next_at":null,"outcome":"restored","completed_at":completed,"result_reason":""}).as_object().unwrap().clone());
         let key = format!("reset-credit:{id}:{}", string(&task["episode"]));
         let mut history = json!({"account_id":id,"account_name":string(&row["name"]),"model_id":task["model_id"],"legacy":false,"kind":"quota_recovery","test_completed_at":task["test_completed_at"],"recovered_at":completed});
+        if let Some(attempts) = task["test_attempts"].as_u64() {
+            history["attempt_count"] = attempts.into();
+        }
         if task["model_test_job_id"].is_string() {
             history["model_test_job_id"] = task["model_test_job_id"].clone();
         }

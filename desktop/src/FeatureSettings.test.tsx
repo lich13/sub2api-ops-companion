@@ -219,3 +219,39 @@ describe("feature settings drafts", () => {
     expect(target.querySelector<HTMLFieldSetElement>("fieldset.recovery-compatibility")?.disabled).toBe(true);
   });
 });
+
+it("selects source models independently, refreshes explicitly and keeps typed IDs", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  let resolveOld!: (value: unknown) => void;
+  vi.mocked(api).mockImplementation(async (method, path, body) => {
+    if (path === "/accounts/1/models?purpose=model_test") return new Promise(resolve => { resolveOld = resolve; }) as never;
+    if (path === "/accounts/2/models?purpose=model_test") return [{ id: "fixture-source-two" }] as never;
+    if (path === "/accounts/2/models?purpose=model_test&refresh=true") return [{ id: "fixture-refreshed" }] as never;
+    return original(method, path, body);
+  });
+  await openFeatures();
+  const source = container.querySelector<HTMLSelectElement>('[aria-label="测活模型来源账号"]')!;
+  const select = async (value: string) => { await act(async () => { source.value = value; source.dispatchEvent(new Event("change", { bubbles: true })); }); };
+  await select("1"); await select("2");
+  await act(async () => resolveOld([{ id: "fixture-obsolete" }]));
+  expect([...container.querySelectorAll('datalist option')].map(node => node.getAttribute("value"))).toEqual(["fixture-source-two"]);
+  expect(container.querySelector<HTMLInputElement>('[aria-label="测活模型"]')!.value).toBe("fixture-model");
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新测活模型列表"]')!.click());
+  expect(container.querySelector('datalist option')?.getAttribute("value")).toBe("fixture-refreshed");
+  expect(writes()).toEqual([]);
+  expect(container.textContent).not.toContain("次数不含首次执行");
+  const autoSource = container.querySelector<HTMLSelectElement>('[aria-label="自动检测模型来源账号"]')!;
+  expect(autoSource.value).toBe("");
+  for (const [label, value] of [["测活模型", "fixture-manual-recovery"], ["自动检测模型", "fixture-manual-detection"]]) {
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  const read = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (method, path, body) => method === "PUT" && path === "/config/oauth"
+    ? { ...config.oauth, revision: "oauth-r2", oauth_recovery_test_model_id: "fixture-manual-recovery", model_detection_model_id: "fixture-manual-detection" } as never : read(method, path, body));
+  await act(async () => saveButton(form("恢复、测活与模型检测")).click());
+  expect(writes()).toEqual([["PUT", "/config/oauth", { expected_revision: "oauth-r1", changes: { oauth_recovery_test_model_id: "fixture-manual-recovery", model_detection_model_id: "fixture-manual-detection" } }]]);
+});

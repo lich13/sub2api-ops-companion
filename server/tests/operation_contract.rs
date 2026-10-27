@@ -2527,6 +2527,7 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
     let entry = &history[format!("connection-test:{}", job["id"].as_str().unwrap())];
     assert_eq!(entry["kind"], "connection_test");
     assert_eq!(entry["result_status"], "completed");
+    assert_eq!(entry["attempt_count"], 1);
     assert!(entry["recovered_at"].is_null());
     harness.restart().await;
     harness.operations.tick().await.unwrap();
@@ -2557,6 +2558,30 @@ async fn scheduled_connection_runs_once_at_the_second_and_keeps_history_across_r
         state["recovery_history"][format!("connection-test:{}", queued["id"].as_str().unwrap())]
             ["result_status"],
         "cancelled"
+    );
+    assert_eq!(
+        state["recovery_history"][format!("connection-test:{}", queued["id"].as_str().unwrap())]
+            ["attempt_count"],
+        0
+    );
+    let legacy_id = sub2ops_server::operations::id();
+    let mut legacy =
+        harness.operations.store.read().unwrap()["jobs"][job["id"].as_str().unwrap()].clone();
+    legacy["id"] = legacy_id.clone().into();
+    legacy.as_object_mut().unwrap().remove("attempt_count");
+    harness
+        .operations
+        .store
+        .transaction(|data| {
+            data["jobs"][&legacy_id] = legacy;
+            Ok(())
+        })
+        .unwrap();
+    harness.operations.tick().await.unwrap();
+    assert!(
+        harness.actions.queries.oauth.snapshot().unwrap()["recovery_history"]
+            [format!("connection-test:{legacy_id}")]["attempt_count"]
+            .is_null()
     );
     let mut invalid = request.clone();
     invalid["request_id"] = "fixture-scheduled-invalid-0001".into();

@@ -94,6 +94,7 @@ pub fn new_intent(descriptor: &Value, status: &str, at: Option<DateTime<Utc>>) -
         .cloned()
         .map(Value::Object)
         .unwrap_or(json!({}));
+    intent["model_attempt_count"] = 0.into();
     intent.as_object_mut().unwrap().extend(json!({"status":status,"deferred_until":"","next_retry_at":"","attempt_count":0,"block_signature":"","confirmed_at":at.map(datetime).unwrap_or_default(),"tested_at":"","recovered_at":"","last_error":"","last_error_code":""}).as_object().unwrap().clone());
     intent
 }

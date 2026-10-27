@@ -2044,8 +2044,8 @@ async fn group_management_auth_schema_deletion_and_error_readback_match_pinned_c
         )
         .await;
     assert_eq!(
-        wrong_result.0, 422,
-        "unsupported account platforms cannot edit groups"
+        wrong_result.0, 409,
+        "accounts can only join groups of their own platform"
     );
 
     let deleted_account = harness
@@ -7392,5 +7392,143 @@ async fn sub2api_config_routes_require_admin_and_validate_before_host_access() {
     assert_eq!(invalid.0, 422);
     let valid = harness.request(Method::POST, "sub2api-config/apply", Some(json!({"expected_revision":"a".repeat(64),"runtime_revision":"b".repeat(64),"changes":[{"path":"log.level","remove":false,"value":"info"}]}))).await;
     assert_eq!(valid.0, 503);
+    harness.finish().await;
+}
+
+#[tokio::test]
+async fn group_management_all_platforms_and_usage_platform_filters() {
+    let mut h = Harness::new().await;
+    let other = h.insert_group("openai", false, &[]).await;
+    let mut ids = Vec::new();
+    for platform in ["anthropic", "gemini", "deepseek", "fixture-custom"] {
+        let first = h.insert_group(platform, false, &[]).await;
+        let second = h.insert_group(platform, false, &[]).await;
+        let account = h
+            .insert_account(platform, "apikey", json!({}), json!({}), None, &[first])
+            .await;
+        let row = h.account(account).await;
+        let path = format!("accounts/{account}/groups");
+        let result = h.request(Method::PUT, &path, Some(json!({"expected_version":account_version(&row),"scope_group_ids":[first,second],"group_ids":[second]}))).await;
+        assert_eq!(result.0, 200, "{platform}: {}", result.1);
+        assert_eq!(h.linked_groups(account).await, vec![second]);
+        let row = h.account(account).await;
+        let rejected = h.request(Method::PUT, &path, Some(json!({"expected_version":account_version(&row),"scope_group_ids":[other],"group_ids":[other]}))).await;
+        assert_eq!(rejected.0, 409);
+        ids.push(account);
+    }
+    let first_log = NEXT_ACCOUNT_ID.fetch_add(10, Ordering::Relaxed);
+    for (offset, account) in [Some(ids[0]), Some(ids[0]), Some(ids[1]), None]
+        .into_iter()
+        .enumerate()
+    {
+        sqlx::query("INSERT INTO usage_logs(id,account_id,model,created_at,actual_cost) VALUES($1,$2,'fixture-model',now(),$3)")
+            .bind(first_log + offset as i64).bind(account).bind((offset + 1) as i32).execute(&h.runtime.db.pool).await.unwrap();
+    }
+    sqlx::query("UPDATE accounts SET deleted_at=now() WHERE id=$1")
+        .bind(ids[0])
+        .execute(&h.runtime.db.pool)
+        .await
+        .unwrap();
+    let path = "usage-records?platform=anthropic&include_summary=true&limit=1";
+    let (status, first, _) = h.request(Method::GET, path, None).await;
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(first["items"].as_array().unwrap().len(), 1);
+    assert_eq!(first["items"][0]["account_id"], ids[0]);
+    assert_eq!(
+        first["summary"]["actual_cost"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap(),
+        3.0
+    );
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let page_path = format!("{path}&cursor={}", urlencoding_for_fixture(cursor));
+    let (_, next, _) = h.request(Method::GET, &page_path, None).await;
+    assert_eq!(next["items"].as_array().unwrap().len(), 1);
+    assert_eq!(next["items"][0]["account_id"], ids[0]);
+    let wrong = page_path.replace("platform=anthropic", "platform=gemini");
+    assert_eq!(h.request(Method::GET, &wrong, None).await.0, 422);
+    let (_, count, _) = h
+        .request(
+            Method::GET,
+            &format!(
+                "usage-records?platform=anthropic&after_id={}",
+                first_log - 1
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(count["new_count"], 2);
+    let (_, all, _) = h
+        .request(Method::GET, "usage-records?include_summary=true", None)
+        .await;
+    assert_eq!(
+        all["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["id"]
+                .as_i64()
+                .is_some_and(|id| id >= first_log && id < first_log + 4))
+            .count(),
+        4
+    );
+    h.finish().await;
+}
+
+fn urlencoding_for_fixture(value: &str) -> String {
+    reqwest::Url::parse_with_params("https://example.invalid", &[("cursor", value)])
+        .unwrap()
+        .query()
+        .unwrap()
+        .trim_start_matches("cursor=")
+        .to_owned()
+}
+
+#[tokio::test]
+async fn model_directory_http_refresh_reuses_accounts_and_invalidates_changed_sources() {
+    let mut harness = Harness::new().await;
+    for platform in ["openai", "fixture-custom"] {
+        let account = harness
+            .insert_account(
+                platform,
+                "apikey",
+                json!({"api_key":"fixture-directory-key"}),
+                json!({}),
+                None,
+                &[],
+            )
+            .await;
+        let endpoint = format!("accounts/{account}/models?purpose=model_test");
+        let source = if platform == "openai" {
+            format!("/fixture-models/{account}")
+        } else {
+            format!("/api/v1/admin/accounts/{account}/models")
+        };
+        let first = harness.request(Method::GET, &endpoint, None).await;
+        assert_eq!(first.0, 200);
+        for _ in 0..3 {
+            let cached = harness.request(Method::GET, &endpoint, None).await;
+            assert_eq!(cached.1, first.1);
+        }
+        assert_eq!(harness.upstream.matching(Method::GET, &source).len(), 1);
+        let refreshed = harness
+            .request(Method::GET, &format!("{endpoint}&refresh=true"), None)
+            .await;
+        assert_eq!(refreshed.0, 200);
+        assert_eq!(refreshed.1, first.1);
+        assert_eq!(harness.upstream.matching(Method::GET, &source).len(), 2);
+        sqlx::query("UPDATE accounts SET credentials=credentials || '{\"fixture_revision\":\"updated\"}'::jsonb WHERE id=$1").bind(account).execute(&harness.runtime.db.pool).await.unwrap();
+        assert_eq!(harness.request(Method::GET, &endpoint, None).await.0, 200);
+        assert_eq!(harness.upstream.matching(Method::GET, &source).len(), 3);
+        assert_eq!(
+            harness
+                .request(Method::GET, &format!("{endpoint}&refresh=invalid"), None)
+                .await
+                .0,
+            422
+        );
+    }
     harness.finish().await;
 }

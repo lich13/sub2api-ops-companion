@@ -136,6 +136,39 @@ async function settle() {
 }
 
 describe("scheduled model detection", () => {
+  it("refreshes explicitly while retaining the selection and only revokes the old directory on authentication errors", async () => {
+    const detection = { ...baseDetection, model_override: "gpt-6-luna", model_source: "account", global_model_id: "gpt-6-sol" };
+    let error = "";
+    let finish: ((value: unknown) => void) | undefined;
+    vi.mocked(api).mockImplementation(async (_method, path) => {
+      if (path.endsWith("/model-detection")) return detection as never;
+      if (path.endsWith("refresh=true")) {
+        if (error) throw new Error(error);
+        return new Promise(resolve => { finish = resolve; }) as never;
+      }
+      return models as never;
+    });
+    await act(async () => root.render(<ModelDetectionDialog account={{ ...account, type: "apikey" }} online close={() => {}} report={vi.fn()}/>));
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="检测模型"]')!;
+    const refresh = container.querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!;
+    await act(async () => refresh.click());
+    expect(refresh.disabled).toBe(true);
+    expect(select.value).toBe("gpt-6-luna");
+    await act(async () => finish!(models));
+    expect(refresh.disabled).toBe(false);
+    error = "目录暂不可用";
+    await act(async () => refresh.click());
+    expect(select.value).toBe("gpt-6-luna");
+    expect(select.disabled).toBe(false);
+    expect(select.textContent).toContain("GPT-6 Sol");
+    expect(container.textContent).toContain(error);
+    error = "上游授权失效 [http_401]";
+    await act(async () => refresh.click());
+    expect(select.value).toBe("gpt-6-luna");
+    expect(select.disabled).toBe(true);
+    expect(select.textContent).not.toContain("GPT-6 Sol");
+  });
+
   it("shows the last automatic start with the shared full time format", async () => {
     const startedAt = "2026-10-08T00:00:00Z";
     await renderDialog({ ...baseDetection, last_automatic_started_at: startedAt });

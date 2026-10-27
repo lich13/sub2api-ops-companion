@@ -1035,7 +1035,78 @@ async fn recovery_model_one_valid_group_really_recovers_with_durable_history() {
         "recovered"
     );
     assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        state["recovery_history"]
+            .as_object()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()["attempt_count"],
+        1
+    );
     assert!(h.runtime.monitor.row(id).await.unwrap()["rate_limit_reset_at"].is_null());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn legacy_recovery_without_reliable_test_count_does_not_infer_a_total() {
+    let h = Harness::new().await;
+    let (row, usage, mut intent) = seed_recovery(&h, false).await;
+    let id = integer(&row["id"]).unwrap();
+    intent
+        .as_object_mut()
+        .unwrap()
+        .remove("model_attempt_count");
+    intent["attempt_count"] = 3.into();
+    h.runtime
+        .monitor
+        .store
+        .transaction(|state| {
+            state["scheduler"][id.to_string()]["recovery_intent"] = intent.clone();
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        run_natural_model(&h, id, &intent, &usage).await["status"],
+        "completed"
+    );
+    assert_eq!(
+        natural_cycle(&h, id, &intent, &usage).await["recovered"],
+        true
+    );
+    let state = h.runtime.monitor.state().unwrap();
+    assert!(state["recovery_history"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()["attempt_count"]
+        .is_null());
+    h.close().await;
+}
+
+#[tokio::test]
+async fn model_rejected_before_test_execution_does_not_increment_recovery_count() {
+    let h = Harness::new().await;
+    let (row, usage, intent) = seed_recovery(&h, false).await;
+    let id = integer(&row["id"]).unwrap();
+    h.runtime
+        .config
+        .oauth
+        .transaction(|raw| {
+            raw["model_detection_model_id"] = "unlisted-model".into();
+            Ok(())
+        })
+        .unwrap();
+
+    let result = natural_cycle(&h, id, &intent, &usage).await;
+    assert_eq!(result["attempt_count"], 0);
+    assert_eq!(h.mock.count("POST", "/v1/responses"), 0);
+    assert_eq!(
+        h.runtime.monitor.state().unwrap()["scheduler"][id.to_string()]["recovery_intent"]
+            ["model_attempt_count"],
+        0
+    );
     h.close().await;
 }
 
@@ -1640,6 +1711,15 @@ async fn credit_model_consumes_only_with_slot_and_recovers_once_without_hourly_q
             if cooldown { 2 } else { 1 }
         );
         assert_eq!(state["recovery_history"].as_object().unwrap().len(), 1);
+        assert_eq!(
+            state["recovery_history"]
+                .as_object()
+                .unwrap()
+                .values()
+                .next()
+                .unwrap()["attempt_count"],
+            1
+        );
         assert_eq!(state["pending_events"], json!({}));
         assert_eq!(
             state["scheduler"][id.to_string()]["credit_result_notifications"]

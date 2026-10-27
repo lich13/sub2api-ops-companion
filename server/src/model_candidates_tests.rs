@@ -34,104 +34,162 @@ async fn settled(cache: &Candidates) {
 }
 
 #[tokio::test]
-async fn freshness_stale_refresh_empty_and_missing_candidate_use_one_clock() {
+async fn directories_survive_age_and_refresh_replaces_including_empty() {
     let (cache, clock) = harness();
     assert_eq!(
         cache
-            .get("a".into(), None, async { Ok(models()) })
+            .get("a".into(), false, async { Ok(models()) })
             .await
             .unwrap(),
         models()
     );
-    advance(&clock, 59);
-    cache
-        .get("a".into(), None, async {
-            panic!("fresh cache must not fetch")
-        })
-        .await
-        .unwrap();
-    advance(&clock, 1);
+    advance(&clock, 86_400);
     assert_eq!(
         cache
-            .get("a".into(), None, async { Ok(vec![]) })
+            .get("a".into(), false, async {
+                panic!("cached reads must not fetch")
+            })
             .await
             .unwrap(),
         models()
     );
-    settled(&cache).await;
     assert!(cache
-        .get("a".into(), None, async {
+        .get("a".into(), true, async { Ok(vec![]) })
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(cache
+        .get("a".into(), false, async {
             panic!("empty success is cached")
         })
         .await
         .unwrap()
         .is_empty());
-    advance(&clock, 60);
-    let error = cache
-        .get("a".into(), Some("fixture-text"), async {
-            Err(Failure::temporary(Error::new(502, "fixture unavailable")))
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(error.status.as_u16(), 502);
     cache.close().await;
 }
 
 #[tokio::test]
-async fn transient_failure_never_extends_age_and_permanent_failure_revokes_stale() {
-    let (cache, clock) = harness();
+async fn explicit_refresh_reports_failure_retains_transient_and_revokes_permanent() {
+    let (cache, _) = harness();
     cache
-        .get("a".into(), None, async { Ok(models()) })
+        .get("a".into(), false, async { Ok(models()) })
         .await
         .unwrap();
-    advance(&clock, 60);
-    cache
-        .get("a".into(), None, async {
-            Err(Failure::temporary(Error::new(504, "fixture timeout")))
-        })
-        .await
-        .unwrap();
-    settled(&cache).await;
-    advance(&clock, 4);
-    cache
-        .get("a".into(), Some("fixture-text"), async {
-            panic!("retry backoff")
-        })
-        .await
-        .unwrap();
-    advance(&clock, 1);
-    cache
-        .get("a".into(), None, async {
-            Err(Failure::permanent(Error::new(502, "fixture rejected")))
-        })
-        .await
-        .unwrap();
-    settled(&cache).await;
+    assert_eq!(
+        cache
+            .get("a".into(), true, async {
+                Err(Failure::temporary(Error::new(504, "fixture timeout")))
+            })
+            .await
+            .unwrap_err()
+            .status
+            .as_u16(),
+        504
+    );
+    assert_eq!(
+        cache
+            .get("a".into(), false, async {
+                panic!("retain last successful directory")
+            })
+            .await
+            .unwrap(),
+        models()
+    );
     assert!(cache
-        .get("a".into(), None, async { panic!("failure cooldown") })
-        .await
-        .is_err());
-    advance(&clock, 5);
-    cache
-        .get("a".into(), None, async { Ok(models()) })
-        .await
-        .unwrap();
-    advance(&clock, 299);
-    cache
-        .get("a".into(), None, async {
-            Err(Failure::temporary(Error::new(502, "fixture unavailable")))
-        })
-        .await
-        .unwrap();
-    settled(&cache).await;
-    advance(&clock, 1);
-    assert!(cache
-        .get("a".into(), None, async {
-            panic!("age is not renewed on failure")
+        .get("a".into(), true, async {
+            Err(Failure::permanent(Error::new(401, "fixture revoked")))
         })
         .await
         .is_err());
+    assert!(cache
+        .get("a".into(), false, async {
+            panic!("revoked failure cooldown")
+        })
+        .await
+        .is_err());
+    assert_eq!(
+        cache
+            .get("a".into(), true, async { Ok(models()) })
+            .await
+            .unwrap(),
+        models()
+    );
     cache.close().await;
+}
+
+#[tokio::test]
+async fn successful_directories_survive_restart_and_revocation_is_persistent() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = Settings::from_env(
+        &[
+            (
+                "DATABASE_URL".into(),
+                "postgresql://fixture@127.0.0.1/fixture".into(),
+            ),
+            (
+                "USAGE_QUERY_STATE_PATH".into(),
+                temp.path()
+                    .join("usage.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]
+        .into(),
+        false,
+    )
+    .unwrap();
+    let cache = Candidates::new(Default::default())
+        .persisted(&settings)
+        .unwrap();
+    cache
+        .get("fixture-a".into(), false, async { Ok(models()) })
+        .await
+        .unwrap();
+    cache
+        .get("fixture-b".into(), false, async {
+            Ok(vec![json!({"id":"fixture-other"})])
+        })
+        .await
+        .unwrap();
+    cache.close().await;
+    let restored = Candidates::new(Default::default())
+        .persisted(&settings)
+        .unwrap();
+    assert_eq!(
+        restored
+            .get("fixture-a".into(), false, async {
+                panic!("restart must not fetch")
+            })
+            .await
+            .unwrap(),
+        models()
+    );
+    assert_eq!(
+        restored
+            .get("fixture-b".into(), false, async {
+                panic!("isolated persisted account")
+            })
+            .await
+            .unwrap()[0]["id"],
+        "fixture-other"
+    );
+    assert!(restored
+        .get("fixture-a".into(), true, async {
+            Err(Failure::permanent(Error::new(403, "fixture denied")))
+        })
+        .await
+        .is_err());
+    restored.close().await;
+    let restored = Candidates::new(Default::default())
+        .persisted(&settings)
+        .unwrap();
+    assert!(restored
+        .get("fixture-a".into(), false, async {
+            Err(Failure::permanent(Error::new(403, "fixture denied")))
+        })
+        .await
+        .is_err());
+    restored.close().await;
 }
 
 #[tokio::test]
@@ -143,7 +201,7 @@ async fn concurrent_reads_survive_client_cancellation_without_duplicate_fetch() 
     let count = calls.clone();
     let first = tokio::spawn(async move {
         owned
-            .get("a".into(), None, async move {
+            .get("a".into(), false, async move {
                 count.fetch_add(1, Ordering::SeqCst);
                 receive.await.unwrap();
                 Ok(models())
@@ -158,7 +216,7 @@ async fn concurrent_reads_survive_client_cancellation_without_duplicate_fetch() 
     let owned = cache.clone();
     let second = tokio::spawn(async move {
         owned
-            .get("a".into(), None, async { panic!("single flight") })
+            .get("a".into(), false, async { panic!("single flight") })
             .await
     });
     send.send(()).unwrap();
@@ -179,7 +237,7 @@ async fn concurrency_is_bounded_and_shutdown_releases_waiters_and_permits() {
         let count = calls.clone();
         readers.push(tokio::spawn(async move {
             owned
-                .get(id.to_string(), None, async move {
+                .get(id.to_string(), false, async move {
                     count.fetch_add(1, Ordering::SeqCst);
                     std::future::pending().await
                 })
@@ -191,7 +249,7 @@ async fn concurrency_is_bounded_and_shutdown_releases_waiters_and_permits() {
     }
     assert_eq!(
         cache
-            .get("overflow".into(), None, async {
+            .get("overflow".into(), false, async {
                 panic!("no waiting queue")
             })
             .await
@@ -207,7 +265,7 @@ async fn concurrency_is_bounded_and_shutdown_releases_waiters_and_permits() {
     assert!(cache.state.lock().unwrap().entries.is_empty());
     assert_eq!(cache.slots.available_permits(), 8);
     assert!(cache
-        .get("closed".into(), None, async { panic!("closed") })
+        .get("closed".into(), false, async { panic!("closed") })
         .await
         .is_err());
 }
@@ -217,7 +275,7 @@ async fn entries_and_normalized_bytes_are_bounded_and_identity_isolated() {
     let (cache, clock) = harness();
     for id in 0..=MAX_ENTRIES {
         cache
-            .get(id.to_string(), None, async { Ok(models()) })
+            .get(id.to_string(), false, async { Ok(models()) })
             .await
             .unwrap();
         advance(&clock, 1);
@@ -233,7 +291,7 @@ async fn entries_and_normalized_bytes_are_bounded_and_identity_isolated() {
     ] {
         let count = calls.clone();
         cache
-            .get(source.into(), None, async move {
+            .get(source.into(), false, async move {
                 count.fetch_add(1, Ordering::SeqCst);
                 Ok(vec![
                     json!({"id":"fixture","display_name":"x".repeat(3*1024*1024)}),
@@ -263,7 +321,7 @@ async fn refresh_has_an_eight_second_budget_and_can_retry_after_timeout() {
     let (cache, clock) = harness();
     let start = Instant::now();
     let error = cache
-        .get("a".into(), None, std::future::pending())
+        .get("a".into(), false, std::future::pending())
         .await
         .unwrap_err();
     assert_eq!(error.status.as_u16(), 504);
@@ -272,7 +330,7 @@ async fn refresh_has_an_eight_second_budget_and_can_retry_after_timeout() {
     advance(&clock, 5);
     assert_eq!(
         cache
-            .get("a".into(), None, async { Ok(models()) })
+            .get("a".into(), false, async { Ok(models()) })
             .await
             .unwrap(),
         models()

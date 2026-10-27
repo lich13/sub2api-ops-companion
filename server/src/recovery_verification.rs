@@ -304,6 +304,13 @@ impl Monitor {
                 intent["connection_attempt_count"] =
                     (integer(&intent["connection_attempt_count"]).unwrap_or(0) + 1).into();
             }
+            if method == "model" {
+                if let Some(attempts) = integer(&intent["model_attempt_count"])
+                    .or_else(|| (intent["attempt_count"] == 1).then_some(0))
+                {
+                    intent["model_attempt_count"] = (attempts + 1).into();
+                }
+            }
             intent["verification_dispatched"] = true.into();
             intent["next_retry_at"] = "".into();
             intent["waiting_reason"] = "".into();
@@ -332,12 +339,26 @@ impl Monitor {
             let mut result = output.unwrap_or_else(
                 |_| json!({"success":false,"uncertain":true,"error_code":"account_test_error"}),
             );
+            if method == "model"
+                && !truthy(&result["deferred"])
+                && !truthy(&result["uncertain"])
+                && !result["job_id"].is_string()
+            {
+                if let Some(attempts) = integer(&intent["model_attempt_count"]) {
+                    intent["model_attempt_count"] = attempts.saturating_sub(1).into();
+                }
+            }
             if !self.selected(id, generation, method_generation, method)? {
                 return Ok(
                     json!({"success":false,"skipped":true,"error_code":"manual_intervention"}),
                 );
             }
             if truthy(&result["deferred"]) {
+                if method == "model" {
+                    if let Some(attempts) = integer(&intent["model_attempt_count"]) {
+                        intent["model_attempt_count"] = attempts.saturating_sub(1).into();
+                    }
+                }
                 intent["status"] = "retry".into();
                 intent["attempt_count"] = json!(integer(&intent["attempt_count"])
                     .unwrap_or(1)
@@ -433,7 +454,10 @@ impl Monitor {
         if !truthy(&result["success"]) {
             self.recovery_failed(id, &after, &intent, &result, generation, method_generation)?;
             let mut result = result;
-            if let Some(attempts) = intent.get("connection_attempt_count") {
+            if let Some(attempts) = intent
+                .get("connection_attempt_count")
+                .or_else(|| intent.get("model_attempt_count"))
+            {
                 result["attempt_count"] = attempts.clone();
                 let state = self.shared_state()?;
                 let next = &state["scheduler"][id.to_string()]["recovery_intent"]["next_retry_at"];
@@ -568,7 +592,10 @@ impl Monitor {
         };
         let key = format!("recovery:{id}:{fingerprint}:{suffix}");
         let mut event = json!({"account_id":id,"account_name":row["name"].as_str().filter(|v|!v.is_empty()).unwrap_or("-"),"plan_type":quota::account_plan(row),"window_labels":intent["window_keys"].as_array().into_iter().flatten().map(|v|string(v).trim_start_matches("codex_")).collect::<Vec<_>>(),"status":status,"stage":if status=="auth_failed" {"account_test"} else {"recovery"},"checked_at":datetime(at),"model_id":test["model_id"],"duration_ms":test["duration_ms"],"test_success":truthy(&test["success"]),"error_code":code,"error":safe_error(&test["error"],800),"dedupe_key":key,"reset_at":intent["due_at"],"reset_source":intent["source"],"fingerprint":fingerprint,"remaining_summary":summary["remaining_summary"]});
-        if let Some(attempts) = intent.get("connection_attempt_count") {
+        if let Some(attempts) = intent
+            .get("connection_attempt_count")
+            .or_else(|| intent.get("model_attempt_count"))
+        {
             event["attempt_count"] = attempts.clone();
         }
         if test["job_id"].is_string() {
@@ -742,13 +769,23 @@ impl Monitor {
         if !recovery_events::known(&key, id, self.shared_state()?.as_ref()) {
             update.pending.insert(key.clone(), event);
         }
-        update.history.insert(key,json!({"account_id":id,"account_name":row["name"],"model_test_job_id":test["job_id"],"model_id":test["model_id"],"legacy":false,"test_completed_at":test["completed_at"],"recovered_at":datetime(at)}));
+        let mut history = json!({"account_id":id,"account_name":row["name"],"model_test_job_id":test["job_id"],"model_id":test["model_id"],"legacy":false,"test_completed_at":test["completed_at"],"recovered_at":datetime(at)});
+        if let Some(attempts) = intent
+            .get("connection_attempt_count")
+            .or_else(|| intent.get("model_attempt_count"))
+        {
+            history["attempt_count"] = attempts.clone();
+        }
+        update.history.insert(key, history);
         update.generations = Some(BTreeMap::from([(id, generation)]));
         update.methods = Some(BTreeMap::from([(id, method_generation)]));
         self.store.commit(update)?;
         let mut result = test.clone();
         result["recovered"] = true.into();
-        if let Some(attempts) = intent.get("connection_attempt_count") {
+        if let Some(attempts) = intent
+            .get("connection_attempt_count")
+            .or_else(|| intent.get("model_attempt_count"))
+        {
             result["attempt_count"] = attempts.clone();
             result["next_retry_at"] = Value::Null;
         }

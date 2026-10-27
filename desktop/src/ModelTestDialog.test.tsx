@@ -58,6 +58,20 @@ afterEach(async () => {
 });
 
 describe("ModelTestDialog candidates", () => {
+  it("manually refreshes without replacing the selected model after a temporary failure", async () => {
+    await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={vi.fn()}/>));
+    await settle();
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="测试模型"]')!;
+    await act(async () => { select.value = "gpt-6-astra"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const original = vi.mocked(api).getMockImplementation()!;
+    vi.mocked(api).mockImplementation((method, path, body) => path.endsWith("refresh=true") ? Promise.reject(new Error("目录暂不可用")) : original(method, path, body));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="刷新模型列表"]')!.click());
+    expect(api).toHaveBeenCalledWith("GET", "/accounts/101/models?purpose=model_test&refresh=true");
+    expect(select.value).toBe("gpt-6-astra");
+    expect(container.textContent).toContain("目录暂不可用");
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "开始测试")?.disabled).toBe(false);
+  });
+
   it("requests and renders the current account upstream directory candidates", async () => {
     await act(async () => root.render(<ModelTestDialog account={account} online close={() => {}} report={() => {}} />));
     await act(async () => Promise.resolve());
@@ -271,7 +285,7 @@ describe("ModelTestDialog candidates", () => {
     let polls = 0;
     vi.mocked(api).mockImplementation(async (method, path, body) => {
       if (path.endsWith("/latest")) return job as never;
-      if (path === "/accounts/101/models?purpose=model_test" && ++reads === 1) throw new Error("目录失败");
+      if (path.startsWith("/accounts/101/models?purpose=model_test")) { if (++reads === 1) throw new Error("目录失败"); return [{ id: "gpt-6-luna" }] as never; }
       if (path === `/model-tests/${job.id}`) {
         polls += 1;
         return (polls === 1 ? job : { ...job, status: "completed", completed_groups: 3, valid_groups: 3 }) as never;

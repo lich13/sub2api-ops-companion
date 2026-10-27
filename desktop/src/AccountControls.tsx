@@ -224,6 +224,7 @@ export function RecoveryHistory({
               <th>恢复类型</th>
               <th>验证方式</th>
               <th>测试模型</th>
+              <th className="recovery-attempts">尝试次数</th>
               <th>用卡时间</th>
               <th>测试完成时间</th>
               <th>结果 / 恢复时间</th>
@@ -245,6 +246,7 @@ export function RecoveryHistory({
                 <td data-label="恢复类型">{scheduled ? "预约测试" : card ? "用卡恢复" : "额度恢复"}</td>
                 <td data-label="验证方式">{scheduled ? "测试连接" : card ? card.verification_method === "model" ? "模型测试" : "测试连接" : "—"}</td>
                 <td data-label="测试模型">{r.model_id || "未知"}</td>
+                <td data-label="尝试次数" className="recovery-attempts">{r.attempt_count ?? "—"}</td>
                 <td data-label="用卡时间"><time>{card ? fullTime(card.completed_at) : "—"}</time></td>
                 <td data-label="测试完成时间">
                   <time>

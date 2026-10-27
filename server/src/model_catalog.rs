@@ -602,11 +602,19 @@ impl Catalog {
     }
 
     pub async fn source_catalog(&self, account: &Value, timeout: Duration) -> Result<Value> {
+        self.source_catalog_read(account, timeout, false).await
+    }
+    async fn source_catalog_read(
+        &self,
+        account: &Value,
+        timeout: Duration,
+        refresh: bool,
+    ) -> Result<Value> {
         let identity = source_identity(account);
         {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             if let Some((until, value)) = cache.sources.get(&identity) {
-                if *until > Instant::now() {
+                if !refresh && *until > Instant::now() {
                     return Ok(value.clone());
                 }
             }
@@ -805,7 +813,14 @@ impl Catalog {
             .read_http(reqwest::Method::GET, &url, &headers, None, Some(&client))
             .await?;
         if response.status != 200 {
-            return Err(Error::new(502, "上游目录暂不可用"));
+            return Err(Error::new(
+                if matches!(response.status, 401 | 403) {
+                    response.status
+                } else {
+                    502
+                },
+                format!("上游模型目录请求失败 [http_{}]", response.status),
+            ));
         }
         let mut data: Value = serde_json::from_slice(&response.body)?;
         let deadline = tokio::time::Instant::now() + timeout;
@@ -909,6 +924,9 @@ impl Catalog {
     }
 
     pub async fn account_models(&self, id: i64) -> Result<Vec<Value>> {
+        self.account_models_read(id, false).await
+    }
+    pub(crate) async fn account_models_read(&self, id: i64, refresh: bool) -> Result<Vec<Value>> {
         let account = self
             .db
             .one(
@@ -918,7 +936,7 @@ impl Catalog {
             .await?
             .ok_or_else(|| Error::new(404, "账号不存在"))?;
         let data = self
-            .source_catalog(&account, Duration::from_secs(8))
+            .source_catalog_read(&account, Duration::from_secs(8), refresh)
             .await?;
         let entries = data
             .as_array()

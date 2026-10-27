@@ -303,6 +303,9 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
     {
         return Err(Error::invalid());
     }
+    if matches!(path.as_slice(), ["accounts", _, "models"]) {
+        boolean(&query, "refresh")?;
+    }
     let mut payload = json!({});
     if crate::request_schema::has_body(&path, method.as_str()) {
         payload = if matches!(path.as_slice(), ["account-priority-orders", _, "cancel"]) {
@@ -452,6 +455,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
                 end_date: query.get("end_date").cloned(),
                 include_summary: boolean(&query, "include_summary")?,
                 account_id: number(&query, "account_id", i64::MIN, i64::MAX)?,
+                platform: query.get("platform").filter(|v| !v.is_empty()).cloned(),
                 api_key_id: number(&query, "api_key_id", i64::MIN, i64::MAX)?,
                 user_id: number(&query, "user_id", i64::MIN, i64::MAX)?,
                 model: query.get("model").cloned(),
@@ -585,6 +589,7 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
         ["proxies"] => json!(runtime.actions.proxies(&key).await?),
         ["proxies", id, action] => runtime.proxies.run(&key, path_id(id)?, action).await?,
         ["accounts", id, "models"] => {
+            let refresh = boolean(&query, "refresh")?;
             let purpose = get_string(&query, "purpose");
             if purpose.is_some_and(|value| value != "model_test") {
                 return Err(Error::new(422, "模型目录用途无效"));
@@ -593,31 +598,66 @@ async fn desktop(State(runtime): State<Arc<Runtime>>, request: Request) -> Resul
             if purpose == Some("model_test") {
                 let row = runtime.actions.account(account_id, None).await?;
                 if crate::model_target::supported(&row) {
-                    json!(runtime.actions.models(account_id, &key, true).await?)
+                    json!(
+                        runtime
+                            .actions
+                            .model_test_candidates(account_id, &key, refresh)
+                            .await?
+                    )
                 } else {
-                    match runtime.catalog.account_models(account_id).await {
-                        Ok(models) => json!(models),
-                        Err(error) if error.status.as_u16() == 422 => {
-                            let data = runtime
-                                .actions
-                                .json(
-                                    reqwest::Method::GET,
-                                    &format!("accounts/{account_id}/models"),
-                                    &key,
-                                    None,
-                                    30,
-                                )
-                                .await?;
-                            let items = data
-                                .as_array()
-                                .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
-                            if items.len() > 10_000 {
-                                return Err(Error::new(502, "上游模型列表超过限制"));
+                    let (identity, _) = runtime.actions.candidate_source(account_id, &key).await?;
+                    let expected = identity.clone();
+                    let actions = runtime.actions.clone();
+                    let catalog = runtime.catalog.clone();
+                    let key = key.clone();
+                    let fetch = async move {
+                        let result: Result<Vec<Value>> = async {
+                            let models = match catalog.account_models_read(account_id, true).await {
+                                Ok(models) => models,
+                                Err(error) if error.status.as_u16() == 422 => {
+                                    let data = actions
+                                        .json(
+                                            reqwest::Method::GET,
+                                            &format!("accounts/{account_id}/models"),
+                                            &key,
+                                            None,
+                                            30,
+                                        )
+                                        .await?;
+                                    let items = data
+                                        .as_array()
+                                        .ok_or_else(|| Error::new(502, "模型列表格式无效"))?;
+                                    if items.len() > 10_000 {
+                                        return Err(Error::new(502, "上游模型列表超过限制"));
+                                    }
+                                    crate::actions::filter_models(items, &[])
+                                }
+                                Err(error) => return Err(error),
+                            };
+                            if actions.candidate_source(account_id, &key).await?.0 != expected {
+                                return Err(Error::new(
+                                    409,
+                                    "账号或上游连接已变化，请重新读取模型目录",
+                                ));
                             }
-                            json!(crate::actions::filter_models(items, &[]))
+                            Ok(models)
                         }
-                        Err(error) => return Err(error),
-                    }
+                        .await;
+                        result.map_err(|error| {
+                            if error.status.is_server_error() {
+                                crate::model_candidates::Failure::temporary(error)
+                            } else {
+                                crate::model_candidates::Failure::permanent(error)
+                            }
+                        })
+                    };
+                    json!(
+                        runtime
+                            .actions
+                            .candidates
+                            .get(identity, refresh, fetch)
+                            .await?
+                    )
                 }
             } else {
                 json!(runtime.actions.models(account_id, &key, false).await?)

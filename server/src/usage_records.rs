@@ -239,6 +239,7 @@ pub struct Filter {
     pub end_date: Option<String>,
     pub include_summary: bool,
     pub account_id: Option<i64>,
+    pub platform: Option<String>,
     pub api_key_id: Option<i64>,
     pub user_id: Option<i64>,
     pub model: Option<String>,
@@ -279,6 +280,9 @@ impl UsageRecords {
         {
             return Err(Error::new(422, "分页或筛选参数无效"));
         }
+        if f.platform.as_ref().is_some_and(|v| v.len() > 80) {
+            return Err(Error::new(422, "平台筛选无效"));
+        }
         let has_cursor = f.cursor.as_ref().is_some_and(|v| !v.is_empty());
         if has_cursor && f.after_id.is_some() {
             return Err(Error::new(422, "分页和新增检查不能同时使用"));
@@ -316,6 +320,12 @@ impl UsageRecords {
                 .as_array_mut()
                 .unwrap()
                 .extend([json!(f.start_date), json!(f.end_date)]);
+        }
+        if let Some(platform) = f.platform.as_ref().filter(|v| !v.is_empty()) {
+            criteria
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"platform": platform}));
         }
         let signature = config_revision(&criteria);
         let saved = if has_cursor {
@@ -376,6 +386,10 @@ impl UsageRecords {
                 params.push(value.into());
                 clauses.push(format!("u.{field} = ${}", params.len()));
             }
+        }
+        if let Some(platform) = f.platform.as_ref().filter(|v| !v.is_empty()) {
+            params.push(platform.clone().into());
+            clauses.push(format!("EXISTS (SELECT 1 FROM accounts platform_account WHERE platform_account.id=u.account_id AND platform_account.platform=${})", params.len()));
         }
         if let Some(model) = f.model.as_ref().filter(|s| !s.is_empty()) {
             if model.chars().count() > 200 {

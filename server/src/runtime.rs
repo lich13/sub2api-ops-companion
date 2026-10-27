@@ -182,7 +182,8 @@ impl Runtime {
             settings.clone(),
         )?;
         actions.candidates =
-            crate::model_candidates::Candidates::with_clock(actions.supervisor.clone(), monotonic);
+            crate::model_candidates::Candidates::with_clock(actions.supervisor.clone(), monotonic)
+                .persisted(&settings)?;
         let mut bark = Bark::new(settings.clone())?;
         bark.supervise(actions.supervisor.clone());
         let config = ConfigService::new(settings.clone(), bark.clone(), queries);

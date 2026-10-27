@@ -384,6 +384,7 @@ let state: ViewState = {
         recovered_at: now,
         legacy: false,
         kind: "reset_credit",
+        attempt_count: 3,
         reset_credit: { consumed: true, completed_at: before, verification_method: "model" },
       },
       {
@@ -404,6 +405,7 @@ let state: ViewState = {
         recovered_at: null,
         legacy: false,
         kind: "connection_test",
+        attempt_count: 1,
         result_status: "completed",
       },
     ],
@@ -602,7 +604,7 @@ export async function run(
       return { verified: true, degradation_mark: account.degradation_mark };
     }
     if (String(args.path).startsWith("/usage-records") || String(args.path).startsWith("/usage-record-options")) {
-      return (await import("./recordPreview")).recordPreview(String(args.path));
+      return (await import("./recordPreview")).recordPreview(String(args.path), accounts);
     }
     if (String(args.path).startsWith("/model-")) {
       return (await import("./modelPreview")).modelPreview(String(args.method), String(args.path), (args.body || {}) as Record<string, unknown>);
@@ -682,7 +684,9 @@ export async function run(
           }
         : { status: "idle", total: 0, completed: 0, items: [] };
     if (path.split("?", 1)[0].endsWith("/models")) {
-      if (path.split("?")[1] === "purpose=model_test") {
+      const query = new URLSearchParams(path.split("?")[1]);
+      if (scenario === "model-directory-error" && query.get("refresh") === "true") throw new Error("模型目录暂不可用，请重试");
+      if (query.get("purpose") === "model_test") {
         const account = state.snapshot?.accounts.find((item) => item.id === Number(path.split("/")[2]));
         if (!account) throw new Error("账号不存在");
         return (await import("./modelTestPreview")).modelTestCandidates(account);

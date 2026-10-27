@@ -32,6 +32,7 @@ import {
 } from "./records";
 import { useRecordFeed } from "./useRecordFeed";
 import RecordFilter from "./RecordFilter";
+import { priorityPlatformName, sortPriorityPlatforms, preferredPlatforms } from "./priorities";
 import RecordDatePicker from "./RecordDatePicker";
 import { presetRange, type RecordDateRange } from "./recordDates";
 import { useBackAction } from "./mobile";
@@ -236,6 +237,7 @@ function Cell({ column, row }: { column: RecordColumn; row: UsageRecord }) {
   }
 }
 const defaultFilters = {
+  platform: "",
   account: "",
   user: null as RecordOption | null,
   key: null as RecordOption | null,
@@ -497,6 +499,7 @@ export default function UsageRecords({
     sentinel = useRef<HTMLDivElement>(null),
     menu = useRef<HTMLDetailsElement>(null),
     detailEpoch = useRef(0);
+  const platforms = useMemo(() => sortPriorityPlatforms([...new Set([...preferredPlatforms, ...accounts.map(account => account.platform)])].map(platform => ({ platform }))), [accounts]);
   const accountOptions = useMemo<RecordOption[]>(
     () => accounts.map((account) => ({
       id: account.id, name: account.name, status: account.status, deleted: false,
@@ -560,6 +563,7 @@ export default function UsageRecords({
       start_date: range.start,
       end_date: range.end,
     });
+    if (filters.platform) p.set("platform", filters.platform);
     if (filters.account) p.set("account_id", filters.account);
     if (filters.user) p.set("user_id", String(filters.user.id));
     if (filters.key) p.set("api_key_id", String(filters.key.id));
@@ -731,6 +735,11 @@ export default function UsageRecords({
                   </button>
                 </header>
               )}
+              <select aria-label="记录平台" value={draft.platform} onChange={e => {
+                const platform = e.target.value;
+                const selected = accounts.find(account => String(account.id) === draft.account);
+                setDraft({ ...draft, platform, account: platform && selected?.platform !== platform ? "" : draft.account });
+              }}><option value="">全部平台</option>{platforms.map(({ platform }) => <option key={platform} value={platform}>{priorityPlatformName(platform)}</option>)}</select>
               <RecordFilter
                 kind="users"
                 onOpenChange={pickerChanged}
@@ -743,7 +752,7 @@ export default function UsageRecords({
                 onOpenChange={pickerChanged}
                 active={active}
                 value={accountOptions.find((account) => String(account.id) === draft.account) ?? null}
-                options={accountOptions}
+                options={accountOptions.filter(option => !draft.platform || accounts.some(account => account.id === option.id && account.platform === draft.platform))}
                 onChange={(account) =>
                   setDraft({ ...draft, account: account ? String(account.id) : "" })
                 }

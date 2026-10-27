@@ -311,7 +311,10 @@
 }
 .app.mobile .records-filter-sheet > .record-filter {
   width: 100%;
+  max-width: none;
+  flex: none;
 }
+.app.mobile .records-filter-sheet > select,
 .app.mobile .records-filter-sheet > input,
 .app.mobile .records-filter-sheet .record-filter-trigger,
 .app.mobile .records-filter-sheet > button[type="submit"] {
@@ -325,6 +328,7 @@
   font-weight: 400;
   border-radius: 6px;
 }
+.app.mobile .records-filter-sheet > select,
 .app.mobile .records-filter-sheet .records-model-filter {
   flex: none;
 }

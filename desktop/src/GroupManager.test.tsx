@@ -395,3 +395,13 @@ describe("group manager drafts", () => {
     expect(container.textContent).not.toContain("个账号待应用");
   });
 });
+
+it("offers every actual platform and preserves account isolation", async () => {
+  await act(async () => render([account(21, "Claude fixture", [21], "anthropic"), account(31, "Gemini fixture", [31], "gemini"), account(41, "Custom fixture", [], "custom")], { groups: [group(21, "Claude 分组", "anthropic"), group(31, "Gemini 分组", "gemini")] }));
+  expect([...container.querySelectorAll('[role="tab"]')].map(tab => tab.textContent)).toEqual(["Claude", "Gemini", "custom"]);
+  expect(container.textContent).toContain("Claude fixture");
+  expect(container.textContent).not.toContain("Gemini fixture");
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.textContent === "Gemini")!.click());
+  expect(container.textContent).toContain("Gemini fixture");
+  expect(container.textContent).not.toContain("Claude fixture");
+});

@@ -2086,3 +2086,21 @@ describe("record view", () => {
     },
   );
 });
+
+it("applies platform to the record feed and clears an incompatible account", async () => {
+  serve(() => page([record(1)]));
+  await renderView({ accounts: [account(9, "Codex fixture"), { ...account(10, "Claude fixture"), platform: "anthropic" }] });
+  await click("账户筛选");
+  await click("Codex fixture#9");
+  await applyFilters();
+  expect(params(paths().at(-1)!).get("account_id")).toBe("9");
+  const platform = container.querySelector<HTMLSelectElement>('[aria-label="记录平台"]')!;
+  expect([...platform.options].map(option => option.textContent)).toEqual(expect.arrayContaining(["全部平台", "Codex", "Claude", "Gemini", "DeepSeek"]));
+  await act(async () => { platform.value = "anthropic"; platform.dispatchEvent(new Event("change", { bubbles: true })); });
+  await click("筛选");
+  expect(button("账户筛选").textContent).toBe("全部账户");
+  expect(params(paths().at(-1)!).has("account_id")).toBe(false);
+  expect(paths().filter(path => path.startsWith("/usage-records?")).at(-1)).toContain("platform=anthropic");
+  await advance(10_000);
+  expect(paths().filter(path => path.startsWith("/usage-records?")).every(path => !params(path).has("after_id") || params(path).get("platform") === "anthropic")).toBe(true);
+});

@@ -1278,7 +1278,7 @@ impl Operations {
             } else {
                 string(&job["status"])
             };
-            let entry = json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status,"attempt_count":job.get("attempt_count").cloned().unwrap_or(json!(u64::from(truthy(&job["started_at"]))))});
+            let entry = json!({"account_id":job["account_id"],"account_name":job["account_name"],"model_id":result["actual_model"].as_str().unwrap_or(string(&job["payload"]["model_id"])),"test_completed_at":result["completed_at"].as_str().unwrap_or(string(&job["updated_at"])),"recovered_at":null,"legacy":false,"kind":"connection_test","result_status":status,"attempt_count":job.get("attempt_count").cloned().unwrap_or_else(|| if status == "cancelled" && !truthy(&job["started_at"]) { json!(0) } else { Value::Null })});
             if matches!(status, "completed" | "failed" | "needs_confirmation")
                 && job["notification_suppressed"] != true
             {

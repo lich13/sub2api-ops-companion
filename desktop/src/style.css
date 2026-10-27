@@ -2288,3 +2288,22 @@ td:last-child {
 .test-schedules li > div { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .test-schedules time { font-variant-numeric: tabular-nums; }
 .test-schedules li > div > span { overflow-wrap: anywhere; color: var(--muted); }
+
+.model-directory-control { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+.model-directory-control > select, .model-directory-control > input { flex: 1; width: 0; min-width: 0; }
+.model-directory-control > .icon-button { flex: 0 0 38px; min-height: 38px; align-self: stretch; }
+.model-source-field { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.model-source-field .field { display: grid; align-items: start; justify-content: stretch; min-width: 0; gap: 8px; padding: 0; border: 0; font-size: 13px; }
+.model-source-field input, .model-source-field select { width: 100%; max-width: 100%; min-height: 38px; font: inherit; }
+.model-source-error { grid-column: 1 / -1; }
+.model-test-model { font-size: 13px; }
+.recovery-attempts { font-variant-numeric: tabular-nums; }
+.app:not(.mobile) .recovery-attempts { text-align: right; }
+.app:not(.mobile) .recovery-table th, .app:not(.mobile) .recovery-table td:not(:first-child) { white-space: nowrap; }
+.app:not(.mobile) .recovery-table td:first-child { min-width: 150px; max-width: 220px; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .model-source-field { grid-template-columns: minmax(0, 1fr); }
+  .model-directory-control > .icon-button { flex-basis: 48px; min-height: 48px; }
+  .model-source-field input, .model-source-field select { min-height: 48px; }
+  .group-platforms { max-width: 100%; flex-wrap: wrap; }
+}
