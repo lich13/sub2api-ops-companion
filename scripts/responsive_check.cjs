@@ -1624,11 +1624,32 @@ async function desktopMenuChecks(h, fixture) {
       };
     };
     const filterBar = section.querySelector(".records-filter-bar");
+    const toolbar = section.querySelector(".records-toolbar");
+    const rect = (element) => {
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom, width: box.width };
+    };
+    const toolbarChildren = [...(toolbar?.children ?? [])].map(rect);
     const controls = [...section.querySelectorAll(
       ".records-toolbar input:not([type=checkbox]), .records-toolbar select, .records-toolbar .record-filter-trigger, .records-toolbar > button[type=submit]",
     )];
     return {
       filterGap: filterBar ? getComputedStyle(filterBar).gap : "",
+      filterBar: filterBar ? {
+        ...rect(filterBar),
+        scrollWidth: filterBar.scrollWidth,
+        clientWidth: filterBar.clientWidth,
+      } : null,
+      toolbar: toolbar ? {
+        ...rect(toolbar),
+        scrollWidth: toolbar.scrollWidth,
+        clientWidth: toolbar.clientWidth,
+      } : null,
+      toolbarChildren,
+      filterInline: rect(section.querySelector(".records-filter-inline")),
+      datePicker: rect(section.querySelector(".records-date-picker")),
+      dateLabelWhiteSpace: getComputedStyle(section.querySelector(".records-date-trigger > span")).whiteSpace,
       controls: controls.map((element) => style(element)),
       dateTrigger: style(section.querySelector(".records-date-trigger")),
       head: style(section.querySelector(".records-table thead th")),
@@ -1656,6 +1677,19 @@ async function desktopMenuChecks(h, fixture) {
     };
   });
   await h.state(recordsDensity.filterGap === "6px"
+    && recordsDensity.filterBar?.width > 0
+    && recordsDensity.filterBar.scrollWidth <= recordsDensity.filterBar.clientWidth + 1
+    && recordsDensity.toolbar?.scrollWidth <= recordsDensity.toolbar.clientWidth + 1
+    && recordsDensity.datePicker?.width > 0
+    && recordsDensity.filterInline?.width > 0
+    && Math.abs(
+      (recordsDensity.datePicker.top + recordsDensity.datePicker.bottom) / 2
+      - (recordsDensity.filterInline.top + recordsDensity.filterInline.bottom) / 2,
+    ) <= 1
+    && recordsDensity.dateLabelWhiteSpace === "nowrap"
+    && recordsDensity.toolbarChildren.every((child) => child !== null)
+    && Math.max(...recordsDensity.toolbarChildren.map((child) => (child.top + child.bottom) / 2))
+      - Math.min(...recordsDensity.toolbarChildren.map((child) => (child.top + child.bottom) / 2)) <= 1
     && recordsDensity.controls.length > 0
     && recordsDensity.controls.every((control) => control?.rectHeight >= 27.5 && control?.rectHeight <= 28.5)
     && recordsDensity.dateTrigger?.rectHeight >= 27.5

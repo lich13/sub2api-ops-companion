@@ -64,6 +64,7 @@ export default function RecordDatePicker({
         aria-haspopup="dialog"
         disabled={disabled}
         className="records-date-trigger"
+        title={dateRangeLabel(value)}
         onClick={() => {
           setDraft(value);
           setError("");
