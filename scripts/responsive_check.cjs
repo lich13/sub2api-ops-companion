@@ -885,7 +885,7 @@ async function eventChecks(h, fixture) {
     } else {
       const rows = panel.locator(".recovery-table tbody tr");
       await h.visible(rows.first(), "recovery-history-row");
-      const columns = ["账号", "恢复类型", "验证方式", "测试模型", "用卡时间", "测试完成时间", "结果 / 恢复时间"];
+      const columns = ["账号", "恢复类型", "验证方式", "测试模型", "尝试次数", "用卡时间", "测试完成时间", "结果 / 恢复时间"];
       await h.state(isDeepStrictEqual(await panel.locator(".recovery-table th").allTextContents(), columns), "recovery-history-column-labels", panel);
       const recoveries = [...fixture.recoveries].sort((a, b) => b.id - a.id);
       await h.state(await rows.count() === recoveries.length && recoveries.some((item) => item.kind === "reset_credit")

@@ -863,6 +863,31 @@ impl Harness {
         .expect("real model test worker did not reach a terminal state")
     }
 
+    async fn refresh_model_candidates(&self, id: i64) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let runtime = self.runtime().clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, sub2ops_server::api::router(runtime))
+                .await
+                .unwrap();
+        });
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!(
+                "http://{address}/api/desktop/v1/accounts/{id}/models?purpose=model_test&refresh=true"
+            ))
+            .header("x-api-key", ADMIN_KEY)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        server.abort();
+        let _ = server.await;
+    }
+
     async fn restart_runtime(&mut self) {
         let old = self.runtime.take().expect("Runtime to restart");
         old.close().await;
@@ -1662,6 +1687,7 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
         .unwrap();
 
     let models_path = format!("/fixture-models/{id}");
+    harness.refresh_model_candidates(id).await;
     let models_before_tick = harness.mock.count("GET", &models_path);
     harness.advance(300);
     harness.runtime().detection.tick().await.unwrap();
@@ -1673,10 +1699,7 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
         blocked["candidate_recheck_at"],
         datetime(harness.now() + Duration::minutes(1))
     );
-    assert_eq!(
-        harness.mock.count("GET", &models_path),
-        models_before_tick + 1
-    );
+    assert_eq!(harness.mock.count("GET", &models_path), models_before_tick);
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
         harness.runtime().detection.store.read().unwrap()["automatic_starts"]
@@ -1688,11 +1711,13 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
         json!({"id":"gpt-6-luna"}),
         json!({"id":"gpt-5.6-luna"}),
     ]);
+    harness.refresh_model_candidates(id).await;
+    let models_after_refresh = harness.mock.count("GET", &models_path);
     harness.advance(59);
     harness.runtime().detection.tick().await.unwrap();
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_before_tick + 1
+        models_after_refresh
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
 
@@ -1708,7 +1733,7 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
     );
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_before_tick + 2
+        models_after_refresh
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
 
@@ -1721,14 +1746,9 @@ async fn unavailable_candidate_rechecks_after_one_minute_and_resumes_a_full_inte
     let job = harness.wait_job_terminal(&job_id).await;
     assert_eq!(job["status"], "completed");
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 1);
-    harness
-        .mock
-        .wait_for("GET", &models_path, models_before_tick + 3)
-        .await;
-    // The final scheduled tick and its worker share the same controlled refresh.
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_before_tick + 3
+        models_after_refresh
     );
     assert!(harness.mock.unexpected().is_empty());
     harness.close().await;
@@ -1770,13 +1790,13 @@ async fn missing_fingerprint_target_pauses_candidate_without_dispatch_or_recheck
         .any(|model| model["id"] == model_detection::TARGET));
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_count_before_tick + 1
+        models_count_before_tick
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     harness.runtime().detection.tick().await.unwrap();
     assert_eq!(
         harness.mock.count("GET", &models_path),
-        models_count_before_tick + 1
+        models_count_before_tick
     );
     assert_eq!(harness.mock.count("POST", "/v1/responses"), 0);
     assert!(
