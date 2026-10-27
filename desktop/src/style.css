@@ -180,6 +180,7 @@ strong {
   margin-left: auto;
   font-size: 10px;
   opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -192,6 +193,7 @@ strong {
 }
 .sidebar-bottom small {
   margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 .main {
   flex: 1;
@@ -537,10 +539,6 @@ td small {
 td strong {
   word-break: break-word;
 }
-th:last-child,
-td:last-child {
-  text-align: right;
-}
 .account-status {
   font-size: 11px;
   display: flex;
@@ -646,6 +644,13 @@ td:last-child {
   background: var(--surface);
   border-radius: 10px;
   padding: 22px;
+}
+.settings-card > h2 {
+  margin-bottom: 14px;
+}
+.settings-card > button,
+.settings-card fieldset > button {
+  margin-top: 14px;
 }
 .settings-heading {
   display: flex;
@@ -1731,8 +1736,23 @@ td:last-child {
 .test-controls {
   padding: 16px 20px;
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 130px minmax(0, 1fr);
   gap: 12px;
+  align-items: end;
+}
+.app:not(.mobile) .test-controls:has(select[aria-label="执行方式"]) {
+  grid-template-columns: 140px 120px minmax(0, 1fr);
+}
+.app:not(.mobile) .test-controls > label:has(select[aria-label="执行方式"]):has(+ .test-schedule-time),
+.app:not(.mobile) .test-controls > label:has(select[aria-label="执行方式"]):has(+ p) {
+  grid-column: 1 / -1;
+}
+.app:not(.mobile) .test-controls > label:has(.model-directory-control) {
+  grid-column: auto / -1;
+}
+.test-controls > p {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 .test-controls label {
   display: grid;
@@ -1865,12 +1885,12 @@ td:last-child {
 .lm-tokenizer ul { list-style: none; margin: 0; padding: 0; }
 .lm-tokenizer li { display: flex; gap: 12px; justify-content: space-between; padding: 8px 0; font-size: 12px; }
 .lm-tokenizer li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.detection-platform-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
-.detection-platform-settings > div { flex: 1 1 200px; }
-.detection-platform-settings strong { font-size: 13px; }
+.detection-platform-settings { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.detection-platform-settings > div { flex: 1 1 180px; }
+.detection-platform-settings strong { font-size: 12px; font-weight: 500; }
 .detection-platform-settings p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; }
-.detection-platform-settings label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
-.detection-platform-settings select { max-width: 100%; min-height: 38px; }
+.detection-platform-settings label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12px; }
+.detection-platform-settings select { max-width: 100%; min-width: 132px; min-height: 36px; }
 @media (max-width: 520px) {
   .lm-candidates > div { grid-template-columns: minmax(0, 1fr) 70px 56px; gap: 6px; }
 }
@@ -2233,8 +2253,9 @@ td:last-child {
 }
 .model-detection-dialog { width: min(520px, calc(100vw - 32px)); }
 .model-detection-dialog .switch-row,
-.model-detection-dialog .field { display: grid; grid-template-columns: 1fr minmax(150px, 260px); gap: 12px; align-items: center; margin: 12px 0; }
+.model-detection-dialog .field { display: grid; grid-template-columns: 1fr minmax(150px, 260px); gap: 12px; align-items: center; margin: 12px 0; border-bottom: 0; padding: 0; }
 .model-detection-dialog .field > span { color: var(--muted); font-size: 12px; }
+.model-detection-dialog .field > .muted { grid-column: 1 / -1; justify-self: end; font-size: 11px; }
 .model-detection-dialog .field input,
 .model-detection-dialog .field select { min-width: 0; width: 100%; }
 .detection-meta { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px 12px; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -2254,12 +2275,19 @@ td:last-child {
 .fingerprint-status dd { margin: 0; overflow-wrap: anywhere; }
 .fingerprint-status button { flex: 0 0 auto; }
 @media (max-width: 760px) { .fingerprint-status button { min-height: 48px; } .account-template-row.mapping input:nth-of-type(2) { grid-column: 1; } }
-.model-detection-dialog .switch-row { display: flex; justify-content: space-between; min-height: 48px; cursor: pointer; }
+.switch-row,
+.model-detection-dialog .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; cursor: pointer; font-size: 12px; }
+.switch-row input,
 .model-detection-dialog .switch-row input { appearance: none; flex: 0 0 44px; width: 44px; height: 26px; min-height: 26px; padding: 3px; margin: 0; border: 0; border-radius: 20px; background: var(--line); cursor: pointer; }
+.switch-row input::before,
 .model-detection-dialog .switch-row input::before { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform 120ms ease; }
+.switch-row input:checked,
 .model-detection-dialog .switch-row input:checked { background: var(--accent); }
+.switch-row input:checked::before,
 .model-detection-dialog .switch-row input:checked::before { transform: translateX(18px); }
+.switch-row input:focus-visible,
 .model-detection-dialog .switch-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.switch-row input:disabled,
 .model-detection-dialog .switch-row input:disabled { opacity: .5; cursor: default; }
 
 
@@ -2290,13 +2318,13 @@ td:last-child {
 .test-schedules li > div > span { overflow-wrap: anywhere; color: var(--muted); }
 
 .model-directory-control { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-.model-directory-control > select, .model-directory-control > input { flex: 1; width: 0; min-width: 0; }
-.model-directory-control > .icon-button { flex: 0 0 38px; min-height: 38px; align-self: stretch; }
-.model-source-field { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.model-source-field .field { display: grid; align-items: start; justify-content: stretch; min-width: 0; gap: 8px; padding: 0; border: 0; font-size: 13px; }
-.model-source-field input, .model-source-field select { width: 100%; max-width: 100%; min-height: 38px; font: inherit; }
+.model-directory-control > select, .model-directory-control > input { flex: 1; width: 0; min-width: 0; min-height: 36px; }
+.model-directory-control > .icon-button { flex: 0 0 36px; min-height: 36px; align-self: stretch; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; }
+.model-source-field { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.model-source-field .field { display: grid; align-items: start; justify-content: stretch; min-width: 0; gap: 8px; padding: 0; border: 0; font-size: 12px; }
+.model-source-field input, .model-source-field select { width: 100%; max-width: 100%; min-height: 36px; font: inherit; }
 .model-source-error { grid-column: 1 / -1; }
-.model-test-model { font-size: 13px; }
+.model-test-model { font-size: 12px; }
 .recovery-attempts { font-variant-numeric: tabular-nums; }
 .app:not(.mobile) .recovery-attempts { text-align: right; }
 .app:not(.mobile) .recovery-table th, .app:not(.mobile) .recovery-table td:not(:first-child) { white-space: nowrap; }

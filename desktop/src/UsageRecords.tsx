@@ -815,7 +815,7 @@ export default function UsageRecords({
           disabled={!active || feed.loading}
           onClick={() => void refresh()}
         >
-          <RefreshCw size={15} className={feed.loading ? "spinning" : ""} />
+          <RefreshCw size={15} className={feed.loading ? "spin" : ""} />
         </button>
         <details
           className="records-column-menu"

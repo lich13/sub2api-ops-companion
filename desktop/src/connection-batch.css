@@ -1,4 +1,4 @@
-.connection-batch { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.connection-batch { padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .connection-batch header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
 .connection-batch header > span { color: var(--muted); }
 .connection-batch-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }

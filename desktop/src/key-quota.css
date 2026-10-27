@@ -30,7 +30,7 @@
   font-size: 10px;
 }
 .key-quota-error {
-  color: var(--amber);
+  color: var(--warn);
 }
 .key-quota-subscription header {
   display: flex;
@@ -86,6 +86,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.key-quota-settings > header h2 {
+  margin: 0;
 }
 .key-quota-settings footer {
   display: flex;

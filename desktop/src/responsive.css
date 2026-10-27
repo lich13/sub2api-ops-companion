@@ -43,6 +43,19 @@
   font-size: 12px;
   line-height: 20px;
 }
+.app:not(.mobile) .page-surface[data-page="accounts"] .filters .search,
+.app:not(.mobile) .page-surface[data-page="accounts"] .filters select {
+  height: 30px;
+  min-height: 30px;
+}
+.app:not(.mobile) .page-surface[data-page="accounts"] .filters select {
+  padding: 4px 8px;
+}
+.app:not(.mobile) .page-surface[data-page="accounts"] .filters .search input {
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 20px;
+}
 .sidebar { width: 176px; }
 .content { padding: 20px; }
 @media (max-width: 1360px) {
@@ -195,4 +208,5 @@
 .mobile .model-test-dialog button, .mobile .model-test-dialog summary, .mobile .lm-probe-option label, .mobile .detection-platform-settings select { min-height: 48px; }
 .mobile .model-test-dialog summary { display: list-item; align-content: center; line-height: 1.5; padding: 12px 0; }
 .mobile .detection-platform-settings { display: grid; grid-template-columns: minmax(0, 1fr); }
+.mobile .detection-platform-settings label { display: grid; gap: 6px; }
 .mobile .lm-candidates > div { padding: 12px 0; }

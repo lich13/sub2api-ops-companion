@@ -69,6 +69,7 @@
 .app:not(.mobile) .records-toolbar input,
 .app:not(.mobile) .records-toolbar select,
 .app:not(.mobile) .records-toolbar button,
+.app:not(.mobile) .records-toolbar .record-filter-trigger,
 .app:not(.mobile) .records-mismatch-filter,
 .app:not(.mobile) .records-date-trigger { font-size: 13px; }
 .app:not(.mobile) .records-date-trigger,
@@ -91,6 +92,7 @@
 }
 .records-mismatch-filter input {
   height: auto;
+  margin: 0;
   accent-color: var(--accent);
 }
 .records-toolbar button {
@@ -312,6 +314,20 @@
   background: var(--accent-bg);
   border-color: transparent;
   padding: 4px 9px;
+}
+.app:not(.mobile) .records-actions > .icon-button,
+.app:not(.mobile) .records-actions > .new-records,
+.app:not(.mobile) .records-column-menu summary {
+  height: 28px;
+  min-height: 28px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app:not(.mobile) .records-actions > .icon-button {
+  width: 28px;
+  padding: 0;
 }
 .records-scroll {
   flex: 1;
